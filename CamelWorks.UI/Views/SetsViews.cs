@@ -19,6 +19,9 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class SetsViews
     {
+        private const string WholeModel = "Everything loaded";
+        private const string Selection = "Current selection";
+
         /// <summary>The boolean set builder.</summary>
         public static UIElement Builder() => new SetBuilderScreen().Build();
 
@@ -112,6 +115,7 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Name", _name),
                     Actions(session),
                     _results,
+                    new FamilyScreen(session, RedrawSaved).Build(),
                     Ui.Card("Saved sets", "Kept in the project file, so they travel with the job.", _saved)));
             }
 
@@ -356,6 +360,267 @@ namespace CamelWorks.UI.Views
 
             private static IEnumerable<SetExpression> Parts(SetExpression expression) =>
                 expression is AndExpression all ? all.Parts : new[] { expression };
+        }
+
+        // ===================================================================================
+        // Generating a family of sets
+        // ===================================================================================
+
+        /// <summary>
+        /// One set per level, per discipline, per zone — made in one pass instead of one at a time.
+        ///
+        /// This is an hour of clicking that gets done on every job, from a list somebody reads off
+        /// the properties panel. The list is already in the model, and a single pass produces both
+        /// the values and how many elements carry each one — which is the number that decides
+        /// whether a set is worth having at all.
+        ///
+        /// Nothing has to be set up first. The property boxes start on the two things every
+        /// federation has an answer for, and the run tells you what it found rather than making you
+        /// know in advance.
+        /// </summary>
+        private sealed class FamilyScreen
+        {
+            private readonly Session _session;
+            private readonly Action<Session> _refresh;
+
+            private readonly TextBox _category = Ui.Text("Element", null, 150);
+            private readonly TextBox _property = Ui.Text("Level", null, 150);
+            private readonly TextBox _pattern = Ui.Text("{value}", null, 180);
+            private readonly TextBox _floor = Ui.Text("1", null, 60);
+            private readonly StackPanel _preview = Ui.Stack();
+            private readonly StackPanel _status = Ui.Stack();
+
+            private SetFamilyPlan? _plan;
+
+            internal FamilyScreen(Session session, Action<Session> refresh)
+            {
+                _session = session;
+                _refresh = refresh;
+            }
+
+            internal UIElement Build()
+            {
+                var scope = WholeModel;
+                var picker = Ui.Choice(new[] { WholeModel, Selection }, scope, pick => scope = pick);
+
+                var look = Ui.Runner("See what it would make", _preview, job =>
+                {
+                    _plan = null;
+                    _status.Children.Clear();
+
+                    var category = _category.Text.Trim();
+                    var property = _property.Text.Trim();
+
+                    if (category.Length == 0 || property.Length == 0)
+                    {
+                        _preview.Children.Add(Ui.Problem("Name the property to split on first."));
+                        return;
+                    }
+
+                    job.Say("Reading the model...");
+
+                    var values = new List<string?>();
+                    var traversal = scope == Selection
+                        ? TraversalScope.CurrentSelection
+                        : TraversalScope.WholeDocument;
+
+                    foreach (var item in _session.Model.Traverse(traversal))
+                    {
+                        if (values.Count % 2000 == 0 && !job.Step(values.Count, "elements read")) return;
+                        values.Add(item.Property(category, property));
+                    }
+
+                    if (values.Count == 0)
+                    {
+                        _preview.Children.Add(Ui.Empty("Nothing in scope.",
+                            scope == Selection
+                                ? "Select some elements, or switch the scope to the whole model."
+                                : "No models are loaded."));
+                        return;
+                    }
+
+                    var library = SetLibrary.FromJson(_session.Store.Section(ProjectStore.SetsSection)["items"]);
+
+                    var plan = SetFamily.Of(category, property, values, new FamilyOptions
+                    {
+                        NamePattern = _pattern.Text,
+                        Floor = Floor(_floor.Text),
+                        Existing = library.Sets.Select(set => set.Name).ToList(),
+                    });
+
+                    _plan = plan;
+                    Show(plan, values.Count);
+                });
+
+                return Ui.Card("Make a family of sets",
+                    "One set per value of a property. Each one is a rule, not a list, so a set made "
+                    + "today still covers the walls somebody adds tomorrow.",
+                    Ui.Field("Scope", picker),
+                    Ui.Field("Property tab", _category),
+                    Ui.Field("Property", _property),
+                    Ui.Field("Name pattern", _pattern),
+                    Ui.Field("Skip values under", _floor),
+                    look,
+                    _preview,
+                    _status);
+            }
+
+            private void Show(SetFamilyPlan plan, int scanned)
+            {
+                _preview.Children.Add(Ui.Line(plan.Explain(), 1, true));
+                _preview.Children.Add(Ui.Line(Ui.Count(scanned, "element") + " read", 0.6));
+
+                if (plan.Sets.Count == 0)
+                {
+                    _preview.Children.Add(Ui.Empty("Nothing to split on.",
+                        "No element in scope carries \"" + plan.Category + " / " + plan.Property
+                        + "\". Check the spelling against the properties panel — the tab name matters "
+                        + "as much as the property name."));
+                    return;
+                }
+
+                foreach (var set in plan.Sets)
+                {
+                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+                    var proposed = set;
+
+                    row.Children.Add(Ui.Check(string.Empty, set.IsSelected, v => proposed.IsSelected = v));
+                    row.Children.Add(Ui.Line(set.Name, 1, true));
+                    row.Children.Add(Ui.Line(Ui.Count(set.Elements, "element"), 0.7));
+
+                    if (set.Note != null) row.Children.Add(Ui.Pill(set.Note, Tone.Warn));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    _preview.Children.Add(row);
+                }
+
+                if (plan.Blanks > 0)
+                    _preview.Children.Add(Ui.Note(Ui.Count(plan.Blanks, "element")
+                        + " carry no value for this property and are in none of these sets. They are "
+                        + "not an \"unassigned\" set: an element with no level is one somebody has to "
+                        + "look at, and collecting them would make that gap look handled."));
+
+                _preview.Children.Add(Ui.Across(
+                    Ui.Button("Save the ticked ones", Save),
+                    Ui.Button("Save and publish them", Publish)));
+            }
+
+            /// <summary>Write the ticked sets into the project file.</summary>
+            private void Save()
+            {
+                _status.Children.Clear();
+
+                var wanted = Wanted();
+                if (wanted == null) return;
+
+                var library = SetLibrary.FromJson(_session.Store.Section(ProjectStore.SetsSection)["items"]);
+
+                foreach (var set in wanted)
+                {
+                    var existing = library.Sets.FirstOrDefault(
+                        s => string.Equals(s.Name, set.Name, StringComparison.OrdinalIgnoreCase));
+
+                    library.Put(new SavedSet(existing?.Id ?? library.NextId("set"), set.Name, set.Expression)
+                    {
+                        Note = "One of a family split on " + _plan!.Category + " / " + _plan.Property + ".",
+                    });
+                }
+
+                _session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
+
+                _status.Children.Add(_session.Store.Save()
+                    ? Ui.Line("Saved " + Ui.Count(wanted.Count, "set") + " to the project.", 1, true)
+                    : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                _session.Record(ActivityKind.Reconcile,
+                    "made " + Ui.Count(wanted.Count, "set") + " split on " + _plan!.Property);
+
+                _refresh(_session);
+            }
+
+            /// <summary>
+            /// Write them, then push each one into the host as a native search set.
+            ///
+            /// Saved first and published second, deliberately: publishing is the half that can fail
+            /// per set, and a family that saved cleanly and published nine of eleven is recoverable.
+            /// A family that published and then failed to save is eleven host sets nobody can find
+            /// again from CamelWorks.
+            /// </summary>
+            private void Publish()
+            {
+                Save();
+
+                var wanted = Wanted();
+                if (wanted == null) return;
+
+                var published = 0;
+                var live = 0;
+                var refused = new List<string>();
+
+                foreach (var set in wanted)
+                {
+                    try
+                    {
+                        var outcome = _session.Search.Publish(set.Name, DnfCompiler.Compile(set.Expression));
+
+                        published++;
+                        if (outcome.IsLive) live++;
+                    }
+                    catch (Exception e)
+                    {
+                        // Named, not counted, and the loop carries on. A family where two of eleven
+                        // were refused is a family with two holes in it, and a total does not say
+                        // which two.
+                        refused.Add(set.Name + " - " + Ui.Describe(e));
+                    }
+                }
+
+                _status.Children.Add(Ui.Line("Published " + Ui.Count(published, "set")
+                    + " into the host's selection sets.", 1, true));
+
+                if (live < published)
+                    _status.Children.Add(Ui.Note(Ui.Count(published - live, "set")
+                        + " went in as a fixed list of elements rather than a live search, because the "
+                        + "host could not express the rule as a search. Those will not pick up elements "
+                        + "added later; the CamelWorks set will."));
+
+                foreach (var problem in refused) _status.Children.Add(Ui.Problem(problem));
+
+                if (refused.Count > 0)
+                    _status.Children.Add(Ui.Note("Every set here is saved in the project whatever the host "
+                        + "did with it, so a refusal costs nothing but a second attempt."));
+
+                _session.Record(ActivityKind.Export, "published " + Ui.Count(published, "set"));
+            }
+
+            /// <summary>The ticked sets, or null with a message when there are none.</summary>
+            private IReadOnlyList<ProposedSet>? Wanted()
+            {
+                var plan = _plan;
+
+                if (plan == null)
+                {
+                    _status.Children.Add(Ui.Line("Press the button above first.", 0.8));
+                    return null;
+                }
+
+                var wanted = plan.Sets.Where(s => s.IsSelected).ToList();
+
+                if (wanted.Count == 0)
+                {
+                    _status.Children.Add(Ui.Line("Nothing is ticked.", 0.8));
+                    return null;
+                }
+
+                return wanted;
+            }
+
+            private static int Floor(string? text) =>
+                int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0
+                    ? value
+                    : FamilyOptions.DefaultFloor;
         }
 
         // ===================================================================================
