@@ -1263,8 +1263,13 @@ namespace CamelWorks.UI.Views
                     Ui.Button("Show me", () =>
                     {
                         if (picked == null || picked.Elements.Count == 0) return;
-                        session.Model.Select(picked.Elements);
-                        session.View.ZoomTo(picked.Elements, 2.0);
+
+                        // Materialised once: the seam takes IReadOnlyList, which IList is not, and
+                        // both calls want the same list rather than two copies of it.
+                        var keys = picked.Elements.ToList();
+
+                        session.Model.Select(keys);
+                        session.View.ZoomTo(keys, 2.0);
                     }),
                     Ui.Button("Close it", () => Close(session, picked)),
                     Ui.Button("Delete it", () => Delete(session, picked))));
@@ -2461,6 +2466,9 @@ namespace CamelWorks.UI.Views
                             + "without images. Every viewpoint still opens on its clash."));
                 }
 
+                RememberSent(session, board);
+                session.Store.Save();
+
                 results.Children.Add(Ui.Line("Wrote " + file, 0.8));
                 session.Record(ActivityKind.Exchange, "exported BCF " + version, file);
             });
@@ -2524,6 +2532,8 @@ namespace CamelWorks.UI.Views
                     results.Children.Add(Ui.Note("CamelWorks has recorded which topics it has seen, so the "
                         + "same file read again reports nothing new. It does not write them into the model: "
                         + "somebody else's issue list is theirs until you decide what to do with it."));
+
+                    Reply(session, read.Topics, results);
                 }
 
                 session.Record(ActivityKind.Exchange, "read a BCF file", file);
@@ -2545,6 +2555,147 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>Topic GUIDs this project has already been shown.</summary>
+        /// <summary>
+        /// The half of BCF that makes it worth having: what a returned file says about this board.
+        ///
+        /// An issue that goes out and never comes back is a spreadsheet with extra steps. A reply
+        /// carries somebody else's opinion of statuses this board already holds, and the whole
+        /// difficulty is reconciling the two without either side quietly losing a decision.
+        ///
+        /// Nothing is applied until somebody presses the button, and what the button would do is on
+        /// the screen above it, row by row.
+        /// </summary>
+        private static void Reply(Session session, IReadOnlyList<BcfTopic> topics, Panel results)
+        {
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board in Triage and read this file again to see "
+                    + "what it says about it. Without a board there is nothing to reconcile against."));
+                return;
+            }
+
+            // The record of what was sent, with the current board laid over it: the record survives
+            // a re-run that renamed a group, and the board is right about what it is called today.
+            var sent = Sent(session);
+            foreach (var group in board.Groups) sent[BcfGuid.For(group.Id)] = group.Name;
+
+            var current = new Dictionary<string, FindingStatus>(StringComparer.Ordinal);
+
+            foreach (var group in board.Groups)
+            {
+                // The least-progressed member. A group is only resolved when everything in it is,
+                // and calling it resolved because one row was would close work that is still open.
+                current[group.Name] = group.Items.Count == 0
+                    ? FindingStatus.Active
+                    : group.Items.Min(i => i.Status);
+            }
+
+            var report = BcfResponse.Read(topics, sent, current);
+
+            if (report.Matched.Count == 0)
+            {
+                results.Children.Add(Ui.Note("None of these topics came from this project, so there is "
+                    + "nothing on the board to reconcile. Read them as somebody else's list."));
+                return;
+            }
+
+            results.Children.Add(Ui.Line("What this reply says about the board", 1, true));
+            results.Children.Add(Ui.Line(report.Explain(), 0.8));
+
+            var rows = report.Matched.Select(m => new TableRow(m,
+                m.GroupName,
+                m.Topic.TopicStatus,
+                FindingStatusLattice.ToName(m.Current),
+                m.Changes ? FindingStatusLattice.ToName(m.Merged) : "-",
+                m.UnknownStatus != null ? "not a status we know"
+                    : m.Refused ? "kept where it is"
+                    : m.IsReopen && m.Changes ? "re-opened"
+                    : string.Empty)
+            {
+                Tone = m.UnknownStatus != null ? Tone.Warn
+                     : m.IsReopen && m.Changes ? Tone.Bad
+                     : m.Changes ? Tone.Good
+                     : Tone.Plain,
+            }).ToList();
+
+            results.Children.Add(Ui.Table(rows,
+                ("Group", 200), ("The file says", 120), ("The board says", 110),
+                ("Would become", 110), ("", 0)));
+
+            if (report.Refused > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Refused, "topic")
+                    + " asked for a status lower than the board holds and will stay where they are. "
+                    + "The file was exported before those decisions were made, and a stale \"Open\" "
+                    + "must not undo an approval nobody has disputed. A deliberate re-open is "
+                    + "different and is honoured."));
+
+            if (report.Unknown > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Unknown, "topic")
+                    + " carry a status word CamelWorks does not recognise. BCF lets every project "
+                    + "define its own, so those are shown and left alone rather than mapped onto a "
+                    + "guess."));
+
+            if (report.Changes == 0)
+            {
+                results.Children.Add(Ui.Empty("Nothing to apply.",
+                    "The board already agrees with everything in this file that CamelWorks can act on."));
+                return;
+            }
+
+            results.Children.Add(Ui.Button("Apply " + Ui.Count(report.Changes, "change") + " to the board",
+                () => Apply(session, board, report, results)));
+        }
+
+        /// <summary>Write the reply into the board, one group at a time.</summary>
+        private static void Apply(Session session, ClashPipelineResult board,
+                                  BcfResponseReport report, Panel results)
+        {
+            var moved = 0;
+            var groups = 0;
+
+            foreach (var response in report.Matched.Where(m => m.Changes))
+            {
+                var group = board.Groups.FirstOrDefault(
+                    g => string.Equals(g.Name, response.GroupName, StringComparison.Ordinal));
+
+                if (group == null) continue;
+
+                groups++;
+
+                foreach (var item in group.Items)
+                {
+                    // Per item, and promote-only unless the file re-opened it. Applying the group's
+                    // merged status flat would demote the rows somebody had already taken further.
+                    var next = response.IsReopen
+                        ? response.Merged
+                        : FindingStatusLattice.Merge(item.Status, response.Merged);
+
+                    if (next == item.Status) continue;
+
+                    item.Status = next;
+                    moved++;
+                }
+
+                if (response.AssignedTo != null && group.AssignedTo == null)
+                    group.AssignByHand(response.AssignedTo);
+            }
+
+            Save(session, board, "applied a BCF reply to " + Ui.Count(groups, "group"));
+
+            results.Children.Add(session.Store.Save()
+                ? Ui.Line("Applied to " + Ui.Count(groups, "group") + ", "
+                          + Ui.Count(moved, "result") + " moved. Load the board again to see it.", 1, true)
+                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+            results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
+                + "in Triage, and it puts back the board as it was before this."));
+
+            session.Record(ActivityKind.Exchange,
+                "applied a BCF reply: " + Ui.Count(groups, "group") + " moved");
+        }
+
         private static HashSet<string> Known(Session session)
         {
             var saved = session.Store.Section(ProjectStore.ClashSection)["bcfTopics"];
@@ -2564,6 +2715,44 @@ namespace CamelWorks.UI.Views
                                                           .Select(JsonValue.String)));
 
             session.Store.Save();
+        }
+
+        /// <summary>
+        /// Which board group each topic this project has exported came from.
+        ///
+        /// Written at export and read when a file comes back. The topic GUID is derived from the
+        /// group id, so it could be recomputed from the board — but only while the board still
+        /// holds that group under that id, and a reply usually arrives after a re-run has moved
+        /// things. The record is what makes a reply readable a fortnight later.
+        /// </summary>
+        private static Dictionary<string, string> Sent(Session session)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            var saved = session.Store.Section(ProjectStore.ClashSection)["bcfGroups"];
+
+            foreach (var guid in saved.Keys)
+            {
+                var group = saved[guid].AsString();
+                if (!string.IsNullOrEmpty(group)) map[guid] = group!;
+            }
+
+            return map;
+        }
+
+        /// <summary>Record what this export sent, so the reply can be matched to it.</summary>
+        private static void RememberSent(Session session, ClashPipelineResult board)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var saved = section["bcfGroups"];
+
+            if (saved.Kind != JsonKind.Object)
+            {
+                saved = JsonValue.Object();
+                section.Set("bcfGroups", saved);
+            }
+
+            foreach (var group in board.Groups)
+                saved.Set(BcfGuid.For(group.Id), JsonValue.String(group.Name));
         }
 
         /// <summary>How many components one viewpoint will name before it stops.</summary>
