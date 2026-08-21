@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
@@ -99,6 +100,7 @@ namespace CamelWorks.UI.Views
 
                 editor.Children.Clear();
                 editor.Children.Add(Writer(session, keys));
+                editor.Children.Add(new ColumnScreen(session, keys).Build());
             });
 
             return Ui.Scroll(Ui.Stack(
@@ -116,57 +118,375 @@ namespace CamelWorks.UI.Views
         /// writes to is exactly the set that was read, and offering to write before then would mean
         /// guessing at what.
         /// </summary>
-        private static UIElement Writer(Session session, IReadOnlyList<ElementKey> keys)
+        private static UIElement Writer(Session session, IReadOnlyList<ElementKey> keys) =>
+            new WriteScreen(session, keys).Build();
+
+        /// <summary>
+        /// Writing a property, in two steps, and never over somebody else's answer by accident.
+        ///
+        /// Writing into a model is the one destructive thing CamelWorks does, and it is destructive
+        /// in a way Ctrl+Z does not reach — Navisworks does not put user-defined property writes on
+        /// its undo stack. So the button that writes is not the button you press first. You see the
+        /// diff, element by element, and then you decide.
+        ///
+        /// <b>Existing values are kept unless you say otherwise.</b> The failure this prevents is
+        /// mundane and expensive: a coordinator runs a zoning rule on Tuesday, a colleague runs
+        /// their own on Wednesday, and the first person's answers are gone with nothing to say they
+        /// were ever there. Keeping is the default; replacing is a choice made in front of a count
+        /// of exactly what would be replaced.
+        /// </summary>
+        private sealed class WriteScreen
         {
-            var name = Ui.Text("Zone", null, 150);
-            var value = Ui.Text(string.Empty, null, 200);
-            var status = Ui.Stack();
+            /// <summary>What the picker says for each policy.</summary>
+            private const string Keep = "leave it alone";
 
-            var apply = Ui.Runner("Write to " + Ui.Count(keys.Count, "element"), status, job =>
+            private const string Replace = "replace it";
+
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _name = Ui.Text("Zone", null, 150);
+            private readonly TextBox _value = Ui.Text(string.Empty, null, 200);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _applyRow = Ui.Stack();
+
+            private ExistingValues _existing = ExistingValues.Keep;
+            private WriteDiff? _diff;
+
+            internal WriteScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
-                if (name.Text.Trim().Length == 0)
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
                 {
-                    status.Children.Add(Ui.Line("Give the property a name first.", 0.8));
-                    return;
-                }
+                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
+                    if (_diff != null) ShowApply();
+                });
 
-                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: set " + name.Text.Trim()))
+                var preview = Ui.Runner("Show me what would change", _status, job =>
                 {
-                    foreach (var key in keys)
-                        write.SetProperty(key, NavWriteTransaction.TabName, name.Text.Trim(), value.Text);
+                    _diff = null;
+                    _applyRow.Children.Clear();
 
-                    var preview = write.Preview();
+                    var name = _name.Text.Trim();
 
-                    if (preview.IsEmpty)
+                    if (name.Length == 0)
                     {
-                        status.Children.Add(Ui.Empty("Nothing to write.", "None of those elements still resolve."));
+                        _status.Children.Add(Ui.Problem("Give the property a name first."));
                         return;
                     }
 
-                    job.Say("Writing...");
-                    var written = write.Commit();
+                    job.Say("Reading what is there now...");
 
-                    status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
+                    var diff = PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                        PropertyDiff.Resolve(_session.Model, _keys), _value.Text);
 
-                    if (preview.Unresolved.Count > 0)
-                        status.Children.Add(Ui.Line(Ui.Count(preview.Unresolved.Count, "element")
-                            + " could not be found and were skipped.", 0.7));
+                    _diff = diff;
 
-                    session.Record(ActivityKind.Write,
-                        "set " + name.Text.Trim() + " on " + Ui.Count(written, "element"));
+                    _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
+
+                    _status.Children.Add(Ui.Across(
+                        Ui.Figure(diff.Added.ToString("N0", CultureInfo.InvariantCulture), "to add",
+                                  diff.Added > 0 ? Tone.Good : Tone.Plain),
+                        Ui.Figure(diff.Changed.ToString("N0", CultureInfo.InvariantCulture), "already set",
+                                  diff.Changed > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(diff.Cleared.ToString("N0", CultureInfo.InvariantCulture), "would empty",
+                                  diff.Cleared > 0 ? Tone.Bad : Tone.Plain),
+                        Ui.Figure(diff.Unchanged.ToString("N0", CultureInfo.InvariantCulture), "already right")));
+
+                    if (diff.Before.Count > 0)
+                        _status.Children.Add(Ui.Line("There now: "
+                            + string.Join(", ", diff.Before.Select(v => v.ToString())), 0.7));
+
+                    if (diff.Changes.Count > 0)
+                    {
+                        var rows = diff.Changes.Select(c => new TableRow(c,
+                            c.Label,
+                            c.Before ?? "-",
+                            c.After ?? "-",
+                            Word(c.Kind))
+                        {
+                            Tone = c.Kind == WriteChange.Added ? Tone.Good : Tone.Warn,
+                        }).ToList();
+
+                        _status.Children.Add(Ui.Table(rows,
+                            ("Element", 200), ("Now", 130), ("Would become", 130), ("", 0)));
+
+                        if (diff.Added + diff.Changed + diff.Cleared > diff.Changes.Count)
+                            _status.Children.Add(Ui.Line("First " + diff.Changes.Count
+                                + " of them; the counts above are all of them.", 0.6));
+                    }
+
+                    if (diff.Missing.Count > 0)
+                        _status.Children.Add(Ui.Note(Ui.Count(diff.Missing.Count, "element")
+                            + " no longer resolve and will be skipped. They were read before the model "
+                            + "changed under them; re-read the scope to see the current answer."));
+
+                    if (diff.IsEmpty)
+                    {
+                        _status.Children.Add(Ui.Empty("Nothing to write.",
+                            "Every element in scope already holds exactly this value. Writing it "
+                            + "again would be a few hundred thousand host calls to no effect."));
+                        return;
+                    }
+
+                    ShowApply();
+                });
+
+                return Ui.Card("Write a property",
+                    "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
+                    + "\", so it is never mixed with the authoring tool's data.",
+                    Ui.Field("Name", _name),
+                    Ui.Field("Value", _value),
+                    Ui.Field("If a value is already there", policy),
+                    preview,
+                    Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its "
+                            + "undo stack, so CamelWorks records what it changed in the project file "
+                            + "instead of pretending otherwise."),
+                    _status,
+                    _applyRow);
+            }
+
+            /// <summary>
+            /// The button that actually writes, labelled with what it is about to do.
+            ///
+            /// It says the number rather than saying "Apply", because the number is the thing worth
+            /// checking and a button that hides it is asking you to trust a screen you have already
+            /// scrolled past.
+            /// </summary>
+            private void ShowApply()
+            {
+                _applyRow.Children.Clear();
+
+                var diff = _diff;
+                if (diff == null) return;
+
+                var writes = diff.Writes(_existing);
+
+                if (writes == 0)
+                {
+                    _applyRow.Children.Add(Ui.Note(
+                        "Nothing would be written: every element in scope already holds a value, and "
+                        + "existing values are being left alone. Switch to \"" + Replace
+                        + "\" if replacing them is what you meant."));
+                    return;
                 }
-            });
 
-            return Ui.Card("Write a property",
-                "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
-                + "\", so it is never mixed with the authoring tool's data.",
-                Ui.Field("Name", name),
-                Ui.Field("Value", value),
-                apply,
-                Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its undo "
-                        + "stack, so CamelWorks records what it changed in the project file instead of "
-                        + "pretending otherwise."),
-                status);
+                var skipped = diff.Added + diff.Changed + diff.Cleared - writes;
+
+                _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(writes, "element"), () => Apply(diff)));
+
+                if (skipped > 0)
+                    _applyRow.Children.Add(Ui.Line(Ui.Count(skipped, "element")
+                        + " will be left as they are because they already hold something.", 0.7));
+            }
+
+            private void Apply(WriteDiff diff)
+            {
+                var name = diff.Name;
+                var written = 0;
+
+                using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: set " + name))
+                {
+                    // Queued from the diff rather than from the scope, so an element that already
+                    // holds the value is not written to at all. On a federation that is the
+                    // difference between a re-run costing nothing and costing a minute.
+                    foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    {
+                        var item = entry.Value;
+                        if (item == null) continue;
+
+                        var kind = PropertyDiff.Classify(item.Property(NavWriteTransaction.TabName, name),
+                                                         _value.Text);
+
+                        if (!PropertyDiff.ShouldWrite(kind, _existing)) continue;
+
+                        write.SetProperty(entry.Key, NavWriteTransaction.TabName, name, _value.Text);
+                    }
+
+                    written = write.Commit();
+                }
+
+                _applyRow.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
+
+                if (_existing == ExistingValues.Overwrite && diff.Changed > 0)
+                    _applyRow.Children.Add(Ui.Note(Ui.Count(diff.Changed, "element")
+                        + " held a different value and now hold this one. What they held is in the "
+                        + "project journal, which is the only way back."));
+
+                _session.Record(ActivityKind.Write,
+                    "set " + name + " on " + Ui.Count(written, "element")
+                    + (_existing == ExistingValues.Overwrite ? ", replacing existing values" : ""));
+
+                // The diff describes a model that no longer exists. Making the button press once is
+                // not a nicety: pressing it twice would report a second write of nothing and read as
+                // if the first had failed.
+                _diff = null;
+            }
+
+            private static string Word(WriteChange kind) => kind switch
+            {
+                WriteChange.Added => "new",
+                WriteChange.Changed => "replaces a value",
+                WriteChange.Cleared => "empties it",
+                _ => "no change",
+            };
+        }
+
+        /// <summary>
+        /// Renaming and removing a column CamelWorks put there.
+        ///
+        /// The two operations nobody thinks about until the day they need them, and by then the
+        /// column is on forty thousand elements and the only alternative is a script. Both are
+        /// scoped to whatever was read, both count before they act, and both refuse to touch a tab
+        /// CamelWorks does not own — the authoring tool's data is not ours to rename.
+        /// </summary>
+        private sealed class ColumnScreen
+        {
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _column = Ui.Text(string.Empty, null, 150);
+            private readonly TextBox _renamed = Ui.Text(string.Empty, null, 150);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _actions = Ui.Stack();
+
+            internal ColumnScreen(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var count = Ui.Runner("Count it", _status, job =>
+                {
+                    _actions.Children.Clear();
+
+                    var column = _column.Text.Trim();
+
+                    if (column.Length == 0)
+                    {
+                        _status.Children.Add(Ui.Problem("Name the column first."));
+                        return;
+                    }
+
+                    job.Say("Reading...");
+
+                    var census = PropertyDiff.Census(NavWriteTransaction.TabName, column,
+                        PropertyDiff.Resolve(_session.Model, _keys));
+
+                    if (census.Present == 0)
+                    {
+                        _status.Children.Add(Ui.Empty("Nothing carries it.",
+                            "No element in this scope has a \"" + column + "\" in the "
+                            + NavWriteTransaction.TabName + " tab. Check the spelling, or widen the "
+                            + "scope and read again."));
+                        return;
+                    }
+
+                    _status.Children.Add(Ui.Line(Ui.Count(census.Present, "element")
+                        + " carry it, out of " + Ui.Count(census.Scope, "element") + " in scope.", 1, true));
+
+                    _status.Children.Add(Ui.Line("Values: "
+                        + string.Join(", ", census.Before.Where(v => v.Value != null).Select(v => v.ToString())), 0.7));
+
+                    _actions.Children.Add(Ui.Across(
+                        Ui.Button("Rename it", () => Rename(column, census.Present)),
+                        Ui.Button("Remove it from " + Ui.Count(census.Present, "element"),
+                                  () => Remove(column, census.Present))));
+                });
+
+                return Ui.Card("Rename or remove a column",
+                    "Only columns in CamelWorks' own tab. Renaming what the authoring tool wrote would "
+                    + "make the model disagree with the model it came from.",
+                    Ui.Field("Column", _column),
+                    Ui.Field("New name", _renamed),
+                    count,
+                    _status,
+                    _actions);
+            }
+
+            /// <summary>
+            /// Copy to the new name, then remove the old — in that order, in one transaction.
+            ///
+            /// The order matters if it fails halfway: a crash after the copy leaves both columns,
+            /// which somebody can see and sort out. A crash after the removal would leave neither.
+            /// </summary>
+            private void Rename(string column, int carriers)
+            {
+                var renamed = _renamed.Text.Trim();
+
+                if (renamed.Length == 0)
+                {
+                    _actions.Children.Add(Ui.Problem("Type the new name first."));
+                    return;
+                }
+
+                if (string.Equals(renamed, column, StringComparison.OrdinalIgnoreCase))
+                {
+                    _actions.Children.Add(Ui.Problem("That is the name it already has."));
+                    return;
+                }
+
+                var moved = 0;
+
+                using (var write = new NavWriteTransaction(_session.Model,
+                           "CamelWorks: rename " + column + " to " + renamed))
+                {
+                    foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    {
+                        var item = entry.Value;
+                        if (item == null) continue;
+
+                        var value = item.Property(NavWriteTransaction.TabName, column);
+                        if (string.IsNullOrEmpty(value)) continue;
+
+                        write.SetProperty(entry.Key, NavWriteTransaction.TabName, renamed, value);
+                        write.RemoveProperty(entry.Key, NavWriteTransaction.TabName, column);
+                    }
+
+                    moved = write.Commit();
+                }
+
+                _actions.Children.Add(Ui.Line("Renamed on " + Ui.Count(moved, "element")
+                    + (moved == carriers ? "." : " of " + carriers + "."), 1, true));
+
+                _session.Record(ActivityKind.Write,
+                    "renamed " + column + " to " + renamed + " on " + Ui.Count(moved, "element"));
+            }
+
+            private void Remove(string column, int carriers)
+            {
+                var removed = 0;
+
+                using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: remove " + column))
+                {
+                    foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    {
+                        var item = entry.Value;
+                        if (item == null) continue;
+                        if (string.IsNullOrEmpty(item.Property(NavWriteTransaction.TabName, column))) continue;
+
+                        write.RemoveProperty(entry.Key, NavWriteTransaction.TabName, column);
+                    }
+
+                    removed = write.Commit();
+                }
+
+                _actions.Children.Add(Ui.Line("Removed from " + Ui.Count(removed, "element")
+                    + (removed == carriers ? "." : " of " + carriers + "."), 1, true));
+
+                _actions.Children.Add(Ui.Note("What those elements held is in the project journal. "
+                    + "Ctrl+Z does not reach a property write, so that record is the way back."));
+
+                _session.Record(ActivityKind.Write,
+                    "removed " + column + " from " + Ui.Count(removed, "element"));
+            }
         }
 
         // -----------------------------------------------------------------------------------
