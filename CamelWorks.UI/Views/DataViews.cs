@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Report;
 using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
@@ -616,40 +618,125 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>Sum the numeric properties the model carries, grouped, reporting what it could not read.</summary>
-        public static UIElement Takeoff()
+        public static UIElement Takeoff() => new TakeoffScreen().Build();
+
+        /// <summary>
+        /// How much of something there is, and where it is.
+        ///
+        /// One axis answers the first question. Two answer the second, which is what a programme, a
+        /// procurement schedule or a phasing plan is actually built from — and producing it by hand
+        /// means running the takeoff once per level and typing the results into a spreadsheet.
+        ///
+        /// Nothing has to be mapped first. The measure comes from whatever the elements already
+        /// carry, and what cannot be read is counted and named rather than quietly left out of the
+        /// total.
+        /// </summary>
+        private sealed class TakeoffScreen
         {
-            var results = Ui.Stack();
+            /// <summary>The column axis that means "do not pivot".</summary>
+            private const string NoColumns = "Nothing - just the one axis";
 
-            var measure = "Volume";
-            var group = "Category";
-
-            var measurePicker = Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, measure, p => measure = p);
-            var groupPicker = Ui.Choice(new[] { "Category", "Type", "Model", "Level" }, group, p => group = p);
-
-            var run = Ui.Runner("Sum this model", results, job =>
+            private static readonly string[] Axes =
             {
+                "Category", "Type", "Model", "Level", "Discipline", "System",
+            };
+
+            private readonly StackPanel _results = Ui.Stack();
+            private readonly StackPanel _output = Ui.Stack();
+            private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
+
+            private string _scope = Selection;
+            private string _measure = "Volume";
+            private string _rows = "Category";
+            private string _columns = NoColumns;
+
+            private TakeoffPivotTable? _table;
+            private TakeoffResult? _flat;
+
+            internal UIElement Build()
+            {
+                var columns = new List<string> { NoColumns };
+                columns.AddRange(Axes);
+
+                var scope = Ui.Choice(new[] { Selection, WholeModel }, _scope, p => _scope = p);
+                var measure = Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, _measure, p => _measure = p);
+                var rows = Ui.Choice(Axes, _rows, p => _rows = p);
+                var down = Ui.Choice(columns, _columns, p => _columns = p);
+
+                var run = Ui.Runner("Sum it", _results, Run);
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Takeoff"),
+                    Ui.Sub("Sums whatever the elements carry, with no mapping table to build first. Pick a "
+                           + "second axis and it becomes a pivot: concrete by level, ductwork by system."),
+                    Ui.Field("Scope", scope),
+                    Ui.Field("Measure", measure),
+                    Ui.Field("Rows", rows),
+                    Ui.Field("Columns", down),
+                    run,
+                    _results,
+                    _output));
+            }
+
+            private void Run(Job job)
+            {
+                _table = null;
+                _flat = null;
+                _output.Children.Clear();
+
                 var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+                if (session == null) { _results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                var lines = new List<TakeoffLine>();
+                var traversal = _scope == Selection
+                    ? TraversalScope.CurrentSelection
+                    : TraversalScope.WholeDocument;
 
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                var flat = new List<TakeoffLine>();
+                var pivot = new List<PivotLine>();
+                var wide = _columns != NoColumns;
+
+                foreach (var item in session.Model.Traverse(traversal))
                 {
-                    if (!job.Step(lines.Count, "elements read")) return;
+                    if (!job.Step(flat.Count + pivot.Count, "elements read")) return;
 
-                    var value = measure == "Count" ? "1" : Measure(item, measure);
+                    var value = _measure == "Count" ? "1" : Measure(item, _measure);
+                    var row = AxisOf(session, item, _rows);
 
-                    lines.Add(new TakeoffLine(item.DisplayName, GroupOf(item, group), value));
+                    if (wide) pivot.Add(new PivotLine(item.DisplayName, row, AxisOf(session, item, _columns), value));
+                    else flat.Add(new TakeoffLine(item.DisplayName, row, value));
+                }
+
+                if (flat.Count + pivot.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty(
+                        _scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        _scope == Selection
+                            ? "Select elements in the model, or switch the scope to everything loaded."
+                            : "Append a model first."));
+                    return;
                 }
 
                 job.Say("Adding up...");
-                var result = Core.Data.Takeoff.Sum(lines);
 
-                results.Children.Add(Ui.Line(result.ToString(), 1, true));
+                if (wide) Wide(session, pivot);
+                else Narrow(session, flat);
+
+                _output.Children.Add(Ui.Field("Write to", _path));
+                _output.Children.Add(Ui.Across(Ui.Button("Write it to a spreadsheet", () => Export(session))));
+            }
+
+            /// <summary>The single-axis answer.</summary>
+            private void Narrow(Session session, IReadOnlyList<TakeoffLine> lines)
+            {
+                var result = Core.Data.Takeoff.Sum(lines);
+                _flat = result;
+
+                _results.Children.Add(Ui.Line(result.ToString(), 1, true));
 
                 if (result.Groups.Count == 0)
                 {
-                    results.Children.Add(Ui.Empty("Nothing to measure.", "Nothing loaded carries that property."));
+                    _results.Children.Add(Ui.Empty("Nothing to measure.",
+                        "Nothing in scope carries that property."));
                     return;
                 }
 
@@ -657,30 +744,202 @@ namespace CamelWorks.UI.Views
                     g.Name,
                     g.Count.ToString("N0", CultureInfo.InvariantCulture),
                     g.Total?.ToString() ?? (g.MixedKinds ? "(mixed units)" : "-"),
-                    g.Unreadable > 0 ? g.Unreadable.ToString(CultureInfo.InvariantCulture) + " unreadable" : string.Empty)
+                    g.Unreadable > 0
+                        ? g.Unreadable.ToString(CultureInfo.InvariantCulture) + " unreadable"
+                        : string.Empty)
                 {
                     Tone = g.IsComplete ? Tone.Plain : Tone.Warn,
                 }).ToList();
 
-                results.Children.Add(Ui.Table(rows,
+                _results.Children.Add(Ui.Table(rows,
                     ("Group", 190), ("Count", 80), ("Total", 130), ("", 0)));
 
-                if (!result.IsComplete)
-                    results.Children.Add(Ui.Note("Some values could not be read as quantities. They are counted "
-                        + "and named rather than dropped, because a total that quietly excludes what it could "
-                        + "not parse is worse than no total."));
+                Caveat(result.IsComplete);
 
-                session.Record(ActivityKind.Report, "took off " + measure.ToLowerInvariant() + " by "
-                                                    + group.ToLowerInvariant() + ": " + result);
-            });
+                session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
+                                                    + " by " + _rows.ToLowerInvariant() + ": " + result);
+            }
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Takeoff"),
-                Ui.Sub("Sums whatever the elements carry, with no mapping table to build first."),
-                Ui.Field("Measure", measurePicker),
-                Ui.Field("Group by", groupPicker),
-                run,
-                results));
+            /// <summary>The two-axis answer.</summary>
+            private void Wide(Session session, IReadOnlyList<PivotLine> lines)
+            {
+                var table = TakeoffPivot.Of(lines);
+                _table = table;
+
+                _results.Children.Add(Ui.Line(table.Explain(), 1, true));
+
+                if (table.IsEmpty)
+                {
+                    _results.Children.Add(Ui.Empty("Nothing to measure.",
+                        "Nothing in scope carries that property."));
+                    return;
+                }
+
+                var headers = new List<(string Header, double Width)> { (_rows, 170) };
+
+                foreach (var column in table.Columns) headers.Add((column, 110));
+                headers.Add(("Total", 110));
+
+                var rows = new List<TableRow>();
+
+                foreach (var row in table.Rows)
+                {
+                    var cells = new List<string?> { row };
+
+                    foreach (var column in table.Columns) cells.Add(Read(table.Cell(row, column)));
+
+                    cells.Add(Read(table.RowTotal(row)));
+
+                    rows.Add(new TableRow(row, cells.ToArray())
+                    {
+                        Tone = table.RowTotal(row)?.IsComplete == false ? Tone.Warn : Tone.Plain,
+                    });
+                }
+
+                // The totals row last and labelled, so a reader scrolling to the bottom of a long
+                // table knows the last line is not another category.
+                var totals = new List<string?> { "All" };
+
+                foreach (var column in table.Columns) totals.Add(Read(table.ColumnTotal(column)));
+
+                totals.Add(Read(table.Grand));
+                rows.Add(new TableRow(null, totals.ToArray()) { Tone = Tone.Good });
+
+                _results.Children.Add(Ui.Table(rows, headers.ToArray()));
+
+                Caveat(table.Grand.IsComplete);
+
+                if (table.DroppedRows > 0 || table.DroppedColumns > 0)
+                    _results.Children.Add(Ui.Note("The largest rows and columns are shown. What is not on "
+                        + "screen is still in every total on it, so the numbers add up whether or not "
+                        + "the thing they came from has a row of its own."));
+
+                session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
+                                                    + " by " + _rows.ToLowerInvariant() + " and "
+                                                    + _columns.ToLowerInvariant() + ": " + table);
+            }
+
+            private void Caveat(bool complete)
+            {
+                if (complete) return;
+
+                _results.Children.Add(Ui.Note("Some values could not be read as quantities, or a cell held "
+                    + "more than one kind of unit. They are counted and named rather than dropped, because "
+                    + "a total that quietly excludes what it could not parse is worse than no total."));
+            }
+
+            /// <summary>How one cell reads: the total, or why there is not one.</summary>
+            private static string Read(TakeoffGroup? group)
+            {
+                if (group == null || group.Count == 0) return string.Empty;
+                if (group.MixedKinds) return "(mixed units)";
+
+                return group.Total?.ToString()
+                       ?? group.Count.ToString("N0", CultureInfo.InvariantCulture) + " elements";
+            }
+
+            /// <summary>Write the same table the screen is showing, so the two cannot disagree.</summary>
+            private void Export(Session session)
+            {
+                _output.Children.Clear();
+                _output.Children.Add(Ui.Field("Write to", _path));
+
+                var file = _path.Text.Trim();
+
+                if (file.Length == 0)
+                {
+                    file = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        session.Profile.ProjectName + " takeoff.xlsx");
+
+                    _path.Text = file;
+                }
+
+                var block = _table != null ? Sheet(_table) : _flat != null ? Sheet(_flat) : null;
+
+                if (block == null)
+                {
+                    _output.Children.Add(Ui.Line("Sum it first.", 0.8));
+                    return;
+                }
+
+                try
+                {
+                    File.WriteAllBytes(file, XlsxWriter.Write("Takeoff", block));
+                }
+                catch (Exception e)
+                {
+                    _output.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _output.Children.Add(Ui.Line("Wrote " + file, 1, true));
+                session.Record(ActivityKind.Report, "wrote a takeoff spreadsheet", file);
+            }
+
+            private TableBlock Sheet(TakeoffPivotTable table)
+            {
+                var headers = new List<string> { _rows };
+                headers.AddRange(table.Columns);
+                headers.Add("Total");
+
+                var block = new TableBlock(headers.ToArray());
+
+                foreach (var row in table.Rows)
+                {
+                    var cells = new List<string> { row };
+
+                    foreach (var column in table.Columns) cells.Add(Read(table.Cell(row, column)));
+
+                    cells.Add(Read(table.RowTotal(row)));
+                    block.Row(cells.ToArray());
+                }
+
+                var totals = new List<string> { "All" };
+
+                foreach (var column in table.Columns) totals.Add(Read(table.ColumnTotal(column)));
+
+                totals.Add(Read(table.Grand));
+                block.Row(totals.ToArray());
+
+                return block;
+            }
+
+            private TableBlock Sheet(TakeoffResult result)
+            {
+                var block = new TableBlock(_rows, "Count", "Total", "Unreadable");
+
+                foreach (var group in result.Groups.OrderByDescending(g => g.Count))
+                    block.Row(group.Name,
+                        group.Count.ToString("N0", CultureInfo.InvariantCulture),
+                        Read(group),
+                        group.Unreadable.ToString(CultureInfo.InvariantCulture));
+
+                return block;
+            }
+
+            /// <summary>
+            /// Which bucket an element falls into on one axis.
+            ///
+            /// Discipline and system come from what the project already worked out and from what the
+            /// element carries, in that order — there is no table to fill in first, which is the
+            /// difference between a takeoff somebody runs and one they mean to set up properly.
+            /// </summary>
+            private static string AxisOf(Session session, IModelItem item, string axis) => axis switch
+            {
+                "Type" => item.TypeName ?? PivotLine.None,
+                "Model" => item.Model.DisplayName,
+                "Discipline" => session.Profile.DisciplineOf(item.Model.Scope) ?? PivotLine.None,
+                "System" => item.Property("Element", "System Name")
+                            ?? item.Property("Element", "System")
+                            ?? item.Property("Item", "System")
+                            ?? PivotLine.None,
+                "Level" => item.Property(NavWriteTransaction.TabName, "Level")
+                           ?? item.Property("Element", "Level")
+                           ?? item.Property("Item", "Level")
+                           ?? PivotLine.None,
+                _ => item.Category ?? PivotLine.None,
+            };
         }
 
         private static string? Measure(IModelItem item, string measure) =>
@@ -688,16 +947,5 @@ namespace CamelWorks.UI.Views
             ?? item.Property("Item", measure)
             ?? item.Property("Revit Material Takeoff", measure)
             ?? item.Property(NavWriteTransaction.TabName, measure);
-
-        private static string GroupOf(IModelItem item, string group) => group switch
-        {
-            "Type" => item.TypeName ?? "(no type)",
-            "Model" => item.Model.DisplayName,
-            "Level" => item.Property(NavWriteTransaction.TabName, "Level")
-                       ?? item.Property("Element", "Level")
-                       ?? item.Property("Item", "Level")
-                       ?? "(no level)",
-            _ => item.Category ?? "(no category)",
-        };
     }
 }
