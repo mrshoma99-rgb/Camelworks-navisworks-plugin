@@ -66,6 +66,7 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Untitled project", profile.ProjectName);
             Assert.Equal(0.010, profile.ClashTolerance);
             Assert.Equal(5.0, profile.ClashProximity);
+            Assert.Equal(1.0, profile.DuplicateBand);
             Assert.Empty(profile.Parties);
             Assert.Contains(profile.Settings, s => s.Key == ProfileKeys.LevelSource);
         }

@@ -145,6 +145,76 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
+        public void FrameBox(CamelWorks.Core.Abstractions.BoundingBox box)
+        {
+            var scale = NavUnits.UnitsPerMetre(_document.Document.Units);
+
+            // The host's own ZoomBox rather than a computed camera. It knows about the current
+            // aspect ratio, the projection and the near plane, and getting any of those wrong
+            // yields a view that is technically pointed the right way and shows nothing.
+            var viewpoint = Host.CurrentViewpoint.CreateCopy();
+
+            viewpoint.ZoomBox(new BoundingBox3D(
+                new Point3D(box.MinX * scale, box.MinY * scale, box.MinZ * scale),
+                new Point3D(box.MaxX * scale, box.MaxY * scale, box.MaxZ * scale)));
+
+            Host.CurrentViewpoint.CopyFrom(viewpoint);
+        }
+
+        /// <inheritdoc />
+        public IDisposable BorrowCamera() => new BorrowedCamera(Host);
+
+        private sealed class BorrowedCamera : IDisposable
+        {
+            private readonly Document _document;
+            private readonly Viewpoint _saved;
+
+            internal BorrowedCamera(Document document)
+            {
+                _document = document;
+                _saved = document.CurrentViewpoint.CreateCopy();
+            }
+
+            public void Dispose()
+            {
+                try
+                {
+                    _document.CurrentViewpoint.CopyFrom(_saved);
+                }
+                catch (Exception)
+                {
+                    // Disposed inside a finally after something else already failed. Throwing here
+                    // would replace the real error with one about a camera.
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public byte[]? Capture(int width, int height)
+        {
+            if (width < 1 || height < 1) return null;
+
+            try
+            {
+                using (var image = Host.GenerateImage(ImageGenerationStyle.Scene, width, height, false))
+                using (var buffer = new System.IO.MemoryStream())
+                {
+                    if (image == null) return null;
+
+                    image.Save(buffer, System.Drawing.Imaging.ImageFormat.Png);
+                    return buffer.ToArray();
+                }
+            }
+            catch (Exception)
+            {
+                // Rendering off-screen is not available in every configuration - a machine with no
+                // GPU context, a document mid-load. The contract is null, and the caller writes the
+                // file without images rather than not at all.
+                return null;
+            }
+        }
+
+        /// <inheritdoc />
         public void SetSectionBox(CamelWorks.Core.Abstractions.BoundingBox box, double marginMetres)
         {
             // The seam states margins in metres; the box arrives in model units. Without the

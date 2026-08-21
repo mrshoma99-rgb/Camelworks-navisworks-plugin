@@ -159,6 +159,54 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public bool IsSectionBoxEnabled => SectionBoxEnabled;
 
+        /// <summary>The box the camera was last framed on, or null.</summary>
+        public BoundingBox? Framed { get; private set; }
+
+        /// <summary>How many times the camera has been borrowed and put back.</summary>
+        public int CameraBorrows { get; private set; }
+
+        /// <summary>True while a borrow is outstanding, so a test can prove it was returned.</summary>
+        public bool CameraOut { get; private set; }
+
+        /// <summary>What <see cref="Capture"/> returns. Null models a host that cannot render.</summary>
+        public byte[]? Rendered { get; set; } = { 0x89, 0x50, 0x4E, 0x47 };
+
+        /// <inheritdoc />
+        public void FrameBox(BoundingBox box)
+        {
+            Framed = box;
+            _document.Record("view.frameBox");
+        }
+
+        /// <inheritdoc />
+        public IDisposable BorrowCamera()
+        {
+            CameraBorrows++;
+            CameraOut = true;
+            _document.Record("view.borrowCamera");
+            return new Borrow(this);
+        }
+
+        private sealed class Borrow : IDisposable
+        {
+            private readonly FakeViewSession _session;
+
+            internal Borrow(FakeViewSession session) => _session = session;
+
+            public void Dispose()
+            {
+                _session.CameraOut = false;
+                _session._document.Record("view.returnCamera");
+            }
+        }
+
+        /// <inheritdoc />
+        public byte[]? Capture(int width, int height)
+        {
+            _document.Record("view.capture " + width + "x" + height);
+            return Rendered;
+        }
+
         /// <inheritdoc />
         public void SetColour(IReadOnlyList<ElementKey> keys, Colour colour)
         {

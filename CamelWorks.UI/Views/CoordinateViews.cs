@@ -93,15 +93,24 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
+            // Cross-test duplicates go first, before anything counts or carries over. Two tests
+            // that both report one pipe through one wall are one problem; leaving both on the board
+            // means the same conflict is assigned twice, reported twice, and closed once.
+            job.Say("Collapsing duplicates...");
+
+            var collapse = DuplicateCollapse.Across(items, session.Profile.DuplicateBand);
+            var survivors = collapse.Kept;
+
             job.Say("Carrying over the last run...");
 
             var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
             var snapshot = Snapshot(session);
-            var delta = ClashCarryOver.Apply(items, snapshot);
+            var delta = ClashCarryOver.Apply(survivors, snapshot);
 
             job.Say("Applying rules...");
 
             var options = rules.ToOptions(session.Profile.ClashProximity);
+            options.CollapsedDuplicates = collapse.Count;
 
             // Read from the file rather than from the snapshot. A hand assignment is a decision
             // about a group, not about a run — reading it off the previous run would mean losing
@@ -109,9 +118,14 @@ namespace CamelWorks.UI.Views
             // run it before.
             options.Decisions = Decisions(session);
 
-            var board = ClashPipeline.Run(items, options);
+            var board = ClashPipeline.Run(survivors, options);
 
             notes.Add(delta.ToString());
+
+            if (collapse.Count > 0)
+                notes.Add(Ui.Count(collapse.Count, "result")
+                          + " were the same conflict found by more than one test, and were folded "
+                          + "into the one the funnel keeps. They are counted, not hidden.");
             if (rules.IsDefault) notes.Add("Nothing is configured, so the built-in rules ran: " + board.Funnel);
 
             LastBoard = board;
@@ -957,6 +971,9 @@ namespace CamelWorks.UI.Views
             var version = "2.1";
             var picker = Ui.Choice(new[] { "2.1", "3.0" }, version, v => version = v);
 
+            var snapshots = true;
+            var snapshotBox = Ui.Check("Include a snapshot of each group", snapshots, v => snapshots = v);
+
             var export = Ui.Runner("Export the board", results, job =>
             {
                 var session = Host.Current;
@@ -985,7 +1002,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 job.Say("Building topics...");
-                var topics = Topics(session, board);
+                var topics = Topics(session, board, snapshots, job);
 
                 job.Say("Writing...");
 
@@ -998,6 +1015,19 @@ namespace CamelWorks.UI.Views
                     results.Children.Add(Ui.Line(result.ToString(), 1, true));
 
                     foreach (var note in result.Notes) results.Children.Add(Ui.Note(note));
+
+                    if (result.UnresolvableComponents > 0)
+                        results.Children.Add(Ui.Note(
+                            Ui.Count(result.UnresolvableComponents, "element")
+                            + " could not be named by an IFC GlobalId, because the model they came from "
+                            + "did not carry one. They are written with CamelWorks' own identity instead, "
+                            + "so the topic still says which elements it means — a receiving tool just "
+                            + "cannot select them for you."));
+
+                    if (snapshots && result.Snapshots == 0 && result.Viewpoints > 0)
+                        results.Children.Add(Ui.Note(
+                            "Navisworks would not render the snapshots, so the file carries cameras "
+                            + "without images. Every viewpoint still opens on its clash."));
                 }
 
                 results.Children.Add(Ui.Line("Wrote " + file, 0.8));
@@ -1074,6 +1104,11 @@ namespace CamelWorks.UI.Views
                        + "camera's aspect ratio, which 2.1 has nowhere to put."),
                 Ui.Field("Version", picker),
                 Ui.Field("File", path),
+                snapshotBox,
+                Ui.Note("A topic with no viewpoint is a sentence about a problem somewhere in a "
+                        + "federation. Every topic CamelWorks writes carries a camera and the elements "
+                        + "involved; the snapshot is the part that moves your view while it runs, and "
+                        + "your camera is put back afterwards."),
                 Ui.Across(export, import),
                 results));
         }
@@ -1100,33 +1135,130 @@ namespace CamelWorks.UI.Views
             session.Store.Save();
         }
 
-        private static IReadOnlyList<BcfTopic> Topics(Session session, ClashPipelineResult board)
+        /// <summary>How many components one viewpoint will name before it stops.</summary>
+        private const int ComponentCap = 400;
+
+        /// <summary>How big a snapshot is. Big enough to read, small enough that a hundred fit in a file.</summary>
+        private const int SnapshotWidth = 1280;
+
+        /// <summary>How big a snapshot is.</summary>
+        private const int SnapshotHeight = 720;
+
+        private static IReadOnlyList<BcfTopic> Topics(Session session, ClashPipelineResult board,
+                                                      bool snapshots, Job job)
         {
             var topics = new List<BcfTopic>();
             var author = session.Profile.Author;
             var now = new DateTimeOffset(DateTime.UtcNow);
 
-            foreach (var group in board.Groups)
+            // The camera is moved once per group when snapshots are on, and put back at the end
+            // whatever happens. Leaving a coordinator looking at the last clash of a hundred is a
+            // small betrayal they would remember.
+            using (var camera = snapshots ? session.View.BorrowCamera() : null)
             {
-                // One topic per group, not per clash. A group is the unit somebody fixes; a BCF file
-                // with one topic per penetration is the export everybody complains about.
-                var topic = new BcfTopic(BcfGuid.For(group.Id), group.Name, now, author)
+                foreach (var group in board.Groups)
                 {
-                    TopicType = "Clash",
-                    TopicStatus = "Open",
-                    AssignedTo = group.AssignedTo,
-                    Priority = group.Priority,
-                    Description = Ui.Count(group.Items.Count, "clash") + " in " + group.Name
-                                  + ". " + board.Funnel,
-                };
+                    if (!job.Step(topics.Count, "topics built")) break;
 
-                foreach (var label in new[] { group.Items.FirstOrDefault()?.Level, group.Items.FirstOrDefault()?.ModelPair })
-                    if (!string.IsNullOrEmpty(label)) topic.Labels.Add(label!);
+                    // One topic per group, not per clash. A group is the unit somebody fixes; a BCF
+                    // file with one topic per penetration is the export everybody complains about.
+                    var topic = new BcfTopic(BcfGuid.For(group.Id), group.Name, now, author)
+                    {
+                        TopicType = "Clash",
+                        TopicStatus = "Open",
+                        AssignedTo = group.AssignedTo,
+                        Priority = group.Priority,
+                        Description = Ui.Count(group.Items.Count, "clash") + " in " + group.Name + ". " + board.Funnel,
+                    };
 
-                topics.Add(topic);
+                    foreach (var label in new[] { group.Items.FirstOrDefault()?.Level,
+                                                  group.Items.FirstOrDefault()?.ModelPair })
+                        if (!string.IsNullOrEmpty(label)) topic.Labels.Add(label!);
+
+                    topic.Viewpoints.Add(Viewpoint(session, group, snapshots));
+                    topics.Add(topic);
+                }
             }
 
             return topics;
         }
+
+        /// <summary>
+        /// The viewpoint that makes a topic worth receiving.
+        ///
+        /// A topic with no viewpoint is a sentence about a problem somewhere in a federation. The
+        /// camera says where to stand, and the components say which two things to look at — without
+        /// both, the person opening it in another tool has to go and find the clash themselves,
+        /// which is the entire job the file was supposed to save them.
+        /// </summary>
+        private static BcfViewpoint Viewpoint(Session session, ClashGroup group, bool snapshot)
+        {
+            var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
+            var framing = BcfFraming.Around(points);
+
+            var viewpoint = new BcfViewpoint(group.Id) { Camera = framing.ToCamera() };
+
+            var named = 0;
+
+            foreach (var item in group.Items)
+            {
+                if (named >= ComponentCap) break;
+
+                viewpoint.Selection.Add(Component(session, item.Key.A));
+                viewpoint.Selection.Add(Component(session, item.Key.B));
+                named += 2;
+            }
+
+            if (!snapshot) return viewpoint;
+
+            session.View.FrameBox(Box(points));
+            viewpoint.Snapshot = session.View.Capture(SnapshotWidth, SnapshotHeight);
+
+            return viewpoint;
+        }
+
+        /// <summary>The box a group occupies, in metres, never degenerate.</summary>
+        private static BoundingBox Box(IReadOnlyList<(double X, double Y, double Z)> points)
+        {
+            if (points.Count == 0) return new BoundingBox(-1, -1, -1, 1, 1, 1);
+
+            double minX = points[0].X, maxX = minX, minY = points[0].Y, maxY = minY,
+                   minZ = points[0].Z, maxZ = minZ;
+
+            foreach (var (x, y, z) in points)
+            {
+                minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+                minZ = Math.Min(minZ, z); maxZ = Math.Max(maxZ, z);
+            }
+
+            // A group of one clash is a single point, and a zero-size box frames nothing.
+            const double margin = 1.5;
+
+            return new BoundingBox(minX - margin, minY - margin, minZ - margin,
+                                   maxX + margin, maxY + margin, maxZ + margin);
+        }
+
+        /// <summary>
+        /// One element, as BCF names elements.
+        ///
+        /// BCF identifies by IFC GlobalId, which a federation only has where a model came from IFC.
+        /// Where it does not, the component is written with CamelWorks' own key as the authoring
+        /// tool id and no GlobalId — which the writer counts and the export reports, rather than
+        /// writing a Revit element id into a field a viewer will look up and not find.
+        /// </summary>
+        private static BcfComponent Component(Session session, ElementKey key)
+        {
+            var item = session.Model.Resolve(key);
+
+            var guid = item == null ? null : IfcGuid.OrNull(
+                item.Property("IFC", "GlobalId")
+                ?? item.Property("Element", "IFC GUID")
+                ?? item.Property("Item", "GUID")
+                ?? item.Property("Element", "GUID"));
+
+            return new BcfComponent(guid, key.ToString(), "CamelWorks");
+        }
+
     }
 }

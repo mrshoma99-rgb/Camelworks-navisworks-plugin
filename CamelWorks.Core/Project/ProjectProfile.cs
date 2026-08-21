@@ -80,6 +80,9 @@ namespace CamelWorks.Core.Project
         /// <summary>Proximity band in metres for grouping clashes that are really one problem.</summary>
         public const string ClashProximity = "clash.proximity";
 
+        /// <summary>How close two tests' results have to be, in metres, to be the same conflict.</summary>
+        public const string DuplicateBand = "clash.duplicateBand";
+
         /// <summary>The parties a clash can be assigned to, comma separated.</summary>
         public const string Parties = "coordinate.parties";
 
@@ -281,6 +284,9 @@ namespace CamelWorks.Core.Project
         /// <summary>Proximity band in metres for grouping.</summary>
         public double ClashProximity => Number(ProfileKeys.ClashProximity, 5.0);
 
+        /// <summary>How close two tests' results have to be to count as the same conflict, in metres.</summary>
+        public double DuplicateBand => Number(ProfileKeys.DuplicateBand, 1.0);
+
         /// <summary>The parties a clash can be assigned to.</summary>
         public IReadOnlyList<string> Parties =>
             (Value(ProfileKeys.Parties) ?? string.Empty)
@@ -323,6 +329,9 @@ namespace CamelWorks.Core.Project
 
             settings.Add(new ProfileSetting(ProfileKeys.ClashProximity, "Grouping distance (m)", "5",
                 "clashes within 5 m of each other are usually one problem seen three times"));
+
+            settings.Add(new ProfileSetting(ProfileKeys.DuplicateBand, "Same-conflict distance (m)", "1",
+                "two tests reporting a hit within 1 m of each other are reporting the same conflict"));
 
             var disciplines = new List<string>();
 

@@ -34,6 +34,12 @@
     <ProjectReference Include="..\CamelWorks.Core\CamelWorks.Core.csproj" />
   </ItemGroup>
 
+  <!-- Document.GenerateImage hands back a System.Drawing.Bitmap, which is how a BCF viewpoint gets
+       a snapshot. A framework assembly, present on every machine that runs Navisworks. -->
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
   <!-- Reference-only: the user's own licensed Navisworks supplies these at run time and they are
        never copied into the bundle. -->
   <ItemGroup>
