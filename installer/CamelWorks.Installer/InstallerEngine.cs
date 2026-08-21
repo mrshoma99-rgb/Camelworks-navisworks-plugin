@@ -197,7 +197,6 @@ public static class InstallerEngine
             key?.DeleteSubKeyTree("CamelWorks", throwOnMissingSubKey: false);
         }
 
-
         if (!Directory.Exists(BundleDir))
         {
             return;
@@ -205,12 +204,6 @@ public static class InstallerEngine
 
         EvacuateSelfFromBundle();
         DeleteBundleDir();
-    }
-
-        catch (Exception ex) when (ex is System.Security.SecurityException || ex is UnauthorizedAccessException)
-        {
-            // A stale Apps & Features row is cosmetic; never fail the install over it.
-        }
     }
 
     // ------------------------------------------------------------- payload
