@@ -8,6 +8,8 @@ using System.Windows.Controls;
 using Autodesk.Navisworks.Api.Plugins;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Identity;
+using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
 
 namespace CamelWorks.UI.Views
@@ -25,8 +27,17 @@ namespace CamelWorks.UI.Views
         // Health
         // -----------------------------------------------------------------------------------
 
-        /// <summary>One scorecard over the federation, run on demand.</summary>
-        public static UIElement Health()
+        /// <summary>
+        /// Is this federation fit to work on: CamelWorks' own checks, and the client's.
+        ///
+        /// Both run on demand and neither needs anything set up first. The built-in rules ship
+        /// with the product; the IDS card takes the file your client sent and answers it against
+        /// the model, which is the same question asked by somebody with a contract behind them.
+        /// </summary>
+        public static UIElement Health() => Ui.Scroll(Ui.Stack(BuiltIn(), Ids()));
+
+        /// <summary>The rules that ship with the product.</summary>
+        private static UIElement BuiltIn()
         {
             var results = Ui.Stack();
 
@@ -83,12 +94,231 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Reconcile, "checked model health: " + report);
             });
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Health"),
-                Ui.Sub("Six checks over geometry, placement and data. Nothing to configure — the rules "
-                       + "are built in and the thresholds scale to the model rather than assuming metres."),
+            return Ui.Card("Health",
+                "Six checks over geometry, placement and data. Nothing to configure — the rules "
+                + "are built in and the thresholds scale to the model rather than assuming metres.",
                 run,
-                results));
+                results);
+        }
+
+        /// <summary>
+        /// The client's own rules, run against the federation.
+        ///
+        /// An IDS is an employer's information requirements written so a machine can read them —
+        /// "every wall carries a fire rating from this list", in a file, from whoever is paying for
+        /// the model. Nothing on this card is CamelWorks' opinion about your data. The file is the
+        /// rules, and the only thing to set up is the file, which somebody else already wrote.
+        ///
+        /// The hard part is that IDS speaks IFC and a federation does not. See
+        /// <see cref="IdsProjection"/> for how the two are bridged, and note that every guess it
+        /// makes is reported on screen rather than folded silently into the result.
+        /// </summary>
+        private static UIElement Ids()
+        {
+            var results = Ui.Stack();
+            var path = Ui.Text(string.Empty, null, 340);
+            var classSource = Ui.Text(string.Empty, null, 200);
+
+            var run = Ui.Runner("Check against an IDS", results, job =>
+            {
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var file = path.Text.Trim();
+
+                if (file.Length == 0)
+                {
+                    results.Children.Add(Ui.Problem("Type the path of the .ids file your client sent."));
+                    return;
+                }
+
+                if (!File.Exists(file))
+                {
+                    results.Children.Add(Ui.Problem("There is no file at " + file + "."));
+                    return;
+                }
+
+                IdsReadResult read;
+                using (var stream = File.OpenRead(file)) read = IdsReader.Read(stream);
+
+                foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
+
+                if (!read.IsUsable || read.Document == null)
+                {
+                    results.Children.Add(Ui.Empty("Nothing to check.",
+                        "That file read as IDS but carried no specifications CamelWorks could use."));
+                    return;
+                }
+
+                var document = read.Document;
+                var projection = IdsProjection.For(document, PropertyPath.Parse(classSource.Text));
+                var elements = new List<IdsElement>();
+
+                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                {
+                    if (projection.Read % 2000 == 0 && !job.Step(projection.Read, "elements read")) return;
+
+                    var element = projection.From(item);
+                    if (element != null) elements.Add(element);
+                }
+
+                job.Say("Checking...");
+                var report = IdsChecker.Check(document, elements);
+
+                results.Children.Add(Ui.Line(document.ToString(), 1, true));
+                results.Children.Add(Ui.Line(report.ToString(), 0.85));
+
+                results.Children.Add(Ui.Across(
+                    Ui.Figure(report.Satisfied.ToString(CultureInfo.InvariantCulture), "met",
+                              report.Satisfied > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Figure(report.Unsatisfied.ToString(CultureInfo.InvariantCulture), "failed",
+                              report.Unsatisfied > 0 ? Tone.Bad : Tone.Plain),
+                    Ui.Figure(report.NotApplicable.ToString(CultureInfo.InvariantCulture), "matched nothing",
+                              report.NotApplicable > 0 ? Tone.Warn : Tone.Plain)));
+
+                results.Children.Add(Reach(projection));
+
+                foreach (var note in Caveats(document, projection)) results.Children.Add(note);
+
+                var rows = report.Results.Select(r => new TableRow(r,
+                    r.Specification.Name,
+                    r.NothingApplied && !r.CountOutOfRange ? "-" : r.Applicable.ToString("N0", CultureInfo.InvariantCulture),
+                    r.NothingApplied ? "-" : r.Passed.ToString("N0", CultureInfo.InvariantCulture),
+                    r.Failed > 0 ? r.Failed.ToString("N0", CultureInfo.InvariantCulture) : "-",
+                    Verdict(r))
+                {
+                    Tone = ToneOf(r),
+                }).ToList();
+
+                var table = Ui.Table(rows,
+                    ("Specification", 250), ("Applies to", 80), ("Pass", 60), ("Fail", 60), ("", 0));
+
+                table.OnPick(picked =>
+                {
+                    if (!(picked is IdsSpecificationResult result)) return;
+
+                    var live = Host.Current;
+                    if (live == null) return;
+
+                    var keys = new List<ElementKey>();
+
+                    foreach (var violation in result.Violations)
+                    {
+                        if (ElementKey.TryParse(violation.ElementId, out var key)) keys.Add(key);
+                    }
+
+                    if (keys.Count > 0) live.Model.Select(keys);
+                });
+
+                results.Children.Add(table);
+                results.Children.Add(Ui.Line("Pick a row to select that specification's failing elements.", 0.6));
+
+                foreach (var detail in Details(report)) results.Children.Add(detail);
+
+                session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
+            });
+
+            return Ui.Card("Client requirements",
+                "Answer an IDS — the openBIM way of writing information requirements down — against "
+                + "this federation. Point it at the file and press the button; there is nothing else "
+                + "to fill in.",
+                Ui.Field("IDS file", path),
+                Ui.Field("IFC class from", classSource),
+                Ui.Note("Leave the second box empty unless a run tells you to fill it in. IDS is "
+                        + "written about IFC classes, and a federation only carries those where a "
+                        + "model came from IFC — so CamelWorks looks in the places the readers put "
+                        + "them and believes a value only if it reads like a class name. A Revit "
+                        + "export saying \"Basic Wall\" is a family, not an IfcWall, and treating it "
+                        + "as one would make every row below meaningless."),
+                run,
+                results);
+        }
+
+        /// <summary>How much of the federation the check could actually see.</summary>
+        private static UIElement Reach(IdsProjection projection) => Ui.Line(
+            Ui.Count(projection.Read, "element") + " read · "
+            + Ui.Count(projection.Kept, "element") + " carried something this IDS asks about · "
+            + Ui.Count(projection.Classed, "element") + " carried an IFC class", 0.7);
+
+        /// <summary>The things a reader has to know before believing the rows.</summary>
+        private static IEnumerable<UIElement> Caveats(IdsDocument document, IdsProjection projection)
+        {
+            if (projection.Classed == 0 && projection.Read > 0)
+            {
+                yield return Ui.Problem(
+                    "Nothing in this federation carried an IFC class, so every specification written "
+                    + "about an IFC entity matched nothing. That is a property-naming difference, not "
+                    + "an empty model.");
+
+                var candidates = projection.Candidates;
+
+                yield return candidates.Count > 0
+                    ? Ui.Note("These properties hold values that read like IFC classes. Put one in the "
+                              + "\"IFC class from\" box and run it again: "
+                              + string.Join(", ", candidates.Select(c => c.ToString())))
+                    : Ui.Note("No property anywhere in the federation held a value beginning with "
+                              + "\"Ifc\", so there is nothing to point the box at. The models were "
+                              + "almost certainly not exported through IFC.");
+            }
+
+            var unanswerable = IdsProjection.Unanswerable(document);
+
+            if (unanswerable.Count > 0)
+                yield return Ui.Note(
+                    Ui.Count(unanswerable.Count, "specification") + " below ask what an element is "
+                    + "aggregated into, which import does not carry across — the tree above an element "
+                    + "is a model and a layer, not an IfcBuildingStorey. They will read as failures "
+                    + "here and should be answered against the IFC itself: "
+                    + string.Join(", ", unanswerable));
+        }
+
+        /// <summary>Why each unsatisfied specification failed, split by requirement.</summary>
+        private static IEnumerable<UIElement> Details(IdsReport report)
+        {
+            foreach (var result in report.Results.Where(r => !r.IsSatisfied && r.Violations.Count > 0))
+            {
+                yield return Ui.Line(result.Specification.Name, 1, true);
+
+                var byRequirement = result.Violations
+                    .GroupBy(v => v.Requirement)
+                    .OrderByDescending(g => g.Count());
+
+                foreach (var group in byRequirement)
+                {
+                    var missing = group.Count(v => v.Failure == IdsFailure.Missing);
+                    var wrong = group.Count(v => v.Failure == IdsFailure.WrongValue);
+                    var prohibited = group.Count(v => v.Failure == IdsFailure.Prohibited);
+
+                    var parts = new List<string>();
+                    if (missing > 0) parts.Add(missing.ToString("N0", CultureInfo.InvariantCulture) + " missing it");
+                    if (wrong > 0) parts.Add(wrong.ToString("N0", CultureInfo.InvariantCulture) + " with a value it does not accept");
+                    if (prohibited > 0) parts.Add(prohibited.ToString("N0", CultureInfo.InvariantCulture) + " carrying what it forbids");
+
+                    yield return Ui.Line(group.Key.Describe() + " — " + string.Join(", ", parts), 0.75);
+
+                    if (group.Key.Instructions != null)
+                        yield return Ui.Line(group.Key.Instructions, 0.6);
+                }
+
+                if (result.ViolationsTruncated)
+                    yield return Ui.Line("Only the first "
+                        + IdsChecker.DefaultViolationCap.ToString("N0", CultureInfo.InvariantCulture)
+                        + " failures were kept, so the split above counts those and the totals count all of them.", 0.6);
+            }
+        }
+
+        /// <summary>The last column: what happened, in a word or two.</summary>
+        private static string Verdict(IdsSpecificationResult result)
+        {
+            if (result.CountOutOfRange) return "wrong number of elements";
+            if (result.NothingApplied) return "matched nothing";
+            return result.Failed == 0 ? "met" : "not met";
+        }
+
+        private static Tone ToneOf(IdsSpecificationResult result)
+        {
+            if (result.IsSatisfied) return Tone.Good;
+            return result.NothingApplied && !result.CountOutOfRange ? Tone.Warn : Tone.Bad;
         }
 
         // -----------------------------------------------------------------------------------

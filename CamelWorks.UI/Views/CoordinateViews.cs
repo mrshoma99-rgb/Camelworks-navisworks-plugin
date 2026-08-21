@@ -35,6 +35,14 @@ namespace CamelWorks.UI.Views
         /// <summary>What the last board was of, for a report's cover.</summary>
         internal static string? LastBoardLabel { get; private set; }
 
+        /// <summary>
+        /// What changed between the last board and the one before it.
+        ///
+        /// Held beside the board rather than recomputed, because carry-over runs against the
+        /// snapshot the run then overwrites — ask again afterwards and every answer is "unchanged".
+        /// </summary>
+        internal static ClashDelta? LastDelta { get; private set; }
+
         // ===================================================================================
         // Building the board
         // ===================================================================================
@@ -130,6 +138,7 @@ namespace CamelWorks.UI.Views
 
             LastBoard = board;
             LastBoardLabel = session.Profile.ProjectName;
+            LastDelta = delta;
 
             Save(session, board);
             return board;
@@ -220,70 +229,262 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>The board.</summary>
-        public static UIElement Triage()
+        public static UIElement Triage() => new TriageScreen().Build();
+
+        /// <summary>
+        /// The board, held as an object because it filters without reloading.
+        ///
+        /// Reading the clash engine and running the rules over a federation is the expensive part,
+        /// and a board that had to redo it to answer "just show me the unassigned ones" would make
+        /// the filter something you use once and then stop using.
+        /// </summary>
+        private sealed class TriageScreen
         {
-            var results = Ui.Stack();
-            var detail = Ui.Stack();
+            /// <summary>Everything.</summary>
+            private const string All = "Everything";
 
-            var run = Ui.Runner("Load the board", results, job =>
+            /// <summary>Only groups nobody owns.</summary>
+            private const string Unassigned = "Unassigned";
+
+            /// <summary>Only groups the last run had not seen, or that came back.</summary>
+            private const string Changed = "New or back again";
+
+            /// <summary>Only groups assigned to whoever is sitting here.</summary>
+            private const string Mine = "Mine";
+
+            private readonly StackPanel _summary = Ui.Stack();
+            private readonly StackPanel _rows = Ui.Stack();
+            private readonly StackPanel _detail = Ui.Stack();
+            private readonly TextBox _search;
+            private readonly ComboBox _preset;
+
+            /// <summary>
+            /// The results this run found back again, by reference.
+            ///
+            /// A regression is not a status. Carry-over sets a returning result to Active — it has
+            /// a history, so New would be a lie — and records it in the delta instead, which means
+            /// the only way to know a row came back is to hold the delta's list. The board's items
+            /// and the delta's are the same objects, so identity is the right test.
+            /// </summary>
+            private readonly HashSet<ClashItem> _regressed = new HashSet<ClashItem>();
+
+            private ClashPipelineResult? _board;
+            private ClashDelta? _delta;
+            private Session? _session;
+
+            internal TriageScreen()
             {
-                var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+                _search = Ui.Text(string.Empty, _ => Redraw(), 220);
+                _preset = Ui.Choice(new[] { All, Unassigned, Changed, Mine }, All, _ => Redraw(), 170);
+            }
 
-                var notes = new List<string>();
-                var board = Build(session, job, notes);
-
-                foreach (var note in notes) results.Children.Add(Ui.Note(note));
-
-                if (board == null) return;
-
-                results.Children.Add(Ui.Across(
-                    Ui.Figure(board.Funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                    Ui.Figure(board.Funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "groups"),
-                    Ui.Figure(board.Funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
-                        board.Funnel.Unassigned > 0 ? Tone.Warn : Tone.Good),
-                    Ui.Figure(board.Funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed")));
-
-                results.Children.Add(Ui.Line(board.Funnel.ToString(), 0.8));
-
-                if (board.Funnel.RulesApplied.Count > 0)
-                    results.Children.Add(Ui.Line("Rules: " + string.Join(", ", board.Funnel.RulesApplied), 0.6));
-
-                if (board.Groups.Count == 0)
+            internal UIElement Build()
+            {
+                var run = Ui.Runner("Load the board", _summary, job =>
                 {
-                    results.Children.Add(Ui.Empty("Nothing on the board.",
+                    _session = Host.Current;
+                    _rows.Children.Clear();
+                    _detail.Children.Clear();
+
+                    if (_session == null) { _summary.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                    var notes = new List<string>();
+                    _board = CoordinateViews.Build(_session, job, notes);
+                    _delta = LastDelta;
+
+                    _regressed.Clear();
+                    if (_delta != null) foreach (var item in _delta.Regressed) _regressed.Add(item);
+
+                    foreach (var note in notes) _summary.Children.Add(Ui.Note(note));
+
+                    if (_board == null) return;
+
+                    Summarise();
+                    Redraw();
+                });
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Triage"),
+                    Ui.Sub("The engine's results, grouped into work. The funnel says how a count of several "
+                           + "thousand became this one — every row removed is accounted for rather than "
+                           + "quietly dropped."),
+                    run,
+                    _summary,
+                    Ui.Across(Ui.Field("Show", _preset), Ui.Field("Find", _search)),
+                    _rows,
+                    _detail,
+                    HeadroomCard()));
+            }
+
+            /// <summary>
+            /// The funnel, and what changed since the last run.
+            ///
+            /// The delta goes above the board rather than in a column, because it is the first
+            /// question of the week and the last one anybody wants to derive by scrolling: what is
+            /// new, and what did we already fix and has come back.
+            /// </summary>
+            private void Summarise()
+            {
+                var board = _board!;
+                var funnel = board.Funnel;
+
+                _summary.Children.Add(Ui.Across(
+                    Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
+                    Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "groups"),
+                    Ui.Figure(funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
+                        funnel.Unassigned > 0 ? Tone.Warn : Tone.Good),
+                    Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed")));
+
+                if (_delta != null)
+                {
+                    var regressed = _delta.Regressed.Count;
+
+                    _summary.Children.Add(Ui.Across(
+                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
+                            _delta.New.Count > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture), "still there"),
+                        Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone",
+                            _delta.Resolved.Count > 0 ? Tone.Good : Tone.Plain),
+                        Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
+                            regressed > 0 ? Tone.Bad : Tone.Plain)));
+
+                    if (regressed > 0)
+                        _summary.Children.Add(Ui.Problem(
+                            Ui.Count(regressed, "clash") + " that a previous run recorded as resolved is "
+                            + "back. Something that was fixed has been undone, or a model went backwards — "
+                            + "either way it is the first thing to look at this week."));
+
+                    if (_delta.WeakMatches > 0)
+                        _summary.Children.Add(Ui.Note(
+                            Ui.Count(_delta.WeakMatches, "result")
+                            + " matched the last run only on a weak key, because the elements involved "
+                            + "carry no stable identity. Their history is a best guess."));
+                }
+
+                _summary.Children.Add(Ui.Line(funnel.ToString(), 0.8));
+
+                if (funnel.RulesApplied.Count > 0)
+                    _summary.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.6));
+            }
+
+            /// <summary>Which groups the preset and the search box leave.</summary>
+            private IReadOnlyList<ClashGroup> Filtered()
+            {
+                if (_board == null) return Array.Empty<ClashGroup>();
+
+                var preset = _preset.SelectedItem as string ?? All;
+                var query = _search.Text.Trim();
+                var me = _session?.Profile.Author;
+
+                return _board.Groups.Where(group =>
+                    Passes(group, preset, me) && Matches(group, query)).ToList();
+            }
+
+            private bool Passes(ClashGroup group, string preset, string? me) => preset switch
+            {
+                Unassigned => group.AssignedTo == null,
+                Changed => group.Items.Any(i => i.Status == FindingStatus.New || _regressed.Contains(i)),
+                Mine => me != null && string.Equals(group.AssignedTo, me, StringComparison.OrdinalIgnoreCase),
+                _ => true,
+            };
+
+            /// <summary>
+            /// Free text against everything on the row and everything in it.
+            ///
+            /// Searching the items as well as the group is the point: "level 3" and "AHU-02" are
+            /// how people describe where a problem is, and neither is necessarily in the group's
+            /// name.
+            /// </summary>
+            private static bool Matches(ClashGroup group, string query)
+            {
+                if (query.Length == 0) return true;
+
+                if (Has(group.Name, query) || Has(group.AssignedTo, query) || Has(group.Priority, query))
+                    return true;
+
+                foreach (var item in group.Items)
+                    if (Has(item.TestName, query) || Has(item.Level, query) || Has(item.ModelPair, query)
+                        || Has(item.CategoryA, query) || Has(item.CategoryB, query)
+                        || Has(item.Grid, query) || Has(item.Zone, query))
+                        return true;
+
+                return false;
+            }
+
+            private static bool Has(string? text, string query) =>
+                text != null && text.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            private void Redraw()
+            {
+                _rows.Children.Clear();
+
+                if (_board == null) return;
+
+                if (_board.Groups.Count == 0)
+                {
+                    _rows.Children.Add(Ui.Empty("Nothing on the board.",
                         "Every result was suppressed by a rule. The funnel above says by which."));
                     return;
                 }
 
-                var rows = board.Groups.Select(g => new TableRow(g,
+                var groups = Filtered();
+
+                if (groups.Count == 0)
+                {
+                    _rows.Children.Add(Ui.Empty("Nothing matches.",
+                        "The board has " + Ui.Count(_board.Groups.Count, "group")
+                        + "; none of them match this filter."));
+                    return;
+                }
+
+                if (groups.Count < _board.Groups.Count)
+                    _rows.Children.Add(Ui.Line("Showing " + groups.Count + " of "
+                                               + _board.Groups.Count + " groups.", 0.6));
+
+                var rows = groups.Select(g => new TableRow(g,
                     g.Name,
                     g.Items.Count.ToString("N0", CultureInfo.InvariantCulture),
+                    Change(g),
                     g.AssignedTo ?? "-",
                     g.Priority ?? string.Empty,
                     g.IsPinned ? "pinned" : string.Empty)
                 {
-                    Tone = g.AssignedTo == null ? Tone.Warn : Tone.Plain,
+                    Tone = ToneOf(g),
                 }).ToList();
 
-                results.Children.Add(Ui.Table(rows,
-                    ("Group", 220), ("Clashes", 80), ("Assigned to", 120), ("Priority", 90), ("", 0))
+                _rows.Children.Add(Ui.Table(rows,
+                    ("Group", 210), ("Clashes", 70), ("Since last run", 120),
+                    ("Assigned to", 110), ("Priority", 80), ("", 0))
                     .OnPick(item =>
                     {
-                        detail.Children.Clear();
-                        if (item is ClashGroup group) detail.Children.Add(Detail(session, group));
+                        _detail.Children.Clear();
+                        if (item is ClashGroup group && _session != null)
+                            _detail.Children.Add(Detail(_session, group));
                     }));
-            });
+            }
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Triage"),
-                Ui.Sub("The engine's results, grouped into work. The funnel says how a count of several "
-                       + "thousand became this one — every row removed is accounted for rather than "
-                       + "quietly dropped."),
-                run,
-                results,
-                detail,
-                HeadroomCard()));
+            /// <summary>What happened to a group since the last run, on one line.</summary>
+            private string Change(ClashGroup group)
+            {
+                if (_delta == null) return string.Empty;
+
+                var fresh = group.Items.Count(i => i.Status == FindingStatus.New);
+                var back = group.Items.Count(i => _regressed.Contains(i));
+
+                if (back > 0 && fresh > 0) return back + " back, " + fresh + " new";
+                if (back > 0) return back + " back";
+                if (fresh == group.Items.Count) return "all new";
+                if (fresh > 0) return fresh + " new";
+
+                return "unchanged";
+            }
+
+            private Tone ToneOf(ClashGroup group)
+            {
+                if (group.Items.Any(i => _regressed.Contains(i))) return Tone.Bad;
+                if (group.AssignedTo == null) return Tone.Warn;
+                return Tone.Plain;
+            }
         }
 
         // ===================================================================================
