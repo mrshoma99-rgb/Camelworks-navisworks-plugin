@@ -218,9 +218,58 @@ namespace CamelWorks.Core.Automation
                     Choice("group", "Group by", "Category", "Category", "Type", "Model", "Level"),
                 }),
 
+            new NodeKind("data.pivot", "Data", "Pivot",
+                "Sums a measure across two axes at once - concrete by level, ductwork by system.",
+                new[] { Keys("in", "elements") }, new[] { Table("out", "table") },
+                new[]
+                {
+                    Choice("measure", "Measure", "Volume", "Volume", "Area", "Length", "Count"),
+                    Choice("rows", "Rows", "Category",
+                        "Category", "Type", "Model", "Level", "Discipline", "System"),
+                    Choice("columns", "Columns", "Level",
+                        "Category", "Type", "Model", "Level", "Discipline", "System"),
+                }),
+
+            new NodeKind("health.check", "Data", "Health check",
+                "Runs the built-in model checks and hands on what they found.",
+                None, new[] { Table("out", "table") }, NoSettings),
+
             new NodeKind("clash.board", "Data", "Clash board",
                 "The board as the rules leave it, as a table.",
                 None, new[] { Table("out", "table") }, NoSettings),
+
+            new NodeKind("clash.run", "Coordinate", "Run the tests",
+                "Runs the clash tests in the document, so the board that follows is of today.",
+                None, None,
+                new[]
+                {
+                    Choice("which", "Run", "Only ones that never have",
+                        "Only ones that never have", "Every test"),
+                }),
+
+            new NodeKind("clash.bcf", "Coordinate", "Export BCF",
+                "Writes the board as a BCF file, cameras and components included.",
+                None, None,
+                new[]
+                {
+                    Text("path", "File"),
+                    Choice("version", "Version", "2.1", "2.1", "3.0"),
+                    Choice("snapshots", "Pictures", "No", "No", "Yes"),
+                }),
+
+            new NodeKind("clash.viewpoints", "Coordinate", "Save a walkthrough",
+                "One saved viewpoint per group on the board, framed on the group.",
+                None, None,
+                new[]
+                {
+                    Text("folder", "Folder", "Coordination"),
+                    Text("pattern", "Name pattern", "{n}. {group}"),
+                }),
+
+            new NodeKind("sets.publish", "Deliver", "Publish a set",
+                "Puts the elements into the host's selection sets, where anybody can find them.",
+                new[] { Keys("in", "elements") }, None,
+                new[] { Text("name", "Set name") }),
 
             new NodeKind("report.write", "Deliver", "Report",
                 "Writes the table as a PDF, spreadsheet or web page.",

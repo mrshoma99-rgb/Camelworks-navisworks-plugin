@@ -79,6 +79,36 @@ namespace CamelWorks.Core.Automation
         /// <param name="path">Where to write.</param>
         /// <param name="table">What to write.</param>
         void Csv(string path, TableBlock table);
+
+        /// <summary>Sum a measure across two axes at once.</summary>
+        /// <param name="keys">The elements.</param>
+        /// <param name="measure">What to measure.</param>
+        /// <param name="rows">What the rows are.</param>
+        /// <param name="columns">What the columns are.</param>
+        TableBlock Pivot(IReadOnlyList<ElementKey> keys, string measure, string rows, string columns);
+
+        /// <summary>Run the clash tests that have never run, returning how many ran.</summary>
+        /// <param name="all">True to run every test rather than only the ones that never have.</param>
+        int RunClashTests(bool all);
+
+        /// <summary>Write the board as BCF.</summary>
+        /// <param name="path">Where to write.</param>
+        /// <param name="version">"2.1" or "3.0".</param>
+        /// <param name="snapshots">Whether to render a picture per topic.</param>
+        void Bcf(string path, string version, bool snapshots);
+
+        /// <summary>Save one viewpoint per board group, returning how many were saved.</summary>
+        /// <param name="folder">Which viewpoint folder, or empty for the root.</param>
+        /// <param name="pattern">The name pattern.</param>
+        int Walkthrough(string folder, string pattern);
+
+        /// <summary>Publish the elements as a host selection set.</summary>
+        /// <param name="name">The set's name.</param>
+        /// <param name="keys">The elements.</param>
+        void PublishSet(string name, IReadOnlyList<ElementKey> keys);
+
+        /// <summary>Run the built-in health rules over the model, as a table.</summary>
+        TableBlock Health();
     }
 
     /// <summary>What one node did.</summary>
@@ -346,6 +376,83 @@ namespace CamelWorks.Core.Automation
                     var table = host.ClashBoard();
                     outcome = table.Rows.Count.ToString("N0", CultureInfo.InvariantCulture) + " rows";
                     produced = new Value { Table = table };
+                    return true;
+                }
+
+                case "data.pivot":
+                {
+                    var table = host.Pivot(In("in"), node.Setting("measure"),
+                                           node.Setting("rows"), node.Setting("columns"));
+
+                    outcome = table.Rows.Count.ToString("N0", CultureInfo.InvariantCulture) + " rows";
+                    produced = new Value { Table = table };
+                    return true;
+                }
+
+                case "health.check":
+                {
+                    var table = host.Health();
+                    outcome = table.Rows.Count.ToString("N0", CultureInfo.InvariantCulture) + " findings";
+                    produced = new Value { Table = table };
+                    return true;
+                }
+
+                case "clash.run":
+                {
+                    var ran = host.RunClashTests(node.Setting("which") == "Every test");
+
+                    // A run that found no test to run is not a failure. It is what a graph run the
+                    // morning after a full run looks like, and colouring it red teaches people to
+                    // ignore the colour.
+                    outcome = ran == 0
+                        ? "no test needed running"
+                        : ran.ToString("N0", CultureInfo.InvariantCulture) + " tests run";
+
+                    return true;
+                }
+
+                case "clash.bcf":
+                {
+                    var path = node.Setting("path");
+
+                    if (path.Trim().Length == 0)
+                    {
+                        outcome = "no file to write to";
+                        return false;
+                    }
+
+                    host.Bcf(path, node.Setting("version"), node.Setting("snapshots") == "Yes");
+                    outcome = "wrote " + path;
+                    return true;
+                }
+
+                case "clash.viewpoints":
+                {
+                    var saved = host.Walkthrough(node.Setting("folder"), node.Setting("pattern"));
+
+                    outcome = saved == 0
+                        ? "nothing on the board to frame"
+                        : saved.ToString("N0", CultureInfo.InvariantCulture) + " viewpoints saved";
+
+                    return true;
+                }
+
+                case "sets.publish":
+                {
+                    var name = node.Setting("name");
+
+                    if (name.Trim().Length == 0)
+                    {
+                        outcome = "no name to publish under";
+                        return false;
+                    }
+
+                    var keys = In("in");
+                    host.PublishSet(name, keys);
+
+                    outcome = "published " + keys.Count.ToString("N0", CultureInfo.InvariantCulture)
+                            + " elements as \"" + name + "\"";
+
                     return true;
                 }
 

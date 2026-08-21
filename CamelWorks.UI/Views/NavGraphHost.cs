@@ -8,6 +8,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Automation;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Sets;
 using CamelWorks.Nav;
@@ -178,6 +179,193 @@ namespace CamelWorks.UI.Views
             // does badly is guess the encoding, and Excel guesses ANSI without it.
             File.WriteAllText(path, text.ToString(), new UTF8Encoding(true));
         }
+
+        /// <inheritdoc />
+        public TableBlock Pivot(IReadOnlyList<ElementKey> keys, string measure, string rows, string columns)
+        {
+            var lines = new List<PivotLine>();
+
+            foreach (var key in keys)
+            {
+                var item = _session.Model.Resolve(key);
+                if (item == null) continue;
+
+                lines.Add(new PivotLine(item.DisplayName,
+                    AxisOf(item, rows), AxisOf(item, columns),
+                    measure == "Count" ? "1" : Measure(item, measure)));
+            }
+
+            var pivot = TakeoffPivot.Of(lines);
+
+            var headers = new List<string> { rows };
+            headers.AddRange(pivot.Columns);
+            headers.Add("Total");
+
+            var table = new TableBlock(headers.ToArray());
+
+            foreach (var row in pivot.Rows)
+            {
+                var cells = new List<string> { row };
+
+                foreach (var column in pivot.Columns) cells.Add(Cell(pivot.Cell(row, column)));
+
+                cells.Add(Cell(pivot.RowTotal(row)));
+                table.Row(cells.ToArray());
+            }
+
+            var totals = new List<string> { "All" };
+
+            foreach (var column in pivot.Columns) totals.Add(Cell(pivot.ColumnTotal(column)));
+
+            totals.Add(Cell(pivot.Grand));
+            table.Row(totals.ToArray());
+
+            return table;
+        }
+
+        /// <inheritdoc />
+        public TableBlock Health()
+        {
+            var elements = new List<HealthElement>();
+            var scale = _session.MetresPerUnit;
+
+            foreach (var item in _session.Model.Traverse(TraversalScope.WholeDocument))
+            {
+                var bounds = item.Bounds;
+
+                elements.Add(new HealthElement(item.Key.ToString(), item.Model.DisplayName)
+                {
+                    Name = item.DisplayName,
+                    Category = item.Category,
+                    X = bounds.CentreX * scale,
+                    Y = bounds.CentreY * scale,
+                    Z = bounds.CentreZ * scale,
+                    SizeX = bounds.SizeX * scale,
+                    SizeY = bounds.SizeY * scale,
+                    SizeZ = bounds.SizeZ * scale,
+                    PropertyCount = item.Properties().Any() ? 1 : 0,
+                });
+            }
+
+            var report = ModelHealth.Check(elements);
+            var table = new TableBlock("Finding", "What to do", "Examples");
+
+            foreach (var finding in report.Findings)
+                table.Row(finding.Summary, finding.Fix, string.Join(", ", finding.Examples));
+
+            return table;
+        }
+
+        /// <inheritdoc />
+        public int RunClashTests(bool all)
+        {
+            if (!_session.Clash.IsAvailable || !_session.Clash.CanEdit) return 0;
+
+            var ran = 0;
+
+            foreach (var test in _session.Clash.Tests())
+            {
+                if (!all && test.LastRunTicks > 0) continue;
+                if (_session.Clash.Run(test.Id)) ran++;
+            }
+
+            return ran;
+        }
+
+        /// <inheritdoc />
+        public void Bcf(string path, string version, bool snapshots)
+        {
+            var notes = new List<string>();
+            var board = CoordinateViews.Build(_session, Job.Silent(), notes);
+
+            if (board == null) return;
+
+            var topics = CoordinateViews.TopicsOf(_session, board, snapshots, Job.Silent());
+
+            using (var stream = File.Create(path))
+            {
+                BcfWriter.Write(stream, topics,
+                    version == "3.0" ? BcfVersion.V30 : BcfVersion.V21,
+                    new BcfProject(_session.Profile.ProjectName, _session.Profile.ProjectName));
+            }
+        }
+
+        /// <inheritdoc />
+        public int Walkthrough(string folder, string pattern)
+        {
+            var notes = new List<string>();
+            var board = CoordinateViews.Build(_session, Job.Silent(), notes);
+
+            if (board == null) return 0;
+
+            var into = (folder ?? string.Empty).Trim();
+            var template = string.IsNullOrWhiteSpace(pattern) ? "{n}. {group}" : pattern;
+            var saved = 0;
+            var n = 1;
+
+            // Borrowed once and put back at the end, exactly as the Viewpoints tab does it. A graph
+            // that ran overnight and left the camera on the last clash of two hundred would be a
+            // small betrayal somebody notices first thing in the morning.
+            using (_session.View.BorrowCamera())
+            {
+                foreach (var group in board.Groups)
+                {
+                    var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
+
+                    if (points.Count == 0) { n++; continue; }
+
+                    _session.View.FrameBox(CoordinateViews.BoxOf(points));
+
+                    _session.Viewpoints.SaveCurrent(
+                        template
+                            .Replace("{n}", n.ToString("00", CultureInfo.InvariantCulture))
+                            .Replace("{group}", group.Name)
+                            .Replace("{who}", group.AssignedTo ?? "unassigned")
+                            .Replace("{count}", group.Items.Count.ToString(CultureInfo.InvariantCulture)),
+                        into.Length == 0 ? null : into);
+
+                    saved++;
+                    n++;
+                }
+            }
+
+            return saved;
+        }
+
+        /// <inheritdoc />
+        public void PublishSet(string name, IReadOnlyList<ElementKey> keys)
+        {
+            if (keys.Count == 0) return;
+
+            _session.Search.PublishKeys(name, keys);
+        }
+
+        /// <summary>How one pivot cell reads: its total, or why there is not one.</summary>
+        private static string Cell(TakeoffGroup? group)
+        {
+            if (group == null || group.Count == 0) return string.Empty;
+            if (group.MixedKinds) return "(mixed units)";
+
+            return group.Total?.ToString()
+                   ?? group.Count.ToString("N0", CultureInfo.InvariantCulture) + " elements";
+        }
+
+        /// <summary>Which bucket an element falls into on one pivot axis.</summary>
+        private string AxisOf(IModelItem item, string axis) => axis switch
+        {
+            "Type" => item.TypeName ?? PivotLine.None,
+            "Model" => item.Model.DisplayName,
+            "Discipline" => _session.Profile.DisciplineOf(item.Model.Scope) ?? PivotLine.None,
+            "System" => item.Property("Element", "System Name")
+                        ?? item.Property("Element", "System")
+                        ?? item.Property("Item", "System")
+                        ?? PivotLine.None,
+            "Level" => item.Property(NavWriteTransaction.TabName, "Level")
+                       ?? item.Property("Element", "Level")
+                       ?? item.Property("Item", "Level")
+                       ?? PivotLine.None,
+            _ => item.Category ?? PivotLine.None,
+        };
 
         private static string Escape(string value) =>
             value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0

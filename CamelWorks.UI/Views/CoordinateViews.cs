@@ -2438,7 +2438,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 job.Say("Building topics...");
-                var topics = Topics(session, board, snapshots, job);
+                var topics = TopicsOf(session, board, snapshots, job);
 
                 job.Say("Writing...");
 
@@ -2764,8 +2764,19 @@ namespace CamelWorks.UI.Views
         /// <summary>How big a snapshot is.</summary>
         private const int SnapshotHeight = 720;
 
-        private static IReadOnlyList<BcfTopic> Topics(Session session, ClashPipelineResult board,
-                                                      bool snapshots, Job job)
+        /// <summary>
+        /// One BCF topic per group, with its camera, its components and optionally its picture.
+        ///
+        /// Shared with the graph so an overnight run writes the same file the button does. A second
+        /// implementation of "what a topic is" is how the automated export and the manual one come
+        /// to disagree about something a client is reading.
+        /// </summary>
+        /// <param name="session">The document.</param>
+        /// <param name="board">The board to export.</param>
+        /// <param name="snapshots">Whether to render a picture per topic.</param>
+        /// <param name="job">Progress, or <see cref="Job.Silent"/>.</param>
+        internal static IReadOnlyList<BcfTopic> TopicsOf(Session session, ClashPipelineResult board,
+                                                         bool snapshots, Job job)
         {
             var topics = new List<BcfTopic>();
             var author = session.Profile.Author;

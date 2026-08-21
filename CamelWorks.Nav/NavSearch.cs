@@ -137,6 +137,40 @@ namespace CamelWorks.Nav
             return outcome;
         }
 
+        /// <summary>
+        /// Publish a fixed list of elements as a host selection set.
+        ///
+        /// The other Publish takes a rule and prefers a live search, because a set that re-runs
+        /// keeps up with the model. This one is for elements that arrived by some other route — a
+        /// graph's working set, a hand selection — where there is no rule to save and pretending
+        /// there is one would produce a set that quietly means something different tomorrow.
+        /// </summary>
+        /// <param name="name">The set's name. An existing set of that name is replaced.</param>
+        /// <param name="keys">The elements.</param>
+        /// <returns>How many of them still resolved.</returns>
+        public int PublishKeys(string name, IReadOnlyList<ElementKey> keys)
+        {
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is required", nameof(name));
+            if (keys == null) throw new ArgumentNullException(nameof(keys));
+
+            var items = new ModelItemCollection();
+
+            foreach (var key in keys)
+            {
+                if (_document.Resolve(key) is NavModelItem resolved) items.Add(resolved.Item);
+            }
+
+            var set = new SelectionSet(items) { DisplayName = name };
+
+            var existing = _document.Sets()
+                .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null) _document.Document.SelectionSets.Remove(existing);
+
+            _document.Document.SelectionSets.AddCopy(set);
+            return items.Count;
+        }
+
         private IEnumerable<ModelItem> RunClause(SearchClause clause, ICollection<string> notes)
         {
             ModelItemCollection working;
