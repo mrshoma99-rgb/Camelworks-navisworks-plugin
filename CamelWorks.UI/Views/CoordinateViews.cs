@@ -1727,7 +1727,11 @@ namespace CamelWorks.UI.Views
                 if (board == null)
                 {
                     var notes = new List<string>();
-                    board = Build(session, job, notes);
+
+                    // Qualified: this class has its own Build(), and an unqualified call binds to
+                    // it rather than to the board builder.
+                    board = CoordinateViews.Build(session, job, notes);
+
                     foreach (var note in notes) _results.Children.Add(Ui.Note(note));
                 }
 
