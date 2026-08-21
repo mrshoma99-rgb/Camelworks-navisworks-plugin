@@ -57,11 +57,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         internal static ClashPipelineResult? Build(Session session, Job job, ICollection<string> notes)
         {
-            if (!session.Clash.IsAvailable)
-            {
-                notes.Add(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.");
-                return null;
-            }
+            if (!session.Clash.IsAvailable) return Hydrate(session, job, notes);
 
             var scale = session.MetresPerUnit;
             var items = new List<ClashItem>();
@@ -141,6 +137,86 @@ namespace CamelWorks.UI.Views
             LastDelta = delta;
 
             Save(session, board);
+            return board;
+        }
+
+        /// <summary>
+        /// Rebuild the board from the project file when there is no clash engine to read.
+        ///
+        /// This is the promise that makes CamelWorks worth installing on a Simulate seat, which is
+        /// most of the seats on most jobs. Simulate has no Clash Detective, so tests cannot be read
+        /// and cannot be run — but triaging a board, assigning it, reporting on it and issuing BCF
+        /// are not clash detection, and the project file already carries enough to reconstruct what
+        /// a Manage seat last ran.
+        ///
+        /// The result is labelled as a record rather than a reading, every time, because the one
+        /// way this feature could do harm is by looking like a live board. It is not saved back
+        /// either: writing a lower-fidelity copy over the record it came from would lose the
+        /// coordinates the next Manage run needs to carry status across.
+        /// </summary>
+        private static ClashPipelineResult? Hydrate(Session session, Job job, ICollection<string> notes)
+        {
+            job.Say("Reading the last recorded run...");
+
+            var snapshot = Snapshot(session);
+            var hydrated = ClashHydration.From(snapshot, session.MetresPerUnit);
+
+            if (hydrated.IsEmpty)
+            {
+                notes.Add(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.");
+                notes.Add("There is no recorded run in this project either, so there is nothing to open. "
+                          + "A board comes from a Navisworks Manage seat running the tests once; after "
+                          + "that this seat can triage, assign, report and issue it.");
+                return null;
+            }
+
+            var scale = session.MetresPerUnit;
+            var levels = Levels(session, job, scale);
+
+            job.Say("Describing " + Ui.Count(hydrated.Items.Count, "result") + "...");
+
+            var read = 0;
+
+            foreach (var item in hydrated.Items)
+            {
+                if (read++ % 500 == 0 && !job.Step(read, "results described")) return null;
+
+                // Everything except the coordinates is re-derived from the elements themselves,
+                // which Simulate reads perfectly well. Only the clash engine is missing.
+                item.ModelA = ModelOf(session, item.Key.A);
+                item.ModelB = ModelOf(session, item.Key.B);
+                item.DisciplineA = session.Profile.DisciplineOf(item.Key.A.ModelScope);
+                item.DisciplineB = session.Profile.DisciplineOf(item.Key.B.ModelScope);
+                item.CategoryA = CategoryOf(session, item.Key.A);
+                item.CategoryB = CategoryOf(session, item.Key.B);
+                item.Level = levels.LevelAt(item.Z);
+            }
+
+            job.Say("Applying rules...");
+
+            var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+            var options = rules.ToOptions(session.Profile.ClashProximity);
+            options.Decisions = Decisions(session);
+
+            var board = ClashPipeline.Run(hydrated.Items, options);
+
+            notes.Add(hydrated.Explain());
+            notes.Add("This board was rebuilt from what the project file recorded, because this "
+                      + "Navisworks edition has no clash engine. Everything on it can be triaged, "
+                      + "assigned, reported and issued as BCF. Two things it cannot do: run a test, "
+                      + "and notice a conflict that has appeared since the run it came from.");
+
+            if (hydrated.Unusable > 0)
+                notes.Add(Ui.Count(hydrated.Unusable, "record")
+                          + " in the project file could not be read back and are missing from this board.");
+
+            LastBoard = board;
+            LastBoardLabel = hydrated.Label ?? session.Profile.ProjectName;
+
+            // No delta and no save. There was no run to compare against, and writing this board
+            // back over the record it came from would replace real clash points with cell centres.
+            LastDelta = null;
+
             return board;
         }
 

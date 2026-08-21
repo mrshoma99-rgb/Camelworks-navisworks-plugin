@@ -46,6 +46,14 @@ namespace CamelWorks.UI.Views
 
             var body = Ui.Stack(chips, Ui.Line("Project file " + session.Store.Where, 0.7));
 
+            // A seat without the clash engine is not a seat without the coordination work, and the
+            // one place somebody looks to find that out is the chip that just told them so.
+            if (!session.Clash.IsAvailable)
+                body.Children.Add(Ui.Note("This Navisworks edition has no Clash Detective, so tests "
+                    + "cannot be run here. The board still opens: CamelWorks rebuilds it from what "
+                    + "the project file recorded the last time a Manage seat ran, and triage, "
+                    + "assignment, reports and BCF all work on it."));
+
             if (session.Store.UsedBackup)
                 body.Children.Add(Ui.Note("The project file could not be read and its backup was used instead. "
                                           + "Nothing is lost that was saved before the last write."));
