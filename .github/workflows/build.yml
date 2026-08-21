@@ -99,3 +99,13 @@ jobs:
       # Every ribbon command needs both icon sizes on disk; a missing one is a blank button.
       - name: Check every command has its icons
         run: python3 tools/icons.py --check
+
+      # Core builds here without WPF or Navisworks in sight, so a public type that shadows one of
+      # their names compiles fine on this job and then breaks all four Windows jobs at once.
+      - name: Check no Core type name shadows WPF or Navisworks
+        run: python3 checks/validate-core-names.py
+
+      # The release gate from the harvest protocol: the only company named anywhere in this tree
+      # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
+      - name: Check nothing but BIMCamel is named
+        run: python3 checks/validate-branding.py

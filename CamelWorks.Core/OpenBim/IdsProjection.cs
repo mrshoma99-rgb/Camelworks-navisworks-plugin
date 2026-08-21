@@ -11,13 +11,13 @@ namespace CamelWorks.Core.OpenBim
     /// Comparison ignores case on both halves, because the same property arrives spelled three
     /// ways across a federation and none of them is the wrong one.
     /// </summary>
-    public readonly struct PropertyPath : IEquatable<PropertyPath>
+    public readonly struct PropertyAddress : IEquatable<PropertyAddress>
     {
         /// <summary>How the two halves are written when a path is shown or typed.</summary>
         public const string Separator = " / ";
 
         /// <summary>Create a path.</summary>
-        public PropertyPath(string category, string name)
+        public PropertyAddress(string category, string name)
         {
             Category = category ?? string.Empty;
             Name = name ?? string.Empty;
@@ -33,18 +33,18 @@ namespace CamelWorks.Core.OpenBim
         public bool IsEmpty => Name.Length == 0;
 
         /// <summary>Read a path a person typed. Returns null when there is no name in it.</summary>
-        public static PropertyPath? Parse(string? text)
+        public static PropertyAddress? Parse(string? text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
 
             var cut = text!.LastIndexOf('/');
 
-            if (cut < 0) return new PropertyPath(string.Empty, text.Trim());
+            if (cut < 0) return new PropertyAddress(string.Empty, text.Trim());
 
             var category = text.Substring(0, cut).Trim();
             var name = text.Substring(cut + 1).Trim();
 
-            return name.Length == 0 ? (PropertyPath?)null : new PropertyPath(category, name);
+            return name.Length == 0 ? (PropertyAddress?)null : new PropertyAddress(category, name);
         }
 
         /// <summary>
@@ -56,12 +56,12 @@ namespace CamelWorks.Core.OpenBim
             && (Category.Length == 0 || string.Equals(Category, value.Category, StringComparison.OrdinalIgnoreCase));
 
         /// <inheritdoc />
-        public bool Equals(PropertyPath other) =>
+        public bool Equals(PropertyAddress other) =>
             string.Equals(Category, other.Category, StringComparison.OrdinalIgnoreCase)
             && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase);
 
         /// <inheritdoc />
-        public override bool Equals(object? obj) => obj is PropertyPath other && Equals(other);
+        public override bool Equals(object? obj) => obj is PropertyAddress other && Equals(other);
 
         /// <inheritdoc />
         public override int GetHashCode() =>
@@ -69,10 +69,10 @@ namespace CamelWorks.Core.OpenBim
             ^ StringComparer.OrdinalIgnoreCase.GetHashCode(Name);
 
         /// <summary>Equality.</summary>
-        public static bool operator ==(PropertyPath left, PropertyPath right) => left.Equals(right);
+        public static bool operator ==(PropertyAddress left, PropertyAddress right) => left.Equals(right);
 
         /// <summary>Inequality.</summary>
-        public static bool operator !=(PropertyPath left, PropertyPath right) => !left.Equals(right);
+        public static bool operator !=(PropertyAddress left, PropertyAddress right) => !left.Equals(right);
 
         /// <inheritdoc />
         public override string ToString() => Category.Length == 0 ? Name : Category + Separator + Name;
@@ -127,17 +127,17 @@ namespace CamelWorks.Core.OpenBim
             };
 
         /// <summary>Where the IFC class is looked for, best first.</summary>
-        private static readonly PropertyPath[] TypeLadder =
+        private static readonly PropertyAddress[] TypeLadder =
         {
-            new PropertyPath("IFC", "Entity"),
-            new PropertyPath("IFC", "Type"),
-            new PropertyPath("IFC", "Class"),
-            new PropertyPath("Element", "IfcType"),
-            new PropertyPath("Element", "IFC Type"),
-            new PropertyPath("Element", "Entity"),
-            new PropertyPath("Element", "Type"),
-            new PropertyPath("Item", "Type"),
-            new PropertyPath("Item", "Class"),
+            new PropertyAddress("IFC", "Entity"),
+            new PropertyAddress("IFC", "Type"),
+            new PropertyAddress("IFC", "Class"),
+            new PropertyAddress("Element", "IfcType"),
+            new PropertyAddress("Element", "IFC Type"),
+            new PropertyAddress("Element", "Entity"),
+            new PropertyAddress("Element", "Type"),
+            new PropertyAddress("Item", "Type"),
+            new PropertyAddress("Item", "Class"),
         };
 
         private static readonly string[] PredefinedNames = { "PredefinedType", "Predefined Type" };
@@ -145,12 +145,12 @@ namespace CamelWorks.Core.OpenBim
 
         private readonly List<IdsPropertyFacet> _properties = new List<IdsPropertyFacet>();
         private readonly List<IdsClassificationFacet> _classifications = new List<IdsClassificationFacet>();
-        private readonly Dictionary<PropertyPath, int> _candidates = new Dictionary<PropertyPath, int>();
-        private readonly PropertyPath? _typeSource;
+        private readonly Dictionary<PropertyAddress, int> _candidates = new Dictionary<PropertyAddress, int>();
+        private readonly PropertyAddress? _typeSource;
         private readonly bool _wantsAttributes;
         private readonly bool _wantsMaterials;
 
-        private IdsProjection(IdsDocument document, PropertyPath? typeSource)
+        private IdsProjection(IdsDocument document, PropertyAddress? typeSource)
         {
             _typeSource = typeSource;
 
@@ -181,7 +181,7 @@ namespace CamelWorks.Core.OpenBim
         /// Only interesting when <see cref="Classed"/> is zero: it turns "nothing applied and I
         /// don't know why" into "your class is in this property, point me at it".
         /// </summary>
-        public IReadOnlyList<PropertyPath> Candidates =>
+        public IReadOnlyList<PropertyAddress> Candidates =>
             _candidates.OrderByDescending(c => c.Value).Take(MaxSuggestions).Select(c => c.Key).ToList();
 
         /// <summary>Build a projection for one IDS.</summary>
@@ -190,7 +190,7 @@ namespace CamelWorks.Core.OpenBim
         /// Where the IFC class lives, when the person running the check knows and CamelWorks does
         /// not. Taken at its word — no prefix test — because they can see their own data.
         /// </param>
-        public static IdsProjection For(IdsDocument document, PropertyPath? typeSource = null)
+        public static IdsProjection For(IdsDocument document, PropertyAddress? typeSource = null)
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
 
@@ -342,7 +342,7 @@ namespace CamelWorks.Core.OpenBim
             {
                 if (!LooksLikeAClass(property.Value)) continue;
 
-                var path = new PropertyPath(property.Category, property.Name);
+                var path = new PropertyAddress(property.Category, property.Name);
 
                 if (_candidates.TryGetValue(path, out var seen)) _candidates[path] = seen + 1;
                 else if (_candidates.Count < MaxSuggestions * 4) _candidates[path] = 1;

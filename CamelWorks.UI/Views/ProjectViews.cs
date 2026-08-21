@@ -151,7 +151,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 var document = read.Document;
-                var projection = IdsProjection.For(document, PropertyPath.Parse(classSource.Text));
+                var projection = IdsProjection.For(document, PropertyAddress.Parse(classSource.Text));
                 var elements = new List<IdsElement>();
 
                 foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))

@@ -6,12 +6,12 @@ using Xunit;
 
 namespace CamelWorks.Core.Tests
 {
-    public class PropertyPathTests
+    public class PropertyAddressTests
     {
         [Fact]
         public void A_path_reads_back_the_way_it_was_written()
         {
-            var path = PropertyPath.Parse("Pset_WallCommon / FireRating");
+            var path = PropertyAddress.Parse("Pset_WallCommon / FireRating");
 
             Assert.NotNull(path);
             Assert.Equal("Pset_WallCommon", path!.Value.Category);
@@ -22,7 +22,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void A_name_on_its_own_matches_any_tab()
         {
-            var path = PropertyPath.Parse("Entity");
+            var path = PropertyAddress.Parse("Entity");
 
             Assert.NotNull(path);
             Assert.Equal(string.Empty, path!.Value.Category);
@@ -34,19 +34,19 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void Nothing_typed_is_no_path_rather_than_an_empty_one()
         {
-            Assert.Null(PropertyPath.Parse(null));
-            Assert.Null(PropertyPath.Parse("   "));
-            Assert.Null(PropertyPath.Parse("Element /  "));
+            Assert.Null(PropertyAddress.Parse(null));
+            Assert.Null(PropertyAddress.Parse("   "));
+            Assert.Null(PropertyAddress.Parse("Element /  "));
         }
 
         [Fact]
         public void Case_does_not_make_two_paths_different()
         {
-            Assert.Equal(new PropertyPath("IFC", "Entity"), new PropertyPath("ifc", "entity"));
-            Assert.Equal(new PropertyPath("IFC", "Entity").GetHashCode(),
-                         new PropertyPath("ifc", "entity").GetHashCode());
-            Assert.True(new PropertyPath("IFC", "Entity") == new PropertyPath("ifc", "ENTITY"));
-            Assert.True(new PropertyPath("IFC", "Entity") != new PropertyPath("IFC", "Type"));
+            Assert.Equal(new PropertyAddress("IFC", "Entity"), new PropertyAddress("ifc", "entity"));
+            Assert.Equal(new PropertyAddress("IFC", "Entity").GetHashCode(),
+                         new PropertyAddress("ifc", "entity").GetHashCode());
+            Assert.True(new PropertyAddress("IFC", "Entity") == new PropertyAddress("ifc", "ENTITY"));
+            Assert.True(new PropertyAddress("IFC", "Entity") != new PropertyAddress("IFC", "Type"));
         }
     }
 
@@ -97,7 +97,7 @@ namespace CamelWorks.Core.Tests
             var document = Federation(out var model);
             var item = document.AddItem(model, "Wall-01").WithProperty("Custom", "BuiltAs", "IfcWallStandardCase");
 
-            var told = IdsProjection.For(WallRule(), PropertyPath.Parse("Custom / BuiltAs"));
+            var told = IdsProjection.For(WallRule(), PropertyAddress.Parse("Custom / BuiltAs"));
 
             Assert.Equal("IFCWALLSTANDARDCASE", told.From(item)?.IfcType);
         }
@@ -110,7 +110,7 @@ namespace CamelWorks.Core.Tests
             var document = Federation(out var model);
             var item = document.AddItem(model, "Wall-01").WithProperty("Custom", "Class", "Wall");
 
-            var told = IdsProjection.For(WallRule(), PropertyPath.Parse("Custom / Class"));
+            var told = IdsProjection.For(WallRule(), PropertyAddress.Parse("Custom / Class"));
 
             Assert.Equal("WALL", told.From(item)?.IfcType);
         }
@@ -232,7 +232,7 @@ namespace CamelWorks.Core.Tests
             foreach (var item in document.Traverse(TraversalScope.WholeDocument)) projection.From(item);
 
             Assert.Equal(0, projection.Classed);
-            Assert.Equal(new PropertyPath("Custom", "BuiltAs"), projection.Candidates.First());
+            Assert.Equal(new PropertyAddress("Custom", "BuiltAs"), projection.Candidates.First());
         }
 
         [Fact]

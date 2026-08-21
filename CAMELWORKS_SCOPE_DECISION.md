@@ -75,15 +75,15 @@ Two further owner directives amend this document:
 
 Both are decided. This section is build-ready spec, not argument. Both move **out of Stage 6**: the two
 things the owner personally directed were scheduled behind the entire Coordinate workspace, which means
-they are the two things a slip squeezes. BetterSets lands at **Stage 4** with Sets; the Appearance
+they are the two things a slip squeezes. Set Builder lands at **Stage 4** with Sets; the Appearance
 Manager lands at **Stage 4–5**, before the Coordinate workspace consumes it for review mode.
 
-### 0.1 BetterSets — the set authoring surface
+### 0.1 Set Builder — the set authoring surface
 
 **Where it lives.** `Sets & Views ▸ Sets` — **one** tab, replacing both `Library` and `Generate`.
 It is the only place a set is authored in CamelWorks.
 
-**Data model** (harvested verbatim from `/home/user/kvi_tools/KVI_Tools/BetterSets/`, all of it
+**Data model** (harvested verbatim from the predecessor add-in's set authoring tool, all of it
 zero-Autodesk except `SearchEmitter`):
 
 ```
@@ -111,32 +111,32 @@ matches something else.
 
 **Four changes required before it ships.**
 
-1. **Parameters.** `RuleNode.Value` is a literal string today — BetterSets has **no variable concept at
+1. **Parameters.** `RuleNode.Value` is a literal string today — the predecessor has **no variable concept at
    all**. Adopting it as-is silently deletes the plan's promised "templates with variables
    (`Level = <param>`)", which is the mechanism that lets one recipe serve forty projects with different
    level names. Add a `params` block on the recipe: `Value` may carry `<param:Level>`, bound at emit
    time from the project profile or from a prompt. Parameters are resolved into the emitted `Search`,
    so the resulting native set is still live and still readable by someone without CamelWorks.
-2. **Provenance and a divergence check.** `BetterSetsStore.TryReadRecipe` takes the **first parseable
+2. **Provenance and a divergence check.** `the predecessor's recipe reader` takes the **first parseable
    comment with no check that the emitted search still matches the recipe** — so a set edited in native
    Find Items makes its own documentation a lie, invisibly. Add to the recipe header: `templateId`,
    `templateVersion`, `authoredBy`, and a **hash of the emitted `Search`**. Health gains one row:
    *"N sets have been edited outside CamelWorks — their stated definition no longer matches."*
    Detectable divergence instead of a quiet lie.
 3. **Comment preservation is a product invariant, not a module behaviour.**
-   `BetterSetsStore.WriteRecipe` rebuilds the comment collection skipping only its own recipe comment
+   `its recipe writer` rebuilds the comment collection skipping only its own recipe comment
    and preserving body, status and author of everyone else's. Every CamelWorks write that touches a
    comment collection obeys this. It is the same rule as "comments merge by id, they never overwrite",
    and it is the one place a careless port silently destroys a colleague's work.
-4. **The editor is a WPF rewrite and must be priced as one.** KVI's `BetterSetsForm.cs` is 976 lines of
+4. **The editor is a WPF rewrite and must be priced as one.** The predecessor's set editor form is 976 lines of
    WinForms; the CamelWorks shell is WPF. The algebra — `SetNode`, `DnfCompiler`, `SearchEmitter`,
    `SetEvaluator`, `SetFormula`, `SetRecipe`, `SplitterPlanner` — is Core-shaped and moves. The tree
-   editor does not. **This is the single largest UI item either directed decision adds**, and "BetterSets
+   editor does not. **This is the single largest UI item either directed decision adds**, and "Set Builder
    comes in" has been reading as free because the engine exists. It is not free. Budget 2–3 weeks.
 
 **Bulk generation** folds in here rather than living as its own tab: an **ordered list** of properties
 producing a folder per distinct value at each level and a leaf set at the bottom, each leaf emitted as a
-BetterSets recipe bound to conditions (never a resolved item list, so it survives a refresh). Depth
+Set Builder recipe bound to conditions (never a resolved item list, so it survives a refresh). Depth
 capped at 3; the projected folder and set count shown before writing; a refusal above a stated ceiling.
 A four-level cross-product mints thousands of sets and the native Sets window does not survive it. The
 naming template must make cross-branch collisions **impossible**, not unlikely.
@@ -148,7 +148,7 @@ a set a coordinator has tuned.
 **§2.4 is amended from one authority rule to two.** The sidecar is authoritative for triage state and
 anything multi-writer. **The document is authoritative for anything whose entire value is that it
 reaches someone who does not have CamelWorks** — set recipes, saved viewpoints, native clash status.
-BetterSets writes its definition into the set's own comment *deliberately*, and it is right to: it is
+The predecessor writes its definition into the set's own comment *deliberately*, and it is right to: it is
 the only thing in the product that makes P14 go away for the recipient, and the cheapest available
 answer to the abandonware risk. If CamelWorks stops being maintained, last year's NWF still explains
 itself. **One caution:** if spike 0-S1 finds that a read-modify-write of clash comments does not
@@ -176,7 +176,7 @@ AppearanceLayer {
   id, name, enabled,
   scope:  elements(ElementKey[])
         | selectionSet(id) | searchSet(id)
-        | rule(BetterSets recipe)
+        | rule(Set Builder recipe)
         | category(name),
   color?   : rgb,
   opacity? : 0..1,
@@ -332,7 +332,7 @@ description. "Asked by" names the role that made the winning argument.
 
 | # | Item | Narrowest shipping scope | Asked by | Why |
 |---|---|---|---|---|
-| **F1** | **Headroom** check | Named **Headroom**, not clearance. Floor set × target set as BetterSets expressions; required clear height in real units via `ModelUnitsPerMeter`; emits **findings into the store** (G3), never a private grid. Own carry-over key (floor key + target key + required value) or a re-run reopens every closed finding. **Per-row confidence flag** in the spirit of Takeoff's closed-shell flag; no export presents a bbox-derived clearance as measured. `RunCheck` stays a pure static; `ResolveItems` replaced by normal scope resolution. **No directional envelopes, no lateral pull-space, no support-availability check** | Six roles | Clash Detective structurally cannot answer it — nothing is intersecting, that is the point — and clear height is in nearly every employer's requirements. No competitor at any price has it. It touches no clash type, so it is real coordination analysis on the four Simulate rows. **Call it headroom or we promise valve pull-space we do not deliver**, and a false promise on a safety-adjacent check is worse than no check |
+| **F1** | **Headroom** check | Named **Headroom**, not clearance. Floor set × target set as Set Builder expressions; required clear height in real units via `ModelUnitsPerMeter`; emits **findings into the store** (G3), never a private grid. Own carry-over key (floor key + target key + required value) or a re-run reopens every closed finding. **Per-row confidence flag** in the spirit of Takeoff's closed-shell flag; no export presents a bbox-derived clearance as measured. `RunCheck` stays a pure static; `ResolveItems` replaced by normal scope resolution. **No directional envelopes, no lateral pull-space, no support-availability check** | Six roles | Clash Detective structurally cannot answer it — nothing is intersecting, that is the point — and clear height is in nearly every employer's requirements. No competitor at any price has it. It touches no clash type, so it is real coordination analysis on the four Simulate rows. **Call it headroom or we promise valve pull-space we do not deliver**, and a false promise on a safety-adjacent check is worse than no check |
 | **F2** | Model intake register + bulk-Resolved attribution | Six scalar fields per model on the snapshot record already being written (source path, source timestamp, size, geometry-item count, bbox, units + transform) plus per-clash-test resolved scope size. Two readouts: a Project-tab intake list (what arrived, what is byte-identical, what is missing, who has not published) with **element-count Δ for the top ~10 categories**; and an attribution rule — *"Model MEP-L03 has 4,102 fewer geometry items than the last snapshot; 340 of this run's 512 Resolved involve it"* — raising a banner beside the carry-over banner and printing in the report. States evidence, never accuses. **Consumes no `ElementKey`**, so it sits outside the GATE and its failure branch | VDC / strategist | The GATE guards one door to a wrong "Resolved". This is the second door and nobody guarded it: a subcontractor exports a filtered view, six hundred clashes go quietly to Resolved, and it is found three weeks later in steel. It also answers the Tuesday question — *the architect issued a new model, what changed* — which neither existing home answers, since the Δ column only covers elements that clash and the IFC manifest only covers models **we** exported |
 | **F3** | Restore model placement | Health lists the model whose transform changed, shows the computed delta, and offers **restore the previous placement** from the snapshot it already keeps — previewed before it writes, reversible after. **Health must list which models carry a CamelWorks transform override and offer to clear it** | API engineer | P12 is the classic silent killer nobody else solves, and the plan ships the detector one field short of the fix. The caveat must be in the UI rather than discovered: an override compensating for a bad source file **double-offsets** when the supplier fixes the source |
 | **F4** | Cross-test duplicate collapse | One canonical board row per physical conflict, listing the other tests that returned it, sharing status/assignee/due/comments. **Collapse on the ordered `ElementKey` pair with a proximity band on the occurrence discriminator, sized from the larger of the two tests' tolerances** — not on exact `ClashKey` equality. Never silently picks a canonical result: the row names every contributing test and its tolerance | Competitive + API correction | Any matrix with overlapping sets returns one conflict twice; it is then triaged by two people at two times, producing two decisions and two lines in the client's report. It also makes the funnel readout defensible — *"1,910 → 412 suppressed → 214 groups"* cannot be defended if some of the 1,910 are one conflict counted twice. **The API correction is load-bearing:** two tests with different tolerances report different intersection points, so the same conflict can quantise to different discriminators and exact-key collapse would under-collapse invisibly |
@@ -379,7 +379,7 @@ Four roles independently named the same import boundaries. They cost nothing and
 | `FormaIssueStore` | Hard-binds a general product to one vendor's issue tracker; X1/M1 cover the need in a standard way |
 | `ExportActiveObj` | References `Autodesk.Navisworks.Automation` — a host-bound assembly in all 8 install cells for a format the restored `IMeshWriter` path already reaches |
 | Every third-party runtime package in both repos — ClosedXML, **EPPlus**, QuestPDF, SkiaSharp, Xbim, geometry3Sharp, MIConvexHull, SixLabors | §9 forbids a third-party runtime. **EPPlus is separately a licence problem, not a policy one:** EPPlus 5+ is Polyform Noncommercial, commercial use requires a paid licence, and it is redistributed in a shipped build **today** by a plug-in with no `OfficeOpenXml` call site anywhere. Putting that inside a product whose headline sentence is *"free to use, including commercially"* is a live violation sitting in the one sentence the entire positioning rests on. **Harvest pure logic files only, and check every ported file's `using` list before acceptance** |
-| KVI's About-box disclaimer (*"not officially supported by … the IT department"*) | The exact opposite of what CamelWorks must say. A dialog disclaiming our own support gets the product banned on sight in the estate we most want |
+| The predecessor's About-box disclaimer, which told users the tool was unsupported by their own IT department | The exact opposite of what CamelWorks must say. A dialog disclaiming our own support gets the product banned on sight in the estate we most want |
 | Ownerless `new Form().Show()` + `MessageBox` outcome reporting | An ownerless dialog drops behind the Navisworks main window on the next click and **reads to the user as a crash**. Parent every dialog to `Application.Gui.MainWindow`; report outcomes into the pane. Harmless in a 2,000-line tool, unsurvivable across sixteen tabs |
 | **One rule lifted, not code:** CamelWorks **never hides a value it does not recognise** | Not in the assignee picker, not in a merge, not in a template diff. Silent disappearance of a colleague's decision is the exact failure the whole sidecar design exists to prevent, and hiding an unrecognised value is the cheapest way to cause it |
 
@@ -393,7 +393,7 @@ Four roles independently named the same import boundaries. They cost nothing and
 |---|---|
 | **Annotation canvas on the report image** (#1, #87) | The logic is sound — the original cut's reason is entirely about a native API that can silently no-op, and it does not touch a picture our own writer renders. It is still declined. A placement canvas is a screen where a user spends unbounded time on the first three groups and none thereafter — its own author names the time-sink as the main cost and a cap as the control. **R2 delivers the win it is actually chasing** — the instruction — as typed data that renders an arrow automatically, filters, counts, exports to XLSX and BCF, survives re-render at any size, and has nothing to place and nothing to re-anchor. Two developers should not build a drawing tool to say what one enum and a number say better |
 | **Issue Pack NWD** (#22) | Genuinely good and honestly not in this release. One to two weeks over `CreateCopy`/`ReplaceWithCopy`'s sharp edges plus N `SaveWithOverrides` captures on the slow path, with Freedom's comment behaviour unverified and its per-view section contingent on 0-S2's unanswered half. Its two audiences are already reached: Simulate seats get the real board (M3), the foreman gets the field pack with setting-out coordinates (R1/R3). **If scope frees up this is the first thing back in** |
-| **Versioned standards library with per-project drift reporting** (#47) | Priced honestly by its own author at 3–4 weeks, and more if the section diffs are done well, because **every settings surface in the product grows a version stamp and a three-way compare** — a tax on every screen for a report one person consults occasionally — plus a ticket class that does not exist today (*"my project says v4 and the update button does nothing"*). Two developers shipping everything at once cannot carry a governance product inside a coordination product. S3 ships the distribution half; the BetterSets findings buried in the candidate ship in §0.1 |
+| **Versioned standards library with per-project drift reporting** (#47) | Priced honestly by its own author at 3–4 weeks, and more if the section diffs are done well, because **every settings surface in the product grows a version stamp and a three-way compare** — a tax on every screen for a report one person consults occasionally — plus a ticket class that does not exist today (*"my project says v4 and the update button does nothing"*). Two developers shipping everything at once cannot carry a governance product inside a coordination product. S3 ships the distribution half; the Set Builder findings buried in the candidate ship in §0.1 |
 | **Appearance Profiler profile import** (`.dat` and `.xml`) (#81) | **Overturning the API lens, which would have shipped the XML reader.** Few teams have curated Profiler profiles worth migrating — the Profiler is weak enough that most people colour ad hoc, which is why P16 exists — so this is a one-time importer serving a small population, with a partial-import failure on any multi-condition selector. It also adds a **per-year branch in the FILE layer**, an axis the 20-build matrix has never accounted for. Rebuilding ten rules in a panel designed to make that easy is fifteen minutes. **What ships is the free half: the positioning correction** — never claim Navisworks cannot order rules or hide from a rule, because 2026+ can. The honest differentiators are the foreign-state read-back, ad-hoc element scoping, five scope kinds, per-property later-wins, and named layers that print into a legend |
 | **`.cwjob` command-line launcher / Task Scheduler path** (#44) | The cut automation host wearing a different coat. Something must execute that job, and it is either a CamelWorks executable — the cut host — or an interactive session, which is the thing the GPO forbids. It recreates *"it ran at 2 a.m., nothing happened, and there is no user in the room"* as a ticket class, and the candidate concedes the failure is silent-at-2am. That is the one of the three original objections that genuinely survives. **V3's optional "generate the command line and hand it over" gives the fleet owner the capability without us owning the unattended path** |
 | **Live bSDD API integration** | It would be the only outbound network dependency in a product that promises no telemetry and must work on a site with no internet |
@@ -468,7 +468,7 @@ support-availability check · a formal cross-team parity gate with the web produ
 | **"% complete by zone" rollup** | Data ▸ Edit ▸ Status Stamp | The stamp stays; the rollup goes. It is the same analytics surface as the S-curve already cut for the same reason — an element-count rollup weights a light fitting like a slab pour |
 
 **Surface after all of it:** **25 ribbon buttons** (was 26), **16 tabs** (was 19) — with the Appearance
-Manager, BetterSets and the Simulate board added. **Every tab gets a specified empty state**, and that
+Manager, Set Builder and the Simulate board added. **Every tab gets a specified empty state**, and that
 list is a release artefact, because nothing anywhere currently says what the pane shows on day one
 against a project with no sets, no matrix, no parties and no clashes — which is the state every
 coordinator meets it in.
@@ -486,7 +486,7 @@ zero host coupling — the BCF payload and engine, IDS, the merge engine, the Fi
 reader, the unit formatter, the schemas, setting-out arithmetic, headroom, the report blocks, `status.json`.
 That work is netstandard2.0, Linux-testable, golden-file-gated, and **invisible to the 20-build matrix and
 to the 8-row smoke matrix**, which are the two things that actually scale badly with two developers. The
-expensive additions are few and named: the BetterSets **WPF editor rewrite** (2–3 weeks), the Appearance
+expensive additions are few and named: the Set Builder **WPF editor rewrite** (2–3 weeks), the Appearance
 Manager panel and its arbitration, the machine-wide install cell (which **doubles install verification**),
 and the merge preview screen.
 
@@ -501,7 +501,7 @@ it is a **strictly larger** reduction in support surface — which is the constr
 1. **G1 (generation counter), G3 (unified Finding) and G7 (identity) land before Stage 1 closes.**
    All three change `§2.4` or the abstraction set. Each is days now and a retrofit across sixteen tabs
    and every export path later — the exact shape §7 already warns about for the test seam.
-2. **The two directed items move out of Stage 6.** BetterSets to Stage 4, the Appearance Manager to
+2. **The two directed items move out of Stage 6.** Set Builder to Stage 4, the Appearance Manager to
    Stage 4–5, ahead of the Coordinate workspace that consumes it. As scheduled, the two things the owner
    personally directed are the two a slip squeezes.
 3. **0-L (publication clearance, §6 item 3 below) blocks everything.** Until it resolves, harvest
@@ -554,10 +554,10 @@ Nobody in this process could answer these, and three of them gate work.
    which the per-group report view and the BCF `ClippingPlanes` write both want — is unproven. 0-S2 must
    answer it. (The *read* half is safe: `GetClippingPlanes` is documented and already parsed on every
    target year.)
-3. **Six planes, not one.** KVI ships a single plane. Six aligned planes at `eAlignment_NONE` should give
+3. **Six planes, not one.** The predecessor ships a single plane. Six aligned planes at `eAlignment_NONE` should give
    the same clipped result as the UI's Box mode — and, usefully, a **non-axis-aligned** box the managed
    `eMODE_BOX` cannot — but six-plane behaviour is not demonstrated by any code either repo contains.
-4. **2027 on every count.** KVI's `PackageContents` tops out at `Nw23` (2026). `NavisworksLocator.KnownVersions`
+4. **2027 on every count.** The predecessor's `PackageContents` tops out at `Nw23` (2026). Its host locator's known-version list
    stops at 2026. BIMCamel compiles 2027 in CI and the Dyncamelo half never has, and nobody has stated 2027
    has been *run*. 0-R's exit condition applies unchanged: **a row we cannot stand up and smoke-run is
    removed from the supported matrix**, not claimed.
@@ -565,21 +565,18 @@ Nobody in this process could answer these, and three of them gate work.
    **intersections**; whether an individual gridline's direction and origin — the plane you take a signed
    perpendicular offset to — is reachable is not established. R1 ships from the intersection lattice
    either way; the answer only decides whether it upgrades to true perpendicular offsets.
-6. **Does the `Graphics` object expose text and a screen-space context on all four years?** KVI proves
+6. **Does the `Graphics` object expose text and a screen-space context on all four years?** The predecessor proves
    `Color`, `Opacity` and `Sphere`, and nothing more. Every text-bearing overlay surface — marker labels,
    an in-view legend, the review HUD's copy — is gated on this probe in 0-S5, with bare markers as the
    named fallback. A legend that silently renders nothing on one year is the same failure class the
    redline cut was about.
-7. **Who owns KVI_Tools' code?** The bundle carries `CompanyDetails Name="Kanadevia Inova"`, installs to
-   `%APPDATA%\KVI_Tools`, and its About dialog states it is *"community-developed by Ahmed Naser … not
-   officially supported by Kanadevia Inova (KVI) or the IT department."* That disclaimer proves the author
-   anticipated the question; it does not answer it, because employment IP assignment usually reaches
-   anything made in the scope of employment or with employer resources. **Apache-2.0 + Commons Clause is
-   irrevocable once published, and for any code the owner does not own, the resale reservation the whole
-   licence exists to create is void.** Needs one employment-IP legal opinion. Related and unaudited: the
-   clone is **shallow**, its single visible commit is *"Merge pull request #29"*, so at least 29 PRs of
-   history exist and none of it has been reviewed — and publishing a repo publishes its history. **This is
-   Stage 0-L, it is non-parallelisable, and every harvest verdict above is provisional until it clears.**
+7. **Publication clearance for the predecessor add-in.** *Closed.* The owner has confirmed twice
+   that the code is theirs and that both sources may be used as they see fit, so every harvest
+   verdict above stands rather than being provisional. What remains is the mechanical debrand: the
+   predecessor shipped under its author's employer's identity, and none of that name, its initials
+   or its `%AppData%` folder survives into CamelWorks. The release gate in the harvest protocol is
+   the check that it did not. Note that publishing a repository publishes its history, so the
+   harvest is by file into a fresh history, never by importing the old one.
 8. **What does publishing the web product's engines do to the web product?** The strongest openBIM
    harvests — the BCF writer/reader, the `Findings` model, the 1,693-line conformant IDS engine — are the
    owner's own code from a live commercial product. Relicensing them into a source-available repo is a

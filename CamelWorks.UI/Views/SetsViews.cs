@@ -376,10 +376,16 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class AppearanceScreen
         {
+            /// <summary>How many elements are read from the host in one go while scanning.</summary>
+            private const int ScanChunk = 5000;
+
             private readonly List<AppearanceLayer> _layers = new List<AppearanceLayer>();
             private readonly StackPanel _stack = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _adder = Ui.Stack();
+            private readonly StackPanel _foreign = Ui.Stack();
+
+            private ForeignGroup? _picked;
 
             internal UIElement Build()
             {
@@ -401,7 +407,8 @@ namespace CamelWorks.UI.Views
                     Ui.Card("Layers", "Top of the list wins.", _stack),
                     _adder,
                     Actions(session),
-                    _results));
+                    _results,
+                    Elsewhere(session)));
             }
 
             private UIElement Actions(Session session)
@@ -484,6 +491,148 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Across(apply, save, reset);
             }
+
+            /// <summary>
+            /// Everything the model is in that this stack did not ask for.
+            ///
+            /// The layer list above says what CamelWorks intends. It says nothing about the isolate
+            /// somebody left switched on in Clash Detective, the transparency a colleague applied
+            /// last Thursday, or the elements a saved viewpoint hid — and those are exactly why a
+            /// federation looks wrong to one person and fine to another. Until they are on screen,
+            /// nobody can tell which of the two they are looking at.
+            ///
+            /// Three things can be done with a row, and the difference between them is who ends up
+            /// responsible. Select shows you. Adopt writes a layer that reproduces the state
+            /// exactly, so the stack now accounts for it and nothing moves. Put back is the only
+            /// thing in CamelWorks that undoes somebody else's work, which is why it is a button a
+            /// person presses on one named row rather than anything that happens on Apply.
+            /// </summary>
+            private UIElement Elsewhere(Session session)
+            {
+                var scan = Ui.Runner("Scan the model", _foreign, job =>
+                {
+                    _picked = null;
+
+                    job.Say("Resolving layers...");
+                    var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
+
+                    job.Say("Listing elements...");
+
+                    var keys = new List<ElementKey>();
+
+                    foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                    {
+                        if (keys.Count % 2000 == 0 && !job.Step(keys.Count, "elements listed")) return;
+                        if (item.HasGeometry) keys.Add(item.Key);
+                    }
+
+                    // Read in chunks so the Stop button means something. A federation is hundreds of
+                    // thousands of elements and each reading crosses into the host; one call for all
+                    // of them would be a frozen window with no way out of it.
+                    var states = new List<AppearanceState>(keys.Count);
+
+                    for (var at = 0; at < keys.Count; at += ScanChunk)
+                    {
+                        if (!job.Step(at, "elements read")) return;
+
+                        var chunk = keys.GetRange(at, Math.Min(ScanChunk, keys.Count - at));
+                        states.AddRange(session.View.ReadAppearance(chunk));
+                    }
+
+                    job.Say("Working out what is not ours...");
+                    var audit = ForeignAppearance.Find(states, fold);
+
+                    _foreign.Children.Add(Ui.Line(audit.Explain(), 1, true));
+
+                    if (audit.IsClean)
+                    {
+                        _foreign.Children.Add(Ui.Empty("Nothing else is going on.",
+                            "Every element is either untouched or accounted for by a layer above. "
+                            + "That is a real result — the scan ran over the whole federation."));
+                        return;
+                    }
+
+                    _foreign.Children.Add(Ui.Across(
+                        Ui.Figure(audit.Hidden.ToString("N0", CultureInfo.InvariantCulture), "hidden",
+                                  audit.Hidden > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure((audit.Total - audit.Hidden).ToString("N0", CultureInfo.InvariantCulture),
+                                  "overridden"),
+                        Ui.Figure(audit.Claimed.ToString("N0", CultureInfo.InvariantCulture), "ours already")));
+
+                    var rows = audit.Groups.Select(g => new TableRow(g,
+                        g.Describe(),
+                        g.Keys.Count.ToString("N0", CultureInfo.InvariantCulture),
+                        g.IsHidden ? "you cannot see these" : string.Empty)
+                    {
+                        Tone = g.IsHidden ? Tone.Warn : Tone.Plain,
+                    }).ToList();
+
+                    _foreign.Children.Add(Ui.Table(rows, ("State", 260), ("Elements", 90), ("", 0))
+                        .OnPick(item => _picked = item as ForeignGroup));
+
+                    if (audit.OtherGroups > 0)
+                        _foreign.Children.Add(Ui.Note(
+                            Ui.Count(audit.OtherGroups, "further state") + " covering "
+                            + Ui.Count(audit.OtherElements, "element")
+                            + " are counted above but not listed. A model where thousands of elements "
+                            + "each carry their own colour is a painted model, not a coordination "
+                            + "problem, and a table of them would be unreadable."));
+
+                    _foreign.Children.Add(Ui.Line("Pick a row, then choose what to do with it.", 0.6));
+                    _foreign.Children.Add(Ui.Across(SelectButton(session), AdoptButton(session), PutBackButton(session)));
+                });
+
+                return Ui.Card("What else is going on",
+                    "Everything hidden or overridden that no layer above accounts for. Reading it is a "
+                    + "pass over the whole federation, so it happens when you ask rather than when the "
+                    + "tab opens.",
+                    scan,
+                    _foreign);
+            }
+
+            private System.Windows.Controls.Button SelectButton(Session session) =>
+                Ui.Button("Select them", () =>
+                {
+                    if (_picked == null) return;
+                    session.Model.Select(_picked.Keys);
+                });
+
+            private System.Windows.Controls.Button AdoptButton(Session session) =>
+                Ui.Button("Make it a layer", () =>
+                {
+                    if (_picked == null) return;
+
+                    var layer = ForeignAppearance.Adopt(_picked,
+                        "adopted-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+
+                    _layers.Add(layer);
+                    Redraw(session);
+
+                    _foreign.Children.Add(Ui.Line("\"" + layer.Name + "\" is now on top of the stack. "
+                        + "The model looks exactly as it did — what changed is that the stack now says "
+                        + "why.", 0.8));
+
+                    session.Record(ActivityKind.Appearance, "adopted " + layer.Name);
+                });
+
+            private System.Windows.Controls.Button PutBackButton(Session session) =>
+                Ui.Button("Put them back", () =>
+                {
+                    if (_picked == null) return;
+
+                    var keys = _picked.Keys;
+
+                    session.View.ClearOverrides(keys);
+                    if (_picked.IsHidden) session.View.SetVisible(keys, true);
+
+                    _foreign.Children.Add(Ui.Line("Reset " + Ui.Count(keys.Count, "element")
+                        + ". Scan again to see what is left.", 0.8));
+
+                    session.Record(ActivityKind.Appearance,
+                        "reset " + Ui.Count(keys.Count, "element") + " somebody else had overridden");
+
+                    _picked = null;
+                });
 
             private static void Execute(Session session, AppearancePlan plan)
             {
