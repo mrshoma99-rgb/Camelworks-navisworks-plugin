@@ -147,13 +147,21 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
+            /// <summary>What the value picker says for each of the two ways to make one.</summary>
+            private const string Fixed = "the same for every element";
+
+            private const string Worked = "worked out from other properties";
+
             private readonly TextBox _name = Ui.Text("Zone", null, 150);
             private readonly TextBox _value = Ui.Text(string.Empty, null, 200);
+            private readonly TextBox _formula = Ui.Text(string.Empty, null, 340);
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
 
             private ExistingValues _existing = ExistingValues.Keep;
+            private string _how = Fixed;
             private WriteDiff? _diff;
+            private Formula? _parsed;
 
             internal WriteScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
@@ -169,9 +177,12 @@ namespace CamelWorks.UI.Views
                     if (_diff != null) ShowApply();
                 });
 
+                var how = Ui.Choice(new[] { Fixed, Worked }, _how, pick => _how = pick);
+
                 var preview = Ui.Runner("Show me what would change", _status, job =>
                 {
                     _diff = null;
+                    _parsed = null;
                     _applyRow.Children.Clear();
 
                     var name = _name.Text.Trim();
@@ -182,12 +193,19 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
+                    if (_how == Worked && !Read()) return;
+
                     job.Say("Reading what is there now...");
 
-                    var diff = PropertyDiff.Of(NavWriteTransaction.TabName, name,
-                        PropertyDiff.Resolve(_session.Model, _keys), _value.Text);
+                    var diff = _parsed == null
+                        ? PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                            PropertyDiff.Resolve(_session.Model, _keys), _value.Text)
+                        : PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                            PropertyDiff.Resolve(_session.Model, _keys), ValueOf(_parsed));
 
                     _diff = diff;
+
+                    if (_parsed != null) Unworkable(diff);
 
                     _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
 
@@ -243,7 +261,14 @@ namespace CamelWorks.UI.Views
                     "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
                     + "\", so it is never mixed with the authoring tool's data.",
                     Ui.Field("Name", _name),
+                    Ui.Field("The value is", how),
                     Ui.Field("Value", _value),
+                    Ui.Field("Formula", _formula),
+                    Ui.Note("A formula reads other properties: {Element/Mark}. Join text with & and do "
+                            + "arithmetic with + - * / — two different operators on purpose, because one "
+                            + "that did both would turn a door reference of \"12\" and a level of \"3\" "
+                            + "into 15 instead of \"12-3\". An element missing something the formula "
+                            + "needs is left alone rather than written a zero."),
                     Ui.Field("If a value is already there", policy),
                     preview,
                     Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its "
@@ -297,17 +322,31 @@ namespace CamelWorks.UI.Views
                     // Queued from the diff rather than from the scope, so an element that already
                     // holds the value is not written to at all. On a federation that is the
                     // difference between a re-run costing nothing and costing a minute.
+                    var text = _value.Text;
+                    var formula = _parsed;
+
+                    Func<IModelItem, string?> value;
+
+                    if (formula != null) value = ValueOf(formula);
+                    else value = _ => text;
+
                     foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
                     {
                         var item = entry.Value;
                         if (item == null) continue;
 
-                        var kind = PropertyDiff.Classify(item.Property(NavWriteTransaction.TabName, name),
-                                                         _value.Text);
+                        var next = value(item);
+
+                        // A formula that could not be worked out for this element writes nothing at
+                        // all, rather than emptying whatever is there. Leaving it alone is the same
+                        // rule the preview counted it under.
+                        if (_parsed != null && next == null) continue;
+
+                        var kind = PropertyDiff.Classify(item.Property(NavWriteTransaction.TabName, name), next);
 
                         if (!PropertyDiff.ShouldWrite(kind, _existing)) continue;
 
-                        write.SetProperty(entry.Key, NavWriteTransaction.TabName, name, _value.Text);
+                        write.SetProperty(entry.Key, NavWriteTransaction.TabName, name, next);
                     }
 
                     written = write.Commit();
@@ -328,6 +367,68 @@ namespace CamelWorks.UI.Views
                 // not a nicety: pressing it twice would report a second write of nothing and read as
                 // if the first had failed.
                 _diff = null;
+            }
+
+            /// <summary>
+            /// Read the formula box, reporting what is wrong with it rather than refusing silently.
+            /// </summary>
+            private bool Read()
+            {
+                var formula = Formula.Parse(_formula.Text);
+
+                if (!formula.IsUsable)
+                {
+                    _status.Children.Add(Ui.Problem(formula.Problem ?? "That is not a formula."));
+                    return false;
+                }
+
+                _parsed = formula;
+
+                _status.Children.Add(Ui.Line("Reads " + string.Join(", ",
+                    formula.References.Select(r => r.ToString())) + ".", 0.6));
+
+                return true;
+            }
+
+            /// <summary>The value function for a formula: null for an element it cannot be worked out for.</summary>
+            private static Func<IModelItem, string?> ValueOf(Formula formula) => item =>
+                formula.Evaluate((category, name) => category.Length == 0
+                    ? AnyTab(item, name)
+                    : item.Property(category, name)).Value;
+
+            /// <summary>
+            /// A property by name, whichever tab it is under.
+            ///
+            /// What somebody means when they write {Level} rather than {Element/Level}. The first
+            /// match wins, and the tab is worth naming when a federation carries the same property
+            /// name under two of them — which the note on the card says.
+            /// </summary>
+            private static string? AnyTab(IModelItem item, string name)
+            {
+                foreach (var property in item.Properties())
+                {
+                    if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(property.Value))
+                        return property.Value;
+                }
+
+                return null;
+            }
+
+            /// <summary>Say how many elements the formula could not be worked out for.</summary>
+            private void Unworkable(WriteDiff diff)
+            {
+                // Everything the formula produced nothing for lands in Unchanged, because a null
+                // value against a property that is not there is no change. Naming that number is
+                // the difference between "it did nothing" and "it did nothing to these".
+                var blank = diff.Unchanged;
+                if (blank <= 0) return;
+
+                _status.Children.Add(Ui.Note(Ui.Count(blank, "element")
+                    + " either already hold this value or carry nothing the formula needs. The ones "
+                    + "missing a property are left alone rather than written an empty value — an "
+                    + "element with no width has no area, and a zero would go into a schedule "
+                    + "somebody adds up."));
             }
 
             private static string Word(WriteChange kind) => kind switch
