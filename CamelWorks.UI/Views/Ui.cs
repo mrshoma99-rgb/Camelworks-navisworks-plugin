@@ -476,6 +476,32 @@ namespace CamelWorks.UI.Views
         /// <param name="table">The table.</param>
         public static object? Picked(this ListView table) => (table.SelectedItem as TableRow)?.Source;
 
+        /// <summary>
+        /// Let more than one row be picked at once.
+        ///
+        /// Extended rather than Multiple: click, shift-click and control-click are what every list
+        /// on the machine already does, and a list where a plain click adds to the selection
+        /// instead of replacing it surprises people into selecting things they did not mean to.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        public static ListView Multi(this ListView table)
+        {
+            table.SelectionMode = SelectionMode.Extended;
+            return table;
+        }
+
+        /// <summary>The items behind every selected row, in the order the table holds them.</summary>
+        /// <param name="table">The table.</param>
+        public static IReadOnlyList<object> PickedMany(this ListView table)
+        {
+            var picked = new List<object>();
+
+            foreach (var selected in table.SelectedItems)
+                if (selected is TableRow row && row.Source != null) picked.Add(row.Source);
+
+            return picked;
+        }
+
         // -----------------------------------------------------------------------------------
         // Running work
         // -----------------------------------------------------------------------------------

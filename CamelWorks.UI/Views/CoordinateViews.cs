@@ -35,6 +35,9 @@ namespace CamelWorks.UI.Views
         /// <summary>What the last board was of, for a report's cover.</summary>
         internal static string? LastBoardLabel { get; private set; }
 
+        /// <summary>How many of a group's results are listed when it is opened.</summary>
+        private const int DetailCap = 300;
+
         /// <summary>
         /// What changed between the last board and the one before it.
         ///
@@ -121,6 +124,7 @@ namespace CamelWorks.UI.Views
             // every assignment the first time somebody opens the board on a machine that has not
             // run it before.
             options.Decisions = Decisions(session);
+            options.PinnedGroups = Pinned(session);
 
             var board = ClashPipeline.Run(survivors, options);
 
@@ -197,6 +201,7 @@ namespace CamelWorks.UI.Views
             var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
             var options = rules.ToOptions(session.Profile.ClashProximity);
             options.Decisions = Decisions(session);
+            options.PinnedGroups = Pinned(session);
 
             var board = ClashPipeline.Run(hydrated.Items, options);
 
@@ -267,6 +272,88 @@ namespace CamelWorks.UI.Views
             return new ClashSnapshot(records, Decisions(session));
         }
 
+        /// <summary>
+        /// The groups people made by hand, which the rules must never re-derive.
+        ///
+        /// Read from the project file rather than from the last snapshot, for the same reason
+        /// assignments are: a pin is a decision about the work, not about a run, and reading it off
+        /// the previous run would mean losing every one the first time somebody opens the board on
+        /// a machine that has not run it before.
+        /// </summary>
+        private static IReadOnlyDictionary<string, IReadOnlyList<string>> Pinned(Session session)
+        {
+            var pinned = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            var saved = session.Store.Section(ProjectStore.ClashSection)["pinned"];
+
+            foreach (var name in saved.Keys)
+            {
+                var keys = saved[name].Items
+                    .Select(k => k.AsString())
+                    .Where(k => !string.IsNullOrEmpty(k))
+                    .Select(k => k!)
+                    .ToList();
+
+                if (keys.Count > 0) pinned[name] = keys;
+            }
+
+            return pinned;
+        }
+
+        /// <summary>Put results into a hand-made group, and write it down.</summary>
+        private static void Pin(Session session, string name, IEnumerable<ClashItem> items)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var saved = section["pinned"];
+
+            if (saved.Kind != JsonKind.Object)
+            {
+                saved = JsonValue.Object();
+                section.Set("pinned", saved);
+            }
+
+            var keys = new List<string>();
+            var moving = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var item in items)
+            {
+                keys.Add(item.Key.ToString());
+                moving.Add(item.Key.ToString());
+            }
+
+            // A result belongs to exactly one hand-made group. Leaving it in its old one as well
+            // would make which group it lands in depend on dictionary order, which is the kind of
+            // thing that looks like the board losing track of a decision.
+            foreach (var existing in saved.Keys.ToList())
+            {
+                if (string.Equals(existing, name, StringComparison.Ordinal)) continue;
+
+                var left = saved[existing].Items
+                    .Select(k => k.AsString())
+                    .Where(k => !string.IsNullOrEmpty(k) && !moving.Contains(k!))
+                    .Select(k => k!)
+                    .ToList();
+
+                if (left.Count == 0) saved.Remove(existing);
+                else saved.Set(existing, JsonValue.Array(left.Select(JsonValue.String)));
+            }
+
+            if (saved[name].Kind == JsonKind.Array)
+                foreach (var already in saved[name].Items)
+                {
+                    var text = already.AsString();
+                    if (text != null && !moving.Contains(text)) keys.Add(text);
+                }
+
+            saved.Set(name, JsonValue.Array(keys.Select(JsonValue.String)));
+        }
+
+        /// <summary>Stop treating a group as hand-made, so the rules decide it again.</summary>
+        private static void Unpin(Session session, string name)
+        {
+            var saved = session.Store.Section(ProjectStore.ClashSection)["pinned"];
+            if (saved.Kind == JsonKind.Object) saved.Remove(name);
+        }
+
         /// <summary>The assignments made by hand, which outrank the rules and survive a re-run.</summary>
         private static IReadOnlyDictionary<string, GroupDecision> Decisions(Session session)
         {
@@ -280,8 +367,24 @@ namespace CamelWorks.UI.Views
             return decisions;
         }
 
-        private static void Save(Session session, ClashPipelineResult board)
+        /// <summary>
+        /// Write the board down, keeping the version it replaces.
+        ///
+        /// One step of history, not a stack. Every board edit is small and immediately visible, so
+        /// the mistake people actually make is the last one — and a product that offered ten steps
+        /// of undo over a file two people share would be promising something it cannot honour the
+        /// moment the other person saves.
+        /// </summary>
+        /// <param name="session">The session.</param>
+        /// <param name="board">The board to record.</param>
+        /// <param name="summary">What to write in the activity log.</param>
+        private static void Save(Session session, ClashPipelineResult board, string? summary = null)
         {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var previous = section["snapshot"];
+
+            if (previous.Kind == JsonKind.Array) section.Set("previous", previous);
+
             var snapshot = ClashSnapshot.Of(board);
 
             var array = JsonValue.Array(snapshot.Records.Select(r =>
@@ -296,8 +399,35 @@ namespace CamelWorks.UI.Views
                 return json;
             }));
 
-            session.Store.Section(ProjectStore.ClashSection).Set("snapshot", array);
-            session.Record(ActivityKind.Regroup, "ran the rules: " + board.Funnel);
+            section.Set("snapshot", array);
+            session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
+        }
+
+        /// <summary>True when there is a version of the board to go back to.</summary>
+        private static bool CanRewind(Session session) =>
+            session.Store.Section(ProjectStore.ClashSection)["previous"].Kind == JsonKind.Array;
+
+        /// <summary>
+        /// Put back the board as it was before the last edit.
+        ///
+        /// Swaps rather than pops, so pressing Undo twice puts you back where you started. That is
+        /// what a single-step undo has to do — one that only went one way would leave somebody who
+        /// undid the wrong thing with no way forward.
+        /// </summary>
+        private static bool Rewind(Session session)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var previous = section["previous"];
+
+            if (previous.Kind != JsonKind.Array) return false;
+
+            var current = section["snapshot"];
+
+            section.Set("snapshot", previous);
+            if (current.Kind == JsonKind.Array) section.Set("previous", current);
+            else section.Remove("previous");
+
+            return session.Store.Save();
         }
 
         // ===================================================================================
@@ -719,11 +849,19 @@ namespace CamelWorks.UI.Views
             return false;
         }
 
+        /// <summary>
+        /// One group, opened: what is in it, and the four things a coordinator does to it.
+        ///
+        /// Assign it, group some of it differently, mark what has been dealt with, and change your
+        /// mind. Until now the board could be read and filtered but not edited, which meant the
+        /// statuses carry-over exists to preserve had no way of ever being set — the whole
+        /// human-judgement half of the pipeline was unreachable from the product.
+        /// </summary>
         private static UIElement Detail(Session session, ClashGroup group)
         {
             var status = Ui.Stack();
 
-            var rows = group.Items.Take(300).Select(item => new TableRow(item,
+            var rows = group.Items.Take(DetailCap).Select(item => new TableRow(item,
                 item.TestName,
                 item.Level ?? "-",
                 item.ModelPair,
@@ -732,6 +870,7 @@ namespace CamelWorks.UI.Views
 
             var table = Ui.Table(rows,
                 ("Test", 130), ("Level", 90), ("Models", 170), ("What", 170), ("Status", 90))
+                .Multi()
                 .OnPick(item =>
                 {
                     if (!(item is ClashItem clash)) return;
@@ -769,12 +908,119 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
             });
 
+            var newGroup = Ui.Text(group.Name + " - split", null, 200);
+
+            var regroup = Ui.Button("Move the picked ones", () =>
+            {
+                status.Children.Clear();
+
+                var picked = table.PickedMany().OfType<ClashItem>().ToList();
+                var name = newGroup.Text.Trim();
+
+                if (picked.Count == 0)
+                {
+                    status.Children.Add(Ui.Line("Pick the results to move first. "
+                        + "Shift-click and control-click work here the way they do everywhere else.", 0.8));
+                    return;
+                }
+
+                if (name.Length == 0)
+                {
+                    status.Children.Add(Ui.Line("Give the group a name first.", 0.8));
+                    return;
+                }
+
+                Pin(session, name, picked);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line(Ui.Count(picked.Count, "result") + " will be in \"" + name
+                              + "\" from the next load. A hand-made group is never re-derived, so the "
+                              + "rules will leave it alone.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+            });
+
+            var release = group.IsPinned
+                ? Ui.Button("Let the rules decide this again", () =>
+                {
+                    status.Children.Clear();
+                    Unpin(session, group.Name);
+
+                    status.Children.Add(session.Store.Save()
+                        ? Ui.Line("\"" + group.Name + "\" is no longer hand-made. The next load will group "
+                                  + "its results by the rule stack.", 0.8)
+                        : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+                })
+                : null;
+
+            var mark = FindingStatus.Reviewed;
+            var marks = new[] { "Reviewed", "Approved", "Resolved", "Active" };
+
+            var marker = Ui.Choice(marks, "Reviewed", pick =>
+                mark = Enum.TryParse<FindingStatus>(pick, out var parsed) ? parsed : FindingStatus.Reviewed);
+
+            var apply = Ui.Button("Mark them", () =>
+            {
+                status.Children.Clear();
+
+                var board = LastBoard;
+                if (board == null) { status.Children.Add(Ui.Line("Load the board first.", 0.8)); return; }
+
+                var picked = table.PickedMany().OfType<ClashItem>().ToList();
+                if (picked.Count == 0) picked = group.Items.ToList();
+
+                foreach (var item in picked) item.Status = mark;
+
+                Save(session, board, "marked " + Ui.Count(picked.Count, "result") + " as " + mark);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line(Ui.Count(picked.Count, "result") + " marked " + mark
+                              + ". Reviewed and Approved are the two the next run will not recompute — "
+                              + "they are the only judgements the engine cannot make for itself.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                Redraw(table, group);
+            });
+
+            var undo = CanRewind(session)
+                ? Ui.Button("Undo the last board edit", () =>
+                {
+                    status.Children.Clear();
+
+                    status.Children.Add(Rewind(session)
+                        ? Ui.Line("Put back. Load the board again to see it — and pressing this a second "
+                                  + "time brings the edit back, so an undo of the wrong thing is not a "
+                                  + "one-way door.", 0.8)
+                        : Ui.Problem(session.Store.LastSaveProblem
+                                     ?? "There is no earlier version of the board to go back to."));
+                })
+                : null;
+
             return Ui.Card(group.Name,
-                Ui.Count(group.Items.Count, "clash") + (group.Items.Count > 300 ? ", first 300 shown" : string.Empty),
+                Ui.Count(group.Items.Count, "clash")
+                + (group.Items.Count > DetailCap ? ", first " + DetailCap + " shown" : string.Empty)
+                + (group.IsPinned ? " - made by hand" : string.Empty),
                 Ui.Field("Assign to", picker),
-                Ui.Across(assign),
+                Ui.Across(assign, release, undo),
+                Ui.Field("Move picked into", newGroup),
+                Ui.Across(regroup),
+                Ui.Field("Mark picked as", marker),
+                Ui.Across(apply),
+                Ui.Note("Marking changes the board, not the model. Navisworks keeps its own status on "
+                        + "each clash result and CamelWorks does not write into it: two tools disagreeing "
+                        + "about whether something is resolved is worse than one of them not knowing."),
                 status,
                 table);
+        }
+
+        /// <summary>Repaint the status column in place, so a mark shows without reloading the board.</summary>
+        private static void Redraw(ListView table, ClashGroup group)
+        {
+            table.ItemsSource = group.Items.Take(DetailCap).Select(item => new TableRow(item,
+                item.TestName,
+                item.Level ?? "-",
+                item.ModelPair,
+                (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
+                item.Status.ToString())).ToList();
         }
 
         // ===================================================================================
