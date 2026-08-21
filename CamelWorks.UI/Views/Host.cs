@@ -243,6 +243,15 @@ namespace CamelWorks.UI.Views
 
             public System.Collections.Generic.IReadOnlyList<ClashResultInfo> Results(string testId) =>
                 Array.Empty<ClashResultInfo>();
+
+            public bool CanEdit => false;
+
+            public ClashTestInfo? Create(ClashTestSpec spec) => null;
+
+            public bool Run(string testId) => false;
+
+            public string? LastProblem =>
+                "There is no clash engine in this Navisworks edition, so tests cannot be made or run.";
         }
     }
 }

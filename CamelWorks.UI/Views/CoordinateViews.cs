@@ -706,52 +706,331 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>What the clash engine holds, and when each test last ran.</summary>
-        public static UIElement Tests()
+        public static UIElement Tests() => new TestsScreen().Build();
+
+        /// <summary>
+        /// The engine's tests, and a way to stop making them by hand.
+        ///
+        /// Building a discipline matrix in Clash Detective is an afternoon: Add Test, pick two
+        /// selections, set a tolerance, name it, thirty-six times. It is not difficult and that is
+        /// exactly the problem — it is long enough to be done once and then never redone when a
+        /// model is added, which is how a matrix quietly stops covering the federation it was
+        /// drawn for.
+        /// </summary>
+        private sealed class TestsScreen
         {
-            var session = Host.Current;
+            private const string ByDiscipline = "Discipline";
+            private const string ByModel = "Model";
 
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Tests"), Ui.Sub(Host.NoModel)));
+            private readonly StackPanel _list = Ui.Stack();
+            private readonly StackPanel _grid = Ui.Stack();
+            private readonly StackPanel _results = Ui.Stack();
 
-            if (!session.Clash.IsAvailable)
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Tests"),
-                    Ui.Note(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
+            /// <summary>
+            /// Where a run reports, kept apart from where creating reports.
+            ///
+            /// Not tidiness: a Runner clears its own output panel when pressed, so a "Run them"
+            /// button living in the panel it writes to would delete itself on the way in.
+            /// </summary>
+            private readonly StackPanel _runs = Ui.Stack();
 
-            var tests = session.Clash.Tests();
+            private readonly TextBox _pattern = Ui.Text("{a} vs {b}", null, 200);
+            private readonly TextBox _tolerance = Ui.Text("0.010", null, 80);
+            private readonly TextBox _folder = Ui.Text(string.Empty, null, 150);
 
-            if (tests.Count == 0)
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Tests"),
-                    Ui.Empty("No clash tests in this document.",
-                        "Set them up in Clash Detective. CamelWorks reads the results and turns them into "
-                        + "work; it does not replace the engine that produces them.")));
+            private string _rows = ByDiscipline;
+            private string _columns = ByDiscipline;
+            private bool _selfPairs;
 
-            var rows = tests.Select(t => new TableRow(t,
-                t.Name,
-                t.Folder ?? string.Empty,
-                t.ResultCount.ToString("N0", CultureInfo.InvariantCulture),
-                t.LastRunTicks > 0
-                    ? new DateTime(t.LastRunTicks).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)
-                    : "never run")
+            private Session? _session;
+            private MatrixPlan? _plan;
+
+            internal UIElement Build()
             {
-                Tone = t.LastRunTicks > 0 ? Tone.Plain : Tone.Warn,
-            }).ToList();
+                _session = Host.Current;
 
-            var stale = tests.Count(t => t.LastRunTicks <= 0);
+                if (_session == null)
+                    return Ui.Scroll(Ui.Stack(Ui.Heading("Tests"), Ui.Sub(Host.NoModel)));
 
-            var body = Ui.Stack(
-                Ui.Across(
+                if (!_session.Clash.IsAvailable)
+                    return Ui.Scroll(Ui.Stack(
+                        Ui.Heading("Tests"),
+                        Ui.Note(_session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
+
+                Redraw();
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Tests"),
+                    Ui.Sub("The clash engine's own tests. A test that has never run contributes nothing to "
+                           + "the board, which is worth seeing before wondering where the clashes went."),
+                    _list,
+                    Matrix(),
+                    _results,
+                    _runs));
+            }
+
+            /// <summary>The tests as they stand, and the one action worth having beside them.</summary>
+            private void Redraw()
+            {
+                _list.Children.Clear();
+
+                var session = _session;
+                if (session == null) return;
+
+                var tests = session.Clash.Tests();
+
+                if (tests.Count == 0)
+                {
+                    _list.Children.Add(Ui.Empty("No clash tests in this document.",
+                        "Build a matrix below, or set them up in Clash Detective. CamelWorks reads the "
+                        + "results and turns them into work; it does not replace the engine that "
+                        + "produces them."));
+                    return;
+                }
+
+                var rows = tests.Select(t => new TableRow(t,
+                    t.Name,
+                    t.Folder ?? string.Empty,
+                    t.ResultCount.ToString("N0", CultureInfo.InvariantCulture),
+                    t.LastRunTicks > 0
+                        ? new DateTime(t.LastRunTicks).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)
+                        : "never run")
+                {
+                    Tone = t.LastRunTicks > 0 ? Tone.Plain : Tone.Warn,
+                }).ToList();
+
+                var stale = tests.Where(t => t.LastRunTicks <= 0).ToList();
+
+                _list.Children.Add(Ui.Across(
                     Ui.Pill(Ui.Count(tests.Count, "test")),
                     Ui.Pill(Ui.Count(tests.Sum(t => t.ResultCount), "result")),
-                    stale > 0 ? Ui.Pill(stale + " never run", Tone.Warn) : null),
-                Ui.Table(rows, ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
+                    stale.Count > 0 ? Ui.Pill(stale.Count + " never run", Tone.Warn) : null));
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Tests"),
-                Ui.Sub("The clash engine's own tests. A test that has never run contributes nothing to the "
-                       + "board, which is worth seeing before wondering where the clashes went."),
-                body));
+                _list.Children.Add(Ui.Table(rows,
+                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
+
+                if (stale.Count > 0 && session.Clash.CanEdit)
+                    _list.Children.Add(Ui.Runner("Run the " + stale.Count + " that never have", _runs,
+                        job => Run(stale, job)));
+            }
+
+            /// <summary>The builder.</summary>
+            private UIElement Matrix()
+            {
+                var axes = new[] { ByDiscipline, ByModel };
+
+                var rows = Ui.Choice(axes, _rows, pick => _rows = pick);
+                var columns = Ui.Choice(axes, _columns, pick => _columns = pick);
+                var diagonal = Ui.Check("Include each side against itself", _selfPairs, v => _selfPairs = v);
+
+                var build = Ui.Runner("Show me the grid", _grid, job =>
+                {
+                    _plan = null;
+
+                    var session = _session;
+                    if (session == null) return;
+
+                    var a = Sides(session, _rows);
+                    var b = Sides(session, _columns);
+
+                    if (a.Count == 0 || b.Count == 0)
+                    {
+                        _grid.Children.Add(Ui.Empty("Nothing to pair up.",
+                            "No models are loaded, so there is nothing on either axis."));
+                        return;
+                    }
+
+                    var plan = ClashMatrix.Build(a, b, new MatrixOptions
+                    {
+                        Tolerance = Metres(_tolerance.Text),
+                        SelfPairs = _selfPairs,
+                        NamePattern = _pattern.Text,
+                        Existing = session.Clash.Tests().Select(t => t.Name).ToList(),
+                    });
+
+                    _plan = plan;
+                    Show(plan);
+                });
+
+                return Ui.Card("Build a matrix",
+                    "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
+                    + "be set up first: the disciplines come from what CamelWorks already worked out about "
+                    + "the models that are loaded.",
+                    Ui.Field("Rows", rows),
+                    Ui.Field("Columns", columns),
+                    Ui.Field("Name pattern", _pattern),
+                    Ui.Field("Tolerance (m)", _tolerance),
+                    Ui.Field("Put them in folder", _folder),
+                    diagonal,
+                    build,
+                    _grid);
+            }
+
+            /// <summary>The grid, with a tick on every row that is going to be made.</summary>
+            private void Show(MatrixPlan plan)
+            {
+                _grid.Children.Add(Ui.Line(plan.Explain(), 1, true));
+
+                foreach (var test in plan.Tests)
+                {
+                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+                    var proposed = test;
+
+                    row.Children.Add(Ui.Check(string.Empty, test.IsSelected, v => proposed.IsSelected = v));
+                    row.Children.Add(Ui.Line(test.Name, 1, true));
+                    row.Children.Add(Ui.Line(test.A + "  x  " + test.B, 0.7));
+
+                    if (test.Note != null) row.Children.Add(Ui.Pill(test.Note, Tone.Warn));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    _grid.Children.Add(row);
+                }
+
+                var session = _session;
+
+                if (session != null && !session.Clash.CanEdit)
+                {
+                    _grid.Children.Add(Ui.Problem(
+                        "This document will not take new clash tests — it is open read-only, or the host "
+                        + "is holding its clash data. The grid above is still the right answer; it just "
+                        + "cannot be created from here."));
+                    return;
+                }
+
+                _grid.Children.Add(Ui.Runner("Create the ticked ones", _results, Create));
+            }
+
+            private void Create(Job job)
+            {
+                var session = _session;
+                var plan = _plan;
+
+                if (session == null || plan == null) return;
+
+                var wanted = plan.Tests.Where(t => t.IsSelected).ToList();
+
+                if (wanted.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty("Nothing is ticked.",
+                        "Every row was either already in the document or has an empty side. Tick the ones "
+                        + "you want anyway, or change the axes."));
+                    return;
+                }
+
+                var folder = _folder.Text.Trim();
+                var made = new List<ClashTestInfo>();
+                var refused = new List<string>();
+
+                foreach (var test in wanted)
+                {
+                    if (!job.Step(made.Count, "tests made")) break;
+
+                    var created = session.Clash.Create(test.ToSpec(folder.Length == 0 ? null : folder));
+
+                    if (created != null) made.Add(created.Value);
+                    else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
+                }
+
+                _results.Children.Add(Ui.Line("Made " + Ui.Count(made.Count, "test") + ".", 1, true));
+
+                // Named individually rather than counted. A matrix where four of thirty-six failed is
+                // a matrix with four holes in it, and a count does not say which four.
+                foreach (var problem in refused) _results.Children.Add(Ui.Problem(problem));
+
+                if (made.Count > 0)
+                {
+                    session.Record(ActivityKind.Regroup,
+                        "built a clash matrix: " + Ui.Count(made.Count, "test"));
+
+                    _results.Children.Add(Ui.Runner("Run them", _runs, inner => Run(made, inner)));
+                }
+
+                Redraw();
+            }
+
+            /// <summary>
+            /// Run tests one at a time, reporting as it goes.
+            ///
+            /// One at a time rather than the host's run-everything, because running everything also
+            /// re-runs the tests somebody else is halfway through triaging, and a matrix build is
+            /// not a reason to throw away their afternoon.
+            /// </summary>
+            private void Run(IReadOnlyList<ClashTestInfo> tests, Job job)
+            {
+                var session = _session;
+                if (session == null) return;
+
+                var ran = 0;
+                var refused = new List<string>();
+
+                foreach (var test in tests)
+                {
+                    job.Say("Running " + test.Name + "...");
+                    if (!job.Step(ran, "tests run")) break;
+
+                    if (session.Clash.Run(test.Id)) ran++;
+                    else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
+                }
+
+                _runs.Children.Add(Ui.Line("Ran " + Ui.Count(ran, "test") + ".", 1, true));
+
+                foreach (var problem in refused) _runs.Children.Add(Ui.Problem(problem));
+
+                if (ran > 0)
+                {
+                    _runs.Children.Add(Ui.Note("Load the board in Triage to see what they found. "
+                        + "CamelWorks does not read results automatically — a run that takes ten minutes "
+                        + "should not also decide when you look at it."));
+
+                    session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "test"));
+                }
+
+                Redraw();
+            }
+
+            /// <summary>
+            /// One axis, worked out from what is already known rather than from a form.
+            ///
+            /// The discipline of a model is something the profile already derived from its filename
+            /// on the day it was loaded, so a discipline matrix needs nothing configured — which is
+            /// the whole difference between a builder somebody uses and one they mean to set up
+            /// properly one day.
+            /// </summary>
+            private static IReadOnlyList<MatrixSide> Sides(Session session, string axis)
+            {
+                var models = session.Model.Models;
+
+                if (axis == ByModel)
+                    return models
+                        .Select(m => new MatrixSide(m.DisplayName, ClashSide.Model(m.Scope)))
+                        .ToList();
+
+                var byDiscipline = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var model in models)
+                {
+                    var discipline = session.Profile.DisciplineOf(model.Scope) ?? "Unassigned";
+
+                    if (!byDiscipline.TryGetValue(discipline, out var scopes))
+                        byDiscipline[discipline] = scopes = new List<string>();
+
+                    scopes.Add(model.Scope);
+                }
+
+                return byDiscipline
+                    .OrderBy(d => d.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(d => new MatrixSide(d.Key, ClashSide.Models(d.Value)))
+                    .ToList();
+            }
+
+            /// <summary>Read the tolerance box, falling back rather than refusing.</summary>
+            private static double Metres(string? text) =>
+                double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                && value >= 0
+                    ? value
+                    : MatrixOptions.DefaultTolerance;
         }
 
         // ===================================================================================

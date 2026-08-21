@@ -114,6 +114,213 @@ namespace CamelWorks.Nav.Clash
             return results;
         }
 
+        /// <summary>
+        /// Whether tests can be made and run here, as opposed to only read.
+        ///
+        /// Checked by asking the host's own guard rather than by inferring it. A clash collection
+        /// can be present and read-only, and finding that out by having thirty-six creates throw is
+        /// not a design.
+        /// </summary>
+        public bool CanEdit
+        {
+            get
+            {
+                try
+                {
+                    var clash = Clash();
+                    return clash != null && !clash.TestsData.Value.IsReadOnly;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public string? LastProblem { get; private set; }
+
+        /// <inheritdoc />
+        public ClashTestInfo? Create(ClashTestSpec spec)
+        {
+            LastProblem = null;
+
+            if (spec == null) { LastProblem = "No test was described."; return null; }
+
+            var clash = Clash();
+
+            if (clash == null)
+            {
+                LastProblem = "This document has no clash data to add a test to.";
+                return null;
+            }
+
+            try
+            {
+                var test = new ClashTest
+                {
+                    CustomTestName = spec.Name,
+                    TestType = ClashTestType.Hard,
+                    Tolerance = spec.Tolerance * NavUnits.UnitsPerMetre(_document.Document.Units),
+                };
+
+                if (!Fill(test.SelectionA, spec.A)) return null;
+                if (!Fill(test.SelectionB, spec.B)) return null;
+
+                var root = clash.TestsData.Value.TestsRoot;
+
+                if (root == null)
+                {
+                    LastProblem = "The document's clash tests could not be reached.";
+                    return null;
+                }
+
+                // AddCopy, not Add: the host takes a copy of the test and owns it from then on, so
+                // the object built above is not the one in the document and must not be run.
+                clash.TestsData.TestsAddCopy(root, test);
+
+                var made = AllTests(clash)
+                    .Select(t => t.Test)
+                    .LastOrDefault(t => string.Equals(t.DisplayName, spec.Name, StringComparison.Ordinal));
+
+                if (made == null)
+                {
+                    LastProblem = "The host accepted the test but it cannot be found again by name.";
+                    return null;
+                }
+
+                return new ClashTestInfo(made.Guid.ToString(), made.DisplayName ?? spec.Name,
+                                         spec.Folder, 0, LastRunTicksOf(made));
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the test: " + e.Message;
+                return null;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool Run(string testId)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+
+            if (clash == null || string.IsNullOrWhiteSpace(testId))
+            {
+                LastProblem = "There is no clash engine, or no test was named.";
+                return false;
+            }
+
+            var test = AllTests(clash)
+                .Select(t => t.Test)
+                .FirstOrDefault(t => string.Equals(t.Guid.ToString(), testId, StringComparison.OrdinalIgnoreCase));
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            try
+            {
+                clash.TestsData.TestsRunTest(test);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not run \"" + (test.DisplayName ?? testId) + "\": " + e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Point one side of a test at what the spec says.
+        ///
+        /// A saved set becomes a selection SOURCE rather than a copy of its members, which is the
+        /// difference between a matrix that stays right when somebody adds a wall and one that
+        /// silently stops covering it. It is also what Clash Detective itself does when a set is
+        /// picked by hand, so a test CamelWorks made and one made by hand behave the same way.
+        /// </summary>
+        private bool Fill(ClashSelection selection, ClashSide side)
+        {
+            switch (side.Kind)
+            {
+                case ClashSideKind.Models:
+                {
+                    var wanted = new HashSet<string>(side.Scopes, StringComparer.Ordinal);
+                    var roots = new ModelItemCollection();
+
+                    foreach (Model loaded in _document.Document.Models)
+                    {
+                        if (wanted.Contains(NavKeys.ScopeOf(loaded))) roots.Add(loaded.RootItem);
+                    }
+
+                    if (roots.Count == 0)
+                    {
+                        LastProblem = "None of the models this test is about are loaded any more.";
+                        return false;
+                    }
+
+                    selection.Selection.CopyFrom(roots);
+                    return true;
+                }
+
+                case ClashSideKind.Set:
+                {
+                    var sets = _document.Document.SelectionSets;
+                    var found = Find(sets.Value, side.Name);
+
+                    if (found == null)
+                    {
+                        LastProblem = "There is no set called \"" + side.Name + "\" in this document.";
+                        return false;
+                    }
+
+                    var sources = new SelectionSourceCollection { sets.CreateSelectionSource(found) };
+                    selection.Selection.CopyFrom(sources);
+                    return true;
+                }
+
+                default:
+                {
+                    var items = new ModelItemCollection();
+
+                    foreach (var key in side.Keys)
+                    {
+                        if (_document.Resolve(key) is NavModelItem resolved) items.Add(resolved.Item);
+                    }
+
+                    if (items.Count == 0)
+                    {
+                        LastProblem = "None of the elements on one side of this test still resolve.";
+                        return false;
+                    }
+
+                    selection.Selection.CopyFrom(items);
+                    return true;
+                }
+            }
+        }
+
+        private static SavedItem? Find(SavedItemCollection? items, string? name)
+        {
+            if (items == null || string.IsNullOrWhiteSpace(name)) return null;
+
+            foreach (SavedItem item in items)
+            {
+                if (string.Equals(item.DisplayName, name, StringComparison.OrdinalIgnoreCase)) return item;
+
+                if (item is GroupItem folder)
+                {
+                    var nested = Find(folder.Children, name);
+                    if (nested != null) return nested;
+                }
+            }
+
+            return null;
+        }
+
         private DocumentClash? Clash()
         {
             // GetClash() is an extension on Document that only exists when the Manage-only
