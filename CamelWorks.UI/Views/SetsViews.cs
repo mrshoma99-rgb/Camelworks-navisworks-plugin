@@ -1153,9 +1153,168 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Pattern", pattern),
                         Ui.Field("Start at", start),
                         renumber),
+                    Walkthrough(session),
                     _results,
-                    Ui.Card("Saved viewpoints", null, _list)));
+                    Ui.Card("Saved viewpoints", null, _list),
+                    Sweep(session)));
             }
+
+            /// <summary>
+            /// One viewpoint per group on the board, framed on the group.
+            ///
+            /// This is the artefact a coordination meeting is run from and the one nobody has time
+            /// to make: hand somebody an NWD and they click down the list, and every click puts
+            /// them in front of a problem rather than at a coordinate they have to fly to.
+            ///
+            /// CamelWorks already knows how to frame a group — the BCF viewpoints and the report's
+            /// pictures use the same framing, off to one side and above, because a duct through a
+            /// beam is invisible in plan. The only thing missing was somewhere to put them.
+            /// </summary>
+            private UIElement Walkthrough(Session session)
+            {
+                var folder = Ui.Text("Coordination", null, 180);
+                var pattern = Ui.Text("{n}. {group}", null, 200);
+
+                var make = Ui.Runner("Save one per group on the board", _results, job =>
+                {
+                    var board = CoordinateViews.LastBoard;
+
+                    if (board == null)
+                    {
+                        _results.Children.Add(Ui.Note("Load the board in Triage first. These viewpoints are "
+                            + "of its groups, so there has to be a board to make them from."));
+                        return;
+                    }
+
+                    var into = folder.Text.Trim();
+                    var made = 0;
+                    var empty = 0;
+
+                    // The camera is borrowed once for the whole run and put back at the end. Doing
+                    // it per group would leave the view visibly jumping for as long as this takes.
+                    using (session.View.BorrowCamera())
+                    {
+                        var n = 1;
+
+                        foreach (var group in board.Groups)
+                        {
+                            if (!job.Step(made, "viewpoints saved")) break;
+
+                            var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
+
+                            if (points.Count == 0) { empty++; n++; continue; }
+
+                            job.Say("Framing " + group.Name + "...");
+                            session.View.FrameBox(CoordinateViews.BoxOf(points));
+
+                            var name = pattern.Text
+                                .Replace("{n}", n.ToString("00", CultureInfo.InvariantCulture))
+                                .Replace("{group}", group.Name)
+                                .Replace("{who}", group.AssignedTo ?? "unassigned")
+                                .Replace("{count}", group.Items.Count.ToString(CultureInfo.InvariantCulture));
+
+                            session.Viewpoints.SaveCurrent(name, into.Length == 0 ? null : into);
+
+                            made++;
+                            n++;
+                        }
+                    }
+
+                    _results.Children.Add(Ui.Line("Saved " + Ui.Count(made, "viewpoint")
+                        + (into.Length == 0 ? "." : " into \"" + into + "\"."), 1, true));
+
+                    if (empty > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(empty, "group")
+                            + " had no positioned results to frame, so no viewpoint was made for "
+                            + (empty == 1 ? "it" : "them") + "."));
+
+                    _results.Children.Add(Ui.Note("Each one carries the overrides that were in force when it "
+                        + "was made. If you want them clean, apply the Appearance stack you want first and "
+                        + "make them again."));
+
+                    session.Record(ActivityKind.Export, "saved " + Ui.Count(made, "viewpoint")
+                                                        + " from the board");
+                    Redraw(session);
+                });
+
+                return Ui.Card("A viewpoint per issue",
+                    "The walkthrough a coordination meeting is actually run from.",
+                    Ui.Field("Folder", folder),
+                    Ui.Field("Name pattern", pattern),
+                    Ui.Note("{n} is the number, {group} the group, {who} the party it is assigned to, "
+                            + "{count} how many clashes are in it."),
+                    make);
+            }
+
+            /// <summary>
+            /// Delete every viewpoint whose name starts with something.
+            ///
+            /// The only bulk delete worth having and the one that has to be hardest to do by
+            /// accident. A week of generated walkthroughs is exactly the thing that needs clearing
+            /// out before the next one, and doing it one right-click at a time is why people stop
+            /// generating them.
+            /// </summary>
+            private UIElement Sweep(Session session)
+            {
+                var starts = Ui.Text(string.Empty, null, 200);
+                var status = Ui.Stack();
+
+                var count = Ui.Button("Count them", () =>
+                {
+                    status.Children.Clear();
+
+                    var prefix = starts.Text.Trim();
+
+                    if (prefix.Length == 0)
+                    {
+                        status.Children.Add(Ui.Problem("Type what their names start with. An empty box would "
+                            + "match every viewpoint in the document, which is not something to offer by "
+                            + "accident."));
+                        return;
+                    }
+
+                    var doomed = Matching(session, prefix);
+
+                    if (doomed.Count == 0)
+                    {
+                        status.Children.Add(Ui.Line("Nothing starts with \"" + prefix + "\".", 0.8));
+                        return;
+                    }
+
+                    status.Children.Add(Ui.Line(Ui.Count(doomed.Count, "viewpoint") + " start with \""
+                        + prefix + "\": " + string.Join(", ", doomed.Take(6).Select(v => v.Name))
+                        + (doomed.Count > 6 ? ", ..." : string.Empty), 0.8));
+
+                    status.Children.Add(Ui.Button("Delete " + Ui.Count(doomed.Count, "viewpoint"), () =>
+                    {
+                        var gone = 0;
+
+                        foreach (var view in doomed)
+                        {
+                            session.Viewpoints.Delete(view.Id);
+                            gone++;
+                        }
+
+                        status.Children.Add(Ui.Line("Deleted " + Ui.Count(gone, "viewpoint")
+                            + ". Ctrl+Z will not bring them back; save the document only when you are sure.",
+                            1, true));
+
+                        session.Record(ActivityKind.Export, "deleted " + Ui.Count(gone, "viewpoint"));
+                        Redraw(session);
+                    }));
+                });
+
+                return Ui.Card("Clear out a batch",
+                    "Deletes by name, and counts before it does anything.",
+                    Ui.Field("Names starting with", starts),
+                    Ui.Across(count),
+                    status);
+            }
+
+            private static IReadOnlyList<SavedView> Matching(Session session, string prefix) =>
+                session.Viewpoints.All()
+                    .Where(v => v.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
 
             private void Redraw(Session session)
             {

@@ -2221,7 +2221,7 @@ namespace CamelWorks.UI.Views
                         var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
                         if (points.Count == 0) continue;
 
-                        session.View.FrameBox(Box(points));
+                        session.View.FrameBox(BoxOf(points));
 
                         var png = session.View.Capture(1280, 720);
                         if (png != null && png.Length > 0) images[group.Name] = png;
@@ -2831,14 +2831,21 @@ namespace CamelWorks.UI.Views
 
             if (!snapshot) return viewpoint;
 
-            session.View.FrameBox(Box(points));
+            session.View.FrameBox(BoxOf(points));
             viewpoint.Snapshot = session.View.Capture(SnapshotWidth, SnapshotHeight);
 
             return viewpoint;
         }
 
-        /// <summary>The box a group occupies, in metres, never degenerate.</summary>
-        private static BoundingBox Box(IReadOnlyList<(double X, double Y, double Z)> points)
+        /// <summary>
+        /// The box a group occupies, in metres, never degenerate.
+        ///
+        /// Shared with the Viewpoints tab so a saved walkthrough frames its issue exactly the way
+        /// the BCF viewpoints and the report's pictures do. Three framings that drifted apart would
+        /// be three different opinions about where a problem is.
+        /// </summary>
+        /// <param name="points">Every clash point in the group, in metres.</param>
+        internal static BoundingBox BoxOf(IReadOnlyList<(double X, double Y, double Z)> points)
         {
             if (points.Count == 0) return new BoundingBox(-1, -1, -1, 1, 1, 1);
 
