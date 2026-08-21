@@ -38,6 +38,9 @@ namespace CamelWorks.UI.Views
         /// <summary>How many of a group's results are listed when it is opened.</summary>
         private const int DetailCap = 300;
 
+        /// <summary>How many elements a raised issue records.</summary>
+        private const int IssueElementCap = 200;
+
         /// <summary>
         /// The results the last run found back again, by identity.
         ///
@@ -156,7 +159,20 @@ namespace CamelWorks.UI.Views
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
 
-            var board = ClashPipeline.Run(survivors, options);
+            // After carry-over, never before. A raised issue is not something the clash engine
+            // reported, so comparing it against the previous run would find it missing from the
+            // engine's results and call it resolved every single week.
+            var everything = new List<ClashItem>(survivors);
+            var raised = Issues(session).Open();
+            everything.AddRange(raised);
+
+            var board = ClashPipeline.Run(everything, options);
+
+            if (raised.Count > 0)
+                notes.Add(Ui.Count(raised.Count, "issue") + " raised by hand "
+                          + (raised.Count == 1 ? "is" : "are") + " on this board alongside the engine's "
+                          + "results. They group, assign, report and export like anything else; the "
+                          + "test column says where they came from.");
 
             notes.Add(delta.ToString());
 
@@ -233,7 +249,10 @@ namespace CamelWorks.UI.Views
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
 
-            var board = ClashPipeline.Run(hydrated.Items, options);
+            var everything = new List<ClashItem>(hydrated.Items);
+            everything.AddRange(Issues(session).Open());
+
+            var board = ClashPipeline.Run(everything, options);
 
             notes.Add(hydrated.Explain());
             notes.Add("This board was rebuilt from what the project file recorded, because this "
@@ -384,6 +403,14 @@ namespace CamelWorks.UI.Views
             if (saved.Kind == JsonKind.Object) saved.Remove(name);
         }
 
+        /// <summary>Every issue somebody raised on this project, from the project file.</summary>
+        internal static ManualIssueList Issues(Session session) =>
+            ManualIssueList.FromJson(session.Store.Section(ProjectStore.ClashSection)["issues"]);
+
+        /// <summary>Write the issue list back.</summary>
+        private static void SaveIssues(Session session, ManualIssueList issues) =>
+            session.Store.Section(ProjectStore.ClashSection).Set("issues", issues.ToJson());
+
         /// <summary>The assignments made by hand, which outrank the rules and survive a re-run.</summary>
         private static IReadOnlyDictionary<string, GroupDecision> Decisions(Session session)
         {
@@ -417,7 +444,12 @@ namespace CamelWorks.UI.Views
 
             var snapshot = ClashSnapshot.Of(board);
 
-            var array = JsonValue.Array(snapshot.Records.Select(r =>
+            // Raised issues are kept in their own list and left out of the snapshot. The snapshot
+            // is what the next run's carry-over compares the ENGINE's results against, and a record
+            // the engine can never produce would read as resolved on every single run.
+            var array = JsonValue.Array(snapshot.Records
+                .Where(r => !string.Equals(r.TestName, ManualIssue.RaisedByHand, StringComparison.Ordinal))
+                .Select(r =>
             {
                 var json = JsonValue.Object()
                     .Set("key", JsonValue.String(r.Key.ToString()))
@@ -548,6 +580,7 @@ namespace CamelWorks.UI.Views
                     Ui.Across(Ui.Field("Show", _preset), Ui.Field("Find", _search)),
                     _rows,
                     _detail,
+                    new RaiseScreen().Build(),
                     HeadroomCard()));
             }
 
@@ -1050,6 +1083,278 @@ namespace CamelWorks.UI.Views
                 item.ModelPair,
                 (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
                 item.Status.ToString())).ToList();
+        }
+
+        /// <summary>
+        /// Raising a coordination problem the clash engine cannot see.
+        ///
+        /// A door swinging into an escape route, a valve with nowhere to be pulled to, an access
+        /// route that stops at a wall, a riser with no builder's work opening. None of them are
+        /// intersections, all of them are coordination, and none of them can be raised in a tool
+        /// whose board only knows what the engine said — so they end up in a spreadsheet beside the
+        /// board, reported separately and closed where nobody can see them next to the work they
+        /// belong with.
+        ///
+        /// The elements come from the current selection, which is where the person already is when
+        /// they notice. Nothing else is required: a title is enough, and every other box has an
+        /// answer already.
+        /// </summary>
+        private sealed class RaiseScreen
+        {
+            private readonly TextBox _title = Ui.Text(string.Empty, null, 260);
+            private readonly TextBox _note = Ui.Text(string.Empty, null, 340);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _list = Ui.Stack();
+
+            private string? _party;
+            private string _priority = "Medium";
+
+            internal UIElement Build()
+            {
+                var session = Host.Current;
+                if (session == null) return Ui.Stack();
+
+                var parties = new List<string> { "Unassigned" };
+                parties.AddRange(session.Profile.Parties);
+                _party = parties[0];
+
+                var who = Ui.Choice(parties, _party, p => _party = p);
+                var how = Ui.Choice(new[] { "High", "Medium", "Low" }, _priority, p => _priority = p);
+
+                Redraw(session);
+
+                return Ui.Card("Raise an issue",
+                    "For what the clash engine cannot see. It joins the board and behaves like "
+                    + "everything else on it.",
+                    Ui.Field("What is wrong", _title),
+                    Ui.Field("More", _note),
+                    Ui.Field("Who", who),
+                    Ui.Field("Priority", how),
+                    Ui.Across(Ui.Button("Raise it against the selection", () => Raise(session))),
+                    Ui.Note("The elements come from what is selected in the model right now. Select the "
+                            + "door and the corridor, not the whole level — a viewpoint that opens on "
+                            + "half a building tells the reader nothing."),
+                    _status,
+                    _list);
+            }
+
+            private void Raise(Session session)
+            {
+                _status.Children.Clear();
+
+                var title = _title.Text.Trim();
+
+                if (title.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Say what is wrong first. One line is enough."));
+                    return;
+                }
+
+                var selected = session.Model.SelectedKeys();
+
+                if (selected.Count == 0)
+                {
+                    _status.Children.Add(Ui.Problem(
+                        "Nothing is selected. An issue with no elements is a note nobody can find "
+                        + "again, so CamelWorks will not make one."));
+                    return;
+                }
+
+                // Two participants because that is what a board identity is made of. One selected
+                // element pairs with itself, which is a real pair and a stable key.
+                var first = selected[0];
+                var second = selected.Count > 1 ? selected[1] : first;
+
+                double x = 0, y = 0, z = 0;
+                var counted = 0;
+
+                foreach (var key in selected)
+                {
+                    var item = session.Model.Resolve(key);
+                    if (item == null) continue;
+
+                    var bounds = item.Bounds;
+                    x += bounds.CentreX; y += bounds.CentreY; z += bounds.CentreZ;
+                    counted++;
+                }
+
+                if (counted > 0) { x /= counted; y /= counted; z /= counted; }
+
+                var issues = Issues(session);
+                var scale = session.MetresPerUnit;
+
+                // The key is made from the raw host-unit centroid, the way a clash key is, and then
+                // kept forever. The metres go on the issue for everything that reads coordinates.
+                var issue = new ManualIssue(issues.NextId(), ClashKey.Create(first, second, x, y, z), title)
+                {
+                    Note = _note.Text.Trim().Length == 0 ? null : _note.Text.Trim(),
+                    AssignedTo = _party == "Unassigned" ? null : _party,
+                    Priority = _priority,
+                    Level = LevelOf(session, selected),
+                    Author = session.Profile.Author,
+                    RaisedTicks = DateTime.UtcNow.Ticks,
+                    X = x * scale,
+                    Y = y * scale,
+                    Z = z * scale,
+                };
+
+                foreach (var key in selected.Take(IssueElementCap)) issue.Elements.Add(key);
+
+                issues.Put(issue);
+                SaveIssues(session, issues);
+
+                if (issue.AssignedTo != null) Decide(session, issue.Title, issue.AssignedTo, issue.Priority);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Raised against " + Ui.Count(selected.Count, "element")
+                              + ". Load the board to see it — it will be its own group, named after "
+                              + "the title, and the rules will leave it alone.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                session.Record(ActivityKind.Regroup, "raised an issue: " + title);
+
+                _title.Text = string.Empty;
+                _note.Text = string.Empty;
+
+                Redraw(session);
+            }
+
+            /// <summary>What is already raised, and a way to close or delete one.</summary>
+            private void Redraw(Session session)
+            {
+                _list.Children.Clear();
+
+                var issues = Issues(session);
+
+                if (issues.Unreadable > 0)
+                    _list.Children.Add(Ui.Note(Ui.Count(issues.Unreadable, "issue")
+                        + " in the project file could not be read back. They are still in the file; "
+                        + "CamelWorks has not deleted them."));
+
+                if (issues.Issues.Count == 0) return;
+
+                var open = issues.Issues.Count(i => i.Status != FindingStatus.Resolved);
+
+                _list.Children.Add(Ui.Line(Ui.Count(open, "issue") + " open, "
+                    + (issues.Issues.Count - open).ToString(CultureInfo.InvariantCulture)
+                    + " closed and kept as a record.", 0.7));
+
+                var rows = issues.Issues.Select(i => new TableRow(i,
+                    i.Title,
+                    i.AssignedTo ?? "unassigned",
+                    i.Priority ?? string.Empty,
+                    i.Status.ToString(),
+                    i.RaisedTicks > 0
+                        ? new DateTime(i.RaisedTicks).ToLocalTime().ToString("d MMM", CultureInfo.InvariantCulture)
+                        : string.Empty)
+                {
+                    Tone = i.Status == FindingStatus.Resolved ? Tone.Good : Tone.Warn,
+                }).ToList();
+
+                var table = Ui.Table(rows,
+                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Status", 90), ("Raised", 70));
+
+                ManualIssue? picked = null;
+                table.OnPick(item => picked = item as ManualIssue);
+
+                _list.Children.Add(table);
+
+                _list.Children.Add(Ui.Across(
+                    Ui.Button("Show me", () =>
+                    {
+                        if (picked == null || picked.Elements.Count == 0) return;
+                        session.Model.Select(picked.Elements);
+                        session.View.ZoomTo(picked.Elements, 2.0);
+                    }),
+                    Ui.Button("Close it", () => Close(session, picked)),
+                    Ui.Button("Delete it", () => Delete(session, picked))));
+            }
+
+            private void Close(Session session, ManualIssue? picked)
+            {
+                _status.Children.Clear();
+
+                if (picked == null) { _status.Children.Add(Ui.Line("Pick one first.", 0.8)); return; }
+
+                var issues = Issues(session);
+                var issue = issues.Find(picked.Id);
+
+                if (issue == null) return;
+
+                issue.Status = FindingStatus.Resolved;
+                SaveIssues(session, issues);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Closed. It stays in this list as a record and leaves the board.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                session.Record(ActivityKind.Regroup, "closed an issue: " + issue.Title);
+                Redraw(session);
+            }
+
+            /// <summary>
+            /// Delete rather than close, for the one raised by mistake.
+            ///
+            /// Closing keeps the record because the record is the evidence the work happened.
+            /// Deleting exists for the typo, and says which of the two it is doing.
+            /// </summary>
+            private void Delete(Session session, ManualIssue? picked)
+            {
+                _status.Children.Clear();
+
+                if (picked == null) { _status.Children.Add(Ui.Line("Pick one first.", 0.8)); return; }
+
+                var issues = Issues(session);
+                issues.Remove(picked.Id);
+                SaveIssues(session, issues);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Deleted. Closing keeps the record; deleting is for the one raised by "
+                              + "mistake, and this was the second.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                session.Record(ActivityKind.Regroup, "deleted an issue: " + picked.Title);
+                Redraw(session);
+            }
+
+            /// <summary>
+            /// The level of the first element that carries one.
+            ///
+            /// Read off the element rather than worked out from the height, because building the
+            /// level set means a pass over the whole federation and raising an issue should not
+            /// take a minute.
+            /// </summary>
+            private static string? LevelOf(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                foreach (var key in keys.Take(IssueElementCap))
+                {
+                    var item = session.Model.Resolve(key);
+                    if (item == null) continue;
+
+                    var level = item.Property("Element", "Level") ?? item.Property("Item", "Layer");
+                    if (!string.IsNullOrWhiteSpace(level)) return level!.Trim();
+                }
+
+                return null;
+            }
+
+            /// <summary>Record the party against the group the issue will become.</summary>
+            private static void Decide(Session session, string group, string party, string? priority)
+            {
+                var section = session.Store.Section(ProjectStore.ClashSection);
+                var decisions = section["decisions"];
+
+                if (decisions.Kind != JsonKind.Object)
+                {
+                    decisions = JsonValue.Object();
+                    section.Set("decisions", decisions);
+                }
+
+                var decision = JsonValue.Object().Set("party", JsonValue.String(party));
+                if (priority != null) decision.Set("priority", JsonValue.String(priority));
+
+                decisions.Set(group, decision);
+            }
         }
 
         // ===================================================================================
