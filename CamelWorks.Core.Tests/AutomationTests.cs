@@ -232,10 +232,12 @@ namespace CamelWorks.Core.Tests
 
     public class NodeCatalogueTests
     {
-        // The two that cannot run unconfigured, and why: both write a file, and there is no
-        // defensible default path. Every other node in the catalogue has to run on the settings it
-        // is born with, or the canvas is not zero-setup.
-        private static readonly string[] NeedAPath = { "report.write", "csv.write" };
+        // The three that cannot run unconfigured, and why: every one of them writes a file, and
+        // there is no defensible default path. Every other node in the catalogue has to run on the
+        // settings it is born with, or the canvas is not zero-setup.
+        //
+        // In catalogue order, because that is the order the check below produces them in.
+        private static readonly string[] NeedAPath = { "clash.bcf", "report.write", "csv.write" };
 
         private static Graph WithInputs(NodeKind kind)
         {
@@ -279,8 +281,12 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void Only_the_two_file_writers_need_configuring_before_they_run()
+        public void Only_the_file_writers_need_configuring_before_they_run()
         {
+            // The list is exact on purpose. A node that quietly joined it would be a node somebody
+            // drops on the canvas, presses Run, and gets nothing from — which is the zero-setup
+            // rule failing in the one place it is easiest not to notice.
+
             var needConfiguring = NodeCatalogue.All
                 .Where(kind => !GraphRunner.Run(WithInputs(kind), new FakeGraphHost(6))
                                            .Steps.First(s => s.NodeId == "subject").Ran)

@@ -269,7 +269,7 @@ namespace CamelWorks.Core.Automation
             new NodeKind("sets.publish", "Deliver", "Publish a set",
                 "Puts the elements into the host's selection sets, where anybody can find them.",
                 new[] { Keys("in", "elements") }, None,
-                new[] { Text("name", "Set name") }),
+                new[] { Text("name", "Set name", "CamelWorks working set") }),
 
             new NodeKind("report.write", "Deliver", "Report",
                 "Writes the table as a PDF, spreadsheet or web page.",
