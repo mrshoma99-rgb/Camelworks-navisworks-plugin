@@ -1,0 +1,192 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.1.0"
+        required: true
+
+jobs:
+  release:
+    name: Build and publish the CamelWorks bundle
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Work out the version
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/', '' }
+                     else { '${{ github.event.inputs.version }}' }
+          if (-not $version) { Write-Host "::error::no version"; exit 1 }
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$version"
+
+      - name: Setup .NET SDK 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build and stage the per-year bundle (2024-2027)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $years   = '2024', '2025', '2026', '2027'
+          $staging = "staging"
+          $numeric = $env:VERSION.TrimStart('v')
+
+          foreach ($year in $years) {
+            Write-Host "=== Building for Navisworks $year ==="
+
+            # --no-incremental: the sources are identical across years, so up-to-date checks would
+            # otherwise skip the recompile against the new API version and ship one year's DLL four
+            # times - which loads, and then silently fails to register its ribbon tab.
+            dotnet build CamelWorks.UI/CamelWorks.UI.csproj -c Release --no-incremental `
+              -p:NavisworksYear=$year -p:Version=$numeric
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+
+            dotnet build CamelWorks.Nav.Clash/CamelWorks.Nav.Clash.csproj -c Release --no-incremental `
+              -p:NavisworksYear=$year -p:Version=$numeric
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+
+            $yeardir = "$staging/CamelWorks.bundle/$year"
+            New-Item -ItemType Directory -Force -Path "$yeardir/en-US", "$yeardir/Resources" | Out-Null
+
+            $files = @{
+              "CamelWorks.UI/bin/Release/net48/CamelWorks.UI.dll"                 = "CamelWorks.UI.dll"
+              "CamelWorks.Nav/bin/Release/net48/CamelWorks.Nav.dll"               = "CamelWorks.Nav.dll"
+              "CamelWorks.Nav.Clash/bin/Release/net48/CamelWorks.Nav.Clash.dll"   = "CamelWorks.Nav.Clash.dll"
+              "CamelWorks.Core/bin/Release/netstandard2.0/CamelWorks.Core.dll"    = "CamelWorks.Core.dll"
+            }
+
+            foreach ($from in $files.Keys) {
+              $alt = $from -replace "/bin/Release/", "/bin/x64/Release/"
+              $source = if (Test-Path $from) { $from } elseif (Test-Path $alt) { $alt } else { $null }
+              if (-not $source) {
+                Write-Host "::error::Missing build output for ${year}: $($files[$from])"
+                exit 1
+              }
+              Copy-Item $source -Destination (Join-Path $yeardir $files[$from])
+            }
+
+            Copy-Item "CamelWorks.UI/CamelWorks.xaml"   -Destination "$yeardir/en-US"
+            Copy-Item "CamelWorks.UI/Resources/*.png"   -Destination "$yeardir/Resources"
+          }
+
+          # The manifest is stamped through the XML DOM: never string-edit it, because a corrupted
+          # <?xml?> declaration makes Navisworks ignore the whole bundle without saying anything.
+          [xml]$doc = Get-Content "dist/CamelWorks.bundle/PackageContents.xml" -Raw
+          $doc.ApplicationPackage.Version = "$numeric.0"
+          $manifest = Join-Path (Get-Location) "$staging/CamelWorks.bundle/PackageContents.xml"
+          $doc.Save($manifest)
+
+          [xml]$check = Get-Content $manifest -Raw
+          if ($check.ApplicationPackage.Version -ne "$numeric.0") {
+            Write-Host "::error::Staged PackageContents.xml failed validation"
+            exit 1
+          }
+
+          # Everything the manifest promises must be in the folder it names. A bundle missing one
+          # file loads its ribbon and fails at the first click, which reads as a broken plug-in
+          # rather than a broken build.
+          $required = 'CamelWorks.UI.dll', 'CamelWorks.Nav.dll', 'CamelWorks.Nav.Clash.dll', 'CamelWorks.Core.dll'
+
+          foreach ($year in $years) {
+            foreach ($file in $required) {
+              if (-not (Test-Path "$staging/CamelWorks.bundle/$year/$file")) {
+                Write-Host "::error::$file missing from the staged $year folder"
+                exit 1
+              }
+            }
+            if (-not (Test-Path "$staging/CamelWorks.bundle/$year/en-US/CamelWorks.xaml")) {
+              Write-Host "::error::CamelWorks.xaml missing from the staged $year folder"
+              exit 1
+            }
+            if ((Get-ChildItem "$staging/CamelWorks.bundle/$year/Resources" -Filter *.png).Count -lt 50) {
+              Write-Host "::error::ribbon icons missing from the staged $year folder"
+              exit 1
+            }
+          }
+
+          Copy-Item "dist/README.md" -Destination $staging
+          Copy-Item "LICENSE"        -Destination $staging
+          Copy-Item "NOTICE"         -Destination $staging
+
+      - name: Build the graphical installer (CamelWorksSetup.exe)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $numeric = $env:VERSION.TrimStart('v')
+          Compress-Archive -Path "staging/CamelWorks.bundle" -DestinationPath "payload.zip"
+
+          # --no-incremental is load-bearing: MSBuild's up-to-date check does not treat the added
+          # EmbeddedResource as a change, and an incremental build here ships a payload-less exe.
+          dotnet build installer/CamelWorks.Installer/CamelWorks.Installer.csproj -c Release `
+            -p:BundlePayload="$(Join-Path (Get-Location) 'payload.zip')" `
+            -p:Version=$numeric `
+            --no-incremental `
+            -o installer-out
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          # A resource is stored verbatim, so the exe MUST be larger than the payload it carries.
+          $payload = (Get-Item "payload.zip").Length
+          $exe = (Get-Item "installer-out/CamelWorksSetup.exe").Length
+          if ($exe -le $payload) {
+            Write-Host "::error::CamelWorksSetup.exe ($exe bytes) is smaller than its payload ($payload bytes) - the bundle was not embedded"
+            exit 1
+          }
+
+          Copy-Item "installer-out/CamelWorksSetup.exe" "CamelWorksSetup.exe"
+          Copy-Item "installer-out/CamelWorksSetup.exe" "staging/CamelWorksSetup.exe"
+
+      - name: Package and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = "CamelWorks-$env:VERSION-navisworks.zip"
+          Compress-Archive -Path "staging/*" -DestinationPath $zip
+
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $exeHash = (Get-FileHash "CamelWorksSetup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $notes = @"
+          CamelWorks for Autodesk Navisworks 2024-2027 - coordination, data and delivery.
+
+          The clash board with a funnel that accounts for every result the engine produced, headroom
+          (the check no clash test can do), the Appearance layers system, boolean sets compiled to
+          native search sets, BCF 2.1 and 3.0, reports, and a node canvas over the same services the
+          buttons drive.
+
+          Everything works on a raw model with nothing configured. Clash tools need Navisworks
+          Manage; the rest runs on Simulate too.
+
+          ## Install
+
+          1. Download ``CamelWorksSetup.exe`` and run it - it installs per user into
+             ``%APPDATA%\Autodesk\ApplicationPlugins``, no admin rights needed.
+          2. If Windows SmartScreen appears (unsigned download), click **More info -> Run anyway**.
+          3. Start Navisworks - the **CamelWorks** ribbon tab appears.
+
+          Uninstall from **Settings -> Apps -> CamelWorks for Navisworks**, or rerun the setup.
+          Silent modes: ``CamelWorksSetup.exe /silent`` and ``CamelWorksSetup.exe /uninstall /silent``.
+
+          ## Licence
+
+          Free to use, including commercially and on commercial projects. Not free to sell: see
+          LICENSE (Apache 2.0 with the Commons Clause). Source-available, not open source.
+
+          ## Checksums
+
+          ``````
+          $zipHash  $zip
+          $exeHash  CamelWorksSetup.exe
+          ``````
+          "@
+
+          Set-Content -Path notes.md -Value $notes
+          gh release create $env:VERSION --title "CamelWorks $env:VERSION" --notes-file notes.md `
+            $zip "CamelWorksSetup.exe"

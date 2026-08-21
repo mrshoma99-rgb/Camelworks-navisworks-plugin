@@ -1,0 +1,29 @@
+CamelWorks for Autodesk Navisworks
+Copyright (c) 2026 Ahmed Naser (bimcamel.com)
+
+This product includes third-party material, listed below with its own terms. The
+Commons Clause condition in LICENSE applies to CamelWorks, not to this material:
+each item stays under the licence named here.
+
+
+Google Material Symbols
+-----------------------
+The ribbon icons in CamelWorks.UI/Resources are rasterised from Google's Material
+Symbols, used unmodified in shape and recoloured for the ribbon.
+
+    https://github.com/google/material-design-icons
+    Copyright Google LLC
+    Licensed under the Apache License, Version 2.0
+
+    You may obtain a copy of the Apache License at
+    http://www.apache.org/licenses/LICENSE-2.0
+
+tools/icons.py records which symbol each button uses and regenerates the set.
+
+
+Autodesk Navisworks .NET API
+----------------------------
+CamelWorks compiles against the Navisworks API reference assemblies and does not
+redistribute them. They are supplied by the user's own licensed Navisworks
+installation. No Autodesk assembly is included in this repository or in the
+CamelWorks bundle.

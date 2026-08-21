@@ -1,0 +1,4 @@
+Build for Navisworks 2025 and copy CamelWorks.UI.dll, CamelWorks.Nav.dll,
+CamelWorks.Nav.Clash.dll and CamelWorks.Core.dll into this folder,
+CamelWorks.xaml into en-US/, and the ribbon icons into Resources/.
+See the README at the root of this bundle.

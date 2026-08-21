@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage SchemaVersion="3.0" Version="0.1.0.0" Author="BIMCamel"
+    ProductCode="{B619E98B-7D03-4A15-BDB0-99EDD3920EB2}"
+    Name="CamelWorks for Navisworks"
+    Description="Coordination, data and delivery tools for Navisworks - www.bimcamel.com">
+  <CompanyDetails Name="BIMCamel" Url="https://www.bimcamel.com" />
+
+  <!-- One DLL PER RELEASE: a Navisworks plug-in must be compiled against the API of the release it
+       runs in (2024 = Api v21, 2025 = v22, 2026 = v23, 2027 = v24). A single DLL built against one
+       year still loads in the others, but its ribbon tab silently fails to register, because
+       Navisworks reflects over the [RibbonLayout] / [RibbonTab] / [Command] attributes and those
+       attribute types do not resolve across a major API version.
+
+       CamelWorks.Core.dll, CamelWorks.Nav.dll and CamelWorks.Nav.Clash.dll sit beside CamelWorks.UI
+       and are deliberately NOT declared: they are libraries, and Autodesk.Navisworks.Clash.dll
+       ships with Manage but not with Simulate, so CamelWorks.Nav.Clash is loaded by name the
+       moment a clash screen is opened rather than at start-up. A Simulate user therefore never
+       faults on it. -->
+
+  <Components Description="2027 Manage">
+    <RuntimeRequirements OS="Win64" Platform="NAVMAN" SeriesMin="Nw24" SeriesMax="Nw24" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2027\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2027 Simulate">
+    <RuntimeRequirements OS="Win64" Platform="NAVSIM" SeriesMin="Nw24" SeriesMax="Nw24" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2027\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2026 Manage">
+    <RuntimeRequirements OS="Win64" Platform="NAVMAN" SeriesMin="Nw23" SeriesMax="Nw23" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2026\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2026 Simulate">
+    <RuntimeRequirements OS="Win64" Platform="NAVSIM" SeriesMin="Nw23" SeriesMax="Nw23" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2026\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2025 Manage">
+    <RuntimeRequirements OS="Win64" Platform="NAVMAN" SeriesMin="Nw22" SeriesMax="Nw22" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2025\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2025 Simulate">
+    <RuntimeRequirements OS="Win64" Platform="NAVSIM" SeriesMin="Nw22" SeriesMax="Nw22" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2025\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2024 Manage">
+    <RuntimeRequirements OS="Win64" Platform="NAVMAN" SeriesMin="Nw21" SeriesMax="Nw21" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2024\CamelWorks.UI.dll" />
+  </Components>
+  <Components Description="2024 Simulate">
+    <RuntimeRequirements OS="Win64" Platform="NAVSIM" SeriesMin="Nw21" SeriesMax="Nw21" />
+    <ComponentEntry AppType="ManagedPlugin" ModuleName=".\2024\CamelWorks.UI.dll" />
+  </Components>
+
+</ApplicationPackage>

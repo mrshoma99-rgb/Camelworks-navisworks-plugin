@@ -1,0 +1,101 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    name: Windows (plug-in ${{ matrix.year }})
+    runs-on: windows-latest
+    env:
+      CI: "true"
+    strategy:
+      fail-fast: false
+      matrix:
+        year: ["2024", "2025", "2026", "2027"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # A Navisworks plug-in must compile against the API of the release it runs in, so every
+      # host-bound assembly is built once per year. CamelWorks.Nav.Clash is built separately and
+      # deliberately: it is the one assembly that needs Autodesk.Navisworks.Clash.dll, which ships
+      # with Manage and not with Simulate.
+      - name: Build CamelWorks.Nav (Release, Navisworks ${{ matrix.year }})
+        run: dotnet build CamelWorks.Nav/CamelWorks.Nav.csproj -c Release -p:NavisworksYear=${{ matrix.year }}
+
+      - name: Build CamelWorks.Nav.Clash (Release, Navisworks ${{ matrix.year }})
+        run: dotnet build CamelWorks.Nav.Clash/CamelWorks.Nav.Clash.csproj -c Release -p:NavisworksYear=${{ matrix.year }}
+
+      - name: Build CamelWorks.UI (Release, Navisworks ${{ matrix.year }})
+        run: dotnet build CamelWorks.UI/CamelWorks.UI.csproj -c Release -p:NavisworksYear=${{ matrix.year }}
+
+  installer:
+    name: Windows (installer)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build installer (Release)
+        run: dotnet build installer/CamelWorks.Installer/CamelWorks.Installer.csproj -c Release
+
+  # CamelWorks.Core is netstandard2.0 with no Autodesk reference, so it builds AND its tests run
+  # here. That is the whole point of the seam: the clash pipeline, the set compiler, the appearance
+  # fold, the graph runner, BCF and the report writers are all proved without a Navisworks anywhere.
+  core:
+    name: Linux (CamelWorks.Core + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build CamelWorks.Core (Release)
+        run: dotnet build CamelWorks.Core/CamelWorks.Core.csproj -c Release
+
+      - name: Test CamelWorks.Core
+        run: dotnet test CamelWorks.Core.Tests/CamelWorks.Core.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+      # Unit tests prove the writer emitted what it meant to. Only the published schema proves a
+      # receiving tool will accept it — which is how the missing BCF 3.0 AspectRatio was found.
+      - name: Validate written BCF against the published schemas
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libxml2-utils
+          schemas/bcf/validate.sh
+
+      - name: Check written PDFs are structurally sound
+        run: |
+          sudo apt-get install -y --no-install-recommends qpdf
+          checks/validate-pdf.sh
+
+      # A command lives in three places - the ribbon markup, the [Command] attribute and the
+      # catalogue - and nothing in the compiler connects them.
+      - name: Check the ribbon, the plug-in and the catalogue agree
+        run: python3 checks/validate-ribbon.py
+
+      # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
+      # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
+      # fails at the first click.
+      - name: Check the bundle manifest and the release workflow agree
+        run: python3 checks/validate-bundle.py
+
+      # Every ribbon command needs both icon sizes on disk; a missing one is a blank button.
+      - name: Check every command has its icons
+        run: python3 tools/icons.py --check
