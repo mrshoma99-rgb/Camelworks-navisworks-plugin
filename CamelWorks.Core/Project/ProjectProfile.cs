@@ -87,6 +87,9 @@ namespace CamelWorks.Core.Project
         /// <summary>The parties a clash can be assigned to, comma separated.</summary>
         public const string Parties = "coordinate.parties";
 
+        /// <summary>What this project calls its priorities, comma separated, most urgent first.</summary>
+        public const string Priorities = "coordinate.priorities";
+
         /// <summary>Where levels come from: the model's own, or inferred from geometry.</summary>
         public const string LevelSource = "data.levels";
 
@@ -295,8 +298,13 @@ namespace CamelWorks.Core.Project
         public double DuplicateBand => Number(ProfileKeys.DuplicateBand, 1.0);
 
         /// <summary>The parties a clash can be assigned to.</summary>
-        public IReadOnlyList<string> Parties =>
-            (Value(ProfileKeys.Parties) ?? string.Empty)
+        public IReadOnlyList<string> Parties => Listed(ProfileKeys.Parties);
+
+        /// <summary>What this project calls its priorities, most urgent first.</summary>
+        public IReadOnlyList<string> Priorities => Listed(ProfileKeys.Priorities);
+
+        private IReadOnlyList<string> Listed(string key) =>
+            (Value(key) ?? string.Empty)
                 .Split(',')
                 .Select(p => p.Trim())
                 .Where(p => p.Length > 0)
@@ -386,6 +394,9 @@ namespace CamelWorks.Core.Project
                 "sixteenths, which is what a tape measure is marked in - only used when lengths are "
                 + "in feet and inches",
                 Measure.Denominators.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList()));
+
+            settings.Add(new ProfileSetting(ProfileKeys.Priorities, "Priorities", "High, Medium, Low",
+                "the three every coordination board settles on when nobody states otherwise"));
 
             settings.Add(new ProfileSetting(ProfileKeys.LevelSource, "Levels from", "Model, then geometry",
                 "the model's own level property where it has one, and a height histogram where it does not",

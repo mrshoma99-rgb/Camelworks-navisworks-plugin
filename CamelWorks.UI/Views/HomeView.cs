@@ -104,7 +104,7 @@ namespace CamelWorks.UI.Views
 
         private static string RouteFor(string kind) => kind switch
         {
-            ActivityKind.Reconcile => "Project/Models",
+            ActivityKind.Reconcile => "Project/Health",
             ActivityKind.Regroup => "Coordinate/Triage",
             _ => "Coordinate/Report",
         };

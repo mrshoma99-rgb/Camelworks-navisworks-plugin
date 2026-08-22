@@ -88,8 +88,9 @@ namespace CamelWorks.UI.Shell
                     + "model with nothing configured."),
                 new WorkspaceTab("Setup", "Setup",
                     "What CamelWorks already derived, with an override on each line. Skippable."),
-                new WorkspaceTab("Models", "Models",
-                    "The federation: what is loaded, from where, and when it was last refreshed."),
+                new WorkspaceTab("Profile", "Profile",
+                    "Responsible parties, priorities and code tables. Created lazily; nothing blocks "
+                    + "on it."),
                 new WorkspaceTab("Export", "Export IFC",
                     "The IFC exporter, full pane.")),
 

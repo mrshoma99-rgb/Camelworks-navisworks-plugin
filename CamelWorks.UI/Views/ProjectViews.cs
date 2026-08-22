@@ -11,6 +11,8 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Store;
+using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
 {
@@ -34,7 +36,8 @@ namespace CamelWorks.UI.Views
         /// with the product; the IDS card takes the file your client sent and answers it against
         /// the model, which is the same question asked by somebody with a contract behind them.
         /// </summary>
-        public static UIElement Health() => Ui.Scroll(Ui.Stack(Intake(), BuiltIn(), Ids()));
+        public static UIElement Health() =>
+            Ui.Scroll(Ui.Stack(Intake(), Federation(), BuiltIn(), Ids()));
 
         /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
         private const string IntakeKey = "intake";
@@ -485,6 +488,284 @@ namespace CamelWorks.UI.Views
         /// nothing here has to be visited before any other feature works — which is the difference
         /// between a product you can try in a minute and one that starts with an afternoon of forms.
         /// </summary>
+        /// <summary>
+        /// The project file, as a screen.
+        ///
+        /// <b>It is created lazily and nothing blocks on it.</b> Every screen in the product works
+        /// against a raw model with none of this filled in; what is here makes the second project
+        /// faster, not the first one possible. A coordinator who never opens this tab gets the
+        /// whole product.
+        ///
+        /// Four things live here because all four are answers about the project rather than about
+        /// the model: who the parties are, what the priorities are called, which values a coded
+        /// property is allowed to hold, and the three operations that write into the model itself.
+        /// </summary>
+        public static UIElement Profile()
+        {
+            var session = Host.Current;
+
+            if (session == null)
+                return Ui.Scroll(Ui.Stack(Ui.Heading("Profile"), Ui.Sub(Host.NoModel)));
+
+            return Ui.Scroll(Ui.Stack(
+                Ui.Heading("Profile"),
+                Ui.Sub("What this project keeps beside the model. Created when you first change "
+                       + "something and never before; nothing anywhere waits for it."),
+                Ui.Line("Kept " + session.Store.Where, 0.75),
+                Parties(session),
+                Codes(session),
+                ModelWrites(session)));
+        }
+
+        /// <summary>Who a clash can be assigned to, and what the priorities are called.</summary>
+        private static UIElement Parties(Session session)
+        {
+            var status = Ui.Stack();
+
+            var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, 380);
+            var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, 380);
+
+            var save = Ui.Button("Save", () =>
+            {
+                status.Children.Clear();
+
+                Override(session, ProfileKeys.Parties, parties.Text);
+                Override(session, ProfileKeys.Priorities, priorities.Text);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Saved. The board's assign picker and the report's per-party split "
+                              + "both read this.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+            });
+
+            return Ui.Card("Responsible parties",
+                "Comma separated. Derived from the disciplines in the loaded models until you say otherwise",
+                Ui.Field("Parties", parties),
+                Ui.Field("Priorities", priorities),
+                Ui.Across(save),
+                Ui.Note("Leave these alone and the board still works: the assignee is free text and "
+                        + "the priorities are the built-in three. Filling them in turns two free-text "
+                        + "boxes into pickers, which is worth about a minute a week."),
+                status);
+        }
+
+        /// <summary>
+        /// The values a coded property is allowed to hold.
+        ///
+        /// The point is the refusal. A lookup that silently passes an unlisted value does nothing:
+        /// the whole reason a project keeps a code list is that "L3-MECH-01" and "L03 MECH 1" are
+        /// the same thing to a person and two different things to every downstream tool, and the
+        /// only moment either can be caught is the moment somebody writes one.
+        /// </summary>
+        private static UIElement Codes(Session session)
+        {
+            var status = Ui.Stack();
+            var list = Ui.Stack();
+
+            var name = Ui.Text("Uniclass", null, 180);
+            var body = Ui.Text(string.Empty, null, 420);
+
+            var tables = CodeTables.FromJson(
+                session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+
+            void Redraw()
+            {
+                list.Children.Clear();
+
+                if (tables.IsEmpty)
+                {
+                    list.Children.Add(Ui.Empty("No code tables.",
+                        "Paste one in above. Everything works without one; a table turns a free-text "
+                        + "property into a checked one."));
+
+                    return;
+                }
+
+                foreach (var tableName in tables.Names)
+                {
+                    var table = tables.Find(tableName)!;
+                    var mine = tableName;
+
+                    list.Children.Add(Ui.Across(
+                        Ui.Pill(table.ToString()),
+                        Ui.Button("Load", () =>
+                        {
+                            name.Text = mine;
+                            body.Text = table.ToText();
+                        }),
+                        Ui.Button("Remove", () =>
+                        {
+                            tables.Remove(mine);
+                            Store(session, tables, status);
+                            Redraw();
+                        })));
+                }
+            }
+
+            var add = Ui.Button("Save this table", () =>
+            {
+                status.Children.Clear();
+
+                var parsed = CodeTable.Parse(name.Text, body.Text);
+
+                if (parsed.IsEmpty && tables.Find(name.Text) == null)
+                {
+                    status.Children.Add(Ui.Problem("Nothing in that box reads as a code. One row per "
+                        + "line: the code, then optionally a description and a parent, separated by "
+                        + "commas or tabs."));
+
+                    return;
+                }
+
+                tables.Put(parsed);
+                Store(session, tables, status);
+
+                status.Children.Add(Ui.Line(parsed.IsEmpty
+                    ? "Removed - an empty table means you do not want it, not that you want an empty one."
+                    : parsed.ToString() + " saved. Data can now assign from it, and Health reports "
+                      + "anything out of it.", 0.8));
+
+                Redraw();
+            });
+
+            Redraw();
+
+            return Ui.Card("Code tables",
+                "The values a coded property is allowed to hold, and the ones it is not",
+                Ui.Field("Name", name),
+                Ui.Field("Rows", body),
+                Ui.Across(add),
+                Ui.Note("One row per line: code, description, parent - commas or tabs between them, "
+                        + "and a line starting with # is a comment. Paste the column straight out of "
+                        + "the spreadsheet your client sent."),
+                list,
+                status);
+        }
+
+        private static void Store(Session session, CodeTables tables, Panel status)
+        {
+            session.Store.Section(ProjectStore.ProfileSection).Set("codeTables", tables.ToJson());
+
+            if (!session.Store.Save())
+                status.Children.Add(Ui.Problem(session.Store.LastSaveProblem
+                                               ?? "Could not write the project file."));
+        }
+
+        /// <summary>
+        /// The three things that write into the model, each behind a count of what it would touch.
+        ///
+        /// These are off the ribbon on purpose. Writing into a federation is the one destructive
+        /// thing this product does, and it is destructive in a way Ctrl+Z does not reach — so the
+        /// buttons live where somebody has to go looking for them, and each one says how many
+        /// elements it would affect before it does anything.
+        /// </summary>
+        private static UIElement ModelWrites(Session session)
+        {
+            var status = Ui.Stack();
+
+            var count = Ui.Runner("Count what CamelWorks has written", status, job =>
+            {
+                var carrying = Carrying(session, job, out var read);
+
+                if (read < 0) return;
+
+                status.Children.Add(Ui.Line(Ui.Count(carrying.Count, "element")
+                    + " of " + Ui.Count(read, "element") + " carry a CamelWorks property.", 1, true));
+
+                if (carrying.Count == 0)
+                {
+                    status.Children.Add(Ui.Note("Nothing to remove. CamelWorks keeps its work in the "
+                        + "project file beside the model; properties are only written when you ask "
+                        + "for them on the Data tab."));
+
+                    return;
+                }
+
+                status.Children.Add(Ui.Button("Remove them from " + Ui.Count(carrying.Count, "element"),
+                    () => Strip(session, carrying, status)));
+            });
+
+            return Ui.Card("Model writes",
+                "The three operations that touch the model itself",
+                count,
+                Ui.Note("Ctrl+Z does not undo a property write - Navisworks does not put custom "
+                        + "property writes on its undo stack. What CamelWorks wrote is recorded in "
+                        + "the project journal, and removing it here is the way back."),
+                status);
+        }
+
+        /// <summary>Every element carrying anything in the CamelWorks tab.</summary>
+        private static List<ElementKey> Carrying(Session session, Job job, out int read)
+        {
+            var carrying = new List<ElementKey>();
+            read = 0;
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+            {
+                if (read % 2000 == 0 && !job.Step(read, "elements read")) { read = -1; return carrying; }
+
+                read++;
+
+                foreach (var property in item.Properties())
+                {
+                    if (!string.Equals(property.Category, NavWriteTransaction.TabName,
+                                       StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (string.IsNullOrEmpty(property.Value)) continue;
+
+                    carrying.Add(item.Key);
+                    break;
+                }
+            }
+
+            return carrying;
+        }
+
+        /// <summary>Take every CamelWorks property back off the elements that carry one.</summary>
+        private static void Strip(Session session, IReadOnlyList<ElementKey> keys, Panel status)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var key in keys)
+            {
+                var item = session.Model.Resolve(key);
+                if (item == null) continue;
+
+                foreach (var property in item.Properties())
+                    if (string.Equals(property.Category, NavWriteTransaction.TabName,
+                                      StringComparison.OrdinalIgnoreCase))
+                        names.Add(property.Name);
+            }
+
+            int written;
+
+            using (var write = new NavWriteTransaction(session.Model, "CamelWorks: remove properties"))
+            {
+                foreach (var key in keys)
+                    foreach (var property in names)
+                        write.RemoveProperty(key, NavWriteTransaction.TabName, property);
+
+                written = write.Commit();
+            }
+
+            status.Children.Add(Ui.Line("Removed " + Ui.Count(names.Count, "property") + " from "
+                + Ui.Count(written, "element") + ".", 1, true));
+
+            session.Record(ActivityKind.Write,
+                "removed CamelWorks properties from " + Ui.Count(written, "element"));
+        }
+
+        /// <summary>Write one profile override and leave the rest alone.</summary>
+        private static void Override(Session session, string key, string? value)
+        {
+            var setting = session.Profile.Find(key);
+            if (setting != null) setting.Override = value;
+
+            session.Store.Section(ProjectStore.ProfileSection)
+                   .Set(key, JsonValue.String(string.IsNullOrWhiteSpace(value) ? null : value!.Trim()));
+        }
+
         public static UIElement Setup()
         {
             var session = Host.Current;
@@ -552,12 +833,12 @@ namespace CamelWorks.UI.Views
         /// federation whose sources changed a fortnight ago and show it without comment, and the
         /// coordination that follows is against a model nobody is building.
         /// </summary>
-        public static UIElement Models()
+        private static UIElement Federation()
         {
             var session = Host.Current;
 
             if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Models"), Ui.Sub(Host.NoModel)));
+                return Ui.Card("The federation", Host.NoModel);
 
             var savedAt = FileTime(session.SavedPath);
             var rows = new List<TableRow>();
@@ -623,11 +904,10 @@ namespace CamelWorks.UI.Views
 
             body.Children.Add(Repoint(session));
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Models"),
-                Ui.Sub("What is loaded, from where, and whether the file on disk has moved on since this "
-                       + "federation was saved."),
-                body));
+            return Ui.Card("The federation",
+                "What is loaded, from where, and whether the file on disk has moved on since this "
+                + "federation was saved",
+                body);
         }
 
         private static UIElement Repoint(Session session)

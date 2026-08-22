@@ -92,13 +92,13 @@ namespace CamelWorks.UI.Shell
                 new[] { "configure", "settings", "options", "preferences" },
                 new[] { "where do I set this up", "do I have to configure it first" }),
 
-            Pane("ID_CW_FixLinks", "Fix Broken Links", "Project/Models",
+            Act("ID_CW_FixLinks", "Fix Broken Links",
                 "Find the sources a loaded model can no longer see, and what changed since the "
                 + "federation was saved.",
                 new[] { "missing model", "relink", "repath", "broken reference" },
                 new[] { "model did not load", "file not found", "the NWF points at the wrong folder" }),
 
-            Pane("ID_CW_ProjectProfile", "Project Profile", "Project/Setup",
+            Pane("ID_CW_ProjectProfile", "Project Profile", "Project/Profile",
                 "What this project's settings are, where each came from, and an override on each line.",
                 new[] { "template", "profile", "preset" },
                 new[] { "set this up the same way on the next job" }),
