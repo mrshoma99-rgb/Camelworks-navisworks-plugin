@@ -118,6 +118,7 @@ namespace CamelWorks.UI.Views
                 var geometry = new NavGeometry(session.Model);
                 var meshes = new List<GltfMesh>();
                 var read = 0;
+                var silent = 0;
                 var capped = false;
 
                 foreach (var item in Scope(session, scope()))
@@ -132,7 +133,11 @@ namespace CamelWorks.UI.Views
 
                     var mesh = geometry.Read(item, Name(item));
 
-                    if (mesh == null) continue;
+                    // Counted, not dropped. An element the tree says has geometry and the COM
+                    // layer will not give triangles for is worth a number on the screen: it is
+                    // usually a handful and occasionally it is everything, and those two look
+                    // identical if nothing counts them.
+                    if (mesh == null) { silent++; continue; }
 
                     Paint(session, item, mesh, colour);
                     meshes.Add(mesh);
@@ -165,6 +170,13 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Line("Written to " + file + ".", 0.8));
 
                 foreach (var note in written.Notes) results.Children.Add(Ui.Note(note));
+
+                if (silent > 0)
+                    results.Children.Add(Ui.Note(Ui.Count(silent, "element")
+                        + " the model says carry geometry gave no triangles when read. A handful is "
+                        + "ordinary - a group node that owns its children's geometry rather than any "
+                        + "of its own reads this way. A large number means the read is failing, and "
+                        + "the file is short by that much."));
 
                 if (capped)
                     results.Children.Add(Ui.Note("It stopped at " + Ui.Count(Ceiling, "element")

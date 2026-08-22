@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Autodesk.Navisworks.Api;
 using Autodesk.Navisworks.Api.ComApi;
 using Autodesk.Navisworks.Api.Interop.ComApi;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Report;
 
 namespace CamelWorks.Nav
@@ -36,18 +37,28 @@ namespace CamelWorks.Nav
         /// <summary>
         /// One element's triangles, in metres, in world coordinates.
         /// </summary>
-        /// <param name="item">The element.</param>
+        /// <param name="item">
+        /// The element, as the seam hands it over. Taken as the seam type rather than the host's
+        /// own, because that is what a traversal yields and what every caller already holds:
+        /// asking a UI screen to produce an Autodesk.Navisworks.Api.ModelItem would push the host
+        /// type back across the seam this whole assembly exists to keep on one side of it.
+        /// </param>
         /// <param name="name">What the node should be called.</param>
         /// <returns>A mesh, or null when the element carries no triangles.</returns>
-        public GltfMesh? Read(ModelItem item, string name)
+        public GltfMesh? Read(IModelItem? item, string name)
         {
-            if (item == null) return null;
+            // Unwrapped rather than looked up by key: the traversal is already holding the host
+            // item, and resolving it again through the document's index would be a dictionary hit
+            // per element for something already in hand.
+            var host = (item as NavModelItem)?.Item;
+
+            if (host == null) return null;
 
             var sink = new TriangleSink(_scale);
 
             try
             {
-                var selection = new ModelItemCollection { item };
+                var selection = new ModelItemCollection { host };
                 var com = ComApiBridge.ToInwOpSelection(selection);
 
                 foreach (InwOaPath3 path in com.Paths())
