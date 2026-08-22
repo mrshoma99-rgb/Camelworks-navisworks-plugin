@@ -48,7 +48,9 @@ namespace CamelWorks.Core.Report
                 switch (block)
                 {
                     case HeadingBlock heading: layout.Heading(heading); break;
-                    case ParagraphBlock paragraph: layout.Paragraph(paragraph.Text); break;
+                    case ParagraphBlock paragraph:
+                        layout.Paragraph(paragraph.Text, paragraph.IsBold);
+                        break;
                     case PageBreakBlock _: layout.NewPage(); break;
                     case TableBlock table: layout.Table(table); break;
                     case ImageBlock image: layout.Image(image); break;
@@ -126,14 +128,14 @@ namespace CamelWorks.Core.Report
                 }
             }
 
-            internal void Paragraph(string? text)
+            internal void Paragraph(string? text, bool bold = false)
             {
                 if (string.IsNullOrWhiteSpace(text)) return;
 
-                foreach (var line in Wrap(text!, Usable, BodySize, bold: false))
+                foreach (var line in Wrap(text!, Usable, BodySize, bold))
                 {
                     Need(Leading);
-                    Text(line, Margin, _y, BodySize, bold: false);
+                    Text(line, Margin, _y, BodySize, bold);
                     _y -= Leading;
                 }
 

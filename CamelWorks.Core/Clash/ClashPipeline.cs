@@ -49,6 +49,22 @@ namespace CamelWorks.Core.Clash
         public bool AssignedByHand { get; private set; }
 
         /// <summary>
+        /// What to do about this group, once somebody has said.
+        ///
+        /// Never derived and never guessed: no rule sets one, because a rule cannot know what the
+        /// right fix is. It is <see cref="Resolution.None"/> until a person decides, and a report
+        /// prints that as "resolution not stated" rather than inventing an instruction.
+        /// </summary>
+        public Resolution Instruction { get; internal set; } = Resolution.None;
+
+        /// <summary>
+        /// Record what to do about it. The counterpart of <see cref="AssignByHand"/>: an
+        /// instruction is a decision, so it goes in through a named door and survives a re-run.
+        /// </summary>
+        /// <param name="instruction">The instruction, or null to clear it.</param>
+        public void Instruct(Resolution? instruction) => Instruction = instruction ?? Resolution.None;
+
+        /// <summary>
         /// Record a person's decision. The only way to set a party from outside the pipeline, so
         /// that a hand assignment can never be mistaken for a rule's guess and quietly overwritten.
         /// </summary>
@@ -76,10 +92,15 @@ namespace CamelWorks.Core.Clash
     public sealed class GroupDecision
     {
         /// <summary>Create a decision.</summary>
-        public GroupDecision(string? assignedTo = null, string? priority = null)
+        /// <param name="assignedTo">Responsible party a person chose.</param>
+        /// <param name="priority">Priority a person chose.</param>
+        /// <param name="instruction">What a person said to do about it.</param>
+        public GroupDecision(string? assignedTo = null, string? priority = null,
+                             Resolution? instruction = null)
         {
             AssignedTo = assignedTo;
             Priority = priority;
+            Instruction = instruction ?? Resolution.None;
         }
 
         /// <summary>Responsible party a person chose.</summary>
@@ -87,6 +108,14 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Priority a person chose.</summary>
         public string? Priority { get; }
+
+        /// <summary>What a person said to do about it.</summary>
+        public Resolution Instruction { get; }
+
+        /// <summary>True when there is anything here worth carrying to the next run.</summary>
+        public bool IsSomething =>
+            !string.IsNullOrWhiteSpace(AssignedTo) || !string.IsNullOrWhiteSpace(Priority)
+            || Instruction.IsStated;
     }
 
     /// <summary>
@@ -342,6 +371,8 @@ namespace CamelWorks.Core.Clash
                     group.AssignByHand(decision.AssignedTo, decision.Priority);
                 else if (!string.IsNullOrWhiteSpace(decision.Priority))
                     group.Priority = decision.Priority;
+
+                if (decision.Instruction.IsStated) group.Instruct(decision.Instruction);
             }
 
             var assigned = 0;

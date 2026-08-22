@@ -79,7 +79,7 @@ namespace CamelWorks.Core.Report
                     break;
 
                 case ParagraphBlock p:
-                    sb.Append("<p>");
+                    sb.Append(p.IsBold ? "<p class=\"strong\">" : "<p>");
                     Escape(sb, p.Text);
                     sb.Append("</p>\n");
                     break;
@@ -276,6 +276,7 @@ namespace CamelWorks.Core.Report
             ".swatch{display:inline-block;width:11px;height:11px;margin-right:5px;border:1px solid #0003;vertical-align:-1px}" +
             ".count{color:#888}" +
             ".disclosure{margin:18px 0;padding:10px 14px;background:#fbf7e8;border-left:3px solid #d8b64a}" +
+            "p.strong{font-weight:600}" +
             ".pagebreak{page-break-after:always}" +
             "@media print{body{padding:0}}";
     }

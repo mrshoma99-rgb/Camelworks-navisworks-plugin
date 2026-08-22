@@ -84,8 +84,14 @@ namespace CamelWorks.Core.Clash
 
             foreach (var group in result.Groups)
             {
-                if (group.AssignedByHand)
-                    decisions[group.Name] = new GroupDecision(group.AssignedTo, group.Priority);
+                // An instruction counts as a decision even where the party came from a rule: it is
+                // the only thing on the board that no rule can reproduce, so losing it on a re-run
+                // would lose the one part a person actually authored.
+                if (group.AssignedByHand || group.Instruction.IsStated)
+                    decisions[group.Name] = new GroupDecision(
+                        group.AssignedByHand ? group.AssignedTo : null,
+                        group.AssignedByHand ? group.Priority : null,
+                        group.Instruction);
 
                 foreach (var item in group.Items)
                     records.Add(new ClashRecord(item.Key, item.Status, group.Name, group.IsPinned, item.TestName));

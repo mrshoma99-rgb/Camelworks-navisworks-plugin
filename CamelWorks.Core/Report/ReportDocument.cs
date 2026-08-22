@@ -90,6 +90,15 @@ namespace CamelWorks.Core.Report
 
         /// <summary>The text.</summary>
         public string Text { get; }
+
+        /// <summary>
+        /// True when the line carries more weight than the prose around it.
+        ///
+        /// One use, deliberately: the resolution instruction under a group's image. That pairing —
+        /// a picture of the problem and one sentence saying what to do about it — is the whole
+        /// deliverable, and a reader skimming forty pages has to be able to find the sentence.
+        /// </summary>
+        public bool IsBold { get; set; }
     }
 
     /// <summary>Forces the next block onto a new page in paginated output; ignored elsewhere.</summary>

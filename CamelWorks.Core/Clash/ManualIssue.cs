@@ -58,6 +58,12 @@ namespace CamelWorks.Core.Clash
         /// <summary>What is wrong, in the words of whoever saw it.</summary>
         public string? Note { get; set; }
 
+        /// <summary>
+        /// What to do about it, once somebody has said. An issue somebody raised deserves the
+        /// typed instruction as much as a clash does — more, since nobody's engine will restate it.
+        /// </summary>
+        public Resolution Instruction { get; set; } = Resolution.None;
+
         /// <summary>Who has to do something about it.</summary>
         public string? AssignedTo { get; set; }
 
@@ -121,6 +127,7 @@ namespace CamelWorks.Core.Clash
                 .Set("z", JsonValue.Number(Z));
 
             if (!string.IsNullOrEmpty(Note)) json.Set("note", JsonValue.String(Note));
+            if (Instruction.IsStated) json.Set("instruction", Instruction.ToJson());
             if (!string.IsNullOrEmpty(AssignedTo)) json.Set("party", JsonValue.String(AssignedTo));
             if (!string.IsNullOrEmpty(Priority)) json.Set("priority", JsonValue.String(Priority));
             if (!string.IsNullOrEmpty(Level)) json.Set("level", JsonValue.String(Level));
@@ -161,6 +168,7 @@ namespace CamelWorks.Core.Clash
             };
 
             issue.RaisedTicks = json["raised"].AsLong();
+            issue.Instruction = Resolution.FromJson(json["instruction"]);
 
             foreach (var element in json["elements"].Items)
             {

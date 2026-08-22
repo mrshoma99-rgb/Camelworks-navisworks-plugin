@@ -164,10 +164,13 @@ namespace CamelWorks.UI.Views
             // reported, so comparing it against the previous run would find it missing from the
             // engine's results and call it resolved every single week.
             var everything = new List<ClashItem>(survivors);
-            var raised = Issues(session).Open();
+            var issues = Issues(session);
+            var raised = issues.Open();
             everything.AddRange(raised);
 
             var board = ClashPipeline.Run(everything, options);
+
+            Instruct(board, issues);
 
             if (raised.Count > 0)
                 notes.Add(Ui.Count(raised.Count, "issue") + " raised by hand "
@@ -250,10 +253,14 @@ namespace CamelWorks.UI.Views
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
 
+            var raised = Issues(session);
+
             var everything = new List<ClashItem>(hydrated.Items);
-            everything.AddRange(Issues(session).Open());
+            everything.AddRange(raised.Open());
 
             var board = ClashPipeline.Run(everything, options);
+
+            Instruct(board, raised);
 
             notes.Add(hydrated.Explain());
             notes.Add("This board was rebuilt from what the project file recorded, because this "
@@ -404,6 +411,27 @@ namespace CamelWorks.UI.Views
             if (saved.Kind == JsonKind.Object) saved.Remove(name);
         }
 
+        /// <summary>
+        /// Carry an issue's own instruction onto the group it became.
+        ///
+        /// The decisions map still wins where it has one, so instructing the group afterwards is
+        /// not undone by the issue's record the next time the board loads.
+        /// </summary>
+        /// <param name="board">The board that has just been built.</param>
+        /// <param name="issues">Every issue raised on this project.</param>
+        private static void Instruct(ClashPipelineResult board, ManualIssueList issues)
+        {
+            foreach (var issue in issues.Issues)
+            {
+                if (!issue.Instruction.IsStated) continue;
+
+                var group = board.Groups.FirstOrDefault(g =>
+                    string.Equals(g.Name, issue.Title, StringComparison.Ordinal));
+
+                if (group != null && !group.Instruction.IsStated) group.Instruct(issue.Instruction);
+            }
+        }
+
         /// <summary>Every issue somebody raised on this project, from the project file.</summary>
         internal static ManualIssueList Issues(Session session) =>
             ManualIssueList.FromJson(session.Store.Section(ProjectStore.ClashSection)["issues"]);
@@ -412,7 +440,7 @@ namespace CamelWorks.UI.Views
         private static void SaveIssues(Session session, ManualIssueList issues) =>
             session.Store.Section(ProjectStore.ClashSection).Set("issues", issues.ToJson());
 
-        /// <summary>The assignments made by hand, which outrank the rules and survive a re-run.</summary>
+        /// <summary>The decisions made by hand, which outrank the rules and survive a re-run.</summary>
         private static IReadOnlyDictionary<string, GroupDecision> Decisions(Session session)
         {
             var decisions = new Dictionary<string, GroupDecision>(StringComparer.Ordinal);
@@ -420,9 +448,51 @@ namespace CamelWorks.UI.Views
 
             foreach (var name in saved.Keys)
                 decisions[name] = new GroupDecision(saved[name]["party"].AsString(),
-                                                   saved[name]["priority"].AsString());
+                                                   saved[name]["priority"].AsString(),
+                                                   Resolution.FromJson(saved[name]["instruction"]));
 
             return decisions;
+        }
+
+        /// <summary>
+        /// Write one decision about a group into the project file, merging with what is there.
+        ///
+        /// Merging, not replacing: assigning a group and instructing it are two separate actions on
+        /// two separate days, and a writer that replaced the record would silently drop whichever
+        /// one was done first.
+        /// </summary>
+        /// <param name="session">The session.</param>
+        /// <param name="group">The group's name, which is its identity across runs.</param>
+        /// <param name="party">The responsible party, or null to leave it alone.</param>
+        /// <param name="priority">The priority, or null to leave it alone.</param>
+        /// <param name="instruction">What to do about it, or null to leave it alone.</param>
+        private static void Remember(Session session, string group, string? party = null,
+                                     string? priority = null, Resolution? instruction = null)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var decisions = section["decisions"];
+
+            if (decisions.Kind != JsonKind.Object)
+            {
+                decisions = JsonValue.Object();
+                section.Set("decisions", decisions);
+            }
+
+            var decision = decisions[group];
+
+            if (decision.Kind != JsonKind.Object)
+            {
+                decision = JsonValue.Object();
+                decisions.Set(group, decision);
+            }
+
+            if (party != null) decision.Set("party", JsonValue.String(party));
+            if (priority != null) decision.Set("priority", JsonValue.String(priority));
+
+            if (instruction == null) return;
+
+            if (instruction.IsStated) decision.Set("instruction", instruction.ToJson());
+            else decision.Remove("instruction");
         }
 
         /// <summary>
@@ -953,21 +1023,75 @@ namespace CamelWorks.UI.Views
             {
                 status.Children.Clear();
                 group.AssignByHand(party);
-
-                var section = session.Store.Section(ProjectStore.ClashSection);
-                var decisions = section["decisions"];
-
-                if (decisions.Kind != JsonKind.Object)
-                {
-                    decisions = JsonValue.Object();
-                    section.Set("decisions", decisions);
-                }
-
-                decisions.Set(group.Name, JsonValue.Object().Set("party", JsonValue.String(party)));
+                Remember(session, group.Name, party);
 
                 status.Children.Add(session.Store.Save()
                     ? Ui.Line("\"" + group.Name + "\" goes to " + party
                               + ". A hand assignment outranks the rules and survives the next run.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+            });
+
+            // --- what to do about it ------------------------------------------------------
+            // Four typed fields rather than a comment box. A comment cannot be drawn as an arrow,
+            // cannot be checked against next week's model, and means three things to three readers.
+            var units = session.Profile.Units;
+
+            var verb = group.Instruction.ActionWord;
+            var verbPicker = Ui.Choice(Resolution.Actions, verb, v => verb = v);
+
+            var way = group.Instruction.DirectionWord;
+            var wayPicker = Ui.Choice(Resolution.Directions, way, v => way = v);
+
+            var howFar = Ui.Text(group.Instruction.Amount.HasValue
+                ? units.Bare(group.Instruction.Amount.Value) : string.Empty, null, 90);
+
+            var why = Ui.Text(group.Instruction.Note ?? string.Empty, null, 260);
+
+            var stated = Ui.Line(group.Instruction.Describe(units), 0.85);
+
+            var instruct = Ui.Button("Record what to do", () =>
+            {
+                status.Children.Clear();
+
+                var action = Resolution.ActionOf(verb);
+
+                double? amount = null;
+
+                if (!string.IsNullOrWhiteSpace(howFar.Text))
+                {
+                    if (!units.TryRead(howFar.Text, out var read))
+                    {
+                        status.Children.Add(Ui.Problem("\"" + howFar.Text.Trim()
+                            + "\" is not a distance. A bare number is read in "
+                            + units.LengthUnit + "."));
+                        return;
+                    }
+
+                    amount = read;
+                }
+
+                // The picked row names the element, when one is picked. Otherwise the instruction
+                // is about the group, which is the honest answer when nobody said otherwise.
+                var picked = table.PickedMany().OfType<ClashItem>().FirstOrDefault();
+
+                var instruction = new Resolution(action,
+                    picked?.CategoryA,
+                    Resolution.AxisOf(way),
+                    amount,
+                    why.Text,
+                    picked?.Key.A.ToString());
+
+                group.Instruct(instruction);
+                Remember(session, group.Name, instruction: instruction);
+
+                stated.Text = instruction.Describe(units);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line(instruction.IsStated
+                        ? "Recorded. It prints under this group in the report, draws as an arrow in "
+                          + "review, and survives the next run - no rule can restate it."
+                        : "Cleared. The report will say the resolution is not stated, which is the "
+                          + "truth and reads better than a blank line.", 0.8)
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
             });
 
@@ -1064,6 +1188,16 @@ namespace CamelWorks.UI.Views
                 + (group.IsPinned ? " - made by hand" : string.Empty),
                 Ui.Field("Assign to", picker),
                 Ui.Across(assign, release, undo),
+                Ui.Field("What to do", verbPicker),
+                Ui.Field("Which way", wayPicker),
+                Ui.Field("How far (" + units.LengthUnit + ")", howFar),
+                Ui.Field("Note", why),
+                Ui.Across(instruct),
+                stated,
+                Ui.Note("Pick a row first and the instruction names that element and starts its arrow "
+                        + "there; leave everything unpicked and it is about the group. A group nobody "
+                        + "has instructed prints \"" + Resolution.Unstated.ToLowerInvariant()
+                        + "\" rather than a blank line."),
                 Ui.Field("Move picked into", newGroup),
                 Ui.Across(regroup),
                 Ui.Field("Mark picked as", marker),
@@ -1345,22 +1479,8 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Record the party against the group the issue will become.</summary>
-            private static void Decide(Session session, string group, string party, string? priority)
-            {
-                var section = session.Store.Section(ProjectStore.ClashSection);
-                var decisions = section["decisions"];
-
-                if (decisions.Kind != JsonKind.Object)
-                {
-                    decisions = JsonValue.Object();
-                    section.Set("decisions", decisions);
-                }
-
-                var decision = JsonValue.Object().Set("party", JsonValue.String(party));
-                if (priority != null) decision.Set("priority", JsonValue.String(priority));
-
-                decisions.Set(group, decision);
-            }
+            private static void Decide(Session session, string group, string party, string? priority) =>
+                Remember(session, group, party, priority);
         }
 
         // ===================================================================================
@@ -2303,9 +2423,9 @@ namespace CamelWorks.UI.Views
             Since(document, groups, regressed);
 
             document.Heading("Groups");
-            document.Add(Summary(groups));
+            document.Add(Summary(groups, session.Profile.Units));
 
-            if (images.Count > 0) Pictures(document, groups, images);
+            if (images.Count > 0) Pictures(document, groups, images, session.Profile.Units);
 
             document.PageBreak();
             document.Heading("Every clash");
@@ -2348,9 +2468,16 @@ namespace CamelWorks.UI.Views
                     + "elements involved carry no stable identity. Their history is a best guess.");
         }
 
-        /// <summary>A rendered view of each group that produced one, with its own heading.</summary>
+        /// <summary>
+        /// A rendered view of each group that produced one, with its own heading and its instruction.
+        ///
+        /// The instruction goes directly under the image, in bold, because that pairing is the whole
+        /// deliverable: a picture of the problem and one sentence saying what to do about it. A
+        /// group nobody has instructed says so rather than leaving a gap the reader has to
+        /// interpret.
+        /// </summary>
         private static void Pictures(ReportDocument document, IReadOnlyList<ClashGroup> groups,
-                                     IReadOnlyDictionary<string, byte[]> images)
+                                     IReadOnlyDictionary<string, byte[]> images, Measure units)
         {
             document.PageBreak();
             document.Heading("Where they are");
@@ -2362,18 +2489,21 @@ namespace CamelWorks.UI.Views
                 document.Heading(group.Name, 2);
                 document.Add(new ImageBlock(png,
                     Ui.Count(group.Items.Count, "clash") + " - " + (group.AssignedTo ?? "unassigned")));
+
+                document.Add(new ParagraphBlock(group.Instruction.Describe(units)) { IsBold = true });
             }
         }
 
-        private static TableBlock Summary(IReadOnlyList<ClashGroup> groups)
+        private static TableBlock Summary(IReadOnlyList<ClashGroup> groups, Measure units)
         {
-            var table = new TableBlock("Group", "Clashes", "Assigned to", "Priority");
+            var table = new TableBlock("Group", "Clashes", "Assigned to", "Priority", "What to do");
 
             foreach (var group in groups)
                 table.Row(group.Name,
                     group.Items.Count.ToString("N0", CultureInfo.InvariantCulture),
                     group.AssignedTo ?? "unassigned",
-                    group.Priority ?? string.Empty);
+                    group.Priority ?? string.Empty,
+                    group.Instruction.Describe(units));
 
             return table;
         }
