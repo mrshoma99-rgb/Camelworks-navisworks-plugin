@@ -1420,7 +1420,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (!job.Step(flat.Count + pivot.Count, "elements read")) return;
 
-                    var value = _measure == "Count" ? "1" : Measure(item, _measure);
+                    var value = _measure == "Count" ? "1" : MeasureOf(item, _measure);
                     var row = AxisOf(session, item, _rows);
 
                     if (wide) pivot.Add(new PivotLine(item.DisplayName, row, AxisOf(session, item, _columns), value));
@@ -1663,7 +1663,14 @@ namespace CamelWorks.UI.Views
             };
         }
 
-        private static string? Measure(IModelItem item, string measure) =>
+        /// <summary>
+        /// The value of a measured property, whichever tab carries it.
+        ///
+        /// Named MeasureOf and not Measure or Quantity: both of those are Core type names this
+        /// file imports, and a method that shadows one makes the type unusable in the whole class -
+        /// which is a compile error a long way from the line that caused it.
+        /// </summary>
+        private static string? MeasureOf(IModelItem item, string measure) =>
             item.Property("Element", measure)
             ?? item.Property("Item", measure)
             ?? item.Property("Revit Material Takeoff", measure)

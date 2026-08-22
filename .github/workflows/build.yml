@@ -105,6 +105,12 @@ jobs:
       - name: Check no Core type name shadows WPF or Navisworks
         run: python3 checks/validate-core-names.py
 
+      # C# finds a member before a type, so a helper named after a Core type makes that type
+      # unreachable in the whole class - and the error lands wherever the type was used, not where
+      # the helper was declared. Invisible here: Core builds on Linux, the host assemblies do not.
+      - name: Check no host member shadows a Core type
+        run: python3 checks/validate-shadowing.py
+
       # Adding a member to a seam interface breaks every implementer, and two of the three
       # assemblies that implement them cannot be compiled on this runner at all — so the break is
       # invisible here and arrives as five simultaneous CS0535 failures on the Windows jobs.
