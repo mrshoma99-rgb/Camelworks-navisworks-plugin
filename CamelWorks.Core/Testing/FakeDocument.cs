@@ -161,6 +161,9 @@ namespace CamelWorks.Core.Testing
         /// <summary>True when the host is holding this model somewhere other than where it was authored.</summary>
         public bool HasTransform { get; set; }
 
+        /// <summary>Where the federation is holding it. Settable, so a test can stage a move.</summary>
+        public IReadOnlyList<double>? Placement { get; set; }
+
         /// <inheritdoc />
         public string DisplayName { get; }
 

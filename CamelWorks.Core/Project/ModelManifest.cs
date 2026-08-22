@@ -53,6 +53,32 @@ namespace CamelWorks.Core.Project
         /// <summary>The discipline in force for it, when the profile worked one out.</summary>
         public string? Discipline { get; set; }
 
+        /// <summary>
+        /// Where the federation was holding it: twelve numbers, as <c>IModelSource.Placement</c>
+        /// writes them. Kept so a placement that changes can be put back.
+        /// </summary>
+        public IReadOnlyList<double>? Placement { get; set; }
+
+        /// <summary>
+        /// True when this model is somewhere other than where the other record had it.
+        ///
+        /// Compared at four decimal places, which is a tenth of a millimetre in metres: a re-export
+        /// nudges the last bit of a double, and a health check that called that a move would cry
+        /// wolf every week.
+        /// </summary>
+        /// <param name="other">The record to compare against.</param>
+        public bool MovedSince(ModelRecord? other)
+        {
+            if (other?.Placement == null || Placement == null) return false;
+            if (other.Placement.Count != Placement.Count) return true;
+
+            for (var i = 0; i < Placement.Count; i++)
+                if (Math.Abs(Placement[i] - other.Placement[i]) > 0.0001)
+                    return true;
+
+            return false;
+        }
+
         /// <summary>The timestamp as a report prints it.</summary>
         public string When =>
             Modified.HasValue
@@ -91,6 +117,9 @@ namespace CamelWorks.Core.Project
             if (Items.HasValue) json.Set("items", JsonValue.Number(Items.Value));
             if (Discipline != null) json.Set("discipline", JsonValue.String(Discipline));
 
+            if (Placement != null && Placement.Count == 12)
+                json.Set("placement", JsonValue.Array(Placement.Select(JsonValue.Number)));
+
             if (Bounds.HasValue)
             {
                 var b = Bounds.Value;
@@ -127,6 +156,10 @@ namespace CamelWorks.Core.Project
 
             if (json["bytes"].Kind == JsonKind.Number) record.Bytes = json["bytes"].AsLong();
             if (json["items"].Kind == JsonKind.Number) record.Items = (int)json["items"].AsLong();
+
+            var placement = json["placement"].Items;
+
+            if (placement.Count == 12) record.Placement = placement.Select(v => v.AsDouble()).ToList();
 
             var bounds = json["bounds"].Items;
 
@@ -296,6 +329,7 @@ namespace CamelWorks.Core.Project
                     ModelUnits = model.ModelUnits,
                     HasTransform = model.HasTransform,
                     Discipline = profile?.DisciplineOf(model.Scope),
+                    Placement = model.Placement,
                 };
 
                 if (itemCounts != null && itemCounts.TryGetValue(model.Scope, out var count))
@@ -447,10 +481,13 @@ namespace CamelWorks.Core.Project
             var arrived = new List<ModelRecord>();
             var unchanged = new List<ModelRecord>();
             var changed = new List<ModelRecord>();
+            var moved = new List<ModelRecord>();
 
             foreach (var model in now.Models)
             {
                 if (!previous.TryGetValue(model.Scope, out var was)) { arrived.Add(model); continue; }
+
+                if (model.MovedSince(was)) moved.Add(model);
 
                 if (model.LooksIdenticalTo(was)) unchanged.Add(model); else changed.Add(model);
             }
@@ -460,6 +497,8 @@ namespace CamelWorks.Core.Project
             Arrived = arrived;
             Unchanged = unchanged;
             Changed = changed;
+            Moved = moved;
+            Before = previous;
             Missing = previous.Values.Where(m => !here.Contains(m.Scope)).ToList();
             HasPrevious = before != null && before.Models.Count > 0;
         }
@@ -473,11 +512,24 @@ namespace CamelWorks.Core.Project
         /// <summary>Models whose source has been rewritten.</summary>
         public IReadOnlyList<ModelRecord> Changed { get; }
 
+        /// <summary>
+        /// Models the federation is now holding somewhere else.
+        ///
+        /// The classic silent killer, and the one nothing else catches: a transform is applied by
+        /// somebody dragging a model in the units-and-transform dialog, nobody notices, and every
+        /// clash from that moment on is in the wrong place. It is listed separately from a
+        /// republish because it is a different mistake with a different fix.
+        /// </summary>
+        public IReadOnlyList<ModelRecord> Moved { get; }
+
         /// <summary>Models that were in the previous manifest and are not loaded now.</summary>
         public IReadOnlyList<ModelRecord> Missing { get; }
 
         /// <summary>True when there was a previous manifest to compare against.</summary>
         public bool HasPrevious { get; }
+
+        /// <summary>What each model was, by scope, so a placement can be put back.</summary>
+        public IReadOnlyDictionary<string, ModelRecord> Before { get; }
 
         /// <summary>
         /// True when nobody has published since the last run.
@@ -501,6 +553,7 @@ namespace CamelWorks.Core.Project
 
             var parts = new List<string>();
 
+            if (Moved.Count > 0) parts.Add(Measure.Count(Moved.Count) + " MOVED BY THE FEDERATION");
             if (Changed.Count > 0) parts.Add(Measure.Count(Changed.Count) + " republished");
             if (Arrived.Count > 0) parts.Add(Measure.Count(Arrived.Count) + " new");
             if (Unchanged.Count > 0) parts.Add(Measure.Count(Unchanged.Count) + " unchanged");
@@ -514,11 +567,14 @@ namespace CamelWorks.Core.Project
         {
             var table = new TableBlock("Model", "Discipline", "State", "Source last written", "Size");
 
+            var moved = new HashSet<string>(Moved.Select(m => m.Scope), StringComparer.Ordinal);
+
             foreach (var (model, state) in Arrived.Select(m => (m, "new"))
                          .Concat(Changed.Select(m => (m, "republished")))
                          .Concat(Unchanged.Select(m => (m, "unchanged")))
                          .Concat(Missing.Select(m => (m, "no longer loaded"))))
-                table.Row(model.DisplayName, model.Discipline ?? string.Empty, state,
+                table.Row(model.DisplayName, model.Discipline ?? string.Empty,
+                          moved.Contains(model.Scope) ? state + ", moved by the federation" : state,
                           model.When, model.Size);
 
             return table;

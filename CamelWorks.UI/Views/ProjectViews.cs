@@ -34,7 +34,160 @@ namespace CamelWorks.UI.Views
         /// with the product; the IDS card takes the file your client sent and answers it against
         /// the model, which is the same question asked by somebody with a contract behind them.
         /// </summary>
-        public static UIElement Health() => Ui.Scroll(Ui.Stack(BuiltIn(), Ids()));
+        public static UIElement Health() => Ui.Scroll(Ui.Stack(Intake(), BuiltIn(), Ids()));
+
+        /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
+        private const string IntakeKey = "intake";
+
+        /// <summary>
+        /// What arrived this week, and whether anything moved.
+        ///
+        /// The question that opens every coordination meeting — who published and who did not —
+        /// answered today by opening properties on eight files. And the one nothing else catches: a
+        /// model the federation is now holding somewhere else, because somebody dragged it in the
+        /// units-and-transform dialog and nobody noticed. Every clash from that moment on is in the
+        /// wrong place.
+        /// </summary>
+        private static UIElement Intake()
+        {
+            var results = Ui.Stack();
+            var actions = Ui.Stack();
+
+            var run = Ui.Runner("Check what arrived", results, job =>
+            {
+                actions.Children.Clear();
+
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                job.Say("Reading the models...");
+
+                var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+                var read = 0;
+
+                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                {
+                    if (read % 2000 == 0 && !job.Step(read, "elements read")) return;
+                    read++;
+
+                    if (!item.HasGeometry) continue;
+
+                    var scope = item.Model.Scope;
+                    counts[scope] = counts.TryGetValue(scope, out var seen) ? seen + 1 : 1;
+                }
+
+                var manifest = ModelManifest.Of(session.Model.Models, session.Profile,
+                                                itemCounts: counts, version: Ui.Release,
+                                                takenUtc: DateTimeOffset.UtcNow);
+
+                var section = session.Store.Section(ProjectStore.ModelsSection);
+                var before = ModelManifest.FromJson(section[IntakeKey]);
+
+                var intake = manifest.Since(before.Models.Count > 0 ? before : null);
+
+                results.Children.Add(Ui.Line(intake.Explain(), 1, true));
+                results.Children.Add(Ui.Line(manifest.Explain(), 0.8));
+
+                if (intake.NothingNew && intake.Missing.Count == 0)
+                    results.Children.Add(Ui.Note(
+                        "A run against exactly last week's files produces exactly last week's board. "
+                        + "Worth knowing before the meeting rather than during it."));
+
+                var units = session.Profile.Units;
+                var table = manifest.ModelTable(units);
+
+                var rows = table.Rows.Select(r => new TableRow(r,
+                    r[0] ?? string.Empty, r[2] ?? string.Empty, r[3] ?? string.Empty,
+                    r[5] ?? string.Empty, r[6] ?? string.Empty)).ToList();
+
+                results.Children.Add(Ui.Table(rows,
+                    ("Model", 200), ("Source last written", 150), ("Size", 80),
+                    ("Placement", 170), ("Elements", 0)));
+
+                if (intake.HasPrevious)
+                {
+                    var register = intake.Table();
+
+                    results.Children.Add(Ui.Line("Since the last check", 1, true));
+
+                    results.Children.Add(Ui.Table(register.Rows.Select(r => new TableRow(r,
+                        r[0] ?? string.Empty, r[1] ?? string.Empty, r[2] ?? string.Empty,
+                        r[3] ?? string.Empty)).ToList(),
+                        ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0)));
+                }
+
+                Placement(session, intake, actions);
+
+                section.Set(IntakeKey, manifest.ToJson());
+                session.Store.Save();
+            });
+
+            return Ui.Card("Models",
+                "What arrived, what is byte-identical, and whether the federation has moved anything",
+                run,
+                results,
+                actions);
+        }
+
+        /// <summary>
+        /// The models the federation has moved, and the offer to put them back.
+        ///
+        /// Previewed before it writes and reversible after: the previous placement is in the record
+        /// this check just replaced, so putting a model back is the same operation as moving it and
+        /// leaves the same trail.
+        /// </summary>
+        private static void Placement(Session session, ModelIntake intake, Panel actions)
+        {
+            var carried = session.Model.Models.Where(m => m.HasTransform).ToList();
+
+            if (intake.Moved.Count == 0 && carried.Count == 0) return;
+
+            if (intake.Moved.Count > 0)
+            {
+                actions.Children.Add(Ui.Problem(
+                    Ui.Count(intake.Moved.Count, "model") + " has been moved by the federation since "
+                    + "the last check: " + string.Join(", ", intake.Moved.Select(m => m.DisplayName))
+                    + ". Nobody is told when this happens, and every clash from that moment on is in "
+                    + "the wrong place."));
+
+                foreach (var model in intake.Moved)
+                {
+                    var record = model;
+
+                    if (!intake.Before.TryGetValue(record.Scope, out var was) || was.Placement == null)
+                        continue;
+
+                    var source = session.Model.Models.FirstOrDefault(
+                        m => string.Equals(m.Scope, record.Scope, StringComparison.Ordinal));
+
+                    if (source == null) continue;
+
+                    actions.Children.Add(Ui.Button("Put " + record.DisplayName + " back where it was", () =>
+                    {
+                        var problem = session.Model.Restore(source, was.Placement);
+
+                        actions.Children.Add(problem == null
+                            ? Ui.Line(record.DisplayName + " is back where the last check found it. "
+                                      + "Run the clash tests again - everything on the board was "
+                                      + "computed against the other placement.", 1, true)
+                            : Ui.Problem(problem));
+
+                        if (problem == null)
+                            session.Record(ActivityKind.Reconcile,
+                                "put " + record.DisplayName + " back to its previous placement");
+                    }));
+                }
+            }
+
+            if (carried.Count == 0) return;
+
+            actions.Children.Add(Ui.Note(
+                Ui.Count(carried.Count, "model") + " carries a transform: "
+                + string.Join(", ", carried.Select(m => m.DisplayName))
+                + ". That is legitimate - it is how a survey-grid model is brought onto a project "
+                + "grid - and it is worth knowing which ones, because a transform is also the thing "
+                + "nobody remembers applying."));
+        }
 
         /// <summary>The rules that ship with the product.</summary>
         private static UIElement BuiltIn()

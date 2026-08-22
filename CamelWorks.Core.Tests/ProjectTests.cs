@@ -59,6 +59,7 @@ namespace CamelWorks.Core.Tests
             public long? SourceBytes => null;
             public string? ModelUnits => null;
             public bool HasTransform => false;
+            public IReadOnlyList<double>? Placement => null;
         }
 
         [Fact]

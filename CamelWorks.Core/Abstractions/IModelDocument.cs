@@ -41,6 +41,17 @@ namespace CamelWorks.Core.Abstractions
         /// every clash from that moment on is in the wrong place.
         /// </summary>
         bool HasTransform { get; }
+
+        /// <summary>
+        /// Where the federation is holding this model: nine numbers of rotation and scale, then
+        /// three of translation, row by row. Null when the host will not say.
+        ///
+        /// Recorded so a placement that changes can be put back. A transform is applied by somebody
+        /// dragging a model in the units-and-transform dialog, nobody notices, and every clash from
+        /// that moment is in the wrong place — and without the previous numbers the only fix is to
+        /// remember what they were.
+        /// </summary>
+        IReadOnlyList<double>? Placement { get; }
     }
 
     /// <summary>

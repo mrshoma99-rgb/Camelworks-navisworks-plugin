@@ -36,6 +36,20 @@ namespace CamelWorks.Core.Tests
             return document;
         }
 
+        /// <summary>A federation whose structural model sits at the given translation.</summary>
+        private static FakeDocument Placed(double x, double y, double z)
+        {
+            var document = Federation(Monday);
+
+            foreach (FakeSource model in document.Models)
+                model.Placement = new[] { 1d, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 };
+
+            ((FakeSource)document.Models[1]).Placement =
+                new[] { 1d, 0, 0, 0, 1, 0, 0, 0, 1, x, y, z };
+
+            return document;
+        }
+
         [Fact]
         public void The_manifest_says_what_the_run_was_run_against()
         {
@@ -208,6 +222,64 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("STR.nwc", Assert.Single(intake.Missing).DisplayName);
             Assert.Contains("1 no longer loaded", intake.Explain());
             Assert.Contains(intake.Table().Rows, r => r[2] == "no longer loaded");
+        }
+
+        [Fact]
+        public void A_model_the_federation_has_moved_is_named_as_moved()
+        {
+            // The classic silent killer: somebody drags a model in the units-and-transform dialog,
+            // nobody is told, and every clash from that moment on is in the wrong place.
+            var last = ModelManifest.Of(Placed(0, 0, 0).Models);
+            var now = ModelManifest.Of(Placed(0, 0, 1.5).Models);
+
+            var intake = now.Since(last);
+
+            Assert.Equal("STR.nwc", Assert.Single(intake.Moved).DisplayName);
+            Assert.Contains("MOVED BY THE FEDERATION", intake.Explain());
+            Assert.Contains(intake.Table().Rows, r => (r[2] ?? string.Empty).Contains("moved"));
+        }
+
+        [Fact]
+        public void The_previous_placement_is_kept_so_the_model_can_be_put_back()
+        {
+            var last = ModelManifest.Of(Placed(0, 0, 0).Models);
+
+            var intake = ModelManifest.Of(Placed(0, 0, 1.5).Models).Since(last);
+
+            var moved = Assert.Single(intake.Moved);
+
+            Assert.True(intake.Before.TryGetValue(moved.Scope, out var was));
+            Assert.Equal(0, was!.Placement![11], 6);
+            Assert.Equal(1.5, moved.Placement![11], 6);
+        }
+
+        [Fact]
+        public void A_placement_that_wobbles_in_the_last_bit_of_a_double_is_not_a_move()
+        {
+            // A re-export nudges the last bit, and a health check that cried wolf every week is one
+            // people learn to skip.
+            var last = ModelManifest.Of(Placed(0, 0, 0).Models);
+
+            Assert.Empty(ModelManifest.Of(Placed(0, 0, 0.00001).Models).Since(last).Moved);
+        }
+
+        [Fact]
+        public void A_placement_survives_being_written_down()
+        {
+            var before = ModelManifest.Of(Placed(1, 2, 3).Models);
+            var after = ModelManifest.FromJson(JsonReader.Parse(before.ToJson().ToJson()));
+
+            Assert.Equal(3, after.Models[1].Placement![11], 6);
+            Assert.False(after.Models[1].MovedSince(before.Models[1]));
+        }
+
+        [Fact]
+        public void A_model_whose_placement_nobody_recorded_is_not_reported_as_moved()
+        {
+            // Null means the host would not say, and "would not say" is not "has moved".
+            var last = ModelManifest.Of(Federation(Monday).Models);
+
+            Assert.Empty(ModelManifest.Of(Placed(0, 0, 9).Models).Since(last).Moved);
         }
 
         [Fact]
