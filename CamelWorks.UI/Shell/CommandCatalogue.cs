@@ -111,8 +111,8 @@ namespace CamelWorks.UI.Shell
                 new[] { "too many clashes", "thousands of results", "the same clash forty times",
                         "one pipe through forty joists", "where do I even start" }),
 
-            Pane("ID_CW_Review", "Review", "Coordinate/Triage",
-                "The board, on the group you were last looking at.",
+            Act("ID_CW_Review", "Review",
+                "One group at a time, over the model, with both hands on the keyboard.",
                 new[] { "walk the clashes", "go through results", "sign off" },
                 new[] { "I need to go through these one at a time" }),
 

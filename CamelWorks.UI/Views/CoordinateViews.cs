@@ -1259,6 +1259,25 @@ namespace CamelWorks.UI.Views
             session.Record(ActivityKind.Report, "produced a change notice: " + notice.Explain(units));
         }
 
+        /// <summary>
+        /// The groups still worth looking at, in board order.
+        ///
+        /// Anything with a member that is not approved or resolved. A review that walked the
+        /// closed ones too would spend most of an afternoon on work that is already done.
+        /// </summary>
+        /// <param name="board">The board.</param>
+        internal static IReadOnlyList<ClashGroup> Reviewable(ClashPipelineResult board) =>
+            board.Groups
+                 .Where(g => g.Items.Count == 0 || g.Items.Any(i => FindingStatusLattice.IsOpen(i.Status)))
+                 .ToList();
+
+        /// <summary>Write the board down from outside this class, keeping the version it replaces.</summary>
+        /// <param name="session">The session.</param>
+        /// <param name="board">The board to record.</param>
+        /// <param name="summary">What to write in the activity log.</param>
+        internal static void SaveBoard(Session session, ClashPipelineResult board, string summary) =>
+            Save(session, board, summary);
+
         /// <summary>The freeze this project holds, or null.</summary>
         private static Freeze? Frozen(Session session) =>
             Freeze.FromJson(session.Store.Section(ProjectStore.ClashSection)["freeze"]);
