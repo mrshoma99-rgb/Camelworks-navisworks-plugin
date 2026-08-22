@@ -19,12 +19,7 @@ namespace CamelWorks.Core.OpenBim
             IsReopen = isReopen;
             UnknownStatus = unknownStatus;
 
-            // An explicit re-open is a decision somebody made about this issue in front of the
-            // evidence. Everything else is a merge of two edits neither author knew about, and the
-            // lattice's promote-only rule is what stops a stale "Open" undoing a real "Approved".
-            Merged = incoming == null ? current
-                   : isReopen ? incoming.Value
-                   : FindingStatusLattice.Merge(current, incoming.Value);
+            Merged = BcfResponse.Merge(current, incoming, isReopen);
         }
 
         /// <summary>The topic as it arrived.</summary>
@@ -216,6 +211,26 @@ namespace CamelWorks.Core.OpenBim
                     return null;
             }
         }
+
+        /// <summary>
+        /// Where a returned status leaves a group.
+        ///
+        /// The central rule of every inbound leg, in one place because there are two of them — a
+        /// BCF file and a returned worksheet — and two copies of it would eventually disagree
+        /// about somebody's approval.
+        ///
+        /// An explicit re-open is a decision somebody made in front of the evidence, so it is
+        /// honoured even downwards; refusing it would make CamelWorks the tool that argues with
+        /// the site. Everything else is a merge of two edits neither author knew about, and the
+        /// lattice's promote-only rule is what stops a stale "Open" undoing a real "Approved".
+        /// </summary>
+        /// <param name="current">Where the board has it now.</param>
+        /// <param name="incoming">What came back, or null when the word was not one we know.</param>
+        /// <param name="isReopen">True when the word means a deliberate re-open.</param>
+        public static FindingStatus Merge(FindingStatus current, FindingStatus? incoming, bool isReopen) =>
+            incoming == null ? current
+            : isReopen ? incoming.Value
+            : FindingStatusLattice.Merge(current, incoming.Value);
 
         /// <summary>True when the word means somebody deliberately re-opened the issue.</summary>
         /// <param name="status">The topic status from the file.</param>

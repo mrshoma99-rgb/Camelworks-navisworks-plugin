@@ -175,9 +175,21 @@ namespace CamelWorks.Core.Data
         /// <param name="sheet">The worksheet.</param>
         /// <param name="known">The identities in scope, as <c>ElementKey.ToString()</c> writes them.</param>
         /// <param name="keyHeading">The identity column's heading.</param>
+        /// <param name="comparer">
+        /// How two identities are compared. Ordinal by default, because an element key is a hash
+        /// and case is part of it; a caller whose identities are case-insensitive says so.
+        /// </param>
+        /// <param name="advice">
+        /// What to do about a sheet with no identity column. Said by the caller, because "export it
+        /// from here first" points at a different screen depending on what was exported.
+        /// </param>
         public static SheetImportReport Of(SheetTable? sheet, IReadOnlyCollection<string>? known,
-                                           string keyHeading = KeyHeading)
+                                           string keyHeading = KeyHeading,
+                                           StringComparer? comparer = null,
+                                           string? advice = null)
         {
+            var identity = comparer ?? StringComparer.Ordinal;
+
             var none = Array.Empty<SheetRow>();
 
             if (sheet == null || sheet.IsEmpty)
@@ -189,15 +201,16 @@ namespace CamelWorks.Core.Data
             if (keyColumn < 0)
                 return new SheetImportReport(sheet.Headers, -1, none, none, none, 0,
                     "that sheet has no \"" + keyHeading + "\" column, so there is no way to tell which "
-                    + "element each row is about. Export the properties from here first, fill in the "
-                    + "sheet that comes out, and send that back.");
+                    + "element each row is about. "
+                    + (advice ?? "Export the properties from here first, fill in the sheet that comes "
+                                 + "out, and send that back."));
 
-            var inScope = new HashSet<string>(known ?? Array.Empty<string>(), StringComparer.Ordinal);
+            var inScope = new HashSet<string>(known ?? Array.Empty<string>(), identity);
 
             var matched = new List<SheetRow>();
             var unmatched = new List<SheetRow>();
             var duplicates = new List<SheetRow>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var seen = new HashSet<string>(identity);
             var blank = 0;
 
             for (var r = 1; r < sheet.Rows.Count; r++)

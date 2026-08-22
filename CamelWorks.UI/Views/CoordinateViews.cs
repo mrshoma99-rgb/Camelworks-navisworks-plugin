@@ -3353,7 +3353,338 @@ namespace CamelWorks.UI.Views
                         + "involved; the snapshot is the part that moves your view while it runs, and "
                         + "your camera is put back afterwards."),
                 Ui.Across(export, import),
+                Worksheet(),
                 results));
+        }
+
+        /// <summary>
+        /// The worksheet leg: the same issues, for a far end that has Excel and not a BCF reader.
+        ///
+        /// BCF assumes the other side has a tool that reads BCF. Most of the other sides on a real
+        /// project have Excel, and a coordinator who sends a .bcfzip to a fabricator gets a phone
+        /// call. So the same issues go out as a sheet with two empty columns, and come back through
+        /// the same merge policy as a returned BCF file - including the rule that a stale "Open"
+        /// does not undo an approval.
+        /// </summary>
+        private static UIElement Worksheet()
+        {
+            var results = Ui.Stack();
+            var path = Ui.Text(string.Empty, null, 340);
+
+            var session = Host.Current;
+
+            var parties = new List<string> { "Everyone" };
+            if (session != null) parties.AddRange(session.Profile.Parties);
+
+            var party = parties[0];
+            var picker = Ui.Choice(parties, party, p => party = p);
+
+            var write = Ui.Runner("Write a worksheet", results, job =>
+                WriteSheet(results, path, party, job));
+
+            var read = Ui.Runner("Read one back", results, job => ReadSheet(results, path, job));
+
+            return Ui.Card("Worksheet",
+                "For a far end that has Excel and not a BCF reader",
+                Ui.Field("For", picker),
+                Ui.Field("File", path),
+                Ui.Across(write, read),
+                Ui.Note(IssueSheet.Instructions()),
+                results);
+        }
+
+        /// <summary>Write the open issues out, one row each, with two columns to fill in.</summary>
+        private static void WriteSheet(Panel results, TextBox path, string party, Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board in Triage first. The worksheet is of the "
+                    + "board, and without one there is nothing to send."));
+                return;
+            }
+
+            var units = session.Profile.Units;
+            var everyone = string.Equals(party, "Everyone", StringComparison.Ordinal);
+
+            var lines = new List<IssueLine>();
+
+            foreach (var group in board.Groups)
+            {
+                if (!everyone && !string.Equals(group.AssignedTo, party, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Open issues only. Sending somebody a list of what they already closed is how a
+                // list stops being read.
+                if (group.Items.Count > 0 && group.Items.All(i => FindingStatusLattice.IsClosed(i.Status)))
+                    continue;
+
+                var first = group.Items.FirstOrDefault();
+
+                lines.Add(new IssueLine(group.Name)
+                {
+                    Party = group.AssignedTo,
+                    Level = first?.Level,
+                    Location = first == null ? null : IssueSheet.Where(first.X, first.Y, first.Z, units),
+                    Description = first == null
+                        ? Ui.Count(group.Items.Count, "clash")
+                        : (first.CategoryA ?? "?") + " against " + (first.CategoryB ?? "?")
+                          + " - " + Ui.Count(group.Items.Count, "clash"),
+                    Instruction = group.Instruction.IsStated ? group.Instruction.Describe(units) : null,
+                    Status = group.Items.Count == 0
+                        ? FindingStatus.Active
+                        : group.Items.Min(i => i.Status),
+                });
+            }
+
+            if (lines.Count == 0)
+            {
+                results.Children.Add(Ui.Empty("Nothing open to send.",
+                    everyone
+                        ? "Every group on the board is approved or resolved."
+                        : "Nothing open on the board is with " + party + "."));
+                return;
+            }
+
+            var file = path.Text.Trim();
+
+            if (file.Length == 0)
+            {
+                file = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    Deliverable.Safe(session.Profile.ProjectName + " issues - " + party) + ".xlsx");
+
+                path.Text = file;
+            }
+
+            job.Say("Writing " + Ui.Count(lines.Count, "issue") + "...");
+
+            try
+            {
+                File.WriteAllBytes(file, XlsxWriter.Write(new[] { IssueSheet.Write(party, lines) }));
+            }
+            catch (Exception error)
+            {
+                results.Children.Add(Ui.Problem("Could not write it: " + error.Message));
+                return;
+            }
+
+            RememberSheet(session, lines);
+
+            results.Children.Add(Ui.Line("Wrote " + Ui.Count(lines.Count, "issue") + " to " + file, 1, true));
+
+            session.Record(ActivityKind.Exchange,
+                "wrote an issue worksheet for " + party + " - " + Ui.Count(lines.Count, "issue"), file);
+        }
+
+        /// <summary>Read a returned worksheet and show what it would do, before doing any of it.</summary>
+        private static void ReadSheet(Panel results, TextBox path, Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board in Triage and read this sheet again. "
+                    + "Without a board there is nothing to reconcile against."));
+                return;
+            }
+
+            var file = path.Text.Trim();
+
+            if (file.Length == 0)
+            {
+                results.Children.Add(Ui.Problem("Say which file to read back."));
+                return;
+            }
+
+            job.Say("Reading the sheet...");
+
+            byte[] bytes;
+
+            try
+            {
+                bytes = File.ReadAllBytes(file);
+            }
+            catch (Exception error)
+            {
+                results.Children.Add(Ui.Problem("Could not read it: " + error.Message));
+                return;
+            }
+
+            var book = XlsxReader.Read(bytes);
+
+            if (!book.IsUsable)
+            {
+                results.Children.Add(Ui.Problem(book.Problem ?? "Nothing could be read from that file."));
+                return;
+            }
+
+            // The record of what was sent, with the current board laid over it: the record survives
+            // a re-run that renamed a group, and the board is right about what it is called today.
+            var sent = SentSheets(session);
+            foreach (var group in board.Groups) sent[IssueSheet.IdOf(group.Name)] = group.Name;
+
+            var current = new Dictionary<string, FindingStatus>(StringComparer.Ordinal);
+
+            foreach (var group in board.Groups)
+                current[group.Name] = group.Items.Count == 0
+                    ? FindingStatus.Active
+                    : group.Items.Min(i => i.Status);
+
+            var report = IssueSheet.Read(book.First, sent, current);
+
+            results.Children.Add(Ui.Line(report.Explain(), 1, true));
+
+            if (report.Problem != null)
+            {
+                results.Children.Add(Ui.Problem(report.Problem));
+                return;
+            }
+
+            if (report.Unmatched.Count > 0)
+                results.Children.Add(Ui.Problem(
+                    Ui.Count(report.Unmatched.Count, "row") + " name an issue this project never sent "
+                    + "- rows " + string.Join(", ", report.Unmatched.Take(8).Select(r => r.Number))
+                    + ". Somebody added them, or they came from another package. They are somebody's "
+                    + "list and not this board's status to change."));
+
+            if (report.Duplicates.Count > 0)
+                results.Children.Add(Ui.Problem(
+                    Ui.Count(report.Duplicates.Count, "row") + " repeat an issue an earlier row already "
+                    + "answered. The first row wins."));
+
+            if (report.Blank > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Blank, "row")
+                    + " carry a response but no issue id, so there is no way to tell which issue "
+                    + "they are about."));
+
+            if (report.Matched.Count == 0) return;
+
+            var rows = report.Matched.Select(m => new TableRow(m,
+                m.Group,
+                m.UnknownStatus ?? (m.Incoming == null ? "-" : FindingStatusLattice.ToName(m.Incoming.Value)),
+                FindingStatusLattice.ToName(m.Current),
+                m.Changes ? FindingStatusLattice.ToName(m.Merged) : "-",
+                m.Note ?? string.Empty)
+            {
+                Tone = m.UnknownStatus != null ? Tone.Warn
+                     : m.IsReopen && m.Changes ? Tone.Bad
+                     : m.Changes ? Tone.Good
+                     : Tone.Plain,
+            }).ToList();
+
+            results.Children.Add(Ui.Table(rows,
+                ("Issue", 200), ("They say", 110), ("The board says", 110),
+                ("Would become", 110), ("What they wrote", 0)));
+
+            if (report.Refused > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Refused, "row")
+                    + " asked for a status lower than the board holds and will stay where they are. "
+                    + "The sheet went out before those decisions were made, and a stale \"Open\" must "
+                    + "not undo an approval nobody has disputed. A deliberate re-open is different "
+                    + "and is honoured."));
+
+            if (report.Changes == 0)
+            {
+                results.Children.Add(Ui.Empty("Nothing to apply.",
+                    "The board already agrees with everything on that sheet."));
+                return;
+            }
+
+            results.Children.Add(Ui.Button("Apply " + Ui.Count(report.Changes, "change") + " to the board",
+                () => ApplySheet(session, board, report, results)));
+
+            session.Record(ActivityKind.Exchange, "read an issue worksheet", file);
+        }
+
+        /// <summary>Write a returned worksheet into the board, one group at a time.</summary>
+        private static void ApplySheet(Session session, ClashPipelineResult board,
+                                       IssueSheetReport report, Panel results)
+        {
+            var moved = 0;
+            var groups = 0;
+
+            foreach (var response in report.Matched.Where(m => m.Changes))
+            {
+                var group = board.Groups.FirstOrDefault(
+                    g => string.Equals(g.Name, response.Group, StringComparison.Ordinal));
+
+                if (group == null) continue;
+
+                groups++;
+
+                foreach (var item in group.Items)
+                {
+                    // Per item, and promote-only unless the sheet re-opened it. Applying the merged
+                    // status flat would demote rows somebody had already taken further.
+                    var next = response.IsReopen
+                        ? response.Merged
+                        : FindingStatusLattice.Merge(item.Status, response.Merged);
+
+                    if (next == item.Status) continue;
+
+                    item.Status = next;
+                    moved++;
+                }
+            }
+
+            Save(session, board, "applied a returned worksheet to " + Ui.Count(groups, "group"));
+
+            results.Children.Add(session.Store.Save()
+                ? Ui.Line("Applied to " + Ui.Count(groups, "group") + ", " + Ui.Count(moved, "result")
+                          + " moved. Load the board again to see it.", 1, true)
+                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+            results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
+                + "in Triage, and it puts back the board as it was before this."));
+
+            session.Record(ActivityKind.Exchange,
+                "applied a returned worksheet: " + Ui.Count(groups, "group") + " moved");
+        }
+
+        /// <summary>Which board group each issue id this project has sent out came from.</summary>
+        private static Dictionary<string, string> SentSheets(Session session)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var saved = session.Store.Section(ProjectStore.ClashSection)["sheetIssues"];
+
+            foreach (var id in saved.Keys)
+            {
+                var group = saved[id].AsString();
+                if (!string.IsNullOrEmpty(group)) map[id] = group!;
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// Record what this worksheet sent, so a reply is readable a fortnight later.
+        ///
+        /// The id is derived from the group name, so it could be recomputed - but only while the
+        /// board still holds that group under that name, and a reply usually arrives after a re-run
+        /// has renamed something.
+        /// </summary>
+        private static void RememberSheet(Session session, IEnumerable<IssueLine> lines)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var saved = section["sheetIssues"];
+
+            if (saved.Kind != JsonKind.Object)
+            {
+                saved = JsonValue.Object();
+                section.Set("sheetIssues", saved);
+            }
+
+            foreach (var line in lines) saved.Set(line.IssueId, JsonValue.String(line.Group));
+
+            session.Store.Save();
         }
 
         /// <summary>Topic GUIDs this project has already been shown.</summary>
