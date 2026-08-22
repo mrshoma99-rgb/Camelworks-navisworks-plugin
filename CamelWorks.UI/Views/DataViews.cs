@@ -1357,6 +1357,9 @@ namespace CamelWorks.UI.Views
             /// <summary>The column axis that means "do not pivot".</summary>
             private const string NoColumns = "Nothing - just the one axis";
 
+            /// <summary>The assumed-unit choice that means "leave bare numbers bare".</summary>
+            private const string NoUnit = "Leave it as it is";
+
             private static readonly string[] Axes =
             {
                 "Category", "Type", "Model", "Level", "Discipline", "System",
@@ -1365,6 +1368,11 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _output = Ui.Stack();
             private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _clean = Ui.Text(string.Empty, null, 220);
+
+            private string _assume = NoUnit;
+            private ValueCleaner _cleaner = ValueCleaner.None;
+            private Measure _units = new Measure();
 
             private string _scope = Selection;
             private string _measure = "Volume";
@@ -1384,6 +1392,11 @@ namespace CamelWorks.UI.Views
                 var rows = Ui.Choice(Axes, _rows, p => _rows = p);
                 var down = Ui.Choice(columns, _columns, p => _columns = p);
 
+                var assumable = new List<string> { NoUnit };
+                assumable.AddRange(ValueCleaner.AssumableUnits);
+
+                var assume = Ui.Choice(assumable, _assume, p => _assume = p);
+
                 var run = Ui.Runner("Sum it", _results, Run);
 
                 return Ui.Scroll(Ui.Stack(
@@ -1394,6 +1407,18 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Measure", measure),
                     Ui.Field("Rows", rows),
                     Ui.Field("Columns", down),
+                    Ui.Card("If the values need tidying first",
+                        "Both of these are off until you set them. A property that already reads as a "
+                        + "quantity needs neither.",
+                        Ui.Field("Take the number matching", _clean),
+                        Ui.Across(
+                            Ui.Button("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
+                            Ui.Button("Clear it", () => _clean.Text = string.Empty)),
+                        Ui.Field("When it has no unit, read it as", assume),
+                        Ui.Note("Nothing here invents a number. A pattern that matches nothing leaves the "
+                                + "value alone, so the takeoff still counts it unreadable and names it - "
+                                + "turning what it could not clean into a zero would move the failure out "
+                                + "of a line that admits it and into a total that is quietly wrong.")),
                     run,
                     _results,
                     _output));
@@ -1408,6 +1433,17 @@ namespace CamelWorks.UI.Views
                 var session = Host.Current;
                 if (session == null) { _results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
+                _units = session.Profile.Units;
+
+                _cleaner = ValueCleaner.Of(_clean.Text,
+                                           _assume == NoUnit ? null : _assume,
+                                           out var badPattern);
+
+                // Said and then carried on with what survived, rather than refusing to run. A bad
+                // pattern with a good assumed unit is still half a setting, and a takeoff that
+                // silently ignored the box would be worse than one that says the box was wrong.
+                if (badPattern != null) _results.Children.Add(Ui.Problem(badPattern));
+
                 var traversal = _scope == Selection
                     ? TraversalScope.CurrentSelection
                     : TraversalScope.WholeDocument;
@@ -1420,7 +1456,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (!job.Step(flat.Count + pivot.Count, "elements read")) return;
 
-                    var value = _measure == "Count" ? "1" : MeasureOf(item, _measure);
+                    var value = _measure == "Count" ? "1" : _cleaner.Clean(MeasureOf(item, _measure));
                     var row = AxisOf(session, item, _rows);
 
                     if (wide) pivot.Add(new PivotLine(item.DisplayName, row, AxisOf(session, item, _columns), value));
@@ -1452,7 +1488,7 @@ namespace CamelWorks.UI.Views
                 var result = Core.Data.Takeoff.Sum(lines);
                 _flat = result;
 
-                _results.Children.Add(Ui.Line(result.ToString(), 1, true));
+                _results.Children.Add(Ui.Line(result.Describe(_units), 1, true));
 
                 if (result.Groups.Count == 0)
                 {
@@ -1464,7 +1500,7 @@ namespace CamelWorks.UI.Views
                 var rows = result.Groups.OrderByDescending(g => g.Count).Select(g => new TableRow(g,
                     g.Name,
                     g.Count.ToString("N0", CultureInfo.InvariantCulture),
-                    g.Total?.ToString() ?? (g.MixedKinds ? "(mixed units)" : "-"),
+                    g.Total?.Show(_units) ?? (g.MixedKinds ? "(mixed units)" : "-"),
                     g.Unreadable > 0
                         ? g.Unreadable.ToString(CultureInfo.InvariantCulture) + " unreadable"
                         : string.Empty)
@@ -1473,8 +1509,9 @@ namespace CamelWorks.UI.Views
                 }).ToList();
 
                 _results.Children.Add(Ui.Table(rows,
-                    ("Group", 190), ("Count", 80), ("Total", 130), ("", 0)));
+                    ("Group", 190), ("Count", 80), ("Total (" + UnitWord() + ")", 130), ("", 0)));
 
+                Provenance();
                 Caveat(result.IsComplete);
 
                 session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
@@ -1487,7 +1524,7 @@ namespace CamelWorks.UI.Views
                 var table = TakeoffPivot.Of(lines);
                 _table = table;
 
-                _results.Children.Add(Ui.Line(table.Explain(), 1, true));
+                _results.Children.Add(Ui.Line(table.Explain(_units), 1, true));
 
                 if (table.IsEmpty)
                 {
@@ -1499,7 +1536,7 @@ namespace CamelWorks.UI.Views
                 var headers = new List<(string Header, double Width)> { (_rows, 170) };
 
                 foreach (var column in table.Columns) headers.Add((column, 110));
-                headers.Add(("Total", 110));
+                headers.Add(("Total (" + UnitWord() + ")", 110));
 
                 var rows = new List<TableRow>();
 
@@ -1528,6 +1565,7 @@ namespace CamelWorks.UI.Views
 
                 _results.Children.Add(Ui.Table(rows, headers.ToArray()));
 
+                Provenance();
                 Caveat(table.Grand.IsComplete);
 
                 if (table.DroppedRows > 0 || table.DroppedColumns > 0)
@@ -1540,6 +1578,33 @@ namespace CamelWorks.UI.Views
                                                     + _columns.ToLowerInvariant() + ": " + table);
             }
 
+            /// <summary>Which unit the column is in, for the heading rather than every cell.</summary>
+            private string UnitWord() => _measure switch
+            {
+                "Volume" => _units.VolumeUnit,
+                "Area" => _units.AreaUnit,
+                "Length" => _units.LengthUnit,
+                _ => "count",
+            };
+
+            /// <summary>
+            /// What this run did to the numbers before it added them.
+            ///
+            /// Shown every time and not only when a cleaner is set. A takeoff whose provenance is
+            /// invisible is one somebody has to re-derive by hand before they will put it in a cost
+            /// plan, and the whole point of the tool is that they should not have to.
+            /// </summary>
+            private void Provenance()
+            {
+                var said = "Totals in " + _units.Describe() + ". ";
+
+                said += _cleaner.DoesNothing
+                    ? "Values read exactly as the model wrote them."
+                    : "Before adding: " + _cleaner.Describe() + ".";
+
+                _results.Children.Add(Ui.Line(said, 0.7));
+            }
+
             private void Caveat(bool complete)
             {
                 if (complete) return;
@@ -1550,12 +1615,12 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>How one cell reads: the total, or why there is not one.</summary>
-            private static string Read(TakeoffGroup? group)
+            private string Read(TakeoffGroup? group)
             {
                 if (group == null || group.Count == 0) return string.Empty;
                 if (group.MixedKinds) return "(mixed units)";
 
-                return group.Total?.ToString()
+                return group.Total?.Show(_units)
                        ?? group.Count.ToString("N0", CultureInfo.InvariantCulture) + " elements";
             }
 
@@ -1602,7 +1667,7 @@ namespace CamelWorks.UI.Views
             {
                 var headers = new List<string> { _rows };
                 headers.AddRange(table.Columns);
-                headers.Add("Total");
+                headers.Add("Total (" + UnitWord() + ")");
 
                 var block = new TableBlock(headers.ToArray());
 
@@ -1628,7 +1693,7 @@ namespace CamelWorks.UI.Views
 
             private TableBlock Sheet(TakeoffResult result)
             {
-                var block = new TableBlock(_rows, "Count", "Total", "Unreadable");
+                var block = new TableBlock(_rows, "Count", "Total (" + UnitWord() + ")", "Unreadable");
 
                 foreach (var group in result.Groups.OrderByDescending(g => g.Count))
                     block.Row(group.Name,

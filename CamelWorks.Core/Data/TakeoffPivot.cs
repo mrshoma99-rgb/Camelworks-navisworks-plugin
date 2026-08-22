@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Measurement;
 
 namespace CamelWorks.Core.Data
 {
@@ -99,7 +100,13 @@ namespace CamelWorks.Core.Data
             _columnTotals.TryGetValue(column, out var total) ? total : null;
 
         /// <summary>The one-line readout.</summary>
-        public string Explain()
+        public string Explain() => Explain(null);
+
+        /// <summary>
+        /// The same readout with the grand total in the project's units.
+        /// </summary>
+        /// <param name="units">The formatter, or null for base SI.</param>
+        public string Explain(Measure? units)
         {
             if (IsEmpty) return "nothing in scope carries this measure";
 
@@ -107,7 +114,7 @@ namespace CamelWorks.Core.Data
                   + Rows.Count.ToString("N0", CultureInfo.InvariantCulture) + " rows and "
                   + Columns.Count.ToString("N0", CultureInfo.InvariantCulture) + " columns";
 
-            if (Grand.Total != null) s += " - " + Grand.Total.Value;
+            if (Grand.Total != null) s += " - " + Grand.Total.Value.Show(units);
             else if (Grand.MixedKinds) s += " - mixed units, so no total";
 
             if (Grand.Unreadable > 0)
