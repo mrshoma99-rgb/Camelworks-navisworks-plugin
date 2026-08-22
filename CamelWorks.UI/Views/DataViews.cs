@@ -1230,6 +1230,13 @@ namespace CamelWorks.UI.Views
                 var elevations = new List<double>();
                 var items = new List<(ElementKey Key, double Base, double Top)>();
 
+                // The grid is read before the traverse, because it is one call and it decides
+                // whether the rest of the chain matters.
+                job.Say("Looking for a coordination grid...");
+
+                var grids = new NavGrids(session.Model);
+                var fromGrid = grids.Derive();
+
                 foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                 {
                     if (!job.Step(items.Count, "elements read")) return;
@@ -1247,20 +1254,31 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Working out levels...");
 
+                // Grid, then the models' own property, then the histogram. In that order because
+                // that is the order of authority: a grid level is one authored fact with the name
+                // that is on the drawing, a level property is one authored fact per model, and a
+                // histogram is an honest guess.
                 var fromModel = LevelSet.FromModel(named);
-                var levels = fromModel.Bands.Count > 0 ? fromModel : LevelSet.Derive(elevations);
+
+                var levels = fromGrid.Bands.Count > 0 ? fromGrid
+                           : fromModel.Bands.Count > 0 ? fromModel
+                           : LevelSet.Derive(elevations);
 
                 results.Children.Add(Ui.Line(levels.ToString(), 1, true));
+                results.Children.Add(Ui.Line(levels.Provenance(), 0.75));
 
-                results.Children.Add(Ui.Line(levels.IsFromModel
-                    ? "Read from the models' own Level property."
-                    : "The models carry no usable level property, so these were inferred from a histogram "
-                      + "of element base heights.", 0.75));
+                if (levels.Source == LevelSource.Grid && grids.Name != null)
+                    results.Children.Add(Ui.Line("Grid system: " + grids.Name, 0.6));
+
+                // What each unused source would have said. A coordinator who disagrees with the
+                // answer needs to see the alternative before deciding the tool is wrong, and the
+                // numbers are already computed.
+                Alternatives(results, levels, fromModel, named.Count);
 
                 if (levels.Bands.Count == 0)
                 {
                     results.Children.Add(Ui.Empty("No levels.",
-                        "Nothing loaded carries geometry to infer them from."));
+                        "Nothing loaded carries a grid, a level property, or geometry to infer them from."));
                     return;
                 }
 
@@ -1270,7 +1288,8 @@ namespace CamelWorks.UI.Views
                     b.Name,
                     units.Bare(b.Elevation),
                     b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
-                    b.IsDerived ? "inferred" : "from the model")).ToList();
+                    b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
+                                                                                 : "from the model")).ToList();
 
                 results.Children.Add(Ui.Table(rows,
                     ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
@@ -1278,16 +1297,115 @@ namespace CamelWorks.UI.Views
 
                 after.Children.Clear();
                 after.Children.Add(Stamp(session, levels, items));
+                after.Children.Add(GridStamp(session, grids));
             });
 
             return Ui.Scroll(Ui.Stack(
                 Ui.Heading("Levels & zones"),
-                Ui.Sub("Uses the models' own levels where they have them and a height histogram where they "
-                       + "do not — and says which, because a level called \"Level +3.600\" is honest about "
-                       + "being a guess in a way that \"Level 2\" is not."),
+                Ui.Sub("The coordination grid where the federation has one, the models' own levels where "
+                       + "they have them, and a height histogram where neither — and it says which, "
+                       + "because a level called \"Level +3.600\" is honest about being a guess in a way "
+                       + "that \"Level 2\" is not."),
                 run,
                 results,
                 after));
+        }
+
+        /// <summary>
+        /// What the sources that were not used would have said.
+        ///
+        /// Shown because the first question anybody asks a derived answer is "compared to what".
+        /// Both alternatives are already computed by the time the chain has picked one, so the only
+        /// cost of showing them is four lines, and the cost of not showing them is a coordinator
+        /// re-running the tool three ways to find out.
+        /// </summary>
+        private static void Alternatives(Panel into, LevelSet chosen, LevelSet property,
+                                         int propertyReadings)
+        {
+            if (chosen.Source == LevelSource.Grid && property.Bands.Count > 0)
+                into.Children.Add(Ui.Line("The models' own level property would have given "
+                    + Ui.Count(property.Bands.Count, "level") + " instead, from "
+                    + Ui.Count(propertyReadings, "reading") + ".", 0.6));
+
+            // Many more property levels than a building has storeys is the signature of disciplines
+            // spelling the same storey differently, and it is worth naming rather than leaving
+            // somebody to notice "L02" and "Level 02" sitting next to each other in a report.
+            if (chosen.Source == LevelSource.Property && property.Bands.Count > 25)
+                into.Children.Add(Ui.Note(Ui.Count(property.Bands.Count, "distinct level")
+                    + " is more than most buildings have storeys. That usually means two disciplines "
+                    + "spell the same storey differently - \"L02\" and \"Level 02\" are two levels "
+                    + "here. Worth a look at the table below before anything is reported by level."));
+        }
+
+        /// <summary>
+        /// Write the grid reference onto every element.
+        ///
+        /// The half of the grid nobody gets at: Navisworks knows which grid square an element sits
+        /// in and will tell you, one element at a time, in a tooltip. Stamped onto a property it
+        /// becomes something clash grouping, set rules and reports can all use - and "Grid C-4" is
+        /// how a site engineer finds the thing.
+        /// </summary>
+        private static UIElement GridStamp(Session session, NavGrids grids)
+        {
+            if (grids.System == null)
+                return Ui.Card("Put the grid reference on the elements",
+                    "Nothing loaded carries a coordination grid, so there is no reference to write. "
+                    + "Grids come across from Revit and from IFC files that carry IfcGrid; a model "
+                    + "exported without one has none to find.",
+                    Ui.Line("No grid in this federation.", 0.7));
+
+            var status = Ui.Stack();
+
+            var apply = Ui.Runner("Stamp the grid reference onto every element", status, job =>
+            {
+                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
+                {
+                    var placed = 0;
+                    var missed = 0;
+
+                    foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                    {
+                        if (!job.Step(placed + missed, "elements read")) return;
+                        if (!item.HasGeometry) continue;
+
+                        var reference = grids.Reference(item);
+
+                        if (reference == null) { missed++; continue; }
+
+                        write.SetProperty(item.Key, NavWriteTransaction.TabName, "Grid", reference);
+                        placed++;
+                    }
+
+                    if (placed == 0)
+                    {
+                        status.Children.Add(Ui.Empty("Nothing to stamp.",
+                            "The grid could not place any element in scope."));
+                        return;
+                    }
+
+                    job.Say("Writing...");
+                    var written = write.Commit();
+
+                    status.Children.Add(Ui.Line("Stamped " + Ui.Count(written, "element") + ".", 1, true));
+
+                    if (missed > 0)
+                        status.Children.Add(Ui.Note(Ui.Count(missed, "element")
+                            + " got no reference, because the grid could not place them. They keep "
+                            + "whatever Grid value they already had rather than being given a blank "
+                            + "one: an element the grid cannot locate is not an element at grid "
+                            + "nowhere."));
+
+                    session.Record(ActivityKind.Write,
+                        "stamped grid references onto " + Ui.Count(written, "element"));
+                }
+            });
+
+            return Ui.Card("Put the grid reference on the elements",
+                "Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
+                + "\" grid system, so clash grouping, set rules and reports can all say \"C-4\" "
+                + "instead of a coordinate.",
+                apply,
+                status);
         }
 
         private static UIElement Stamp(Session session, LevelSet levels,
