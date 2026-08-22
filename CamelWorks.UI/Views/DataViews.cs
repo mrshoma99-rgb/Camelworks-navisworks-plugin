@@ -105,6 +105,7 @@ namespace CamelWorks.UI.Views
                 editor.Children.Add(Writer(session, keys));
                 editor.Children.Add(new ColumnScreen(session, keys).Build());
                 editor.Children.Add(new ExcelScreen(session, keys).Build());
+                editor.Children.Add(new CodeScreen(session, keys).Build());
             });
 
             return Ui.Scroll(Ui.Stack(
@@ -115,6 +116,218 @@ namespace CamelWorks.UI.Views
                 read,
                 results,
                 editor));
+        }
+
+        /// <summary>
+        /// Assign a code, and refuse anything the table does not list.
+        ///
+        /// The point is the refusal. A lookup that silently passes an unlisted value is a lookup
+        /// that does nothing — the whole reason a project keeps a code list is that "L3-MECH-01"
+        /// and "L03 MECH 1" are the same thing to a person and two different things to every
+        /// downstream tool, and the only moment either can be caught is the moment somebody writes
+        /// one.
+        ///
+        /// So it reads a property, puts each value through the table, and writes only what comes
+        /// back — in the table's own spelling, so a column ends up with one form of each code
+        /// rather than four. What it refused is counted and named.
+        /// </summary>
+        private sealed class CodeScreen
+        {
+            private const string Keep = "leave it alone";
+
+            private const string Replace = "replace it";
+
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _source = Ui.Text("Element / Classification", null, 240);
+            private readonly TextBox _target = Ui.Text("Code", null, 160);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _applyRow = Ui.Stack();
+
+            private ExistingValues _existing = ExistingValues.Keep;
+            private CodeTable? _table;
+            private WriteDiff? _diff;
+
+            internal CodeScreen(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var tables = CodeTables.FromJson(
+                    _session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+
+                if (tables.IsEmpty)
+                    return Ui.Card("Assign a code",
+                        "Needs a code table",
+                        Ui.Empty("No code tables on this project.",
+                            "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
+                            + "client sent. Everything else here works without one."));
+
+                _table = tables.Find(tables.Names[0]);
+
+                var picker = Ui.Choice(tables.Names, tables.Names[0], pick =>
+                {
+                    _table = tables.Find(pick);
+                    _target.Text = pick;
+                });
+
+                _target.Text = tables.Names[0];
+
+                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
+                {
+                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
+                    if (_diff != null) ShowApply();
+                });
+
+                var preview = Ui.Runner("Show me what would change", _status, Preview);
+
+                return Ui.Card("Assign a code",
+                    "Reads a property, puts it through the table, and writes only what the table lists",
+                    Ui.Field("Table", picker),
+                    Ui.Field("Read from", _source),
+                    Ui.Field("Write as", _target),
+                    Ui.Field("Existing values", policy),
+                    Ui.Across(preview),
+                    Ui.Note("\"Read from\" is a property on the elements, written as \"Category / Name\". "
+                            + "A value the table does not list is left alone and counted, never "
+                            + "written and never guessed at."),
+                    _status,
+                    _applyRow);
+            }
+
+            /// <summary>Read the source, check it against the table, and show the coverage and the diff.</summary>
+            private void Preview(Job job)
+            {
+                _applyRow.Children.Clear();
+                _diff = null;
+
+                var table = _table;
+                if (table == null) return;
+
+                var target = _target.Text.Trim();
+
+                if (target.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Give the property a name to write as."));
+                    return;
+                }
+
+                var (category, name) = Split(_source.Text);
+
+                if (name.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem(
+                        "Say which property to read, as \"Category / Name\" - for example "
+                        + "\"Element / Classification\"."));
+
+                    return;
+                }
+
+                job.Say("Reading " + name + "...");
+
+                var values = new List<string?>();
+
+                foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    values.Add(entry.Value?.Property(category, name));
+
+                var coverage = table.Check(values);
+
+                _status.Children.Add(Ui.Line(coverage.Explain(), 1, true));
+
+                _status.Children.Add(Ui.Across(
+                    Ui.Figure(Measure.Count(coverage.Coded), "in the table",
+                              coverage.Coded > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Figure(Measure.Count(coverage.Uncoded), "carry nothing"),
+                    Ui.Figure(Measure.Count(coverage.Invalid), "not in the table",
+                              coverage.Invalid > 0 ? Tone.Bad : Tone.Good)));
+
+                if (coverage.InvalidValues.Count > 0)
+                    _status.Children.Add(Ui.Problem("Not in " + table.Name + ": "
+                        + string.Join(", ", coverage.InvalidValues.Take(10))
+                        + ". Those elements are left alone. Either the table is missing a row or the "
+                        + "model is carrying a value nobody agreed to."));
+
+                var diff = PropertyDiff.Of(NavWriteTransaction.TabName, target,
+                    PropertyDiff.Resolve(_session.Model, _keys),
+                    item => table.Canonical(item.Property(category, name))
+                            ?? item.Property(NavWriteTransaction.TabName, target));
+
+                _diff = diff;
+
+                _status.Children.Add(Ui.Line(diff.Explain(), 0.85));
+
+                if (diff.Changes.Count > 0)
+                {
+                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
+                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
+
+                    _status.Children.Add(Ui.Table(rows,
+                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
+                }
+
+                ShowApply();
+            }
+
+            /// <summary>"Category / Name" into its two halves. A bare name means any category.</summary>
+            private static (string Category, string Name) Split(string? text)
+            {
+                var whole = (text ?? string.Empty).Trim();
+                var slash = whole.IndexOf('/');
+
+                return slash < 0
+                    ? (string.Empty, whole)
+                    : (whole.Substring(0, slash).Trim(), whole.Substring(slash + 1).Trim());
+            }
+
+            private void ShowApply()
+            {
+                _applyRow.Children.Clear();
+
+                var diff = _diff;
+                if (diff == null) return;
+
+                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+
+                if (count == 0)
+                {
+                    _applyRow.Children.Add(Ui.Note("Nothing would be written with that policy."));
+                    return;
+                }
+
+                _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(count, "element"), () => Apply(diff)));
+            }
+
+            private void Apply(WriteDiff diff)
+            {
+                _applyRow.Children.Clear();
+
+                var target = _target.Text.Trim();
+                int written;
+
+                using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: code " + target))
+                {
+                    foreach (var change in diff.Changes)
+                    {
+                        if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
+
+                        write.SetProperty(change.Key, NavWriteTransaction.TabName, target, change.After);
+                    }
+
+                    written = write.Commit();
+                }
+
+                _status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element")
+                    + ", every one of them a value " + (_table?.Name ?? "the table") + " lists.", 1, true));
+
+                _session.Record(ActivityKind.Write,
+                    "assigned " + target + " from a code table onto " + Ui.Count(written, "element"));
+
+                _diff = null;
+            }
         }
 
         /// <summary>

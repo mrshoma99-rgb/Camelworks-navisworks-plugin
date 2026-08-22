@@ -9,6 +9,7 @@ using Autodesk.Navisworks.Api.Plugins;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
@@ -37,7 +38,125 @@ namespace CamelWorks.UI.Views
         /// the model, which is the same question asked by somebody with a contract behind them.
         /// </summary>
         public static UIElement Health() =>
-            Ui.Scroll(Ui.Stack(Intake(), Federation(), BuiltIn(), Ids()));
+            Ui.Scroll(Ui.Stack(Intake(), Federation(), BuiltIn(), Coded(), Ids()));
+
+        /// <summary>
+        /// Whether the coded properties hold values anybody agreed to.
+        ///
+        /// The other half of a code table. Assigning from one guarantees what CamelWorks wrote;
+        /// this is the check over what is already there — values that arrived with the model, were
+        /// written by another tool, or were typed before the table existed.
+        /// </summary>
+        private static UIElement Coded()
+        {
+            var session = Host.Current;
+
+            if (session == null) return Ui.Card("Codes", Host.NoModel);
+
+            var tables = CodeTables.FromJson(
+                session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+
+            if (tables.IsEmpty)
+                return Ui.Card("Codes",
+                    "Needs a code table",
+                    Ui.Empty("No code tables on this project.",
+                        "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
+                        + "client sent. Every other check here runs without one."));
+
+            var results = Ui.Stack();
+            var table = tables.Find(tables.Names[0])!;
+            var property = Ui.Text(tables.Names[0], null, 240);
+
+            var picker = Ui.Choice(tables.Names, tables.Names[0], pick =>
+            {
+                table = tables.Find(pick)!;
+                property.Text = pick;
+            });
+
+            var run = Ui.Runner("Check the codes", results, job =>
+            {
+                var (category, name) = SplitProperty(property.Text);
+
+                if (name.Length == 0)
+                {
+                    results.Children.Add(Ui.Problem(
+                        "Say which property carries the code, as \"Category / Name\" or just the name."));
+
+                    return;
+                }
+
+                var values = new List<string?>();
+                var read = 0;
+
+                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                {
+                    if (read % 2000 == 0 && !job.Step(read, "elements read")) return;
+                    read++;
+
+                    values.Add(category.Length == 0
+                        ? Anywhere(item, name)
+                        : item.Property(category, name));
+                }
+
+                var coverage = table.Check(values);
+
+                results.Children.Add(Ui.Line(coverage.Explain(), 1, true));
+
+                results.Children.Add(Ui.Across(
+                    Ui.Figure(Measure.Count(coverage.Coded), "in " + table.Name,
+                              coverage.Coded > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Figure(Measure.Count(coverage.Uncoded), "carry nothing"),
+                    Ui.Figure(Measure.Count(coverage.Invalid), "out of the table",
+                              coverage.Invalid > 0 ? Tone.Bad : Tone.Good)));
+
+                if (coverage.IsClean)
+                {
+                    results.Children.Add(Ui.Note("Everything that carries a value carries one "
+                        + table.Name + " lists. Uncoded elements are a different question - a table "
+                        + "says which values are allowed, not which elements need one."));
+
+                    return;
+                }
+
+                results.Children.Add(Ui.Problem(Ui.Count(coverage.Invalid, "element")
+                    + " carry a value " + table.Name + " does not list. Either the table is missing "
+                    + "a row or the model is carrying a value nobody agreed to, and the difference "
+                    + "matters: one is a five-second edit and the other is a conversation."));
+
+                results.Children.Add(Ui.Table(
+                    coverage.InvalidValues.Select(v => new TableRow(v, v) { Tone = Tone.Bad }).ToList(),
+                    ("Not in " + table.Name, 0)));
+            });
+
+            return Ui.Card("Codes",
+                "Whether a coded property holds values anybody agreed to",
+                Ui.Field("Table", picker),
+                Ui.Field("Property", property),
+                run,
+                results);
+        }
+
+        /// <summary>"Category / Name" into its two halves. A bare name means any category.</summary>
+        private static (string Category, string Name) SplitProperty(string? text)
+        {
+            var whole = (text ?? string.Empty).Trim();
+            var slash = whole.IndexOf('/');
+
+            return slash < 0
+                ? (string.Empty, whole)
+                : (whole.Substring(0, slash).Trim(), whole.Substring(slash + 1).Trim());
+        }
+
+        /// <summary>The first property with this name in any category, or null.</summary>
+        private static string? Anywhere(IModelItem item, string name)
+        {
+            foreach (var property in item.Properties())
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(property.Value))
+                    return property.Value;
+
+            return null;
+        }
 
         /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
         private const string IntakeKey = "intake";
