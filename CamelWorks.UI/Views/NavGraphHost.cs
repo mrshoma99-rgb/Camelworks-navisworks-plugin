@@ -367,6 +367,61 @@ namespace CamelWorks.UI.Views
             _ => item.Category ?? PivotLine.None,
         };
 
+        /// <inheritdoc />
+        public bool Append(string path)
+        {
+            // TryAppendFile rather than AppendFile: the graph runner wants a false, not an
+            // exception, so it can stop the run and name the file that would not load.
+            try
+            {
+                if (!_session.Model.Document.TryAppendFile(path)) return false;
+
+                // Both caches are now short by everything in the file just appended. This one
+                // matters most: a graph that appends and then says "Everything" would work on the
+                // federation as it was before the append.
+                _everything = null;
+                _session.Model.Invalidate();
+
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
+
+        /// <inheritdoc />
+        public bool RefreshModels()
+        {
+            // UpdateFiles reloads only the models whose file has changed on disk, and reports
+            // whether any had. False is not a failure - it is the answer on the morning after
+            // nobody published.
+            try
+            {
+                var changed = _session.Model.Document.UpdateFiles();
+
+                // Every cached element handle is against the old load. Left stale, the step after
+                // this would run over a model that has been replaced underneath it.
+                if (changed)
+                {
+                    _everything = null;
+                    _session.Model.Invalidate();
+                }
+
+                return changed;
+            }
+            catch (Exception) { return false; }
+        }
+
+        /// <inheritdoc />
+        public bool Save(string path)
+        {
+            try
+            {
+                // The extension decides the format: .nwf keeps the links, .nwd bakes the geometry
+                // in. Navisworks reads it off the path, so nothing here has to choose.
+                return _session.Model.Document.TrySaveFile(path);
+            }
+            catch (Exception) { return false; }
+        }
+
         private static string Escape(string value) =>
             value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0
                 ? value

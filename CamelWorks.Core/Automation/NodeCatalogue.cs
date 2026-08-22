@@ -80,10 +80,12 @@ namespace CamelWorks.Core.Automation
     public sealed class NodeKind
     {
         internal NodeKind(string id, string group, string title, string summary,
-                          NodePort[] inputs, NodePort[] outputs, NodeSetting[] settings)
+                          NodePort[] inputs, NodePort[] outputs, NodeSetting[] settings,
+                          bool foundational = false)
         {
             Id = id; Group = group; Title = title; Summary = summary;
             Inputs = inputs; Outputs = outputs; Settings = settings;
+            Foundational = foundational;
         }
 
         /// <summary>Stable id, written to the file.</summary>
@@ -106,6 +108,17 @@ namespace CamelWorks.Core.Automation
 
         /// <summary>What it needs told.</summary>
         public IReadOnlyList<NodeSetting> Settings { get; }
+
+        /// <summary>
+        /// True when everything after this node depends on it having worked.
+        ///
+        /// The steps that assemble the federation. They carry no wires - nothing downstream can be
+        /// "skipped for want of an input" the way a colour node is - and yet a clash report over
+        /// three models where four were meant is exactly the quietly-wrong answer that gets
+        /// believed. So the runner stops on one of these rather than carrying on into a job that no
+        /// longer means what it says.
+        /// </summary>
+        public bool Foundational { get; }
 
         /// <summary>A port by id, input or output.</summary>
         /// <param name="portId">The port id.</param>
@@ -280,6 +293,25 @@ namespace CamelWorks.Core.Automation
                     Choice("format", "Format", "PDF", "PDF", "XLSX", "HTML"),
                     Text("title", "Title", "CamelWorks report"),
                 }),
+
+            new NodeKind("model.append", "Model", "Append a file",
+                "Adds a file to the federation, the way File > Append does. The step that makes an "
+                + "overnight job possible: a job that assembles its own federation does not need "
+                + "somebody to have assembled it first.",
+                None, None,
+                new[] { Text("path", "File") }, foundational: true),
+
+            new NodeKind("model.refresh", "Model", "Refresh from disk",
+                "Reloads every model whose file has changed since it was opened, so what follows is "
+                + "about today's models rather than Tuesday's.",
+                None, None, NoSettings, foundational: true),
+
+            new NodeKind("model.save", "Model", "Save the federation",
+                "Writes the document out. The extension decides it: .nwf keeps the links so the next "
+                + "refresh still works, .nwd bakes the geometry in so somebody without the source "
+                + "files can open it.",
+                None, None,
+                new[] { Text("path", "File") }, foundational: true),
 
             new NodeKind("csv.write", "Deliver", "CSV",
                 "Writes the table as comma-separated text.",

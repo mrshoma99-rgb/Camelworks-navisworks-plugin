@@ -109,6 +109,26 @@ namespace CamelWorks.Core.Automation
 
         /// <summary>Run the built-in health rules over the model, as a table.</summary>
         TableBlock Health();
+
+        /// <summary>
+        /// Append a file into the open federation.
+        /// </summary>
+        /// <param name="path">The file to append.</param>
+        /// <returns>True when the host took it.</returns>
+        bool Append(string path);
+
+        /// <summary>
+        /// Reload every loaded model whose file has changed on disk.
+        /// </summary>
+        /// <returns>True when anything actually changed.</returns>
+        bool RefreshModels();
+
+        /// <summary>
+        /// Save the document. The extension decides NWF or NWD.
+        /// </summary>
+        /// <param name="path">Where to save it.</param>
+        /// <returns>True when it was written.</returns>
+        bool Save(string path);
     }
 
     /// <summary>What one node did.</summary>
@@ -179,6 +199,11 @@ namespace CamelWorks.Core.Automation
     ///    skipped too, and every one of them says why. A half-built graph is the ordinary state of
     ///    one being written, and refusing to run any of it until every wire is in place would make
     ///    the canvas useless exactly while it is being used.
+    /// 3. <b>A foundational step that fails stops the run.</b> The steps that assemble the
+    ///    federation carry no wires, so the skip-what-depends-on-it rule cannot reach them: a
+    ///    failed append followed by a clash run and a report produces a real-looking PDF about a
+    ///    federation missing a model, and nothing on it says so. Stopping is the only answer that
+    ///    does not lie.
     /// </summary>
     public static class GraphRunner
     {
@@ -238,6 +263,19 @@ namespace CamelWorks.Core.Automation
                     if (produced != null) outputs[node.Id] = produced;
 
                     steps.Add(new GraphStep(node.Id, definition.Title, ran, outcome));
+
+                    // A foundational step that did not work stops the run. See NodeKind.Foundational:
+                    // these carry no wires, so nothing downstream would be skipped for want of an
+                    // input, and the job would go on to run tests and write a report about a
+                    // federation that is not the one it says it is.
+                    if (!ran && definition.Foundational)
+                    {
+                        problems.Add(definition.Title + ": " + outcome
+                                     + ". Nothing after this step was run, because everything after it "
+                                     + "would have been about a federation this did not finish "
+                                     + "assembling.");
+                        break;
+                    }
                 }
                 catch (Exception e)
                 {
@@ -386,6 +424,40 @@ namespace CamelWorks.Core.Automation
 
                     outcome = table.Rows.Count.ToString("N0", CultureInfo.InvariantCulture) + " rows";
                     produced = new Value { Table = table };
+                    return true;
+                }
+
+                case "model.append":
+                {
+                    var path = node.Setting("path").Trim();
+
+                    if (path.Length == 0) { outcome = "no file named"; return false; }
+
+                    if (!host.Append(path)) { outcome = "the host would not append " + path; return false; }
+
+                    outcome = "appended " + path;
+                    return true;
+                }
+
+                case "model.refresh":
+                {
+                    var changed = host.RefreshModels();
+
+                    // Nothing changed is a real answer and not a failure: it is the answer an
+                    // overnight refresh gives on the morning after nobody published.
+                    outcome = changed ? "models reloaded from disk" : "nothing on disk had changed";
+                    return true;
+                }
+
+                case "model.save":
+                {
+                    var path = node.Setting("path").Trim();
+
+                    if (path.Length == 0) { outcome = "no file named"; return false; }
+
+                    if (!host.Save(path)) { outcome = "the host would not save to " + path; return false; }
+
+                    outcome = "saved " + path;
                     return true;
                 }
 

@@ -158,6 +158,34 @@ namespace CamelWorks.Core.Testing
         }
 
         /// <inheritdoc />
+        /// <summary>Files this fake will refuse to append.</summary>
+        public HashSet<string> Unappendable { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>What a refresh reports having changed.</summary>
+        public bool AnythingChanged { get; set; } = true;
+
+        /// <inheritdoc />
+        public bool Append(string path)
+        {
+            Did.Add("append " + path);
+            return !Unappendable.Contains(path);
+        }
+
+        /// <inheritdoc />
+        public bool RefreshModels()
+        {
+            Did.Add("refresh");
+            return AnythingChanged;
+        }
+
+        /// <inheritdoc />
+        public bool Save(string path)
+        {
+            Did.Add("save " + path);
+            return true;
+        }
+
+        /// <inheritdoc />
         public void PublishSet(string name, IReadOnlyList<ElementKey> keys) =>
             Did.Add("publish:" + name + " x" + keys.Count);
     }
