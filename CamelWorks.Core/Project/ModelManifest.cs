@@ -532,13 +532,18 @@ namespace CamelWorks.Core.Project
         public IReadOnlyDictionary<string, ModelRecord> Before { get; }
 
         /// <summary>
-        /// True when nobody has published since the last run.
+        /// True when nobody has published since the last run, and nothing has been moved.
         ///
         /// Worth saying out loud: a week's coordination run against exactly last week's files
         /// produces exactly last week's board, and a coordinator who does not know that spends the
         /// meeting explaining why nothing moved.
+        ///
+        /// A model the federation has been moved counts as news even though its file is untouched.
+        /// It is in fact the most important news there is, and an early "nobody has published"
+        /// would bury exactly the thing worth reporting.
         /// </summary>
-        public bool NothingNew => HasPrevious && Arrived.Count == 0 && Changed.Count == 0;
+        public bool NothingNew =>
+            HasPrevious && Arrived.Count == 0 && Changed.Count == 0 && Moved.Count == 0;
 
         /// <summary>The one-line readout.</summary>
         public string Explain()

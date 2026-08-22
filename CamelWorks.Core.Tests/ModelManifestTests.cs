@@ -235,6 +235,10 @@ namespace CamelWorks.Core.Tests
             var intake = now.Since(last);
 
             Assert.Equal("STR.nwc", Assert.Single(intake.Moved).DisplayName);
+
+            // Not "nobody has published": the file is untouched, and that early answer would bury
+            // exactly the thing worth reporting.
+            Assert.False(intake.NothingNew);
             Assert.Contains("MOVED BY THE FEDERATION", intake.Explain());
             Assert.Contains(intake.Table().Rows, r => (r[2] ?? string.Empty).Contains("moved"));
         }

@@ -351,8 +351,10 @@ namespace CamelWorks.Nav
 
             try
             {
-                Document.SetModelUnitsAndTransform(source.Model, source.Model.Units, transform,
-                                                   source.Model.IsTransformReflected);
+                // On the model collection, not on the document: the document's own overload takes
+                // an index pair and is not the one that moves a model.
+                Document.Models.SetModelUnitsAndTransform(source.Model, source.Model.Units, transform,
+                                                          source.Model.IsTransformReflected);
 
                 // Everything handed out so far points into a tree that has just moved. A stale
                 // handle that looks fresh is worse than one that says it is stale.
