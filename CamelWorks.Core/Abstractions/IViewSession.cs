@@ -56,6 +56,20 @@ namespace CamelWorks.Core.Abstractions
         void FrameBox(BoundingBox box);
 
         /// <summary>
+        /// Look straight down at a box, orthographic, so a render of it is a plan.
+        ///
+        /// Orthographic because a perspective plan is not a plan: markers near the edges land where
+        /// the projection put them rather than where the thing is, and a reader scaling off it gets
+        /// a different answer at every corner.
+        ///
+        /// Returns false when the host refuses, which is an ordinary outcome — a 2D sheet view has
+        /// no camera to rotate — and the caller prints the report without the plan rather than
+        /// failing the export.
+        /// </summary>
+        /// <param name="box">What has to be visible, in metres.</param>
+        bool LookDown(BoundingBox box);
+
+        /// <summary>
         /// Remember where the camera is, and put it back when the returned handle is disposed.
         ///
         /// A <c>using</c> rather than a save/restore pair, because anything that moves the camera in

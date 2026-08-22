@@ -162,6 +162,35 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
+        public bool LookDown(CamelWorks.Core.Abstractions.BoundingBox box)
+        {
+            try
+            {
+                var scale = NavUnits.UnitsPerMetre(_document.Document.Units);
+                var viewpoint = Host.CurrentViewpoint.CreateCopy();
+
+                // Projection and direction before the fit, in that order: ZoomBox works out the
+                // extents the camera needs, and it can only do that once it knows which way the
+                // camera is facing and whether the frustum converges.
+                viewpoint.Projection = ViewpointProjection.Orthographic;
+                viewpoint.AlignDirection(new Vector3D(0, 0, -1));
+
+                viewpoint.ZoomBox(new BoundingBox3D(
+                    new Point3D(box.MinX * scale, box.MinY * scale, box.MinZ * scale),
+                    new Point3D(box.MaxX * scale, box.MaxY * scale, box.MaxZ * scale)));
+
+                Host.CurrentViewpoint.CopyFrom(viewpoint);
+
+                return true;
+            }
+            catch (Exception)
+            {
+                // A 2D sheet view has no camera to rotate. The report goes out without the plan.
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
         public IDisposable BorrowCamera() => new BorrowedCamera(Host);
 
         private sealed class BorrowedCamera : IDisposable

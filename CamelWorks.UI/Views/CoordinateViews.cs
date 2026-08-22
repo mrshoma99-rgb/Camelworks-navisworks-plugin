@@ -2205,6 +2205,7 @@ namespace CamelWorks.UI.Views
             private string _audience = Everyone;
             private bool _changedOnly;
             private bool _pictures;
+            private bool _keyPlan = true;
             private bool _perParty;
 
             internal UIElement Build()
@@ -2220,6 +2221,7 @@ namespace CamelWorks.UI.Views
 
                 var changed = Ui.Check("Only what the last run had not seen", _changedOnly, v => _changedOnly = v);
                 var pictures = Ui.Check("A picture of each group", _pictures, v => _pictures = v);
+                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan, v => _keyPlan = v);
                 var split = Ui.Check("One file per party, not one file", _perParty, v => _perParty = v);
 
                 var write = Ui.Runner("Write the report", _results, Write);
@@ -2241,6 +2243,7 @@ namespace CamelWorks.UI.Views
                             + "information."),
                     changed,
                     pictures,
+                    plan,
                     split,
                     Ui.Note("A picture moves your view while it runs and puts it back afterwards. On a "
                             + "board of two hundred groups that is two hundred renders, so it is off "
@@ -2301,7 +2304,7 @@ namespace CamelWorks.UI.Views
                 job.Say("Building the report...");
 
                 var document = Shape(session, board, groups, _audience, regressed,
-                                     Pictures(session, groups, job), revision, was);
+                                     Pictures(session, groups, job), revision, was, job);
 
                 job.Say("Writing...");
                 Emit(file, document, Flat(session, groups));
@@ -2362,7 +2365,7 @@ namespace CamelWorks.UI.Views
                     job.Say("Writing " + party + "...");
 
                     var document = Shape(session, board, groups, party, regressed,
-                                         Pictures(session, groups, job), revision, was);
+                                         Pictures(session, groups, job), revision, was, job);
 
                     Emit(file, document, Flat(session, groups));
 
@@ -2467,6 +2470,66 @@ namespace CamelWorks.UI.Views
             /// group would still be correct and would leave the view visibly jumping back and forth
             /// for as long as the report takes.
             /// </summary>
+            /// <summary>How wide the site plan is rendered. One pixel of a 400 m site is 250 mm.</summary>
+            private const int PlanWidth = 1600;
+
+            /// <summary>How tall the site plan is rendered.</summary>
+            private const int PlanHeight = 1200;
+
+            /// <summary>
+            /// One top-down plan of everything on the board, with a numbered marker per group.
+            ///
+            /// Rendered once per report, not once per group: it is the page a reader turns back to,
+            /// and forty renders of the same plan would be forty identical pages.
+            ///
+            /// The camera is borrowed and returned like the group pictures, and the whole thing is
+            /// skipped rather than failed when the host will not give a plan view — a 2D sheet has
+            /// no camera to rotate, and a report without a key plan is still a report.
+            /// </summary>
+            private ImageBlock? Plan(Session session, IReadOnlyList<ClashGroup> groups, Job job,
+                                     out BoundingBox framed)
+            {
+                framed = default;
+
+                if (!_keyPlan || groups.Count == 0) return null;
+
+                var site = KeyPlan.Extent(groups.SelectMany(g => g.Items).Select(i => (i.X, i.Y, i.Z)));
+                if (site == null) return null;
+
+                framed = KeyPlan.Frame(site.Value, PlanWidth, PlanHeight);
+
+                job.Say("Rendering the site plan...");
+
+                byte[]? png;
+
+                using (session.View.BorrowCamera())
+                {
+                    if (!session.View.LookDown(framed)) return null;
+
+                    png = session.View.Capture(PlanWidth, PlanHeight);
+                }
+
+                if (png == null || png.Length == 0) return null;
+
+                var block = new ImageBlock(png, "Every issue on this report, seen from above");
+
+                var number = 0;
+
+                foreach (var group in groups)
+                {
+                    number++;
+
+                    var first = group.Items.FirstOrDefault();
+                    if (first == null) continue;
+
+                    var at = KeyPlan.At(framed, first.X, first.Y);
+
+                    block.Callouts.Add(new Callout(number, at.X, at.Y));
+                }
+
+                return block;
+            }
+
             private IReadOnlyDictionary<string, byte[]> Pictures(Session session,
                                                                  IReadOnlyList<ClashGroup> groups, Job job)
             {
@@ -2536,7 +2599,7 @@ namespace CamelWorks.UI.Views
                                          IReadOnlyList<ClashGroup> groups, string audience,
                                          ICollection<ClashItem> regressed,
                                          IReadOnlyDictionary<string, byte[]> images,
-                                         string revision, ReportIssue? was)
+                                         string revision, ReportIssue? was, Job job)
             {
                 if (_mode == FieldPack)
                     return FieldPackOf(session, groups, audience, images, revision, was);
@@ -2544,7 +2607,10 @@ namespace CamelWorks.UI.Views
                 if (_mode == Penetration)
                     return PenetrationsOf(session, board, groups, audience, revision, was);
 
-                return Document(session, board, groups, audience, regressed, images, revision, was);
+                var plan = Plan(session, groups, job, out var framed);
+
+                return Document(session, board, groups, audience, regressed, images, revision, was,
+                                plan, framed, PlanWidth);
             }
 
             /// <summary>The flat table that goes into a spreadsheet.</summary>
@@ -2571,7 +2637,9 @@ namespace CamelWorks.UI.Views
                                                IReadOnlyList<ClashGroup> groups, string audience,
                                                ICollection<ClashItem> regressed,
                                                IReadOnlyDictionary<string, byte[]> images,
-                                               string? revision = null, ReportIssue? supersedes = null)
+                                               string? revision = null, ReportIssue? supersedes = null,
+                                               ImageBlock? plan = null, BoundingBox framed = default,
+                                               int planWidth = 0)
         {
             var whole = groups.Count == board.Groups.Count;
 
@@ -2611,6 +2679,7 @@ namespace CamelWorks.UI.Views
 
             Since(document, groups, regressed);
             WhoOwesWhat(document, session, board, whole ? null : audience);
+            WhereOnSite(document, session, groups, plan, framed, planWidth);
 
             document.Heading("Groups");
             document.Add(Summary(groups, session.Profile.Units));
@@ -2622,8 +2691,72 @@ namespace CamelWorks.UI.Views
             document.Add(Table(groups, session.Profile.Units));
 
             WhatItWasRunAgainst(document, session);
+            WhatIsNotShown(document, session);
 
             return document;
+        }
+
+        /// <summary>
+        /// One plan of the site with every issue marked on it, and what it can and cannot resolve.
+        ///
+        /// A report full of close-up renders answers "what does this look like" and never answers
+        /// "where is it". One plan answers the second question for forty issues at once.
+        /// </summary>
+        private static void WhereOnSite(ReportDocument document, Session session,
+                                        IReadOnlyList<ClashGroup> groups, ImageBlock? plan,
+                                        BoundingBox framed, int planWidth)
+        {
+            if (plan == null) return;
+
+            document.PageBreak();
+            document.Heading("Where on the site");
+            document.Add(plan);
+
+            var number = 0;
+
+            document.Add(KeyPlan.Legend(groups.Select(g =>
+            {
+                number++;
+
+                var first = g.Items.FirstOrDefault();
+
+                return (number, g.Name, g.AssignedTo, first?.Level);
+            })));
+
+            document.Paragraph(KeyPlan.Resolution(framed, planWidth, session.Profile.Units));
+        }
+
+        /// <summary>
+        /// What this report could not show.
+        ///
+        /// Its own block so it cannot be forgotten. The redline line is the honest one: a
+        /// coordinator who has marked up a viewpoint has every reason to expect the words to come
+        /// out in the report, and finding out on site that they did not is worse than being told
+        /// here.
+        /// </summary>
+        private static void WhatIsNotShown(ReportDocument document, Session session)
+        {
+            var disclosure = new DisclosureBlock("Not shown in this report");
+
+            var marked = 0;
+
+            try
+            {
+                marked = session.Viewpoints.All().Count(v => v.HasRedlines);
+            }
+            catch (Exception)
+            {
+                // A host that cannot list viewpoints simply contributes no line.
+            }
+
+            if (marked > 0)
+                disclosure.Line("Redline mark-ups on " + Ui.Count(marked, "saved viewpoint")
+                    + ". Navisworks exposes no supported way for a plug-in to read the text of a "
+                    + "redline: the drawing objects live behind an internal state handle the public "
+                    + "API never hands out, and neither the .NET nor the COM surface enumerates them. "
+                    + "Anything written on those viewpoints has to be read in Navisworks.");
+
+            if (disclosure.Lines.Count > 0) document.Add(disclosure);
         }
 
         /// <summary>

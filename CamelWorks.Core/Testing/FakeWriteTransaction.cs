@@ -178,6 +178,25 @@ namespace CamelWorks.Core.Testing
             _document.Record("view.frameBox");
         }
 
+        /// <summary>Whether the host will accept a plan view. Settable, so a test can refuse one.</summary>
+        public bool CanLookDown { get; set; } = true;
+
+        /// <summary>The box the camera was last looked down at, or null.</summary>
+        public BoundingBox? LookedDownAt { get; private set; }
+
+        /// <inheritdoc />
+        public bool LookDown(BoundingBox box)
+        {
+            _document.Record("view.lookDown");
+
+            if (!CanLookDown) return false;
+
+            LookedDownAt = box;
+            Framed = box;
+
+            return true;
+        }
+
         /// <inheritdoc />
         public IDisposable BorrowCamera()
         {
