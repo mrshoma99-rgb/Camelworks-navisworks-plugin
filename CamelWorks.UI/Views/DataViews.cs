@@ -104,6 +104,7 @@ namespace CamelWorks.UI.Views
                 editor.Children.Clear();
                 editor.Children.Add(Writer(session, keys));
                 editor.Children.Add(new ColumnScreen(session, keys).Build());
+                editor.Children.Add(new ExcelScreen(session, keys).Build());
             });
 
             return Ui.Scroll(Ui.Stack(
@@ -114,6 +115,377 @@ namespace CamelWorks.UI.Views
                 read,
                 results,
                 editor));
+        }
+
+        /// <summary>
+        /// Out to a spreadsheet and back again, keyed.
+        ///
+        /// Sending properties out is a courtesy; taking them back is the feature. The whole reason
+        /// a project exports a schedule is that somebody is going to fill in a column, and a tool
+        /// that cannot read it back has moved the retyping rather than removed it.
+        ///
+        /// The sheet carries a written identity column so a returned row is matched on what it is
+        /// rather than on what it is called — every keyed import in this industry matches on a mark
+        /// or a description, and every one of them breaks the first time two doors are called
+        /// "D-12". That column is the one column the import may never write back.
+        ///
+        /// Coming back in goes through exactly the same preview as any other write: a diff, element
+        /// by element, before anything touches the model.
+        /// </summary>
+        private sealed class ExcelScreen
+        {
+            /// <summary>What the picker says for each policy.</summary>
+            private const string Keep = "leave it alone";
+
+            private const string Replace = "replace it";
+
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _out = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _in = Ui.Text(string.Empty, null, 340);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _applyRow = Ui.Stack();
+
+            private ExistingValues _existing = ExistingValues.Keep;
+            private SheetImportReport? _read;
+            private string? _column;
+            private string _property = string.Empty;
+            private WriteDiff? _diff;
+
+            internal ExcelScreen(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var write = Ui.Runner("Write a sheet", _status, Out);
+                var read = Ui.Runner("Read a sheet back", _status, In);
+
+                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
+                {
+                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
+                    if (_diff != null) ShowApply();
+                });
+
+                return Ui.Card("Excel",
+                    "Out with an identity column, back in through the same preview as any other write",
+                    Ui.Field("Write to", _out),
+                    Ui.Across(write),
+                    Ui.Field("Read back", _in),
+                    Ui.Field("Existing values", policy),
+                    Ui.Across(read),
+                    Ui.Note("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
+                            + "returned row is matched to an element, it is never written back, and "
+                            + "deleting it makes the sheet unreadable. Rows that match nothing are "
+                            + "counted and named rather than skipped."),
+                    _status,
+                    _applyRow);
+            }
+
+            /// <summary>Every property these elements carry, one column each, plus the identity.</summary>
+            private void Out(Job job)
+            {
+                _applyRow.Children.Clear();
+
+                var path = _out.Text.Trim();
+
+                if (path.Length == 0)
+                {
+                    path = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        Deliverable.Safe(_session.Profile.ProjectName + " properties") + ".xlsx");
+
+                    _out.Text = path;
+                }
+
+                job.Say("Reading properties...");
+
+                var columns = new List<string>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var rows = new List<(ElementKey Key, string Name, Dictionary<string, string?> Values)>();
+
+                var read = 0;
+
+                foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                {
+                    if (!job.Step(read++, "elements read")) return;
+                    if (entry.Value == null) continue;
+
+                    var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var property in entry.Value.Properties())
+                    {
+                        var name = property.Category + " / " + property.Name;
+
+                        if (seen.Add(name)) columns.Add(name);
+
+                        values[name] = property.Value;
+                    }
+
+                    rows.Add((entry.Key, entry.Value.DisplayName, values));
+                }
+
+                if (rows.Count == 0)
+                {
+                    _status.Children.Add(Ui.Empty("Nothing to write.",
+                        "None of the elements that were read could be found in the model any more. "
+                        + "Read the properties again."));
+                    return;
+                }
+
+                // Alphabetical after the two fixed columns, so a sheet somebody opens next week has
+                // the columns where they were last week.
+                columns.Sort(StringComparer.OrdinalIgnoreCase);
+
+                var sheet = new XlsxSheet("Properties");
+
+                var header = new List<string?> { SheetImport.KeyHeading, "Element" };
+                header.AddRange(columns);
+                sheet.Row(header.ToArray());
+
+                foreach (var row in rows)
+                {
+                    var cells = new List<string?> { row.Key.ToString(), row.Name };
+
+                    foreach (var column in columns)
+                        cells.Add(row.Values.TryGetValue(column, out var value) ? value : null);
+
+                    sheet.Row(cells.ToArray());
+                }
+
+                job.Say("Writing...");
+
+                try
+                {
+                    System.IO.File.WriteAllBytes(path, XlsxWriter.Write(new[] { sheet }));
+                }
+                catch (Exception error)
+                {
+                    _status.Children.Add(Ui.Problem("Could not write it: " + error.Message));
+                    return;
+                }
+
+                _in.Text = path;
+
+                _status.Children.Add(Ui.Line("Wrote " + Ui.Count(rows.Count, "element") + " and "
+                    + Ui.Count(columns.Count, "property") + " to " + path, 1, true));
+
+                _session.Record(ActivityKind.Export, "wrote properties to a spreadsheet", path);
+            }
+
+            /// <summary>Read a returned sheet, match it, and show what would change.</summary>
+            private void In(Job job)
+            {
+                _applyRow.Children.Clear();
+                _diff = null;
+
+                var path = _in.Text.Trim();
+
+                if (path.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Say which file to read back."));
+                    return;
+                }
+
+                byte[] bytes;
+
+                try
+                {
+                    bytes = System.IO.File.ReadAllBytes(path);
+                }
+                catch (Exception error)
+                {
+                    _status.Children.Add(Ui.Problem("Could not read it: " + error.Message));
+                    return;
+                }
+
+                job.Say("Reading the sheet...");
+
+                var book = XlsxReader.Read(bytes);
+
+                if (!book.IsUsable)
+                {
+                    _status.Children.Add(Ui.Problem(book.Problem ?? "Nothing could be read from that file."));
+                    return;
+                }
+
+                var known = new HashSet<string>(_keys.Select(k => k.ToString()), StringComparer.Ordinal);
+
+                var report = SheetImport.Of(book.Sheet("Properties") ?? book.First, known);
+                _read = report;
+
+                _status.Children.Add(Ui.Line(report.Explain(), 1, true));
+
+                if (report.Problem != null)
+                {
+                    _status.Children.Add(Ui.Problem(report.Problem));
+                    return;
+                }
+
+                Unplaceable(report);
+
+                if (!report.IsUsable) return;
+
+                var writable = report.Writable.Where(w => !string.Equals(w, "Element",
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (writable.Count == 0)
+                {
+                    _status.Children.Add(Ui.Empty("Nothing to bring back.",
+                        "That sheet has an identity column and nothing else worth writing."));
+                    return;
+                }
+
+                _column = writable[0];
+                _property = Suggested(_column);
+
+                var name = Ui.Text(_property, null, 200);
+                var picker = Ui.Choice(writable, _column, pick =>
+                {
+                    _column = pick;
+                    name.Text = Suggested(pick);
+                });
+
+                var preview = Ui.Runner("Show me what would change", _status,
+                    inner => Preview(inner, name.Text));
+
+                _status.Children.Add(Ui.Field("Bring back the column", picker));
+                _status.Children.Add(Ui.Field("Write it as", name));
+                _status.Children.Add(Ui.Across(preview));
+            }
+
+            /// <summary>What a sheet column should be called on the element, before anybody edits it.</summary>
+            private static string Suggested(string? column)
+            {
+                if (string.IsNullOrWhiteSpace(column)) return "Value";
+
+                var slash = column!.LastIndexOf('/');
+
+                return slash < 0 ? column.Trim() : column.Substring(slash + 1).Trim();
+            }
+
+            /// <summary>Say what could not be placed, in full, before offering to write anything.</summary>
+            private void Unplaceable(SheetImportReport report)
+            {
+                if (report.Unmatched.Count > 0)
+                    _status.Children.Add(Ui.Problem(
+                        Ui.Count(report.Unmatched.Count, "row") + " in that sheet match no element in "
+                        + "scope - rows " + string.Join(", ", report.Unmatched.Take(8).Select(r => r.Number))
+                        + (report.Unmatched.Count > 8 ? " and more" : string.Empty)
+                        + ". They were added after the export, belong to another package, or name "
+                        + "elements this model no longer has. Nothing will be written for them."));
+
+                if (report.Duplicates.Count > 0)
+                    _status.Children.Add(Ui.Problem(
+                        Ui.Count(report.Duplicates.Count, "row") + " repeat an identity an earlier row "
+                        + "already claimed - rows "
+                        + string.Join(", ", report.Duplicates.Take(8).Select(r => r.Number))
+                        + ". The first row wins and these are ignored."));
+
+                if (report.Blank > 0)
+                    _status.Children.Add(Ui.Note(
+                        Ui.Count(report.Blank, "row") + " carry values but no identity, so there is no "
+                        + "way to tell which element they are about."));
+            }
+
+            /// <summary>The diff, from the chosen column, through the same path as every other write.</summary>
+            private void Preview(Job job, string property)
+            {
+                _applyRow.Children.Clear();
+                _diff = null;
+
+                var report = _read;
+                if (report == null) return;
+
+                var name = property.Trim();
+
+                if (name.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Give the property a name first."));
+                    return;
+                }
+
+                _property = name;
+
+                var values = report.Column(report.ColumnOf(_column));
+
+                job.Say("Reading what is there now...");
+
+                var diff = PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                    PropertyDiff.Resolve(_session.Model, _keys),
+                    item => values.TryGetValue(item.Key.ToString(), out var value)
+                        ? value
+                        : item.Property(NavWriteTransaction.TabName, name));
+
+                _diff = diff;
+
+                _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
+
+                if (diff.Changes.Count > 0)
+                {
+                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
+                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
+
+                    _status.Children.Add(Ui.Table(rows,
+                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
+                }
+
+                ShowApply();
+            }
+
+            private void ShowApply()
+            {
+                _applyRow.Children.Clear();
+
+                var diff = _diff;
+                if (diff == null) return;
+
+                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+
+                if (count == 0)
+                {
+                    _applyRow.Children.Add(Ui.Note("Nothing would be written with that policy."));
+                    return;
+                }
+
+                _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(count, "element"), () => Apply(diff)));
+            }
+
+            private void Apply(WriteDiff diff)
+            {
+                _applyRow.Children.Clear();
+
+                int written;
+
+                using (var write = new NavWriteTransaction(_session.Model,
+                           "CamelWorks: " + _property + " from a spreadsheet"))
+                {
+                    // Queued from the diff rather than from the scope, so an element already
+                    // holding the value is not written to at all - and an element the sheet said
+                    // nothing about is not touched, because its "after" is its "before".
+                    foreach (var change in diff.Changes)
+                    {
+                        if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
+
+                        write.SetProperty(change.Key, NavWriteTransaction.TabName, _property, change.After);
+                    }
+
+                    written = write.Commit();
+                }
+
+                _status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
+
+                _session.Record(ActivityKind.Write,
+                    "brought " + _property + " back from a spreadsheet onto "
+                    + Ui.Count(written, "element"));
+
+                // The diff describes a model that no longer exists. Pressing the button twice would
+                // report a second write of nothing and read as if the first had failed.
+                _diff = null;
+            }
         }
 
         /// <summary>
