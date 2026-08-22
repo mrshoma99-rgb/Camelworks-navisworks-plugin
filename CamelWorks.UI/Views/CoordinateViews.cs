@@ -2187,11 +2187,21 @@ namespace CamelWorks.UI.Views
             /// <summary>The audience that means the groups nobody owns yet.</summary>
             private const string Nobody = "Only the unassigned";
 
+            /// <summary>The whole board, laid out for a desk.</summary>
+            private const string FullReport = "Full report";
+
+            /// <summary>One issue per page in large type, for a hand and a wall.</summary>
+            private const string FieldPack = "Field pack - one issue per page";
+
+            /// <summary>Services through structure, for the pour.</summary>
+            private const string Penetration = "Penetration schedule";
+
             private readonly StackPanel _results = Ui.Stack();
             private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
             private readonly TextBox _template = Ui.Text(Deliverable.DefaultTemplate, null, 340);
 
             private string _format = "PDF";
+            private string _mode = FullReport;
             private string _audience = Everyone;
             private bool _changedOnly;
             private bool _pictures;
@@ -2205,6 +2215,7 @@ namespace CamelWorks.UI.Views
                 if (session != null) parties.AddRange(session.Profile.Parties);
 
                 var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format, f => _format = f);
+                var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m => _mode = m);
                 var audience = Ui.Choice(parties, _audience, a => _audience = a);
 
                 var changed = Ui.Check("Only what the last run had not seen", _changedOnly, v => _changedOnly = v);
@@ -2219,6 +2230,7 @@ namespace CamelWorks.UI.Views
                            + "and the numbers on the cover are the funnel's, so the report and the screen "
                            + "agree."),
                     Ui.Field("Format", format),
+                    Ui.Field("Contents", mode),
                     Ui.Field("For", audience),
                     Ui.Field("Write to", _path),
                     Ui.Field("Name it", _template),
@@ -2233,6 +2245,11 @@ namespace CamelWorks.UI.Views
                     Ui.Note("A picture moves your view while it runs and puts it back afterwards. On a "
                             + "board of two hundred groups that is two hundred renders, so it is off "
                             + "until you ask for it."),
+                    Ui.Note("The field pack is the same board set for a site cabin: one issue per page, "
+                            + "type big enough to read one-handed, and a line to sign against. The "
+                            + "penetration schedule is every service that goes through structure - what "
+                            + "the model says it is and where, with no opening size derived and no host "
+                            + "thickness inferred, because those are numbers somebody cuts concrete from."),
                     write,
                     _results));
             }
@@ -2283,11 +2300,11 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Building the report...");
 
-                var document = Document(session, board, groups, _audience, regressed,
-                                        Pictures(session, groups, job), revision, was);
+                var document = Shape(session, board, groups, _audience, regressed,
+                                     Pictures(session, groups, job), revision, was);
 
                 job.Say("Writing...");
-                Emit(file, document, groups, session.Profile.Units);
+                Emit(file, document, Flat(session, groups));
 
                 Issued(session, _audience, new ReportIssue(revision, now, System.IO.Path.GetFileName(file)));
                 session.Store.Save();
@@ -2344,10 +2361,10 @@ namespace CamelWorks.UI.Views
 
                     job.Say("Writing " + party + "...");
 
-                    var document = Document(session, board, groups, party, regressed,
-                                            Pictures(session, groups, job), revision, was);
+                    var document = Shape(session, board, groups, party, regressed,
+                                         Pictures(session, groups, job), revision, was);
 
-                    Emit(file, document, groups, session.Profile.Units);
+                    Emit(file, document, Flat(session, groups));
 
                     // Each party has its own revision letter, because each party has its own
                     // sequence of issues and telling Mechanical they are on revision F because
@@ -2478,13 +2495,19 @@ namespace CamelWorks.UI.Views
                 return images;
             }
 
-            private void Emit(string file, ReportDocument document, IReadOnlyList<ClashGroup> groups,
-                              Measure units)
+            /// <summary>
+            /// Write it out, in whichever of the three shapes was asked for.
+            ///
+            /// The spreadsheet gets the same content as a flat table rather than the laid-out
+            /// document: a field pack pasted into Excel one issue per sheet would be unusable, and
+            /// what somebody wants from a spreadsheet is rows they can sort.
+            /// </summary>
+            private void Emit(string file, ReportDocument document, TableBlock flat)
             {
                 switch (_format)
                 {
                     case "XLSX":
-                        File.WriteAllBytes(file, XlsxWriter.Write("Clashes", Table(groups, units)));
+                        File.WriteAllBytes(file, XlsxWriter.Write(SheetName, flat));
                         break;
 
                     case "HTML":
@@ -2493,10 +2516,44 @@ namespace CamelWorks.UI.Views
 
                     default:
                     {
-                        using (var stream = File.Create(file)) PdfReportWriter.Write(stream, document);
+                        using (var stream = File.Create(file))
+                            PdfReportWriter.Write(stream, document,
+                                _mode == FieldPack ? PdfReportWriter.FieldPackType : 1);
+
                         break;
                     }
                 }
+            }
+
+            /// <summary>What the one worksheet is called.</summary>
+            private string SheetName =>
+                _mode == Penetration ? "Penetrations" : _mode == FieldPack ? "Field pack" : "Clashes";
+
+            /// <summary>The document, in whichever of the three shapes was asked for.</summary>
+            private ReportDocument Shape(Session session, ClashPipelineResult board,
+                                         IReadOnlyList<ClashGroup> groups, string audience,
+                                         ICollection<ClashItem> regressed,
+                                         IReadOnlyDictionary<string, byte[]> images,
+                                         string revision, ReportIssue? was)
+            {
+                if (_mode == FieldPack)
+                    return FieldPackOf(session, groups, audience, images, revision, was);
+
+                if (_mode == Penetration)
+                    return PenetrationsOf(session, board, groups, audience, revision, was);
+
+                return Document(session, board, groups, audience, regressed, images, revision, was);
+            }
+
+            /// <summary>The flat table that goes into a spreadsheet.</summary>
+            private TableBlock Flat(Session session, IReadOnlyList<ClashGroup> groups)
+            {
+                var units = session.Profile.Units;
+
+                if (_mode == Penetration) return Schedule(session, groups).Table(units);
+                if (_mode == FieldPack) return FieldTable(groups, units);
+
+                return Table(groups, units);
             }
         }
 
@@ -2565,6 +2622,264 @@ namespace CamelWorks.UI.Views
             WhatItWasRunAgainst(document, session);
 
             return document;
+        }
+
+        /// <summary>
+        /// The same board, set for a site cabin.
+        ///
+        /// Portrait, one issue per page, type big enough to read one-handed off a phone, and a line
+        /// to sign against. Nobody had watched a foreman pinch-zoom a forty-page landscape PDF, and
+        /// it is the difference between a report that gets used on site and one that gets printed
+        /// and left in the cabin.
+        ///
+        /// No funnel, no manifest, no per-party ledger: those are a coordinator's questions, and
+        /// putting them in front of somebody holding a spanner is how the page that matters gets
+        /// missed.
+        /// </summary>
+        private static ReportDocument FieldPackOf(Session session, IReadOnlyList<ClashGroup> groups,
+                                                  string audience,
+                                                  IReadOnlyDictionary<string, byte[]> images,
+                                                  string revision, ReportIssue? was)
+        {
+            var units = session.Profile.Units;
+
+            var document = new ReportDocument(session.Profile.ProjectName + " — field pack")
+            {
+                Subtitle = audience,
+            };
+
+            document.Fact("Project", session.Profile.ProjectName);
+            document.Fact("For", audience);
+            document.Fact("Revision", revision);
+            document.Fact("Date", DateTime.Now.ToString("d MMMM yyyy", CultureInfo.InvariantCulture));
+            document.Fact("Issues", Ui.Count(groups.Sum(g => g.Items.Count), "clash"));
+
+            if (was != null) document.Paragraph(was.Supersedes);
+
+            document.Paragraph("One page per issue. Each page says where it is, what to do about it, "
+                               + "and has a line to sign when it is done.");
+
+            var number = 0;
+
+            foreach (var group in groups)
+            {
+                document.PageBreak();
+
+                number++;
+
+                document.Heading(number.ToString(CultureInfo.InvariantCulture) + ". " + group.Name);
+
+                if (images.TryGetValue(group.Name, out var png))
+                    document.Add(new ImageBlock(png, group.AssignedTo ?? PartyLedger.Nobody));
+
+                document.Add(new ParagraphBlock(group.Instruction.Describe(units)) { IsBold = true });
+
+                document.Add(WhereItIs(group, units));
+                document.Add(SignHere());
+            }
+
+            return document;
+        }
+
+        /// <summary>Where the issue is, in as few rows as it can be said in.</summary>
+        private static TableBlock WhereItIs(ClashGroup group, Measure units)
+        {
+            var table = new TableBlock("Where", "What");
+
+            var first = group.Items.FirstOrDefault();
+
+            table.Row("Level", first?.Level ?? Measure.Nothing);
+            table.Row("Models", first?.ModelPair ?? Measure.Nothing);
+
+            table.Row("Setting out (" + units.LengthUnit + ")",
+                first == null ? Measure.Nothing
+                    : units.Bare(first.X) + ", " + units.Bare(first.Y) + ", " + units.Bare(first.Z));
+
+            table.Row("Responsible", group.AssignedTo ?? PartyLedger.Nobody);
+            table.Row("Clashes in this issue", Ui.Count(group.Items.Count, "clash"));
+
+            return table;
+        }
+
+        /// <summary>
+        /// A line to sign against.
+        ///
+        /// A table rather than a block of its own, so it renders on all three outputs without any
+        /// of the three writers learning a new shape. The row is empty because somebody fills it in
+        /// with a pen.
+        /// </summary>
+        private static TableBlock SignHere()
+        {
+            var table = new TableBlock("Fixed by", "Date", "Signature");
+
+            table.Row(" ", " ", " ");
+
+            return table;
+        }
+
+        /// <summary>The field pack as a flat table, for the spreadsheet.</summary>
+        private static TableBlock FieldTable(IReadOnlyList<ClashGroup> groups, Measure units)
+        {
+            var axis = " (" + units.LengthUnit + ")";
+
+            var table = new TableBlock("#", "Issue", "Level", "Models", "Responsible",
+                                       "X" + axis, "Y" + axis, "Z" + axis,
+                                       "What to do", "Fixed by", "Date");
+
+            var number = 0;
+
+            foreach (var group in groups)
+            {
+                var first = group.Items.FirstOrDefault();
+
+                number++;
+
+                table.Row(number.ToString(CultureInfo.InvariantCulture),
+                          group.Name,
+                          first?.Level ?? string.Empty,
+                          first?.ModelPair ?? string.Empty,
+                          group.AssignedTo ?? PartyLedger.Nobody,
+                          first == null ? string.Empty : units.Bare(first.X),
+                          first == null ? string.Empty : units.Bare(first.Y),
+                          first == null ? string.Empty : units.Bare(first.Z),
+                          group.Instruction.Describe(units),
+                          string.Empty, string.Empty);
+            }
+
+            return table;
+        }
+
+        /// <summary>
+        /// Every service that goes through structure, as a schedule.
+        ///
+        /// On a concrete frame the pour date is the one immovable date on the programme, and this
+        /// list is what has to be right before it — today produced by reading a clash board and
+        /// retyping it into a spreadsheet, which is the same list one transcription error later.
+        /// </summary>
+        private static ReportDocument PenetrationsOf(Session session, ClashPipelineResult board,
+                                                     IReadOnlyList<ClashGroup> groups, string audience,
+                                                     string revision, ReportIssue? was)
+        {
+            var units = session.Profile.Units;
+            var schedule = Schedule(session, groups);
+
+            var document = new ReportDocument(session.Profile.ProjectName + " — penetration schedule")
+            {
+                Subtitle = audience,
+            };
+
+            document.Fact("Project", session.Profile.ProjectName);
+            document.Fact("For", audience);
+            document.Fact("Revision", revision);
+            document.Fact("Date", DateTime.Now.ToString("d MMMM yyyy", CultureInfo.InvariantCulture));
+            document.Fact("Penetrations", Ui.Count(schedule.Lines.Count, "penetration"));
+
+            if (was != null) document.Paragraph(was.Supersedes);
+
+            document.Heading("Services through structure");
+            document.Paragraph(schedule.Explain());
+
+            if (schedule.IsEmpty)
+            {
+                document.Paragraph(
+                    "Nothing on this board pairs a service with a piece of structure. That is a real "
+                    + "answer on a steel frame or an early-stage model; on a concrete frame with MEP "
+                    + "loaded it more likely means the categories in these models do not name their "
+                    + "elements as ducts, pipes, walls and slabs.");
+
+                return document;
+            }
+
+            document.Add(schedule.Table(units));
+
+            document.Paragraph(
+                "Sizes and systems are what the model states, not what CamelWorks worked out. No "
+                + "opening size is derived and no host thickness is inferred: both are numbers "
+                + "somebody cuts concrete from, and neither is this tool's to guess.");
+
+            WhatItWasRunAgainst(document, session);
+
+            return document;
+        }
+
+        /// <summary>
+        /// Pick the penetrations out of the board.
+        ///
+        /// One line per result rather than per group, because a group of eight ducts through one
+        /// wall is eight sleeves and the schedule is a list of sleeves.
+        /// </summary>
+        private static PenetrationSchedule Schedule(Session session, IReadOnlyList<ClashGroup> groups)
+        {
+            var lines = new List<PenetrationLine>();
+            var considered = 0;
+
+            foreach (var group in groups)
+            {
+                foreach (var item in group.Items)
+                {
+                    considered++;
+
+                    var a = session.Model.Resolve(item.Key.A);
+                    var b = session.Model.Resolve(item.Key.B);
+
+                    var serviceIsA = Penetrations.ServiceIsA(
+                        item.CategoryA ?? a?.Category, a?.TypeName,
+                        item.CategoryB ?? b?.Category, b?.TypeName);
+
+                    if (serviceIsA == null) continue;
+
+                    var service = serviceIsA.Value ? a : b;
+                    var host = serviceIsA.Value ? b : a;
+
+                    var serviceName = service?.DisplayName
+                                      ?? (serviceIsA.Value ? item.CategoryA : item.CategoryB);
+
+                    var hostName = host?.DisplayName
+                                   ?? (serviceIsA.Value ? item.CategoryB : item.CategoryA);
+
+                    lines.Add(new PenetrationLine(group.Name, serviceName ?? "(unnamed)",
+                                                  hostName ?? "(unnamed)")
+                    {
+                        Size = Size(service),
+                        SystemName = service?.Property("Element", "System Name")
+                                     ?? service?.Property("Item", "System")
+                                     ?? service?.Property("Element", "System Classification"),
+                        HostType = host?.TypeName,
+                        Level = item.Level,
+                        Party = group.AssignedTo,
+                        X = item.X, Y = item.Y, Z = item.Z,
+                        Status = item.Status,
+                    });
+                }
+            }
+
+            return Penetrations.Of(lines, considered);
+        }
+
+        /// <summary>
+        /// The service's size, as the model states it.
+        ///
+        /// Read, never derived. A round duct carries a diameter, a rectangular one carries width
+        /// and height, and a tool that inferred one from a bounding box would be handing somebody a
+        /// number to cut concrete from that no engineer had ever seen.
+        /// </summary>
+        private static string? Size(IModelItem? item)
+        {
+            if (item == null) return null;
+
+            var stated = item.Property("Element", "Size") ?? item.Property("Item", "Size");
+            if (!string.IsNullOrWhiteSpace(stated)) return stated!.Trim();
+
+            var diameter = item.Property("Element", "Diameter");
+            if (!string.IsNullOrWhiteSpace(diameter)) return diameter!.Trim();
+
+            var width = item.Property("Element", "Width");
+            var height = item.Property("Element", "Height");
+
+            if (!string.IsNullOrWhiteSpace(width) && !string.IsNullOrWhiteSpace(height))
+                return width!.Trim() + " x " + height!.Trim();
+
+            return null;
         }
 
         /// <summary>

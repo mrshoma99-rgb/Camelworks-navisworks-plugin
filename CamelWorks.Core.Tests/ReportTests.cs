@@ -9,6 +9,20 @@ namespace CamelWorks.Core.Tests
     public class ReportDocumentTests
     {
         [Fact]
+        public void A_bold_paragraph_is_marked_so_a_reader_can_find_the_one_sentence_that_matters()
+        {
+            var html = HtmlReportWriter.Write(
+                new ReportDocument("t").Add(new ParagraphBlock("Move the duct 150 mm down") { IsBold = true }));
+
+            Assert.Contains("<p class=\"strong\">Move the duct 150 mm down</p>", html, StringComparison.Ordinal);
+            Assert.Contains("p.strong{font-weight:600}", html, StringComparison.Ordinal);
+
+            Assert.Contains("<p>Move the duct 150 mm down</p>",
+                HtmlReportWriter.Write(new ReportDocument("t").Add(new ParagraphBlock("Move the duct 150 mm down"))),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
         public void A_report_needs_a_title()
         {
             Assert.Throws<ArgumentException>(() => new ReportDocument("  "));
