@@ -9,6 +9,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -785,10 +786,12 @@ namespace CamelWorks.UI.Views
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                if (!double.TryParse(minimum.Text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                     out var height) || height <= 0)
+                var units = session.Profile.Units;
+
+                if (!units.TryRead(minimum.Text, out var height) || height <= 0)
                 {
-                    results.Children.Add(Ui.Line("Type a height in metres, like 2.100.", 0.8));
+                    results.Children.Add(Ui.Line("Type a clear height, like " + units.Length(2.1)
+                        + ". A bare number is read in " + units.LengthUnit + ".", 0.8));
                     return;
                 }
 
@@ -849,23 +852,21 @@ namespace CamelWorks.UI.Views
                 if (found.Spans.Count == 0)
                 {
                     results.Children.Add(Ui.Empty("Nothing is too low.",
-                        "Every surface has at least " + height.ToString("0.000", CultureInfo.InvariantCulture)
-                        + " m of clear height above it."));
+                        "Every surface has at least " + units.Length(height) + " of clear height above it."));
                     return;
                 }
 
                 var rows = found.Spans.Take(300).Select(span => new TableRow(span,
-                    span.Clear.ToString("0.000", CultureInfo.InvariantCulture),
+                    units.Bare(span.Clear),
                     span.Obstruction.Name,
                     span.Floor.Name,
-                    span.X.ToString("0.0", CultureInfo.InvariantCulture) + ", "
-                        + span.Y.ToString("0.0", CultureInfo.InvariantCulture))
+                    units.Bare(span.X) + ", " + units.Bare(span.Y))
                 {
                     Tone = span.Clear < height * 0.8 ? Tone.Bad : Tone.Warn,
                 }).ToList();
 
                 results.Children.Add(Ui.Table(rows,
-                    ("Clear (m)", 90), ("Under", 190), ("Over", 190), ("At", 0))
+                    ("Clear (" + units.LengthUnit + ")", 90), ("Under", 190), ("Over", 190), ("At", 0))
                     .OnPick(item =>
                     {
                         if (!(item is HeadroomSpan span)) return;
@@ -2071,7 +2072,7 @@ namespace CamelWorks.UI.Views
                 var document = Document(session, board, groups, _audience, regressed, Pictures(session, groups, job));
 
                 job.Say("Writing...");
-                Emit(file, document, groups);
+                Emit(file, document, groups, session.Profile.Units);
 
                 _results.Children.Add(Ui.Line("Wrote " + file, 1, true));
                 session.Record(ActivityKind.Report, "wrote a " + _format + " clash report", file);
@@ -2120,7 +2121,7 @@ namespace CamelWorks.UI.Views
                     var document = Document(session, board, groups, party, regressed,
                                             Pictures(session, groups, job));
 
-                    Emit(file, document, groups);
+                    Emit(file, document, groups, session.Profile.Units);
 
                     _results.Children.Add(Ui.Line(party + " - " + Ui.Count(groups.Count, "group")
                         + " - " + file, 0.8));
@@ -2231,12 +2232,13 @@ namespace CamelWorks.UI.Views
                 return images;
             }
 
-            private void Emit(string file, ReportDocument document, IReadOnlyList<ClashGroup> groups)
+            private void Emit(string file, ReportDocument document, IReadOnlyList<ClashGroup> groups,
+                              Measure units)
             {
                 switch (_format)
                 {
                     case "XLSX":
-                        File.WriteAllBytes(file, XlsxWriter.Write("Clashes", Table(groups)));
+                        File.WriteAllBytes(file, XlsxWriter.Write("Clashes", Table(groups, units)));
                         break;
 
                     case "HTML":
@@ -2307,7 +2309,7 @@ namespace CamelWorks.UI.Views
 
             document.PageBreak();
             document.Heading("Every clash");
-            document.Add(Table(groups));
+            document.Add(Table(groups, session.Profile.Units));
 
             return document;
         }
@@ -2376,9 +2378,19 @@ namespace CamelWorks.UI.Views
             return table;
         }
 
-        private static TableBlock Table(IReadOnlyList<ClashGroup> groups)
+        /// <summary>
+        /// Every clash, with its setting-out coordinates in the project's own units.
+        ///
+        /// The unit is in the heading rather than in four hundred cells, and it comes from the
+        /// project profile rather than from whatever the host display happens to be set to — a
+        /// report reissued in different units from last week's is how a trade sets out twice.
+        /// </summary>
+        private static TableBlock Table(IReadOnlyList<ClashGroup> groups, Measure units)
         {
-            var table = new TableBlock("Group", "Test", "Level", "Models", "What", "Status", "X", "Y", "Z");
+            var axis = " (" + units.LengthUnit + ")";
+
+            var table = new TableBlock("Group", "Test", "Level", "Models", "What", "Status",
+                                       "X" + axis, "Y" + axis, "Z" + axis);
 
             foreach (var group in groups)
                 foreach (var item in group.Items)
@@ -2388,9 +2400,9 @@ namespace CamelWorks.UI.Views
                         item.ModelPair,
                         (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
                         item.Status.ToString(),
-                        item.X.ToString("0.00", CultureInfo.InvariantCulture),
-                        item.Y.ToString("0.00", CultureInfo.InvariantCulture),
-                        item.Z.ToString("0.00", CultureInfo.InvariantCulture));
+                        units.Bare(item.X),
+                        units.Bare(item.Y),
+                        units.Bare(item.Z));
 
             return table;
         }

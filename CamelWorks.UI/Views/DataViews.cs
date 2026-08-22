@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
@@ -647,14 +648,17 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var units = session.Profile.Units;
+
                 var rows = levels.Bands.Select(b => new TableRow(b,
                     b.Name,
-                    b.Elevation.ToString("0.000", CultureInfo.InvariantCulture) + " m",
+                    units.Bare(b.Elevation),
                     b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
                     b.IsDerived ? "inferred" : "from the model")).ToList();
 
                 results.Children.Add(Ui.Table(rows,
-                    ("Level", 140), ("Elevation", 100), ("Elements", 110), ("Source", 110)));
+                    ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
+                    ("Elements", 110), ("Source", 110)));
 
                 after.Children.Clear();
                 after.Children.Add(Stamp(session, levels, items));

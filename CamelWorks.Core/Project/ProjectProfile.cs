@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Project
@@ -88,6 +89,12 @@ namespace CamelWorks.Core.Project
 
         /// <summary>Where levels come from: the model's own, or inferred from geometry.</summary>
         public const string LevelSource = "data.levels";
+
+        /// <summary>How lengths are written on every screen and in every export.</summary>
+        public const string Units = "units.length";
+
+        /// <summary>The finest inch fraction to round to, when lengths are written in feet and inches.</summary>
+        public const string InchFraction = "units.inchFraction";
 
         /// <summary>Prefix for a per-model discipline setting. The rest of the key is the model scope.</summary>
         public const string DisciplinePrefix = "discipline.";
@@ -296,6 +303,15 @@ namespace CamelWorks.Core.Project
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+        /// <summary>
+        /// How this project writes a length. Every screen and every export goes through it.
+        ///
+        /// Seeded once from the model's own units and then left alone: a coordinator who switches
+        /// the host to millimetres to read a dimension must not thereby reissue every report in
+        /// different units from last week's.
+        /// </summary>
+        public Measure Units => Measure.Of(Value(ProfileKeys.Units), (int)Number(ProfileKeys.InchFraction, 16));
+
         /// <summary>The discipline in force for a model scope, or null when none was worked out.</summary>
         /// <param name="modelScope">The scope, as <c>IModelSource.Scope</c> reports it.</param>
         public string? DisciplineOf(string? modelScope) =>
@@ -310,8 +326,12 @@ namespace CamelWorks.Core.Project
         /// <param name="models">The loaded models. An empty list is fine and still yields a profile.</param>
         /// <param name="documentPath">The saved document's path, when it has one.</param>
         /// <param name="user">Who is working, for the author line.</param>
+        /// <param name="hostUnits">
+        /// What the host says the model is in. Seeds the project's unit choice once; null is fine
+        /// and means metres.
+        /// </param>
         public static ProjectProfile Derive(IReadOnlyList<IModelSource>? models, string? documentPath = null,
-                                            string? user = null)
+                                            string? user = null, string? hostUnits = null)
         {
             var sources = models ?? Array.Empty<IModelSource>();
 
@@ -357,11 +377,44 @@ namespace CamelWorks.Core.Project
                     ? "one per discipline found in the loaded models"
                     : "no disciplines could be read from the model names"));
 
+            var (units, unitsBecause) = DeriveUnits(hostUnits);
+
+            settings.Add(new ProfileSetting(ProfileKeys.Units, "Lengths in", units, unitsBecause,
+                Measure.Choices));
+
+            settings.Add(new ProfileSetting(ProfileKeys.InchFraction, "Inch fraction", "16",
+                "sixteenths, which is what a tape measure is marked in - only used when lengths are "
+                + "in feet and inches",
+                Measure.Denominators.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList()));
+
             settings.Add(new ProfileSetting(ProfileKeys.LevelSource, "Levels from", "Model, then geometry",
                 "the model's own level property where it has one, and a height histogram where it does not",
                 new[] { "Model, then geometry", "Model only", "Geometry only" }));
 
             return new ProjectProfile(settings);
+        }
+
+        /// <summary>
+        /// What to write lengths in, read once from whatever the host says the model is in.
+        ///
+        /// Read once, deliberately. This is a project setting, not a follower: the alternative is a
+        /// product whose reports change units when somebody toggles the host display to check a
+        /// dimension, which is how two revisions of the same drawing end up disagreeing.
+        /// </summary>
+        private static (string Units, string Because) DeriveUnits(string? hostUnits)
+        {
+            if (string.IsNullOrWhiteSpace(hostUnits))
+                return (Measure.Choices[0], "nothing said what the model is in, so metres");
+
+            var said = hostUnits!.Trim();
+            var system = Measure.Of(said).System;
+
+            var chosen = system == UnitSystem.Imperial ? Measure.Choices[2]
+                       : system == UnitSystem.Millimetres ? Measure.Choices[1]
+                       : Measure.Choices[0];
+
+            return (chosen, "read once from the model's units (" + said
+                          + ") - it does not follow the host after that");
         }
 
         private static (string? Name, string Because) DeriveName(IReadOnlyList<IModelSource> models, string? documentPath)
