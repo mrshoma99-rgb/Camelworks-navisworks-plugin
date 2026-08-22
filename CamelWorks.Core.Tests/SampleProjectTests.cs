@@ -13,16 +13,23 @@ namespace CamelWorks.Core.Tests
     {
         private const long When = 638_000_000_000_000_000L;
 
+        private const string Document = @"C:\jobs\Riverside.nwd";
+
         /// <summary>Write the sample to a fake disk and open it the way the product would.</summary>
         private static ProjectStore Opened()
         {
             var fs = new InMemoryFileSystem();
-            var path = @"C:\jobs\.camelworks\Riverside.camelworks";
 
-            fs.CreateDirectory(@"C:\jobs\.camelworks");
-            fs.WriteAllText(path, SampleProject.Write(When));
+            // Asked where the sidecar belongs rather than assumed. Hardcoding the path put the file
+            // somewhere the store did not look and every assertion below came back empty - which
+            // said "the sample is wrong" when what was wrong was the test's idea of the layout.
+            var (path, _) = ProjectStore.Locate(Document, null);
 
-            return ProjectStore.Open(fs, @"C:\jobs\Riverside.nwd", null);
+            Assert.NotNull(path);
+
+            fs.WriteAllText(path!, SampleProject.Write(When));
+
+            return ProjectStore.Open(fs, Document, null);
         }
 
         [Fact]

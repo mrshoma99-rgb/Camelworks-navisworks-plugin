@@ -232,12 +232,17 @@ namespace CamelWorks.Core.Tests
 
     public class NodeCatalogueTests
     {
-        // The three that cannot run unconfigured, and why: every one of them writes a file, and
-        // there is no defensible default path. Every other node in the catalogue has to run on the
-        // settings it is born with, or the canvas is not zero-setup.
+        // The five that cannot run unconfigured, and why: every one of them names a file, and there
+        // is no defensible default path for any of them. Three write one and two read or replace
+        // one, which is the same problem from the other side - "append the file at no path" has no
+        // sensible reading either. Every other node in the catalogue has to run on the settings it
+        // is born with, or the canvas is not zero-setup.
         //
         // In catalogue order, because that is the order the check below produces them in.
-        private static readonly string[] NeedAPath = { "clash.bcf", "report.write", "csv.write" };
+        private static readonly string[] NeedAPath =
+        {
+            "clash.bcf", "report.write", "model.append", "model.save", "csv.write",
+        };
 
         private static Graph WithInputs(NodeKind kind)
         {
