@@ -2449,11 +2449,13 @@ namespace CamelWorks.UI.Views
             {
                 var section = session.Store.Section(ProjectStore.ClashSection);
 
-                var register = new Dictionary<string, ReportIssue>(
-                    Deliverable.Read(section["issued"]), StringComparer.OrdinalIgnoreCase)
-                {
-                    [audience] = issue,
-                };
+                // Copied key by key: Dictionary has a constructor taking IDictionary and one taking
+                // a capacity, and an IReadOnlyDictionary silently matches neither.
+                var register = new Dictionary<string, ReportIssue>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var entry in Deliverable.Read(section["issued"])) register[entry.Key] = entry.Value;
+
+                register[audience] = issue;
 
                 section.Set("issued", Deliverable.Write(register));
             }

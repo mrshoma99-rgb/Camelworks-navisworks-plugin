@@ -54,6 +54,11 @@ namespace CamelWorks.Core.Tests
             public string DisplayName { get; }
             public string SourcePath { get; }
             public string Scope => ElementKey.ScopeOf(SourcePath);
+
+            public DateTimeOffset? SourceModifiedUtc => null;
+            public long? SourceBytes => null;
+            public string? ModelUnits => null;
+            public bool HasTransform => false;
         }
 
         [Fact]

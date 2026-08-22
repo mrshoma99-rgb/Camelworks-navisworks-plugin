@@ -105,6 +105,12 @@ jobs:
       - name: Check no Core type name shadows WPF or Navisworks
         run: python3 checks/validate-core-names.py
 
+      # Adding a member to a seam interface breaks every implementer, and two of the three
+      # assemblies that implement them cannot be compiled on this runner at all — so the break is
+      # invisible here and arrives as five simultaneous CS0535 failures on the Windows jobs.
+      - name: Check every seam implementer is up to date
+        run: python3 checks/validate-seam.py
+
       # The release gate from the harvest protocol: the only company named anywhere in this tree
       # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
       - name: Check nothing but BIMCamel is named
