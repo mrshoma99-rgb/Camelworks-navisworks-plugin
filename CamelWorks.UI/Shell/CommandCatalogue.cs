@@ -209,11 +209,11 @@ namespace CamelWorks.UI.Shell
                 new[] { "ifc", "openbim export", "ifc4", "ifc2x3" },
                 new[] { "they want IFC", "export to IFC" }),
 
-            Pane("ID_CW_Export", "Export", "Project/Export",
-                "IFC from the exporter's own panel; spreadsheets and CSV from the screen that "
-                + "produced the numbers.",
-                new[] { "gltf", "glb", "csv", "xlsx", "web viewer" },
-                new[] { "put this on the web", "send them the geometry" }),
+            Act("ID_CW_Export", "Export",
+                "Geometry as a GLB a browser opens, or the properties as a spreadsheet.",
+                new[] { "gltf", "glb", "csv", "xlsx", "web viewer", "3d", "share the model" },
+                new[] { "put this on the web", "send them the geometry",
+                        "they cannot open an nwd", "send it to the client" }),
 
             Dialog("ID_CW_Help", "Help",
                 "Guide, limitations, shortcuts, Find a Tool, sample project, diagnostics, updates, about.",

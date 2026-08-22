@@ -31,6 +31,7 @@ namespace CamelWorks.UI.Views
                 case "ID_CW_SectionBox": return SectionBox();
                 case "ID_CW_Review": return ReviewWindow.Show();
                 case "ID_CW_FixLinks": return FixLinksWindow.Show();
+                case "ID_CW_Export": return ExportWindow.Show();
                 default: return null;
             }
         }
