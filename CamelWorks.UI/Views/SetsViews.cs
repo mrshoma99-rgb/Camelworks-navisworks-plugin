@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Report;
 using CamelWorks.Core.Sets;
 using CamelWorks.Nav;
 
@@ -1402,16 +1404,20 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>
-        /// Bulk rename and renumber, a walkthrough saved from the board, and a delete by name.
+        /// Bulk rename and renumber, re-folder, batch render, copy overrides, a walkthrough saved
+        /// from the board, and a delete by name.
         ///
-        /// Not re-foldering: moving a saved viewpoint between folders is not something the seam
-        /// does, and claiming it here while the code only renames would be the doc lying about the
-        /// product. A viewpoint saved into a folder gets there at save time.
+        /// All of it is one call away in the host's API and none of it is anywhere in the host's
+        /// UI. Navisworks will render a viewpoint off-screen, move one between folders and rewrite
+        /// one from the current view — one viewpoint at a time, by hand, which is why a coordination
+        /// pack is still made with a snipping tool.
         /// </summary>
         private sealed class ViewpointScreen
         {
             private readonly StackPanel _list = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
+
+            private string _size = "1920 x 1080";
 
             internal UIElement Build()
             {
@@ -1481,6 +1487,9 @@ namespace CamelWorks.UI.Views
                     Walkthrough(session),
                     _results,
                     Ui.Card("Saved viewpoints", null, _list),
+                    Refolder(session),
+                    Render(session),
+                    CopyOverrides(session),
                     Sweep(session)));
             }
 
@@ -1579,6 +1588,304 @@ namespace CamelWorks.UI.Views
             /// out before the next one, and doing it one right-click at a time is why people stop
             /// generating them.
             /// </summary>
+
+            /// <summary>
+            /// Move viewpoints into a folder, in bulk.
+            ///
+            /// The host has folders in the Saved Viewpoints panel and gives you one way to use
+            /// them: drag, one viewpoint at a time. Forty viewpoints saved out of a clash run land
+            /// flat in the root, and filing them is forty drags nobody does — so they stay in the
+            /// root, and the next run's forty land on top of them.
+            /// </summary>
+            private UIElement Refolder(Session session)
+            {
+                var starts = Ui.Text(string.Empty, null, 180);
+                var into = Ui.Text("Coordination", null, 180);
+                var status = Ui.Stack();
+
+                var move = Ui.Runner("Move them", status, job =>
+                {
+                    var prefix = starts.Text.Trim();
+
+                    if (prefix.Length == 0)
+                    {
+                        status.Children.Add(Ui.Problem("Type what their names start with. An empty box would "
+                            + "move every viewpoint in the document, which is not something to offer by "
+                            + "accident."));
+                        return;
+                    }
+
+                    var wanted = into.Text.Trim();
+                    var moving = Matching(session, prefix);
+
+                    if (moving.Count == 0)
+                    {
+                        status.Children.Add(Ui.Line("Nothing starts with \"" + prefix + "\".", 0.8));
+                        return;
+                    }
+
+                    var moved = 0;
+                    var already = 0;
+                    var refused = 0;
+
+                    foreach (var view in moving)
+                    {
+                        if (!job.Step(moved, "moved")) break;
+
+                        // Already there is not a move and not a failure. Counting it as either
+                        // would make a re-run of the same sweep read as though it had done work.
+                        if (string.Equals(view.Folder ?? string.Empty, wanted, StringComparison.OrdinalIgnoreCase))
+                        {
+                            already++;
+                            continue;
+                        }
+
+                        if (session.Viewpoints.MoveTo(view.Id, wanted.Length == 0 ? null : wanted) == null)
+                            refused++;
+                        else
+                            moved++;
+                    }
+
+                    status.Children.Add(Ui.Line("Moved " + Ui.Count(moved, "viewpoint")
+                        + (wanted.Length == 0 ? " to the top level." : " into \"" + wanted + "\"."), 1, true));
+
+                    if (already > 0)
+                        status.Children.Add(Ui.Line(Ui.Count(already, "viewpoint")
+                            + " were already there and were left alone.", 0.7));
+
+                    if (refused > 0)
+                        status.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
+                            + " could not be moved. A viewpoint the host will not take out of its folder "
+                            + "keeps its old place rather than being lost, so nothing has gone missing."));
+
+                    session.Record(ActivityKind.Export, "filed " + Ui.Count(moved, "viewpoint"));
+                    Redraw(session);
+                });
+
+                return Ui.Card("File them into a folder",
+                    "Everything whose name starts with what you type. The folder is made if it is not "
+                    + "there; a viewpoint already in it is left where it is.",
+                    Ui.Field("Names starting with", starts),
+                    Ui.Field("Into folder", into),
+                    move,
+                    status);
+            }
+
+            /// <summary>
+            /// Render every viewpoint to a PNG, in one pass.
+            ///
+            /// The thing a coordination pack is made of, and the reason people still take
+            /// screenshots one at a time with the snipping tool. The host renders a viewpoint
+            /// off-screen perfectly well and has never offered to do it for all of them.
+            ///
+            /// The camera is borrowed for the whole run and put back at the end, so a batch over
+            /// eighty viewpoints does not leave somebody looking at the eightieth.
+            /// </summary>
+            private UIElement Render(Session session)
+            {
+                var into = Ui.Text(string.Empty, null, 340);
+                var size = Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080",
+                                     pick => _size = pick);
+                var status = Ui.Stack();
+
+                var render = Ui.Runner("Render them all", status, job =>
+                {
+                    var folder = into.Text.Trim();
+
+                    if (folder.Length == 0)
+                    {
+                        status.Children.Add(Ui.Problem("Say where to write them."));
+                        return;
+                    }
+
+                    var views = session.Viewpoints.All();
+
+                    if (views.Count == 0)
+                    {
+                        status.Children.Add(Ui.Line("There are no saved viewpoints to render.", 0.8));
+                        return;
+                    }
+
+                    try { Directory.CreateDirectory(folder); }
+                    catch (Exception e)
+                    {
+                        status.Children.Add(Ui.Problem("Could not make that folder: " + Ui.Describe(e)));
+                        return;
+                    }
+
+                    var (width, height) = Size(_size);
+
+                    var written = 0;
+                    var blank = 0;
+                    var failed = new List<string>();
+                    var n = 1;
+
+                    using (session.View.BorrowCamera())
+                    {
+                        foreach (var view in views)
+                        {
+                            if (!job.Step(written, "rendered")) break;
+
+                            job.Say("Rendering " + view.Name + "...");
+
+                            try
+                            {
+                                session.Viewpoints.Apply(view.Id);
+
+                                var png = session.View.Capture(width, height);
+
+                                // Null is the documented answer from a machine that cannot render
+                                // off-screen. Writing a zero-byte PNG so the count looks right
+                                // would hand somebody a pack of broken files.
+                                if (png == null || png.Length == 0) { blank++; n++; continue; }
+
+                                var name = n.ToString("000", CultureInfo.InvariantCulture)
+                                         + " - " + Deliverable.Safe(view.Name) + ".png";
+
+                                File.WriteAllBytes(Path.Combine(folder, name), png);
+                                written++;
+                            }
+                            catch (Exception e)
+                            {
+                                failed.Add(view.Name + " - " + Ui.Describe(e));
+                            }
+
+                            n++;
+                        }
+                    }
+
+                    status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "image") + " to " + folder + ".",
+                                                1, true));
+
+                    if (blank > 0)
+                        status.Children.Add(Ui.Note(Ui.Count(blank, "viewpoint")
+                            + " produced no image. Off-screen rendering is not available in every "
+                            + "configuration - a machine with no graphics context, a document still "
+                            + "loading. Nothing was written for those rather than an empty file."));
+
+                    foreach (var problem in failed.Take(6)) status.Children.Add(Ui.Problem(problem));
+
+                    session.Record(ActivityKind.Export, "rendered " + Ui.Count(written, "viewpoint"));
+                });
+
+                return Ui.Card("Render every viewpoint to an image",
+                    "One PNG per saved viewpoint, numbered in the order they are in. The camera goes back "
+                    + "where it was when the run finishes.",
+                    Ui.Field("Write into", into),
+                    Ui.Field("Size", size),
+                    render,
+                    status);
+            }
+
+            /// <summary>The chosen render size.</summary>
+            private static (int Width, int Height) Size(string choice) => choice switch
+            {
+                "1280 x 720" => (1280, 720),
+                "2560 x 1440" => (2560, 1440),
+                _ => (1920, 1080),
+            };
+
+            /// <summary>
+            /// Give a run of viewpoints the overrides one of them carries.
+            ///
+            /// Somebody sets up the colours once — services by system, structure greyed back — and
+            /// then has forty viewpoints that do not have them, because the overrides were saved
+            /// into whichever one happened to be current at the time.
+            ///
+            /// The cost is stated on the card and not buried: the host's only way to rewrite a
+            /// saved viewpoint replaces its redlines too, so a viewpoint somebody drew on loses the
+            /// drawing. There is no call that does one without the other.
+            /// </summary>
+            private UIElement CopyOverrides(Session session)
+            {
+                var status = Ui.Stack();
+                var views = session.Viewpoints.All();
+
+                if (views.Count < 2)
+                    return Ui.Card("Copy overrides onto other viewpoints",
+                        "Needs at least two saved viewpoints: one to take the overrides from and one to "
+                        + "put them on.",
+                        Ui.Line(Ui.Count(views.Count, "viewpoint") + " saved.", 0.7));
+
+                var names = views.Select(v => v.ToString()).ToList();
+
+                var from = names[0];
+                var source = Ui.Choice(names, from, pick => from = pick);
+
+                var starts = Ui.Text(string.Empty, null, 180);
+
+                var copy = Ui.Runner("Copy them across", status, job =>
+                {
+                    var prefix = starts.Text.Trim();
+
+                    if (prefix.Length == 0)
+                    {
+                        status.Children.Add(Ui.Problem("Type what the targets' names start with. An empty "
+                            + "box would rewrite every viewpoint in the document, and rewriting one "
+                            + "discards its redlines."));
+                        return;
+                    }
+
+                    var chosen = session.Viewpoints.All()
+                        .FirstOrDefault(v => string.Equals(v.ToString(), from, StringComparison.Ordinal));
+
+                    if (string.IsNullOrEmpty(chosen.Id))
+                    {
+                        status.Children.Add(Ui.Problem("That viewpoint is no longer in the document."));
+                        return;
+                    }
+
+                    var targets = Matching(session, prefix)
+                        .Where(v => !string.Equals(v.Id, chosen.Id, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (targets.Count == 0)
+                    {
+                        status.Children.Add(Ui.Line("Nothing else starts with \"" + prefix + "\".", 0.8));
+                        return;
+                    }
+
+                    var done = 0;
+                    var refused = 0;
+
+                    using (session.View.BorrowCamera())
+                    {
+                        foreach (var target in targets)
+                        {
+                            if (!job.Step(done, "copied")) break;
+
+                            if (session.Viewpoints.CopyOverrides(chosen.Id, target.Id)) done++;
+                            else refused++;
+                        }
+                    }
+
+                    status.Children.Add(Ui.Line("Copied the overrides onto " + Ui.Count(done, "viewpoint")
+                        + ".", 1, true));
+
+                    if (refused > 0)
+                        status.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
+                            + " were left exactly as they were, because the host would not rewrite them. "
+                            + "A refusal costs nothing: none of them has been changed."));
+
+                    session.Record(ActivityKind.Export,
+                        "copied viewpoint overrides onto " + Ui.Count(done, "viewpoint"));
+
+                    Redraw(session);
+                });
+
+                return Ui.Card("Copy overrides onto other viewpoints",
+                    "Takes the colours and hidden elements from one saved viewpoint and puts them on every "
+                    + "viewpoint whose name starts with what you type. Each one keeps its own camera.",
+                    Ui.Field("Take them from", source),
+                    Ui.Field("Put them on names starting with", starts),
+                    Ui.Note("Rewriting a saved viewpoint replaces its redlines with the source's. That is "
+                            + "the host's own behaviour and there is no call that avoids it, so a viewpoint "
+                            + "somebody has drawn on will lose the drawing. Nothing else about the target "
+                            + "changes - not its name, not its folder, not its camera."),
+                    copy,
+                    status);
+            }
+
             private UIElement Sweep(Session session)
             {
                 var starts = Ui.Text(string.Empty, null, 200);

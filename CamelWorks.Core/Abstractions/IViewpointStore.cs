@@ -26,6 +26,28 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Rename a saved viewpoint.</summary>
         void Rename(string viewId, string newName);
 
+        /// <summary>
+        /// Move a saved viewpoint into a folder, making the folder if it is not there.
+        /// </summary>
+        /// <param name="viewId">The viewpoint's path.</param>
+        /// <param name="folder">The folder path, or null to move it to the top.</param>
+        /// <returns>The viewpoint's new path, or null when it could not be moved.</returns>
+        string? MoveTo(string viewId, string? folder);
+
+        /// <summary>
+        /// Give one viewpoint the overrides another one carries, keeping its own camera.
+        ///
+        /// The host has no way to set a saved viewpoint's overrides directly, so this is done by
+        /// restoring the source, putting the camera back where the target had it, and re-capturing
+        /// the target from that. Which means <b>the target's redlines are replaced by the
+        /// source's</b> — the host's own replace does that and there is no call that does not.
+        /// Stated rather than discovered, since redlines somebody drew are not recoverable.
+        /// </summary>
+        /// <param name="fromViewId">The viewpoint whose overrides are wanted.</param>
+        /// <param name="toViewId">The viewpoint to put them on.</param>
+        /// <returns>True when it happened.</returns>
+        bool CopyOverrides(string fromViewId, string toViewId);
+
         /// <summary>Delete a saved viewpoint.</summary>
         void Delete(string viewId);
     }
@@ -46,9 +68,13 @@ namespace CamelWorks.Core.Abstractions
         public bool HasOverrides { get; }
 
         /// <summary>
-        /// True when the host reports native redlines on this viewpoint. CamelWorks can read their
-        /// text but cannot see their geometry, so a report carrying this view says so rather than
-        /// silently omitting an instruction somebody drew.
+        /// True when the host reports native redlines on this viewpoint.
+        ///
+        /// Always false against Navisworks, and the reason is worth recording where somebody will
+        /// look for it: a saved viewpoint's redlines come back as an <c>LcOpRedlineList</c>, which
+        /// exposes no public member at all — not a count, not an enumerator. There is no call that
+        /// answers "does this viewpoint have redlines on it", so nothing here can claim one does.
+        /// The field stays because a host that could answer would fill it in.
         /// </summary>
         public bool HasRedlines { get; }
 
