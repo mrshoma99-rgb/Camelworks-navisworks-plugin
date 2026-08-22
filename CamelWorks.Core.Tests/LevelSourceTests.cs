@@ -70,7 +70,8 @@ namespace CamelWorks.Core.Tests
         public void Nothing_at_all_has_no_source_and_says_so()
         {
             Assert.Equal(LevelSource.None, LevelSet.Empty.Source);
-            Assert.Contains("no grid", LevelSet.Empty.Provenance());
+            Assert.Contains("carries a grid, a level property, or geometry",
+                            LevelSet.Empty.Provenance());
 
             var fromNothing = LevelSet.FromGrid(new KeyValuePair<string, double>[0]);
 
