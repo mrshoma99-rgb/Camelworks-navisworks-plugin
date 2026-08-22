@@ -330,6 +330,32 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// The board as it stood before the last run, for the per-party comparison.
+        ///
+        /// Only the two figures the ledger needs — the party counts and when they were taken. The
+        /// records themselves are already read by <see cref="Snapshot"/> for carry-over, and
+        /// reading them twice to count them a second way would be work for nothing.
+        /// </summary>
+        private static ClashSnapshot? Previous(Session session)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var parties = section["previousParties"];
+
+            if (parties.Kind != JsonKind.Object || parties.Keys.Count == 0) return null;
+
+            var open = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var party in parties.Keys) open[party] = (int)parties[party].AsLong();
+
+            var taken = section["previousTaken"];
+
+            return new ClashSnapshot(Array.Empty<ClashRecord>(), null, null, open,
+                taken.Kind == JsonKind.Number
+                    ? DateTimeOffset.FromUnixTimeSeconds(taken.AsLong())
+                    : (DateTimeOffset?)null);
+        }
+
+        /// <summary>
         /// The groups people made by hand, which the rules must never re-derive.
         ///
         /// Read from the project file rather than from the last snapshot, for the same reason
@@ -511,9 +537,25 @@ namespace CamelWorks.UI.Views
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section["snapshot"];
 
-            if (previous.Kind == JsonKind.Array) section.Set("previous", previous);
+            if (previous.Kind == JsonKind.Array)
+            {
+                section.Set("previous", previous);
+                Shift(section, "parties", "previousParties");
+                Shift(section, "taken", "previousTaken");
+            }
 
-            var snapshot = ClashSnapshot.Of(board);
+            var taken = DateTimeOffset.UtcNow;
+            var snapshot = ClashSnapshot.Of(board, takenUtc: taken);
+
+            // Per-party open counts ride with the snapshot rather than being re-derived from it: a
+            // record carries its group, not its party, and answering "what did Mechanical have open
+            // last week" through this week's assignment rules would restate history every time
+            // somebody re-assigned a group.
+            var parties = JsonValue.Object();
+            foreach (var entry in snapshot.OpenByParty) parties.Set(entry.Key, JsonValue.Number(entry.Value));
+
+            section.Set("parties", parties);
+            section.Set("taken", JsonValue.Number(taken.ToUnixTimeSeconds()));
 
             // Raised issues are kept in their own list and left out of the snapshot. The snapshot
             // is what the next run's carry-over compares the ENGINE's results against, and a record
@@ -560,7 +602,29 @@ namespace CamelWorks.UI.Views
             if (current.Kind == JsonKind.Array) section.Set("previous", current);
             else section.Remove("previous");
 
+            Swap(section, "parties", "previousParties");
+            Swap(section, "taken", "previousTaken");
+
             return session.Store.Save();
+        }
+
+        /// <summary>Move one key's value to another, clearing the source.</summary>
+        private static void Shift(JsonValue section, string from, string to)
+        {
+            var value = section[from];
+
+            if (value.Kind == JsonKind.Null) section.Remove(to);
+            else section.Set(to, value);
+        }
+
+        /// <summary>Exchange two keys, so an undo of an undo lands back where it started.</summary>
+        private static void Swap(JsonValue section, string a, string b)
+        {
+            var first = section[a];
+            var second = section[b];
+
+            if (second.Kind == JsonKind.Null) section.Remove(a); else section.Set(a, second);
+            if (first.Kind == JsonKind.Null) section.Remove(b); else section.Set(b, first);
         }
 
         // ===================================================================================
@@ -698,6 +762,24 @@ namespace CamelWorks.UI.Views
                             Ui.Count(_delta.WeakMatches, "result")
                             + " matched the last run only on a weak key, because the elements involved "
                             + "carry no stable identity. Their history is a best guess."));
+                }
+
+                // Who owes what, above the board. The count of clashes is a fact about the model;
+                // this is a fact about the week, and it is the one the meeting is actually about.
+                var session = Host.Current;
+
+                if (session != null)
+                {
+                    var ledger = PartyLedger.Of(board.Groups, Previous(session), LastBoardLabel,
+                                                DateTimeOffset.UtcNow);
+
+                    if (ledger.Lines.Count > 0)
+                    {
+                        _summary.Children.Add(Ui.Line(ledger.Explain(), 0.85, true));
+
+                        _summary.Children.Add(Ui.Line(string.Join("   ",
+                            ledger.Lines.Take(6).Select(l => l.ToString())), 0.7));
+                    }
                 }
 
                 _summary.Children.Add(Ui.Line(funnel.ToString(), 0.8));
@@ -2107,6 +2189,7 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _results = Ui.Stack();
             private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _template = Ui.Text(Deliverable.DefaultTemplate, null, 340);
 
             private string _format = "PDF";
             private string _audience = Everyone;
@@ -2138,6 +2221,12 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Format", format),
                     Ui.Field("For", audience),
                     Ui.Field("Write to", _path),
+                    Ui.Field("Name it", _template),
+                    Ui.Note("The name carries " + string.Join(", ", Deliverable.Tokens)
+                            + ". Each issue takes the next revision letter and its cover says which "
+                            + "one it supersedes - a PDF in an inbox that looks exactly like last "
+                            + "week's is the most common reason a trade builds from the wrong "
+                            + "information."),
                     changed,
                     pictures,
                     split,
@@ -2186,16 +2275,29 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var file = Where(session, _audience);
+                var now = DateTimeOffset.UtcNow;
+                var was = LastIssue(session, _audience);
+                var revision = Deliverable.NextRevision(was?.Revision);
+
+                var file = Where(session, _audience, revision, now);
 
                 job.Say("Building the report...");
-                var document = Document(session, board, groups, _audience, regressed, Pictures(session, groups, job));
+
+                var document = Document(session, board, groups, _audience, regressed,
+                                        Pictures(session, groups, job), revision, was);
 
                 job.Say("Writing...");
                 Emit(file, document, groups, session.Profile.Units);
 
-                _results.Children.Add(Ui.Line("Wrote " + file, 1, true));
-                session.Record(ActivityKind.Report, "wrote a " + _format + " clash report", file);
+                Issued(session, _audience, new ReportIssue(revision, now, System.IO.Path.GetFileName(file)));
+                session.Store.Save();
+
+                _results.Children.Add(Ui.Line("Wrote revision " + revision + " to " + file, 1, true));
+
+                if (was != null) _results.Children.Add(Ui.Line(was.Supersedes, 0.8));
+
+                session.Record(ActivityKind.Report,
+                    "wrote a " + _format + " clash report, revision " + revision, file);
             }
 
             /// <summary>
@@ -2234,20 +2336,31 @@ namespace CamelWorks.UI.Views
                     var groups = Chosen(board, party, regressed);
                     if (groups.Count == 0) continue;
 
-                    var file = Where(session, party);
+                    var now = DateTimeOffset.UtcNow;
+                    var was = LastIssue(session, party);
+                    var revision = Deliverable.NextRevision(was?.Revision);
+
+                    var file = Where(session, party, revision, now);
 
                     job.Say("Writing " + party + "...");
 
                     var document = Document(session, board, groups, party, regressed,
-                                            Pictures(session, groups, job));
+                                            Pictures(session, groups, job), revision, was);
 
                     Emit(file, document, groups, session.Profile.Units);
 
-                    _results.Children.Add(Ui.Line(party + " - " + Ui.Count(groups.Count, "group")
-                        + " - " + file, 0.8));
+                    // Each party has its own revision letter, because each party has its own
+                    // sequence of issues and telling Mechanical they are on revision F because
+                    // Structures has had five would be a lie about their own history.
+                    Issued(session, party, new ReportIssue(revision, now, System.IO.Path.GetFileName(file)));
+
+                    _results.Children.Add(Ui.Line(party + " - rev " + revision + " - "
+                        + Ui.Count(groups.Count, "group") + " - " + file, 0.8));
 
                     written++;
                 }
+
+                session.Store.Save();
 
                 _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
 
@@ -2270,13 +2383,13 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Where the file goes, made from the audience so two reports never collide.</summary>
-            private string Where(Session session, string audience)
+            private string Where(Session session, string audience, string revision, DateTimeOffset issued)
             {
                 var typed = _path.Text.Trim();
                 var extension = "." + _format.ToLowerInvariant();
 
-                var stem = session.Profile.ProjectName + " clash report"
-                         + (audience == Everyone ? string.Empty : " - " + Safe(audience));
+                var stem = Deliverable.Name(_template.Text, session.Profile.ProjectName,
+                                            audience == Everyone ? null : audience, revision, issued);
 
                 if (typed.Length == 0)
                 {
@@ -2299,20 +2412,33 @@ namespace CamelWorks.UI.Views
                 var directory = System.IO.Path.GetDirectoryName(typed) ?? string.Empty;
                 var name = System.IO.Path.GetFileNameWithoutExtension(typed);
 
-                return System.IO.Path.Combine(directory, name + " - " + Safe(audience) + extension);
+                return System.IO.Path.Combine(directory,
+                    Deliverable.Safe(name + " - " + audience + " - Rev " + revision) + extension);
             }
 
-            /// <summary>A party name that is safe in a filename.</summary>
-            private static string Safe(string text)
+            /// <summary>
+            /// What this issue is called, and what it replaces.
+            ///
+            /// The most common cause of a trade building from the wrong information is a PDF in an
+            /// inbox that looks exactly like last week's, so every issue takes the next revision and
+            /// says on its cover which one it supersedes.
+            /// </summary>
+            private static ReportIssue? LastIssue(Session session, string audience) =>
+                Deliverable.Read(session.Store.Section(ProjectStore.ClashSection)["issued"])
+                    .TryGetValue(audience, out var issue) ? issue : null;
+
+            /// <summary>Record what just went out, so the next one knows what it supersedes.</summary>
+            private static void Issued(Session session, string audience, ReportIssue issue)
             {
-                var clean = new char[text.Length];
-                var at = 0;
+                var section = session.Store.Section(ProjectStore.ClashSection);
 
-                foreach (var c in text)
-                    clean[at++] = c == '/' || c == '\\' || c == ':' || c == '*' || c == '?'
-                                  || c == '"' || c == '<' || c == '>' || c == '|' ? '-' : c;
+                var register = new Dictionary<string, ReportIssue>(
+                    Deliverable.Read(section["issued"]), StringComparer.OrdinalIgnoreCase)
+                {
+                    [audience] = issue,
+                };
 
-                return new string(clean, 0, at).Trim();
+                section.Set("issued", Deliverable.Write(register));
             }
 
             /// <summary>
@@ -2385,7 +2511,8 @@ namespace CamelWorks.UI.Views
         private static ReportDocument Document(Session session, ClashPipelineResult board,
                                                IReadOnlyList<ClashGroup> groups, string audience,
                                                ICollection<ClashItem> regressed,
-                                               IReadOnlyDictionary<string, byte[]> images)
+                                               IReadOnlyDictionary<string, byte[]> images,
+                                               string? revision = null, ReportIssue? supersedes = null)
         {
             var whole = groups.Count == board.Groups.Count;
 
@@ -2397,6 +2524,7 @@ namespace CamelWorks.UI.Views
             document.Fact("Project", session.Profile.ProjectName);
             document.Fact("Author", session.Profile.Author);
             document.Fact("Date", DateTime.Now.ToString("d MMMM yyyy", CultureInfo.InvariantCulture));
+            if (revision != null) document.Fact("Revision", revision);
             if (!whole) document.Fact("For", audience);
             document.Fact("From the engine", board.Funnel.Input.ToString("N0", CultureInfo.InvariantCulture));
             document.Fact("In this report", groups.Sum(g => g.Items.Count).ToString("N0", CultureInfo.InvariantCulture));
@@ -2404,6 +2532,8 @@ namespace CamelWorks.UI.Views
 
             if (whole)
                 document.Fact("Unassigned", board.Funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture));
+
+            if (supersedes != null) document.Paragraph(supersedes.Supersedes);
 
             document.Heading("How this list was produced");
             document.Paragraph(board.Funnel.ToString());
@@ -2421,6 +2551,7 @@ namespace CamelWorks.UI.Views
                     + " — so that the numbers here and on the coordinator's screen are the same numbers.");
 
             Since(document, groups, regressed);
+            WhoOwesWhat(document, session, board, whole ? null : audience);
 
             document.Heading("Groups");
             document.Add(Summary(groups, session.Profile.Units));
@@ -2431,7 +2562,86 @@ namespace CamelWorks.UI.Views
             document.Heading("Every clash");
             document.Add(Table(groups, session.Profile.Units));
 
+            WhatItWasRunAgainst(document, session);
+
             return document;
+        }
+
+        /// <summary>
+        /// Who owes what, and whether last week's list got shorter.
+        ///
+        /// The board's own figures, always of the whole board even on a report for one party — the
+        /// point of the block is that everybody's copy carries the same numbers, so the meeting is
+        /// about the building rather than about whose report is right.
+        /// </summary>
+        private static void WhoOwesWhat(ReportDocument document, Session session,
+                                        ClashPipelineResult board, string? audience)
+        {
+            var ledger = PartyLedger.Of(board.Groups, Previous(session),
+                                        audience ?? LastBoardLabel, DateTimeOffset.UtcNow);
+
+            if (ledger.Lines.Count == 0) return;
+
+            document.Heading("Who owes what");
+            document.Add(ledger.Table());
+            document.Paragraph(ledger.Provenance());
+        }
+
+        /// <summary>
+        /// The manifest: every model this run was run against, and every test that produced it.
+        ///
+        /// "Which revision of the structural model was this run against?" is the first question in
+        /// the Wednesday meeting and the only question six months later, and a report that cannot
+        /// answer it is a screenshot with a logo.
+        /// </summary>
+        private static void WhatItWasRunAgainst(ReportDocument document, Session session)
+        {
+            var manifest = ModelManifest.Of(session.Model.Models, session.Profile,
+                                            TestRecords(session), version: Ui.Release,
+                                            takenUtc: DateTimeOffset.UtcNow);
+
+            if (manifest.IsEmpty && manifest.Tests.Count == 0) return;
+
+            document.PageBreak();
+            document.Heading("What this was run against");
+            document.Paragraph(manifest.Explain());
+
+            if (!manifest.IsEmpty) document.Add(manifest.ModelTable(session.Profile.Units));
+
+            if (manifest.Tests.Count > 0)
+            {
+                document.Heading("Tests", 2);
+                document.Add(manifest.TestTable());
+            }
+
+            document.Paragraph(
+                "Timestamps are of the source files as this run read them, in UTC. A model with no "
+                + "readable source is shown as such rather than left blank: an unreachable share and "
+                + "a file that has never changed are different facts.");
+        }
+
+        /// <summary>
+        /// A host last-run time as an instant.
+        ///
+        /// The host hands back a bare <c>DateTime</c> with no kind, which on a desktop API means
+        /// local time — the same reading the Tests screen makes. Stated here once rather than
+        /// guessed at in two places, so the report and the screen cannot disagree by an hour.
+        /// </summary>
+        internal static DateTimeOffset? RunAt(long ticks) =>
+            ticks > 0 ? new DateTimeOffset(new DateTime(ticks, DateTimeKind.Local)) : (DateTimeOffset?)null;
+
+        /// <summary>One record per clash test the host holds, or nothing on an edition with no engine.</summary>
+        private static IReadOnlyList<TestRecord> TestRecords(Session session)
+        {
+            var clash = session.Clash;
+            if (clash == null || !clash.IsAvailable) return Array.Empty<TestRecord>();
+
+            var records = new List<TestRecord>();
+
+            foreach (var test in clash.Tests())
+                records.Add(new TestRecord(test.Name, RunAt(test.LastRunTicks), test.ResultCount));
+
+            return records;
         }
 
         /// <summary>

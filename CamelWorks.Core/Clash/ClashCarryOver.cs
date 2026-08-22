@@ -53,11 +53,15 @@ namespace CamelWorks.Core.Clash
         /// <summary>Create a snapshot.</summary>
         public ClashSnapshot(IReadOnlyList<ClashRecord> records,
                              IReadOnlyDictionary<string, GroupDecision>? decisions = null,
-                             string? label = null)
+                             string? label = null,
+                             IReadOnlyDictionary<string, int>? openByParty = null,
+                             DateTimeOffset? takenUtc = null)
         {
             Records = records ?? throw new ArgumentNullException(nameof(records));
             Decisions = decisions ?? new Dictionary<string, GroupDecision>(StringComparer.Ordinal);
             Label = label;
+            OpenByParty = openByParty ?? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            TakenUtc = takenUtc;
         }
 
         /// <summary>Every result the run ended with.</summary>
@@ -69,21 +73,50 @@ namespace CamelWorks.Core.Clash
         /// <summary>How the snapshot reads on screen — a date, a milestone, an issue number.</summary>
         public string? Label { get; }
 
+        /// <summary>
+        /// How many findings each party still had open when this was taken.
+        ///
+        /// Recorded here rather than derived from <see cref="Records"/>, because a record carries
+        /// its group and not its party, and the mapping from group to party is a thing people
+        /// change. Answering "what did Mechanical have open last week" from this week's assignment
+        /// rules would restate history every time somebody re-assigned a group.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> OpenByParty { get; }
+
+        /// <summary>When it was taken, UTC.</summary>
+        public DateTimeOffset? TakenUtc { get; }
+
         /// <summary>An empty snapshot — what the first run compares against.</summary>
         public static ClashSnapshot Empty { get; } = new ClashSnapshot(Array.Empty<ClashRecord>());
 
         /// <summary>
         /// Take a snapshot of a finished run, so the next one has something to compare against.
         /// </summary>
-        public static ClashSnapshot Of(ClashPipelineResult result, string? label = null)
+        /// <param name="result">The finished run.</param>
+        /// <param name="label">How it reads on screen — a date, a milestone, an issue number.</param>
+        /// <param name="takenUtc">
+        /// When it was taken. Passed in rather than read from the clock, so a snapshot written
+        /// twice from the same run is the same snapshot.
+        /// </param>
+        public static ClashSnapshot Of(ClashPipelineResult result, string? label = null,
+                                       DateTimeOffset? takenUtc = null)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
 
             var records = new List<ClashRecord>();
             var decisions = new Dictionary<string, GroupDecision>(StringComparer.Ordinal);
+            var open = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var group in result.Groups)
             {
+                var party = string.IsNullOrWhiteSpace(group.AssignedTo)
+                    ? PartyLedger.Nobody : group.AssignedTo!;
+
+                var outstanding = group.Items.Count(i => FindingStatusLattice.IsOpen(i.Status));
+
+                if (outstanding > 0)
+                    open[party] = open.TryGetValue(party, out var seen) ? seen + outstanding : outstanding;
+
                 // An instruction counts as a decision even where the party came from a rule: it is
                 // the only thing on the board that no rule can reproduce, so losing it on a re-run
                 // would lose the one part a person actually authored.
@@ -102,7 +135,7 @@ namespace CamelWorks.Core.Clash
             foreach (var item in result.Suppressed)
                 records.Add(new ClashRecord(item.Key, item.Status, null, false, item.TestName));
 
-            return new ClashSnapshot(records, decisions, label);
+            return new ClashSnapshot(records, decisions, label, open, takenUtc);
         }
     }
 

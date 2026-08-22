@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -144,6 +145,36 @@ namespace CamelWorks.UI.Views
     {
         /// <summary>The gap used between stacked things, everywhere.</summary>
         public const double Gap = 8;
+
+        /// <summary>
+        /// Which CamelWorks this is, read from the assembly rather than kept as a constant.
+        ///
+        /// A constant is a second place for the version to live and therefore a place for it to be
+        /// wrong, and the one thing a report cover and a support bundle must not be wrong about is
+        /// which build produced them.
+        /// </summary>
+        public static string Release { get; } = ReadRelease();
+
+        private static string ReadRelease()
+        {
+            try
+            {
+                var assembly = typeof(Ui).Assembly;
+
+                var info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                                   ?.InformationalVersion;
+
+                if (!string.IsNullOrWhiteSpace(info)) return info!;
+
+                return assembly.GetName().Version?.ToString() ?? "unknown";
+            }
+            catch (Exception)
+            {
+                // A build with no version attributes at all is a development build, and saying so
+                // is better than a report cover that claims a version nobody can look up.
+                return "unknown";
+            }
+        }
 
         // -----------------------------------------------------------------------------------
         // Type

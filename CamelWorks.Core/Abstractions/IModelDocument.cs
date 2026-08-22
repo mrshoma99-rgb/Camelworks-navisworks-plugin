@@ -17,6 +17,30 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>The scope hash every key from this model carries.</summary>
         string Scope { get; }
+
+        /// <summary>
+        /// When the source file was last written, UTC, or null when it cannot be read.
+        ///
+        /// The most-asked question in a Wednesday coordination meeting is "which revision of the
+        /// structural model was this run against", and the only honest answer is the file's own
+        /// timestamp. Null is ordinary — the source may be on a share that is offline, or gone.
+        /// </summary>
+        DateTimeOffset? SourceModifiedUtc { get; }
+
+        /// <summary>How many bytes the source file is, or null when it cannot be read.</summary>
+        long? SourceBytes { get; }
+
+        /// <summary>The unit this model was authored in, as the host names it, or null.</summary>
+        string? ModelUnits { get; }
+
+        /// <summary>
+        /// True when the host is holding this model somewhere other than where it was authored.
+        ///
+        /// A transform is legitimate — it is how a survey-grid model is brought onto a project
+        /// grid — and it is also the classic silent killer: nobody notices one being applied, and
+        /// every clash from that moment on is in the wrong place.
+        /// </summary>
+        bool HasTransform { get; }
     }
 
     /// <summary>

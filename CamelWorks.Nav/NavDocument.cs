@@ -18,6 +18,34 @@ namespace CamelWorks.Nav
             Scope = NavKeys.ScopeOf(model);
             DisplayName = System.IO.Path.GetFileName(SourcePath);
             if (string.IsNullOrEmpty(DisplayName)) DisplayName = "(unnamed model)";
+
+            // Read once, at load. The manifest is a record of what this run saw, and re-reading the
+            // share every time a report is written would make two reports of the same run disagree.
+            try
+            {
+                var file = new System.IO.FileInfo(SourcePath);
+
+                if (file.Exists)
+                {
+                    SourceModifiedUtc = new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
+                    SourceBytes = file.Length;
+                }
+            }
+            catch (Exception)
+            {
+                // An unreadable path is an ordinary answer, not an error: the source may be on a
+                // share that is offline, on a drive nobody mapped, or genuinely gone.
+            }
+
+            try
+            {
+                ModelUnits = model.Units.ToString();
+                HasTransform = !model.Transform.IsIdentity();
+            }
+            catch (Exception)
+            {
+                ModelUnits = null;
+            }
         }
 
         /// <summary>The host model.</summary>
@@ -31,6 +59,18 @@ namespace CamelWorks.Nav
 
         /// <inheritdoc />
         public string Scope { get; }
+
+        /// <inheritdoc />
+        public DateTimeOffset? SourceModifiedUtc { get; }
+
+        /// <inheritdoc />
+        public long? SourceBytes { get; }
+
+        /// <inheritdoc />
+        public string? ModelUnits { get; }
+
+        /// <inheritdoc />
+        public bool HasTransform { get; }
     }
 
     /// <summary>One element.</summary>
