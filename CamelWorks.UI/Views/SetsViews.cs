@@ -1082,7 +1082,13 @@ namespace CamelWorks.UI.Views
         // Viewpoints
         // ===================================================================================
 
-        /// <summary>Bulk rename, renumber and re-folder, plus saving one from where you are.</summary>
+        /// <summary>
+        /// Bulk rename and renumber, a walkthrough saved from the board, and a delete by name.
+        ///
+        /// Not re-foldering: moving a saved viewpoint between folders is not something the seam
+        /// does, and claiming it here while the code only renames would be the doc lying about the
+        /// product. A viewpoint saved into a folder gets there at save time.
+        /// </summary>
         private sealed class ViewpointScreen
         {
             private readonly StackPanel _list = Ui.Stack();
