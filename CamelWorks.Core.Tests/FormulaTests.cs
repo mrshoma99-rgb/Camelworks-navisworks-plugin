@@ -165,6 +165,117 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("0.3333", Value("1 / 3"));
         }
 
+        // ---------------------------------------------------------------------------------
+        // Functions
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_pattern_pulls_the_part_of_a_name_that_matters_out()
+        {
+            // What the brackets caught, because "what did the brackets catch" is what somebody
+            // writing a pattern over a name is asking.
+            Assert.Equal("03", Value("regex({Element/Name}, \"L([0-9]+)\")",
+                ("Element/Name", "Duct on L03")));
+
+            // No brackets: the whole match.
+            Assert.Equal("L03", Value("regex({Element/Name}, \"L[0-9]+\")",
+                ("Element/Name", "Duct on L03")));
+        }
+
+        [Fact]
+        public void A_pattern_with_a_replacement_rewrites_rather_than_extracts()
+        {
+            Assert.Equal("Duct-on-L03", Value("regex({a/x}, \" \", \"-\")", ("a/x", "Duct on L03")));
+        }
+
+        [Fact]
+        public void A_pattern_that_matches_nothing_is_empty_rather_than_the_whole_value()
+        {
+            Assert.Equal(string.Empty, Value("regex({a/x}, \"Z([0-9]+)\")", ("a/x", "Duct on L03")));
+        }
+
+        [Fact]
+        public void A_pattern_that_is_not_a_pattern_says_so()
+        {
+            var result = Formula.Parse("regex({a/x}, \"([\")").Evaluate(Element(("a/x", "anything")));
+
+            Assert.Null(result.Value);
+            Assert.Contains("is not a pattern", result.Problem);
+        }
+
+        [Fact]
+        public void A_number_moves_between_units()
+        {
+            // A duct size in millimetres into metres for a schedule.
+            Assert.Equal("0.6", Value("unit({a/x}, \"mm\", \"m\")", ("a/x", "600")));
+            Assert.Equal("600", Value("unit({a/x}, \"m\", \"mm\")", ("a/x", "0.6")));
+            Assert.Equal("12", Value("unit({a/x}, \"ft\", \"in\")", ("a/x", "1")));
+        }
+
+        [Fact]
+        public void A_unit_nobody_uses_says_which_ones_are_understood()
+        {
+            var result = Formula.Parse("unit({a/x}, \"furlong\", \"m\")").Evaluate(Element(("a/x", "1")));
+
+            Assert.Contains("is not a unit", result.Problem);
+            Assert.Contains("mm, cm, m, km", result.Problem);
+        }
+
+        [Fact]
+        public void A_lookup_reads_a_code_table_and_refuses_what_it_does_not_list()
+        {
+            // Passing an unlisted code through is exactly what a code table exists to stop.
+            string? Table(string name, string value) =>
+                name == "Uniclass" && value == "Ss_25" ? "Wall systems" : null;
+
+            Assert.Equal("Wall systems",
+                Formula.Parse("lookup({a/x}, \"Uniclass\")")
+                       .Evaluate(Element(("a/x", "Ss_25")), Table).Value);
+
+            Assert.Equal(string.Empty,
+                Formula.Parse("lookup({a/x}, \"Uniclass\")")
+                       .Evaluate(Element(("a/x", "Ss_99")), Table).Value);
+        }
+
+        [Fact]
+        public void A_lookup_with_no_tables_to_read_says_where_they_live()
+        {
+            var result = Formula.Parse("lookup({a/x}, \"Uniclass\")").Evaluate(Element(("a/x", "Ss_25")));
+
+            Assert.Null(result.Value);
+            Assert.Contains("Project > Profile", result.Problem);
+        }
+
+        [Theory]
+        [InlineData("upper({a/x})", "L03 DUCT")]
+        [InlineData("lower({a/x})", "l03 duct")]
+        [InlineData("trim({a/x})", "L03 Duct")]
+        public void The_three_tidying_functions_do_what_they_say(string formula, string expected)
+        {
+            Assert.Equal(expected, Value(formula, ("a/x", "  L03 Duct  ")));
+        }
+
+        [Fact]
+        public void A_function_can_be_used_inside_an_expression_like_anything_else()
+        {
+            Assert.Equal("D-03",
+                Value("\"D-\" & regex({a/x}, \"L([0-9]+)\")", ("a/x", "Duct on L03")));
+        }
+
+        [Theory]
+        [InlineData("levitate({a/x})", "not a function this formula knows")]
+        [InlineData("regex({a/x})", "takes 2 or 3 arguments")]
+        [InlineData("upper({a/x}, \"x\")", "takes 1 argument, not 2")]
+        [InlineData("regex({a/x}, \"a\"", "never closed")]
+        [InlineData("Mark", "is not a property")]
+        public void A_call_that_cannot_work_says_why_before_it_runs(string text, string expected)
+        {
+            var formula = Formula.Parse(text);
+
+            Assert.False(formula.IsUsable);
+            Assert.Contains(expected, formula.Problem);
+        }
+
         [Fact]
         public void Whitespace_and_case_in_a_reference_do_not_matter()
         {

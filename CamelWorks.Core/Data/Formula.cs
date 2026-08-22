@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
+using CamelWorks.Core.Measurement;
 
 namespace CamelWorks.Core.Data
 {
@@ -159,7 +161,15 @@ namespace CamelWorks.Core.Data
         /// Reads one property: category, name, and null when the element does not carry it. An
         /// empty category means "any tab", which is what a formula that only names a property says.
         /// </param>
-        public FormulaResult Evaluate(Func<string, string, string?> property)
+        /// <param name="lookup">
+        /// Reads a code table: table name, value, and null when that table does not list it.
+        /// Supplied by the caller rather than reached for, so this stays an expression evaluator
+        /// with no idea what a project is. Null means <c>lookup()</c> has nothing to read and says
+        /// so rather than silently passing the value through — passing an unlisted code through is
+        /// exactly what a code table exists to stop.
+        /// </param>
+        public FormulaResult Evaluate(Func<string, string, string?> property,
+                                      Func<string, string, string?>? lookup = null)
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (Problem != null) return new FormulaResult(null, Problem, Array.Empty<PropertyRef>());
@@ -168,7 +178,7 @@ namespace CamelWorks.Core.Data
 
             try
             {
-                var value = _root.Evaluate(property, missing);
+                var value = _root.Evaluate(property, missing, lookup);
 
                 return missing.Count > 0
                     ? new FormulaResult(null, null, missing)
@@ -190,7 +200,7 @@ namespace CamelWorks.Core.Data
         // Scanning
         // -------------------------------------------------------------------------------
 
-        private enum Kind { Property, Number, Text, Operator, Open, Close }
+        private enum Kind { Property, Number, Text, Operator, Open, Close, Name, Comma }
 
         private readonly struct Token
         {
@@ -266,6 +276,16 @@ namespace CamelWorks.Core.Data
 
                 if (c == '(') { tokens.Add(new Token(Kind.Open, "(")); at++; continue; }
                 if (c == ')') { tokens.Add(new Token(Kind.Close, ")")); at++; continue; }
+                if (c == ',') { tokens.Add(new Token(Kind.Comma, ",")); at++; continue; }
+
+                if (char.IsLetter(c) || c == '_')
+                {
+                    var start = at;
+                    while (at < text.Length && (char.IsLetterOrDigit(text[at]) || text[at] == '_')) at++;
+
+                    tokens.Add(new Token(Kind.Name, text.Substring(start, at - start)));
+                    continue;
+                }
 
                 if (c == '+' || c == '-' || c == '*' || c == '/' || c == '&')
                 {
@@ -359,6 +379,38 @@ namespace CamelWorks.Core.Data
                     return new MathNode(new NumberNode(0), ParseAtom(tokens, ref at), '-');
                 }
 
+                case Kind.Name:
+                {
+                    at++;
+
+                    if (at >= tokens.Count || tokens[at].Kind != Kind.Open)
+                        throw new FormatException("\"" + token.Text + "\" is not a property - a property "
+                            + "goes in braces, like {Element/Mark} - and it is not a function either, "
+                            + "because nothing follows it in brackets.");
+
+                    at++;
+
+                    var arguments = new List<Node>();
+
+                    if (at < tokens.Count && tokens[at].Kind != Kind.Close)
+                    {
+                        arguments.Add(ParseJoin(tokens, ref at));
+
+                        while (at < tokens.Count && tokens[at].Kind == Kind.Comma)
+                        {
+                            at++;
+                            arguments.Add(ParseJoin(tokens, ref at));
+                        }
+                    }
+
+                    if (at >= tokens.Count || tokens[at].Kind != Kind.Close)
+                        throw new FormatException("A ( was opened and never closed.");
+
+                    at++;
+
+                    return CallNode.Of(token.Text, arguments);
+                }
+
                 default:
                     throw new FormatException("\"" + token.Text + "\" cannot start a value.");
             }
@@ -396,7 +448,9 @@ namespace CamelWorks.Core.Data
 
         private abstract class Node
         {
-            internal abstract Slot Evaluate(Func<string, string, string?> property, ICollection<PropertyRef> missing);
+            internal abstract Slot Evaluate(Func<string, string, string?> property,
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup);
 
             internal abstract string Describe();
         }
@@ -408,7 +462,8 @@ namespace CamelWorks.Core.Data
             internal NumberNode(double value) => _value = value;
 
             internal override Slot Evaluate(Func<string, string, string?> property,
-                                            ICollection<PropertyRef> missing) => new Slot(_value);
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup) => new Slot(_value);
 
             internal override string Describe() => _value.ToString("0.####", CultureInfo.InvariantCulture);
         }
@@ -420,7 +475,8 @@ namespace CamelWorks.Core.Data
             internal TextNode(string value) => _value = value;
 
             internal override Slot Evaluate(Func<string, string, string?> property,
-                                            ICollection<PropertyRef> missing) => new Slot(_value);
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup) => new Slot(_value);
 
             internal override string Describe() => "\"" + _value + "\"";
         }
@@ -432,7 +488,8 @@ namespace CamelWorks.Core.Data
             internal PropertyNode(PropertyRef reference) => _reference = reference;
 
             internal override Slot Evaluate(Func<string, string, string?> property,
-                                            ICollection<PropertyRef> missing)
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup)
             {
                 var value = property(_reference.Category, _reference.Name);
 
@@ -458,11 +515,155 @@ namespace CamelWorks.Core.Data
             internal JoinNode(Node left, Node right) { _left = left; _right = right; }
 
             internal override Slot Evaluate(Func<string, string, string?> property,
-                                            ICollection<PropertyRef> missing) =>
-                new Slot(_left.Evaluate(property, missing).ToText()
-                         + _right.Evaluate(property, missing).ToText());
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup) =>
+                new Slot(_left.Evaluate(property, missing, lookup).ToText()
+                         + _right.Evaluate(property, missing, lookup).ToText());
 
             internal override string Describe() => _left.Describe() + " & " + _right.Describe();
+        }
+
+        /// <summary>
+        /// A named function over one or more values.
+        ///
+        /// Four of them, and each earns its place by being something a property genuinely needs
+        /// doing to it before it means anything: a pattern pulled out of a name, a number moved
+        /// between units, a value looked up in a table, and a level read off an ancestor.
+        ///
+        /// Everything else stays out. A formula language that grows a function per request ends up
+        /// as a programming language nobody documents, and the moment a person needs a loop they
+        /// needed a spreadsheet instead.
+        /// </summary>
+        private sealed class CallNode : Node
+        {
+            private readonly string _name;
+            private readonly IReadOnlyList<Node> _arguments;
+
+            private CallNode(string name, IReadOnlyList<Node> arguments)
+            {
+                _name = name;
+                _arguments = arguments;
+            }
+
+            /// <summary>The functions a formula may call, and how many arguments each takes.</summary>
+            internal static IReadOnlyList<string> Names { get; } =
+                new[] { "regex", "unit", "lookup", "upper", "lower", "trim" };
+
+            internal static Node Of(string name, IReadOnlyList<Node> arguments)
+            {
+                var known = name.ToLowerInvariant();
+
+                if (!Names.Contains(known))
+                    throw new FormatException("\"" + name + "\" is not a function this formula knows. "
+                        + "The ones it does: " + string.Join(", ", Names) + ".");
+
+                var wanted = Arity(known);
+
+                if (arguments.Count < wanted.Least || arguments.Count > wanted.Most)
+                    throw new FormatException("\"" + name + "\" takes "
+                        + (wanted.Least == wanted.Most
+                            ? wanted.Least.ToString(CultureInfo.InvariantCulture)
+                              + (wanted.Least == 1 ? " argument" : " arguments")
+                            : wanted.Least.ToString(CultureInfo.InvariantCulture) + " or "
+                              + wanted.Most.ToString(CultureInfo.InvariantCulture) + " arguments")
+                        + ", not " + arguments.Count.ToString(CultureInfo.InvariantCulture) + ".");
+
+                return new CallNode(known, arguments);
+            }
+
+            private static (int Least, int Most) Arity(string name) => name switch
+            {
+                "regex" => (2, 3),
+                "unit" => (3, 3),
+                "lookup" => (2, 2),
+                _ => (1, 1),
+            };
+
+            internal override Slot Evaluate(Func<string, string, string?> property,
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup)
+            {
+                var values = _arguments.Select(a => a.Evaluate(property, missing, lookup)).ToList();
+                var first = values[0].ToText();
+
+                switch (_name)
+                {
+                    case "upper": return new Slot(first.ToUpperInvariant());
+                    case "lower": return new Slot(first.ToLowerInvariant());
+                    case "trim": return new Slot(first.Trim());
+
+                    case "regex":
+                    {
+                        var pattern = values[1].ToText();
+
+                        Regex expression;
+
+                        try
+                        {
+                            // A timeout, because a pattern typed by a person runs against every
+                            // element in a federation and catastrophic backtracking would look
+                            // exactly like a hang.
+                            expression = new Regex(pattern, RegexOptions.None, TimeSpan.FromMilliseconds(50));
+                        }
+                        catch (ArgumentException error)
+                        {
+                            throw new FormatException("\"" + pattern + "\" is not a pattern: " + error.Message);
+                        }
+
+                        try
+                        {
+                            if (values.Count == 3)
+                                return new Slot(expression.Replace(first, values[2].ToText()));
+
+                            var match = expression.Match(first);
+
+                            // The first group when the pattern has one, the whole match when it does
+                            // not: "what did the brackets catch" is what somebody writing a pattern
+                            // over a name is asking.
+                            if (!match.Success) return new Slot(string.Empty);
+
+                            return new Slot(match.Groups.Count > 1 ? match.Groups[1].Value : match.Value);
+                        }
+                        catch (RegexMatchTimeoutException)
+                        {
+                            throw new FormatException("\"" + pattern + "\" takes too long to match. "
+                                + "A pattern with nested repeats can take longer than the rest of the "
+                                + "job put together.");
+                        }
+                    }
+
+                    case "unit":
+                    {
+                        var from = Measure.MetresPer(values[1].ToText());
+                        var to = Measure.MetresPer(values[2].ToText());
+
+                        if (from == null)
+                            throw new FormatException("\"" + values[1].ToText() + "\" is not a unit. "
+                                + Measure.UnitWords);
+
+                        if (to == null)
+                            throw new FormatException("\"" + values[2].ToText() + "\" is not a unit. "
+                                + Measure.UnitWords);
+
+                        return new Slot(values[0].AsNumber() * from.Value / to.Value);
+                    }
+
+                    default:
+                    {
+                        // lookup: the value's row in a named table, or nothing when the table does
+                        // not list it. Nothing rather than the value itself, because passing an
+                        // unlisted code through is exactly what a code table exists to stop.
+                        if (lookup == null)
+                            throw new FormatException("lookup() needs a code table, and this screen "
+                                + "has none to read. Project > Profile is where they live.");
+
+                        return new Slot(lookup(values[1].ToText(), first) ?? string.Empty);
+                    }
+                }
+            }
+
+            internal override string Describe() =>
+                _name + "(" + string.Join(", ", _arguments.Select(a => a.Describe())) + ")";
         }
 
         private sealed class MathNode : Node
@@ -474,10 +675,11 @@ namespace CamelWorks.Core.Data
             internal MathNode(Node left, Node right, char op) { _left = left; _right = right; _op = op; }
 
             internal override Slot Evaluate(Func<string, string, string?> property,
-                                            ICollection<PropertyRef> missing)
+                                            ICollection<PropertyRef> missing,
+                                            Func<string, string, string?>? lookup)
             {
-                var left = _left.Evaluate(property, missing);
-                var right = _right.Evaluate(property, missing);
+                var left = _left.Evaluate(property, missing, lookup);
+                var right = _right.Evaluate(property, missing, lookup);
 
                 // Stop before parsing: a missing value is already the answer, and turning "" into a
                 // number error would report the wrong problem.

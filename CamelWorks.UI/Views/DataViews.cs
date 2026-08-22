@@ -855,6 +855,12 @@ namespace CamelWorks.UI.Views
                             + "that did both would turn a door reference of \"12\" and a level of \"3\" "
                             + "into 15 instead of \"12-3\". An element missing something the formula "
                             + "needs is left alone rather than written a zero."),
+                    Ui.Note("Six functions, and each earns its place by being something a property "
+                            + "genuinely needs doing to it: regex(value, pattern) pulls out what the "
+                            + "brackets caught and regex(value, pattern, replacement) rewrites; "
+                            + "unit(number, \"mm\", \"m\") moves a number between units; "
+                            + "lookup(value, \"Uniclass\") reads a code table and gives nothing for a "
+                            + "value it does not list; upper, lower and trim tidy."),
                     Ui.Field("If a value is already there", policy),
                     preview,
                     Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its "
@@ -977,10 +983,35 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The value function for a formula: null for an element it cannot be worked out for.</summary>
-            private static Func<IModelItem, string?> ValueOf(Formula formula) => item =>
-                formula.Evaluate((category, name) => category.Length == 0
+            private Func<IModelItem, string?> ValueOf(Formula formula)
+            {
+                var lookup = Lookup(_session);
+
+                return item => formula.Evaluate((category, name) => category.Length == 0
                     ? AnyTab(item, name)
-                    : item.Property(category, name)).Value;
+                    : item.Property(category, name), lookup).Value;
+            }
+
+            /// <summary>
+            /// The code-table reader a formula's lookup() uses, or null when the project keeps none.
+            ///
+            /// Read once per preview rather than per element: a federation is a hundred thousand
+            /// elements and the tables do not change while a formula runs.
+            /// </summary>
+            internal static Func<string, string, string?>? Lookup(Session session)
+            {
+                var tables = CodeTables.FromJson(
+                    session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+
+                if (tables.IsEmpty) return null;
+
+                return (table, value) =>
+                {
+                    var found = tables.Find(table)?.Find(value);
+
+                    return found?.Description ?? found?.Code;
+                };
+            }
 
             /// <summary>
             /// A property by name, whichever tab it is under.

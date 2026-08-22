@@ -331,6 +331,52 @@ namespace CamelWorks.Core.Measurement
             return true;
         }
 
+        /// <summary>The unit words <see cref="MetresPer"/> understands, for an error message.</summary>
+        public const string UnitWords = "Use one of: mm, cm, m, km, in, ft, yd, mi.";
+
+        /// <summary>
+        /// How many metres one of a named unit is, or null when the name is not a unit.
+        ///
+        /// For converting a number that is already in a stated unit — a duct size in millimetres
+        /// into metres for a schedule — rather than for reading a length a person typed, which is
+        /// <see cref="TryRead"/>'s job.
+        /// </summary>
+        /// <param name="unit">The unit's name or abbreviation.</param>
+        public static double? MetresPer(string? unit)
+        {
+            if (string.IsNullOrWhiteSpace(unit)) return null;
+
+            switch (unit!.Trim().ToLowerInvariant())
+            {
+                case "mm": case "millimetre": case "millimetres": case "millimeter": case "millimeters":
+                    return 0.001;
+
+                case "cm": case "centimetre": case "centimetres": case "centimeter": case "centimeters":
+                    return 0.01;
+
+                case "m": case "metre": case "metres": case "meter": case "meters":
+                    return 1;
+
+                case "km": case "kilometre": case "kilometres": case "kilometer": case "kilometers":
+                    return 1000;
+
+                case "in": case "inch": case "inches":
+                    return MetresPerInch;
+
+                case "ft": case "foot": case "feet":
+                    return 12 * MetresPerInch;
+
+                case "yd": case "yard": case "yards":
+                    return 36 * MetresPerInch;
+
+                case "mi": case "mile": case "miles":
+                    return 63360 * MetresPerInch;
+
+                default:
+                    return null;
+            }
+        }
+
         /// <summary>A count of something, with thousands separated.</summary>
         /// <param name="count">The count.</param>
         public static string Count(long count) => count.ToString("N0", CultureInfo.InvariantCulture);
