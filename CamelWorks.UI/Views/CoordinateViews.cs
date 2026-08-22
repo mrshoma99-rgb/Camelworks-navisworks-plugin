@@ -716,6 +716,7 @@ namespace CamelWorks.UI.Views
                     _rows,
                     _detail,
                     new RaiseScreen().Build(),
+                    FreezeCard(),
                     HeadroomCard()));
             }
 
@@ -1044,6 +1045,223 @@ namespace CamelWorks.UI.Views
                 run,
                 results);
         }
+
+        /// <summary>
+        /// Sign-off and fabrication release, and what has moved since.
+        ///
+        /// Two things a coordination board has to be able to say and cannot: this level was signed
+        /// off on the fourteenth, and these hangers were released to fabrication on the twentieth.
+        /// Both are the same act — somebody put their name to a state of the model — and both are
+        /// worthless unless the tool can afterwards say what has changed since. So it is one
+        /// mechanism, and the Change Notice is the half that earns it.
+        ///
+        /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
+        /// not to enter.
+        /// </summary>
+        private static UIElement FreezeCard()
+        {
+            var results = Ui.Stack();
+
+            var scope = Ui.Text(string.Empty, null, 220);
+            var signatory = Ui.Text(string.Empty, null, 180);
+            var release = Ui.Text(string.Empty, null, 140);
+
+            var freeze = Ui.Runner("Freeze what is on the board", results,
+                job => DoFreeze(results, scope, signatory, release, job));
+
+            var notice = Ui.Runner("Change notice", results, job => DoNotice(results, job));
+
+            var card = Ui.Card("Freeze",
+                "Sign-off and fabrication release are the same record, and both come with a change notice",
+                Ui.Field("What is being frozen", scope),
+                Ui.Field("Signed by", signatory),
+                Ui.Field("Release reference", release),
+                Ui.Across(freeze, notice),
+                Ui.Note("A freeze records where every element on the board is, right now. Nothing "
+                        + "edits it afterwards: the change notice is the difference between that "
+                        + "record and the model as it stands, and it is the thing that stops a "
+                        + "hanger being made to a drawing three weeks old."),
+                results);
+
+            var session = Host.Current;
+
+            if (session != null)
+            {
+                var held = Frozen(session);
+
+                if (held != null)
+                {
+                    results.Children.Add(Ui.Line(held.Describe(), 1, true));
+
+                    if (!held.IsIntact)
+                        results.Children.Add(Ui.Problem(
+                            "That record no longer hashes to its own contents. It has been edited in "
+                            + "the project file, by hand or by a merge, and what it says was agreed "
+                            + "is no longer what it says it was."));
+
+                    results.Children.Add(Ui.Button("Unfreeze", () =>
+                    {
+                        results.Children.Clear();
+
+                        session.Store.Section(ProjectStore.ClashSection).Remove("freeze");
+
+                        results.Children.Add(session.Store.Save()
+                            ? Ui.Line("Unfrozen. Nothing on the board changed - only the record that "
+                                      + "it had been agreed.", 1, true)
+                            : Ui.Problem(session.Store.LastSaveProblem
+                                         ?? "Could not write the project file."));
+
+                        session.Record(ActivityKind.Regroup, "unfroze " + held.Scope);
+                    }));
+                }
+            }
+
+            return card;
+        }
+
+        /// <summary>Record where everything on the board is, right now.</summary>
+        private static void DoFreeze(Panel results, TextBox scope, TextBox signatory, TextBox release,
+                                     Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board first. A freeze is of the board, and "
+                    + "without one there is nothing to agree to."));
+                return;
+            }
+
+            var elements = new List<FrozenElement>();
+            var groups = new List<string>();
+            var missing = 0;
+            var read = 0;
+
+            var metres = session.MetresPerUnit;
+
+            foreach (var group in board.Groups)
+            {
+                groups.Add(group.Name);
+
+                foreach (var item in group.Items)
+                {
+                    foreach (var key in new[] { item.Key.A, item.Key.B })
+                    {
+                        if (!job.Step(read++, "elements read")) return;
+
+                        var element = session.Model.Resolve(key);
+
+                        if (element == null) { missing++; continue; }
+
+                        var b = element.Bounds;
+
+                        elements.Add(new FrozenElement(key, new BoundingBox(
+                            b.MinX * metres, b.MinY * metres, b.MinZ * metres,
+                            b.MaxX * metres, b.MaxY * metres, b.MaxZ * metres)));
+                    }
+                }
+            }
+
+            var record = Freeze.Of(
+                scope.Text.Trim().Length == 0 ? LastBoardLabel : scope.Text,
+                Environment.UserName,
+                DateTimeOffset.UtcNow,
+                groups,
+                elements,
+                signatory.Text,
+                release.Text);
+
+            session.Store.Section(ProjectStore.ClashSection).Set("freeze", record.ToJson());
+
+            results.Children.Add(session.Store.Save()
+                ? Ui.Line(record.Describe(), 1, true)
+                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+            if (missing > 0)
+                results.Children.Add(Ui.Note(Ui.Count(missing, "element")
+                    + " on the board could not be found in the model and are not in the record. "
+                    + "They cannot be reported on later either, which is worth knowing now."));
+
+            session.Record(ActivityKind.Regroup, record.Describe());
+        }
+
+        /// <summary>What has moved since somebody put their name to it.</summary>
+        private static void DoNotice(Panel results, Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var held = Frozen(session);
+
+            if (held == null)
+            {
+                results.Children.Add(Ui.Empty("Nothing is frozen.",
+                    "Freeze the board first. A change notice is the difference between a record "
+                    + "somebody agreed to and the model as it stands."));
+                return;
+            }
+
+            var units = session.Profile.Units;
+            var metres = session.MetresPerUnit;
+
+            var now = new Dictionary<string, BoundingBox>(StringComparer.Ordinal);
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            var read = 0;
+
+            foreach (var frozen in held.Elements)
+            {
+                if (!job.Step(read++, "elements checked")) return;
+
+                var element = session.Model.Resolve(frozen.Key);
+                if (element == null) continue;
+
+                var b = element.Bounds;
+
+                now[frozen.Key.ToString()] = new BoundingBox(
+                    b.MinX * metres, b.MinY * metres, b.MinZ * metres,
+                    b.MaxX * metres, b.MaxY * metres, b.MaxZ * metres);
+
+                names[frozen.Key.ToString()] = element.DisplayName;
+            }
+
+            var notice = held.Since(now);
+
+            results.Children.Add(Ui.Line(notice.Explain(units), 1, true));
+
+            if (notice.IsClear) return;
+
+            var rows = notice.Changes.Take(400).Select(c => new TableRow(c,
+                names.TryGetValue(c.Was.Key.ToString(), out var name) ? name : c.Was.Key.ToString(),
+                c.Describe(units),
+                c.Moved > 0 ? units.Bare(c.Moved) : string.Empty,
+                c.Resized > 0 ? units.Bare(c.Resized) : string.Empty)
+            {
+                Tone = c.IsMissing ? Tone.Bad : Tone.Warn,
+            }).ToList();
+
+            results.Children.Add(Ui.Table(rows,
+                ("Element", 240), ("What changed", 200),
+                ("Moved (" + units.LengthUnit + ")", 110),
+                ("Resized (" + units.LengthUnit + ")", 0))
+                .OnPick(item =>
+                {
+                    if (!(item is FrozenChange change)) return;
+
+                    var keys = new[] { change.Was.Key };
+                    session.Model.Select(keys);
+                    session.View.ZoomTo(keys, 2.0);
+                }));
+
+            session.Record(ActivityKind.Report, "produced a change notice: " + notice.Explain(units));
+        }
+
+        /// <summary>The freeze this project holds, or null.</summary>
+        private static Freeze? Frozen(Session session) =>
+            Freeze.FromJson(session.Store.Section(ProjectStore.ClashSection)["freeze"]);
 
         /// <summary>
         /// Whether an element reads as something people walk on.
