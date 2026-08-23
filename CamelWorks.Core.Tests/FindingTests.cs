@@ -273,10 +273,13 @@ namespace CamelWorks.Core.Tests
         // ---------------------------------------------------------------------------------
 
         [Fact]
-        public void All_six_producers_emit_the_same_shape()
+        public void Every_producer_emits_the_same_shape()
         {
+            // Counted rather than listed, so adding a producer is a decision somebody makes here
+            // rather than something that slips in. Seven: clash, manual, health, headroom, IDS,
+            // set drift and compare.
             var sources = (FindingSource[])Enum.GetValues(typeof(FindingSource));
-            Assert.Equal(6, sources.Length);
+            Assert.Equal(7, sources.Length);
 
             var findings = sources
                 .Select(s => Finding.Create(s, "rule", "title", new[] { E("Wall 1") }))
@@ -284,7 +287,7 @@ namespace CamelWorks.Core.Tests
 
             // Same record, same triage vocabulary — one board, one report, one exporter.
             Assert.All(findings, f => Assert.Equal(FindingStatus.New, f.Status));
-            Assert.Equal(6, findings.Select(f => f.Id).Distinct().Count());   // provenance separates them
+            Assert.Equal(7, findings.Select(f => f.Id).Distinct().Count());   // provenance separates them
         }
 
         [Fact]

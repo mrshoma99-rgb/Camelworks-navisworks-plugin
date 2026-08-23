@@ -95,7 +95,12 @@ namespace CamelWorks.Core.Testing
         {
             Trip("list " + directory);
 
-            var prefix = directory.TrimEnd('/', '\\') + "/";
+            // Both sides normalised, not just the keys. Normalising only the keys made this list
+            // nothing at all for a directory given with backslashes — which is every directory
+            // this product derives on Windows — so a store that saved a file correctly could not
+            // then find it, and the failure looked like the store rather than the fake.
+            var prefix = directory.TrimEnd('/', '\\').Replace('\\', '/') + "/";
+
             return _files.Keys
                 .Where(k => k.Replace('\\', '/').StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 .Select(k => k.Replace('\\', '/').Substring(prefix.Length))

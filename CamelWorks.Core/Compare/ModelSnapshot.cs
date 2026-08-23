@@ -163,8 +163,11 @@ namespace CamelWorks.Core.Compare
             Line(sb, "document", DocumentPath);
             Line(sb, "units", Units);
             Line(sb, "watch", Watch.ToString());
-            Line(sb, "watched", Refs(_watched));
-            Line(sb, "ignored", Refs(_ignored));
+            // Written raw: these two lines are lists whose separator is the very character Clean
+            // replaces, so cleaning the joined string turns a list of four properties into one
+            // property with a long name. Each part is cleaned on its way into the join instead.
+            Raw(sb, "watched", Refs(_watched));
+            Raw(sb, "ignored", Refs(_ignored));
             Line(sb, "elements", Count.ToString(CultureInfo.InvariantCulture));
 
             foreach (var model in _models)
@@ -353,7 +356,8 @@ namespace CamelWorks.Core.Compare
         }
 
         private static string Refs(IReadOnlyList<PropertyRef> refs) =>
-            string.Join(Unit.ToString(), refs.Select(r => r.ToStorage()));
+            string.Join(Unit.ToString(),
+                        refs.Select(r => new PropertyRef(Clean(r.Category), Clean(r.Name)).ToStorage()));
 
         private static IReadOnlyList<PropertyRef> Refs(string value) =>
             value.Length == 0
@@ -366,6 +370,9 @@ namespace CamelWorks.Core.Compare
 
         private static void Line(StringBuilder sb, string key, string value) =>
             sb.Append(key).Append('=').Append(Clean(value)).Append('\n');
+
+        private static void Raw(StringBuilder sb, string key, string value) =>
+            sb.Append(key).Append('=').Append(value).Append('\n');
 
         /// <summary>
         /// One numeric field.

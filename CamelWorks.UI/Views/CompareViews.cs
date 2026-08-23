@@ -283,6 +283,7 @@ namespace CamelWorks.UI.Views
                     Filters(),
                     _list,
                     Paint(),
+                    Walk(),
                     Keep(),
                     _output);
             }
@@ -430,6 +431,76 @@ namespace CamelWorks.UI.Views
                                   + "what removed means. Append the baseline model beside the "
                                   + "current one and they appear in red.")
                         : null);
+            }
+
+            /// <summary>
+            /// A viewpoint per place something happened.
+            ///
+            /// <b>A change list is a list; a building is a place.</b> Four hundred rows tell
+            /// nobody where to stand. A dozen viewpoints — one per area where something actually
+            /// moved — is a walk somebody can do in ten minutes and hand to whoever has to fix it,
+            /// and it survives being sent to a machine that has never had CamelWorks on it.
+            /// </summary>
+            private UIElement Walk()
+            {
+                var cell = CompareClusters.DefaultCell;
+
+                var make = Ui.Runner("Make a viewpoint for each place", _output, job =>
+                {
+                    var clusters = CompareClusters.Of(_result, cell);
+
+                    if (clusters.Count == 0)
+                    {
+                        _output.Children.Add(Ui.Empty("Nowhere to look.",
+                            "Nothing was added, removed, moved or changed."));
+                        return;
+                    }
+
+                    var folder = CompareClusters.Folder(_result);
+                    var made = 0;
+                    var framed = 0;
+
+                    for (var i = 0; i < clusters.Count; i++)
+                    {
+                        if (!job.Step(made, "viewpoints")) break;
+
+                        var cluster = clusters[i];
+
+                        // A cluster of removed elements has nothing in this document to zoom to,
+                        // so the camera is framed on the extent the baseline recorded. That is the
+                        // only way to look at a deletion, and it is the one people ask for most.
+                        if (cluster.Keys.Count > 0) _session.View.ZoomTo(cluster.Keys, 1.5);
+                        else { _session.View.FrameBox(cluster.Bounds); framed++; }
+
+                        _session.Viewpoints.SaveCurrent(
+                            CompareClusters.Name(cluster, i + 1, clusters.Count), folder);
+
+                        made++;
+                    }
+
+                    _output.Children.Add(Ui.Line("Made " + Ui.Count(made, "viewpoint")
+                        + " in \"" + folder + "\".", 1, true));
+
+                    if (framed > 0)
+                        _output.Children.Add(Ui.Note(Ui.Count(framed, "viewpoint")
+                            + " look at where removed elements used to be. There is nothing in "
+                            + "this document at those coordinates — that is what removed means — "
+                            + "so the view is framed on the extent the baseline recorded."));
+
+                    _session.Record(ActivityKind.Reconcile,
+                        "made " + Ui.Count(made, "viewpoint") + " from the comparison");
+                });
+
+                var count = CompareClusters.Of(_result, cell).Count;
+
+                return Ui.Card("Walk it",
+                    "The changes grouped by where they are, one viewpoint each, biggest first.",
+                    Ui.Line(count == 0
+                        ? "Nothing to walk."
+                        : Ui.Count(count, "place") + " where something happened, at "
+                          + cell.ToString("0.#", CultureInfo.InvariantCulture)
+                          + " model units apart or closer.", 0.8),
+                    make);
             }
 
             private UIElement Keep()
