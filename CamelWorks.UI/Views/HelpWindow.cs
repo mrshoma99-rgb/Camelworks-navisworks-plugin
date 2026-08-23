@@ -64,6 +64,21 @@ namespace CamelWorks.UI.Views
                     Bullet("A set built from a rule that needs more than one search is saved as a fixed "
                            + "selection set, because a Navisworks search set holds one search. CamelWorks says "
                            + "which you got rather than letting you find out later."),
+                    Bullet("A removed element cannot be shown in three dimensions. Comparison finds it "
+                           + "because the baseline remembers it, but Navisworks holds one version of a "
+                           + "model at a time and the element is not in this document — that is what "
+                           + "removed means. Append the baseline model beside the current one and the "
+                           + "compare view paints them in red."),
+                    Bullet("Comparison sees shape as a bounding box. That decides moved, resized and "
+                           + "rotated, and it cannot see an element remodelled inside its own envelope, "
+                           + "or a square duct turned about its own run. Reading the actual triangles "
+                           + "can, and costs a geometry pass per element — minutes on a federation — so "
+                           + "it is a choice on the Compare tab rather than something done to you."),
+                    Bullet("Comparing two different files needs somebody to say which model is which. "
+                           + "CamelWorks pairs them by path, then by name, then by name with the revision "
+                           + "marker taken off, and says on every row which rule paired it and why. Where "
+                           + "two candidates fit equally well it pairs neither and asks, because guessing "
+                           + "reports a whole discipline as rebuilt."),
                     Bullet("There is one icon set, drawn for a light ribbon. On a dark Navisworks theme "
                            + "the glyphs are darker than ideal; a theme-aware second set is a design "
                            + "job rather than something to guess at.")),

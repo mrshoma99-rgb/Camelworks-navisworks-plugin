@@ -45,7 +45,7 @@ namespace CamelWorks.Core.Compare
     /// </summary>
     public static class SnapshotBuilder
     {
-        /// <summary>How often <paramref name="onProgress"/> is called, in elements.</summary>
+        /// <summary>How often <see cref="Take"/> reports progress and asks whether to keep going, in elements.</summary>
         public const int ProgressEvery = 2000;
 
         /// <summary>

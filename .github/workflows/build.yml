@@ -117,6 +117,12 @@ jobs:
       - name: Check every seam implementer is up to date
         run: python3 checks/validate-seam.py
 
+      # Core is built with GenerateDocumentationFile and warnings as errors, so a <param> naming a
+      # parameter that does not exist is CS1734 and fails all five jobs ten minutes after the push.
+      # There is no .NET SDK on the machine these files are written on, so nothing else finds it.
+      - name: Check every param tag names a real parameter
+        run: python3 checks/validate-docs.py
+
       # The release gate from the harvest protocol: the only company named anywhere in this tree
       # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
       - name: Check nothing but BIMCamel is named

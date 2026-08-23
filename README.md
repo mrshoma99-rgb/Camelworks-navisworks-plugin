@@ -15,6 +15,7 @@ alongside the terms.
 | **Home** | The weekly cycle as the front door — reconcile, regroup, report — with when each last happened and the way to each |
 | **Project** | Health checks · what CamelWorks derived and why · the federation and whether each source has moved on since the file was saved · the IFC exporter |
 | **Coordinate** | The clash board · headroom · the engine's tests · the rule editor · reports · BCF in and out |
+| **Compare** | What changed between two revisions — added, removed, moved, changed — painted onto the model, stamped into the properties, or sent out as a report |
 | **Data** | Every property folded to one row, and a write · levels derived and stamped · takeoff |
 | **Sets & Views** | Boolean set builder · the Appearance layers system · bulk viewpoint operations |
 | **Batch / Automate** | Saved jobs · a node canvas over the same services the buttons drive |
@@ -76,6 +77,7 @@ never heard of.
 | Ribbon | The markup, the `[Command]` attributes and the catalogue must agree |
 | Bundle | The manifest, the release workflow and its validation gate must agree |
 | Icons | Every command has both sizes on disk |
+| XML docs | Every `<param>` and `<paramref>` names a parameter that exists |
 
 Every Navisworks API member used was read out of the reference assemblies for all four years before
 being written, rather than recalled.
