@@ -34,7 +34,7 @@ namespace CamelWorks.UI.Views
         /// <summary>The last comparison, so the Changes tab has something to show.</summary>
         internal static CompareResult? Last { get; private set; }
 
-        private static readonly CompareOptions Settings = new CompareOptions();
+        private static readonly CompareSettings Settings = new CompareSettings();
         private static string? _pickedBaseline;
         private static bool _deepGeometry;
 

@@ -83,7 +83,7 @@ namespace CamelWorks.Core.Tests
             var a = Snapshot("Rev A", new[] { Print("Duct", x: 0) });
             var b = Snapshot("Rev B", new[] { Print("Duct", x: 0.0002) });
 
-            var result = ModelCompare.Of(a, b, new CompareOptions { Tolerance = 0.00001 });
+            var result = ModelCompare.Of(a, b, new CompareSettings { Tolerance = 0.00001 });
 
             Assert.Equal(1, result.Moved);
         }
@@ -209,7 +209,7 @@ namespace CamelWorks.Core.Tests
             Assert.True(quiet.IsQuiet);
             Assert.Equal(1, quiet.Skipped);
 
-            var loud = ModelCompare.Of(a, b, new CompareOptions { IncludeGroupingNodes = true });
+            var loud = ModelCompare.Of(a, b, new CompareSettings { IncludeGroupingNodes = true });
 
             Assert.Equal(1, loud.Removed);
         }
@@ -302,7 +302,7 @@ namespace CamelWorks.Core.Tests
             var a = Snapshot("A", new[] { Print("Bracket", rung: KeyRung.Geometry, local: "shape") });
             var b = Snapshot("B", new[] { Print("Bracket", rung: KeyRung.Geometry, local: "shape") });
 
-            var result = ModelCompare.Of(a, b, new CompareOptions { WeakestRung = KeyRung.TreePath });
+            var result = ModelCompare.Of(a, b, new CompareSettings { WeakestRung = KeyRung.TreePath });
 
             Assert.Equal(0, result.Removed);
             Assert.Equal(0, result.Added);
@@ -359,7 +359,7 @@ namespace CamelWorks.Core.Tests
             var after = new List<ElementFingerprint>();
 
             var result = ModelCompare.Of(Snapshot("A", before), Snapshot("B", after),
-                                         new CompareOptions { ExampleCap = 5 });
+                                         new CompareSettings { ExampleCap = 5 });
 
             Assert.Equal(40, result.Removed);
             Assert.Equal(5, result.In(ChangeBucket.Removed).Count);
@@ -375,7 +375,7 @@ namespace CamelWorks.Core.Tests
             var before = Enumerable.Range(0, 40).Select(i => Print("Wall " + i, x: i)).ToList();
 
             var result = ModelCompare.Of(Snapshot("A", before), Snapshot("B", new List<ElementFingerprint>()),
-                                         new CompareOptions { ExampleCap = 5 });
+                                         new CompareSettings { ExampleCap = 5 });
 
             Assert.Equal(40, result.KeysIn(ChangeBucket.Removed).Count);
         }
@@ -402,7 +402,7 @@ namespace CamelWorks.Core.Tests
             var b = Snapshot("A", new[] { Print("Wall") });
 
             Assert.Empty(ModelCompare.Of(a, b).Changes);
-            Assert.Single(ModelCompare.Of(a, b, new CompareOptions { KeepUnchanged = true }).Changes);
+            Assert.Single(ModelCompare.Of(a, b, new CompareSettings { KeepUnchanged = true }).Changes);
         }
 
         [Fact]

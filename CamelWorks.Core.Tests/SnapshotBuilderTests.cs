@@ -54,7 +54,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void The_settings_a_snapshot_was_taken_under_are_recorded_with_it()
         {
-            var options = new CompareOptions
+            var options = new CompareSettings
             {
                 Watch = PropertyWatch.Named,
                 Watched = new[] { new PropertyRef("Element", "Level") },

@@ -80,7 +80,7 @@ namespace CamelWorks.Core.Compare
     /// </summary>
     public sealed class CompareResult
     {
-        internal CompareResult(CompareOptions options, ModelPairing pairing,
+        internal CompareResult(CompareSettings options, ModelPairing pairing,
                                IReadOnlyList<ElementChange> changes,
                                IReadOnlyList<ModelTally> models,
                                IReadOnlyList<string> notes)
@@ -93,13 +93,13 @@ namespace CamelWorks.Core.Compare
         }
 
         /// <summary>The settings it ran under.</summary>
-        public CompareOptions Options { get; }
+        public CompareSettings Options { get; }
 
         /// <summary>Which model was held to be which.</summary>
         public ModelPairing Pairing { get; }
 
         /// <summary>
-        /// The changes, capped at <see cref="CompareOptions.ExampleCap"/> per bucket.
+        /// The changes, capped at <see cref="CompareSettings.ExampleCap"/> per bucket.
         ///
         /// Capped rather than complete because a screen showing four hundred thousand rows is a
         /// screen nobody scrolls. <see cref="Dropped"/> says what was left out, so a short list is

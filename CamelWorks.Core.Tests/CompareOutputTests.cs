@@ -282,7 +282,7 @@ namespace CamelWorks.Core.Tests
             var before = Enumerable.Range(0, 20).Select(i => Print("Wall " + i, x: i)).ToList();
 
             var result = ModelCompare.Of(Snapshot("A", before), Snapshot("B", new List<ElementFingerprint>()),
-                                         new CompareOptions { ExampleCap = 3 });
+                                         new CompareSettings { ExampleCap = 3 });
 
             var parent = CompareIssues.Raise(result).Single();
 

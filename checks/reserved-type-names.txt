@@ -11,7 +11,8 @@
 # mistake a minute earlier and on the machine that made it. The WPF half is hand-written from
 # the namespaces CamelWorks.UI imports (System.Windows, .Controls, .Media); the Autodesk half is
 # every public type directly in Autodesk.Navisworks.Api and .Plugins, read out of the reference
-# assemblies. Adding a name here is free. Removing one needs a reason.
+# assemblies; the base-class-library half is at the bottom and is explained there. Adding a name
+# here is free. Removing one needs a reason.
 #
 # One name per line. Blank lines and # comments ignored.
 
@@ -486,3 +487,78 @@ WindowStartupLocation
 WindowState
 WindowStyle
 WrapPanel
+
+# ---------------------------------------------------------------------------------------------
+# The third source, added after CompareOptions cost a CI cycle: the .NET base class library.
+#
+# System, System.Globalization, System.IO, System.Text and System.Linq are imported by nearly
+# every file in the host assemblies — System.Globalization in particular, because every number and
+# date in this product is formatted with CultureInfo.InvariantCulture. A Core type sharing a name
+# with one of them compiles on this machine and is CS0104 on all four Windows jobs, which is the
+# same failure shape as the WPF half above and arrives the same ten minutes too late.
+#
+# Only names that are plausible as a domain type are listed. Nobody is going to call a Core type
+# StreamReader; somebody very nearly called one CompareOptions.
+# ---------------------------------------------------------------------------------------------
+
+Activator
+BinaryReader
+BinaryWriter
+Buffer
+Calendar
+Capture
+CharUnicodeInfo
+CompareInfo
+CompareOptions
+Convert
+CultureInfo
+CultureTypes
+DateTimeFormatInfo
+DateTimeStyles
+Decoder
+DigitShapes
+Directory
+DirectoryInfo
+DriveInfo
+Encoder
+Encoding
+Enumerable
+EqualityComparer
+EventHandler
+FileAccess
+FileAttributes
+FileInfo
+FileMode
+FileOptions
+FileShare
+FileStream
+IdnMapping
+Lazy
+Lookup
+MemoryStream
+NumberFormatInfo
+NumberStyles
+Queryable
+Regex
+RegexOptions
+RegionInfo
+Rune
+SearchOption
+SeekOrigin
+SortKey
+SortVersion
+Stream
+StreamReader
+StreamWriter
+StringBuilder
+StringInfo
+StringReader
+StringWriter
+TextElementEnumerator
+TextInfo
+TextReader
+TextWriter
+TimeSpanStyles
+TimeZoneInfo
+UnicodeCategory
+WeakReference

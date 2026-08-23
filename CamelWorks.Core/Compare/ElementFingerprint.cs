@@ -38,7 +38,7 @@ namespace CamelWorks.Core.Compare
         /// </summary>
         All = 2,
 
-        /// <summary>Exactly the properties named in <see cref="CompareOptions.Watched"/>.</summary>
+        /// <summary>Exactly the properties named in <see cref="CompareSettings.Watched"/>.</summary>
         Named = 3,
     }
 
@@ -341,11 +341,11 @@ namespace CamelWorks.Core.Compare
         /// </summary>
         /// <param name="item">The element.</param>
         /// <param name="options">What to watch, and how much of it to keep.</param>
-        public static ElementFingerprint Of(IModelItem item, CompareOptions? options = null)
+        public static ElementFingerprint Of(IModelItem item, CompareSettings? options = null)
         {
             if (item == null) throw new ArgumentNullException(nameof(item));
 
-            var settings = options ?? CompareOptions.Default;
+            var settings = options ?? CompareSettings.Default;
             var key = item.Key;
             var bounds = item.Bounds;
 
@@ -369,7 +369,7 @@ namespace CamelWorks.Core.Compare
             return print;
         }
 
-        private static IReadOnlyList<WatchedValue> Read(IModelItem item, CompareOptions options)
+        private static IReadOnlyList<WatchedValue> Read(IModelItem item, CompareSettings options)
         {
             var kept = new List<WatchedValue>();
 

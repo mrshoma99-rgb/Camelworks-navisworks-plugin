@@ -54,7 +54,7 @@ namespace CamelWorks.Core.Compare
         /// <param name="document">The open document.</param>
         /// <param name="takenUtc">When this is being taken. Passed in so a snapshot is reproducible.</param>
         /// <param name="label">How it should read on the picker — a milestone, an issue number.</param>
-        /// <param name="options">What to watch. Defaults to <see cref="CompareOptions.Default"/>.</param>
+        /// <param name="options">What to watch. Defaults to <see cref="CompareSettings.Default"/>.</param>
         /// <param name="scope">What to walk. Defaults to the whole document.</param>
         /// <param name="documentPath">The document's path, for the record.</param>
         /// <param name="units">The document's length unit, as the host names it.</param>
@@ -63,7 +63,7 @@ namespace CamelWorks.Core.Compare
         public static ModelSnapshot Take(IModelDocument document,
                                          DateTimeOffset takenUtc,
                                          string? label = null,
-                                         CompareOptions? options = null,
+                                         CompareSettings? options = null,
                                          TraversalScope? scope = null,
                                          string? documentPath = null,
                                          string? units = null,
@@ -72,7 +72,7 @@ namespace CamelWorks.Core.Compare
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
 
-            var settings = options ?? CompareOptions.Default;
+            var settings = options ?? CompareSettings.Default;
 
             var snapshot = new ModelSnapshot
             {
@@ -107,7 +107,7 @@ namespace CamelWorks.Core.Compare
                 }
 
                 // Grouping nodes are recorded rather than filtered here, and filtered at comparison
-                // time by CompareOptions.IncludeGroupingNodes. A baseline that threw them away
+                // time by CompareSettings.IncludeGroupingNodes. A baseline that threw them away
                 // could never be compared with them included, and the person who wants them is
                 // always the person looking at a six-month-old baseline.
                 snapshot.Add(ElementFingerprint.Of(item, settings));

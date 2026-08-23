@@ -9,14 +9,18 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// What counts as a change, and how hard to look.
     ///
+    /// <b>Settings, not Options.</b> <c>System.Globalization.CompareOptions</c> exists and is
+    /// imported by every file in this product that formats a number, so a Core type of that name
+    /// compiles perfectly here and is an ambiguous reference the moment any screen uses it.
+    ///
     /// Every field has a working default. The type exists so that the answers a comparison gives
     /// can be argued with — "why is this listed as moved" has to have an answer better than
     /// "the tool said so", and that answer is a tolerance somebody can see and change.
     /// </summary>
-    public sealed class CompareOptions
+    public sealed class CompareSettings
     {
         /// <summary>The settings a first run uses, having been configured by nobody.</summary>
-        public static CompareOptions Default { get; } = new CompareOptions();
+        public static CompareSettings Default { get; } = new CompareSettings();
 
         /// <summary>Which properties are recorded and compared.</summary>
         public PropertyWatch Watch { get; set; } = PropertyWatch.Standard;
@@ -125,7 +129,7 @@ namespace CamelWorks.Core.Compare
         }
 
         /// <summary>A copy, so a screen can offer "try it with…" without editing the live settings.</summary>
-        public CompareOptions Copy() => new CompareOptions
+        public CompareSettings Copy() => new CompareSettings
         {
             Watch = Watch,
             Watched = _watched,

@@ -29,7 +29,7 @@ namespace CamelWorks.Core.Compare
         /// Raise findings from a comparison.
         ///
         /// Children come from <see cref="CompareResult.Changes"/>, which is capped — see
-        /// <see cref="CompareOptions.ExampleCap"/>. Run the comparison uncapped when the findings
+        /// <see cref="CompareSettings.ExampleCap"/>. Run the comparison uncapped when the findings
         /// are going out as BCF and every element has to be in them; the parent's title carries
         /// the true count either way, so a capped set of children is visible rather than silent.
         /// </summary>

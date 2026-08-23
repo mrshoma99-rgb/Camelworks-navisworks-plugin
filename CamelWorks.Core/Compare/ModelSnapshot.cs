@@ -85,7 +85,7 @@ namespace CamelWorks.Core.Compare
         /// A property only takes part when both sides were watching it, and this is how the
         /// baseline's half of that is asked.
         /// </summary>
-        public CompareOptions Terms() => new CompareOptions
+        public CompareSettings Terms() => new CompareSettings
         {
             Watch = Watch,
             Watched = _watched,

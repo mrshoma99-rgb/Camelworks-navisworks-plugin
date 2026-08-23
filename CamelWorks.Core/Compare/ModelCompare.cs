@@ -38,11 +38,11 @@ namespace CamelWorks.Core.Compare
         /// <summary>Compare two snapshots.</summary>
         /// <param name="before">The baseline side.</param>
         /// <param name="after">The current side.</param>
-        /// <param name="options">What counts as a change. Defaults to <see cref="CompareOptions.Default"/>.</param>
+        /// <param name="options">What counts as a change. Defaults to <see cref="CompareSettings.Default"/>.</param>
         public static CompareResult Of(ModelSnapshot? before, ModelSnapshot? after,
-                                       CompareOptions? options = null)
+                                       CompareSettings? options = null)
         {
-            var settings = options ?? CompareOptions.Default;
+            var settings = options ?? CompareSettings.Default;
             var baseline = before ?? new ModelSnapshot();
             var current = after ?? new ModelSnapshot();
             var terms = baseline.Terms();
@@ -106,7 +106,7 @@ namespace CamelWorks.Core.Compare
         // ---- setting the two sides up -------------------------------------------------------
 
         private static Dictionary<string, List<ElementFingerprint>> Bucket(
-            ModelSnapshot snapshot, CompareOptions settings, ref int skipped)
+            ModelSnapshot snapshot, CompareSettings settings, ref int skipped)
         {
             var by = new Dictionary<string, List<ElementFingerprint>>(StringComparer.Ordinal);
 
@@ -350,7 +350,7 @@ namespace CamelWorks.Core.Compare
         // ---- what is different about one matched element ------------------------------------
 
         private static ChangeKind Differences(ElementFingerprint before, ElementFingerprint after,
-                                              CompareOptions settings, CompareOptions terms,
+                                              CompareSettings settings, CompareSettings terms,
                                               out double distance, out List<ValueChange> properties)
         {
             var kind = ChangeKind.None;
@@ -410,7 +410,7 @@ namespace CamelWorks.Core.Compare
         /// whose transient dictionaries are pure garbage collection.
         /// </summary>
         private static List<ValueChange> Values(ElementFingerprint before, ElementFingerprint after,
-                                                CompareOptions settings, CompareOptions terms)
+                                                CompareSettings settings, CompareSettings terms)
         {
             var changes = new List<ValueChange>();
 
@@ -449,7 +449,7 @@ namespace CamelWorks.Core.Compare
 
         private static void Note(List<ValueChange> changes, PropertyRef property,
                                  string? before, string? after,
-                                 CompareOptions settings, CompareOptions terms)
+                                 CompareSettings settings, CompareSettings terms)
         {
             if (string.Equals(before, after, StringComparison.Ordinal)) return;
             if (!settings.Watches(property) || !terms.Watches(property)) return;
@@ -461,7 +461,7 @@ namespace CamelWorks.Core.Compare
 
         private static void Notes(List<string> notes, CompareResult result,
                                   ModelSnapshot baseline, ModelSnapshot current,
-                                  CompareOptions settings, CompareOptions terms, ModelPairing pairing)
+                                  CompareSettings settings, CompareSettings terms, ModelPairing pairing)
         {
             foreach (var ambiguity in pairing.Ambiguities) notes.Add(ambiguity);
 
@@ -536,15 +536,15 @@ namespace CamelWorks.Core.Compare
             private readonly Dictionary<ChangeKind, int> _byKind = new Dictionary<ChangeKind, int>();
             private readonly Dictionary<ChangeBucket, List<ElementKey>> _keys =
                 new Dictionary<ChangeBucket, List<ElementKey>>();
-            private readonly CompareOptions _terms;
+            private readonly CompareSettings _terms;
 
-            internal Run(CompareOptions settings, CompareOptions terms)
+            internal Run(CompareSettings settings, CompareSettings terms)
             {
                 Settings = settings;
                 _terms = terms;
             }
 
-            internal CompareOptions Settings { get; }
+            internal CompareSettings Settings { get; }
 
             internal int AddedCount { get; private set; }
 

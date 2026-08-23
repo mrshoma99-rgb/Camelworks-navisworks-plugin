@@ -182,7 +182,7 @@ namespace CamelWorks.Core.Tests
             var model = document.AddModel("Structure", @"C:\job\STR.nwc");
             var item = document.AddItem(model, "Wall").WithProperty("Element", "Level", "L03");
 
-            var print = ElementFingerprint.Of(item, new CompareOptions { Watch = PropertyWatch.None });
+            var print = ElementFingerprint.Of(item, new CompareSettings { Watch = PropertyWatch.None });
 
             Assert.Empty(print.Values);
         }
@@ -196,7 +196,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Empty(ElementFingerprint.Of(item).Values);
 
-            var all = ElementFingerprint.Of(item, new CompareOptions { Watch = PropertyWatch.All });
+            var all = ElementFingerprint.Of(item, new CompareSettings { Watch = PropertyWatch.All });
 
             Assert.Equal("24-118", all.ValueOf(new PropertyRef("Custom", "Job Number")));
         }
