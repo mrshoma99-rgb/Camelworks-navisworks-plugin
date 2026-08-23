@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The CamelWorks ribbon tab: five panels, twenty-five buttons.
+  The CamelWorks ribbon tab: six panels, twenty-seven buttons.
 
   Hand-authored Navisworks markup, not WPF — the project file removes it from Page compilation and
   deploys it to an en-US subfolder beside the DLL, which is where the host looks for it.
@@ -57,7 +57,18 @@
       </RibbonPanelSource>
     </RibbonPanel>
 
-    <!-- Panel 3 — Data -->
+    <!-- Panel 3 — Compare. Its own panel rather than a button inside Coordinate: comparing two
+         revisions is what people reach for on the morning a model lands, before any clash runs. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Compare">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Compare" Title="Compare">
+        <local:NWRibbonButton x:Uid="CW_Compare" Id="ID_CW_Compare"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <local:NWRibbonButton x:Uid="CW_Baseline" Id="ID_CW_Baseline"
+                              Size="Standard" ShowText="True" Orientation="Horizontal" />
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 4 — Data -->
     <RibbonPanel x:Uid="RibbonPanel_CW_Data">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Data" Title="Data">
         <local:NWRibbonButton x:Uid="CW_DataManager" Id="ID_CW_DataManager"
@@ -71,7 +82,7 @@
       </RibbonPanelSource>
     </RibbonPanel>
 
-    <!-- Panel 4 — Sets & Views -->
+    <!-- Panel 5 — Sets & Views -->
     <RibbonPanel x:Uid="RibbonPanel_CW_Sets">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Sets" Title="Sets &amp; Views">
         <local:NWRibbonButton x:Uid="CW_Sets" Id="ID_CW_Sets"
@@ -85,7 +96,7 @@
       </RibbonPanelSource>
     </RibbonPanel>
 
-    <!-- Panel 5 — Deliver & Automate -->
+    <!-- Panel 6 — Deliver & Automate -->
     <RibbonPanel x:Uid="RibbonPanel_CW_Deliver">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Deliver" Title="Deliver &amp; Automate">
         <local:NWRibbonButton x:Uid="CW_Batch" Id="ID_CW_Batch"

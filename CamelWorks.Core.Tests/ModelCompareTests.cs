@@ -381,6 +381,21 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void The_unchanged_keys_are_kept_even_though_the_unchanged_rows_are_not()
+        {
+            // The compare view fades the unchanged elements by name. Collecting their keys only
+            // when KeepUnchanged is on would make the fade quietly cover nothing on every default
+            // run — a compare view where the changes do not stand out at all.
+            var before = Enumerable.Range(0, 30).Select(i => Print("Wall " + i, x: i)).ToList();
+            var after = Enumerable.Range(0, 30).Select(i => Print("Wall " + i, x: i)).ToList();
+
+            var result = ModelCompare.Of(Snapshot("A", before), Snapshot("B", after));
+
+            Assert.Empty(result.Changes);
+            Assert.Equal(30, result.KeysIn(ChangeBucket.Unchanged).Count);
+        }
+
+        [Fact]
         public void Unchanged_rows_are_counted_but_not_listed_unless_asked_for()
         {
             var a = Snapshot("A", new[] { Print("Wall") });

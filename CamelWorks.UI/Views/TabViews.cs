@@ -46,6 +46,10 @@ namespace CamelWorks.UI.Views
                     case "Coordinate/Report": return CoordinateViews.Report();
                     case "Coordinate/BCF": return CoordinateViews.Bcf();
 
+                    case "Compare/Run": return CompareViews.Run();
+                    case "Compare/Changes": return CompareViews.Changes();
+                    case "Compare/Baselines": return CompareViews.Baselines();
+
                     case "Data/Data": return DataViews.Manager();
                     case "Data/Zones": return DataViews.Zones();
                     case "Data/Takeoff": return DataViews.Takeoff();

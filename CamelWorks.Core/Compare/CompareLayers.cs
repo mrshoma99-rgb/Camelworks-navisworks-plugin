@@ -121,14 +121,20 @@ namespace CamelWorks.Core.Compare
                 return new CompareView(layers, new[] { "Nothing was compared, so there is nothing to show." }, 0, 0);
 
             // Bottom of the stack, so every coloured layer above it wins on the elements it names.
-            // Ghosting is applied to EVERYTHING rather than to the unchanged elements alone: a
-            // layer that named only the unchanged ones would have to be rebuilt every time the
-            // comparison is re-run, and would leave anything the comparison skipped fully opaque
-            // and looking deliberate.
-            if (ghostUnchanged)
+            //
+            // <b>Named elements, not "everything".</b> Targeting everything is the obvious way to
+            // write this and it is a one-way door: the fade then has to be undone by setting
+            // transparency back across the whole model, which also throws away transparency
+            // somebody applied by hand for their own reasons. Naming the unchanged elements makes
+            // the fade exactly reversible — clear the overrides on the elements the comparison
+            // touched, and nothing else in the document has been written to at all.
+            var unchanged = result.KeysIn(ChangeBucket.Unchanged);
+
+            if (ghostUnchanged && unchanged.Count > 0)
             {
-                layers.Add(new AppearanceLayer(IdPrefix + "ghost", "Compare — everything else",
-                                               LayerTarget.Everything())
+                layers.Add(new AppearanceLayer(IdPrefix + "ghost", "Compare — unchanged",
+                                               LayerTarget.Elements(unchanged,
+                                                   ComparePolicy.Count(unchanged.Count) + " unchanged"))
                 {
                     Transparency = ComparePalette.UnchangedTransparency,
                     Note = "Faded so the changes stand out. Switch this layer off to see the model "

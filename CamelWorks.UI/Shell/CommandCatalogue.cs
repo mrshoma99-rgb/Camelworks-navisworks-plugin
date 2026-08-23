@@ -77,7 +77,7 @@ namespace CamelWorks.UI.Shell
     /// </summary>
     public static class CommandCatalogue
     {
-        /// <summary>All twenty-five, in ribbon order.</summary>
+        /// <summary>All twenty-seven, in ribbon order.</summary>
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
             // Panel 1 — Project
@@ -147,7 +147,23 @@ namespace CamelWorks.UI.Shell
                 new[] { "combine", "reconcile", "incoming", "conflicts" },
                 new[] { "two people reviewed the same clashes", "whose version wins" }),
 
-            // Panel 3 — Data
+            // Panel 3 — Compare
+            Pane("ID_CW_Compare", "Compare", "Compare/Run",
+                "What changed since a baseline: added, removed, moved and changed, painted onto "
+                + "the model. Works on a raw model — take a baseline and you are set up.",
+                new[] { "diff", "difference", "revision", "version", "what changed", "model compare" },
+                new[] { "what changed since last week", "which model did they update",
+                        "the architect moved something and did not say",
+                        "is this the same model as last month", "did anything move",
+                        "I cannot tell what is different" }),
+
+            Act("ID_CW_Baseline", "Baseline",
+                "Record what the model is right now, so a comparison next week has something to "
+                + "compare against.",
+                new[] { "snapshot", "record", "mark", "freeze", "capture" },
+                new[] { "save what it looks like now", "I want to compare against this later" }),
+
+            // Panel 4 — Data
             Pane("ID_CW_DataManager", "Data Manager", "Data/Data",
                 "Browse and edit properties in one place, with calculated columns.",
                 new[] { "properties", "parameters", "attributes", "edit data" },
@@ -169,7 +185,7 @@ namespace CamelWorks.UI.Shell
                 new[] { "quantities", "measure", "counts", "schedule", "qto" },
                 new[] { "how much of this is there", "I need quantities out of the model" }),
 
-            // Panel 4 — Sets & Views
+            // Panel 5 — Sets & Views
             Pane("ID_CW_Sets", "Sets", "Sets/Sets",
                 "Boolean set building, compiled down to native search sets.",
                 new[] { "search sets", "selection sets", "filters", "find items" },
@@ -193,7 +209,7 @@ namespace CamelWorks.UI.Shell
                 new[] { "section", "clip", "cut", "crop" },
                 new[] { "I cannot see inside", "turning sectioning off loses my box" }),
 
-            // Panel 5 — Deliver & Automate
+            // Panel 6 — Deliver & Automate
             Pane("ID_CW_Batch", "Batch", "Batch/Jobs",
                 "Jobs and their run history. A job from this document in one click.",
                 new[] { "automation", "scheduled", "overnight", "unattended" },

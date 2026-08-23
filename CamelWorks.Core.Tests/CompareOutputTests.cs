@@ -53,6 +53,31 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void The_fade_names_the_unchanged_elements_so_it_can_be_taken_back_off()
+        {
+            // Targeting "everything" is the obvious way to write the fade and it is a one-way
+            // door: undoing it then means writing transparency across the whole model, which also
+            // throws away transparency somebody set by hand.
+            var view = CompareLayers.Build(Mixed());
+            var ghost = view.Layers[0];
+
+            Assert.Null(ghost.Target.Expression);
+            Assert.NotEmpty(ghost.Target.Keys);
+            Assert.False(ghost.Target.ReResolves);
+        }
+
+        [Fact]
+        public void With_nothing_unchanged_there_is_no_fade_layer_at_all()
+        {
+            var result = ModelCompare.Of(
+                Snapshot("A", new[] { Print("Gone") }),
+                Snapshot("B", new[] { Print("New") }));
+
+            Assert.DoesNotContain(CompareLayers.Build(result).Layers,
+                                  l => l.Id == CompareLayers.IdPrefix + "ghost");
+        }
+
+        [Fact]
         public void Fading_can_be_switched_off()
         {
             var view = CompareLayers.Build(Mixed(), ghostUnchanged: false);

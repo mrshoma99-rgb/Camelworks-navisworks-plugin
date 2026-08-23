@@ -101,7 +101,16 @@ namespace CamelWorks.Core.Compare
     /// </summary>
     public static class CompareStamp
     {
-        /// <summary>The property tab the stamp writes under.</summary>
+        /// <summary>
+        /// The property tab the stamp writes under.
+        ///
+        /// <b>Not a free choice.</b> The host adapter writes every custom property into one
+        /// user-defined tab of its own — <c>NavWriteTransaction.TabName</c> — because that is the
+        /// only shape the COM API offers. A stamp naming any other tab would be written to that
+        /// one anyway, and would then be invisible to the very search sets it exists to make
+        /// possible. Core cannot reference the adapter to say so in code, so the caller checks the
+        /// two agree and the screen says plainly if they ever stop agreeing.
+        /// </summary>
         public const string Category = "CamelWorks";
 
         /// <summary>The property naming which bucket the element is in.</summary>

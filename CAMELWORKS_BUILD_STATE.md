@@ -96,7 +96,7 @@ carry the clash `Tests` property the other three do.
 
 ## UI — built and wired
 
-Five ribbon panels, twenty-five buttons, two dock panes, six switcher entries, sixteen tabs. Find a
+Six ribbon panels, twenty-seven buttons, two dock panes, seven switcher entries, nineteen tabs. Find a
 Tool searches symptom phrasing, not just command names.
 
 **Every tab does real work:**

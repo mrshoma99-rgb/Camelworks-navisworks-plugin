@@ -8,7 +8,7 @@ using CamelWorks.UI.Views;
 namespace CamelWorks.UI
 {
     /// <summary>
-    /// The CamelWorks ribbon tab and its twenty-five commands.
+    /// The CamelWorks ribbon tab and its twenty-seven commands.
     ///
     /// Every button either opens the pane on a named workspace and tab, acts immediately, or opens
     /// a small menu. <b>No button opens a modal that duplicates a pane screen.</b> True modals are
@@ -78,6 +78,10 @@ namespace CamelWorks.UI
         DisplayName = "Export IFC", ToolTip = "The IFC exporter, full pane")]
     [Command("ID_CW_Export", Icon = "Resources\\Export_16.png", LargeIcon = "Resources\\Export_32.png",
         DisplayName = "Export", ToolTip = "glTF, GLB, CSV or XLSX")]
+    [Command("ID_CW_Compare", Icon = "Resources\\Compare_16.png", LargeIcon = "Resources\\Compare_32.png",
+        DisplayName = "Compare", ToolTip = "What changed since a baseline — added, removed, moved, changed")]
+    [Command("ID_CW_Baseline", Icon = "Resources\\Baseline_16.png", LargeIcon = "Resources\\Baseline_32.png",
+        DisplayName = "Baseline", ToolTip = "Record what the model is right now, to compare against later")]
     [Command("ID_CW_Help", Icon = "Resources\\Help_16.png", LargeIcon = "Resources\\Help_32.png",
         DisplayName = "Help", ToolTip = "Guide, limitations, shortcuts, diagnostics and about")]
     public class CamelWorksPlugin : CommandHandlerPlugin

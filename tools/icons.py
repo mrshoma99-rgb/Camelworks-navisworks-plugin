@@ -65,6 +65,8 @@ ICONS = {
     "Graph":         "account_tree",
     "ExportIfc":     "upload_file",
     "Export":        "download",
+    "Compare":       "compare",
+    "Baseline":      "bookmark_add",
     "Help":          "help",
 }
 
