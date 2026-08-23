@@ -26,6 +26,15 @@ namespace CamelWorks.Core.Findings
 
         /// <summary>A set that stopped returning what it used to.</summary>
         SetDrift = 5,
+
+        /// <summary>
+        /// A difference between two revisions of the model.
+        ///
+        /// Added last, and numbered last, deliberately: a finding's identity is hashed from this
+        /// member's NAME, so appending one leaves every existing finding's id — and with it every
+        /// sign-off anybody has already given — exactly as it was.
+        /// </summary>
+        Compare = 6,
     }
 
     /// <summary>
