@@ -86,12 +86,14 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void Removed_elements_are_counted_as_unpaintable_and_explained()
+        public void Removed_elements_are_counted_and_the_way_to_see_them_is_named()
         {
+            // Not "unpaintable": they are in the revision the baseline was taken from, and the
+            // note points at the button that opens it rather than at homework.
             var view = CompareLayers.Build(Mixed());
 
             Assert.Equal(1, view.Uncolourable);
-            Assert.Contains(view.Notes, n => n.Contains("Append the baseline model"));
+            Assert.Contains(view.Notes, n => n.Contains("Bring the old revision in"));
         }
 
         [Fact]
