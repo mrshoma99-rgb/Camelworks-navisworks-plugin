@@ -321,12 +321,12 @@ namespace CamelWorks.Core.Compare
 
             var print = new ElementFingerprint((KeyRung)rung, fields[1], fields[2], fields[3])
             {
-                CentreX = Read(fields[4]),
-                CentreY = Read(fields[5]),
-                CentreZ = Read(fields[6]),
-                SizeX = Read(fields[7]),
-                SizeY = Read(fields[8]),
-                SizeZ = Read(fields[9]),
+                CentreX = Real(fields[4]),
+                CentreY = Real(fields[5]),
+                CentreZ = Real(fields[6]),
+                SizeX = Real(fields[7]),
+                SizeY = Real(fields[8]),
+                SizeZ = Real(fields[9]),
                 HasGeometry = fields[10] == "g",
                 MeshHash = fields[11] == "-" ? null : fields[11],
                 Name = fields[12],
@@ -367,7 +367,14 @@ namespace CamelWorks.Core.Compare
         private static void Line(StringBuilder sb, string key, string value) =>
             sb.Append(key).Append('=').Append(Clean(value)).Append('\n');
 
-        private static double Read(string field) =>
+        /// <summary>
+        /// One numeric field.
+        ///
+        /// Named Real and not Read: <see cref="Read(string)"/> is the public entry point, and an
+        /// overload differing from it only in a nullable annotation is the same signature to the
+        /// runtime — which the compiler says so plainly that it is worth never learning twice.
+        /// </summary>
+        private static double Real(string field) =>
             double.TryParse(field, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : 0;
 
         private static string Number(double value) =>
