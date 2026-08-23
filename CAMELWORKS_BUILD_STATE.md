@@ -113,6 +113,9 @@ Tool searches symptom phrasing, not just command names.
 | Rules | The pipeline, edited through one editor that draws every rule |
 | Report | PDF, XLSX or HTML, one file per party, filtered to what changed, with a picture per group |
 | BCF | Export with cameras and components; read a reply back and reconcile it against the board |
+| Compare → Run | Pick a baseline, set what counts as a change, and go; the scoreboard, the per-model tally with the reason each pairing was made, and what this baseline cannot answer |
+| Compare → Changes | The change list, filtered and searched; paint it, walk it as viewpoints, stamp it into the properties, raise it on the board, or write the report |
+| Compare → Baselines | What has been recorded and when, kept beside the document |
 | Data | Every property folded to one row; a write you see before you make it; formulas; rename and remove a column |
 | Levels & zones | Derived levels, and stamping them onto elements |
 | Takeoff | One axis or two, over a scope, out to a spreadsheet |
@@ -122,8 +125,9 @@ Tool searches symptom phrasing, not just command names.
 | Jobs | Saved graphs, run without opening the canvas |
 | Canvas | The node graph editor, over twenty-two nodes including the coordination ones |
 
-The two commands that are not screens both earn it: Section Box acts on the model you are looking
-at, and Help is a window because it has to work when the panel does not.
+The three commands that are not screens each earn it: Section Box acts on the model you are looking
+at, Baseline is a one-click weekly habit that should not need a screen, and Help is a window because
+it has to work when the panel does not.
 
 **Icons** are Google Material Symbols (Apache-2.0, attributed in `NOTICE`), fetched and rasterised by
 `tools/icons.py` and committed. The tool is in the repository rather than the PNGs alone, so the set
