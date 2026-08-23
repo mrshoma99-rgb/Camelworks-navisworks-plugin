@@ -170,6 +170,9 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public string SourcePath { get; }
 
+        /// <summary>The file the host has open for this model. Defaults to the source path.</summary>
+        public string? LoadedPath { get; set; }
+
         /// <inheritdoc />
         public string Scope { get; }
     }

@@ -103,6 +103,60 @@ namespace CamelWorks.Core.Compare
             return result;
         }
 
+        /// <summary>
+        /// The current-side elements a triangle read would actually tell you something about.
+        ///
+        /// <b>Every other element is minutes spent for nothing.</b> A shape signature only says
+        /// anything when both revisions have one, so an element whose baseline counterpart was
+        /// never measured cannot be reported as remodelled however long is spent on it. Neither
+        /// can one whose bounding box already differs — it is on the change list already, and
+        /// measuring it changes no answer.
+        ///
+        /// Worked out from the two snapshots directly rather than from a first comparison, because
+        /// the elements this is about are the ones a comparison reports as unchanged — and those
+        /// are exactly the rows a comparison does not keep.
+        /// </summary>
+        /// <param name="baseline">The baseline side.</param>
+        /// <param name="current">The snapshot about to be measured.</param>
+        /// <param name="settings">Used for the size tolerance. Defaults to <see cref="CompareSettings.Default"/>.</param>
+        /// <returns>The scoped key of each element worth measuring.</returns>
+        public static IReadOnlyCollection<string> WorthDeepening(ModelSnapshot? baseline,
+                                                                 ModelSnapshot? current,
+                                                                 CompareSettings? settings = null)
+        {
+            var wanted = new HashSet<string>(StringComparer.Ordinal);
+            if (baseline == null || current == null) return wanted;
+
+            var terms = settings ?? CompareSettings.Default;
+            var measured = new Dictionary<string, ElementFingerprint>(StringComparer.Ordinal);
+
+            foreach (var print in baseline.Elements)
+            {
+                if (print.MeshHash == null || print.Local.Length == 0) continue;
+                if (!measured.ContainsKey(print.Local)) measured[print.Local] = print;
+            }
+
+            if (measured.Count == 0) return wanted;
+
+            foreach (var print in current.Elements)
+            {
+                if (print.MeshHash != null) continue;
+                if (!print.HasGeometry) continue;
+                if (!measured.TryGetValue(print.Local, out var was)) continue;
+
+                var mine = was.SortedExtents();
+                var theirs = print.SortedExtents();
+
+                var resized = Math.Abs(mine[0] - theirs[0]) > terms.SizeTolerance
+                              || Math.Abs(mine[1] - theirs[1]) > terms.SizeTolerance
+                              || Math.Abs(mine[2] - theirs[2]) > terms.SizeTolerance;
+
+                if (!resized) wanted.Add(print.Scoped);
+            }
+
+            return wanted;
+        }
+
         // ---- setting the two sides up -------------------------------------------------------
 
         private static Dictionary<string, List<ElementFingerprint>> Bucket(
@@ -477,12 +531,18 @@ namespace CamelWorks.Core.Compare
                           + " and this run watches " + Watching(settings.Watch)
                           + ". Only properties both were watching take part.");
 
-            if (settings.UseMeshHash
-                && !baseline.Elements.Any(e => e.MeshHash != null)
-                && !current.Elements.Any(e => e.MeshHash != null))
-                notes.Add("No element carries a shape signature, so an element remodelled inside "
+            if (settings.UseMeshHash && baseline.Shapes > 0 && current.Shapes == 0)
+                notes.Add("The baseline measured " + ComparePolicy.Count(baseline.Shapes)
+                          + " elements' triangles and this run measured none, so nothing can be "
+                          + "reported as remodelled. Tick \"read the actual triangles\" to use "
+                          + "what the baseline already paid for.");
+
+            if (settings.UseMeshHash && baseline.Shapes == 0 && current.Shapes == 0)
+                notes.Add("Neither side carries a shape signature, so an element remodelled inside "
                           + "its own bounding box is invisible here. Reading one means a geometry "
-                          + "pass per element, which is why it is not on by default.");
+                          + "pass per element, which is why it is a choice rather than a default — "
+                          + "and it has to be made on BOTH sides, because a signature compares "
+                          + "against nothing on its own.");
 
             if (result.WeakMatches > 0)
                 notes.Add(ComparePolicy.Count(result.WeakMatches) + " matches rest on category, "

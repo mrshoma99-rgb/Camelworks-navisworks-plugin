@@ -5,6 +5,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Compare;
 using CamelWorks.Core.Testing;
 using Xunit;
+using static CamelWorks.Core.Tests.CompareFixtures;
 
 namespace CamelWorks.Core.Tests
 {
@@ -128,6 +129,81 @@ namespace CamelWorks.Core.Tests
             Assert.True(seen.Count >= 2);
             Assert.True(seen[seen.Count - 1].Stopped);
             Assert.True(snapshot.Count < SnapshotBuilder.ProgressEvery * 2 + 10);
+        }
+
+        [Fact]
+        public void Only_the_elements_the_baseline_measured_are_worth_measuring_again()
+        {
+            // A shape signature compares against nothing on its own, so an element the baseline
+            // never measured is a geometry pass that cannot change any answer.
+            var before = Snapshot("A", new[] { Print("A"), Print("B", x: 1), Print("C", x: 2) });
+            before.Elements[0].MeshHash = "aaaa";
+            before.Elements[1].MeshHash = "bbbb";
+
+            var after = Snapshot("B", new[] { Print("A"), Print("B", x: 1), Print("C", x: 2) });
+
+            var wanted = ModelCompare.WorthDeepening(before, after);
+
+            Assert.Equal(2, wanted.Count);
+            Assert.Contains(after.Elements[0].Scoped, wanted);
+            Assert.DoesNotContain(after.Elements[2].Scoped, wanted);
+        }
+
+        [Fact]
+        public void An_element_the_box_already_calls_resized_is_not_worth_measuring()
+        {
+            var before = Snapshot("A", new[] { Print("Duct", sx: 0.4) });
+            before.Elements[0].MeshHash = "aaaa";
+
+            var after = Snapshot("B", new[] { Print("Duct", sx: 0.5) });
+
+            Assert.Empty(ModelCompare.WorthDeepening(before, after));
+        }
+
+        [Fact]
+        public void An_element_already_measured_on_this_side_is_not_measured_twice()
+        {
+            var before = Snapshot("A", new[] { Print("Duct") });
+            before.Elements[0].MeshHash = "aaaa";
+
+            var after = Snapshot("B", new[] { Print("Duct") });
+            after.Elements[0].MeshHash = "bbbb";
+
+            Assert.Empty(ModelCompare.WorthDeepening(before, after));
+        }
+
+        [Fact]
+        public void With_nothing_measured_in_the_baseline_there_is_nothing_to_measure_now()
+        {
+            var before = Snapshot("A", new[] { Print("Duct") });
+            var after = Snapshot("B", new[] { Print("Duct") });
+
+            Assert.Equal(0, before.Shapes);
+            Assert.Empty(ModelCompare.WorthDeepening(before, after));
+            Assert.Empty(ModelCompare.WorthDeepening(null, after));
+        }
+
+        [Fact]
+        public void A_baseline_says_how_many_shapes_it_measured()
+        {
+            var snapshot = Snapshot("A", new[] { Print("A"), Print("B", x: 1) });
+            snapshot.Elements[0].MeshHash = "aaaa";
+
+            Assert.Equal(1, snapshot.Shapes);
+            Assert.Equal(1, ModelSnapshot.Read(snapshot.Write())!.Shapes);
+        }
+
+        [Fact]
+        public void A_run_measured_against_a_baseline_that_was_not_says_so()
+        {
+            var before = Snapshot("A", new[] { Print("Duct") });
+            before.Elements[0].MeshHash = "aaaa";
+
+            var after = Snapshot("B", new[] { Print("Duct") });
+
+            var result = ModelCompare.Of(before, after);
+
+            Assert.Contains(result.Notes, n => n.Contains("this run measured none"));
         }
 
         [Fact]

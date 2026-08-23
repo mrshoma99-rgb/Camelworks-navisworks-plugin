@@ -32,6 +32,16 @@ namespace CamelWorks.Core.Project
         /// <summary>Where it came from.</summary>
         public string SourcePath { get; }
 
+        /// <summary>
+        /// The file the host had open for it, which is what can be appended again later.
+        ///
+        /// The difference between this and <see cref="SourcePath"/> is the difference between
+        /// "the X-drive Revit file this was authored from" and "the NWC in last week's issue
+        /// folder" — and only the second one can be reopened to look at a revision that is no
+        /// longer current.
+        /// </summary>
+        public string? LoadedPath { get; set; }
+
         /// <summary>When the source file was last written, UTC.</summary>
         public DateTimeOffset? Modified { get; set; }
 
@@ -110,6 +120,7 @@ namespace CamelWorks.Core.Project
                 .Set("name", JsonValue.String(DisplayName))
                 .Set("path", JsonValue.String(SourcePath));
 
+            if (LoadedPath != null) json.Set("file", JsonValue.String(LoadedPath));
             if (Modified.HasValue) json.Set("modified", JsonValue.Number(Modified.Value.ToUnixTimeSeconds()));
             if (Bytes.HasValue) json.Set("bytes", JsonValue.Number(Bytes.Value));
             if (ModelUnits != null) json.Set("units", JsonValue.String(ModelUnits));
@@ -146,6 +157,7 @@ namespace CamelWorks.Core.Project
             var record = new ModelRecord(scope, json["name"].AsString() ?? "(unnamed model)",
                                          json["path"].AsString() ?? string.Empty)
             {
+                LoadedPath = json["file"].AsString(),
                 ModelUnits = json["units"].AsString(),
                 HasTransform = json["moved"].AsBool(),
                 Discipline = json["discipline"].AsString(),
@@ -324,6 +336,7 @@ namespace CamelWorks.Core.Project
 
                 var record = new ModelRecord(model.Scope, model.DisplayName, model.SourcePath)
                 {
+                    LoadedPath = model.LoadedPath,
                     Modified = model.SourceModifiedUtc,
                     Bytes = model.SourceBytes,
                     ModelUnits = model.ModelUnits,

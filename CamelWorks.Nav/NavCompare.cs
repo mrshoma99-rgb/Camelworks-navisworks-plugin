@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Compare;
 using CamelWorks.Core.Report;
@@ -68,15 +69,24 @@ namespace CamelWorks.Nav
         /// Fill in shape signatures on a snapshot just taken from this document.
         /// </summary>
         /// <param name="snapshot">The snapshot to deepen, taken from this same document.</param>
+        /// <param name="only">
+        /// The scoped keys worth measuring — see <see cref="ModelCompare.WorthDeepening"/>. Null
+        /// measures everything with geometry, which is what taking a baseline wants and what
+        /// comparing against one almost never does.
+        /// </param>
         /// <param name="cap">How many elements to read before stopping. Zero means all of them.</param>
         /// <param name="keepGoing">Called every few hundred elements; return false to stop.</param>
         /// <param name="onProgress">Called every few hundred elements with the number read.</param>
         /// <returns>How many elements gained a signature.</returns>
-        public int Deepen(ModelSnapshot? snapshot, int cap = DefaultCap,
-                          Func<bool>? keepGoing = null, Action<int>? onProgress = null)
+        public int Deepen(ModelSnapshot? snapshot,
+                          IReadOnlyCollection<string>? only = null,
+                          int cap = DefaultCap,
+                          Func<bool>? keepGoing = null,
+                          Action<int>? onProgress = null)
         {
             if (snapshot == null) return 0;
 
+            var wanted = only == null ? null : new HashSet<string>(only, StringComparer.Ordinal);
             var limit = cap <= 0 ? int.MaxValue : cap;
             var read = 0;
 
@@ -84,6 +94,7 @@ namespace CamelWorks.Nav
             {
                 if (read >= limit) break;
                 if (!print.HasGeometry) continue;
+                if (wanted != null && !wanted.Contains(print.Scoped)) continue;
                 if (!print.TryKey(out var key)) continue;
 
                 var item = Document.Resolve(key);
@@ -101,6 +112,125 @@ namespace CamelWorks.Nav
             onProgress?.Invoke(read);
             return read;
         }
+
+        /// <summary>
+        /// Append the old revision beside the current one, so what was removed can be looked at.
+        /// </summary>
+        /// <remarks>
+        /// <b>Why the other layers do not move when this lands.</b> The document's element index is
+        /// first-wins in document order and appended models go to the end, so every key the current
+        /// model already has still resolves to the current element. The only keys the old revision
+        /// claims are the ones nothing else holds — which is exactly the removed set.
+        ///
+        /// <c>TryAppendFiles</c> rather than <c>AppendFiles</c>: a file that will not open is
+        /// something to say on a line, not an exception to take the pane down with.
+        /// </remarks>
+        /// <param name="paths">The files to append. See <see cref="Core.Compare.BaselineModels"/>.</param>
+        /// <param name="problem">Why it did not work, or null.</param>
+        /// <returns>How many models the document gained.</returns>
+        public int Bring(IReadOnlyList<string>? paths, out string? problem)
+        {
+            problem = null;
+
+            var wanted = (paths ?? Array.Empty<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+            if (wanted.Count == 0) return 0;
+
+            var before = Document.Models.Count;
+
+            try
+            {
+                if (!Document.Document.TryAppendFiles(wanted))
+                {
+                    problem = "Navisworks would not open " + (wanted.Count == 1 ? wanted[0] : "those files")
+                              + ". A file on a share that is offline, or one this Navisworks has no "
+                              + "reader for, both land here.";
+                    return 0;
+                }
+            }
+            catch (Exception e)
+            {
+                problem = "Navisworks refused the append: " + e.Message;
+                return 0;
+            }
+
+            Document.Invalidate();
+
+            // Counted from what the document actually holds now rather than from what was asked
+            // for: appending an NWF brings in everything it references, and saying "1 model" when
+            // eleven arrived would be a number nobody could reconcile with the tree in front of
+            // them.
+            return Math.Max(0, Document.Models.Count - before);
+        }
+
+        /// <summary>
+        /// Take back out the models that were brought in, leaving the document as it was.
+        /// </summary>
+        /// <param name="paths">The files to remove.</param>
+        /// <param name="problem">Why some of it did not work, or null.</param>
+        /// <returns>How many models the document lost.</returns>
+        public int SendBack(IReadOnlyList<string>? paths, out string? problem)
+        {
+            problem = null;
+
+            var wanted = new HashSet<string>(
+                (paths ?? Array.Empty<string>())
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Select(Normalise),
+                StringComparer.Ordinal);
+
+            if (wanted.Count == 0) return 0;
+
+            var indices = new List<int>();
+
+            foreach (var source in Document.Models)
+            {
+                if (!(source is NavModelSource nav)) continue;
+                if (!wanted.Contains(Normalise(nav.LoadedPath ?? nav.SourcePath))) continue;
+
+                try
+                {
+                    var at = Document.Document.Models.IndexOf(nav.Model);
+                    if (at >= 0) indices.Add(at);
+                }
+                catch (Exception)
+                {
+                    // A model the host has already let go of. Nothing to remove.
+                }
+            }
+
+            if (indices.Count == 0) return 0;
+
+            var before = Document.Models.Count;
+            var refused = 0;
+
+            // Highest index first, because removing one renumbers everything after it and a
+            // forwards walk would take out the wrong models from the second removal onward.
+            foreach (var at in indices.OrderByDescending(i => i))
+            {
+                try
+                {
+                    if (!Document.Document.TryRemoveFile(at)) refused++;
+                }
+                catch (Exception)
+                {
+                    refused++;
+                }
+            }
+
+            Document.Invalidate();
+
+            if (refused > 0)
+                problem = "Navisworks kept " + refused.ToString(CultureInfo.InvariantCulture)
+                          + (refused == 1 ? " model" : " models")
+                          + ". Removing it by hand in the selection tree does the same thing.";
+
+            return Math.Max(0, before - Document.Models.Count);
+        }
+
+        private static string Normalise(string? path) =>
+            string.IsNullOrWhiteSpace(path)
+                ? string.Empty
+                : path!.Trim().Replace('\\', '/').ToUpperInvariant();
 
         /// <summary>
         /// The signature of one mesh: every triangle, in the mesh's own coordinates, in no

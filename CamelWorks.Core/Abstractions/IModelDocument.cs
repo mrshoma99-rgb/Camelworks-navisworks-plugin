@@ -15,6 +15,18 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Full source path, used to derive <see cref="ElementKey.ScopeOf"/>.</summary>
         string SourcePath { get; }
 
+        /// <summary>
+        /// The file the host actually has open for this model, or null when it will not say.
+        ///
+        /// <b>Not the same thing as <see cref="SourcePath"/>, and the difference is the point.</b>
+        /// SourcePath is the CAD file a model was first converted from — an X-drive Revit path
+        /// nobody outside the authoring office can reach, and one that names no particular
+        /// revision. This is the NWC or NWD sitting in this week's issue folder: the thing that
+        /// can be handed to somebody, and the thing that can be appended again later to look at a
+        /// revision that is no longer the current one.
+        /// </summary>
+        string? LoadedPath { get; }
+
         /// <summary>The scope hash every key from this model carries.</summary>
         string Scope { get; }
 

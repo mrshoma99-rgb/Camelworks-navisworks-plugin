@@ -47,7 +47,12 @@ namespace CamelWorks.UI.Views
                     Ui.Line("The weekly cycle is the front door: bring in the new models, run the rules "
                             + "over what that broke, send out the result.", 0.85),
                     Ui.Line("Find a tool, top right of the panel, searches what things do as well as what "
-                            + "they are called. \"Why is this thing hidden\" finds Appearance.", 0.85)),
+                            + "they are called. \"Why is this thing hidden\" finds Appearance.", 0.85),
+                    Ui.Line("Compare reads bounding boxes by default and can read the actual triangles "
+                            + "instead — the only way to see an element remodelled inside its own "
+                            + "envelope. It costs a geometry pass per element, so it is a tick box on "
+                            + "both the baseline and the run: a signature on one side compares against "
+                            + "nothing, and Compare says so before you spend the time.", 0.85)),
 
                 Ui.Card("What it will not do",
                     "Each of these is a real limit, not a missing feature list.",
@@ -64,16 +69,18 @@ namespace CamelWorks.UI.Views
                     Bullet("A set built from a rule that needs more than one search is saved as a fixed "
                            + "selection set, because a Navisworks search set holds one search. CamelWorks says "
                            + "which you got rather than letting you find out later."),
-                    Bullet("A removed element cannot be shown in three dimensions. Comparison finds it "
-                           + "because the baseline remembers it, but Navisworks holds one version of a "
-                           + "model at a time and the element is not in this document — that is what "
-                           + "removed means. Append the baseline model beside the current one and the "
-                           + "compare view paints them in red."),
-                    Bullet("Comparison sees shape as a bounding box. That decides moved, resized and "
-                           + "rotated, and it cannot see an element remodelled inside its own envelope, "
-                           + "or a square duct turned about its own run. Reading the actual triangles "
-                           + "can, and costs a geometry pass per element — minutes on a federation — so "
-                           + "it is a choice on the Compare tab rather than something done to you."),
+                    Bullet("Showing a removed element needs the old revision to still be a file. "
+                           + "Compare will open it for you — the baseline records which file each "
+                           + "model was loaded from — and the removed elements then paint red beside "
+                           + "the current ones. What cannot be recovered is a model issued by "
+                           + "overwriting one file in place: those bytes are gone, and Compare says so "
+                           + "rather than looking for them. Issuing each revision into its own folder "
+                           + "is what makes the difference."),
+                    Bullet("A square duct turned about its own run is invisible to any comparison "
+                           + "here. Shape comes from the bounding box, which decides moved, resized "
+                           + "and a quarter turn about an axis; a rotation that leaves the box "
+                           + "identical leaves nothing to see. Reading the actual triangles does not "
+                           + "help with this one either — the triangles move with the element."),
                     Bullet("Comparing two different files needs somebody to say which model is which. "
                            + "CamelWorks pairs them by path, then by name, then by name with the revision "
                            + "marker taken off, and says on every row which rule paired it and why. Where "

@@ -15,6 +15,18 @@ namespace CamelWorks.Nav
         {
             Model = model;
             SourcePath = NavKeys.SourcePathOf(model) ?? string.Empty;
+
+            // FileName, deliberately, where SourcePathOf prefers SourceFileName: this is the file
+            // on disk right now, and re-appending the CAD path would open whatever that file has
+            // become rather than the revision this model is.
+            try
+            {
+                LoadedPath = model.FileName;
+            }
+            catch (Exception)
+            {
+                LoadedPath = null;
+            }
             Scope = NavKeys.ScopeOf(model);
             DisplayName = System.IO.Path.GetFileName(SourcePath);
             if (string.IsNullOrEmpty(DisplayName)) DisplayName = "(unnamed model)";
@@ -51,6 +63,9 @@ namespace CamelWorks.Nav
                 ModelUnits = null;
             }
         }
+
+        /// <summary>The file the host has open for this model. See <see cref="IModelSource.LoadedPath"/>.</summary>
+        public string? LoadedPath { get; }
 
         /// <summary>The host model.</summary>
         public Model Model { get; }

@@ -112,6 +112,17 @@ namespace CamelWorks.Core.Compare
         /// <summary>How many elements it holds.</summary>
         public int Count => _elements.Count;
 
+        /// <summary>
+        /// How many elements carry a shape signature.
+        ///
+        /// <b>The question to ask before spending minutes reading triangles.</b> A signature on one
+        /// side alone compares against nothing: the comparison can only report an element
+        /// remodelled inside its own envelope when BOTH revisions were measured. A baseline taken
+        /// with bounding boxes only can never answer that, however the run is set up, and the
+        /// honest thing is to say so rather than to spend the time and report nothing.
+        /// </summary>
+        public int Shapes => _elements.Count(e => e.MeshHash != null);
+
         /// <summary>Add an element.</summary>
         /// <param name="print">The fingerprint.</param>
         public void Add(ElementFingerprint print)
@@ -184,6 +195,10 @@ namespace CamelWorks.Core.Compare
                   .Append('\t').Append(model.Items.HasValue
                       ? model.Items.Value.ToString(CultureInfo.InvariantCulture)
                       : string.Empty)
+
+                  // Last, so a snapshot written before this field existed still reads: the model
+                  // reader takes what it finds and stops.
+                  .Append('\t').Append(Clean(model.LoadedPath))
                   .Append('\n');
             }
 
@@ -312,6 +327,8 @@ namespace CamelWorks.Core.Compare
 
             if (fields.Length > 6 && int.TryParse(fields[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out var items))
                 record.Items = items;
+
+            if (fields.Length > 7 && fields[7].Length > 0) record.LoadedPath = fields[7];
 
             return record;
         }

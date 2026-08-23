@@ -34,9 +34,28 @@ namespace CamelWorks.UI.Views
         /// <summary>The last comparison, so the Changes tab has something to show.</summary>
         internal static CompareResult? Last { get; private set; }
 
+        /// <summary>
+        /// The baseline that comparison ran against.
+        ///
+        /// Kept because the baseline is the only thing that knows which files the old revision was
+        /// loaded from — and those files are what "show me what was removed" actually needs.
+        /// </summary>
+        internal static ModelSnapshot? LastBaseline { get; private set; }
+
         private static readonly CompareSettings Settings = new CompareSettings();
         private static string? _pickedBaseline;
-        private static bool _deepGeometry;
+
+        /// <summary>
+        /// Whether to read the actual triangles, and how many.
+        ///
+        /// Held on the class rather than the screen so that the choice made when a baseline was
+        /// taken is still the choice when the comparison runs a week later — a baseline measured
+        /// with bounding boxes and a run measured with triangles answers nothing, and the two
+        /// screens agreeing by default is the cheapest way to stop that happening.
+        /// </summary>
+        private static bool _readTriangles;
+
+        private static int _triangleCap = NavCompare.DefaultCap;
 
         // -------------------------------------------------------------------------------------
         // Run
@@ -54,10 +73,23 @@ namespace CamelWorks.UI.Views
             var baselines = store.Baselines();
             var results = new StackPanel();
 
+            var holding = BaselineModels.Of(LastBaseline, session.Model.Models, PhysicalFileSystem.Instance);
+
             var body = Ui.Stack(
                 Ui.Heading("Compare"),
                 Ui.Sub("What changed since a baseline. Added, removed, moved and changed — with the "
                        + "evidence for each match, and a plain list of what this baseline cannot answer."),
+
+                // Said before the button rather than discovered in the results: with the old
+                // revision appended, a fresh comparison sees both revisions at once, pairs the
+                // baseline model to itself, and reports that nothing changed.
+                BaselineModels.IsHoldingBoth(holding)
+                    ? Ui.Note("An older revision is open in this document — it was brought in to show "
+                              + "what was removed. Comparing again now would compare the baseline "
+                              + "against itself and report no changes. Take it back out on the "
+                              + "Changes tab first.")
+                    : null,
+
                 Against(session, store, baselines, results),
                 Terms(),
                 Ui.Runner("Compare", results, job => Go(session, store, results, job)),
@@ -129,12 +161,54 @@ namespace CamelWorks.UI.Views
                 Ui.Check("Include grouping nodes — levels, categories, families", Settings.IncludeGroupingNodes,
                          value => Settings.IncludeGroupingNodes = value),
 
-                Ui.Check("Read the actual triangles (slow — minutes on a federation)", _deepGeometry,
-                         value => _deepGeometry = value),
+                Ui.Check("Read the actual triangles", _readTriangles, value => _readTriangles = value),
+
+                Ui.Field("At most", Ui.Text(
+                    _triangleCap.ToString(CultureInfo.InvariantCulture),
+                    text =>
+                    {
+                        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+                            && value >= 0)
+                            _triangleCap = value;
+                    }, 90)),
+
+                Ui.Line("Elements. Zero means no limit.", 0.7),
 
                 Ui.Line("The triangles are the only way to see an element remodelled inside its own "
-                        + "bounding box. Everything else here is free; that one is not, which is why "
-                        + "it is a choice.", 0.7));
+                        + "bounding box — a duct rerouted through the same opening, a stair rebuilt "
+                        + "between the same two levels. Everything else on this screen is free; "
+                        + "this one is a geometry pass per element.", 0.7),
+
+                Triangles());
+        }
+
+        /// <summary>
+        /// What a triangle read can and cannot answer against the baseline that is picked.
+        ///
+        /// <b>A signature on one side compares against nothing.</b> Reading the current model's
+        /// triangles against a baseline that has none costs the minutes and reports nothing at
+        /// all — which reads as "nothing was remodelled" and is the most expensive way this
+        /// feature could lie. So the screen says it before the button is pressed.
+        /// </summary>
+        private static UIElement? Triangles()
+        {
+            if (!_readTriangles) return null;
+
+            var baseline = LastBaseline;
+
+            if (baseline == null)
+                return Ui.Line("Whether this is worth doing depends on the baseline. Run once and "
+                               + "this line will say.", 0.7);
+
+            if (baseline.Shapes > 0)
+                return Ui.Line("The baseline measured " + ComparePolicy.Count(baseline.Shapes)
+                               + " elements, so only the current model's matching ones are read — "
+                               + "the rest would compare against nothing.", 0.7);
+
+            return Ui.Note("The baseline was taken with bounding boxes only, so reading triangles "
+                           + "now has nothing to compare against and no element can be reported as "
+                           + "remodelled. Take a fresh baseline with this ticked and next week's "
+                           + "comparison can answer it.");
         }
 
         private static void Go(Session session, SnapshotStore store, StackPanel results, Job job)
@@ -175,18 +249,41 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
-            if (_deepGeometry)
+            if (_readTriangles)
             {
-                job.Say("Reading triangles...");
-                new NavCompare(session.Model).Deepen(after, NavCompare.DefaultCap,
-                                                     () => !job.IsCancelled,
-                                                     read => job.Step(read, "elements measured"));
+                if (before.Shapes == 0)
+                {
+                    results.Children.Add(Ui.Note("Triangles were not read: the baseline was taken "
+                        + "with bounding boxes only, so there is nothing on the other side to "
+                        + "compare a signature against. Nothing was skipped that could have been "
+                        + "answered."));
+                }
+                else
+                {
+                    var wanted = ModelCompare.WorthDeepening(before, after, Settings);
+
+                    job.Say("Reading triangles for " + ComparePolicy.Count(wanted.Count) + " elements...");
+
+                    var read = new NavCompare(session.Model).Deepen(
+                        after, wanted, _triangleCap,
+                        () => !job.IsCancelled,
+                        done => job.Step(done, "elements measured"));
+
+                    if (_triangleCap > 0 && read >= _triangleCap && wanted.Count > read)
+                        results.Children.Add(Ui.Note("Stopped at the limit of "
+                            + ComparePolicy.Count(_triangleCap) + ". "
+                            + ComparePolicy.Count(wanted.Count - read)
+                            + " more elements would have been measured — raise the limit, or accept "
+                            + "that those are reported on their bounding box alone."));
+                }
             }
 
             job.Say("Comparing...");
 
             var result = ModelCompare.Of(before, after, Settings);
+
             Last = result;
+            LastBaseline = before;
 
             Scoreboard(results, result);
 
@@ -367,35 +464,7 @@ namespace CamelWorks.UI.Views
             {
                 var view = CompareLayers.Build(_result);
 
-                var paint = Ui.Runner("Paint it onto the model", _output, job =>
-                {
-                    job.Say("Resolving...");
-
-                    var resolver = new SetsViews.HostResolver(_session);
-                    var fold = AppearanceStack.Fold(view.Layers, resolver);
-                    var keys = fold.Elements.Select(e => e.Key).ToList();
-
-                    job.Say("Reading what the model looks like now...");
-
-                    var plan = AppearancePlanner.Plan(fold, _session.View.ReadAppearance(keys));
-
-                    job.Say("Painting...");
-
-                    if (plan.Clear.Count > 0) _session.View.ClearOverrides(plan.Clear);
-                    if (plan.Hide.Count > 0) _session.View.SetVisible(plan.Hide, false);
-                    if (plan.Show.Count > 0) _session.View.SetVisible(plan.Show, true);
-
-                    foreach (var batch in plan.Colours) _session.View.SetColour(batch.Keys, batch.Colour);
-                    foreach (var batch in plan.Transparencies)
-                        _session.View.SetTransparency(batch.Keys, batch.Transparency);
-
-                    _output.Children.Add(Ui.Line(view.ToString(), 1, true));
-
-                    foreach (var note in view.Notes) _output.Children.Add(Ui.Note(note));
-
-                    _session.Record(ActivityKind.Appearance, "painted the comparison onto the model",
-                                    _result.Explain());
-                });
+                var paint = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
 
                 var clear = Ui.Button("Take the colours off", () =>
                 {
@@ -425,12 +494,123 @@ namespace CamelWorks.UI.Views
                     + "Through the appearance stack, so it is one row you can switch off rather "
                     + "than an override somebody has to undo by hand.",
                     Ui.Across(paint, clear),
-                    view.Uncolourable > 0
-                        ? Ui.Note(Ui.Count(view.Uncolourable, "removed element")
-                                  + " cannot be painted: they are not in this document, which is "
-                                  + "what removed means. Append the baseline model beside the "
-                                  + "current one and they appear in red.")
-                        : null);
+                    Removed(view));
+            }
+
+            private void ApplyView(Job job, CompareView view)
+            {
+                job.Say("Resolving...");
+
+                var resolver = new SetsViews.HostResolver(_session);
+                var fold = AppearanceStack.Fold(view.Layers, resolver);
+                var keys = fold.Elements.Select(e => e.Key).ToList();
+
+                job.Say("Reading what the model looks like now...");
+
+                var plan = AppearancePlanner.Plan(fold, _session.View.ReadAppearance(keys));
+
+                job.Say("Painting...");
+
+                if (plan.Clear.Count > 0) _session.View.ClearOverrides(plan.Clear);
+                if (plan.Hide.Count > 0) _session.View.SetVisible(plan.Hide, false);
+                if (plan.Show.Count > 0) _session.View.SetVisible(plan.Show, true);
+
+                foreach (var batch in plan.Colours) _session.View.SetColour(batch.Keys, batch.Colour);
+                foreach (var batch in plan.Transparencies)
+                    _session.View.SetTransparency(batch.Keys, batch.Transparency);
+
+                _output.Children.Add(Ui.Line(view.ToString(), 1, true));
+
+                _session.Record(ActivityKind.Appearance, "painted the comparison onto the model",
+                                _result.Explain());
+            }
+
+            /// <summary>
+            /// The removed elements, and the old revision they are still in.
+            ///
+            /// <b>"A removed element cannot be shown" is only true until somebody opens the old
+            /// file.</b> The element is not gone — it is in last month's model, in last month's
+            /// issue folder, and the baseline recorded exactly which file that was. Appending it
+            /// beside the current revision makes the red layer start working, and nothing else in
+            /// the view moves: the host's element index is first-wins in document order, so every
+            /// key the current model already holds still resolves to the current element and the
+            /// old revision claims only the keys nothing else has.
+            /// </summary>
+            private UIElement? Removed(CompareView view)
+            {
+                if (_result.CountIn(ChangeBucket.Removed) == 0) return null;
+
+                var models = BaselineModels.Of(CompareViews.LastBaseline, _session.Model.Models,
+                                               PhysicalFileSystem.Instance);
+
+                var bring = BaselineModels.ToBring(models);
+                var back = BaselineModels.ToSendBack(models);
+
+                var body = new List<UIElement?>
+                {
+                    Ui.Line(Ui.Count(_result.CountIn(ChangeBucket.Removed), "removed element")
+                            + (view.Uncolourable > 0 && back.Count == 0
+                                ? " — not in this document, which is what removed means."
+                                : " — the old revision is open, so they are painted red."), 0.85),
+                    Ui.Line(BaselineModels.Explain(models), 0.7),
+                };
+
+                if (bring.Count > 0)
+                {
+                    body.Add(Ui.Runner("Bring the old revision in", _output, job =>
+                    {
+                        job.Say("Opening " + Ui.Count(bring.Count, "file") + "...");
+
+                        var gained = new NavCompare(_session.Model).Bring(bring, out var problem);
+
+                        if (problem != null) { _output.Children.Add(Ui.Problem(problem)); return; }
+
+                        _output.Children.Add(Ui.Line("Brought in " + Ui.Count(gained, "model") + ".", 1, true));
+
+                        // Repainted straight away, because bringing the file in and then asking
+                        // somebody to press Paint is two steps for one intention.
+                        ApplyView(job, CompareLayers.Build(_result));
+
+                        _output.Children.Add(Ui.Note("The older revision is now part of this "
+                            + "document. Take it back out before comparing again, or the next "
+                            + "comparison will see both revisions and report no changes."));
+
+                        _session.Record(ActivityKind.Reconcile,
+                            "brought the baseline revision in to show " + Ui.Count(
+                                _result.CountIn(ChangeBucket.Removed), "removed element"));
+                    }));
+                }
+
+                if (back.Count > 0)
+                {
+                    body.Add(Ui.Runner("Take the old revision back out", _output, job =>
+                    {
+                        job.Say("Removing " + Ui.Count(back.Count, "model") + "...");
+
+                        var lost = new NavCompare(_session.Model).SendBack(back, out var problem);
+
+                        _output.Children.Add(Ui.Line("Took out " + Ui.Count(lost, "model")
+                                                     + ". The document is as it was.", 1, true));
+
+                        if (problem != null) _output.Children.Add(Ui.Note(problem));
+
+                        _session.Record(ActivityKind.Reconcile, "took the baseline revision back out");
+                    }));
+                }
+
+                foreach (var model in models)
+                {
+                    if (model.Standing == BaselineStanding.CanBring
+                        || model.Standing == BaselineStanding.AlreadyIn) continue;
+
+                    body.Add(Ui.Note(model.Title + " — " + model.Reason));
+                }
+
+                if (bring.Count == 0 && back.Count == 0)
+                    body.Add(Ui.Line("Nothing can be brought in, so the removed elements are on the "
+                                     + "list and in the report but not in the view.", 0.7));
+
+                return Ui.Card("The removed ones", null, body.ToArray());
             }
 
             /// <summary>
@@ -762,6 +942,22 @@ namespace CamelWorks.UI.Views
                 {
                     results.Children.Add(Ui.Note("Stopped. Nothing was saved."));
                     return;
+                }
+
+                // Everything with geometry, not a subset: a baseline is what a comparison a week
+                // from now will be held to, and an element it did not measure is one that
+                // comparison can never report as remodelled.
+                if (_readTriangles)
+                {
+                    job.Say("Reading triangles...");
+
+                    var measured = new NavCompare(session.Model).Deepen(
+                        snapshot, null, _triangleCap,
+                        () => !job.IsCancelled,
+                        done => job.Step(done, "elements measured"));
+
+                    results.Children.Add(Ui.Line("Measured " + Ui.Count(measured, "element")
+                        + ". Next week's comparison can tell a remodelling from a move.", 0.75));
                 }
 
                 job.Say("Saving...");

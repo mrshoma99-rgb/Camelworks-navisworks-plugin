@@ -99,10 +99,11 @@ namespace CamelWorks.Core.Compare
     /// appearance stack means the compare view is one row somebody can switch off, that says what
     /// it is doing and why, and that leaves whatever was underneath it exactly as it was.
     ///
-    /// <b>Removed elements cannot be painted.</b> They are not in this document — that is what
-    /// removed means. Navisworks holds one version of a model at a time, so the only way to see
-    /// them in three dimensions is to append the baseline model alongside the current one, and the
-    /// view says so rather than quietly leaving them out of the legend.
+    /// <b>Removed elements are painted once the old revision is open.</b> They are not in the
+    /// current document — that is what removed means — but they are in the file the baseline was
+    /// taken from, and <see cref="BaselineModels"/> opens it beside the current one. The layer is
+    /// built either way and simply covers nothing until then, so the legend never quietly loses a
+    /// colour and the moment the old revision lands it starts working.
     /// </summary>
     public static class CompareLayers
     {
@@ -157,16 +158,17 @@ namespace CamelWorks.Core.Compare
 
             if (removed.Count > 0)
             {
-                // Added to the stack even though it will paint nothing today. The moment somebody
-                // appends the baseline model beside the current one — which is exactly how you look
-                // at a deletion in three dimensions — this layer starts working with no further
-                // action, and the appearance panel shows it as covering nothing until then rather
-                // than the compare view silently not having one.
+                // Added to the stack even though it may paint nothing yet. The moment the old
+                // revision is opened beside the current one it starts working with no further
+                // action, and until then the appearance panel shows it covering nothing — which is
+                // a truthful empty layer rather than a compare view that silently has no red.
                 layers.Add(Layer(ChangeBucket.Removed, removed, result));
 
                 notes.Add(ComparePolicy.Count(removed.Count) + " removed elements are not in this "
-                          + "document, so nothing here can paint them. Append the baseline model "
-                          + "beside the current one and this layer will show them in red.");
+                          + "document yet. They are in the revision the baseline was taken from, "
+                          + "and \"Bring the old revision in\" opens that file beside this one — "
+                          + "at which point this layer paints them red and nothing else in the view "
+                          + "moves.");
             }
 
             if (coloured == 0 && removed.Count == 0)
