@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Compare;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
