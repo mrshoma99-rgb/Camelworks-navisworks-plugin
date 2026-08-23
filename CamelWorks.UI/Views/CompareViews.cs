@@ -190,7 +190,7 @@ namespace CamelWorks.UI.Views
 
             Scoreboard(results, result);
 
-            session.Record(ActivityKind.Data, "compared against " + entry.Describe(), result.Explain());
+            session.Record(ActivityKind.Reconcile, "compared against " + entry.Describe(), result.Explain());
         }
 
         private static void Scoreboard(StackPanel results, CompareResult result)
@@ -486,7 +486,7 @@ namespace CamelWorks.UI.Views
                         _output.Children.Add(Ui.Line("Search set: \"" + set.Name + "\" — "
                             + Ui.Count(set.Count, "element"), 0.75));
 
-                    _session.Record(ActivityKind.Data, "stamped the comparison onto the model", plan.Explain());
+                    _session.Record(ActivityKind.Write, "stamped the comparison onto the model", plan.Explain());
                 });
 
                 var unstamp = Ui.Button("Take the stamp off", () =>
@@ -535,7 +535,7 @@ namespace CamelWorks.UI.Views
                         + " on the board. Coordinate → Triage to work through them, or "
                         + "Coordinate → BCF to send them out.", 0.85));
 
-                    _session.Record(ActivityKind.Clash,
+                    _session.Record(ActivityKind.Reconcile,
                         "raised " + Ui.Count(findings.Count, "issue") + " from the comparison");
                 });
 
@@ -708,7 +708,7 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Line("Recorded " + entry.Describe() + ".", 1, true));
                 results.Children.Add(Ui.Line("Kept in " + store.Folder + ".", 0.75));
 
-                session.Record(ActivityKind.Data, "recorded a baseline: " + entry.Describe());
+                session.Record(ActivityKind.Reconcile, "recorded a baseline: " + entry.Describe());
 
                 afterwards?.Invoke();
             });
@@ -746,7 +746,7 @@ namespace CamelWorks.UI.Views
             if (entry == null) return store.LastProblem ?? "The baseline could not be saved.";
 
             _pickedBaseline = entry.Describe();
-            session.Record(ActivityKind.Data, "recorded a baseline: " + entry.Describe());
+            session.Record(ActivityKind.Reconcile, "recorded a baseline: " + entry.Describe());
 
             return "Recorded " + entry.Describe() + ".\n\nKept in " + store.Folder
                    + ".\n\nCompare against it from the CamelWorks pane, Compare → Run.";
