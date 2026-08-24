@@ -65,13 +65,15 @@ namespace CamelWorks.Studio
                 Ui.Across(
                     Ui.Figure("2", "to settle", Tone.Bad),
                     Ui.Figure("3", "worth a look", Tone.Warn),
-                    Ui.Figure("4", "clean", Tone.Good)),
+                    Ui.Figure("4", "clean")),
                 Ui.Small("41,880 elements across 6 models, read once."),
 
                 Ui.Finding(true, "Placement", "1 model has been moved by the federation since the last sweep",
                     "Nobody is told when this happens, and every clash from that moment on is in the wrong place.",
                     "Put it back below, then run the clash tests again.",
                     "MEP r4.nwc"),
+                Ui.Across(Ui.Button("Put MEP r4 back where it was", () => { })),
+
                 Ui.Finding(true, "Codes", "412 elements carry a value Uniclass does not list",
                     "Either the table is missing a row or the model is carrying a value nobody agreed "
                     + "to, and the difference matters: one is a five-second edit and the other is a "
@@ -94,8 +96,6 @@ namespace CamelWorks.Studio
                     null,
                     "SITE r1.nwc"),
 
-                Ui.Actions(Ui.Button("Put MEP r4 back where it was", () => { })),
-
                 Ui.Section("What is loaded", "6 models in this federation", false,
                     Ui.Table(new[]
                     {
@@ -108,11 +108,12 @@ namespace CamelWorks.Studio
                 "Answer an IDS — the openBIM way of writing information requirements down — against "
                 + "this federation. Point it at the file and press the button; there is nothing else "
                 + "to fill in.",
-                Ui.Form(Ui.Field("IDS file", Ui.Text(string.Empty, "nothing chosen", null, 260))),
+                Ui.PathField("IDS file", Ui.Text(string.Empty, "nothing chosen", null, 260),
+                             PathKind.Open, "IDS|*.ids|All files|*.*"),
                 Ui.Actions(Ui.Primary("Check against an IDS", () => { })),
                 Ui.Section("Where the IFC class is read from", "wherever the readers put it", false,
-                    Ui.Form(Ui.Field("IFC class from", Ui.Text(string.Empty, "nothing", null, 200),
-                                     "leave it empty unless a run tells you to fill it in")),
+                    Ui.Field("IFC class from", Ui.Text(string.Empty, "nothing", null, 200),
+                             "leave it empty unless a run tells you to fill it in"),
                     Ui.Small("IDS is written about IFC classes, and a federation only carries those "
                              + "where a model came from IFC — so CamelWorks looks in the places the "
                              + "readers put them and believes a value only if it reads like a class "
