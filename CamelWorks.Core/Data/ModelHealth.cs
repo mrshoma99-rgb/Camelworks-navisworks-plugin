@@ -25,6 +25,15 @@ namespace CamelWorks.Core.Data
         /// <summary>Which model it came from.</summary>
         public string Source { get; }
 
+        /// <summary>
+        /// Which element this is, for anything that needs to go there.
+        ///
+        /// <see cref="Id"/> is how it reads in a report; this is how it is found again. They were
+        /// the same string for a while, which is why a health finding could tell you that thirty-
+        /// seven elements sit at the origin and offer no way to look at one of them.
+        /// </summary>
+        public ElementKey Key { get; set; }
+
         /// <summary>Its display name.</summary>
         public string? Name { get; set; }
 
@@ -63,9 +72,11 @@ namespace CamelWorks.Core.Data
     public sealed class HealthFinding
     {
         internal HealthFinding(string rule, string summary, string fix, int count,
-                               IReadOnlyList<string> examples)
+                               IReadOnlyList<string> examples,
+                               IReadOnlyList<ElementKey>? affected = null)
         {
             Rule = rule; Summary = summary; Fix = fix; Count = count; Examples = examples;
+            Affected = affected ?? Array.Empty<ElementKey>();
         }
 
         /// <summary>Which check found it.</summary>
@@ -89,6 +100,16 @@ namespace CamelWorks.Core.Data
 
         /// <summary>A few of them, so the finding can be checked rather than believed.</summary>
         public IReadOnlyList<string> Examples { get; }
+
+        /// <summary>
+        /// Every element the finding is about.
+        ///
+        /// The examples are for reading; this is for acting. A finding that keeps a count and five
+        /// formatted strings has told the reader there is a problem and thrown away the only thing
+        /// that would let them look at it - which is what "37 elements at the origin" and no way to
+        /// select them amounted to.
+        /// </summary>
+        public IReadOnlyList<ElementKey> Affected { get; }
 
         /// <inheritdoc />
         public override string ToString() =>
@@ -339,13 +360,18 @@ namespace CamelWorks.Core.Data
         private static void Add(List<HealthFinding> findings, string rule, string summary, string fix,
                                 IReadOnlyList<HealthElement> affected)
         {
-            var examples = affected
-                .OrderBy(e => e.Id, StringComparer.Ordinal)
+            var ordered = affected.OrderBy(e => e.Id, StringComparer.Ordinal).ToList();
+
+            var examples = ordered
                 .Take(ExampleCount)
                 .Select(e => e.Id + " (" + e.Source + ")")
                 .ToList();
 
-            findings.Add(new HealthFinding(rule, summary, fix, affected.Count, examples));
+            // Every one of them, in the same order the examples were taken from, so the first five
+            // a reader sees are the first five anything acting on the finding would reach.
+            var keys = ordered.Select(e => e.Key).Where(k => !k.IsEmpty).ToList();
+
+            findings.Add(new HealthFinding(rule, summary, fix, ordered.Count, examples, keys));
         }
 
         private static double Distance(double x, double y, double z) => Math.Sqrt((x * x) + (y * y) + (z * z));

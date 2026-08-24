@@ -881,8 +881,14 @@ namespace CamelWorks.UI.Views
         /// <param name="detail">Why it matters, or null.</param>
         /// <param name="fix">What to do about it, or null when there is nothing to do but know.</param>
         /// <param name="examples">A handful of the things concerned, already joined, or null.</param>
+        /// <param name="go">
+        /// What to do about it, if the finding is about something that can be gone to. Rendered
+        /// under the examples. A finding whose elements are still in the model is a place, not just
+        /// a sentence, and the difference between the two is whether this is null.
+        /// </param>
         public static UIElement Finding(bool stop, string check, string headline,
-                                        string? detail = null, string? fix = null, string? examples = null)
+                                        string? detail = null, string? fix = null,
+                                        string? examples = null, UIElement? go = null)
         {
             var body = Stack(
                 Across(Pill(stop ? "Settle this" : "Worth a look", stop ? Tone.Bad : Tone.Warn), Small(check)),
@@ -901,6 +907,8 @@ namespace CamelWorks.UI.Views
             }
 
             if (examples != null) body.Children.Add(Small("e.g. " + examples));
+
+            if (go != null) body.Children.Add(go);
 
             var frame = new Border
             {

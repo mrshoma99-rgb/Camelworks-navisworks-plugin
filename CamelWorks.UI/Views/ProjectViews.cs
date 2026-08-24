@@ -91,7 +91,7 @@ namespace CamelWorks.UI.Views
                 // findings is a fix nobody connects to the one that said "put it back below".
                 foreach (var finding in review.Findings)
                 {
-                    results.Children.Add(Found(finding));
+                    results.Children.Add(Found(session, finding));
 
                     if (finding.Check == Placed && actions.Children.Count > 0)
                     {
@@ -145,10 +145,60 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>One finding, in the vocabulary's own shape.</summary>
-        private static UIElement Found(ReviewFinding finding) =>
+        private static UIElement Found(Session session, ReviewFinding finding) =>
             Ui.Finding(finding.Grade == ReviewGrade.Fault, finding.Check, finding.Headline,
                        finding.Detail, finding.Fix,
-                       finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples));
+                       finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples),
+                       Reach(session, finding));
+
+        /// <summary>
+        /// The way to the elements a finding is about, or nothing when it is not about elements.
+        ///
+        /// A federation check answers a question about the model, and until now that answer was a
+        /// sentence: "37 elements sit on top of each other at the origin" and no way to look at one.
+        /// The reader's next move is always the same - see them - and it was the one thing the tab
+        /// would not do.
+        ///
+        /// A finding about models rather than geometry (a missing file, a moved source) has nothing
+        /// to select, so it gets no row at all rather than a button that would do nothing.
+        /// </summary>
+        private static UIElement? Reach(Session session, ReviewFinding finding)
+        {
+            if (finding.Affected.Count == 0) return null;
+
+            var keys = finding.Affected;
+
+            var show = Ui.Quiet("Show me " + (keys.Count == 1 ? "it" : "all " + Ui.Count(keys.Count, "of them")),
+                () =>
+                {
+                    session.Model.Select(keys);
+                    session.View.ZoomTo(keys, 2.0);
+                });
+
+            var only = Ui.Quiet("Leave only these on screen", () =>
+            {
+                session.Model.Select(keys);
+                session.View.ZoomTo(keys, 2.0);
+                Isolate(session, keys);
+            });
+
+            var row = Ui.Across(show, only);
+            row.Margin = new Thickness(0, 6, 0, 0);
+            return row;
+        }
+
+        /// <summary>Hide everything the finding is not about, so what is left is what it found.</summary>
+        private static void Isolate(Session session, IReadOnlyList<ElementKey> keep)
+        {
+            var wanted = new HashSet<ElementKey>(keep);
+            var hide = new List<ElementKey>();
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                if (item.HasGeometry && !wanted.Contains(item.Key)) hide.Add(item.Key);
+
+            session.View.SetVisible(hide, false);
+            session.View.SetVisible(keep, true);
+        }
 
         /// <summary>
         /// The federation itself: what is loaded, from where, and whether the source has moved on.
@@ -269,6 +319,7 @@ namespace CamelWorks.UI.Views
 
                 reading.Elements.Add(new HealthElement(item.Key.ToString(), item.Model.DisplayName)
                 {
+                    Key = item.Key,
                     Name = item.DisplayName,
                     Category = item.Category,
                     X = bounds.CentreX * scale,
@@ -307,7 +358,8 @@ namespace CamelWorks.UI.Views
 
             foreach (var finding in report.Findings)
                 review.Add(new ReviewFinding(ModelHealth.GradeOf(finding), "Geometry",
-                                             finding.Summary, null, finding.Fix, finding.Examples));
+                                             finding.Summary, null, finding.Fix, finding.Examples,
+                                             finding.Affected));
         }
 
         /// <summary>
