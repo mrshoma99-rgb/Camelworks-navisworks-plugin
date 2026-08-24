@@ -8,7 +8,7 @@ reviewers are handed.
 
 Captions are the cheapest thing to hold to account and the most telling - a renamed button is
 exactly the drift nobody notices. A caption the product builds at run time is compared by its
-literal parts: Ui.Runner("Stamp " + Touched() + " changes into the properties") contributes the
+literal parts: Ui.Runner("Found " + Count(n) + " to look at") contributes the
 two fragments "Stamp " and " changes into the properties", and a harness caption passes when it
 carries every fragment of some panel's caption, in order. Matching on the opening fragment alone
 was not enough - the product has an "Apply " + count caption, so every invented caption beginning
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HARNESS = [ROOT / "CamelWorks.Studio" / "Panels.cs", ROOT / "CamelWorks.Studio" / "Sheets.cs"]
 PANELS = ROOT / "CamelWorks.UI"
 
-CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner)\(')
+CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner|Commit)\(')
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 BUILDER = re.compile(r'^\s*private static \S+ \w+\(')
 

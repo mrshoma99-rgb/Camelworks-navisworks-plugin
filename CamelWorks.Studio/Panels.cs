@@ -447,7 +447,7 @@ namespace CamelWorks.Studio
 
             Ui.Rule(),
 
-            Ui.Actions(Ui.Button("Stamp 1,960 changes into the properties", () => { }),
+            Ui.Actions(Ui.Button("Show me what it would stamp", () => { }),
                        Ui.Button("Raise them on the board", () => { }),
                        Ui.Button("Save the report", () => { }),
                        Ui.Button("Make a viewpoint for each place", () => { })));
@@ -559,10 +559,11 @@ namespace CamelWorks.Studio
 
             Ui.Rule(),
 
-            Ui.Actions(Ui.Button("Stamp the level onto every element", () => { })),
+            Ui.Actions(Ui.Button("Show me what it would stamp", () => { })),
             Ui.Small("Writes Level into the CamelWorks tab, so clash grouping, reports and set "
                      + "rules can all use it — including on models that never had a level property "
-                     + "to begin with."));
+                     + "to begin with. A value already there is replaced: the level is derived from "
+                     + "where the element sits, so the model's own answer is the one being corrected."));
 
         private static IEnumerable<TableRow> Levels()
         {

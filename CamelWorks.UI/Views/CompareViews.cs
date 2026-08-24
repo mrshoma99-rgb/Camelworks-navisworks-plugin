@@ -403,12 +403,6 @@ namespace CamelWorks.UI.Views
             private string Many(ChangeBucket bucket) =>
                 _result.CountIn(bucket).ToString("N0", CultureInfo.InvariantCulture);
 
-            /// <summary>How many elements the comparison found something to say about.</summary>
-            private string Touched() =>
-                (_result.CountIn(ChangeBucket.Added)
-                 + _result.CountIn(ChangeBucket.Removed)
-                 + _result.CountIn(ChangeBucket.Moved)
-                 + _result.CountIn(ChangeBucket.Changed)).ToString("N0", CultureInfo.InvariantCulture);
 
             private UIElement Filters()
             {
@@ -703,9 +697,13 @@ namespace CamelWorks.UI.Views
 
             private UIElement Keep()
             {
-                var stamp = Ui.Runner("Stamp " + Touched() + " changes into the properties",
-                                      output: _output, primary: false, work: job =>
+                StampPlan? planned = null;
+
+                var stamp = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+                    plan: (job, into) =>
                 {
+                    planned = null;
+
                     // The adapter writes every custom property into one tab of its own, whatever
                     // category it was handed. Core names that tab by a literal it cannot check
                     // against the adapter's own constant, so this is where the two are held to
@@ -714,21 +712,44 @@ namespace CamelWorks.UI.Views
                     if (!string.Equals(CompareStamp.Category, NavWriteTransaction.TabName,
                                        StringComparison.Ordinal))
                     {
-                        _output.Children.Add(Ui.Problem(
+                        into.Children.Add(Ui.Problem(
                             "This build writes custom properties to the \"" + NavWriteTransaction.TabName
                             + "\" tab, but the stamp names \"" + CompareStamp.Category
                             + "\". The search sets would not find it, so nothing was written. "
                             + "This is a bug in the build rather than anything you did."));
-                        return;
+                        return 0;
                     }
 
                     var plan = CompareStamp.Plan(_result);
 
                     if (plan.IsEmpty)
                     {
-                        _output.Children.Add(Ui.Empty("Nothing to stamp.", "Nothing changed."));
-                        return;
+                        into.Children.Add(Ui.Empty("Nothing to stamp.", "Nothing changed."));
+                        return 0;
                     }
+
+                    planned = plan;
+
+                    into.Children.Add(Ui.Line(plan.Explain(), 0.85));
+
+                    if (plan.Unreachable > 0)
+                        into.Children.Add(Ui.Note(Ui.Count(plan.Unreachable, "element")
+                            + " in the comparison no longer resolves in the open model and would be "
+                            + "skipped."));
+
+                    foreach (var set in CompareStamp.Sets(_result))
+                        into.Children.Add(Ui.Line("Search set it would make: \"" + set.Name + "\" — "
+                            + Ui.Count(set.Count, "element"), 0.75));
+
+                    into.Children.Add(Ui.Note("Ctrl+Z does not reverse a custom property write — "
+                        + "the host's undo does not reach them. \"Take the stamp off\" is the way back."));
+
+                    return plan.Count;
+                },
+                    apply: job =>
+                {
+                    var plan = planned;
+                    if (plan == null) return;
 
                     job.Say("Writing " + ComparePolicy.Count(plan.Count) + " elements...");
 
@@ -748,13 +769,6 @@ namespace CamelWorks.UI.Views
                                 + " stopped resolving between the comparison and the write, so they "
                                 + "were skipped."));
                     }
-
-                    _output.Children.Add(Ui.Note("Ctrl+Z does not reverse a custom property write — "
-                        + "the host's undo does not reach them. \"Take the stamp off\" is the way back."));
-
-                    foreach (var set in CompareStamp.Sets(_result))
-                        _output.Children.Add(Ui.Line("Search set: \"" + set.Name + "\" — "
-                            + Ui.Count(set.Count, "element"), 0.75));
 
                     _session.Record(ActivityKind.Write, "stamped the comparison onto the model", plan.Explain());
                 });

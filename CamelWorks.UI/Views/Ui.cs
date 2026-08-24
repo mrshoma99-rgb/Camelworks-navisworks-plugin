@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using CamelWorks.Core.Data;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
@@ -1740,6 +1741,130 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
         // Running work
         // -----------------------------------------------------------------------------------
+
+        /// <summary>How many rows of a diff are worth putting on screen.</summary>
+        private const int DiffRows = 200;
+
+        /// <summary>
+        /// What a write would do to the model, as a sentence and a table.
+        ///
+        /// One rendering, because there were four: three write screens and, once Zones started
+        /// proposing rather than stamping, a fourth. They had already drifted - the same table with
+        /// different column widths and two of the three explanations differently worded - which is
+        /// the ordinary fate of a block copied for the third time.
+        /// </summary>
+        public static UIElement Diff(WriteDiff diff)
+        {
+            if (diff == null) throw new ArgumentNullException(nameof(diff));
+
+            var stack = Stack();
+            stack.Children.Add(Line(diff.Explain(), 0.85));
+
+            if (diff.Changes.Count == 0) return stack;
+
+            var rows = diff.Changes.Take(DiffRows).Select(c => new TableRow(c,
+                c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
+
+            stack.Children.Add(Table(rows,
+                ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
+
+            if (diff.Changes.Count > DiffRows)
+                stack.Children.Add(Small("Showing the first " + DiffRows.ToString(CultureInfo.InvariantCulture)
+                                         + " of " + Count(diff.Changes.Count, "row") + "."));
+
+            return stack;
+        }
+
+        /// <summary>
+        /// A proposal you can read, and then the irreversible act it proposes.
+        ///
+        /// Writing properties onto a model is the only thing this product does that cannot be
+        /// undone from inside it, and it was reached three different ways: the Data tab made a
+        /// preview compulsory, while Zones and Changes wrote on the first press. One act, three
+        /// behaviours, and the two that wrote immediately were the ones whose buttons said
+        /// "Stamp ... onto every element" - the widest-sounding of the three.
+        ///
+        /// The shape here is the Data tab's, because it is the right one: press once and you are
+        /// told what would happen, press again and it happens. The first press is read-only, so
+        /// there is nothing to be careful about; the second one names the number in its own
+        /// caption, so what you are agreeing to is on the button rather than above it.
+        /// </summary>
+        /// <param name="propose">Caption for the read-only first press.</param>
+        /// <param name="verb">Leading word of the second button - "Write", "Stamp".</param>
+        /// <param name="noun">What is being counted, singular - "element".</param>
+        /// <param name="plan">
+        /// Works out what would happen, renders its detail into the panel it is handed, and returns
+        /// how many <paramref name="noun"/>s would be written. Zero offers no second press.
+        /// </param>
+        /// <param name="apply">Does it. Only reachable once <paramref name="plan"/> has run.</param>
+        /// <remarks>
+        /// The detail panel is made here rather than passed in, so the four parts come out in the
+        /// order they are read - propose, what it found, commit, what it did. A caller supplying
+        /// its own panel would also be re-parenting it into this stack, which in WPF is not a
+        /// layout quirk but an exception.
+        /// </remarks>
+        public static Panel Commit(string propose, string verb, string noun,
+                                   Func<Job, Panel, int> plan, Action<Job> apply)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            if (apply == null) throw new ArgumentNullException(nameof(apply));
+
+            var detail = Stack();
+            var gate = Stack();
+            var done = Stack();
+
+            var runner = Runner(propose, detail, job =>
+            {
+                // Cleared before the work rather than after it: the plan can throw, and a stale
+                // button offering to write last time's answer is the worst thing left on screen.
+                gate.Children.Clear();
+                done.Children.Clear();
+
+                var count = plan(job, detail);
+                if (count <= 0) return;
+
+                gate.Children.Add(Actions(Button(verb + " " + Count(count, noun),
+                    () => { gate.Children.Clear(); Run(done, apply); })));
+            });
+
+            return Stack(runner, detail, gate, done);
+        }
+
+        /// <summary>Run an action under a job, reporting into <paramref name="output"/>.</summary>
+        private static void Run(Panel output, Action<Job> work)
+        {
+            var status = new TextBlock().Wearing("Hint");
+            var bar = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 0, 0, 6) };
+
+            output.Children.Clear();
+            output.Children.Add(bar);
+            output.Children.Add(status);
+
+            Mouse.OverrideCursor = Cursors.Wait;
+            Began();
+
+            var job = new Job(output.Dispatcher, status, bar);
+            output.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
+
+            try
+            {
+                work(job);
+                status.Text = "Finished in " + Seconds(job.Elapsed) + ".";
+                bar.IsIndeterminate = false;
+                bar.Maximum = 1;
+                bar.Value = 1;
+            }
+            catch (Exception ex)
+            {
+                output.Children.Clear();
+                output.Children.Add(Problem(Describe(ex)));
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Ended();
+            }
+        }
 
         /// <summary>
         /// A button that runs something long, with a progress bar, a running count and a Stop.

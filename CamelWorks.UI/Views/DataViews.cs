@@ -261,16 +261,7 @@ namespace CamelWorks.UI.Views
 
                 _diff = diff;
 
-                _status.Children.Add(Ui.Line(diff.Explain(), 0.85));
-
-                if (diff.Changes.Count > 0)
-                {
-                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
-                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
-
-                    _status.Children.Add(Ui.Table(rows,
-                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
-                }
+                _into.Children.Add(Ui.Diff(diff));
 
                 ShowApply();
             }
@@ -649,16 +640,7 @@ namespace CamelWorks.UI.Views
 
                 _diff = diff;
 
-                _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
-
-                if (diff.Changes.Count > 0)
-                {
-                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
-                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
-
-                    _status.Children.Add(Ui.Table(rows,
-                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
-                }
+                _into.Children.Add(Ui.Diff(diff));
 
                 ShowApply();
             }
@@ -1493,103 +1475,138 @@ namespace CamelWorks.UI.Views
             // that does not apply to this job.
             if (grids.System == null) return Ui.Stack();
 
-            var status = Ui.Stack();
+            // Held between the two presses. The plan pass reads the grid; the write pass reads this.
+            var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Runner("Stamp the grid reference onto every element", status, primary: false, work: job =>
-            {
-                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
+            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+                plan: (job, into) =>
                 {
-                    var placed = 0;
+                    placements.Clear();
+
+                    var scope = new List<KeyValuePair<ElementKey, IModelItem?>>();
                     var missed = 0;
+                    var read = 0;
 
                     foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                     {
-                        if (!job.Step(placed + missed, "elements read")) return;
+                        if (!job.Step(read++, "elements read")) return 0;
                         if (!item.HasGeometry) continue;
 
                         var reference = grids.Reference(item);
 
+                        // Left out of scope rather than carried in with a null value. An element
+                        // the grid cannot locate is not an element at grid nowhere, and a diff
+                        // holding a null would read as a proposal to blank whatever it has.
                         if (reference == null) { missed++; continue; }
 
-                        write.SetProperty(item.Key, NavWriteTransaction.TabName, "Grid", reference);
-                        placed++;
+                        placements[item.Key] = reference;
+                        scope.Add(new KeyValuePair<ElementKey, IModelItem?>(item.Key, item));
                     }
 
-                    if (placed == 0)
-                    {
-                        status.Children.Add(Ui.Empty("Nothing to stamp.",
-                            "The grid could not place any element in scope."));
-                        return;
-                    }
+                    var diff = PropertyDiff.Of(NavWriteTransaction.TabName, "Grid", scope,
+                                               item => placements[item.Key]);
 
-                    job.Say("Writing...");
-                    var written = write.Commit();
-
-                    status.Children.Add(Ui.Line("Stamped " + Ui.Count(written, "element") + ".", 1, true));
+                    into.Children.Add(Ui.Diff(diff));
 
                     if (missed > 0)
-                        status.Children.Add(Ui.Note(Ui.Count(missed, "element")
-                            + " got no reference, because the grid could not place them. They keep "
-                            + "whatever Grid value they already had rather than being given a blank "
-                            + "one: an element the grid cannot locate is not an element at grid "
-                            + "nowhere."));
+                        into.Children.Add(Ui.Note(Ui.Count(missed, "element")
+                            + " would get no reference, because the grid cannot place them. They "
+                            + "keep whatever Grid value they already had."));
 
-                    session.Record(ActivityKind.Write,
-                        "stamped grid references onto " + Ui.Count(written, "element"));
-                }
-            });
+                    return diff.Writes(ExistingValues.Overwrite);
+                },
+                apply: job =>
+                {
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
+                    {
+                        var done = 0;
+
+                        foreach (var placed in placements)
+                        {
+                            if (!job.Step(done++, placements.Count, "elements stamped")) return;
+                            write.SetProperty(placed.Key, NavWriteTransaction.TabName, "Grid", placed.Value);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write,
+                            "stamped grid references onto " + Ui.Count(written, "element"));
+                    }
+                });
 
             return Ui.Stack(
                 apply,
                 Ui.Small("Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
                          + "\" grid system, so clash grouping, set rules and reports can all say "
-                         + "\"C-4\" instead of a coordinate."),
-                status);
+                         + "\"C-4\" instead of a coordinate."));
         }
 
         private static UIElement Stamp(Session session, LevelSet levels,
                                        IReadOnlyList<(ElementKey Key, double Base, double Top)> items)
         {
-            var status = Ui.Stack();
+            var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Runner("Stamp the level onto every element", status, primary: false, work: job =>
-            {
-                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign levels"))
+            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+                plan: (job, into) =>
                 {
-                    var placed = 0;
+                    placements.Clear();
+
+                    var outside = 0;
+                    var read = 0;
 
                     foreach (var item in items)
                     {
-                        if (!job.Step(placed, "elements placed")) return;
+                        if (!job.Step(read++, items.Count, "elements placed")) return 0;
 
                         var level = levels.LevelOf(item.Base, item.Top);
-                        if (level == null) continue;
 
-                        write.SetProperty(item.Key, NavWriteTransaction.TabName, "Level", level);
-                        placed++;
+                        // Same rule as the grid: an element in none of the bands is left out of
+                        // scope, not carried in holding a null that would read as "empty this".
+                        if (level == null) { outside++; continue; }
+
+                        placements[item.Key] = level;
                     }
 
-                    if (placed == 0)
+                    var scope = PropertyDiff.Resolve(session.Model, placements.Keys).ToList();
+
+                    var diff = PropertyDiff.Of(NavWriteTransaction.TabName, "Level", scope,
+                                               item => placements[item.Key]);
+
+                    into.Children.Add(Ui.Diff(diff));
+
+                    if (outside > 0)
+                        into.Children.Add(Ui.Note(Ui.Count(outside, "element")
+                            + " sits outside every derived band and keeps whatever Level it had."));
+
+                    return diff.Writes(ExistingValues.Overwrite);
+                },
+                apply: job =>
+                {
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign levels"))
                     {
-                        status.Children.Add(Ui.Empty("Nothing to stamp.",
-                            "No element sits inside any of the derived bands."));
-                        return;
+                        var done = 0;
+
+                        foreach (var placed in placements)
+                        {
+                            if (!job.Step(done++, placements.Count, "elements stamped")) return;
+                            write.SetProperty(placed.Key, NavWriteTransaction.TabName, "Level", placed.Value);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write, "stamped levels onto " + Ui.Count(written, "element"));
                     }
-
-                    job.Say("Writing...");
-                    var written = write.Commit();
-
-                    status.Children.Add(Ui.Line("Stamped " + Ui.Count(written, "element") + ".", 1, true));
-                    session.Record(ActivityKind.Write, "stamped levels onto " + Ui.Count(written, "element"));
-                }
-            });
+                });
 
             return Ui.Stack(
                 apply,
                 Ui.Small("Writes Level into the CamelWorks tab, so clash grouping, reports and set "
                          + "rules can all use it — including on models that never had a level "
-                         + "property to begin with."),
-                status);
+                         + "property to begin with. A value already there is replaced: the level is "
+                         + "derived from where the element sits, so the model's own answer is the "
+                         + "one being corrected."));
         }
 
         // -----------------------------------------------------------------------------------
