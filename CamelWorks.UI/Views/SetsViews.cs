@@ -1284,7 +1284,152 @@ namespace CamelWorks.UI.Views
                     Sweep(session),
                     _results,
                     Ui.Rule(),
+                    Generate(session),
+                    Ui.Rule(),
                     Walkthrough(session)));
+            }
+
+            /// <summary>
+            /// One viewpoint per element in the selection.
+            ///
+            /// This tab could rename, refile and delete viewpoints, and could not make one. That is
+            /// backwards: making them is the forty minutes of clicking, framing and typing that
+            /// nobody does, which is why a review is one person driving and everybody else watching.
+            /// Renaming forty viewpoints is a nuisance; not having them is the reason there is
+            /// nothing to rename.
+            /// </summary>
+            private UIElement Generate(Session session)
+            {
+                var recipe = new ViewpointRecipe();
+
+                var pattern = Ui.Text(recipe.Pattern, text => recipe.Pattern = text, 220);
+                var folder = Ui.Text(string.Empty, text => recipe.Folder = text, 160);
+
+                var start = Ui.Text("1", text =>
+                {
+                    if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                        recipe.Start = n;
+                }, 70);
+
+                var padding = Ui.Text("3", text =>
+                {
+                    if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                        recipe.Padding = n;
+                }, 70);
+
+                var margin = Ui.Text("2", text =>
+                {
+                    if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var m))
+                        recipe.Margin = m;
+                }, 70);
+
+                var from = Ui.Choice(Enum.GetNames(typeof(ViewFrom)), recipe.From.ToString(),
+                    pick => { if (Enum.TryParse<ViewFrom>(pick, out var v)) recipe.From = v; }, 130);
+
+                var section = Ui.Check("Cut a section just in front of each one", false,
+                                       v => recipe.Section = v);
+
+                ViewpointRun? run = null;
+
+                var make = Ui.Commit("Show me what it would make", "Make", "viewpoint",
+                    plan: (job, into) =>
+                    {
+                        run = ViewpointPlanner.Plan(Selected(session, job), recipe,
+                                                    session.Viewpoints.All().Select(v => v.Name).ToList());
+
+                        into.Children.Add(Ui.Line(run.Explain(), 1, true));
+
+                        foreach (var why in run.Skipped.Take(5)) into.Children.Add(Ui.Note(why));
+
+                        if (run.Views.Count > 0)
+                        {
+                            var rows = run.Views.Take(200)
+                                .Select(v => new TableRow(v, v.Name))
+                                .ToList();
+
+                            into.Children.Add(Ui.Table(rows, ("It would be called", 0)));
+                        }
+
+                        return run.Views.Count;
+                    },
+                    apply: job => Capture(session, run, recipe, job));
+
+                return Ui.Marked(Glyphs.Camera, "Make one for each element",
+                    "Select what the walkthrough is about, and get a numbered viewpoint framed on "
+                    + "every one of them. Nothing has to be set up first.",
+                    Ui.Form(
+                        Ui.Field("Name them", pattern, "{n} is the number, {name} is the element's own name."),
+                        Ui.Pair(Ui.Field("Start at", start), Ui.Field("Digits", padding)),
+                        Ui.Pair(Ui.Field("Look from", from), Ui.Field("Room around (m)", margin)),
+                        Ui.Field("Put them in folder", folder)),
+                    section,
+                    make);
+            }
+
+            /// <summary>What is selected, with each element's own name, in tree order.</summary>
+            private static IReadOnlyList<KeyValuePair<ElementKey, string?>> Selected(Session session, Job job)
+            {
+                var picked = new List<KeyValuePair<ElementKey, string?>>();
+                var read = 0;
+
+                foreach (var item in session.Model.Traverse(TraversalScope.CurrentSelection))
+                {
+                    if (!job.Step(read++, "elements read")) break;
+                    if (!item.HasGeometry) continue;
+
+                    picked.Add(new KeyValuePair<ElementKey, string?>(item.Key, item.DisplayName));
+                }
+
+                return picked;
+            }
+
+            /// <summary>
+            /// Frame each element and save the view.
+            ///
+            /// The camera is borrowed and put back. Somebody who runs this has a view they were
+            /// working from, and a tool that makes forty viewpoints and leaves them looking at the
+            /// fortieth has taken something from them to do it.
+            /// </summary>
+            private void Capture(Session session, ViewpointRun? run, ViewpointRecipe recipe, Job job)
+            {
+                if (run == null || run.IsEmpty) return;
+
+                var made = 0;
+                var failed = 0;
+
+                using (session.View.BorrowCamera())
+                {
+                    foreach (var view in run.Views)
+                    {
+                        if (!job.Step(made + failed, run.Views.Count, "viewpoints made")) break;
+
+                        var item = session.Model.Resolve(view.Key);
+
+                        if (item == null) { failed++; continue; }
+
+                        var one = new[] { view.Key };
+
+                        if (recipe.From == ViewFrom.Above) session.View.LookDown(item.Bounds);
+                        else session.View.ZoomTo(one, recipe.Margin);
+
+                        if (recipe.Section) session.View.SetSectionBox(item.Bounds, recipe.SectionOffset);
+
+                        session.Viewpoints.SaveCurrent(view.Name,
+                            string.IsNullOrWhiteSpace(recipe.Folder) ? null : recipe.Folder);
+
+                        made++;
+                    }
+
+                    if (recipe.Section) session.View.SetSectionBoxEnabled(false);
+                }
+
+                _results.Children.Add(Ui.Line("Made " + Ui.Count(made, "viewpoint") + ".", 1, true));
+
+                if (failed > 0)
+                    _results.Children.Add(Ui.Note(Ui.Count(failed, "element")
+                        + " stopped resolving between the plan and the capture, so they were skipped."));
+
+                session.Record(ActivityKind.Regroup, "made " + Ui.Count(made, "viewpoint") + " from the selection");
             }
 
             /// <summary>
