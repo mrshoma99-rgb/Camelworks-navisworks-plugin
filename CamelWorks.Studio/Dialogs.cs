@@ -131,7 +131,7 @@ namespace CamelWorks.Studio
                         Ui.Field("IFC versions", Ui.Text("IFC4", null, 120))),
                 Ui.Field("Instruction", Ui.Text("Ask the architect before the next issue.", null, 340)),
                 Ui.Pair(Ui.Field("At least this many match", Ui.Text("1", null, 90)),
-                        Ui.Field("At most", Ui.Text("", "no limit", 90)))),
+                        Ui.Field("At most", Ui.Text("", "no limit", null, 90)))),
 
             Ui.Eyebrow("It applies to"),
             Ui.Section("Entity", () => "IFCWALL", false,
