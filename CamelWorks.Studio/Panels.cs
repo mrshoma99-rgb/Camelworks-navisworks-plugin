@@ -60,7 +60,7 @@ namespace CamelWorks.Studio
                         Ui.Field("Property", Ui.Text("Uniclass", null, 240),
                                  "\"Category / Name\", or a bare name for any category"))),
 
-                Verdict("Not fit to coordinate against - 2 problems to settle first.", "RedTx"),
+                Verdict("Not fit to coordinate against \u2014 2 problems to settle first.", "RedTx"),
                 Ui.Across(
                     Ui.Figure("2", "to settle", Tone.Bad),
                     Ui.Figure("3", "worth a look", Tone.Warn),

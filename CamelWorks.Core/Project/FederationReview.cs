@@ -165,7 +165,7 @@ namespace CamelWorks.Core.Project
             if (IsEmpty) return "Nothing has been checked yet.";
 
             if (Faults > 0)
-                return "Not fit to coordinate against - " + Count(Faults, "problem") + " to settle first.";
+                return "Not fit to coordinate against \u2014 " + Count(Faults, "problem") + " to settle first.";
 
             if (Watches > 0)
                 return "Fit to coordinate against, with " + Count(Watches, "thing") + " worth a look.";

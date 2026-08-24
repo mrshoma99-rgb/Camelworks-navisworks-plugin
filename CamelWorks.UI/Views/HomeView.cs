@@ -194,7 +194,7 @@ namespace CamelWorks.UI.Views
                 ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList();
 
             return Ui.Marked(Glyphs.Report, "Recent", null,
-                Ui.Table(rows, ("What", 110), ("", 0), ("When", 110)));
+                Ui.Table(rows, ("What", 110), ("Happened", 0), ("When", 110)));
         }
     }
 }

@@ -1133,9 +1133,9 @@ namespace CamelWorks.UI.Views
             var state = Ui.Stack();
             var results = Ui.Stack();
 
-            var scope = Ui.Text(string.Empty, null, 220);
-            var signatory = Ui.Text(string.Empty, null, 180);
-            var release = Ui.Text(string.Empty, null, 140);
+            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
+            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
+            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
 
             var freeze = Ui.Runner("Freeze what is on the board", results,
                 job => DoFreeze(results, scope, signatory, release, job));

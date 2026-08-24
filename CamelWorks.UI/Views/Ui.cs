@@ -888,7 +888,17 @@ namespace CamelWorks.UI.Views
                 Line(headline, 1, true));
 
             if (detail != null) body.Children.Add(Line(detail, 0.8));
-            if (fix != null) body.Children.Add(Line(fix, 0.8));
+
+            // The fix reads at full weight and the reason does not. They were both Line(…, 0.8),
+            // which put "nobody is told when this happens" and "put it back, then run the tests
+            // again" in the same voice — and only one of them is something to go and do.
+            if (fix != null)
+            {
+                var todo = Line(fix, 1);
+                todo.Margin = new Thickness(0, 3, 0, 0);
+                body.Children.Add(todo);
+            }
+
             if (examples != null) body.Children.Add(Small("e.g. " + examples));
 
             var frame = new Border
@@ -1404,7 +1414,10 @@ namespace CamelWorks.UI.Views
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            row.Children.Add(Glyph(Glyphs.Empty, 22, "Faint", new Thickness(0, 1, 12, 0)));
+            // The glyph size and gutter a banner uses, so the text columns agree. An empty state
+            // and a notice are one device — an icon and a sentence — and a 22-pixel glyph over a
+            // 12-pixel gutter put this one's words nine pixels right of every banner under it.
+            row.Children.Add(Glyph(Glyphs.Empty, 16, "Faint", new Thickness(0, 1, 9, 0)));
             Grid.SetColumn(text, 1);
             row.Children.Add(text);
 
