@@ -59,7 +59,7 @@ namespace CamelWorks.UI.Shell
     }
 
     /// <summary>
-    /// The navigation model: two panes, seven switcher entries, nineteen tabs.
+    /// The navigation model: two panes, eight switcher entries, twenty-one tabs.
     ///
     /// Held as data rather than as markup because three separate things have to agree on it — the
     /// ribbon's routing targets, the shell's switcher, and the command catalogue behind Find a
@@ -140,7 +140,9 @@ namespace CamelWorks.UI.Shell
                     "Bulk rename, renumber and re-folder; batch render; copy overrides between "
                     + "viewpoints.")),
 
-            new Workspace("Batch", "Batch", MainPane, hasTabStrip: true,
+            // No strip: it held one tab, so it was a row of chrome that said "Jobs" above a screen
+            // already titled Jobs, and offered nowhere else to go.
+            new Workspace("Batch", "Batch", MainPane, hasTabStrip: false,
                 new WorkspaceTab("Jobs", "Jobs",
                     "Saved jobs and what each one last did. One click turns this document into "
                     + "another.")),

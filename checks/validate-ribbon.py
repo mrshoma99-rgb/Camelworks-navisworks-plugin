@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
 EXPECTED_COMMANDS = 27
-EXPECTED_TABS = 19
+EXPECTED_TABS = 18
 EXPECTED_SWITCHER = 7
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
