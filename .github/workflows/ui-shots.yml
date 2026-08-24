@@ -23,6 +23,13 @@ on:
       - ".github/workflows/ui-shots.yml"
   workflow_dispatch:
 
+# One at a time per branch, and the newer one wins. This job force-pushes an orphan branch, so two
+# runs in flight together are two writers racing over the same ref - and the pictures that survive
+# would be whichever finished last rather than whichever is current.
+concurrency:
+  group: ui-shots-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 

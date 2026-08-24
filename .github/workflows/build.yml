@@ -1,8 +1,22 @@
 name: build
 
+# Once per push, not twice.
+#
+# "on: push" plus "on: pull_request" fires both for every push to a branch that has a pull request
+# open, so the six-job matrix ran twice - twelve jobs, ten of them Windows, and Windows minutes
+# bill at twice the rate. A branch is covered by the pull_request trigger from the moment its
+# pull request exists, which is before anybody is reading its results.
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
+
+# A push that supersedes another cancels it. Pushing three times in five minutes used to leave
+# three full matrices racing, and only the last one's answer was ever read.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
