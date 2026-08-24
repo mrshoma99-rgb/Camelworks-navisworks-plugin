@@ -476,8 +476,10 @@ namespace CamelWorks.UI.Views
 
             internal UIElement Build()
             {
-                var write = Ui.Runner("Write a sheet", _status, Out, primary: false);
-                var read = Ui.Runner("Read a sheet back", _status, In);
+                // Writing comes first and is what the tool is for; reading back is the second
+                // half of the same trip and happens days later, on a different press.
+                var write = Ui.Runner("Write a sheet", _status, Out);
+                var read = Ui.Runner("Read a sheet back", _status, In, primary: false);
 
                 return Ui.Stack(
                     Ui.Eyebrow("Send one out"),
@@ -971,6 +973,29 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Matching", how)),
                 cased,
                 apply);
+        }
+
+        /// <summary>
+        /// The workbook round-trip, as its own tool.
+        ///
+        /// Its ribbon button opened Data Manager, because this was one of four staging screens
+        /// behind a picker there. It is the only one of the four whose whole point is that
+        /// somebody without Navisworks does the editing, which is why it earns a window rather
+        /// than a slot in a picker beside three ways of typing a value in.
+        /// </summary>
+        public static UIElement Excel()
+        {
+            var session = Host.Current;
+
+            if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
+
+            var keys = session.Model.SelectedKeys();
+
+            return Ui.Scroll(Ui.Stack(
+                Ui.Small(keys.Count == 0
+                    ? "Nothing is selected, so this works on the whole model."
+                    : Ui.Count(keys.Count, "element") + " selected. The sheet carries those."),
+                new ExcelScreen(session, keys).Build()));
         }
 
         private static UIElement Writes(Session session, IReadOnlyList<ElementKey> keys)

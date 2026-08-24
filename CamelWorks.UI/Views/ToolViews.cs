@@ -63,21 +63,6 @@ namespace CamelWorks.UI.Views
                 case "paperwork":
                 case "labels": return SiteWindow.Show();
 
-                // Three tools that have no surface of their own yet. Each is a real feature living
-                // inside another tool's screen - the clearance check inside Clash Tests, the
-                // markup merge inside BCF, the workbook round-trip inside Data Manager - and each
-                // had a ribbon button pointing at that other tool's tab, so pressing either button
-                // landed you in the identical place. Opening the host is honest about where the
-                // feature is; lifting each into its own window is the next job.
-                case "headroom": return Window(Tools.Find("tests"), CoordinateViews.Tests, 1100);
-                case "merge": return Window(Tools.Find("bcf"), CoordinateViews.Bcf, 1000);
-
-                case "excel":
-                    if (panel == null) return "The workbook round-trip is part of Data Manager, "
-                                              + "which needs the CamelWorks pane.";
-                    panel(Tools.Find("data")!);
-                    return null;
-
                 default: return Window(tool, Surface(tool), Wide(tool));
             }
         }
@@ -149,6 +134,10 @@ namespace CamelWorks.UI.Views
             switch (tool.Id)
             {
                 case "health": return ProjectViews.Health;
+                case "setup": return ProjectViews.Setup;
+                case "headroom": return CoordinateViews.ClearHeight;
+                case "merge": return CoordinateViews.Merge;
+                case "excel": return DataViews.Excel;
                 case "project": return ProjectViews.Profile;
                 case "tests": return CoordinateViews.Tests;
                 case "rules": return CoordinateViews.Rules;
@@ -175,8 +164,12 @@ namespace CamelWorks.UI.Views
                 case "takeoff": return 1100;
 
                 case "bcf":
+                case "merge":
+                case "excel":
                 case "viewpoints":
                 case "levels": return 1000;
+
+                case "headroom": return 900;
 
                 default: return 0;
             }

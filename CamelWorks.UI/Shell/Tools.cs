@@ -207,7 +207,7 @@ namespace CamelWorks.UI.Shell
             Of("excel", "Excel Round-trip", ToolShape.Wizard, Glyph.Table,
                "Take the properties out to a workbook, let somebody who does not have Navisworks "
                + "edit them, and read the edits back in.",
-               "Write the workbook"),
+               "Write a sheet"),
 
             Of("datalink", "External Data", ToolShape.Wizard, Glyph.Folder,
                "Join a register, a schedule or an asset list onto the model by a key column, and "
