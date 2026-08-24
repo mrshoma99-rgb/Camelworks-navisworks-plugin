@@ -1,4 +1,5 @@
 using System.Linq;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using Xunit;
 

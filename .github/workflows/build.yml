@@ -130,6 +130,11 @@ jobs:
       - name: Check every underscore field is declared where it is used
         run: python3 checks/validate-fields.py
 
+      # A missing using is the most mechanical mistake there is and the Linux job is twenty minutes
+      # away. This one has a real index to check against - every type this repository declares.
+      - name: Check every repo type used is imported where it is used
+        run: python3 checks/validate-usings.py
+
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
       # fails at the first click.
