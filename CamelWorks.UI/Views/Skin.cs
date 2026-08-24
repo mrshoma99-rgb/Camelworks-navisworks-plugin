@@ -249,15 +249,26 @@ namespace CamelWorks.UI.Views
             ("Card2",       "#FBFCFD", "#262B32"),
 
             ("Text",        "#1F2329", "#E7EAEE"),
-            ("Muted",       "#6B7480", "#9AA3AD"),
-            ("Faint",       "#9AA3AD", "#79828D"),
+            // Faint carries every field hint, every folded summary and — worse — two warnings
+            // about writes Ctrl+Z cannot undo. At #9AA3AD it was 2.56:1 on a card and 2.26:1
+            // in a form well: below the large-text floor, and paler in the light theme than the
+            // dark one, which is backwards. Muted moves down with it so the two tiers stay a
+            // tier apart.
+            ("Muted",       "#5C646F", "#9AA3AD"),
+            ("Faint",       "#767E89", "#8C95A0"),
 
             ("Bd",          "#E1E5EA", "#333941"),
             ("BdStrong",    "#CDD3DA", "#3D444D"),
-            ("Field",       "#FFFFFF", "#1B1E23"),
+            // In light the input is the brightest surface on the panel, which is what makes it
+            // read as "type here". In dark it was #1B1E23 inside a #15171B well - 1.07:1, an
+            // input visible only by its border. It sits above both the well and the card now.
+            ("Field",       "#FFFFFF", "#2B3138"),
             ("FieldBd",     "#CDD3DA", "#3D444D"),
 
-            ("Nav",         "#F0F2F5", "#1A1D22"),
+            // The disclosure fill. Dark #1A1D22 on a #1C1F24 pane is 1.02:1 - no surface at
+            // all, so a fold on the page read as a hairline while the same fold inside a card
+            // read correctly.
+            ("Nav",         "#EAEDF1", "#282D34"),
             ("NavActive",   "#E6F0FA", "#1F2D3D"),
             ("Hover",       "#0F000000", "#14FFFFFF"),
             ("Press",       "#1A000000", "#24FFFFFF"),

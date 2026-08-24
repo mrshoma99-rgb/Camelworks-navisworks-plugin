@@ -62,8 +62,35 @@ namespace CamelWorks.UI.Views
                     session.Record(ActivityKind.Job, "ran \"" + picked.Name + "\": " + result);
                 }));
 
-                body.Children.Add(Ui.Note("A job runs on the model that is open now, using whatever is selected "
-                    + "now. Nothing in it is scheduled or unattended: Navisworks has to be running, and so do you."));
+                // A list of jobs that can only be run is a list nobody can maintain: a graph saved
+                // by mistake, or superseded three weeks ago, had no way off this panel.
+                body.Children.Add(Ui.Danger("Delete the selected job", () =>
+                {
+                    log.Children.Clear();
+
+                    if (picked == null)
+                    {
+                        log.Children.Add(Ui.Line("Pick a job first.", 0.8));
+                        return;
+                    }
+
+                    var doomed = picked;
+
+                    log.Children.Add(Ui.Danger("Yes, delete \"" + doomed.Name + "\"", () =>
+                    {
+                        log.Children.Clear();
+                        Forget(session, doomed.Name);
+
+                        log.Children.Add(session.Store.Save()
+                            ? Ui.Done("Deleted \"" + doomed.Name + "\".")
+                            : Ui.Problem(session.Store.LastSaveProblem
+                                         ?? "Could not write the project file."));
+                    }));
+                }));
+
+                body.Children.Add(Ui.Small("A job runs on the model that is open now, using whatever is "
+                    + "selected now. Nothing in it is scheduled or unattended: Navisworks has to be "
+                    + "running, and so do you."));
             }
 
             var history = session.Store.Activity.Entries
@@ -81,10 +108,14 @@ namespace CamelWorks.UI.Views
                         ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList(),
                     ("Run", 0), ("When", 110));
 
+            // The jobs are what the tab is, so they are not in a box named after the tab. History
+            // keeps its card: it is the result, and the result is what earns one.
             return Ui.Scroll(Ui.Stack(
-                Ui.Marked(Glyphs.Play, "Jobs", null, body, log),
-                Ui.Marked(Glyphs.Clock, "History", null, past),
-                FromThisDocument(session)));
+                body,
+                log,
+                Ui.Rule(),
+                FromThisDocument(session),
+                Ui.Marked(Glyphs.Clock, "What has run", null, past)));
         }
 
         /// <summary>
@@ -221,6 +252,21 @@ namespace CamelWorks.UI.Views
             var folder = System.IO.Path.GetDirectoryName(project);
 
             return string.IsNullOrEmpty(folder) ? file : System.IO.Path.Combine(folder!, file);
+        }
+
+        /// <summary>Take one job out of the project file and leave the others alone.</summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="name">The job's name, as it is listed.</param>
+        private static void Forget(Session session, string name)
+        {
+            var section = session.Store.Section(ProjectStore.JobsSection);
+            if (section["items"].Kind != JsonKind.Array) return;
+
+            var kept = section["items"].Items
+                .Where(item => !string.Equals(Graph.FromJson(item).Name, name, StringComparison.Ordinal))
+                .ToList();
+
+            section.Set("items", JsonValue.Array(kept));
         }
 
         private static IReadOnlyList<Graph> Saved(Session session)

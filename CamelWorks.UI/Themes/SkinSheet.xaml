@@ -263,8 +263,14 @@
               <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Accent}"/>
               <Setter TargetName="b" Property="BorderThickness" Value="1.6"/>
             </Trigger>
+            <!-- An explicit disabled pair, not a blanket opacity. Fading a filled button to 0.4
+                 left white text on a washed fill at 1.76:1, and it faded the two themes
+                 differently, so the same state was legible in neither. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.55"/>
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource Track}"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+              <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -301,7 +307,9 @@
               <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentWash}"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.45"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -333,7 +341,8 @@
               <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentPress}"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.4"/>
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource Track}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -362,7 +371,9 @@
               <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.45"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -393,7 +404,9 @@
               <Setter TargetName="b" Property="Opacity" Value="0.8"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.45"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -439,7 +452,8 @@
               <Setter Property="Foreground" Value="{DynamicResource Text}"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Opacity" Value="0.4"/>
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource Track}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -692,7 +706,12 @@
                           IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
               <ToggleButton.Template>
                 <ControlTemplate TargetType="ToggleButton">
+                  <!-- TextElement.Foreground, not the ComboBox's own Foreground setter. The value is
+                       drawn by a ContentPresenter inside this ToggleButton, and a ToggleButton resolves
+                       its foreground from the WPF theme default - black - so in the dark theme every
+                       dropdown in the product rendered its value at 1.26:1 against its own field. -->
                   <Border x:Name="bd" Background="{DynamicResource Field}" BorderBrush="{DynamicResource FieldBd}"
+                          TextElement.Foreground="{DynamicResource Text}"
                           BorderThickness="1" CornerRadius="8" Padding="10,0,8,0" SnapsToDevicePixels="True">
                     <Grid>
                       <Grid.ColumnDefinitions>
@@ -737,7 +756,8 @@
               <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-              <Setter Property="Opacity" Value="0.55"/>
+              <Setter TargetName="tb" Property="Opacity" Value="0.75"/>
+              <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
@@ -820,13 +840,20 @@
     <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Caption}"/>
     <Setter Property="FontWeight" Value="Bold"/>
-    <Setter Property="Padding" Value="0,7"/>
+
+    <!-- Seven on the left, not zero. Three of it answers the row's tone bar and four answers the
+         inset GridViewRowPresenter applies per cell and a bare ContentPresenter does not, which is
+         why every heading in the product used to hang four pixels left of its own column. -->
+    <Setter Property="Padding" Value="7,7,0,7"/>
     <Setter Property="HorizontalContentAlignment" Value="Left"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="GridViewColumnHeader">
+          <!-- Snapped. It is the only rule in the sheet that was not, so it landed on a fractional
+               pixel and antialiased paler than the row rules directly under it. -->
           <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Bd}"
-                  BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}">
+                  BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}"
+                  SnapsToDevicePixels="True" UseLayoutRounding="True">
             <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
           </Border>
         </ControlTemplate>
@@ -839,9 +866,17 @@
     <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
     <Setter Property="Padding" Value="0,7"/>
     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+
+    <!-- The tone bar. Transparent by default and set per row from the row's own Tone, so the
+         severity of a row is one mark on its edge rather than the colour of every word in it. -->
+    <Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="3,0,0,0"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ListViewItem">
+          <Border x:Name="tone" Background="Transparent" SnapsToDevicePixels="True"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}">
           <Border x:Name="b" Background="Transparent" BorderBrush="{DynamicResource Bd}"
                   BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}">
             <!-- Columns comes through the attached property, which is how the framework's own
@@ -851,6 +886,7 @@
             <GridViewRowPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"
                                   SnapsToDevicePixels="True"
                                   Columns="{TemplateBinding GridView.ColumnCollection}"/>
+          </Border>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -869,8 +905,12 @@
        GridView, the column header row lives in the theme template. An implicit style that sets
        Template replaces that template, and every table in the product loses its headers. The
        rounded frame tables want is put around them in Ui.Table instead. -->
+  <!-- Transparent, not Card. A table that is not inside a card painted a square, borderless
+       Card-coloured slab against the pane: invisible in light, a hard grey block in dark, and the
+       only surface in the product with no corner radius. The rows carry their own rules; the
+       ground belongs to whatever the table was put on. -->
   <Style TargetType="ListView">
-    <Setter Property="Background" Value="{DynamicResource Card}"/>
+    <Setter Property="Background" Value="Transparent"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Bd}"/>
     <Setter Property="BorderThickness" Value="0"/>
     <Setter Property="Foreground" Value="{DynamicResource Text}"/>

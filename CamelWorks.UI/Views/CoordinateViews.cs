@@ -92,9 +92,18 @@ namespace CamelWorks.UI.Views
         /// millimetre model would otherwise group everything within five millimetres and report one
         /// group per clash.
         /// </summary>
-        internal static ClashPipelineResult? Build(Session session, Job job, ICollection<string> notes)
+        /// <param name="session">The open document.</param>
+        /// <param name="job">The run this is part of, for progress and for stopping.</param>
+        /// <param name="notes">Anything the reader has to know, added as it is found.</param>
+        /// <param name="trying">
+        /// A rule set to use instead of the saved one, so the Rules tab can show what its edits
+        /// would do before anybody commits them. Null reads the project file, which is what every
+        /// other caller wants.
+        /// </param>
+        internal static ClashPipelineResult? Build(Session session, Job job, ICollection<string> notes,
+                                                   ClashRuleSet? trying = null)
         {
-            if (!session.Clash.IsAvailable) return Hydrate(session, job, notes);
+            if (!session.Clash.IsAvailable) return Hydrate(session, job, notes, trying);
 
             var scale = session.MetresPerUnit;
             var items = new List<ClashItem>();
@@ -144,7 +153,8 @@ namespace CamelWorks.UI.Views
 
             job.Say("Carrying over the last run...");
 
-            var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+            var rules = trying
+                        ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
             var snapshot = Snapshot(session);
             var delta = ClashCarryOver.Apply(survivors, snapshot);
 
@@ -208,7 +218,8 @@ namespace CamelWorks.UI.Views
         /// either: writing a lower-fidelity copy over the record it came from would lose the
         /// coordinates the next Manage run needs to carry status across.
         /// </summary>
-        private static ClashPipelineResult? Hydrate(Session session, Job job, ICollection<string> notes)
+        private static ClashPipelineResult? Hydrate(Session session, Job job, ICollection<string> notes,
+                                                    ClashRuleSet? trying = null)
         {
             job.Say("Reading the last recorded run...");
 
@@ -248,7 +259,8 @@ namespace CamelWorks.UI.Views
 
             job.Say("Applying rules...");
 
-            var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+            var rules = trying
+                        ?? ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
             var options = rules.ToOptions(session.Profile.ClashProximity);
             options.Decisions = Decisions(session);
             options.PinnedGroups = Pinned(session);
@@ -578,10 +590,6 @@ namespace CamelWorks.UI.Views
             session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
         }
 
-        /// <summary>True when there is a version of the board to go back to.</summary>
-        private static bool CanRewind(Session session) =>
-            session.Store.Section(ProjectStore.ClashSection)["previous"].Kind == JsonKind.Array;
-
         /// <summary>
         /// Put back the board as it was before the last edit.
         ///
@@ -720,8 +728,27 @@ namespace CamelWorks.UI.Views
                 // No card around the board. The board is what this tab is - wrapping it in a
                 // titled box to sit beside three other titled boxes was what made four unrelated
                 // things look like four equals.
+                // The undo is for the whole board, not for a group, and it used to live inside the
+                // panel that opens when you pick a row — so a user who applied a BCF reply, and
+                // was told by BCF to come here for it, had to load the board and click an
+                // arbitrary issue to find it.
+                var undo = Ui.Button("Undo the last board edit", () =>
+                {
+                    var session = Host.Current;
+                    if (session == null) return;
+
+                    _summary.Children.Clear();
+
+                    _summary.Children.Add(Rewind(session)
+                        ? Ui.Done("Put back. Load the board again to see it — and pressing this a "
+                                  + "second time brings the edit back, so an undo of the wrong thing "
+                                  + "is not a one-way door.")
+                        : Ui.Problem(session.Store.LastSaveProblem
+                                     ?? "There is no earlier version of the board to go back to."));
+                });
+
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Actions(run),
+                    Ui.Actions(run, undo),
                     _summary,
                     _filters,
                     _rows,
@@ -1531,26 +1558,12 @@ namespace CamelWorks.UI.Views
                 Redraw(table, group);
             });
 
-            var undo = CanRewind(session)
-                ? Ui.Button("Undo the last board edit", () =>
-                {
-                    status.Children.Clear();
-
-                    status.Children.Add(Rewind(session)
-                        ? Ui.Line("Put back. Load the board again to see it — and pressing this a second "
-                                  + "time brings the edit back, so an undo of the wrong thing is not a "
-                                  + "one-way door.", 0.8)
-                        : Ui.Problem(session.Store.LastSaveProblem
-                                     ?? "There is no earlier version of the board to go back to."));
-                })
-                : null;
-
             return Ui.Card(group.Name,
                 Ui.Count(group.Items.Count, "clash")
                 + (group.Items.Count > DetailCap ? ", first " + DetailCap + " shown" : string.Empty)
                 + (group.IsPinned ? " - made by hand" : string.Empty),
                 Ui.Field("Assign to", picker),
-                Ui.Across(assign, release, undo),
+                Ui.Across(assign, release),
                 Ui.Field("What to do", verbPicker),
                 Ui.Field("Which way", wayPicker),
                 Ui.Field("How far (" + units.LengthUnit + ")", howFar),
@@ -2216,8 +2229,7 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null)
-                    return Ui.Scroll(Ui.Stack(Ui.Heading("Rules"), Ui.Sub(Host.NoModel)));
+                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
                 _rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
 
@@ -2234,15 +2246,49 @@ namespace CamelWorks.UI.Views
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
                 });
 
+                // The tab's own purpose line says "previewed before it is applied", and there was
+                // no preview: you saved, went to Triage, and reloaded the board to find out what
+                // you had done. This is that preview, and it is the panel's answer — the four
+                // figures the rules exist to move.
+                var tryOut = Ui.Runner("Try these on the board", _status, job =>
+                {
+                    var notes = new List<string>();
+                    var board = CoordinateViews.Build(session, job, notes, _rules);
+
+                    foreach (var note in notes) _status.Children.Add(Ui.Note(note));
+
+                    if (board == null) return;
+
+                    var funnel = board.Funnel;
+
+                    _status.Children.Add(Ui.Across(
+                        Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
+                        Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed",
+                                  funnel.Suppressed > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
+                        Ui.Figure(funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
+                                  funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
+
+                    _status.Children.Add(Ui.Line(funnel.ToString(), 0.8));
+
+                    if (funnel.RulesApplied.Count > 0)
+                        _status.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7));
+
+                    _status.Children.Add(Ui.Small("Nothing has been saved. This is what the board "
+                                                  + "would look like if it were."));
+                });
+
+                // The sentence Ui.Numbered exists to delete. Its own doc comment: "a number on
+                // each card says it without being read, and then the sentence can go."
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Info("With nothing here, the board still works: it groups by model pair, then level, "
-                            + "then proximity, and assigns nothing. These rules are how you narrow that, not "
-                            + "how you switch it on."),
                     Ui.Numbered(1, "Suppress and flag", "Applied to every result before anything else.", _filters),
                     Ui.Numbered(2, "Group", "Outermost rule first. Empty means the built-in stack.", _grouping),
                     Ui.Numbered(3, "Assign", "First match wins.", _assigns),
-                    Ui.Across(save),
-                    _status));
+                    Ui.Actions(tryOut, save),
+                    _status,
+                    Ui.Small("With nothing here the board still works: it groups by model pair, then "
+                             + "level, then proximity, and assigns nothing. These rules narrow that; "
+                             + "they do not switch it on.")));
             }
 
             private void Redraw(Session session)
@@ -3963,8 +4009,8 @@ namespace CamelWorks.UI.Views
                           + " moved. Load the board again to see it.")
                 : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
-            results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
-                + "in Triage, and it puts back the board as it was before this."));
+            results.Children.Add(Ui.Note("The board changed, not the model. \"Undo the last board edit\" is "
+                + "beside Load the board on Triage, and it puts the board back as it was before this."));
 
             session.Record(ActivityKind.Exchange,
                 "applied a returned worksheet: " + Ui.Count(groups, "group") + " moved");
@@ -4143,8 +4189,8 @@ namespace CamelWorks.UI.Views
                           + Ui.Count(moved, "result") + " moved. Load the board again to see it.")
                 : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
-            results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
-                + "in Triage, and it puts back the board as it was before this."));
+            results.Children.Add(Ui.Note("The board changed, not the model. \"Undo the last board edit\" is "
+                + "beside Load the board on Triage, and it puts the board back as it was before this."));
 
             session.Record(ActivityKind.Exchange,
                 "applied a BCF reply: " + Ui.Count(groups, "group") + " moved");

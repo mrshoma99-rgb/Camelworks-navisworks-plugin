@@ -527,11 +527,15 @@ namespace CamelWorks.UI.Views
         /// <param name="rest">Everything else, rendered quieter.</param>
         public static Panel Actions(UIElement? first, params UIElement?[] rest)
         {
-            var panel = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, 0) };
+            // Gap below as well as above. The five-pixel per-child bottom margin is the gutter
+            // between two buttons that wrap onto a second line; using it as the gutter under the
+            // whole row welded every action row to whatever came next — most often the fold of
+            // options it is supposed to sit above.
+            var panel = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, Gap) };
 
             if (first is FrameworkElement lead)
             {
-                lead.Margin = new Thickness(0, 0, 8, 5);
+                lead.Margin = new Thickness(0, 0, 8, Gap);
 
                 // The ranking this method exists for, which it used to describe and not perform:
                 // it set a wider margin on the first child and nothing else, so a row of three
@@ -550,7 +554,7 @@ namespace CamelWorks.UI.Views
             foreach (var child in rest)
             {
                 if (child == null) continue;
-                if (child is FrameworkElement element) element.Margin = new Thickness(0, 0, 6, 5);
+                if (child is FrameworkElement element) element.Margin = new Thickness(0, 0, 6, Gap);
                 panel.Children.Add(child);
             }
 
@@ -563,7 +567,9 @@ namespace CamelWorks.UI.Views
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(12, 12, 12, 16),
+            // Four at the bottom, not sixteen. The last card carries its own ten, and the two
+            // together left every panel with twice the air below it that it has above.
+            Padding = new Thickness(12, 12, 12, 4),
             Background = Brushes.Transparent,
             Content = content,
         };
@@ -1511,10 +1517,14 @@ namespace CamelWorks.UI.Views
 
             for (var i = 0; i < columns.Length; i++)
             {
+                // A CellTemplate rather than DisplayMemberBinding, which produces a bare TextBlock
+                // with no trimming — so a cell too narrow for its text was cut mid-word with no
+                // ellipsis, and the one row anybody reads in a run history is the one that says
+                // why something stopped.
                 var column = new GridViewColumn
                 {
                     Header = columns[i].Header,
-                    DisplayMemberBinding = new Binding("[" + i.ToString(CultureInfo.InvariantCulture) + "]"),
+                    CellTemplate = Cell(i, Numeric(columns[i].Header)),
                 };
 
                 if (columns[i].Width > 0)
@@ -1565,9 +1575,11 @@ namespace CamelWorks.UI.Views
                 table.Loaded += (s, e) => Fit();
             }
 
-            // The row's own tone paints its text. Done as a container-generated hook rather than an
-            // ItemContainerStyle trigger because the tone lives on the row object, and a trigger
-            // would need a converter per tone to say the same thing.
+            // A 3px bar down the left of the row, not the row's text.
+            //
+            // Painting every cell with the tone made a job name green in one row and red in the
+            // next, and turned a Model column into a rainbow — colouring the one fact on the row
+            // that is the same in every row. The bar says the same thing and says it once.
             table.ItemContainerGenerator.StatusChanged += (s, e) =>
             {
                 if (table.ItemContainerGenerator.Status != System.Windows.Controls.Primitives.GeneratorStatus.ContainersGenerated)
@@ -1575,14 +1587,69 @@ namespace CamelWorks.UI.Views
 
                 foreach (var item in table.Items)
                 {
-                    if (!(item is TableRow row) || row.Tone == Tone.Plain) continue;
-                    if (table.ItemContainerGenerator.ContainerFromItem(item) is ListViewItem container)
-                        container.Foreground = Skin.Ink(row.Tone);
+                    if (!(item is TableRow row)) continue;
+                    if (!(table.ItemContainerGenerator.ContainerFromItem(item) is ListViewItem container)) continue;
+
+                    if (row.Tone != Tone.Plain) container.BorderBrush = Skin.Ink(row.Tone);
                 }
             };
 
             return table;
         }
+
+        /// <summary>
+        /// One cell: trimmed rather than cut, and with the whole value on a tooltip.
+        /// </summary>
+        /// <param name="index">Which cell of the row.</param>
+        /// <param name="numeric">Whether to line the digits up on the right.</param>
+        private static DataTemplate Cell(int index, bool numeric)
+        {
+            var binding = new Binding("[" + index.ToString(CultureInfo.InvariantCulture) + "]");
+            var text = new FrameworkElementFactory(typeof(TextBlock));
+
+            text.SetBinding(TextBlock.TextProperty, binding);
+            text.SetBinding(FrameworkElement.ToolTipProperty, binding);
+            text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+
+            if (numeric)
+            {
+                // Digits in a column have to line up column to column, exactly as Figure already
+                // takes the trouble to do. Left-aligned, "412" sat under the "8,2" of "8,204".
+                text.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Right);
+                text.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+
+                text.SetValue(System.Windows.Documents.Typography.NumeralAlignmentProperty,
+                              FontNumeralAlignment.Tabular);
+            }
+
+            return new DataTemplate { VisualTree = text };
+        }
+
+        /// <summary>
+        /// Whether a column holds numbers, from what it is called.
+        ///
+        /// By name rather than by a flag on every call site: nineteen panels build tables and the
+        /// headings they use for counts are a short, stable list.
+        /// </summary>
+        /// <param name="header">The column heading.</param>
+        private static bool Numeric(string? header)
+        {
+            if (string.IsNullOrEmpty(header)) return false;
+
+            foreach (var word in NumberHeadings)
+                if (header!.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>Column headings whose cells are counts or measurements.</summary>
+        private static readonly string[] NumberHeadings =
+        {
+            "Elements", "Clashes", "Results", "Count", "Size", "Rows", "Models", "Added",
+            "Removed", "Moved", "Changed", "Pass", "Fail", "Applies to", "Total", "Clear (",
+            "Elevation", "Nodes",
+        };
 
         /// <summary>Call back when a row is picked.</summary>
         /// <param name="table">The table.</param>

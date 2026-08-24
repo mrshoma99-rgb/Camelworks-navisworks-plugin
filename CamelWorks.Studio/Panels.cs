@@ -288,26 +288,38 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Rules() => Sheets.Page(
-            Ui.Info("Rules run in order: suppress and flag, then group, then assign. Nothing is applied "
-                    + "until you press the button, and the board says what each rule did."),
-
-            Ui.Marked(Glyphs.Filter, "Suppress and flag", "First match wins.",
+            Ui.Numbered(1, "Suppress and flag", "Applied to every result before anything else.",
                 Rule("Under 5 mm", "suppressed", Tone.Plain),
                 Rule("Insulation against structure", "suppressed", Tone.Plain),
                 Rule("Anything on the transfer level", "flagged", Tone.Warn),
-                Ui.Actions(Ui.Quiet("Add", () => { }))),
+                Ui.Across(Ui.Quiet("Add", () => { }))),
 
-            Ui.Numbered(2, "Group", "Applied in order.",
+            Ui.Numbered(2, "Group", "Outermost rule first. Empty means the built-in stack.",
                 Rule("Within 5 m of each other", "one issue", Tone.Plain),
                 Rule("Same pair of models", "one issue", Tone.Plain),
-                Ui.Actions(Ui.Quiet("Add", () => { }))),
+                Ui.Across(Ui.Quiet("Add", () => { }))),
 
             Ui.Numbered(3, "Assign", "First match wins.",
                 Rule("MEP-M* against anything", "Mechanical", Tone.Plain),
                 Rule("STR* against ARC*", "Structures", Tone.Plain),
-                Ui.Actions(Ui.Quiet("Add", () => { }))),
+                Ui.Across(Ui.Quiet("Add", () => { }))),
 
-            Ui.Actions(Ui.Primary("Save rules", () => { }), Ui.Button("Let the rules decide this again", () => { })));
+            Ui.Actions(Ui.Primary("Try these on the board", () => { }),
+                       Ui.Button("Save rules", () => { })),
+
+            Ui.Across(
+                Ui.Figure("1,284", "from the engine"),
+                Ui.Figure("412", "suppressed", Tone.Warn),
+                Ui.Figure("96", "issues"),
+                Ui.Figure("13", "unassigned", Tone.Warn)),
+
+            Ui.Line("1,284 results, 412 suppressed, 96 groups.", 0.8),
+            Ui.Line("Rules: Under 5 mm, Insulation against structure, Within 5 m of each other", 0.7),
+            Ui.Small("Nothing has been saved. This is what the board would look like if it were."),
+
+            Ui.Small("With nothing here the board still works: it groups by model pair, then level, "
+                     + "then proximity, and assigns nothing. These rules narrow that; they do not "
+                     + "switch it on."));
 
         private static UIElement Rule(string when, string then, Tone tone)
         {
