@@ -3437,17 +3437,40 @@ namespace CamelWorks.UI.Views
         public static UIElement Bcf()
         {
             var results = Ui.Stack();
-            var path = Ui.Text(string.Empty, null, 340);
+
+            // Two paths, deliberately. These were one TextBox: the box you typed an output
+            // filename into was the box the importer then read from, and the worksheet leg had
+            // the same defect independently. A field that means two opposite things depending on
+            // which button you press is not a field.
+            var outFile = Ui.Text(string.Empty, "leave it and CamelWorks names the file", null, 300);
+            var inFile = Ui.Text(string.Empty, "a .bcfzip, or a worksheet that went out from here", null, 300);
+
             var version = "2.1";
             var picker = Ui.Choice(new[] { "2.1", "3.0" }, version, v => version = v);
 
             var snapshots = true;
-            var snapshotBox = Ui.Check("Include a snapshot of each group", snapshots, v => snapshots = v);
+            var snapshotBox = Ui.Toggle("A view on every topic", snapshots, v => snapshots = v);
 
-            var export = Ui.Runner("Export the board", results, job =>
+            // The far end either has a BCF reader or it has Excel. That is a property of the file
+            // being sent, not a second tool, so it is one control on the one send.
+            var asSheet = false;
+
+            var parties = new List<string> { "Everyone" };
+            var session0 = Host.Current;
+            if (session0 != null) parties.AddRange(session0.Profile.Parties);
+
+            var party = parties[0];
+            var forWhom = Ui.Choice(parties, party, p => party = p);
+
+            var send = Ui.Runner("Send the board", results, job =>
             {
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                // One send, two formats. The worksheet leg used to be a third card with its own
+                // pair of buttons and its own pair of paths; a file format is an option of sending,
+                // not a tool of its own.
+                if (asSheet) { WriteSheet(results, outFile, party, job); return; }
 
                 var board = LastBoard;
 
@@ -3460,7 +3483,7 @@ namespace CamelWorks.UI.Views
 
                 if (board == null) return;
 
-                var file = path.Text.Trim();
+                var file = outFile.Text.Trim();
 
                 if (file.Length == 0)
                 {
@@ -3468,7 +3491,7 @@ namespace CamelWorks.UI.Views
                         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
                         session.Profile.ProjectName + ".bcfzip");
 
-                    path.Text = file;
+                    outFile.Text = file;
                 }
 
                 job.Say("Building topics...");
@@ -3507,12 +3530,19 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "exported BCF " + version, file);
             });
 
-            var import = Ui.Runner("Read a BCF file", results, job =>
+            var read = Ui.Runner("Read it", results, primary: false, work: job =>
             {
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                var file = path.Text.Trim();
+                // The user has a file. They should not have to tell the tool which kind it is.
+                if (inFile.Text.Trim().EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                {
+                    ReadSheet(results, inFile, job);
+                    return;
+                }
+
+                var file = inFile.Text.Trim();
 
                 if (!File.Exists(file))
                 {
@@ -3574,57 +3604,26 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Marked(Glyphs.Onward, "Export", "BCF 2.1 or 3.0, with a camera on every topic.",
+                Ui.Marked(Glyphs.Onward, "Send it out", null,
+                    Ui.Form(Ui.Pair(
+                        Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
+                                                    pick => asSheet = pick == "Spreadsheet")),
+                        Ui.Field("For", forWhom, "Only used by the spreadsheet."))),
+                    Ui.Actions(send)),
+
+                Ui.Section("How it is written", "BCF 2.1 · a view on every topic", false,
                     Ui.Form(
-                        Ui.Field("Version", picker),
-                        Ui.Field("File", path),
-                        snapshotBox)),
-                Ui.Note("A topic with no viewpoint is a sentence about a problem somewhere in a "
-                        + "federation. Every topic CamelWorks writes carries a camera and the elements "
-                        + "involved; the snapshot is the part that moves your view while it runs, and "
-                        + "your camera is put back afterwards."),
-                Ui.Across(export, import),
-                Worksheet(),
+                        Ui.Pair(Ui.Field("Version", picker), Ui.Field("Snapshots", snapshotBox)),
+                        Ui.Field("Write to", outFile))),
+
+                Ui.Marked(Glyphs.Model, "Read the answers back",
+                    "This one changes the board, so it shows you what it would do first.",
+                    Ui.Form(Ui.Field("File", inFile)),
+                    Ui.Actions(read)),
+
                 results));
         }
 
-        /// <summary>
-        /// The worksheet leg: the same issues, for a far end that has Excel and not a BCF reader.
-        ///
-        /// BCF assumes the other side has a tool that reads BCF. Most of the other sides on a real
-        /// project have Excel, and a coordinator who sends a .bcfzip to a fabricator gets a phone
-        /// call. So the same issues go out as a sheet with two empty columns, and come back through
-        /// the same merge policy as a returned BCF file - including the rule that a stale "Open"
-        /// does not undo an approval.
-        /// </summary>
-        private static UIElement Worksheet()
-        {
-            var results = Ui.Stack();
-            var path = Ui.Text(string.Empty, null, 340);
-
-            var session = Host.Current;
-
-            var parties = new List<string> { "Everyone" };
-            if (session != null) parties.AddRange(session.Profile.Parties);
-
-            var party = parties[0];
-            var picker = Ui.Choice(parties, party, p => party = p);
-
-            var write = Ui.Runner("Write a worksheet", results, job =>
-                WriteSheet(results, path, party, job));
-
-            var read = Ui.Runner("Read one back", results, job => ReadSheet(results, path, job));
-
-            return Ui.Card("Worksheet",
-                "For a far end that has Excel and not a BCF reader",
-                Ui.Field("For", picker),
-                Ui.Field("File", path),
-                Ui.Across(write, read),
-                Ui.Note(IssueSheet.Instructions()),
-                results);
-        }
-
-        /// <summary>Write the open issues out, one row each, with two columns to fill in.</summary>
         private static void WriteSheet(Panel results, TextBox path, string party, Job job)
         {
             var session = Host.Current;
