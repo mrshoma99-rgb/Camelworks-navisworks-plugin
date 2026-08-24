@@ -120,7 +120,35 @@ namespace CamelWorks.UI.Views
                 Ui.Rule(),
                 Link(results),
                 Ui.Rule(),
-                Piece(results)));
+                Piece(results),
+                Ui.Rule(),
+                OnSite(results)));
+        }
+
+        /// <summary>
+        /// The three places the model meets something that is not the model.
+        ///
+        /// Here because all three read the current selection, which is what this screen is about:
+        /// where the weight of what is selected sits, the points somebody sets it out from, and
+        /// the paperwork the model already says belongs to it.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement OnSite(Panel results)
+        {
+            var open = Ui.Button("Take it to site...", () =>
+            {
+                var problem = SiteWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Off the screen and onto the ground"),
+                Ui.Small("Where the weight of a module sits, so the crane knows where the hook "
+                         + "goes. The setting-out file the engineer loads into a total station, in "
+                         + "site coordinates with the survey offset written into it. And the "
+                         + "folder of data sheets and site photos the model already says belongs "
+                         + "to each element."),
+                Ui.Actions(open));
         }
 
         /// <summary>
