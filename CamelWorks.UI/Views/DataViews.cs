@@ -118,7 +118,34 @@ namespace CamelWorks.UI.Views
                 Ui.Rule(),
                 Report(results),
                 Ui.Rule(),
-                Link(results)));
+                Link(results),
+                Ui.Rule(),
+                Piece(results)));
+        }
+
+        /// <summary>
+        /// A piece of the federation, chosen by a rule rather than by clicking.
+        ///
+        /// Here rather than on its own tab because the rule is written in the same vocabulary this
+        /// screen reads: a level, a zone, a property value. A person who has just seen what the
+        /// model carries is one step from wanting the part of it that carries one particular thing.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement Piece(Panel results)
+        {
+            var open = Ui.Button("Take a piece of the model out...", () =>
+            {
+                var problem = ExtractWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Part of it, not all of it"),
+                Ui.Small("This level, this zone, this area, that supplier's model, what that "
+                         + "viewpoint shows. The rule is what gets saved, so next revision it takes "
+                         + "whatever matches then - and what comes out is a drawing, a three-D file, "
+                         + "a sheet of its data, or a set Navisworks' own export can work from."),
+                Ui.Actions(open));
         }
 
         /// <summary>

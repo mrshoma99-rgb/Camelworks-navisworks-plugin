@@ -67,11 +67,15 @@ namespace CamelWorks.Core.Data
     }
 
     /// <summary>
-    /// One element, flattened to what a report can read from it.
+    /// One element, flattened to what a tool can read from it without holding the model.
     ///
-    /// The report builder does not hold model items. An item is only valid until the document
-    /// changes underneath it, and a report that a person edits, sorts and exports outlives that by
-    /// minutes — so the reading happens once, at the top, and everything after works on the copy.
+    /// A model item is only valid until the document changes underneath it, and a report a person
+    /// edits, sorts and exports outlives that by minutes — so the reading happens once, at the top,
+    /// and everything after works on the copy.
+    ///
+    /// Named for the report builder because that is what first needed it, and shared since: the
+    /// data link joins on it and the extract selects on it. One flattening, read once per tool run,
+    /// rather than three near-identical ones each with their own idea of what a blank means.
     /// </summary>
     public sealed class ReportElement
     {
@@ -86,11 +90,16 @@ namespace CamelWorks.Core.Data
         /// <param name="model">Which model it came from.</param>
         /// <param name="path">The selection-tree path, root first.</param>
         /// <param name="properties">Everything it carries.</param>
+        /// <param name="bounds">Its world-space box, where it has geometry.</param>
+        /// <param name="hasGeometry">Whether it carries geometry rather than being a grouping node.</param>
         public ReportElement(ElementKey key, string? name, string? category = null, string? type = null,
                              string? model = null, IReadOnlyList<string>? path = null,
-                             IEnumerable<PropertyValue>? properties = null)
+                             IEnumerable<PropertyValue>? properties = null,
+                             BoundingBox bounds = default, bool hasGeometry = false)
         {
             Key = key;
+            Bounds = bounds;
+            HasGeometry = hasGeometry;
             Name = string.IsNullOrWhiteSpace(name) ? "(unnamed)" : name!.Trim();
             Category = Tidy(category);
             Type = Tidy(type);
@@ -133,6 +142,12 @@ namespace CamelWorks.Core.Data
         /// <summary>The selection-tree path, root first.</summary>
         public IReadOnlyList<string> Path { get; }
 
+        /// <summary>Its world-space box. Meaningless when it carries no geometry.</summary>
+        public BoundingBox Bounds { get; }
+
+        /// <summary>Whether it carries geometry, as opposed to being a grouping node.</summary>
+        public bool HasGeometry { get; }
+
         /// <summary>Every property it carries, as a report sees them.</summary>
         public IReadOnlyCollection<PropertyRef> Fields => _exact.Keys;
 
@@ -163,7 +178,8 @@ namespace CamelWorks.Core.Data
             if (item == null) return null;
 
             return new ReportElement(item.Key, item.DisplayName, item.Category, item.TypeName,
-                                     item.Model?.DisplayName, item.TreePath, item.Properties());
+                                     item.Model?.DisplayName, item.TreePath, item.Properties(),
+                                     item.Bounds, item.HasGeometry);
         }
 
         /// <inheritdoc />
