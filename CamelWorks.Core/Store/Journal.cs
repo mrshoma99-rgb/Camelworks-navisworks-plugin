@@ -126,16 +126,25 @@ namespace CamelWorks.Core.Store
     /// <summary>One comment after folding.</summary>
     public readonly struct FoldedComment
     {
+        private readonly string? _id;
+        private readonly string? _author;
+
         internal FoldedComment(string id, string author, long timestampTicks, string? text)
         {
-            Id = id; Author = author; TimestampTicks = timestampTicks; Text = text;
+            _id = id; _author = author; TimestampTicks = timestampTicks; Text = text;
         }
 
-        /// <summary>Comment identity.</summary>
-        public string Id { get; }
+        /// <summary>
+        /// Comment identity.
+        ///
+        /// Read through a field so <c>default(FoldedComment)</c> - which a fold over an empty
+        /// journal will hand back - reads as an empty comment rather than throwing on its own
+        /// <c>ToString</c>.
+        /// </summary>
+        public string Id => _id ?? string.Empty;
 
         /// <summary>Who wrote it.</summary>
-        public string Author { get; }
+        public string Author => _author ?? string.Empty;
 
         /// <summary>When, as UTC ticks.</summary>
         public long TimestampTicks { get; }

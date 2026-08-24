@@ -81,11 +81,20 @@ namespace CamelWorks.Core.Abstractions
     /// <summary>One property reading.</summary>
     public readonly struct PropertyValue
     {
-        /// <summary>Property category (the tab it appears under in the host).</summary>
-        public string Category { get; }
+        private readonly string? _category;
+        private readonly string? _name;
+
+        /// <summary>
+        /// Property category (the tab it appears under in the host).
+        ///
+        /// Read through a field so <c>default(PropertyValue)</c> - an unassigned array slot, a
+        /// <c>FirstOrDefault</c> that found nothing - still gives the string this promises rather
+        /// than a null nobody guarded against.
+        /// </summary>
+        public string Category => _category ?? string.Empty;
 
         /// <summary>Property name.</summary>
-        public string Name { get; }
+        public string Name => _name ?? string.Empty;
 
         /// <summary>Value as displayed. Typing happens above this seam, never in it.</summary>
         public string? Value { get; }
@@ -93,7 +102,7 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Create a reading.</summary>
         public PropertyValue(string category, string name, string? value)
         {
-            Category = category; Name = name; Value = value;
+            _category = category; _name = name; Value = value;
         }
 
         /// <inheritdoc />

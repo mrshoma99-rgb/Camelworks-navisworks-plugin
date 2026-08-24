@@ -45,19 +45,28 @@ namespace CamelWorks.Core.Compare
     /// <summary>Names one property, as a comparison refers to it.</summary>
     public readonly struct PropertyRef : IEquatable<PropertyRef>
     {
-        /// <summary>The property tab.</summary>
-        public string Category { get; }
+        private readonly string? _category;
+        private readonly string? _name;
+
+        /// <summary>
+        /// The property tab.
+        ///
+        /// Read through a field rather than held in an auto-property: a struct has a value nobody
+        /// constructs, and <c>default(PropertyRef)</c> would give null from a property normalised
+        /// only in the constructor - which <see cref="IsEmpty"/> right below would then throw on.
+        /// </summary>
+        public string Category => _category ?? string.Empty;
 
         /// <summary>The property name.</summary>
-        public string Name { get; }
+        public string Name => _name ?? string.Empty;
 
         /// <summary>Create a reference.</summary>
         /// <param name="category">The property tab.</param>
         /// <param name="name">The property name.</param>
         public PropertyRef(string? category, string? name)
         {
-            Category = category ?? string.Empty;
-            Name = name ?? string.Empty;
+            _category = category;
+            _name = name;
         }
 
         /// <summary>True for <c>default(PropertyRef)</c>.</summary>
@@ -135,8 +144,10 @@ namespace CamelWorks.Core.Compare
         /// <summary>Which property.</summary>
         public PropertyRef Property { get; }
 
+        private readonly string? _value;
+
         /// <summary>What it held, truncated to <see cref="ComparePolicy.MaxValueLength"/>.</summary>
-        public string Value { get; }
+        public string Value => _value ?? string.Empty;
 
         /// <summary>Create a reading.</summary>
         /// <param name="property">Which property.</param>
@@ -144,7 +155,7 @@ namespace CamelWorks.Core.Compare
         public WatchedValue(PropertyRef property, string? value)
         {
             Property = property;
-            Value = value ?? string.Empty;
+            _value = value;
         }
 
         /// <inheritdoc />

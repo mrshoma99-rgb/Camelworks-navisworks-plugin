@@ -42,20 +42,31 @@ namespace CamelWorks.Core.Data
     /// <summary>A property a formula reads, as it was written.</summary>
     public readonly struct PropertyRef : IEquatable<PropertyRef>
     {
+        private readonly string? _category;
+        private readonly string? _name;
+
         /// <summary>Create a reference.</summary>
         /// <param name="category">The property tab, or empty for any.</param>
         /// <param name="name">The property name.</param>
         public PropertyRef(string category, string name)
         {
-            Category = category ?? string.Empty;
-            Name = name ?? string.Empty;
+            _category = category;
+            _name = name;
         }
 
-        /// <summary>The property tab, or empty when the formula did not say.</summary>
-        public string Category { get; }
+        /// <summary>
+        /// The property tab, or empty when the formula did not say.
+        ///
+        /// Read through a field rather than held in an auto-property, because a struct has a
+        /// default value nobody constructs: `default(PropertyRef)` runs no constructor, so an
+        /// auto-property normalised in one would still be null - and the whole point of this type
+        /// promising a string is that a caller may say `.Name.Length` without a guard. That is not
+        /// hypothetical; it is two crashes, both of them a screen leaving a reference unset.
+        /// </summary>
+        public string Category => _category ?? string.Empty;
 
-        /// <summary>The property name.</summary>
-        public string Name { get; }
+        /// <summary>The property name, or empty when there is none.</summary>
+        public string Name => _name ?? string.Empty;
 
         /// <inheritdoc />
         public bool Equals(PropertyRef other) =>

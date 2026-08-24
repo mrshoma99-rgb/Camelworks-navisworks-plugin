@@ -19,6 +19,33 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_property_reference_nobody_constructed_still_has_the_strings_it_promises()
+        {
+            // A struct has a value nobody constructs, and this one is produced on purpose: a screen
+            // whose property picker has not been touched hands over default(PropertyRef). It cost
+            // two crashes - one of them inside the method whose whole job was to catch exactly this.
+            var never = default(PropertyRef);
+
+            Assert.Equal(string.Empty, never.Name);
+            Assert.Equal(string.Empty, never.Category);
+            Assert.Equal(0, never.Name.Length);
+            Assert.Equal("{}", never.ToString());
+            Assert.Equal(never, new PropertyRef(string.Empty, string.Empty));
+        }
+
+        [Fact]
+        public void An_element_key_nobody_assigned_reads_as_empty_rather_than_throwing()
+        {
+            var never = default(ElementKey);
+
+            Assert.True(never.IsEmpty);
+            Assert.Equal(string.Empty, never.Value);
+            Assert.Equal(string.Empty, never.ModelScope);
+            Assert.Equal(string.Empty, never.UnscopedValue);
+            Assert.NotNull(never.ToString());
+        }
+
+        [Fact]
         public void The_shown_rows_are_capped_and_the_rows_to_write_are_not()
         {
             // Two screens wrote from Changes, which is the preview: a code table applied to eight

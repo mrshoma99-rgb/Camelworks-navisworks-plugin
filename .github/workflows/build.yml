@@ -212,6 +212,12 @@ jobs:
       - name: Check no local is shadowed by one in a scope beneath it
         run: python3 checks/validate-shadowed-locals.py
 
+      # A struct has a value nobody constructs. `default(PropertyRef).Name` was null on a type
+      # whose signature said it never is, and it crashed the very method whose job was to catch a
+      # missing reference.
+      - name: Check no struct promises a string that default would not give
+        run: python3 checks/validate-default-structs.py
+
       # `Ui.Row(...)` and `IfcGuid.FromText(...)` both read perfectly and neither exists. A static
       # class is a closed set of names, so this needs no type inference to say so.
       - name: Check every member named through a repo static type is there

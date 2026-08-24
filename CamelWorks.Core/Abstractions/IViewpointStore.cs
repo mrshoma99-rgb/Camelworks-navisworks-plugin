@@ -55,11 +55,14 @@ namespace CamelWorks.Core.Abstractions
     /// <summary>One saved viewpoint.</summary>
     public readonly struct SavedView
     {
+        private readonly string? _id;
+        private readonly string? _name;
+
         /// <summary>Host identity, stable for the life of the document.</summary>
-        public string Id { get; }
+        public string Id => _id ?? string.Empty;
 
         /// <summary>Display name.</summary>
-        public string Name { get; }
+        public string Name => _name ?? string.Empty;
 
         /// <summary>Containing folder, or null at the root.</summary>
         public string? Folder { get; }
@@ -81,7 +84,7 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Create a descriptor.</summary>
         public SavedView(string id, string name, string? folder, bool hasOverrides, bool hasRedlines)
         {
-            Id = id; Name = name; Folder = folder; HasOverrides = hasOverrides; HasRedlines = hasRedlines;
+            _id = id; _name = name; Folder = folder; HasOverrides = hasOverrides; HasRedlines = hasRedlines;
         }
 
         /// <inheritdoc />
@@ -265,11 +268,14 @@ namespace CamelWorks.Core.Abstractions
     /// <summary>One clash test.</summary>
     public readonly struct ClashTestInfo
     {
+        private readonly string? _id;
+        private readonly string? _name;
+
         /// <summary>Host identity.</summary>
-        public string Id { get; }
+        public string Id => _id ?? string.Empty;
 
         /// <summary>Display name, typically naming zone, level, phase and the discipline pair.</summary>
-        public string Name { get; }
+        public string Name => _name ?? string.Empty;
 
         /// <summary>Containing folder, or null at the root.</summary>
         public string? Folder { get; }
@@ -287,7 +293,7 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Create a descriptor.</summary>
         public ClashTestInfo(string id, string name, string? folder, int resultCount, long lastRunTicks)
         {
-            Id = id; Name = name; Folder = folder; ResultCount = resultCount; LastRunTicks = lastRunTicks;
+            _id = id; _name = name; Folder = folder; ResultCount = resultCount; LastRunTicks = lastRunTicks;
         }
 
         /// <inheritdoc />
@@ -297,8 +303,10 @@ namespace CamelWorks.Core.Abstractions
     /// <summary>One clash result, as the host reports it.</summary>
     public readonly struct ClashResultInfo
     {
+        private readonly string? _id;
+
         /// <summary>Host identity within its test.</summary>
-        public string Id { get; }
+        public string Id => _id ?? string.Empty;
 
         /// <summary>First participant.</summary>
         public ElementKey A { get; }
@@ -325,7 +333,7 @@ namespace CamelWorks.Core.Abstractions
         public ClashResultInfo(string id, ElementKey a, ElementKey b, double x, double y, double z,
                                string? hostStatus, string? hostAssignedTo)
         {
-            Id = id; A = a; B = b; PointX = x; PointY = y; PointZ = z;
+            _id = id; A = a; B = b; PointX = x; PointY = y; PointZ = z;
             HostStatus = hostStatus; HostAssignedTo = hostAssignedTo;
         }
 

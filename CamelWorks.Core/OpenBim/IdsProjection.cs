@@ -17,17 +17,25 @@ namespace CamelWorks.Core.OpenBim
         public const string Separator = " / ";
 
         /// <summary>Create a path.</summary>
+        private readonly string? _category;
+        private readonly string? _name;
+
         public PropertyAddress(string category, string name)
         {
-            Category = category ?? string.Empty;
-            Name = name ?? string.Empty;
+            _category = category;
+            _name = name;
         }
 
-        /// <summary>The tab the property appears under.</summary>
-        public string Category { get; }
+        /// <summary>
+        /// The tab the property appears under.
+        ///
+        /// Read through a field so <c>default(PropertyAddress)</c> gives the string this promises,
+        /// which is what <see cref="IsEmpty"/> just below assumes.
+        /// </summary>
+        public string Category => _category ?? string.Empty;
 
         /// <summary>The property name.</summary>
-        public string Name { get; }
+        public string Name => _name ?? string.Empty;
 
         /// <summary>True when this path names nothing.</summary>
         public bool IsEmpty => Name.Length == 0;
