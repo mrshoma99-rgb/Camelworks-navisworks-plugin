@@ -135,6 +135,12 @@ jobs:
       - name: Check the skin has no repeated or missing keys
         run: python3 checks/validate-skin.py
 
+      # The harness is what people are handed when they review the UI, so a harness that draws a
+      # button the product does not have is worse than no harness at all. It has drifted four
+      # times in one branch; captions are the cheapest half of it to hold to account.
+      - name: Check the harness draws what the panels draw
+        run: python3 checks/validate-harness.py
+
       # A health rule with no grade still shows on the verdict, ranked below everything that
       # matters. Nothing about that is a compile error or a failing test - the finding just sorts
       # itself to the bottom, which is the one outcome ranking the findings exists to prevent.

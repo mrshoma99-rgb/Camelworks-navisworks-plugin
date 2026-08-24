@@ -251,7 +251,8 @@ namespace CamelWorks.Studio
                 Ui.Pill("1 never run", Tone.Warn)),
 
             Ui.Table(TestRows(), ("Test", 180), ("Last run", 0), ("Clashes", 66)),
-            Ui.Actions(Ui.Primary("Run the 1 that never has", () => { })),
+            Ui.Actions(Ui.Primary("Run all 4 tests", () => { }),
+                       Ui.Button("Run only the 1 that never has", () => { })),
 
             Ui.Rule(),
 
@@ -447,7 +448,7 @@ namespace CamelWorks.Studio
 
             Ui.Rule(),
 
-            Ui.Actions(Ui.Button("Stamp it into the properties", () => { }),
+            Ui.Actions(Ui.Button("Stamp 1,960 changes into the properties", () => { }),
                        Ui.Button("Raise them on the board", () => { }),
                        Ui.Button("Save the report", () => { }),
                        Ui.Button("Make a viewpoint for each place", () => { })));
@@ -544,8 +545,12 @@ namespace CamelWorks.Studio
 
             Ui.Table(Levels(), ("Level", 130), ("Height", 0), ("Elements", 78)),
 
-            Ui.Link("The coordination grid gives 9 levels - use those instead", () => { }),
-            Ui.Link("A histogram of element heights gives 6 levels - use those instead", () => { }),
+            Ui.Field("Worked out from", Ui.Choice(new[]
+            {
+                "The models' own level property (7)",
+                "The coordination grid (9)",
+                "A histogram of element heights (6)",
+            }, "The models' own level property (7)", null, 260)),
 
             Ui.Rule(),
 
