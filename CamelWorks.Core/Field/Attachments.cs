@@ -223,7 +223,7 @@ namespace CamelWorks.Core.Field
     /// Every project keeps the documents somewhere and the model somewhere else, and the join
     /// between them is a property nobody thinks of as a link: a folder name, a drawing number, an
     /// address into a document system. This reads that property, resolves it, and says what is
-    /// actually there - which turns "the O&M is in the folder" into a list a person can open.
+    /// actually there - which turns "the O&amp;M is in the folder" into a list a person can open.
     ///
     /// One mechanism, three uses. A folder of data sheets, a folder of site photos and an address
     /// into a document management system are the same idea pointed at different things, and

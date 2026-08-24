@@ -11,6 +11,10 @@ Two rules, matching two real compiler errors:
   CS1734  <param> or <paramref> names something that is not a parameter of the member it is on
           (including any of them at all on a member that takes no parameters, such as a const).
 
+  CS1570  A doc comment is not well-formed XML. In practice that is one thing: an ampersand in
+          ordinary prose. "the O&M is in the folder" reads perfectly and starts an entity
+          reference the compiler then cannot resolve, and it fails every job at once.
+
   CS1573  A member documents SOME of its parameters and not others. Documenting none is fine —
           that is CS1591's business and the compiler is happy with an undocumented parameter list
           as long as it is consistently undocumented.
@@ -28,6 +32,11 @@ ROOT = Path(__file__).resolve().parent.parent
 PROJECTS = ["CamelWorks.Core", "CamelWorks.Nav", "CamelWorks.Nav.Clash", "CamelWorks.UI", "CamelWorks.Studio"]
 
 DOC = re.compile(r"^\s*///")
+
+# An ampersand that does not begin an entity the parser knows. Everything else about well-formed
+# XML - an unclosed tag, a stray angle bracket - is real but has never once happened here, and a
+# rule that tried to parse the comment as XML would argue about <c>a &lt; b</c> instead.
+LOOSE = re.compile(r"&(?!amp;|lt;|gt;|quot;|apos;|#[0-9]+;|#x[0-9a-fA-F]+;)")
 PARAM_TAG = re.compile(r'<param\s+name\s*=\s*"([^"]*)"')
 PARAMREF_TAG = re.compile(r'<paramref\s+name\s*=\s*"([^"]*)"')
 
@@ -192,6 +201,21 @@ def main():
             if any(part in ("bin", "obj") for part in path.parts):
                 continue
 
+            rel = path.relative_to(ROOT)
+
+            for line, text in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if not DOC.match(text):
+                    continue
+
+                found = LOOSE.search(text)
+
+                if found is None:
+                    continue
+
+                problems.append(
+                    f"{rel}:{line}: \"&\" in a doc comment starts an entity reference. Write "
+                    f"\"&amp;\" — {text.strip()[:70]} (CS1570)")
+
             for number, doc, signature in gather(path):
                 checked += 1
 
@@ -202,7 +226,6 @@ def main():
                     continue
 
                 actual = parameters(signature)
-                rel = path.relative_to(ROOT)
 
                 if actual is None:
                     problems.append(
@@ -230,7 +253,8 @@ def main():
             print("  " + problem, file=sys.stderr)
         return 1
 
-    print(f"docs consistent: {checked} documented declarations, every param tag names a real parameter")
+    print(f"docs consistent: {checked} documented declarations, every param tag names a real "
+          f"parameter and every ampersand is written as one")
     return 0
 
 

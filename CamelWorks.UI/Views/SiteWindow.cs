@@ -23,7 +23,7 @@ namespace CamelWorks.UI.Views
     ///
     /// Everything else in CamelWorks ends at a file somebody opens on a laptop. These end on site.
     /// Where the weight of a module sits decides where the hook goes; the setting-out file is what
-    /// the engineer walks the floor with; and the O&M folder is the thing a commissioning engineer
+    /// the engineer walks the floor with; and the O&amp;M folder is the thing a commissioning engineer
     /// asks for and nobody can find.
     ///
     /// One window because they share the read: all three work off the current selection, and

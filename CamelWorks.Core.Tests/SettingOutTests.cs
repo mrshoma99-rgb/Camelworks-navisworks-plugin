@@ -90,7 +90,7 @@ namespace CamelWorks.Core.Tests
                                        Recipe(PointKind.Start, PointKind.End));
 
             Assert.NotNull(result.Refusal);
-            Assert.Contains("not long enough", result.Refusal!, StringComparison.Ordinal);
+            Assert.Contains("long enough in any direction", result.Refusal!, StringComparison.Ordinal);
         }
 
         [Fact]
