@@ -675,19 +675,20 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
             });
 
-            return Ui.Marked(Glyphs.Report, "Client requirements",
+            return Ui.Marked(Glyphs.Report, "The client's own rules",
                 "Answer an IDS — the openBIM way of writing information requirements down — against "
                 + "this federation. Point it at the file and press the button; there is nothing else "
                 + "to fill in.",
-                Ui.Field("IDS file", path),
-                Ui.Field("IFC class from", classSource),
-                Ui.Note("Leave the second box empty unless a run tells you to fill it in. IDS is "
-                        + "written about IFC classes, and a federation only carries those where a "
-                        + "model came from IFC — so CamelWorks looks in the places the readers put "
-                        + "them and believes a value only if it reads like a class name. A Revit "
-                        + "export saying \"Basic Wall\" is a family, not an IfcWall, and treating it "
-                        + "as one would make every row below meaningless."),
+                Ui.Form(Ui.Field("IDS file", path)),
                 run,
+                Ui.Section("Where the IFC class is read from", "wherever the readers put it", false,
+                    Ui.Form(Ui.Field("IFC class from", classSource,
+                                     "leave it empty unless a run tells you to fill it in")),
+                    Ui.Small("IDS is written about IFC classes, and a federation only carries those "
+                             + "where a model came from IFC — so CamelWorks looks in the places the "
+                             + "readers put them and believes a value only if it reads like a class "
+                             + "name. A Revit export saying \"Basic Wall\" is a family, not an "
+                             + "IfcWall, and treating it as one would make every row meaningless.")),
                 results);
         }
 
@@ -805,11 +806,12 @@ namespace CamelWorks.UI.Views
         {
             var session = Host.Current;
 
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Profile"), Ui.Sub(Host.NoModel)));
+            if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
+            // Three cards, and each earns one: they are three different acts with three different
+            // consequences, and the glyphs are there so that is legible before the titles are read.
             return Ui.Scroll(Ui.Stack(
-                Ui.Line("Kept " + session.Store.Where, 0.75),
+                Ui.Small("Kept " + session.Store.Where),
                 Parties(session),
                 Codes(session),
                 ModelWrites(session)));
@@ -836,14 +838,16 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
             });
 
-            return Ui.Card("Responsible parties",
-                "Comma separated. Derived from the disciplines in the loaded models until you say otherwise",
-                Ui.Field("Parties", parties),
-                Ui.Field("Priorities", priorities),
-                Ui.Across(save),
-                Ui.Note("Leave these alone and the board still works: the assignee is free text and "
-                        + "the priorities are the built-in three. Filling them in turns two free-text "
-                        + "boxes into pickers, which is worth about a minute a week."),
+            return Ui.Marked(Glyphs.Onward, "Who a clash can be given to",
+                "Comma separated. Derived from the disciplines in the loaded models until you say "
+                + "otherwise.",
+                Ui.Form(
+                    Ui.Field("Parties", parties),
+                    Ui.Field("Priorities", priorities)),
+                Ui.Actions(save),
+                Ui.Small("Leave these alone and the board still works: the assignee is free text and "
+                         + "the priorities are the built-in three. Filling them in turns two free-text "
+                         + "boxes into pickers, which is worth about a minute a week."),
                 status);
         }
 
@@ -928,15 +932,16 @@ namespace CamelWorks.UI.Views
 
             Redraw();
 
-            return Ui.Card("Code tables",
-                "The values a coded property is allowed to hold, and the ones it is not",
-                Ui.Field("Name", name),
-                Ui.Field("Rows", body),
-                Ui.Across(add),
-                Ui.Note("One row per line: code, description, parent - commas or tabs between them, "
-                        + "and a line starting with # is a comment. Paste the column straight out of "
-                        + "the spreadsheet your client sent."),
+            return Ui.Marked(Glyphs.Table, "Code tables",
+                "The values a coded property is allowed to hold, and the ones it is not.",
                 list,
+                Ui.Section("Paste one in", "code, description, parent - one per line", false,
+                    Ui.Form(
+                        Ui.Field("Name", name),
+                        Ui.Field("Rows", body, "commas or tabs between them, and a line starting "
+                                               + "with # is a comment")),
+                    add,
+                    Ui.Small("Paste the column straight out of the spreadsheet your client sent.")),
                 status);
         }
 
@@ -983,12 +988,12 @@ namespace CamelWorks.UI.Views
                     () => Strip(session, carrying, status)));
             });
 
-            return Ui.Card("Model writes",
-                "The three operations that touch the model itself",
+            return Ui.Marked(Glyphs.Bin, "Take back what CamelWorks wrote",
+                "Everything the product has put into the model itself, and the way to remove it.",
                 count,
-                Ui.Note("Ctrl+Z does not undo a property write - Navisworks does not put custom "
-                        + "property writes on its undo stack. What CamelWorks wrote is recorded in "
-                        + "the project journal, and removing it here is the way back."),
+                Ui.Small("Ctrl+Z does not undo a property write - Navisworks does not put custom "
+                         + "property writes on its undo stack. What CamelWorks wrote is recorded in "
+                         + "the project journal, and removing it here is the way back."),
                 status);
         }
 

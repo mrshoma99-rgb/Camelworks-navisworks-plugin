@@ -146,20 +146,36 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Profile() => Sheets.Page(
-            Ui.Marked(Glyphs.Model, "Responsible parties",
-                "Who gets what. Used by the board's assign picker and the report's per-party split.",
-                Ui.Table(Parties(), ("Party", 150), ("Covers", 0), ("Issues", 70)),
-                Ui.Form(Ui.Pair(
-                    Ui.Field("Add a party", Ui.Text(string.Empty, "Mechanical contractor", null, 160)),
-                    Ui.Field("Covers", Ui.Text(string.Empty, "MEP*", null, 120)))),
-                Ui.Actions(Ui.Primary("Save", () => { }))),
+            Ui.Small(@"Kept beside the document in D:\Projects\Riverside\Riverside.cwproj"),
+
+            Ui.Marked(Glyphs.Onward, "Who a clash can be given to",
+                "Comma separated. Derived from the disciplines in the loaded models until you say "
+                + "otherwise.",
+                Ui.Form(
+                    Ui.Field("Parties", Ui.Text("Architect, Structures, Mechanical, Electrical", null, 380)),
+                    Ui.Field("Priorities", Ui.Text("Low, Medium, High", null, 380))),
+                Ui.Actions(Ui.Button("Save", () => { })),
+                Ui.Small("Leave these alone and the board still works: the assignee is free text and "
+                         + "the priorities are the built-in three. Filling them in turns two "
+                         + "free-text boxes into pickers, which is worth about a minute a week.")),
 
             Ui.Marked(Glyphs.Table, "Code tables",
-                "Paste one straight out of the spreadsheet the client sent.",
-                Ui.Form(
-                    Ui.Field("Table name", Ui.Text("Uniclass", null, 180)),
-                    Ui.Field("Values", Ui.Text(string.Empty, "one per line, code then description", null, 300))),
-                Ui.Actions(Ui.Primary("Save this table", () => { }))));
+                "The values a coded property is allowed to hold, and the ones it is not.",
+                Ui.Table(Parties(), ("Table", 150), ("Covers", 0), ("Rows", 70)),
+                Ui.Section("Paste one in", "code, description, parent - one per line", false,
+                    Ui.Form(
+                        Ui.Field("Name", Ui.Text("Uniclass", null, 180)),
+                        Ui.Field("Rows", Ui.Text(string.Empty, "Pr_20_93_52, Concrete beam", null, 420),
+                                 "commas or tabs between them, and a line starting with # is a comment")),
+                    Ui.Actions(Ui.Button("Save this table", () => { })),
+                    Ui.Small("Paste the column straight out of the spreadsheet your client sent."))),
+
+            Ui.Marked(Glyphs.Bin, "Take back what CamelWorks wrote",
+                "Everything the product has put into the model itself, and the way to remove it.",
+                Ui.Actions(Ui.Primary("Count what CamelWorks has written", () => { })),
+                Ui.Small("Ctrl+Z does not undo a property write - Navisworks does not put custom "
+                         + "property writes on its undo stack. What CamelWorks wrote is recorded in "
+                         + "the project journal, and removing it here is the way back.")));
 
         private static IEnumerable<TableRow> Parties()
         {
