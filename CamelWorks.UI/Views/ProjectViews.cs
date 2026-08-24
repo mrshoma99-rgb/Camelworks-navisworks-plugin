@@ -91,7 +91,7 @@ namespace CamelWorks.UI.Views
                 // findings is a fix nobody connects to the one that said "put it back below".
                 foreach (var finding in review.Findings)
                 {
-                    results.Children.Add(Found(finding));
+                    results.Children.Add(Found(session, finding));
 
                     if (finding.Check == Placed && actions.Children.Count > 0)
                     {
@@ -145,10 +145,60 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>One finding, in the vocabulary's own shape.</summary>
-        private static UIElement Found(ReviewFinding finding) =>
+        private static UIElement Found(Session session, ReviewFinding finding) =>
             Ui.Finding(finding.Grade == ReviewGrade.Fault, finding.Check, finding.Headline,
                        finding.Detail, finding.Fix,
-                       finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples));
+                       finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples),
+                       Reach(session, finding));
+
+        /// <summary>
+        /// The way to the elements a finding is about, or nothing when it is not about elements.
+        ///
+        /// A federation check answers a question about the model, and until now that answer was a
+        /// sentence: "37 elements sit on top of each other at the origin" and no way to look at one.
+        /// The reader's next move is always the same - see them - and it was the one thing the tab
+        /// would not do.
+        ///
+        /// A finding about models rather than geometry (a missing file, a moved source) has nothing
+        /// to select, so it gets no row at all rather than a button that would do nothing.
+        /// </summary>
+        private static UIElement? Reach(Session session, ReviewFinding finding)
+        {
+            if (finding.Affected.Count == 0) return null;
+
+            var keys = finding.Affected;
+
+            var show = Ui.Quiet("Show me " + (keys.Count == 1 ? "it" : "all " + Ui.Count(keys.Count, "of them")),
+                () =>
+                {
+                    session.Model.Select(keys);
+                    session.View.ZoomTo(keys, 2.0);
+                });
+
+            var only = Ui.Quiet("Leave only these on screen", () =>
+            {
+                session.Model.Select(keys);
+                session.View.ZoomTo(keys, 2.0);
+                Isolate(session, keys);
+            });
+
+            var row = Ui.Across(show, only);
+            row.Margin = new Thickness(0, 6, 0, 0);
+            return row;
+        }
+
+        /// <summary>Hide everything the finding is not about, so what is left is what it found.</summary>
+        private static void Isolate(Session session, IReadOnlyList<ElementKey> keep)
+        {
+            var wanted = new HashSet<ElementKey>(keep);
+            var hide = new List<ElementKey>();
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                if (item.HasGeometry && !wanted.Contains(item.Key)) hide.Add(item.Key);
+
+            session.View.SetVisible(hide, false);
+            session.View.SetVisible(keep, true);
+        }
 
         /// <summary>
         /// The federation itself: what is loaded, from where, and whether the source has moved on.
@@ -263,13 +313,13 @@ namespace CamelWorks.UI.Views
 
             foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
             {
-                if (reading.Elements.Count % 2000 == 0
-                    && !job.Step(reading.Elements.Count, "elements read")) return null;
+                if (!job.Step(reading.Elements.Count, "elements read")) return null;
 
                 var bounds = item.Bounds;
 
                 reading.Elements.Add(new HealthElement(item.Key.ToString(), item.Model.DisplayName)
                 {
+                    Key = item.Key,
                     Name = item.DisplayName,
                     Category = item.Category,
                     X = bounds.CentreX * scale,
@@ -308,7 +358,8 @@ namespace CamelWorks.UI.Views
 
             foreach (var finding in report.Findings)
                 review.Add(new ReviewFinding(ModelHealth.GradeOf(finding), "Geometry",
-                                             finding.Summary, null, finding.Fix, finding.Examples));
+                                             finding.Summary, null, finding.Fix, finding.Examples,
+                                             finding.Affected));
         }
 
         /// <summary>
@@ -593,8 +644,13 @@ namespace CamelWorks.UI.Views
         private static UIElement Ids()
         {
             var results = Ui.Stack();
-            var path = Ui.Text(string.Empty, null, 340);
-            var classSource = Ui.Text(string.Empty, null, 200);
+
+            // The file a client sent is the file they will send a revision of, and the property
+            // their exporter puts the IFC class in does not change between Tuesdays.
+            var kept = ToolMemory.Of(Host.Current?.Store, "project.ids");
+
+            var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), 340);
+            var classSource = Ui.Text(kept.Text("classFrom"), text => kept.Set("classFrom", text), 200);
 
             var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
             {
@@ -633,7 +689,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                 {
-                    if (projection.Read % 2000 == 0 && !job.Step(projection.Read, "elements read")) return;
+                    if (!job.Step(projection.Read, "elements read")) return;
 
                     var element = projection.From(item);
                     if (element != null) elements.Add(element);
@@ -690,7 +746,16 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(table);
                 results.Children.Add(Ui.Line("Pick a row to select that specification's failing elements.", 0.6));
 
+                // The panel answers "are we ready to issue". The workbook answers "what do I fix",
+                // and it is asked by somebody who is not sitting in Navisworks.
+                results.Children.Add(Ui.Actions(Ui.Button("Save it as a workbook...",
+                    () => Workbook(results, document, report, session.NowTicks))));
+
                 foreach (var detail in Details(report)) results.Children.Add(detail);
+
+                // At the press, which is the moment somebody committed to the path and the
+                // property name. Next Tuesday's revision opens on both.
+                kept.Keep();
 
                 session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
             });
@@ -709,7 +774,61 @@ namespace CamelWorks.UI.Views
                              + "readers put them and believes a value only if it reads like a class "
                              + "name. A Revit export saying \"Basic Wall\" is a family, not an "
                              + "IfcWall, and treating it as one would make every row meaningless.")),
+                Ui.Rule(),
+                Author(results),
                 results);
+        }
+
+        /// <summary>
+        /// The other direction: the requirements this project sets, rather than the ones it is set.
+        ///
+        /// A client's IDS answers "have we given them what they asked for". It says nothing about
+        /// what the job has decided among itself, which is argued about all week and then enforced
+        /// by eye. Written as an IDS, the same file checks the model here, travels to the architect
+        /// and comes back with the next revision.
+        /// </summary>
+        private static UIElement Author(Panel results)
+        {
+            var open = Ui.Button("Write an IDS of our own...", () =>
+            {
+                var problem = IdsWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Our own rules"),
+                Ui.Small("The properties this job has decided have to be filled in, and on what. "
+                         + "It opens on the specification everybody writes first, keeps the draft "
+                         + "in the project as IDS itself, and saves a .ids anybody's tool reads."),
+                Ui.Actions(open));
+        }
+
+        /// <summary>Write the check out as the two sheets somebody works through.</summary>
+        private static void Workbook(Panel results, IdsDocument document, IdsReport report, long ticks)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Save the IDS results",
+                Filter = "Excel workbook|*.xlsx",
+                FileName = document.Title + " - IDS.xlsx",
+                AddExtension = true,
+                DefaultExt = ".xlsx",
+            };
+
+            if (dialog.ShowDialog() != true) return;
+
+            try
+            {
+                File.WriteAllBytes(dialog.FileName, IdsSheet.Write(document, report, ticks));
+            }
+            catch (Exception e)
+            {
+                results.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                return;
+            }
+
+            results.Children.Add(Ui.Done("Wrote " + dialog.FileName
+                + " - one sheet per job: the verdicts, and the failures element by element."));
         }
 
         /// <summary>How much of the federation the check could actually see.</summary>
@@ -1025,7 +1144,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
             {
-                if (read % 2000 == 0 && !job.Step(read, "elements read")) { read = -1; return carrying; }
+                if (!job.Step(read, "elements read")) { read = -1; return carrying; }
 
                 read++;
 
@@ -1164,7 +1283,124 @@ namespace CamelWorks.UI.Views
                 broken,
                 Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null,
                           Ui.Form(rows), Ui.Actions(save, reset), status),
+                People(session),
                 file));
+        }
+
+        /// <summary>
+        /// Who is on the job.
+        ///
+        /// A party typed into a box on the board is a party typed differently next week, and a
+        /// board filtered by it quietly splits in two. And an assignment is really to a person: a
+        /// person has an address, which is the difference between a BCF file somebody receives and
+        /// one that sits in a folder waiting to be noticed.
+        ///
+        /// Optional, like everything else here. With nobody on it the board behaves exactly as it
+        /// did - a party is whatever somebody types.
+        /// </summary>
+        private static UIElement People(Session session)
+        {
+            var roster = TeamRoster.FromJson(
+                session.Store.Section(ProjectStore.ProfileSection)["roster"]);
+
+            var list = Ui.Stack();
+            var status = Ui.Stack();
+
+            var name = Ui.Text(string.Empty, "who", null, 160);
+            var party = Ui.Text(string.Empty, "which organisation", null, 160);
+            var email = Ui.Text(string.Empty, "where a BCF file reaches them", null, 200);
+
+            void Keep()
+            {
+                session.Store.Section(ProjectStore.ProfileSection).Set("roster", roster.ToJson());
+
+                status.Children.Clear();
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Done(roster.Explain())
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
+            }
+
+            void Fill()
+            {
+                list.Children.Clear();
+
+                foreach (var member in roster.Members)
+                {
+                    var here = member;
+                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+
+                    row.Children.Add(Ui.Check(string.Empty, here.IsActive, on =>
+                    {
+                        here.IsActive = on;
+                        Keep();
+                    }));
+
+                    row.Children.Add(Ui.Line(here.Name, here.IsActive ? 1 : 0.5, true));
+
+                    if (here.Party != null) row.Children.Add(Ui.Pill(here.Party, Tone.Plain));
+
+                    row.Children.Add(here.Email == null
+                        ? Ui.Pill("no address", Tone.Warn)
+                        : Ui.Line(here.Email, 0.65));
+
+                    row.Children.Add(Ui.Icon(Glyphs.Bin, "Take them off the roster", () =>
+                    {
+                        roster.Remove(here.Id);
+                        Fill();
+                        Keep();
+                    }));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    list.Children.Add(row);
+                }
+
+                if (roster.Members.Count == 0)
+                    list.Children.Add(Ui.Small("Nobody yet. A party is whatever somebody types on "
+                        + "the board until there is."));
+            }
+
+            Fill();
+
+            var add = Ui.Button("Add", () =>
+            {
+                status.Children.Clear();
+
+                var who = name.Text.Trim();
+
+                if (who.Length == 0)
+                {
+                    status.Children.Add(Ui.Problem("Type a name."));
+                    return;
+                }
+
+                // Through Add, so typing a name that is already there edits that row rather than
+                // making a second one - two rows with one name would make every assignment to that
+                // name ambiguous, since the name is the identity.
+                roster.Add(who, party.Text, email.Text);
+
+                name.Text = string.Empty;
+                email.Text = string.Empty;
+
+                Fill();
+                Keep();
+            });
+
+            return Ui.Marked(Glyphs.Tune, "Who is on the job",
+                "The organisations and the people in them. The board offers these when a group is "
+                + "assigned, and more than one person can carry a group.",
+                list,
+                Ui.Form(
+                    Ui.Pair(Ui.Field("Name", name), Ui.Field("Organisation", party)),
+                    Ui.Field("Address", email,
+                             "Optional, and the difference between a BCF file somebody receives "
+                             + "and one that waits in a folder to be noticed.")),
+                Ui.Actions(add),
+                Ui.Small("Unticking somebody keeps them on the roster and out of every list. Their "
+                         + "work does not leave when they do, and the board says so."),
+                status);
         }
 
         private static UIElement Row(ProfileSetting setting)

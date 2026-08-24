@@ -19,23 +19,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # What a Windows runner is actually needed for, decided on a Linux runner first.
+  #
+  # Windows minutes bill at twice the rate of Linux and every push spent three of them, most often
+  # on a commit that touched nothing a Windows compiler sees differently. This job costs about ten
+  # seconds of the cheap kind and decides how much of the expensive kind follows.
+  #
+  # It only ever narrows a pull request. A push to main or a tag builds everything, because that is
+  # the moment the answer has to be complete rather than quick.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      years: ${{ steps.look.outputs.years }}
+      installer: ${{ steps.look.outputs.installer }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out what a Windows runner is needed for
+        id: look
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo 'years=["2024","2025","2026","2027"]' >> "$GITHUB_OUTPUT"
+            echo "installer=true" >> "$GITHUB_OUTPUT"
+            echo "main or a tag: building everything"
+            exit 0
+          fi
+
+          files="$(git diff --name-only '${{ github.event.pull_request.base.sha }}...HEAD')"
+          echo "$files"
+
+          # Anything the Windows compiler sees: the host-bound assemblies, the ribbon markup, and
+          # the build files that decide how any of it is compiled.
+          if grep -qE '^(CamelWorks\.UI/|CamelWorks\.Nav/|CamelWorks\.Nav\.Clash/|CamelWorks\.Studio/|Directory\.Build|.*\.props$|.*\.targets$|\.github/workflows/build\.yml$)' <<< "$files"; then
+            echo 'years=["2024","2027"]' >> "$GITHUB_OUTPUT"
+            echo "host-bound code changed: both ends of the API surface"
+          elif grep -qE '^CamelWorks\.Core/' <<< "$files"; then
+            # Core is compiled into the Windows assemblies too, so a changed signature can break
+            # the UI without any UI file being touched. One year proves the UI still compiles;
+            # bracketing the API surface is only worth it when host-bound code actually moved.
+            echo 'years=["2027"]' >> "$GITHUB_OUTPUT"
+            echo "Core changed: one year, to prove the UI still compiles against it"
+          else
+            echo 'years=[]' >> "$GITHUB_OUTPUT"
+            echo "nothing a Windows compiler reads: no Windows jobs"
+          fi
+
+          if grep -qE '^(installer/|CamelWorks\.Studio/|.*PackageContents\.xml$|\.github/workflows/build\.yml$)' <<< "$files"; then
+            echo "installer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "installer=false" >> "$GITHUB_OUTPUT"
+          fi
+
   windows:
     name: Windows (plug-in ${{ matrix.year }})
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.years != '[]'
     env:
       CI: "true"
-    # The two ends on a pull request, all four on main and on a tag.
+    # The two ends on a pull request that moved host-bound code, all four on main and on a tag.
     #
-    # Windows minutes bill at twice the rate of Linux, and four of these ran on every push. The
-    # years bracket the API surface: a change that compiles against both the oldest and the newest
-    # supported release has nowhere left to break in the two between them, and anything that does
-    # is caught before a release rather than after one, because main and every tag still build all
-    # four. Two jobs saved per push, against a risk that only exists in the window between merging
-    # and tagging.
+    # The years bracket the API surface: a change that compiles against both the oldest and the
+    # newest supported release has nowhere left to break in the two between them, and anything that
+    # does is caught before a release rather than after one, because main and every tag still build
+    # all four.
     strategy:
       fail-fast: false
       matrix:
-        year: ${{ github.event_name == 'pull_request' && fromJSON('["2024","2027"]') || fromJSON('["2024","2025","2026","2027"]') }}
+        year: ${{ fromJSON(needs.changes.outputs.years) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,6 +119,8 @@ jobs:
   installer:
     name: Windows (installer)
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -108,6 +168,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends libxml2-utils
           schemas/bcf/validate.sh
 
+      # No assertion can prove an IDS loads in somebody else's tool. The writer's real output goes
+      # past the published schema instead, with a local stand-in for the two declarations IDS
+      # borrows from XMLSchema so it needs no network. See schemas/ids/README.md.
+      - name: Validate written IDS against the published schema
+        run: schemas/ids/validate.sh
+
       - name: Check written PDFs are structurally sound
         run: |
           sudo apt-get install -y --no-install-recommends qpdf
@@ -118,6 +184,49 @@ jobs:
       # too, because the project file ships it as loose content and nothing compiles it at all.
       - name: Check the ribbon markup, the plug-in and the catalogue agree
         run: python3 checks/validate-ribbon.py
+
+      # Job.Step() rate-limits its own dispatcher pump. A call site that gates it behind an item
+      # counter turns that time limit into a count limit, and the host freezes between pumps.
+      - name: Check no progress pump sits behind a count gate
+        run: python3 checks/validate-pump.py
+
+      # There is no C# compiler on the Linux job, so a mistyped field name only shows up on Windows
+      # twenty minutes later. This catches the one way it happens: a replacement whose search string
+      # was a suffix of a longer identifier.
+      - name: Check every underscore field is declared where it is used
+        run: python3 checks/validate-fields.py
+
+      # A missing using is the most mechanical mistake there is and the Linux job is twenty minutes
+      # away. This one has a real index to check against - every type this repository declares.
+      - name: Check every repo type used is imported where it is used
+        run: python3 checks/validate-usings.py
+
+      # `if (!thing.IsUsable)` reads as a null check but is one indirection away from one, so the
+      # branch below it hands a `string?` to something that takes a `string`. Windows fails the
+      # build on it; Linux cannot see it. This spots the shape without needing a type checker.
+      - name: Check no nullable string is handed to a parameter that refuses one
+        run: python3 checks/validate-nullable-args.py
+
+      # A local added at the top of a long method whose name is already taken by an `out var`
+      # twenty lines down. Neither site reads wrong; C# refuses both, on every job at once.
+      - name: Check no local is shadowed by one in a scope beneath it
+        run: python3 checks/validate-shadowed-locals.py
+
+      # A doc comment that ended up over the field somebody inserted above the constructor it was
+      # written for. Nothing about that reads wrong; the compiler had to say so.
+      - name: Check every public member says what it is
+        run: python3 checks/validate-doc-coverage.py
+
+      # A struct has a value nobody constructs. `default(PropertyRef).Name` was null on a type
+      # whose signature said it never is, and it crashed the very method whose job was to catch a
+      # missing reference.
+      - name: Check no struct promises a string that default would not give
+        run: python3 checks/validate-default-structs.py
+
+      # `Ui.Row(...)` and `IfcGuid.FromText(...)` both read perfectly and neither exists. A static
+      # class is a closed set of names, so this needs no type inference to say so.
+      - name: Check every member named through a repo static type is there
+        run: python3 checks/validate-api.py
 
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and

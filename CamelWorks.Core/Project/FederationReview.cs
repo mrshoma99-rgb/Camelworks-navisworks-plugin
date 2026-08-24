@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Project
 {
@@ -34,9 +35,11 @@ namespace CamelWorks.Core.Project
         /// <param name="detail">Why it matters, in a sentence or two.</param>
         /// <param name="fix">What to do about it, if there is something to do.</param>
         /// <param name="examples">A handful of the elements or models concerned.</param>
+        /// <param name="affected">Every element concerned, for anything that needs to go there.</param>
         public ReviewFinding(ReviewGrade grade, string check, string headline,
                              string? detail = null, string? fix = null,
-                             IReadOnlyList<string>? examples = null)
+                             IReadOnlyList<string>? examples = null,
+                             IReadOnlyList<ElementKey>? affected = null)
         {
             if (string.IsNullOrWhiteSpace(check)) throw new ArgumentException("check", nameof(check));
             if (string.IsNullOrWhiteSpace(headline)) throw new ArgumentException("headline", nameof(headline));
@@ -47,6 +50,7 @@ namespace CamelWorks.Core.Project
             Detail = detail;
             Fix = fix;
             Examples = examples ?? Array.Empty<string>();
+            Affected = affected ?? Array.Empty<ElementKey>();
         }
 
         /// <summary>How badly it came out.</summary>
@@ -66,6 +70,15 @@ namespace CamelWorks.Core.Project
 
         /// <summary>A handful of the elements or models concerned.</summary>
         public IReadOnlyList<string> Examples { get; }
+
+        /// <summary>
+        /// Every element concerned, when the finding is about elements.
+        ///
+        /// Empty for a finding about models or about the project rather than about geometry - a
+        /// missing file has nothing to select. A reader can act on a finding exactly when this is
+        /// not empty, which is what decides whether the panel offers to.
+        /// </summary>
+        public IReadOnlyList<ElementKey> Affected { get; }
 
         /// <inheritdoc/>
         public override string ToString() => Check + ": " + Headline;

@@ -103,6 +103,7 @@ namespace CamelWorks.UI.Views
 
                 editor.Children.Clear();
                 editor.Children.Add(Writes(session, keys));
+                editor.Children.Add(Correct(session, keys));
                 editor.Children.Add(new ColumnScreen(session, keys).Build());
             });
 
@@ -113,7 +114,119 @@ namespace CamelWorks.UI.Views
                 Ui.Form(Ui.Field("Scope", picker)),
                 read,
                 results,
-                editor));
+                editor,
+                Ui.Rule(),
+                Report(results),
+                Ui.Rule(),
+                Link(results),
+                Ui.Rule(),
+                Piece(results),
+                Ui.Rule(),
+                OnSite(results)));
+        }
+
+        /// <summary>
+        /// The three places the model meets something that is not the model.
+        ///
+        /// Here because all three read the current selection, which is what this screen is about:
+        /// where the weight of what is selected sits, the points somebody sets it out from, and
+        /// the paperwork the model already says belongs to it.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement OnSite(Panel results)
+        {
+            var open = Ui.Button("Take it to site...", () =>
+            {
+                var problem = SiteWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Off the screen and onto the ground"),
+                Ui.Small("Where the weight of a module sits, so the crane knows where the hook "
+                         + "goes. The setting-out file the engineer loads into a total station, in "
+                         + "site coordinates with the survey offset written into it. And the "
+                         + "folder of data sheets and site photos the model already says belongs "
+                         + "to each element."),
+                Ui.Actions(open));
+        }
+
+        /// <summary>
+        /// A piece of the federation, chosen by a rule rather than by clicking.
+        ///
+        /// Here rather than on its own tab because the rule is written in the same vocabulary this
+        /// screen reads: a level, a zone, a property value. A person who has just seen what the
+        /// model carries is one step from wanting the part of it that carries one particular thing.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement Piece(Panel results)
+        {
+            var open = Ui.Button("Take a piece of the model out...", () =>
+            {
+                var problem = ExtractWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Part of it, not all of it"),
+                Ui.Small("This level, this zone, this area, that supplier's model, what that "
+                         + "viewpoint shows. The rule is what gets saved, so next revision it takes "
+                         + "whatever matches then - and what comes out is a drawing, a three-D file, "
+                         + "a sheet of its data, or a set Navisworks' own export can work from."),
+                Ui.Actions(open));
+        }
+
+        /// <summary>
+        /// Somebody else's spreadsheet, joined to the model in both directions.
+        ///
+        /// The round trip above works because CamelWorks put its own identities in the sheet. This
+        /// is for the file it did not write - an asset register keyed on tag, a procurement extract
+        /// keyed on order number - where the join has to be stated, and where the register owns
+        /// half the columns and the model owns the other half.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement Link(Panel results)
+        {
+            var open = Ui.Button("Link a spreadsheet to the model...", () =>
+            {
+                var problem = DataLinkWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Somebody else's file"),
+                Ui.Small("Say which column identifies the element and what each other column does: "
+                         + "write it on, fill a gap with it, or take the model's value and send it "
+                         + "back. CamelWorks works the join out by seeing which of the sheet's "
+                         + "columns actually turns up in the model, so a register nobody wrote for "
+                         + "us still lands."),
+                Ui.Actions(open));
+        }
+
+        /// <summary>
+        /// The way out of this screen and into a sheet.
+        ///
+        /// A person who has just read the properties and can see what the model carries is one step
+        /// from wanting all of it in a file - as a door schedule, an asset register, a handover
+        /// matrix. That is a different shape of job to browsing, so it is a window; but it belongs
+        /// here, at the bottom of the screen where the question comes up.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement Report(Panel results)
+        {
+            var open = Ui.Button("Build a report from the model's data...", () =>
+            {
+                var problem = ReportBuilderWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("All of it, as a sheet"),
+                Ui.Small("Pick the properties, pick the shape, get a workbook. It reads the model "
+                         + "and proposes the columns itself, so there is nothing to set up first - "
+                         + "and it carries the element identities, so the sheet that comes out is "
+                         + "the sheet you can fill in and bring back."),
+                Ui.Actions(open));
         }
 
         /// <summary>
@@ -261,16 +374,7 @@ namespace CamelWorks.UI.Views
 
                 _diff = diff;
 
-                _status.Children.Add(Ui.Line(diff.Explain(), 0.85));
-
-                if (diff.Changes.Count > 0)
-                {
-                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
-                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
-
-                    _status.Children.Add(Ui.Table(rows,
-                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
-                }
+                _status.Children.Add(Ui.Diff(diff));
 
                 ShowApply();
             }
@@ -293,7 +397,7 @@ namespace CamelWorks.UI.Views
                 var diff = _diff;
                 if (diff == null) return;
 
-                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+                var count = diff.Every.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
 
                 if (count == 0)
                 {
@@ -313,7 +417,7 @@ namespace CamelWorks.UI.Views
 
                 using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: code " + target))
                 {
-                    foreach (var change in diff.Changes)
+                    foreach (var change in diff.Every)
                     {
                         if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
 
@@ -649,16 +753,7 @@ namespace CamelWorks.UI.Views
 
                 _diff = diff;
 
-                _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
-
-                if (diff.Changes.Count > 0)
-                {
-                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
-                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
-
-                    _status.Children.Add(Ui.Table(rows,
-                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
-                }
+                _status.Children.Add(Ui.Diff(diff));
 
                 ShowApply();
             }
@@ -670,7 +765,7 @@ namespace CamelWorks.UI.Views
                 var diff = _diff;
                 if (diff == null) return;
 
-                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+                var count = diff.Every.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
 
                 if (count == 0)
                 {
@@ -693,7 +788,11 @@ namespace CamelWorks.UI.Views
                     // Queued from the diff rather than from the scope, so an element already
                     // holding the value is not written to at all - and an element the sheet said
                     // nothing about is not touched, because its "after" is its "before".
-                    foreach (var change in diff.Changes)
+                    //
+                    // Every, not Changes: Changes is the first twenty-five rows, which is what the
+                    // screen shows. Writing from it wrote twenty-five elements and reported that it
+                    // had, which is the worst way for this to be wrong.
+                    foreach (var change in diff.Every)
                     {
                         if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
 
@@ -721,6 +820,24 @@ namespace CamelWorks.UI.Views
         /// guessing at what.
         /// </summary>
         /// <summary>What the overwrite picker says for each policy.</summary>
+        private const string Anywhere = "anywhere in the value";
+        private const string WholeValue = "the whole value";
+        private const string AtStart = "at the start";
+        private const string AtEnd = "at the end";
+        private const string LikePattern = "a pattern with * and ?";
+
+        /// <summary>"Category / Name" into its two halves. A bare name means any category.</summary>
+        /// <param name="text">What was typed.</param>
+        private static (string Category, string Name) NameOf(string? text)
+        {
+            var whole = (text ?? string.Empty).Trim();
+            var slash = whole.IndexOf('/');
+
+            return slash < 0
+                ? (string.Empty, whole)
+                : (whole.Substring(0, slash).Trim(), whole.Substring(slash + 1).Trim());
+        }
+
         private const string KeepThem = "leave it alone";
 
         private const string ReplaceThem = "replace it";
@@ -738,6 +855,124 @@ namespace CamelWorks.UI.Views
         /// Renaming a column stays separate. It changes the shape of the data rather than its
         /// values, and it is the one act here that is not a write.
         /// </summary>
+        /// <summary>
+        /// Correct a value everywhere it appears.
+        ///
+        /// Every federation carries a property somebody spelled two ways. Every filter, set rule and
+        /// schedule join then quietly covers half of what it should, and the discovery is a count
+        /// wrong by a number nobody can explain. Fixing it in the authoring tool means six models
+        /// and six people; fixing it here means one press, and the reason nobody does it today is
+        /// that there is nothing to press.
+        /// </summary>
+        private static UIElement Correct(Session session, IReadOnlyList<ElementKey> keys)
+        {
+            var rule = new Replacement { Kind = MatchKind.Part };
+
+            var property = Ui.Text(string.Empty, "Category / Name", text =>
+            {
+                var (category, name) = NameOf(text);
+                rule.Category = category;
+                rule.Name = name;
+            }, 220);
+
+            var find = Ui.Text(string.Empty, text => rule.Find = text, 160);
+            var with = Ui.Text(string.Empty, text => rule.ReplaceWith = text, 160);
+
+            var how = Ui.Choice(new[] { Anywhere, WholeValue, AtStart, AtEnd, LikePattern }, Anywhere,
+                pick => rule.Kind = pick == WholeValue ? MatchKind.Whole
+                                  : pick == AtStart ? MatchKind.Start
+                                  : pick == AtEnd ? MatchKind.End
+                                  : pick == LikePattern ? MatchKind.Pattern
+                                  : MatchKind.Part, 200);
+
+            var cased = Ui.Check("Case has to match", false, v => rule.CaseSensitive = v);
+
+            List<(ElementKey Key, string After)>? staged = null;
+
+            var apply = Ui.Commit("Show me what it would correct", "Correct", "element",
+                plan: (job, into) =>
+                {
+                    staged = null;
+
+                    var refusal = rule.Refusal;
+                    if (refusal != null)
+                    {
+                        into.Children.Add(Ui.Problem(refusal));
+                        return 0;
+                    }
+
+                    var pending = new List<(ElementKey Key, string After)>();
+                    var values = new List<string?>();
+                    var read = 0;
+
+                    foreach (var pair in PropertyDiff.Resolve(session.Model, keys))
+                    {
+                        if (!job.Step(read++, keys.Count, "values read")) return 0;
+                        if (pair.Value == null) continue;
+
+                        var now = pair.Value.Property(rule.Category, rule.Name);
+                        values.Add(now);
+
+                        var after = FindReplace.Apply(now, rule);
+
+                        if (after != null && !string.Equals(after, now, StringComparison.Ordinal))
+                            pending.Add((pair.Key, after));
+                    }
+
+                    var count = FindReplace.Rehearse(values, rule);
+
+                    into.Children.Add(Ui.Line(count.Explain(), 1, true));
+
+                    // Before the press, not after. A rule that compounds is one somebody will run
+                    // twice because they cannot remember whether they already did.
+                    if (rule.Caution != null) into.Children.Add(Ui.Note(rule.Caution));
+
+                    if (count.Examples.Count > 0)
+                    {
+                        var rows = count.Examples
+                            .Select(e => new TableRow(e, e.From, e.To))
+                            .ToList();
+
+                        into.Children.Add(Ui.Table(rows, ("There now", 240), ("Would be", 240)));
+                    }
+
+                    staged = pending;
+                    return pending.Count;
+                },
+                apply: job =>
+                {
+                    var writing = staged;
+                    if (writing == null) return;
+
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: correct a value"))
+                    {
+                        var done = 0;
+
+                        foreach (var entry in writing)
+                        {
+                            if (!job.Step(done++, writing.Count, "elements corrected")) return;
+                            write.SetProperty(entry.Key, rule.Category, rule.Name, entry.After);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write,
+                            "corrected " + rule.Name + " on " + Ui.Count(written, "element"));
+                    }
+                });
+
+            return Ui.Marked(Glyphs.Tune, "Correct a value",
+                "One spelling, everywhere it appears. The two-ways-of-writing-it that makes every "
+                + "filter and every schedule join cover half of what it should.",
+                Ui.Form(
+                    Ui.Field("Property", property, "which one to correct, as it reads in the table above"),
+                    Ui.Pair(Ui.Field("Find", find), Ui.Field("Replace with", with)),
+                    Ui.Field("Matching", how)),
+                cased,
+                apply);
+        }
+
         private static UIElement Writes(Session session, IReadOnlyList<ElementKey> keys)
         {
             var typed = new WriteScreen(session, keys);
@@ -1459,6 +1694,7 @@ namespace CamelWorks.UI.Views
                     after.Children.Add(Ui.Rule());
                     after.Children.Add(Stamp(session, levels, items));
                     after.Children.Add(GridStamp(session, grids));
+                    after.Children.Add(BreakdownStamp(session));
                 }
 
                 Show(chosen);
@@ -1493,103 +1729,242 @@ namespace CamelWorks.UI.Views
             // that does not apply to this job.
             if (grids.System == null) return Ui.Stack();
 
-            var status = Ui.Stack();
+            // Held between the two presses. The plan pass reads the grid; the write pass reads this.
+            var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Runner("Stamp the grid reference onto every element", status, primary: false, work: job =>
-            {
-                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
+            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+                plan: (job, into) =>
                 {
-                    var placed = 0;
+                    placements.Clear();
+
+                    var scope = new List<KeyValuePair<ElementKey, IModelItem?>>();
                     var missed = 0;
+                    var read = 0;
 
                     foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                     {
-                        if (!job.Step(placed + missed, "elements read")) return;
+                        if (!job.Step(read++, "elements read")) return 0;
                         if (!item.HasGeometry) continue;
 
                         var reference = grids.Reference(item);
 
+                        // Left out of scope rather than carried in with a null value. An element
+                        // the grid cannot locate is not an element at grid nowhere, and a diff
+                        // holding a null would read as a proposal to blank whatever it has.
                         if (reference == null) { missed++; continue; }
 
-                        write.SetProperty(item.Key, NavWriteTransaction.TabName, "Grid", reference);
-                        placed++;
+                        placements[item.Key] = reference;
+                        scope.Add(new KeyValuePair<ElementKey, IModelItem?>(item.Key, item));
                     }
 
-                    if (placed == 0)
-                    {
-                        status.Children.Add(Ui.Empty("Nothing to stamp.",
-                            "The grid could not place any element in scope."));
-                        return;
-                    }
+                    var diff = PropertyDiff.Of(NavWriteTransaction.TabName, "Grid", scope,
+                                               item => placements[item.Key]);
 
-                    job.Say("Writing...");
-                    var written = write.Commit();
-
-                    status.Children.Add(Ui.Line("Stamped " + Ui.Count(written, "element") + ".", 1, true));
+                    into.Children.Add(Ui.Diff(diff));
 
                     if (missed > 0)
-                        status.Children.Add(Ui.Note(Ui.Count(missed, "element")
-                            + " got no reference, because the grid could not place them. They keep "
-                            + "whatever Grid value they already had rather than being given a blank "
-                            + "one: an element the grid cannot locate is not an element at grid "
-                            + "nowhere."));
+                        into.Children.Add(Ui.Note(Ui.Count(missed, "element")
+                            + " would get no reference, because the grid cannot place them. They "
+                            + "keep whatever Grid value they already had."));
 
-                    session.Record(ActivityKind.Write,
-                        "stamped grid references onto " + Ui.Count(written, "element"));
-                }
-            });
+                    return diff.Writes(ExistingValues.Overwrite);
+                },
+                apply: job =>
+                {
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
+                    {
+                        var done = 0;
+
+                        foreach (var placed in placements)
+                        {
+                            if (!job.Step(done++, placements.Count, "elements stamped")) return;
+                            write.SetProperty(placed.Key, NavWriteTransaction.TabName, "Grid", placed.Value);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write,
+                            "stamped grid references onto " + Ui.Count(written, "element"));
+                    }
+                });
 
             return Ui.Stack(
                 apply,
                 Ui.Small("Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
                          + "\" grid system, so clash grouping, set rules and reports can all say "
-                         + "\"C-4\" instead of a coordinate."),
-                status);
+                         + "\"C-4\" instead of a coordinate."));
+        }
+
+        /// <summary>
+        /// The selection tree's own shape, written down as properties.
+        ///
+        /// Levels and grids answer where an element is. This answers what it is part of - the
+        /// system under the zone under the package that whoever authored the model already built
+        /// into the tree. Everything downstream joins on that and the model does not carry it as a
+        /// property, so nothing can filter, group, schedule or export against it.
+        /// </summary>
+        private static UIElement BreakdownStamp(Session session)
+        {
+            var recipe = new BreakdownRecipe();
+
+            var levels = Ui.Text("6", text =>
+            {
+                if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                    recipe.Levels = n;
+            }, 70);
+
+            var separator = Ui.Text(recipe.Separator, text => recipe.Separator = text, 70);
+            var prefix = Ui.Text(recipe.Prefix, text => recipe.Prefix = text, 110);
+
+            var root = Ui.Check("Keep the file name as the first level", false, v => recipe.SkipRoot = !v);
+
+            BreakdownPlan? plan = null;
+
+            var apply = Ui.Commit("Show me what it would write", "Write", "element",
+                plan: (job, into) =>
+                {
+                    var paths = new List<KeyValuePair<ElementKey, IReadOnlyList<string>>>();
+                    var read = 0;
+
+                    foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                    {
+                        if (!job.Step(read++, "elements read")) return 0;
+                        if (!item.HasGeometry) continue;
+
+                        paths.Add(new KeyValuePair<ElementKey, IReadOnlyList<string>>(item.Key, item.TreePath));
+                    }
+
+                    plan = Breakdown.Of(paths, recipe);
+
+                    into.Children.Add(Ui.Line(plan.Explain(), 1, true));
+
+                    if (plan.IsEmpty) return 0;
+
+                    var sample = plan.Entries
+                        .GroupBy(e => e.Composite, StringComparer.Ordinal)
+                        .OrderByDescending(g => g.Count())
+                        .Take(12)
+                        .Select(g => new TableRow(g.Key, g.Key, Ui.Count(g.Count(), "element")))
+                        .ToList();
+
+                    into.Children.Add(Ui.Table(sample, ("Breakdown", 0), ("Holds", 120)));
+
+                    if (plan.Deepest < recipe.Levels)
+                        into.Children.Add(Ui.Note("The tree only reaches "
+                            + plan.Deepest.ToString(CultureInfo.InvariantCulture)
+                            + " levels here, so the deeper ones are left unwritten rather than blank."));
+
+                    return plan.Entries.Count;
+                },
+                apply: job =>
+                {
+                    var writing = plan;
+                    if (writing == null) return;
+
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: write the breakdown"))
+                    {
+                        var done = 0;
+
+                        foreach (var entry in writing.Entries)
+                        {
+                            if (!job.Step(done++, writing.Entries.Count, "elements written")) return;
+
+                            for (var level = 0; level < entry.Levels.Count; level++)
+                                write.SetProperty(entry.Key, NavWriteTransaction.TabName,
+                                                  Breakdown.LevelName(recipe, level + 1), entry.Levels[level]);
+
+                            write.SetProperty(entry.Key, NavWriteTransaction.TabName,
+                                              recipe.CompositeName, entry.Composite);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write,
+                            "wrote the breakdown onto " + Ui.Count(written, "element"));
+                    }
+                });
+
+            return Ui.Stack(
+                Ui.Rule(),
+                Ui.Marked(Glyphs.Table, "Write the breakdown down",
+                    "Whoever authored these models already grouped them - by system, by zone, by "
+                    + "package. That grouping is the breakdown every schedule and cost plan joins "
+                    + "on, and it is in the tree rather than on the elements, so nothing can use it.",
+                    Ui.Form(
+                        Ui.Pair(Ui.Field("Property prefix", prefix, "levels come out as \"" + recipe.Prefix + " 1\", \"" + recipe.Prefix + " 2\""),
+                                Ui.Field("How many levels", levels)),
+                        Ui.Field("Joined by", separator, "what separates the levels in the one key a spreadsheet joins on")),
+                    root,
+                    apply));
         }
 
         private static UIElement Stamp(Session session, LevelSet levels,
                                        IReadOnlyList<(ElementKey Key, double Base, double Top)> items)
         {
-            var status = Ui.Stack();
+            var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Runner("Stamp the level onto every element", status, primary: false, work: job =>
-            {
-                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign levels"))
+            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+                plan: (job, into) =>
                 {
-                    var placed = 0;
+                    placements.Clear();
+
+                    var outside = 0;
+                    var read = 0;
 
                     foreach (var item in items)
                     {
-                        if (!job.Step(placed, "elements placed")) return;
+                        if (!job.Step(read++, items.Count, "elements placed")) return 0;
 
                         var level = levels.LevelOf(item.Base, item.Top);
-                        if (level == null) continue;
 
-                        write.SetProperty(item.Key, NavWriteTransaction.TabName, "Level", level);
-                        placed++;
+                        // Same rule as the grid: an element in none of the bands is left out of
+                        // scope, not carried in holding a null that would read as "empty this".
+                        if (level == null) { outside++; continue; }
+
+                        placements[item.Key] = level;
                     }
 
-                    if (placed == 0)
+                    var scope = PropertyDiff.Resolve(session.Model, placements.Keys).ToList();
+
+                    var diff = PropertyDiff.Of(NavWriteTransaction.TabName, "Level", scope,
+                                               item => placements[item.Key]);
+
+                    into.Children.Add(Ui.Diff(diff));
+
+                    if (outside > 0)
+                        into.Children.Add(Ui.Note(Ui.Count(outside, "element")
+                            + " sits outside every derived band and keeps whatever Level it had."));
+
+                    return diff.Writes(ExistingValues.Overwrite);
+                },
+                apply: job =>
+                {
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign levels"))
                     {
-                        status.Children.Add(Ui.Empty("Nothing to stamp.",
-                            "No element sits inside any of the derived bands."));
-                        return;
+                        var done = 0;
+
+                        foreach (var placed in placements)
+                        {
+                            if (!job.Step(done++, placements.Count, "elements stamped")) return;
+                            write.SetProperty(placed.Key, NavWriteTransaction.TabName, "Level", placed.Value);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write, "stamped levels onto " + Ui.Count(written, "element"));
                     }
-
-                    job.Say("Writing...");
-                    var written = write.Commit();
-
-                    status.Children.Add(Ui.Line("Stamped " + Ui.Count(written, "element") + ".", 1, true));
-                    session.Record(ActivityKind.Write, "stamped levels onto " + Ui.Count(written, "element"));
-                }
-            });
+                });
 
             return Ui.Stack(
                 apply,
                 Ui.Small("Writes Level into the CamelWorks tab, so clash grouping, reports and set "
                          + "rules can all use it — including on models that never had a level "
-                         + "property to begin with."),
-                status);
+                         + "property to begin with. A value already there is replaced: the level is "
+                         + "derived from where the element sits, so the model's own answer is the "
+                         + "one being corrected."));
         }
 
         // -----------------------------------------------------------------------------------

@@ -33,28 +33,38 @@ namespace CamelWorks.Core.Identity
     /// </summary>
     public readonly struct ElementKey : IEquatable<ElementKey>
     {
-        /// <summary>Hash of the owning model's source path. See <see cref="ScopeOf"/>.</summary>
-        public string ModelScope { get; }
+        private readonly string? _modelScope;
+        private readonly string? _value;
+        private readonly string? _unscopedValue;
+
+        /// <summary>
+        /// Hash of the owning model's source path. See <see cref="ScopeOf"/>.
+        ///
+        /// Read through a field, like the two below it. <c>default(ElementKey)</c> is a real value
+        /// this codebase produces on purpose - <see cref="IsEmpty"/> exists for it - and an
+        /// auto-property would make <c>ToString</c> on one throw rather than say so.
+        /// </summary>
+        public string ModelScope => _modelScope ?? string.Empty;
 
         /// <summary>Which rung produced <see cref="Value"/>.</summary>
         public KeyRung Rung { get; }
 
         /// <summary>The rung's hashed value, <see cref="Hash.ComponentWidth"/> hex characters.</summary>
-        public string Value { get; }
+        public string Value => _value ?? string.Empty;
 
         /// <summary>
         /// The same rung value computed WITHOUT the model scope. Diagnostic only — it is what lets
         /// a report say "this element looks like one in another model", and it is never used as a
         /// match key. Kept off equality and hashing deliberately.
         /// </summary>
-        public string UnscopedValue { get; }
+        public string UnscopedValue => _unscopedValue ?? string.Empty;
 
         private ElementKey(string modelScope, KeyRung rung, string value, string unscopedValue)
         {
-            ModelScope = modelScope;
+            _modelScope = modelScope;
             Rung = rung;
-            Value = value;
-            UnscopedValue = unscopedValue;
+            _value = value;
+            _unscopedValue = unscopedValue;
         }
 
         /// <summary>True for a key that was never assigned (<c>default(ElementKey)</c>).</summary>

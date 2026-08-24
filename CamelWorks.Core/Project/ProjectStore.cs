@@ -53,6 +53,12 @@ namespace CamelWorks.Core.Project
         /// <summary>What the last health check saw: the model manifest it compares against.</summary>
         public const string ModelsSection = "models";
 
+        /// <summary>What each tool was last told, so it does not ask again.</summary>
+        public const string ToolsSection = "tools";
+
+        /// <summary>Saved model-data reports, and what else the data tools keep for the job.</summary>
+        public const string DataSection = "data";
+
         private readonly IFileSystem _fs;
         private readonly VersionedDocument _document;
 

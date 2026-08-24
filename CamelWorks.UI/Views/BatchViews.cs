@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using CamelWorks.Core.Automation;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
@@ -115,7 +116,34 @@ namespace CamelWorks.UI.Views
                 log,
                 Ui.Rule(),
                 FromThisDocument(session),
+                Ui.Rule(),
+                Compile(log),
                 Ui.Marked(Glyphs.Clock, "What has run", null, past)));
+        }
+
+        /// <summary>
+        /// The other kind of batch: not our operations in sequence, but the file the project ships.
+        ///
+        /// Here because it is the same Monday morning. The job above reloads the federation and
+        /// runs the tests; this turns the delivery folder into the NWD everybody else opens, and
+        /// works out which of the three revisions of half the models is the one that goes in.
+        /// </summary>
+        /// <param name="log">Where to say so if the window will not open.</param>
+        private static UIElement Compile(Panel log)
+        {
+            var open = Ui.Button("Compile the models into a deliverable...", () =>
+            {
+                var problem = CompileWindow.Show();
+                if (problem != null) log.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("The file the project ships"),
+                Ui.Small("Point at the delivery folder and it reads the revision off each name, "
+                         + "drops the superseded ones, and writes one NWD - or one per model. Every "
+                         + "run leaves a log beside what it produced saying what went in, what was "
+                         + "left out and why, and what failed."),
+                Ui.Actions(open));
         }
 
         /// <summary>

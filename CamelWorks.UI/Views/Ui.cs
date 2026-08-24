@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using CamelWorks.Core.Data;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
@@ -880,8 +881,14 @@ namespace CamelWorks.UI.Views
         /// <param name="detail">Why it matters, or null.</param>
         /// <param name="fix">What to do about it, or null when there is nothing to do but know.</param>
         /// <param name="examples">A handful of the things concerned, already joined, or null.</param>
+        /// <param name="go">
+        /// What to do about it, if the finding is about something that can be gone to. Rendered
+        /// under the examples. A finding whose elements are still in the model is a place, not just
+        /// a sentence, and the difference between the two is whether this is null.
+        /// </param>
         public static UIElement Finding(bool stop, string check, string headline,
-                                        string? detail = null, string? fix = null, string? examples = null)
+                                        string? detail = null, string? fix = null,
+                                        string? examples = null, UIElement? go = null)
         {
             var body = Stack(
                 Across(Pill(stop ? "Settle this" : "Worth a look", stop ? Tone.Bad : Tone.Warn), Small(check)),
@@ -900,6 +907,8 @@ namespace CamelWorks.UI.Views
             }
 
             if (examples != null) body.Children.Add(Small("e.g. " + examples));
+
+            if (go != null) body.Children.Add(go);
 
             var frame = new Border
             {
@@ -1332,6 +1341,8 @@ namespace CamelWorks.UI.Views
         {
             var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
 
+            Free(control);
+
             panel.Children.Add(new TextBlock
             {
                 Text = label,
@@ -1347,6 +1358,29 @@ namespace CamelWorks.UI.Views
             if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
 
             return panel;
+        }
+
+        /// <summary>
+        /// Take a control off whatever it is under now, so it can go somewhere else.
+        ///
+        /// A panel that redraws keeps some of its controls between draws - a box somebody is
+        /// halfway through typing in has to survive the redraw or the typing is lost. Clearing the
+        /// panel drops the wrapper those controls sat in but leaves each one still claiming that
+        /// wrapper as its parent, and handing it to a second one is the exception that reads
+        /// "already the logical child of another element" - a crash on the second press of a
+        /// button that worked the first time.
+        /// </summary>
+        /// <param name="control">The control to disconnect. Anything not under a parent is left alone.</param>
+        public static void Free(UIElement? control)
+        {
+            if (!(control is FrameworkElement element)) return;
+
+            switch (element.Parent)
+            {
+                case Panel panel: panel.Children.Remove(control); break;
+                case Border border: border.Child = null; break;
+                case ContentControl holder: holder.Content = null; break;
+            }
         }
 
         /// <summary>Two fields side by side, so a narrow pane is not one column of boxes.</summary>
@@ -1741,6 +1775,132 @@ namespace CamelWorks.UI.Views
         // Running work
         // -----------------------------------------------------------------------------------
 
+        /// <summary>How many rows of a diff are worth putting on screen.</summary>
+        private const int DiffRows = 200;
+
+        /// <summary>
+        /// What a write would do to the model, as a sentence and a table.
+        ///
+        /// One rendering, because there were four: three write screens and, once Zones started
+        /// proposing rather than stamping, a fourth. They had already drifted - the same table with
+        /// different column widths and two of the three explanations differently worded - which is
+        /// the ordinary fate of a block copied for the third time.
+        /// </summary>
+        public static UIElement Diff(WriteDiff diff)
+        {
+            if (diff == null) throw new ArgumentNullException(nameof(diff));
+
+            var stack = Stack();
+            stack.Children.Add(Line(diff.Explain(), 0.85));
+
+            if (diff.Changes.Count == 0) return stack;
+
+            var rows = diff.Changes.Take(DiffRows).Select(c => new TableRow(c,
+                c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
+
+            stack.Children.Add(Table(rows,
+                ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
+
+            // Counted off Every rather than Changes: Changes is itself already capped, so a diff
+            // over eight hundred elements used to offer to show "the first 20 of 25 rows".
+            if (diff.Every.Count > DiffRows)
+                stack.Children.Add(Small("Showing the first " + DiffRows.ToString(CultureInfo.InvariantCulture)
+                                         + " of " + Count(diff.Every.Count, "row") + "."));
+
+            return stack;
+        }
+
+        /// <summary>
+        /// A proposal you can read, and then the irreversible act it proposes.
+        ///
+        /// Writing properties onto a model is the only thing this product does that cannot be
+        /// undone from inside it, and it was reached three different ways: the Data tab made a
+        /// preview compulsory, while Zones and Changes wrote on the first press. One act, three
+        /// behaviours, and the two that wrote immediately were the ones whose buttons said
+        /// "Stamp ... onto every element" - the widest-sounding of the three.
+        ///
+        /// The shape here is the Data tab's, because it is the right one: press once and you are
+        /// told what would happen, press again and it happens. The first press is read-only, so
+        /// there is nothing to be careful about; the second one names the number in its own
+        /// caption, so what you are agreeing to is on the button rather than above it.
+        /// </summary>
+        /// <param name="propose">Caption for the read-only first press.</param>
+        /// <param name="verb">Leading word of the second button - "Write", "Stamp".</param>
+        /// <param name="noun">What is being counted, singular - "element".</param>
+        /// <param name="plan">
+        /// Works out what would happen, renders its detail into the panel it is handed, and returns
+        /// how many <paramref name="noun"/>s would be written. Zero offers no second press.
+        /// </param>
+        /// <param name="apply">Does it. Only reachable once <paramref name="plan"/> has run.</param>
+        /// <remarks>
+        /// The detail panel is made here rather than passed in, so the four parts come out in the
+        /// order they are read - propose, what it found, commit, what it did. A caller supplying
+        /// its own panel would also be re-parenting it into this stack, which in WPF is not a
+        /// layout quirk but an exception.
+        /// </remarks>
+        public static Panel Commit(string propose, string verb, string noun,
+                                   Func<Job, Panel, int> plan, Action<Job> apply)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            if (apply == null) throw new ArgumentNullException(nameof(apply));
+
+            var detail = Stack();
+            var gate = Stack();
+            var done = Stack();
+
+            var runner = Runner(propose, detail, job =>
+            {
+                // Cleared before the work rather than after it: the plan can throw, and a stale
+                // button offering to write last time's answer is the worst thing left on screen.
+                gate.Children.Clear();
+                done.Children.Clear();
+
+                var count = plan(job, detail);
+                if (count <= 0) return;
+
+                gate.Children.Add(Actions(Button(verb + " " + Count(count, noun),
+                    () => { gate.Children.Clear(); Run(done, apply); })));
+            });
+
+            return Stack(runner, detail, gate, done);
+        }
+
+        /// <summary>Run an action under a job, reporting into <paramref name="output"/>.</summary>
+        private static void Run(Panel output, Action<Job> work)
+        {
+            var status = new TextBlock().Wearing("Hint");
+            var bar = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 0, 0, 6) };
+
+            output.Children.Clear();
+            output.Children.Add(bar);
+            output.Children.Add(status);
+
+            Mouse.OverrideCursor = Cursors.Wait;
+            Began();
+
+            var job = new Job(output.Dispatcher, status, bar);
+            output.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
+
+            try
+            {
+                work(job);
+                status.Text = "Finished in " + Seconds(job.Elapsed) + ".";
+                bar.IsIndeterminate = false;
+                bar.Maximum = 1;
+                bar.Value = 1;
+            }
+            catch (Exception ex)
+            {
+                output.Children.Clear();
+                output.Children.Add(Problem(Describe(ex)));
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Ended();
+            }
+        }
+
         /// <summary>
         /// A button that runs something long, with a progress bar, a running count and a Stop.
         ///
@@ -2014,5 +2174,8 @@ namespace CamelWorks.UI.Views
 
         /// <summary>An arrow onward: this takes you somewhere.</summary>
         public const string Onward = "M5,12 L18,12 M13,7 L18,12 L13,17";
+
+        /// <summary>A ruler: a measured dimension.</summary>
+        public const string Ruler = "M3,9 L21,9 L21,15 L3,15 Z M7,9 L7,12 M11,9 L11,13 M15,9 L15,12 M19,9 L19,13";
     }
 }

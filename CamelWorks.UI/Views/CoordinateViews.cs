@@ -244,7 +244,8 @@ namespace CamelWorks.UI.Views
 
             foreach (var item in hydrated.Items)
             {
-                if (read++ % 500 == 0 && !job.Step(read, "results described")) return null;
+                read++;
+                if (!job.Step(read, "results described")) return null;
 
                 // Everything except the coordinates is re-derived from the elements themselves,
                 // which Simulate reads perfectly well. Only the clash engine is missing.
@@ -305,7 +306,7 @@ namespace CamelWorks.UI.Views
                 if (!item.HasGeometry) continue;
                 elevations.Add(item.Bounds.MinZ * scale);
 
-                if (elevations.Count % 5000 == 0 && !job.Step(elevations.Count, "elements measured"))
+                if (!job.Step(elevations.Count, "elements measured"))
                     return LevelSet.Empty;
             }
 
@@ -491,6 +492,14 @@ namespace CamelWorks.UI.Views
 
             return decisions;
         }
+
+        /// <summary>The people on this job, or an empty roster when nobody has named any.</summary>
+        internal static TeamRoster Roster(Session session) =>
+            TeamRoster.FromJson(session.Store.Section(ProjectStore.ProfileSection)["roster"]);
+
+        /// <summary>Who is on which group.</summary>
+        internal static AssignmentBook Assignments(Session session) =>
+            AssignmentBook.FromJson(session.Store.Section(ProjectStore.ClashSection)["assignments"]);
 
         /// <summary>
         /// Write one decision about a group into the project file, merging with what is there.
@@ -1404,11 +1413,79 @@ namespace CamelWorks.UI.Views
                     session.View.ZoomTo(keys, 2.0);
                 });
 
-            var parties = session.Profile.Parties.ToList();
+            // The roster's organisations and the profile's typed ones, together: the roster is a
+            // vocabulary somebody built, and the box is still there for the party nobody has yet.
+            var roster = Roster(session);
+            var book = Assignments(session);
+
+            var parties = session.Profile.Parties
+                .Concat(roster.Parties)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             if (parties.Count == 0) parties.Add("Unassigned");
 
-            var party = parties[0];
-            var picker = Ui.Choice(parties, party, p => party = p);
+            var party = group.AssignedTo != null && parties.Contains(group.AssignedTo, StringComparer.OrdinalIgnoreCase)
+                ? group.AssignedTo
+                : parties[0];
+
+            var people = Ui.Stack();
+            var chosen = new HashSet<string>(book.For(group.Id), StringComparer.Ordinal);
+
+            void DrawPeople()
+            {
+                people.Children.Clear();
+
+                var within = roster.Suggest(party, book);
+
+                foreach (var stranger in roster.Strangers(book, group.Id))
+                    people.Children.Add(Ui.Note("\"" + stranger + "\" is on this group and not on "
+                        + "the roster any more. Their work did not leave when they did."));
+
+                if (within.Count == 0)
+                {
+                    people.Children.Add(Ui.Small(roster.IsEmpty
+                        ? "Nobody is on the roster yet, so this goes to the organisation and no "
+                          + "further. Add people in Project - Profile and they appear here."
+                        : "Nobody from " + party + " is on the roster, so this goes to the "
+                          + "organisation and no further."));
+                    return;
+                }
+
+                people.Children.Add(Ui.Small("More than one person can carry a group. The order is "
+                    + "who is carrying least."));
+
+                foreach (var member in within)
+                {
+                    var here = member;
+
+                    var row = new WrapPanel { Margin = new Thickness(0, 1, 0, 1) };
+
+                    row.Children.Add(Ui.Check(here.Name, chosen.Contains(here.Id), on =>
+                    {
+                        if (on) chosen.Add(here.Id); else chosen.Remove(here.Id);
+                    }));
+
+                    var carrying = book.Load(here.Id);
+
+                    if (carrying > 0)
+                        row.Children.Add(Ui.Pill(Ui.Count(carrying, "group"), Tone.Plain));
+
+                    if (here.Email == null)
+                        row.Children.Add(Ui.Pill("no address", Tone.Warn));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    people.Children.Add(row);
+                }
+            }
+
+            var picker = Ui.Choice(parties, party, p => { party = p; DrawPeople(); });
+
+            DrawPeople();
 
             var assign = Ui.Button("Assign this group", () =>
             {
@@ -1416,10 +1493,21 @@ namespace CamelWorks.UI.Views
                 group.AssignByHand(party);
                 Remember(session, group.Name, party);
 
+                book.Assign(group.Id, chosen);
+                session.Store.Section(ProjectStore.ClashSection).Set("assignments", book.ToJson());
+
+                var named = roster.On(book, group.Id);
+
+                var told = named.Count == 0
+                    ? string.Empty
+                    : ", to " + string.Join(" and ", named.Select(m => m.Name));
+
                 status.Children.Add(session.Store.Save()
-                    ? Ui.Line("\"" + group.Name + "\" goes to " + party
+                    ? Ui.Line("\"" + group.Name + "\" goes to " + party + told
                               + ". A hand assignment outranks the rules and survives the next run.", 0.8)
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                DrawPeople();
             });
 
             // --- what to do about it ------------------------------------------------------
@@ -2027,6 +2115,18 @@ namespace CamelWorks.UI.Views
                     Show(plan);
                 });
 
+                // The quick way stays here, in the pane, because it is genuinely quick: two lists
+                // and every pairing between them, with nothing to set up first. The full matrix -
+                // the one that comes from the client as a spreadsheet, with its own symbols and a
+                // different tolerance per cell - opens in a window, because a square of categories
+                // with a key beside it does not fit in a column four hundred and seventy pixels
+                // wide, and squeezing it in there is what turned it into two dropdowns.
+                var sheet = Ui.Button("Open the matrix from a spreadsheet...", () =>
+                {
+                    var problem = MatrixWindow.Show();
+                    if (problem != null) _grid.Children.Add(Ui.Problem(problem));
+                });
+
                 return Ui.Marked(Glyphs.Clash, "Build a matrix",
                     "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
                     + "be set up first: the disciplines come from what CamelWorks already worked out about "
@@ -2041,7 +2141,11 @@ namespace CamelWorks.UI.Views
                             Ui.Field("Put them in folder", _folder)),
                         diagonal),
                     _grid,
-                    _results);
+                    _results,
+                    Ui.Rule(),
+                    Ui.Small("Already have the matrix as a spreadsheet, with its own symbols and a "
+                             + "different tolerance per cell?"),
+                    Ui.Actions(sheet));
             }
 
             /// <summary>The grid, with a tick on every row that is going to be made.</summary>
@@ -2536,16 +2640,61 @@ namespace CamelWorks.UI.Views
             /// <summary>Services through structure, for the pour.</summary>
             private const string Penetration = "Penetration schedule";
 
-            private readonly StackPanel _results = Ui.Stack();
-            private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
-            private readonly TextBox _template = Ui.Text(Deliverable.DefaultTemplate, null, 340);
+            /// <summary>The marker shapes, in the words somebody would use for them.</summary>
+            private const string Ball = "a ball";
 
-            private string _format = "PDF";
+            private const string Box = "a cube";
+
+            private const string Spike = "a diamond";
+
+            /// <summary>The units choice that means "whatever the document says".</summary>
+            private const string FromDocument = "whatever the document says";
+
+            /// <summary>
+            /// The units a marker can be converted from.
+            ///
+            /// Written out rather than borrowed from the formatter's list, which offers "Feet and
+            /// inches" - a way of printing a length, not a unit a number can be divided by.
+            /// </summary>
+            private static readonly string[] Units =
+            {
+                FromDocument, "Millimetres", "Centimetres", "Metres", "Inches", "Feet",
+            };
+
+            private readonly StackPanel _results = Ui.Stack();
+            private readonly StackPanel _markers = Ui.Stack();
+
+            /// <summary>What this tab was last told, so it does not ask again.</summary>
+            private readonly ToolMemory _kept =
+                ToolMemory.Of(Host.Current?.Store, "coordinate.report");
+
+            private readonly TextBox _path;
+            private readonly TextBox _template;
+
+            private string _units;
+
+            internal ReportScreen()
+            {
+                _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 340);
+
+                _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
+                                    text => _kept.Set("name", text), 340);
+
+                _units = _kept.Text("units", FromDocument) ?? FromDocument;
+
+                _format = _kept.Text("format", "PDF") ?? "PDF";
+                _keyPlan = _kept.Flag("keyPlan", true);
+                _pictures = _kept.Flag("pictures");
+                _perParty = _kept.Flag("perParty");
+                _changedOnly = _kept.Flag("changedOnly");
+            }
+
+            private string _format;
             private string _mode = FullReport;
             private string _audience = Everyone;
             private bool _changedOnly;
             private bool _pictures;
-            private bool _keyPlan = true;
+            private bool _keyPlan;
             private bool _perParty;
 
             internal UIElement Build()
@@ -2560,7 +2709,8 @@ namespace CamelWorks.UI.Views
                 // written, and which one is a thing the screen already knows.
                 var what = Ui.Small(Explain(_mode));
 
-                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format, f => _format = f, 120);
+                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format,
+                                       f => { _format = f; _kept.Set("format", f); }, 120);
                 var audience = Ui.Choice(parties, _audience, a => _audience = a, 180);
 
                 var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
@@ -2569,10 +2719,17 @@ namespace CamelWorks.UI.Views
                     what.Text = Explain(m);
                 });
 
-                var changed = Ui.Check("Only what the last run had not seen", _changedOnly, v => _changedOnly = v);
-                var pictures = Ui.Check("A picture of each group", _pictures, v => _pictures = v);
-                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan, v => _keyPlan = v);
-                var split = Ui.Check("One file per party, not one file", _perParty, v => _perParty = v);
+                var changed = Ui.Check("Only what the last run had not seen", _changedOnly,
+                                       v => { _changedOnly = v; _kept.Set("changedOnly", v); });
+
+                var pictures = Ui.Check("A picture of each group", _pictures,
+                                        v => { _pictures = v; _kept.Set("pictures", v); });
+
+                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan,
+                                    v => { _keyPlan = v; _kept.Set("keyPlan", v); });
+
+                var split = Ui.Check("One file per party, not one file", _perParty,
+                                     v => { _perParty = v; _kept.Set("perParty", v); });
 
                 var write = Ui.Runner("Write the report", _results, Write);
 
@@ -2608,7 +2765,195 @@ namespace CamelWorks.UI.Views
                             Ui.Small("A picture moves your view while it runs and puts it back "
                                      + "afterwards. On a board of two hundred groups that is two "
                                      + "hundred renders, so it is off until you ask for it.")),
-                        _results)));
+                        _results),
+
+                    Ui.Rule(),
+
+                    Exchange(),
+
+                    Ui.Rule(),
+
+                    Markers()));
+            }
+
+            /// <summary>
+            /// The clashes, in the model.
+            ///
+            /// A clash is a row on a board and a camera position, and both need somebody driving
+            /// the mouse. A walkthrough, a site meeting or a subcontractor's own copy of the model
+            /// needs the clash where the clash is: a ball hanging in the air where the duct meets
+            /// the beam, visible from across the room and still there tomorrow.
+            /// </summary>
+            private UIElement Markers()
+            {
+                var recipe = new MarkerRecipe();
+
+                var shapes = new[] { Ball, Box, Spike };
+                var was = _kept.Text("markerShape", Ball) ?? Ball;
+
+                recipe.Shape = was == Box ? MarkerShape.Cube
+                             : was == Spike ? MarkerShape.Diamond
+                             : MarkerShape.Sphere;
+
+                var shape = Ui.Choice(shapes, shapes.Contains(was) ? was : Ball, pick =>
+                {
+                    recipe.Shape = pick == Box ? MarkerShape.Cube
+                                 : pick == Spike ? MarkerShape.Diamond
+                                 : MarkerShape.Sphere;
+
+                    _kept.Set("markerShape", pick);
+                }, 140);
+
+                var across = _kept.Number("markerSize", 300);
+
+                recipe.RadiusMetres = across / 2000.0;
+
+                var size = Ui.Text(across.ToString(CultureInfo.InvariantCulture), text =>
+                {
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                         out var mm) || mm <= 0) return;
+
+                    recipe.RadiusMetres = mm / 2000;
+                    _kept.Set("markerSize", (int)Math.Round(mm));
+                }, 90);
+
+                var units = Ui.Choice(Units, _units, pick => { _units = pick; _kept.Set("units", pick); }, 160);
+
+                var write = Ui.Runner("Make them", _markers, primary: false,
+                                      work: job => Mark(job, recipe));
+
+                return Ui.Marked(Glyphs.Model, "Put the clashes in the model", null,
+                    Ui.Small("One ball per clash, coloured by where it stands, grouped by test - so "
+                             + "the Selection Tree collapses to a line per test and expands to the "
+                             + "clashes. They are geometry like anything else: selectable, hideable, "
+                             + "and removable from the host's own file list."),
+                    Ui.Form(
+                        Ui.Pair(Ui.Field("Shape", shape),
+                                Ui.Field("Across", size, "millimetres, on screen")),
+                        Ui.Field("The model is in", units,
+                                 "Only needed if the document does not say. A point written in the "
+                                 + "wrong unit lands a kilometre from the building.")),
+                    write,
+                    _markers);
+            }
+
+            private void Mark(Job job, MarkerRecipe recipe)
+            {
+                _markers.Children.Clear();
+
+                var session = Host.Current;
+                if (session == null) { _markers.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var board = LastBoard;
+
+                if (board == null)
+                {
+                    _markers.Children.Add(Ui.Problem("The board has not been built yet. Open Clash "
+                        + "Triage and run it first - this marks what the board holds."));
+                    return;
+                }
+
+                // The conversion the whole thing turns on. The host reports clash points in the
+                // document's units and its OBJ reader takes every vertex as metres.
+                var word = _units == FromDocument ? session.Document.Units.ToString() : _units;
+                var metres = Measure.MetresPer(word);
+
+                if (metres == null)
+                {
+                    _markers.Children.Add(Ui.Problem("This document is in \"" + word + "\", which is "
+                        + "not a unit CamelWorks converts. Say which unit it is in the box above, or "
+                        + "the markers would land in the wrong place and look like an empty model."));
+                    return;
+                }
+
+                recipe.MetresPerUnit = metres.Value;
+
+                job.Say("Building the geometry...");
+
+                var items = board.Groups.SelectMany(g => g.Items).ToList();
+                var mesh = ClashMarkers.Write(items, recipe);
+
+                if (mesh.Refusal != null) { _markers.Children.Add(Ui.Problem(mesh.Refusal)); return; }
+
+                foreach (var warning in mesh.Warnings) _markers.Children.Add(Ui.Note(warning));
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the clash markers",
+                    Filter = "Wavefront OBJ|*.obj",
+                    FileName = "clash-markers.obj",
+                    AddExtension = true,
+                    DefaultExt = ".obj",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                var obj = dialog.FileName;
+                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+
+                try
+                {
+                    // The .obj names the .mtl beside it, so the two travel together or the colours
+                    // are lost without anything saying why.
+                    var beside = System.IO.Path.GetFileName(mtl);
+
+                    System.IO.File.WriteAllText(obj,
+                        mesh.Text.Replace("mtllib " + mesh.MaterialFile, "mtllib " + beside));
+
+                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
+                }
+                catch (Exception e)
+                {
+                    _markers.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
+
+                _markers.Children.Add(Ui.Actions(Ui.Button("Bring them into this model", () =>
+                {
+                    try
+                    {
+                        _markers.Children.Add(session.Model.Document.TryAppendFile(obj)
+                            ? Ui.Done("Appended. They are in the Selection Tree under their tests, "
+                                      + "and in the host's file list if you want them out again.")
+                            : Ui.Problem("The host would not append that file."));
+                    }
+                    catch (Exception e)
+                    {
+                        _markers.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
+                    }
+                })));
+
+                // Kept at the press rather than at every keystroke: this is the moment somebody
+                // committed to the settings, and the next run opens on them.
+                _kept.Keep();
+
+                session.Record(ActivityKind.Export, "made clash markers: " + mesh.Explain(), obj);
+            }
+
+            /// <summary>
+            /// The other half of a coordination cycle: the file the reviewer works in.
+            ///
+            /// A report is read and filed. A clash file is opened, worked through, and sent back -
+            /// and it is the only clash format the rest of the industry has agreed on. Without it
+            /// this tab ends at a PDF, and the answers come back as an email.
+            /// </summary>
+            private UIElement Exchange()
+            {
+                var open = Ui.Button("Send the board as a clash file...", () =>
+                {
+                    var problem = ClashExportWindow.Show();
+                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
+                });
+
+                return Ui.Marked(Glyphs.Onward, "Send it as a file somebody can work in", null,
+                    Ui.Small("Clash XML, which Navisworks and every reviewing tool reads. Choose "
+                             + "which tests go, at which statuses, for which party - and keep that "
+                             + "choice, so next Friday is one press rather than the same twenty "
+                             + "decisions. A file that comes back lands on the elements it left "
+                             + "from."),
+                    Ui.Actions(open));
             }
 
             /// <summary>What the chosen template actually produces, in the reader's terms.</summary>
@@ -3761,6 +4106,8 @@ namespace CamelWorks.UI.Views
                                          "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*")),
                     Ui.Actions(read)),
 
+                Together(),
+
                 results));
         }
 
@@ -4068,6 +4415,170 @@ namespace CamelWorks.UI.Views
         /// Nothing is applied until somebody presses the button, and what the button would do is on
         /// the screen above it, row by row.
         /// </summary>
+        /// <summary>
+        /// Six packs come back on Thursday. This is where they become one.
+        ///
+        /// The single-file read above answers "what did they say"; this answers "what did all of
+        /// them say", which is the question a coordinator actually has and the one they were
+        /// answering by opening six files and retyping. It lands on the same board through the same
+        /// path, so a merged return behaves exactly like a single one from here on.
+        /// </summary>
+        private static UIElement Together()
+        {
+            const string Ask = "leave it and tell me";
+            const string Latest = "take the most recent";
+
+            var files = Ui.Stack();
+            var results = Ui.Stack();
+            var rows = new List<TextBox>();
+
+            var policy = StatusConflicts.Ask;
+
+            void AddRow(string? path)
+            {
+                var box = Ui.Text(path ?? string.Empty, null, 300);
+                rows.Add(box);
+
+                var row = Ui.PathField("Returned pack " + rows.Count.ToString(CultureInfo.InvariantCulture),
+                                       box, PathKind.Open, "BCF|*.bcf|All files|*.*");
+
+                files.Children.Add(row);
+            }
+
+            AddRow(null);
+            AddRow(null);
+
+            var more = Ui.Quiet("Another one", () => AddRow(null));
+
+            var merge = Ui.Runner("Bring them together", results, job =>
+            {
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Problem(Host.NoModel)); return; }
+
+                var returns = new List<MergeReturn>();
+                var baseline = new List<BcfTopic>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var box in rows)
+                {
+                    var file = box.Text.Trim();
+                    if (file.Length == 0) continue;
+
+                    if (!File.Exists(file))
+                    {
+                        results.Children.Add(Ui.Problem("There is no file at " + file + "."));
+                        return;
+                    }
+
+                    job.Say("Reading " + System.IO.Path.GetFileName(file) + "...");
+
+                    using (var stream = File.OpenRead(file))
+                    {
+                        var read = BcfReader.Read(stream);
+
+                        foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
+
+                        // The party is the file's own name. Asking somebody to type "Mechanical"
+                        // beside a file called Mechanical.bcf is asking them to do the tool's job,
+                        // and the name is what the conflict list has to say out loud anyway.
+                        returns.Add(new MergeReturn(System.IO.Path.GetFileNameWithoutExtension(file), read.Topics));
+
+                        // The pack as it went out is not always to hand, so it is reconstructed from
+                        // the first sight of each topic. That is right by construction: every return
+                        // starts from the same pack, so the first copy of a topic IS the baseline
+                        // until somebody has changed it.
+                        foreach (var topic in read.Topics)
+                            if (seen.Add(topic.Guid)) baseline.Add(Copy(topic));
+                    }
+                }
+
+                if (returns.Count < 2)
+                {
+                    results.Children.Add(Ui.Empty("Give it two or more.",
+                        "One pack on its own is what the section above is for."));
+                    return;
+                }
+
+                job.Say("Merging...");
+                var merged = BcfMerge.Merge(baseline, returns, policy);
+
+                results.Children.Add(Ui.Line(merged.Explain(), 1, true));
+
+                results.Children.Add(Ui.Across(
+                    Ui.Pill(Ui.Count(merged.Changed, "answer"), merged.Changed > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Pill(Ui.Count(merged.Comments, "comment")),
+                    Ui.Pill(Ui.Count(merged.Added, "raised"), merged.Added > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Pill(Ui.Count(merged.Conflicts.Count, "disagreement"),
+                            merged.Conflicts.Count > 0 ? Tone.Warn : Tone.Plain)));
+
+                if (merged.Conflicts.Count > 0)
+                {
+                    results.Children.Add(Ui.Eyebrow("Nobody won these"));
+
+                    var clashRows = merged.Conflicts.Take(100).Select(c => new TableRow(c,
+                        c.Title,
+                        c.Field,
+                        c.Baseline,
+                        string.Join("; ", c.Answers.Select(a => a.Party + ": " + a.Value)))
+                    {
+                        Tone = Tone.Warn,
+                    }).ToList();
+
+                    results.Children.Add(Ui.Table(clashRows,
+                        ("Issue", 200), ("On", 90), ("Still says", 90), ("They said", 0)));
+
+                    results.Children.Add(Ui.Note("These kept what they had. Two people who answered "
+                        + "the same issue differently were sent the same pack at the same time and "
+                        + "neither saw the other, so neither answer wins by being an answer. Every "
+                        + "comment from both is on the topic below, which is usually enough to "
+                        + "settle it."));
+                }
+
+                Remember(session, merged.Topics.Select(t => t.Guid));
+                Reply(session, merged.Topics, results);
+
+                session.Record(ActivityKind.Exchange,
+                    "merged " + Ui.Count(returns.Count, "returned pack"), merged.Explain());
+            });
+
+            return Ui.Marked(Glyphs.Layers, "Bring several answers together",
+                "Six packs went out on Monday and six come back on Thursday, each holding the same "
+                + "issues with a handful answered. This reads all of them at once.",
+                files,
+                Ui.Actions(more),
+                Ui.Field("When two people disagree",
+                         Ui.Segmented(new[] { Ask, Latest }, Ask,
+                                      pick => policy = pick == Latest ? StatusConflicts.Latest : StatusConflicts.Ask),
+                         "Leaving it is right when the packs went out together, which is the usual "
+                         + "case. Take the most recent when reviews were sequential and a later "
+                         + "reviewer saw the earlier answer."),
+                Ui.Actions(merge),
+                results);
+        }
+
+        /// <summary>
+        /// A topic as it was before anybody answered, for use as the baseline.
+        ///
+        /// Only the fields a return can change are reset; everything else is what the pack carried.
+        /// </summary>
+        private static BcfTopic Copy(BcfTopic from)
+        {
+            var copy = new BcfTopic(from.Guid, from.Title, from.CreationDate, from.CreationAuthor)
+            {
+                TopicType = from.TopicType,
+                TopicStatus = from.TopicStatus,
+                Priority = from.Priority,
+                Stage = from.Stage,
+                Description = from.Description,
+                AssignedTo = from.AssignedTo,
+                DueDate = from.DueDate,
+            };
+
+            foreach (var viewpoint in from.Viewpoints) copy.Viewpoints.Add(viewpoint);
+
+            return copy;
+        }
+
         private static void Reply(Session session, IReadOnlyList<BcfTopic> topics, Panel results)
         {
             var board = LastBoard;

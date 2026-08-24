@@ -107,10 +107,11 @@ namespace CamelWorks.Core.Data
     public sealed class WriteDiff
     {
         internal WriteDiff(string category, string name, IReadOnlyList<PropertyChange> changes,
-                           IReadOnlyList<ValueCount> before, IReadOnlyList<ElementKey> missing, int exampleCap)
+                           IReadOnlyList<PropertyChange> every, IReadOnlyList<ValueCount> before,
+                           IReadOnlyList<ElementKey> missing, int exampleCap)
         {
-            Category = category; Name = name; Changes = changes; Before = before; Missing = missing;
-            ExampleCap = exampleCap;
+            Category = category; Name = name; Changes = changes; Every = every; Before = before;
+            Missing = missing; ExampleCap = exampleCap;
         }
 
         /// <summary>The property tab.</summary>
@@ -119,8 +120,24 @@ namespace CamelWorks.Core.Data
         /// <summary>The property name.</summary>
         public string Name { get; }
 
-        /// <summary>Every element's before and after, capped at <see cref="ExampleCap"/>.</summary>
+        /// <summary>
+        /// Before and after for the screen, capped at <see cref="ExampleCap"/>.
+        ///
+        /// For showing, never for writing. <see cref="Every"/> is the list a write walks - the
+        /// difference between the two is the difference between a preview and the job.
+        /// </summary>
         public IReadOnlyList<PropertyChange> Changes { get; }
+
+        /// <summary>
+        /// Every element that would change, uncapped.
+        ///
+        /// Here because two screens wrote from <see cref="Changes"/>, which is the first twenty-five
+        /// rows: a code table applied to eight hundred elements landed on twenty-five of them, the
+        /// button said "Write 25 elements", and the count agreed with itself all the way down. A
+        /// preview list and a work list read the same at the call site and are not the same thing,
+        /// so they are two properties now.
+        /// </summary>
+        public IReadOnlyList<PropertyChange> Every { get; }
 
         /// <summary>What the scope holds now, by distinct value, largest first.</summary>
         public IReadOnlyList<ValueCount> Before { get; }
@@ -238,6 +255,7 @@ namespace CamelWorks.Core.Data
             if (exampleCap < 0) throw new ArgumentOutOfRangeException(nameof(exampleCap), "the cap cannot be negative");
 
             var changes = new List<PropertyChange>();
+            var every = new List<PropertyChange>();
             var missing = new List<ElementKey>();
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
             var values = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -275,8 +293,13 @@ namespace CamelWorks.Core.Data
 
                 // Unchanged rows are counted but never shown. A diff whose first twenty rows all
                 // say "already correct" hides the one row that does not.
-                if (kind != WriteChange.Unchanged && changes.Count < exampleCap)
-                    changes.Add(new PropertyChange(item.Key, item.DisplayName, before, after, kind));
+                if (kind == WriteChange.Unchanged) continue;
+
+                var change = new PropertyChange(item.Key, item.DisplayName, before, after, kind);
+
+                every.Add(change);
+
+                if (changes.Count < exampleCap) changes.Add(change);
             }
 
             var before_ = counts
@@ -286,7 +309,7 @@ namespace CamelWorks.Core.Data
                 .Select(c => new ValueCount(values[c.Key], c.Value))
                 .ToList();
 
-            return new WriteDiff(category, name, changes, before_, missing, exampleCap)
+            return new WriteDiff(category, name, changes, every, before_, missing, exampleCap)
             {
                 Added = added,
                 Changed = changed,

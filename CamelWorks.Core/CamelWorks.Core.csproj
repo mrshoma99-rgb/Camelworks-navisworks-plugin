@@ -7,6 +7,20 @@
       whole point of the seam, and it is enforced by a test (ArchitectureTests).
     -->
     <TargetFramework>netstandard2.0</TargetFramework>
+
+    <!--
+      Nullable is on, and netstandard2.0 changes how you have to satisfy it. Its reference assembly
+      predates the nullable annotations, so string.IsNullOrWhiteSpace and string.IsNullOrEmpty carry
+      no [NotNullWhen(false)] and DO NOT narrow a string? for the compiler:
+
+          if (string.IsNullOrWhiteSpace(text)) return;
+          use(text.Trim());                                 // CS8602 here, on netstandard2.0 only
+
+      Narrow at the edge into a non-nullable local instead — `var t = (text ?? "").Trim();` — and
+      test its Length. The same code compiles clean on net48 and net8.0, so this is a mistake that
+      only the Linux Core job catches, and no lint can: telling a nullable string from a plain one
+      needs type information, which means it needs a compiler.
+    -->
     <Nullable>enable</Nullable>
     <LangVersion>10.0</LangVersion>
     <AssemblyName>CamelWorks.Core</AssemblyName>

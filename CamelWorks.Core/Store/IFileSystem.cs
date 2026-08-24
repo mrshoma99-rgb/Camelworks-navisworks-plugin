@@ -39,6 +39,17 @@ namespace CamelWorks.Core.Store
 
         /// <summary>File names (not full paths) directly in a directory. Empty when it does not exist.</summary>
         IReadOnlyList<string> ListFiles(string directory);
+
+        /// <summary>
+        /// Whether a directory is there.
+        ///
+        /// Separate from <see cref="Exists"/>, which asks about a file and says no to a folder.
+        /// Here because "that folder is not there" and "that folder is there and empty" are two
+        /// different things to tell somebody, and an empty <see cref="ListFiles"/> cannot tell
+        /// them apart.
+        /// </summary>
+        /// <param name="directory">The directory.</param>
+        bool DirectoryExists(string directory);
     }
 
     /// <summary>The real file system.</summary>
@@ -91,6 +102,9 @@ namespace CamelWorks.Core.Store
             Directory.Exists(directory)
                 ? Directory.GetFiles(directory).Select(Path.GetFileName).Where(n => n != null).Select(n => n!).ToList()
                 : (IReadOnlyList<string>)Array.Empty<string>();
+
+        /// <inheritdoc />
+        public bool DirectoryExists(string directory) => Directory.Exists(directory);
     }
 
     /// <summary>

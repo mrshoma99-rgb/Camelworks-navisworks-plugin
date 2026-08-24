@@ -241,19 +241,28 @@ namespace CamelWorks.Core.Report
     /// <summary>One row of a legend.</summary>
     public readonly struct LegendEntry
     {
+        private readonly string? _label;
+        private readonly string? _colourHex;
+
         /// <summary>Create an entry.</summary>
         public LegendEntry(string label, string colourHex, int? count = null)
         {
-            Label = label ?? throw new ArgumentNullException(nameof(label));
-            ColourHex = colourHex ?? "#000000";
+            _label = label ?? throw new ArgumentNullException(nameof(label));
+            _colourHex = colourHex ?? "#000000";
             Count = count;
         }
 
-        /// <summary>What the colour means.</summary>
-        public string Label { get; }
+        /// <summary>
+        /// What the colour means.
+        ///
+        /// Read through a field: the constructor refuses a null label, but nothing can make
+        /// <c>default(LegendEntry)</c> run it, and an unfilled array slot in a legend would then
+        /// take a report writer down rather than draw an empty swatch.
+        /// </summary>
+        public string Label => _label ?? string.Empty;
 
         /// <summary>The swatch colour, as <c>#rrggbb</c>.</summary>
-        public string ColourHex { get; }
+        public string ColourHex => _colourHex ?? "#000000";
 
         /// <summary>How many elements carry it, when known.</summary>
         public int? Count { get; }
