@@ -74,7 +74,7 @@ namespace CamelWorks.Studio
                 Height = 700,
                 Builder = Working,
                 Widths = new[] { 470 },
-                Drive = host => Click(host, "Compare with the baseline"),
+                Drive = host => Click(host, "Compare"),
             },
             new Sheet { Id = "states", Title = "Empty, wrong, done", Height = 900, Builder = _ => States(), Widths = new[] { 470 } },
         };
@@ -89,6 +89,11 @@ namespace CamelWorks.Studio
 
         // -----------------------------------------------------------------------------------
 
+        // harness: vocabulary
+        //
+        // A specimen sheet of every control, not a reconstruction of a panel. Its captions are
+        // invented to show the weights side by side — "Run the comparison" next to "Reset" next
+        // to "Delete baseline" — so the drift check leaves them alone.
         private static UIElement Controls()
         {
             var pills = Ui.Across(
@@ -216,7 +221,7 @@ namespace CamelWorks.Studio
                         Ui.Pair(
                             Ui.Field("Set name", Ui.Text("{value}", null, 160), "{value} becomes the value"),
                             Ui.Field("Skip branches under", Ui.Text("1", null, 60)))),
-                    Ui.Actions(Ui.Primary("See what it would make", () => { }))),
+                    Ui.Actions(Ui.Primary("See the library it would make", () => { }))),
 
                 Ui.Rule(),
 
@@ -268,7 +273,7 @@ namespace CamelWorks.Studio
                 Ui.Actions(
                     Ui.Primary("Apply the stack", () => { }),
                     Ui.Button("Save the stack", () => { }),
-                    Ui.Quiet("Show everything", () => { })),
+                    Ui.Button("Put the model back", () => { })),
 
                 Ui.Info("A layer only paints what it covers. Elements no layer covers keep whatever "
                         + "Navisworks already had for them."),
@@ -357,7 +362,7 @@ namespace CamelWorks.Studio
         {
             var output = Ui.Stack();
 
-            var runner = Ui.Runner("Compare with the baseline", output, job =>
+            var runner = Ui.Runner("Compare", output, job =>
             {
                 job.Total = 128400;
 
@@ -439,18 +444,21 @@ namespace CamelWorks.Studio
 
                 Ui.Marked(Glyphs.Clock, "The week",
                     "Reconcile, regroup, report. Each opens where the work actually happens.",
-                    Step(1, "Project", "Reconcile", "Six models came in on Friday; two moved.", "2 days ago", false),
+                    Step(1, "Project", "Reconcile", "Six models came in on Friday; two moved.",
+                         "2 days ago", false, "Check the models"),
                     Ui.Rule(),
-                    Step(2, "Coordinate", "Regroup", "1,284 clashes became 96 issues.", "Yesterday", false),
+                    Step(2, "Coordinate", "Regroup", "1,284 clashes became 96 issues.",
+                         "Yesterday", false, "Open the board"),
                     Ui.Rule(),
-                    Step(3, "Coordinate", "Report", "Send this week's out.", null, true)),
+                    Step(3, "Coordinate", "Report", "Send this week's out.",
+                         null, true, "Write the report")),
 
                 Ui.Marked(Glyphs.Report, "Recent", null,
                     Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96))));
         }
 
         private static UIElement Step(int number, string family, string title, string what,
-                                      string? when, bool lead)
+                                      string? when, bool lead, string caption)
         {
             var badge = new Border
             {
@@ -489,8 +497,8 @@ namespace CamelWorks.Studio
             line.Children.Add(text);
 
             var go = lead
-                ? Ui.Primary(title == "Report" ? "Reports" : title, () => { })
-                : Ui.Button(title == "Reconcile" ? "Models" : "Board", () => { });
+                ? (System.Windows.Controls.Button)Ui.Primary(caption, () => { })
+                : Ui.Button(caption, () => { });
 
             go.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(go, 2);
@@ -537,7 +545,7 @@ namespace CamelWorks.Studio
                         Ui.Figure("17", "unreadable", Tone.Warn)),
                     Ui.Table(Sums(), ("Level", 130), ("Volume", 0), ("Elements", 80)),
                     Ui.Tally(4, 7, "level"),
-                    Ui.Actions(Ui.Quiet("Write it to a sheet", () => { }))));
+                    Ui.Actions(Ui.Quiet("Write it to a spreadsheet", () => { }))));
         }
 
         private static IEnumerable<TableRow> Sums()

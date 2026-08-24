@@ -1,61 +1,159 @@
 #!/usr/bin/env python3
 """Fail when the design harness draws a button no panel has.
 
-CamelWorks.Studio/Panels.cs reconstructs the shipping panels so they can be rendered, looked at and
-reviewed on a machine with no Navisworks on it. That only works while the reconstruction is true:
-a harness that draws a button the product does not have is worse than no harness, because it is the
-artefact reviewers are handed.
+CamelWorks.Studio reconstructs the shipping panels so they can be rendered, looked at and reviewed
+on a machine with no Navisworks on it. That only works while the reconstruction is true: a harness
+that draws a button the product does not have is worse than no harness, because it is the artefact
+reviewers are handed.
 
 Captions are the cheapest thing to hold to account and the most telling - a renamed button is
-exactly the drift nobody notices. A caption the product builds at run time ("Write 11,208
-elements") cannot match a literal, so a harness caption passes when its first few characters open
-a string literal somewhere in CamelWorks.UI.
+exactly the drift nobody notices. A caption the product builds at run time is compared by its
+literal parts: Ui.Runner("Stamp " + Touched() + " changes into the properties") contributes the
+two fragments "Stamp " and " changes into the properties", and a harness caption passes when it
+carries every fragment of some panel's caption, in order. Matching on the opening fragment alone
+was not enough - the product has an "Apply " + count caption, so every invented caption beginning
+"Apply " passed.
 
-Sheets.cs is not checked. Its pages are the vocabulary - a specimen sheet of every control - and
-are deliberately not reconstructions of anything.
+A builder marked "// harness: vocabulary" is skipped. Those pages are a specimen sheet of every
+control rather than a reconstruction of a panel, and their captions are invented on purpose to put
+the weights side by side.
 """
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-HARNESS = ROOT / "CamelWorks.Studio" / "Panels.cs"
+HARNESS = [ROOT / "CamelWorks.Studio" / "Panels.cs", ROOT / "CamelWorks.Studio" / "Sheets.cs"]
 PANELS = ROOT / "CamelWorks.UI"
 
-CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner)\(\s*"((?:[^"\\]|\\.)+)"')
+CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner)\(')
+LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
+BUILDER = re.compile(r'^\s*private static \S+ \w+\(')
 
-#: The shortest opening that counts as a match. A caption the product builds at run time - "Write "
-#: plus a count - is caught by the regex as the literal "Write ", and that literal is a prefix of
-#: the harness's "Write 11,208 elements". Five characters is enough that "Read it" and "Read a BCF
-#: file" still diverge. An exact match always counts, however short: "Add" is a whole caption.
-STEM = 4
+MARKER = "// harness: vocabulary"
+
+
+def captions(text):
+    """Every caption in the file, as the ordered tuple of literal fragments that builds it."""
+    found = []
+
+    for call in CALL.finditer(text):
+        depth = 1
+        i = call.end()
+        start = i
+        quoted = False
+
+        while i < len(text) and depth > 0:
+            c = text[i]
+
+            if quoted:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == '"':
+                    quoted = False
+            elif c == '"':
+                quoted = True
+            elif c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif c == "," and depth == 1:
+                break
+
+            i += 1
+
+        expression = text[start:i]
+        parts = tuple(LITERAL.findall(expression))
+
+        if not parts:
+            continue
+
+        # Whether the product builds this caption at run time. A "+" outside the quotes is the
+        # only way it can, and it is the difference between a caption that has to match exactly
+        # and one whose literal parts have to be carried by whatever the harness wrote.
+        joined = "+" in LITERAL.sub("", expression)
+
+        found.append((text.count("\n", 0, call.start()) + 1, parts, joined))
+
+    return found
+
+
+def carries(harness, panel, joined):
+    """Whether a harness caption matches a panel's.
+
+    A panel caption the product writes whole has to match exactly - a button labelled "Save" is no
+    evidence that a button labelled "Save the deck" exists. One the product builds at run time is
+    matched by its literal fragments, in order, because the parts between them are values the
+    harness has to invent.
+    """
+    whole = "".join(harness)
+
+    if not joined:
+        return whole == "".join(panel)
+
+    at = 0
+
+    for fragment in panel:
+        found = whole.find(fragment, at)
+        if found < 0:
+            return False
+
+        at = found + len(fragment)
+
+    return True
 
 
 def main():
-    if not HARNESS.is_file() or not PANELS.is_dir():
+    if not PANELS.is_dir() or not all(path.is_file() for path in HARNESS):
         print("cannot find the harness or the panels", file=sys.stderr)
         return 1
 
-    shipped = set()
+    shipped = []
 
     for path in sorted(PANELS.rglob("*.cs")):
-        shipped.update(CALL.findall(path.read_text(encoding="utf-8")))
+        shipped.extend((parts, joined) for _, parts, joined in captions(path.read_text(encoding="utf-8")))
 
     drifted = []
     checked = 0
+    skipped = 0
 
-    for number, line in enumerate(HARNESS.read_text(encoding="utf-8").splitlines(), 1):
-        for caption in CALL.findall(line):
+    for path in HARNESS:
+        # The marker sits above the builder it applies to, so it is held until the declaration
+        # arrives and then owns that builder until the next one starts.
+        pending = False
+        vocabulary = False
+
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        quiet = set()
+
+        for number, line in enumerate(lines, 1):
+            if MARKER in line:
+                pending = True
+                continue
+
+            if BUILDER.match(line):
+                vocabulary = pending
+                pending = False
+
+            if vocabulary:
+                quiet.add(number)
+
+        for number, parts, _ in captions(text):
+            if number in quiet:
+                skipped += 1
+                continue
+
             checked += 1
 
-            if caption in shipped:
+            if any(carries(parts, one, joined) for one, joined in shipped):
                 continue
 
-            if any(len(one) >= STEM and caption.startswith(one) for one in shipped):
-                continue
-
-            drifted.append(f"CamelWorks.Studio/Panels.cs:{number}: the harness draws "
-                           f'"{caption}" and no panel does')
+            drifted.append(f"{path.name}:{number}: the harness draws "
+                           f'"{"".join(parts)}" and no panel does')
 
     for line in drifted:
         print(line, file=sys.stderr)
@@ -67,7 +165,7 @@ def main():
               "something to leave in the pictures people review.", file=sys.stderr)
         return 1
 
-    print(f"harness true: {checked} captions, every one of them a caption a panel has")
+    print(f"harness true: {checked} captions held to a panel's, {skipped} on the vocabulary sheet")
     return 0
 
 

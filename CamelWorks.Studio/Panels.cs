@@ -252,7 +252,7 @@ namespace CamelWorks.Studio
 
             Ui.Table(TestRows(), ("Test", 180), ("Last run", 0), ("Clashes", 66)),
             Ui.Actions(Ui.Primary("Run all 4 tests", () => { }),
-                       Ui.Button("Run only the 1 that never has", () => { })),
+                       Ui.Button("Run only the 1 that never have", () => { })),
 
             Ui.Rule(),
 
