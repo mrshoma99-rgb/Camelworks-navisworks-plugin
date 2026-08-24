@@ -655,7 +655,7 @@ namespace CamelWorks.UI.Views
                 _kept.Set("template", _template.Name);
                 _kept.Keep();
 
-                _session.Record("data", "Saved the report \"" + _template.Name + "\"",
+                _session.Record(ActivityKind.Setup, "Saved the report \"" + _template.Name + "\"",
                                 Ui.Count(_template.Columns.Count, "column"));
 
                 _note.Children.Add(Ui.Done("Saved \"" + _template.Name + "\". It will run again on "
@@ -788,7 +788,7 @@ namespace CamelWorks.UI.Views
                 _kept.Set("file", file);
                 _kept.Keep();
 
-                _session.Record("data", "Wrote the report \"" + _template.Name + "\"",
+                _session.Record(ActivityKind.Export, "Wrote the report \"" + _template.Name + "\"",
                                 Ui.Count(table.Rows.Count, "row") + " to " + file);
 
                 _output.Children.Add(Ui.Done("Wrote " + file + " - "

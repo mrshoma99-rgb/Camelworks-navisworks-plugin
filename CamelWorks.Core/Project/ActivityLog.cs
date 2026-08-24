@@ -33,6 +33,15 @@ namespace CamelWorks.Core.Project
         /// <summary>A batch job ran.</summary>
         public const string Job = "job";
 
+        /// <summary>
+        /// Something was set up so it can be run again - a saved report, a saved data link.
+        ///
+        /// Worth keeping apart from the act itself. "Wrote the door schedule" is what happened on
+        /// Tuesday; "saved the door schedule" is why Tuesday took two minutes instead of an hour,
+        /// and the person who reads the journal in six months is looking for the second one.
+        /// </summary>
+        public const string Setup = "setup";
+
         /// <summary>The order Home lists them in: the weekly cycle first, everything else after.</summary>
         public static IReadOnlyList<string> Cycle { get; } = new[] { Reconcile, Regroup, Report };
 
@@ -48,6 +57,7 @@ namespace CamelWorks.Core.Project
             Appearance => "Appearance",
             Export => "Export",
             Job => "Job",
+            Setup => "Set up",
             _ => kind ?? "Activity",
         };
 

@@ -19,6 +19,45 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void The_shown_rows_are_capped_and_the_rows_to_write_are_not()
+        {
+            // Two screens wrote from Changes, which is the preview: a code table applied to eight
+            // hundred elements landed on twenty-five, and the button said "Write 25 elements", so
+            // nothing anywhere disagreed with anything else. Every is the work list.
+            var document = Model(out var source);
+
+            for (var i = 0; i < 90; i++) document.AddItem(source, "Wall-" + i);
+
+            var keys = document.Traverse(TraversalScope.WholeDocument).Select(i => i.Key).ToList();
+            var diff = PropertyDiff.Of(Tab, "Zone", PropertyDiff.Resolve(document, keys), "North");
+
+            Assert.Equal(90, diff.Added);
+            Assert.Equal(PropertyDiff.DefaultExampleCap, diff.Changes.Count);
+            Assert.Equal(90, diff.Every.Count);
+            Assert.Equal(90, diff.Writes(ExistingValues.Keep));
+
+            // And the shown rows really are the front of the full list, not a separate reading.
+            Assert.Equal(diff.Changes.Select(c => c.Key),
+                         diff.Every.Take(diff.Changes.Count).Select(c => c.Key));
+        }
+
+        [Fact]
+        public void An_element_already_holding_the_value_is_in_neither_list()
+        {
+            var document = Model(out var source);
+
+            document.AddItem(source, "Wall-01").WithProperty(Tab, "Zone", "North");
+            document.AddItem(source, "Wall-02");
+
+            var keys = document.Traverse(TraversalScope.WholeDocument).Select(i => i.Key).ToList();
+            var diff = PropertyDiff.Of(Tab, "Zone", PropertyDiff.Resolve(document, keys), "North");
+
+            Assert.Single(diff.Every);
+            Assert.Equal("Wall-02", diff.Every[0].Label);
+            Assert.Equal(1, diff.Unchanged);
+        }
+
+        [Fact]
         public void The_three_cases_are_counted_apart()
         {
             var document = Model(out var source);

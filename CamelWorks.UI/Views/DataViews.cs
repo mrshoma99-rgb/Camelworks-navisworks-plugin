@@ -116,7 +116,36 @@ namespace CamelWorks.UI.Views
                 results,
                 editor,
                 Ui.Rule(),
-                Report(results)));
+                Report(results),
+                Ui.Rule(),
+                Link(results)));
+        }
+
+        /// <summary>
+        /// Somebody else's spreadsheet, joined to the model in both directions.
+        ///
+        /// The round trip above works because CamelWorks put its own identities in the sheet. This
+        /// is for the file it did not write - an asset register keyed on tag, a procurement extract
+        /// keyed on order number - where the join has to be stated, and where the register owns
+        /// half the columns and the model owns the other half.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement Link(Panel results)
+        {
+            var open = Ui.Button("Link a spreadsheet to the model...", () =>
+            {
+                var problem = DataLinkWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Somebody else's file"),
+                Ui.Small("Say which column identifies the element and what each other column does: "
+                         + "write it on, fill a gap with it, or take the model's value and send it "
+                         + "back. CamelWorks works the join out by seeing which of the sheet's "
+                         + "columns actually turns up in the model, so a register nobody wrote for "
+                         + "us still lands."),
+                Ui.Actions(open));
         }
 
         /// <summary>
@@ -313,7 +342,7 @@ namespace CamelWorks.UI.Views
                 var diff = _diff;
                 if (diff == null) return;
 
-                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+                var count = diff.Every.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
 
                 if (count == 0)
                 {
@@ -333,7 +362,7 @@ namespace CamelWorks.UI.Views
 
                 using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: code " + target))
                 {
-                    foreach (var change in diff.Changes)
+                    foreach (var change in diff.Every)
                     {
                         if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
 
@@ -681,7 +710,7 @@ namespace CamelWorks.UI.Views
                 var diff = _diff;
                 if (diff == null) return;
 
-                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+                var count = diff.Every.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
 
                 if (count == 0)
                 {
@@ -704,7 +733,11 @@ namespace CamelWorks.UI.Views
                     // Queued from the diff rather than from the scope, so an element already
                     // holding the value is not written to at all - and an element the sheet said
                     // nothing about is not touched, because its "after" is its "before".
-                    foreach (var change in diff.Changes)
+                    //
+                    // Every, not Changes: Changes is the first twenty-five rows, which is what the
+                    // screen shows. Writing from it wrote twenty-five elements and reported that it
+                    // had, which is the worst way for this to be wrong.
+                    foreach (var change in diff.Every)
                     {
                         if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
 

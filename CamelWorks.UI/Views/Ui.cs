@@ -1776,9 +1776,11 @@ namespace CamelWorks.UI.Views
             stack.Children.Add(Table(rows,
                 ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
 
-            if (diff.Changes.Count > DiffRows)
+            // Counted off Every rather than Changes: Changes is itself already capped, so a diff
+            // over eight hundred elements used to offer to show "the first 20 of 25 rows".
+            if (diff.Every.Count > DiffRows)
                 stack.Children.Add(Small("Showing the first " + DiffRows.ToString(CultureInfo.InvariantCulture)
-                                         + " of " + Count(diff.Changes.Count, "row") + "."));
+                                         + " of " + Count(diff.Every.Count, "row") + "."));
 
             return stack;
         }
