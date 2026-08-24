@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Identity;
@@ -1054,6 +1055,7 @@ namespace CamelWorks.UI.Views
                     var row = new WrapPanel { Margin = new Thickness(0, 3, 0, 3) };
 
                     row.Children.Add(Ui.Check(string.Empty, layer.IsEnabled, v => layer.IsEnabled = v));
+                    row.Children.Add(Swatch(layer));
 
                     row.Children.Add(Ui.Line(layer.Name, 1, true));
                     row.Children.Add(Ui.Pill(layer.Target.ReResolves ? "rule" : "fixed",
@@ -1084,6 +1086,44 @@ namespace CamelWorks.UI.Views
                     if (!string.IsNullOrEmpty(layer.Note))
                         _stack.Children.Add(Ui.Line(layer.Note!, 0.6));
                 }
+            }
+
+            /// <summary>
+            /// The colour this layer puts on the model, as a chip.
+            ///
+            /// The literal colour, never a Tone. A layers panel that paints a federation and shows
+            /// no colour anywhere is asking somebody to remember what "Level 04 only" is set to —
+            /// and a chip drawn from the theme's own red would be a preview of the pane rather
+            /// than of the model, and would change when somebody switched to dark.
+            /// </summary>
+            /// <param name="layer">The layer.</param>
+            private static UIElement Swatch(AppearanceLayer layer)
+            {
+                var chip = new Border
+                {
+                    Width = 12,
+                    Height = 12,
+                    CornerRadius = new CornerRadius(3),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    BorderThickness = new Thickness(1),
+                };
+
+                chip.Tint(Border.BorderBrushProperty, "BdStrong");
+
+                if (layer.Colour.HasValue)
+                {
+                    var colour = layer.Colour.Value;
+
+                    chip.Background = new SolidColorBrush(
+                        Color.FromRgb(colour.R, colour.G, colour.B));
+
+                    return chip;
+                }
+
+                // No colour of its own. Left as the outline, so a layer that only hides or only
+                // fades does not claim a colour it never writes.
+                chip.Tint(Border.BackgroundProperty, "Track");
+                return chip;
             }
 
             private static string Effects(AppearanceLayer layer)

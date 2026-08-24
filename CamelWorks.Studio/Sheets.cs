@@ -261,9 +261,9 @@ namespace CamelWorks.Studio
         {
             return Page(
                 Ui.Eyebrow("Top of the list wins"),
-                Layer("Clashing elements", "Red, opaque", Tone.Bad),
-                Layer("Level 04 only", "Everything else 85% transparent", Tone.Plain),
-                Layer("Temporary works", "Hidden", Tone.Warn),
+                Layer("Clashing elements", "Red, opaque", Color.FromRgb(0xC8, 0x10, 0x2E)),
+                Layer("Level 04 only", "Everything else 85% transparent", Color.FromRgb(0x9A, 0xA3, 0xAD)),
+                Layer("Temporary works", "Hidden", Color.FromRgb(0xB4, 0xBC, 0xC5)),
 
                 Ui.Actions(
                     Ui.Primary("Apply the stack", () => { }),
@@ -295,19 +295,23 @@ namespace CamelWorks.Studio
                     Ui.Actions(Ui.Primary("Scan the model", () => { }))));
         }
 
-        private static UIElement Layer(string name, string what, Tone tone)
+        private static UIElement Layer(string name, string what, Color paint)
         {
             var grid = new Grid { Margin = new Thickness(0, 0, 0, 4) };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+            // The literal colour the layer writes, not a Tone. Skin.Ink is a text token and its
+            // three values are the severity palette, so a layer set to red used to show salmon in
+            // the dark theme and a layer with no colour showed as near-white — a preview of the
+            // pane rather than of the model.
             var swatch = new Border
             {
                 Width = 10,
                 Height = 34,
                 CornerRadius = new CornerRadius(3),
-                Background = Skin.Ink(tone),
+                Background = new SolidColorBrush(paint),
                 Margin = new Thickness(0, 0, 10, 0),
             };
 
