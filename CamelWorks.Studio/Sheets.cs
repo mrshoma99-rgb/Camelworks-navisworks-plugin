@@ -81,7 +81,7 @@ namespace CamelWorks.Studio
 
         private static UIElement Shell() => new ShellView(Workspaces.MainPane);
 
-        private static UIElement Page(params UIElement?[] children)
+        internal static UIElement Page(params UIElement?[] children)
         {
             var stack = Ui.Stack(children);
             return new Border { Padding = new Thickness(12, 12, 12, 16), Child = stack };
@@ -234,7 +234,7 @@ namespace CamelWorks.Studio
             return grid;
         }
 
-        private static void Add(Grid grid, int column, UIElement child)
+        internal static void Add(Grid grid, int column, UIElement child)
         {
             Grid.SetColumn(child, column);
             grid.Children.Add(child);

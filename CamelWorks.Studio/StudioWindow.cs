@@ -25,7 +25,7 @@ namespace CamelWorks.Studio
         private readonly Border _frame;
         private readonly TextBlock _caption = new TextBlock();
 
-        private Sheet _sheet = Sheets.All[0];
+        private Sheet _sheet = Program.Everything[0];
         private double _width = 470;
 
         /// <summary>Open the harness.</summary>
@@ -102,7 +102,7 @@ namespace CamelWorks.Studio
 
             stack.Children.Add(new TextBlock { Text = "Design harness", Margin = new Thickness(0, 0, 0, 14) }.Wearing("Lbl"));
 
-            foreach (var sheet in Sheets.All)
+            foreach (var sheet in Program.Everything)
             {
                 var current = sheet;
 
