@@ -2028,6 +2028,18 @@ namespace CamelWorks.UI.Views
                     Show(plan);
                 });
 
+                // The quick way stays here, in the pane, because it is genuinely quick: two lists
+                // and every pairing between them, with nothing to set up first. The full matrix -
+                // the one that comes from the client as a spreadsheet, with its own symbols and a
+                // different tolerance per cell - opens in a window, because a square of categories
+                // with a key beside it does not fit in a column four hundred and seventy pixels
+                // wide, and squeezing it in there is what turned it into two dropdowns.
+                var sheet = Ui.Button("Open the matrix from a spreadsheet...", () =>
+                {
+                    var problem = MatrixWindow.Show();
+                    if (problem != null) _grid.Children.Add(Ui.Problem(problem));
+                });
+
                 return Ui.Marked(Glyphs.Clash, "Build a matrix",
                     "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
                     + "be set up first: the disciplines come from what CamelWorks already worked out about "
@@ -2042,7 +2054,11 @@ namespace CamelWorks.UI.Views
                             Ui.Field("Put them in folder", _folder)),
                         diagonal),
                     _grid,
-                    _results);
+                    _results,
+                    Ui.Rule(),
+                    Ui.Small("Already have the matrix as a spreadsheet, with its own symbols and a "
+                             + "different tolerance per cell?"),
+                    Ui.Actions(sheet));
             }
 
             /// <summary>The grid, with a tick on every row that is going to be made.</summary>
