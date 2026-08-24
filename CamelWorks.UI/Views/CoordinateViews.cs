@@ -2553,9 +2553,33 @@ namespace CamelWorks.UI.Views
             /// <summary>Services through structure, for the pour.</summary>
             private const string Penetration = "Penetration schedule";
 
+            /// <summary>The marker shapes, in the words somebody would use for them.</summary>
+            private const string Ball = "a ball";
+
+            private const string Box = "a cube";
+
+            private const string Spike = "a diamond";
+
+            /// <summary>The units choice that means "whatever the document says".</summary>
+            private const string FromDocument = "whatever the document says";
+
+            /// <summary>
+            /// The units a marker can be converted from.
+            ///
+            /// Written out rather than borrowed from the formatter's list, which offers "Feet and
+            /// inches" - a way of printing a length, not a unit a number can be divided by.
+            /// </summary>
+            private static readonly string[] Units =
+            {
+                FromDocument, "Millimetres", "Centimetres", "Metres", "Inches", "Feet",
+            };
+
             private readonly StackPanel _results = Ui.Stack();
+            private readonly StackPanel _markers = Ui.Stack();
             private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
             private readonly TextBox _template = Ui.Text(Deliverable.DefaultTemplate, null, 340);
+
+            private string _units = FromDocument;
 
             private string _format = "PDF";
             private string _mode = FullReport;
@@ -2629,7 +2653,146 @@ namespace CamelWorks.UI.Views
 
                     Ui.Rule(),
 
-                    Exchange()));
+                    Exchange(),
+
+                    Ui.Rule(),
+
+                    Markers()));
+            }
+
+            /// <summary>
+            /// The clashes, in the model.
+            ///
+            /// A clash is a row on a board and a camera position, and both need somebody driving
+            /// the mouse. A walkthrough, a site meeting or a subcontractor's own copy of the model
+            /// needs the clash where the clash is: a ball hanging in the air where the duct meets
+            /// the beam, visible from across the room and still there tomorrow.
+            /// </summary>
+            private UIElement Markers()
+            {
+                var recipe = new MarkerRecipe();
+
+                var shape = Ui.Choice(new[] { Ball, Box, Spike }, Ball,
+                    pick => recipe.Shape = pick == Box ? MarkerShape.Cube
+                                         : pick == Spike ? MarkerShape.Diamond
+                                         : MarkerShape.Sphere, 140);
+
+                var size = Ui.Text("300", text =>
+                {
+                    if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                        out var mm) && mm > 0)
+                        recipe.RadiusMetres = mm / 2000;
+                }, 90);
+
+                var units = Ui.Choice(Units, FromDocument, pick => _units = pick, 160);
+
+                var write = Ui.Runner("Make them", _markers, primary: false,
+                                      work: job => Mark(job, recipe));
+
+                return Ui.Marked(Glyphs.Model, "Put the clashes in the model", null,
+                    Ui.Small("One ball per clash, coloured by where it stands, grouped by test - so "
+                             + "the Selection Tree collapses to a line per test and expands to the "
+                             + "clashes. They are geometry like anything else: selectable, hideable, "
+                             + "and removable from the host's own file list."),
+                    Ui.Form(
+                        Ui.Pair(Ui.Field("Shape", shape),
+                                Ui.Field("Across", size, "millimetres, on screen")),
+                        Ui.Field("The model is in", units,
+                                 "Only needed if the document does not say. A point written in the "
+                                 + "wrong unit lands a kilometre from the building.")),
+                    write,
+                    _markers);
+            }
+
+            private void Mark(Job job, MarkerRecipe recipe)
+            {
+                _markers.Children.Clear();
+
+                var session = Host.Current;
+                if (session == null) { _markers.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var board = LastBoard;
+
+                if (board == null)
+                {
+                    _markers.Children.Add(Ui.Problem("The board has not been built yet. Open Clash "
+                        + "Triage and run it first - this marks what the board holds."));
+                    return;
+                }
+
+                // The conversion the whole thing turns on. The host reports clash points in the
+                // document's units and its OBJ reader takes every vertex as metres.
+                var word = _units == FromDocument ? session.Document.Units.ToString() : _units;
+                var metres = Measure.MetresPer(word);
+
+                if (metres == null)
+                {
+                    _markers.Children.Add(Ui.Problem("This document is in \"" + word + "\", which is "
+                        + "not a unit CamelWorks converts. Say which unit it is in the box above, or "
+                        + "the markers would land in the wrong place and look like an empty model."));
+                    return;
+                }
+
+                recipe.MetresPerUnit = metres.Value;
+
+                job.Say("Building the geometry...");
+
+                var items = board.Groups.SelectMany(g => g.Items).ToList();
+                var mesh = ClashMarkers.Write(items, recipe);
+
+                if (mesh.Refusal != null) { _markers.Children.Add(Ui.Problem(mesh.Refusal)); return; }
+
+                foreach (var warning in mesh.Warnings) _markers.Children.Add(Ui.Note(warning));
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the clash markers",
+                    Filter = "Wavefront OBJ|*.obj",
+                    FileName = "clash-markers.obj",
+                    AddExtension = true,
+                    DefaultExt = ".obj",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                var obj = dialog.FileName;
+                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+
+                try
+                {
+                    // The .obj names the .mtl beside it, so the two travel together or the colours
+                    // are lost without anything saying why.
+                    var beside = System.IO.Path.GetFileName(mtl);
+
+                    System.IO.File.WriteAllText(obj,
+                        mesh.Text.Replace("mtllib " + mesh.MaterialFile, "mtllib " + beside));
+
+                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
+                }
+                catch (Exception e)
+                {
+                    _markers.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
+
+                _markers.Children.Add(Ui.Actions(Ui.Button("Bring them into this model", () =>
+                {
+                    try
+                    {
+                        _markers.Children.Add(session.Model.Document.TryAppendFile(obj)
+                            ? Ui.Done("Appended. They are in the Selection Tree under their tests, "
+                                      + "and in the host's file list if you want them out again.")
+                            : Ui.Problem("The host would not append that file."));
+                    }
+                    catch (Exception e)
+                    {
+                        _markers.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
+                    }
+                })));
+
+                session.Record(ActivityKind.Export, "made clash markers: " + mesh.Explain(), obj);
             }
 
             /// <summary>
