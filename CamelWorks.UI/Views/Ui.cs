@@ -1383,6 +1383,56 @@ namespace CamelWorks.UI.Views
             }
         }
 
+        /// <summary>
+        /// One tool in a list of them: what it is called, what it is for, and what it will do.
+        ///
+        /// The whole card is the button, because a row with a small button on the end makes
+        /// somebody aim at the small button. The main action is shown rather than offered - it is
+        /// there to answer "what happens if I open this", which is the question a list of tools
+        /// exists to answer and the one a row of tab names never could.
+        /// </summary>
+        /// <param name="title">The tool's name.</param>
+        /// <param name="purpose">What it is trying to do, in one sentence.</param>
+        /// <param name="mainAction">The caption of its one main action, or null when it has none.</param>
+        /// <param name="onOpen">Open it.</param>
+        public static UIElement Row(string title, string purpose, string? mainAction, Action onOpen)
+        {
+            var text = new StackPanel();
+
+            text.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            text.Children.Add(new TextBlock
+            {
+                Text = purpose,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            }.Wearing("Hint"));
+
+            if (!string.IsNullOrEmpty(mainAction))
+                text.Children.Add(new TextBlock
+                {
+                    Text = mainAction + " \u2192",
+                    Margin = new Thickness(0, 6, 0, 0),
+                }.Wearing("Lbl"));
+
+            var card = new System.Windows.Controls.Button
+            {
+                Content = text,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+
+            card.Wearing("RowCard");
+            card.Click += (s, e) => onOpen?.Invoke();
+
+            return card;
+        }
+
         /// <summary>Two fields side by side, so a narrow pane is not one column of boxes.</summary>
         /// <param name="left">The first field.</param>
         /// <param name="right">The second field.</param>
