@@ -806,6 +806,10 @@ namespace CamelWorks.UI.Views
 
                     into.Children.Add(Ui.Line(count.Explain(), 1, true));
 
+                    // Before the press, not after. A rule that compounds is one somebody will run
+                    // twice because they cannot remember whether they already did.
+                    if (rule.Caution != null) into.Children.Add(Ui.Note(rule.Caution));
+
                     if (count.Examples.Count > 0)
                     {
                         var rows = count.Examples

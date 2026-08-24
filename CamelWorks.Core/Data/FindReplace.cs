@@ -61,6 +61,31 @@ namespace CamelWorks.Core.Data
         /// <summary>True when the rule can run.</summary>
         public bool IsUsable => Refusal == null;
 
+        /// <summary>
+        /// Whether running this rule twice would corrupt what it corrected the first time.
+        ///
+        /// The ordinary correction is "MECH" to "Mechanical", and the replacement contains the
+        /// search text. On a partial match that is not idempotent: the second run finds "Mech"
+        /// inside "Mechanical" and produces "Mechanicalanical". Run it on a Friday, run it again on
+        /// Monday because you cannot remember whether you did, and the property is ruined in a way
+        /// that reads like a different bug entirely.
+        ///
+        /// Whole and Pattern are safe, because what they matched was the entire value and the
+        /// replacement no longer matches. The three partial kinds are not.
+        /// </summary>
+        public bool Compounds =>
+            IsUsable
+            && (Kind == MatchKind.Part || Kind == MatchKind.Start || Kind == MatchKind.End)
+            && ReplaceWith.IndexOf(Find, CaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase) >= 0;
+
+        /// <summary>What to warn about before running it, or null.</summary>
+        public string? Caution =>
+            Compounds
+                ? "Running this twice would make it worse rather than doing nothing: \"" + ReplaceWith
+                  + "\" still contains \"" + Find + "\", so a second pass would find it again inside "
+                  + "what the first pass wrote. Match the whole value instead if you might run it twice."
+                : null;
+
         /// <inheritdoc />
         public override string ToString() =>
             Name + ": " + Kind + " \"" + Find + "\" -> \"" + ReplaceWith + "\"";

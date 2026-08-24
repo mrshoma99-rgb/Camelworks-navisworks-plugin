@@ -131,15 +131,55 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void Already_corrected_values_are_reported_rather_than_looking_like_a_failure()
         {
+            // A correction that cannot find itself again. "MECH" as a whole value becomes
+            // "Mechanical", and "Mechanical" is not "MECH", so the second and third runs do nothing.
             var count = FindReplace.Rehearse(
                 new[] { "Mechanical", "Mechanical", "MECH" },
-                Rule("MECH", "Mechanical"));
+                Rule("MECH", "Mechanical", MatchKind.Whole));
 
-            // The two that already read that way matched and changed nothing. Saying so is what
-            // stops a reader concluding the tool did not work.
-            Assert.Equal(3, count.Matched);
+            Assert.Equal(1, count.Matched);
             Assert.Equal(1, count.Changed);
+        }
+
+        [Fact]
+        public void A_matched_value_that_comes_out_the_same_is_counted_but_not_changed()
+        {
+            var count = FindReplace.Rehearse(new[] { "MECH", "MECH" }, Rule("MECH", "MECH"));
+
+            Assert.Equal(2, count.Matched);
+            Assert.Equal(0, count.Changed);
             Assert.Contains("already read that way", count.Explain());
+        }
+
+        [Fact]
+        public void A_partial_rule_whose_replacement_contains_its_search_is_flagged()
+        {
+            // The ordinary correction, and a trap. Running it twice finds "Mech" inside what the
+            // first run wrote, so "Mechanical" becomes "Mechanicalanical" — which reads like a
+            // different bug entirely a week later.
+            var rule = Rule("MECH", "Mechanical");
+
+            Assert.True(rule.Compounds);
+            Assert.Contains("twice", rule.Caution);
+
+            Assert.Equal("Mechanicalanical",
+                         FindReplace.Apply(FindReplace.Apply("MECH", rule), rule));
+        }
+
+        [Fact]
+        public void Matching_the_whole_value_is_safe_to_run_twice()
+        {
+            var rule = Rule("MECH", "Mechanical", MatchKind.Whole);
+
+            Assert.False(rule.Compounds);
+            Assert.Null(rule.Caution);
+            Assert.Null(FindReplace.Apply(FindReplace.Apply("MECH", rule), rule));
+        }
+
+        [Fact]
+        public void A_replacement_that_does_not_contain_its_search_is_not_flagged()
+        {
+            Assert.False(Rule("MECH", "Structural").Compounds);
         }
 
         [Fact]
