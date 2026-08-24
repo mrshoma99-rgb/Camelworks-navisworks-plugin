@@ -538,13 +538,15 @@ namespace CamelWorks.UI.Views
             {
                 lead.Margin = new Thickness(0, 0, 8, Gap);
 
-                // The ranking this method exists for, which it used to describe and not perform:
-                // it set a wider margin on the first child and nothing else, so a row of three
-                // came out as three identical grey rectangles — the exact failure the comment
-                // above claims to fix. A Runner is left alone; it was told at its own call site
-                // whether it leads, and a row can hold one that deliberately does not.
-                if (lead is System.Windows.Controls.Button button) button.Wearing("PrimaryBtn");
-
+                // It used to restyle the first child as the primary, whatever the caller had
+                // asked for. That was meant to stop a row coming out as three identical grey
+                // rectangles, and it did - by taking the decision away from the one place that
+                // knows the answer. A row reading "Keep" then "Forget" made Keep the loudest
+                // thing on the card because it was written first, and "Add a row" outshouted the
+                // rule being written above it.
+                //
+                // The ranking is the caller's now: Primary for the thing the card is for, Quiet
+                // for the rest, Danger for what cannot be undone. Position means nothing.
                 panel.Children.Add(lead);
             }
             else if (first != null)

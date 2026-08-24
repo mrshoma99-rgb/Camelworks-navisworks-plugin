@@ -393,7 +393,7 @@ namespace CamelWorks.Studio
                 new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null, 320),
                 "the most recent is picked for you")),
 
-            Ui.Actions(Ui.Primary("Compare", () => { })),
+            Ui.Actions(Ui.Primary("Run the comparison", () => { })),
 
             Ui.Section("What counts as a change",
                 "moves over 0.001 model units · standard properties compared · GUID, tree path or shape",

@@ -120,24 +120,24 @@ namespace CamelWorks.UI.Shell
             Of("setup", "Project Setup", ToolShape.Window, Glyph.Tune,
                "What CamelWorks already worked out about this job on its own, with an override on "
                + "every line. Skippable - nothing waits on it.",
-               "Keep these settings"),
+               "Save overrides"),
 
             Of("project", "Project Profile", ToolShape.Window, Glyph.Tune,
                "Everything this job's settings are, what CamelWorks worked out on its own, and "
                + "where each one came from.",
-               "Save the profile"),
+               "Save"),
 
             Of("links", "Fix Broken Links", ToolShape.Window, Glyph.Folder,
                "Find the source files a loaded model can no longer see, and point it at where they "
                + "went.",
-               "Repoint the ones I picked"),
+               "Bring in"),
 
             // ---- Coordinate -------------------------------------------------------------------
 
             Of("triage", "Clash Triage", ToolShape.Panel, Glyph.Clash,
                "Turn every clash the tests found into the handful of issues somebody actually "
                + "fixes, and give each one to whoever fixes it.",
-               "Assign this group"),
+               "Load the board"),
 
             Of("review", "Review", ToolShape.Window, Glyph.Camera,
                "Walk the findings one at a time over the model, deciding each in front of the "
@@ -146,22 +146,22 @@ namespace CamelWorks.UI.Shell
 
             Of("tests", "Clash Tests", ToolShape.Window, Glyph.Play,
                "Say what gets tested against what, and how close is too close.",
-               "Run the tests"),
+               "Run them"),
 
             Of("matrix", "Clash Matrix", ToolShape.Wizard, Glyph.Table,
                "Build a whole test set at once from a grid of one discipline against another, "
                + "instead of naming forty tests by hand.",
-               "Build and run the matrix"),
+               "Read the matrix"),
 
             Of("headroom", "Headroom", ToolShape.Window, Glyph.Layers,
                "Find where the clear height under the services is not there - which no clash test "
                + "can find, because nothing is touching.",
-               "Run the clearance check"),
+               "Check clear height"),
 
             Of("rules", "Clash Rules", ToolShape.Window, Glyph.Filter,
                "Suppress what does not matter, group what is one issue, and assign what is left - "
                + "one pipeline, previewed before any of it is applied.",
-               "Apply the pipeline"),
+               "Try these on the board"),
 
             Of("clashreport", "Clash Report", ToolShape.Window, Glyph.Report,
                "Get the board out as a document somebody who does not have Navisworks can read.",
@@ -169,12 +169,12 @@ namespace CamelWorks.UI.Shell
 
             Of("bcf", "BCF", ToolShape.Window, Glyph.Onward,
                "Exchange issues with every other tool that speaks BCF, in 2.1 or 3.0.",
-               "Export the issues"),
+               "Send the board"),
 
             Of("merge", "Merge Markups", ToolShape.Window, Glyph.Compare,
                "Fold several reviewers' responses back into one board, showing where two of them "
                + "disagree rather than letting the last one win.",
-               "Merge the responses"),
+               "Bring them together"),
 
             Of("clashxml", "Clash XML", ToolShape.Window, Glyph.Clash,
                "Read a board out of the format other coordination tools speak, or write one back "
@@ -202,7 +202,7 @@ namespace CamelWorks.UI.Shell
 
             Of("data", "Data Manager", ToolShape.Panel, Glyph.Table,
                "Browse every property the elements carry, and write the ones that are missing.",
-               "Write the changes"),
+               "Read properties"),
 
             Of("excel", "Excel Round-trip", ToolShape.Wizard, Glyph.Table,
                "Take the properties out to a workbook, let somebody who does not have Navisworks "
@@ -212,21 +212,21 @@ namespace CamelWorks.UI.Shell
             Of("datalink", "External Data", ToolShape.Wizard, Glyph.Folder,
                "Join a register, a schedule or an asset list onto the model by a key column, and "
                + "write it back either way.",
-               "Write it into the model"),
+               "Read the file"),
 
             Of("levels", "Levels and Zones", ToolShape.Window, Glyph.Layers,
                "Work out what level and what zone every element is on, from whatever the model "
                + "already carries.",
-               "Assign them"),
+               "Derive levels"),
 
             Of("takeoff", "Takeoff", ToolShape.Window, Glyph.Table,
                "Sum the quantities the model carries, grouped how a bill wants them, and say what "
                + "could not be read rather than dropping it.",
-               "Write the takeoff"),
+               "Sum it"),
 
             Of("report", "Report Builder", ToolShape.Wizard, Glyph.Report,
                "Build a report of model data on a template it proposes from the model itself.",
-               "Write the report"),
+               "Read the model"),
 
             Of("ids", "IDS", ToolShape.Window, Glyph.Tick,
                "Write down what every model must carry, as the open standard for saying so, and "
@@ -237,22 +237,22 @@ namespace CamelWorks.UI.Shell
 
             Of("sets", "Sets", ToolShape.Panel, Glyph.Filter,
                "Build the selections every other tool works on, out of properties and other sets.",
-               "Publish the set"),
+               "Publish as a Navisworks set"),
 
             Of("appearance", "Appearance", ToolShape.Panel, Glyph.Layers,
                "Control what is visible and what colour it is, as layers that stack and can be "
                + "taken back off.",
-               "Apply the layers"),
+               "Apply the stack"),
 
             Of("viewpoints", "Viewpoints", ToolShape.Window, Glyph.Camera,
                "Rename, renumber, re-folder and render viewpoints in bulk, instead of one at a "
                + "time down the tree.",
-               "Apply to the selected"),
+               "Read what is selected"),
 
             Of("restructure", "Restructure", ToolShape.Wizard, Glyph.Model,
                "Reshape the set library into the folders the properties imply, rather than the "
                + "order they were made in.",
-               "Restructure the library"),
+               "Read the model"),
 
             Of("sectionbox", "Section Box", ToolShape.Act, Glyph.Empty,
                "Box whatever is selected, or switch sectioning off when nothing is.",
@@ -263,17 +263,17 @@ namespace CamelWorks.UI.Shell
             Of("extract", "Extract", ToolShape.Wizard, Glyph.Model,
                "Cut a piece out of the federation - a level, a zone, a room, a view - as a set, a "
                + "drawing or a model somebody else can open.",
-               "Extract it"),
+               "Read it"),
 
             Of("compile", "Compile", ToolShape.Wizard, Glyph.Save,
                "Append a list of models into one deliverable, newest revision of each, with a log "
                + "of what went in.",
-               "Compile the deliverable"),
+               "Compile"),
 
             Of("ifc", "Export IFC", ToolShape.Window, Glyph.Onward,
                "Write the model out as IFC, with the mapping and the classification it should "
                + "carry.",
-               "Export"),
+               "Open the IFC exporter"),
 
             // One window used to hold all five of these behind five collapsible sections, which
             // is five tools sharing a title bar and no main action between them. They read the
@@ -307,7 +307,7 @@ namespace CamelWorks.UI.Shell
 
             Of("batch", "Batch", ToolShape.Window, Glyph.Clock,
                "Run a saved sequence of steps over the document that is open, in one press.",
-               "Run the job"),
+               "Run the selected job"),
 
             Of("graph", "Graph Editor", ToolShape.Panel, Glyph.Play,
                "Build that sequence as a graph, when a list of steps is not enough.",

@@ -1744,7 +1744,7 @@ namespace CamelWorks.UI.Views
                         Ui.Pair(
                             Ui.Field("Who", who),
                             Ui.Field("Priority", how))),
-                    Ui.Actions(Ui.Button("Raise it against the selection", () => Raise(session))),
+                    Ui.Actions(Ui.Primary("Raise it against the selection", () => Raise(session))),
                     Ui.Note("The elements come from what is selected in the model right now. Select the "
                             + "door and the corridor, not the whole level — a viewpoint that opens on "
                             + "half a building tells the reader nothing."),
@@ -2923,7 +2923,7 @@ namespace CamelWorks.UI.Views
 
                 _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
 
-                _markers.Children.Add(Ui.Actions(Ui.Button("Bring them into this model", () =>
+                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them into this model", () =>
                 {
                     try
                     {

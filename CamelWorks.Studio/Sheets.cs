@@ -74,7 +74,7 @@ namespace CamelWorks.Studio
                 Height = 700,
                 Builder = Working,
                 Widths = new[] { 470 },
-                Drive = host => Click(host, "Compare"),
+                Drive = host => Click(host, "Run the comparison"),
             },
             new Sheet { Id = "states", Title = "Empty, wrong, done", Height = 900, Builder = _ => States(), Widths = new[] { 470 } },
         };
@@ -193,7 +193,7 @@ namespace CamelWorks.Studio
                              "how it reads in the Navisworks selection tree")),
 
                 Ui.Actions(
-                    Ui.Primary("Run", () => { }),
+                    Ui.Primary("Run the graph", () => { }),
                     Ui.Button("Save to project", () => { }),
                     Ui.Button("Publish as a Navisworks set", () => { })),
 
@@ -358,7 +358,7 @@ namespace CamelWorks.Studio
         {
             var output = Ui.Stack();
 
-            var runner = Ui.Runner("Compare", output, job =>
+            var runner = Ui.Runner("Run the comparison", output, job =>
             {
                 job.Total = 128400;
 

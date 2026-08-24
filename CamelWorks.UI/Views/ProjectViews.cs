@@ -748,7 +748,7 @@ namespace CamelWorks.UI.Views
 
                 // The panel answers "are we ready to issue". The workbook answers "what do I fix",
                 // and it is asked by somebody who is not sitting in Navisworks.
-                results.Children.Add(Ui.Actions(Ui.Button("Save it as a workbook...",
+                results.Children.Add(Ui.Actions(Ui.Primary("Save it as a workbook...",
                     () => Workbook(results, document, report, session.NowTicks))));
 
                 foreach (var detail in Details(report)) results.Children.Add(detail);
@@ -1247,7 +1247,7 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
             });
 
-            var save = Ui.Button("Save overrides", () =>
+            var save = Ui.Primary("Save overrides", () =>
             {
                 status.Children.Clear();
 
@@ -1530,7 +1530,7 @@ namespace CamelWorks.UI.Views
         {
             var status = Ui.Stack();
 
-            var open = Ui.Button("Open the IFC exporter", () =>
+            var open = Ui.Primary("Open the IFC exporter", () =>
             {
                 status.Children.Clear();
 

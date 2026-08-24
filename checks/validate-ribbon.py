@@ -34,6 +34,11 @@ MAX_PER_COLUMN = 3
 UID = "{http://schemas.microsoft.com/winfx/2006/xaml}Uid"
 
 
+def every_cs():
+    """Every C# file in the UI, for the checks that look for a caption anywhere in it."""
+    return "".join(p.read_text(encoding="utf-8") for p in sorted(UI.rglob("*.cs")))
+
+
 def read(path):
     return (UI / path).read_text(encoding="utf-8")
 
@@ -153,6 +158,30 @@ def main():
             continue
         if action == "null" and tool_id != "help":
             problems |= fail(f'tool "{tool_id}" is a {shape} with no main action')
+
+    # And the main action must be a button that exists.
+    #
+    # Without this the registry is a wish. Every tool promises one filled button with a named
+    # caption, and twenty-four of them once promised a caption no screen had - because the
+    # registry was written as the design and the screens kept their own words. A promise nothing
+    # checks is how "every tool has a main action" becomes a sentence in a doc comment.
+    #
+    # Matched on a prefix either way, because some captions are built at run time: the compile
+    # button reads "Compile 9 files" and the repoint button reads "Bring in 4".
+    buttons = [c.strip().rstrip(".").strip().lower()
+               for c in re.findall(r'Ui\.(?:Primary|Runner)\(\s*"([^"]+)"', every_cs())]
+
+    for tool_id, shape, action in re.findall(
+            r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),(?:.|\n)*?\n\s+(null|"[^"]*")\),',
+            tools_source):
+        if shape in ("Act", "Menu") or action == "null":
+            continue
+
+        want = action.strip('"').strip().rstrip(".").strip().lower()
+
+        if not any(b == want or b.startswith(want) or want.startswith(b) for b in buttons):
+            problems |= fail(f'tool "{tool_id}" promises the action {action} '
+                             f"and no Primary or Runner has that caption")
 
     named = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
     seen = {}

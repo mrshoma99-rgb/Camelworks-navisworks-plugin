@@ -97,7 +97,7 @@ namespace CamelWorks.UI.Views
                 Ui.Form(Ui.Field("Compare against",
                     Ui.Choice(labels, _pickedBaseline, pick => _pickedBaseline = pick, 320),
                     "the most recent is picked for you")),
-                Ui.Runner("Compare", results, job => Go(session, store, results, job)),
+                Ui.Runner("Run the comparison", results, job => Go(session, store, results, job)),
                 Terms(),
                 Ui.Section("Record a new baseline", "the model as it stands right now", false,
                     Take(session, store, results, primary: false)),

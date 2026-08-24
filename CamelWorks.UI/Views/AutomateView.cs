@@ -126,7 +126,7 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 });
 
-                var run = Ui.Runner("Run", _log, job =>
+                var run = Ui.Runner("Run the graph", _log, job =>
                 {
                     var result = GraphRunner.Run(_graph, new NavGraphHost(session), job.Say);
 
