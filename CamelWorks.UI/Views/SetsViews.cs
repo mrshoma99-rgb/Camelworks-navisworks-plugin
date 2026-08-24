@@ -12,6 +12,7 @@ using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Sets;
+using CamelWorks.Core.Store;
 using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
@@ -535,6 +536,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _adder = Ui.Stack();
             private readonly StackPanel _foreign = Ui.Stack();
+            private readonly StackPanel _travel = Ui.Stack();
 
             private ForeignGroup? _picked;
 
@@ -558,7 +560,203 @@ namespace CamelWorks.UI.Views
                     _results,
                     _adder,
                     Ui.Rule(),
-                    Elsewhere(session)));
+                    Elsewhere(session),
+                    Ui.Rule(),
+                    Travel(session)));
+            }
+
+            /// <summary>
+            /// The scheme, off this model and onto another one.
+            ///
+            /// Everything else on this tab is better than the host at deciding what a federation
+            /// looks like, and none of it could leave the document. A scheme agreed in a workshop
+            /// is an afternoon's work that lived in one person's Navisworks and died with it.
+            /// </summary>
+            private UIElement Travel(Session session)
+            {
+                var options = new TransferOptions();
+                var note = Ui.Text(string.Empty, "what this scheme is", null, 240);
+
+                var take = Ui.Runner("Take this model's scheme...", _travel, primary: false,
+                                     work: job => Take(session, job, note.Text));
+
+                var put = Ui.Runner("Bring a scheme in...", _travel, primary: false,
+                                    work: job => Bring(session, job, options));
+
+                return Ui.Stack(
+                    Ui.Eyebrow("Somewhere else"),
+                    Ui.Small("Every override in this model, written down and replayed into another. "
+                             + "The identity is tried first and the name second, because a key does "
+                             + "not survive a re-export - and how each element was found is reported, "
+                             + "since found-by-name is a guess."),
+                    Ui.Form(
+                        Ui.Field("Call it", note),
+                        Ui.Check("Bring the colours", options.Colours, on => options.Colours = on),
+                        Ui.Check("Bring the transparency", options.Transparency,
+                                 on => options.Transparency = on),
+                        Ui.Check("Bring what was hidden", options.Hidden, on => options.Hidden = on),
+                        Ui.Small("A colour scheme is a way of reading a model; a hidden element is a "
+                                 + "claim that something should not be looked at. Somebody taking the "
+                                 + "first rarely wants the second."),
+                        Ui.Check("Fall back to the element's name", options.ByPath,
+                                 on => options.ByPath = on)),
+                    Ui.Actions(take, put),
+                    _travel);
+            }
+
+            /// <summary>Every element's appearance, read in chunks so Stop means something.</summary>
+            private void Take(Session session, Job job, string note)
+            {
+                _travel.Children.Clear();
+
+                job.Say("Listing the model...");
+
+                var keys = new List<ElementKey>();
+                var paths = new Dictionary<ElementKey, string>();
+
+                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                {
+                    if (!job.Step(keys.Count, "elements listed")) return;
+                    if (!item.HasGeometry) continue;
+
+                    keys.Add(item.Key);
+                    paths[item.Key] = string.Join(AppearanceEntry.PathSeparator, item.TreePath);
+                }
+
+                var states = new List<AppearanceState>(keys.Count);
+
+                for (var at = 0; at < keys.Count; at += ScanChunk)
+                {
+                    if (!job.Step(at, keys.Count, "elements read")) return;
+
+                    var chunk = keys.GetRange(at, Math.Min(ScanChunk, keys.Count - at));
+                    states.AddRange(session.View.ReadAppearance(chunk));
+                }
+
+                var snapshot = AppearanceTransfer.Capture(states, paths);
+
+                snapshot.SourceModel = session.SavedPath;
+                snapshot.WhenTicks = session.NowTicks;
+                snapshot.Note = note.Trim().Length == 0 ? null : note.Trim();
+
+                _travel.Children.Add(Ui.Line(snapshot.Explain(), 1, true));
+
+                if (!snapshot.IsUsable)
+                {
+                    _travel.Children.Add(Ui.Empty("Nothing to take.",
+                        "No element in this model carries a colour, a transparency or a hiding."));
+                    return;
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the appearance scheme",
+                    Filter = "CamelWorks appearance|*.cwlook",
+                    FileName = (snapshot.Note ?? "appearance") + ".cwlook",
+                    AddExtension = true,
+                    DefaultExt = ".cwlook",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    File.WriteAllText(dialog.FileName, snapshot.ToJson().ToJson());
+                }
+                catch (Exception e)
+                {
+                    _travel.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _travel.Children.Add(Ui.Done("Wrote " + dialog.FileName));
+
+                session.Record(ActivityKind.Appearance, "took the appearance scheme: " + snapshot.Explain());
+            }
+
+            /// <summary>Read a scheme, find its elements here, and put it on as layers.</summary>
+            private void Bring(Session session, Job job, TransferOptions options)
+            {
+                _travel.Children.Clear();
+
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "Open an appearance scheme",
+                    Filter = "CamelWorks appearance|*.cwlook|All files|*.*",
+                    CheckFileExists = true,
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                JsonValue json;
+
+                try
+                {
+                    json = JsonReader.Parse(File.ReadAllText(dialog.FileName));
+                }
+                catch (Exception e)
+                {
+                    _travel.Children.Add(Ui.Problem("Could not read it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                var refusal = AppearanceSnapshot.Refuses(json);
+
+                if (refusal != null) { _travel.Children.Add(Ui.Problem(refusal)); return; }
+
+                var snapshot = AppearanceSnapshot.FromJson(json);
+
+                _travel.Children.Add(Ui.Line(snapshot.Explain(), 0.8));
+
+                if (snapshot.Note != null) _travel.Children.Add(Ui.Line(snapshot.Note, 0.7));
+
+                job.Say("Looking for those elements here...");
+
+                var here = new List<KeyValuePair<ElementKey, string?>>();
+
+                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                {
+                    if (!job.Step(here.Count, "elements listed")) return;
+                    if (!item.HasGeometry) continue;
+
+                    here.Add(new KeyValuePair<ElementKey, string?>(
+                        item.Key, string.Join(AppearanceEntry.PathSeparator, item.TreePath)));
+                }
+
+                var match = AppearanceTransfer.Match(snapshot, here, options);
+
+                _travel.Children.Add(Ui.Line(match.Explain(), 1, true));
+
+                if (!match.IsUsable)
+                {
+                    _travel.Children.Add(Ui.Empty("Nothing to bring in.",
+                        "None of that scheme's elements are in this model."));
+                    return;
+                }
+
+                var made = AppearanceTransfer.Layers(match, options,
+                    "transfer-" + session.NowTicks.ToString(CultureInfo.InvariantCulture),
+                    snapshot.Note ?? "Brought in");
+
+                if (made.Count == 0)
+                {
+                    _travel.Children.Add(Ui.Empty("Nothing to bring in.",
+                        "Those elements are here, but nothing you ticked applies to any of them."));
+                    return;
+                }
+
+                // Added to the stack rather than written to the model: it sits in the precedence
+                // with everything else, and switching it off puts the model back.
+                foreach (var layer in made) _layers.Add(layer);
+
+                Redraw(session);
+
+                _travel.Children.Add(Ui.Done("Added " + Ui.Count(made.Count, "layer")
+                    + " to the stack. Nothing has moved yet - press \"Apply the stack\" when the "
+                    + "order above is right."));
+
+                session.Record(ActivityKind.Appearance,
+                    "brought in an appearance scheme: " + match.Explain());
             }
 
             private UIElement Actions(Session session)
