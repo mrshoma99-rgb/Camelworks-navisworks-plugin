@@ -6,42 +6,35 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 using CamelWorks.UI.Views;
 
 namespace CamelWorks.UI.Shell
 {
     /// <summary>
-    /// The pane's chrome: a brand bar with search, a workspace switcher, a tab strip and the
-    /// content.
+    /// The pane's chrome: a brand bar with search, the open tool's name, and the tool.
     ///
-    /// Built in code rather than XAML because the layout is driven by <see cref="Workspaces"/> —
-    /// markup would either duplicate that list or bind to it through a pile of templates, and the
-    /// list is the thing three separate parts of the product have to agree on. What it is painted
-    /// with is not in here at all: every colour and control shape comes from <see cref="Skin"/>,
-    /// which is the same token set the BIMCamel IFC exporter uses, so the two panes docked beside
-    /// each other look like one product rather than two.
+    /// <b>One tool at a time, and no tabs.</b> This used to carry a workspace switcher over a tab
+    /// strip - seven workspaces, eighteen tabs - and twenty-one of the twenty-seven ribbon buttons
+    /// opened this same pane on a different one of them. Three opened a tab another button already
+    /// opened. The result was that every tool looked like the same form with different fields, and
+    /// the ribbon was a menu wearing a ribbon's clothes.
     ///
-    /// <b>It collapses by label, never to glyphs.</b> Below about 900 device-independent pixels the
-    /// switcher becomes a labelled dropdown. A row of unlabelled icons saves the same space and
-    /// costs the user the ability to find anything, which is the opposite of what a product with
-    /// this much surface needs.
+    /// Now a ribbon button opens its own tool. Six tools are panels and come up here, because
+    /// their work genuinely happens beside the model for an hour at a time; everything else opens
+    /// its own window. At rest this shows the launcher: every tool, what it is for, and what it
+    /// will do.
+    ///
+    /// What it is painted with is not in here at all: every colour and control shape comes from
+    /// <see cref="Skin"/>, the same token set the BIMCamel IFC exporter uses, so two panes docked
+    /// beside each other look like one product rather than two.
     /// </summary>
     public sealed class ShellView : UserControl
     {
-        /// <summary>Below this width the switcher collapses to a dropdown.</summary>
-        public const double NarrowWidth = 900;
-
         private readonly string _paneId;
-        private readonly StackPanel _switcher = new StackPanel { Orientation = Orientation.Horizontal };
-        private readonly ToggleButton _switcherNarrow = new ToggleButton();
-        private readonly Popup _menu = new Popup { Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
-        private readonly ListBox _menuList = new ListBox { MaxHeight = 420, MinWidth = 250 };
         private readonly TextBlock _purpose = new TextBlock();
         private readonly Border _purposeBar;
-        private readonly StackPanel _tabs = new StackPanel { Orientation = Orientation.Horizontal };
-        private Border? _tabRule;
-        private ScrollViewer? _tabsHost;
+        private readonly System.Windows.Controls.Button _back = new System.Windows.Controls.Button();
+        private readonly TextBlock _open = new TextBlock();
         private System.Windows.Controls.Primitives.Popup? _pop;
         private readonly Border _rail;
         private readonly TextBox _search = new TextBox { MinWidth = 130, Tag = "Find a tool" };
@@ -52,16 +45,13 @@ namespace CamelWorks.UI.Shell
         private readonly ProgressBar _busy = new ProgressBar { Height = 3, Visibility = Visibility.Collapsed };
         private readonly System.Windows.Controls.Button _theme = new System.Windows.Controls.Button();
 
-        private Workspace _workspace;
-        private WorkspaceTab? _tab;
-        private bool _narrow;
+        private Tool? _tool;
 
         /// <summary>Create the shell for one pane.</summary>
-        /// <param name="paneId">Which pane this is, so it shows only its own workspaces.</param>
+        /// <param name="paneId">Which pane this is.</param>
         public ShellView(string paneId)
         {
-            _paneId = paneId ?? Workspaces.MainPane;
-            _workspace = Workspaces.All.First(w => w.PaneId == _paneId);
+            _paneId = paneId ?? MainPane;
 
             Skin.Apply(this);
 
@@ -86,13 +76,11 @@ namespace CamelWorks.UI.Shell
             Grid.SetRow(_busy, 1);
             root.Children.Add(_busy);
 
-            // The workspace and its tabs share one row.
-            //
-            // They were two stacked strips, which spent about fifty pixels of a pane that is often
-            // only six hundred tall saying twice over where you are. The workspace name is the
-            // heading and the tabs are its children, so a divider between them reads them as
-            // equals; side by side with a rule between, the hierarchy is the layout.
-            _rail = new Border { Padding = new Thickness(8, 5, 8, 5), Child = SwitcherRow() };
+            // One row saying which tool is open, and the way back to all of them. What was here
+            // before was a switcher over a tab strip, which spent about fifty pixels of a pane
+            // often only six hundred tall on navigation between screens that a ribbon button
+            // already opens directly.
+            _rail = new Border { Padding = new Thickness(8, 5, 8, 5), Child = HeaderRow() };
             _rail.Tint(Border.BackgroundProperty, "Nav");
             _rail.Tint(Border.BorderBrushProperty, "Bd");
             _rail.BorderThickness = new Thickness(0, 0, 0, 1);
@@ -100,12 +88,12 @@ namespace CamelWorks.UI.Shell
             root.Children.Add(_rail);
 
 
-            // One line saying what the tab is for, on the screen rather than in a tooltip.
+            // One line saying what the tool is for, on the screen rather than in a tooltip.
             //
-            // Workspaces.cs has always carried this sentence for every one of the nineteen tabs,
-            // and it has always been a tooltip - which is to say it was written for somebody who
-            // already knew enough to hover. A row of nouns is exactly what makes a first-time user
-            // feel lost, and twenty pixels is what it costs to stop that.
+            // Every tool has always carried this sentence and it has always been a tooltip - which
+            // is to say it was written for somebody who already knew enough to hover over the
+            // right thing. A row of nouns is what makes a first-time user feel lost, and twenty
+            // pixels is what it costs to stop that.
             _purposeBar = new Border { Padding = new Thickness(11, 5, 11, 6), Child = PurposeRow() };
             _purposeBar.Tint(Border.BackgroundProperty, "Nav");
             _purposeBar.Tint(Border.BorderBrushProperty, "Bd");
@@ -165,11 +153,6 @@ namespace CamelWorks.UI.Shell
             ground.Tint(Border.BackgroundProperty, "Pane");
             Content = ground;
 
-            _switcherNarrow.Checked += (s, e) => _menu.IsOpen = true;
-            _switcherNarrow.Unchecked += (s, e) => _menu.IsOpen = false;
-            _menu.Closed += (s, e) => _switcherNarrow.IsChecked = false;
-            _menuList.SelectionChanged += (s, e) => PickNarrow();
-
             _search.TextChanged += (s, e) => Filter();
             _search.PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape) Clear(); };
             _searchResults.SelectionChanged += (s, e) => Jump();
@@ -177,9 +160,8 @@ namespace CamelWorks.UI.Shell
             // The list is at least as wide as the field it drops from, and never wider than the
             // pane. A fixed width looked deliberate at one pane size and wrong at the other two.
             _search.SizeChanged += (s, e) => _searchResults.MinWidth = Math.Max(0, _search.ActualWidth);
-            SizeChanged += (s, e) => Reflow(e.NewSize.Width);
 
-            // A job started on one tab must still look like it is running after you switch to
+            // A job started in one tool must still look like it is running after you open
             // another. Otherwise the answer to "did I actually press it?" is to press it again,
             // which is how two exports end up fighting over one file.
             //
@@ -189,28 +171,28 @@ namespace CamelWorks.UI.Shell
             Loaded += (s, e) => Hook(true);
             Unloaded += (s, e) => Hook(false);
 
-            BuildSwitcher();
-            Show(_workspace.Id, null);
+            Show(null);
         }
 
-        /// <summary>Bring the shell to a workspace and tab.</summary>
-        /// <param name="workspaceId">The workspace, or null to stay where it is.</param>
-        /// <param name="tabId">The tab, or null for the workspace's first.</param>
-        public void Show(string? workspaceId, string? tabId)
+        /// <summary>The main pane's id.</summary>
+        public const string MainPane = "CamelWorks";
+
+        /// <summary>The graph editor's pane id. Separate because the canvas needs full width.</summary>
+        public const string AutomatePane = "CamelWorks.Automate";
+
+        /// <summary>
+        /// Show a tool in this pane, or the launcher when there is none.
+        /// </summary>
+        /// <param name="toolId">Which tool, or null for the launcher.</param>
+        public void Show(string? toolId)
         {
-            var workspace = Workspaces.Find(workspaceId);
+            var tool = Tools.Find(toolId);
 
-            // A route into the other pane's workspace is ignored rather than obeyed. The ribbon
-            // opens the right pane first; obeying it here as well would leave both panes showing
-            // the same screen.
-            if (workspace != null && workspace.PaneId == _paneId) _workspace = workspace;
+            // Only panel tools live in a pane. Anything else arriving here is a routing mistake,
+            // and showing the launcher is a better answer than showing the wrong tool.
+            _tool = tool != null && tool.Shape == ToolShape.Panel ? tool : null;
 
-            _tab = _workspace.Tabs.FirstOrDefault(
-                       t => string.Equals(t.Id, tabId, StringComparison.OrdinalIgnoreCase))
-                   ?? _workspace.Tabs.FirstOrDefault();
-
-            BuildSwitcher();
-            BuildTabs();
+            BuildHeader();
             ShowContent();
         }
 
@@ -398,66 +380,40 @@ namespace CamelWorks.UI.Shell
             };
         }
 
-        private UIElement SwitcherRow()
+        /// <summary>
+        /// Which tool is open, and the way back to all of them.
+        ///
+        /// Two controls where there were a switcher, a dropdown for when the pane is narrow, and a
+        /// scrolling strip of tabs. There is nothing to switch between here any more: a ribbon
+        /// button opens the tool it names, and this row says which one answered.
+        /// </summary>
+        private UIElement HeaderRow()
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
 
-            _switcherNarrow.Wearing("RailBtn");
-            _switcherNarrow.Visibility = Visibility.Collapsed;
-            _switcherNarrow.Padding = new Thickness(9, 4, 9, 4);
+            _back.Wearing("RailBtn");
+            _back.Padding = new Thickness(9, 4, 9, 4);
+            _back.Margin = new Thickness(0, 0, 8, 0);
+            _back.ToolTip = "Every tool, and what each one is for";
+            _back.Click += (s, e) => Show(null);
 
-            _menu.PlacementTarget = _switcherNarrow;
-
-            var frame = new Border
+            var label = new StackPanel { Orientation = Orientation.Horizontal };
+            label.Children.Add(Ui.Glyph(Glyphs.Backward, 13, "Muted", new Thickness(0, 0, 6, 0)));
+            label.Children.Add(new TextBlock
             {
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Margin = new Thickness(0, 4, 0, 8),
-                Child = _menuList,
-                Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 18,
-                    ShadowDepth = 3,
-                    Opacity = 0.24,
-                },
-            };
-
-            frame.Tint(Border.BackgroundProperty, "Card");
-            frame.Tint(Border.BorderBrushProperty, "Bd");
-            _menu.Child = frame;
-
-            row.Children.Add(_switcherNarrow);
-            row.Children.Add(_switcher);
-
-            var rule = new Border
-            {
-                Width = 1,
-                Margin = new Thickness(10, 3, 10, 3),
-                VerticalAlignment = VerticalAlignment.Stretch,
-            };
-            rule.Tint(Border.BackgroundProperty, "Bd");
-
-            _tabRule = rule;
-            row.Children.Add(rule);
-
-            // The tabs scroll rather than wrap. A second line of tabs would put the row back to the
-            // two-row height this change exists to reclaim.
-            _tabsHost = new ScrollViewer
-            {
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Text = "All tools",
                 VerticalAlignment = VerticalAlignment.Center,
-                Content = _tabs,
-            };
+            });
 
-            var scroller = _tabsHost;
-            scroller.PreviewMouseWheel += (s, e) =>
-            {
-                scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset - e.Delta);
-                e.Handled = true;
-            };
+            _back.Content = label;
 
-            row.Children.Add(scroller);
+            _open.VerticalAlignment = VerticalAlignment.Center;
+            _open.FontWeight = FontWeights.SemiBold;
+            _open.TextTrimming = TextTrimming.CharacterEllipsis;
+
+            row.Children.Add(_back);
+            row.Children.Add(_open);
+
             return row;
         }
 
@@ -478,149 +434,41 @@ namespace CamelWorks.UI.Shell
             return row;
         }
 
-        /// <summary>A workspace's colour dot beside its name.</summary>
-        private static UIElement Dotted(Workspace workspace, bool withPurpose)
+        private void BuildHeader()
         {
-            var dot = new System.Windows.Shapes.Ellipse
-            {
-                Width = 8,
-                Height = 8,
-                Margin = new Thickness(0, 0, 8, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var launcher = _tool == null;
 
-            dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Fam." + workspace.Id);
+            _open.Text = launcher ? "All tools" : _tool!.Title;
+            _where.Text = launcher ? Ui.Count(Tools.All.Count, "tool") : _tool!.Title;
 
-            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            text.Children.Add(new TextBlock { Text = workspace.Title, FontWeight = FontWeights.SemiBold });
-
-            // On the chip, the count. A docked pane is narrow at every width anybody docks it at,
-            // so this chip is the only door to the other six workspaces — and "Home ⌄" on its own
-            // reads as a breadcrumb rather than as the thing you press to find everything else.
-            if (!withPurpose)
-                text.Children.Add(new TextBlock
-                {
-                    Text = Ui.Count(Workspaces.All.Count, "workspace"),
-                    Margin = new Thickness(0, 1, 0, 0),
-                }.Wearing("Hint"));
-
-            if (withPurpose)
-                text.Children.Add(new TextBlock
-                {
-                    Text = workspace.Tabs.FirstOrDefault()?.Summary ?? string.Empty,
-                    TextWrapping = TextWrapping.Wrap,
-                    MaxWidth = 260,
-                    Margin = new Thickness(0, 1, 0, 0),
-                }.Wearing("Hint"));
-
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
-            row.Children.Add(dot);
-            row.Children.Add(text);
-
-            // Only on the chip. In the menu the row is the choice, and a chevron on each of seven
-            // choices would say that every one of them opens something further.
-            if (!withPurpose) row.Children.Add(Ui.Glyph(Glyphs.Down, 12, "Muted", new Thickness(8, 1, 0, 0)));
-
-            return row;
-        }
-
-        private void BuildSwitcher()
-        {
-            _switcher.Children.Clear();
-            _menuList.Items.Clear();
-
-            _where.Text = _workspace.Title + (_tab == null || !_workspace.HasTabStrip ? string.Empty : "  ·  " + _tab.Title);
-            _switcherNarrow.Content = Dotted(_workspace, withPurpose: false);
-
-            foreach (var workspace in Workspaces.All.Where(w => w.PaneId == _paneId))
-            {
-                var current = workspace;
-
-                // A dot in the workspace's own colour, matching the ribbon icon for the same
-                // section. Eight identical grey labels is what "all the tools look the same"
-                // looks like in a switcher.
-                var dot = new System.Windows.Shapes.Ellipse
-                {
-                    Width = 7,
-                    Height = 7,
-                    Margin = new Thickness(0, 0, 7, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-
-                dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Fam." + workspace.Id);
-
-                var label = new StackPanel { Orientation = Orientation.Horizontal };
-                label.Children.Add(dot);
-                label.Children.Add(new TextBlock { Text = workspace.Title, VerticalAlignment = VerticalAlignment.Center });
-
-                var button = new ToggleButton
-                {
-                    Content = label,
-                    IsChecked = ReferenceEquals(workspace, _workspace),
-                    Margin = new Thickness(0, 0, 3, 0),
-                    ToolTip = workspace.Tabs.FirstOrDefault()?.Summary,
-                };
-
-                button.Wearing("RailBtn");
-                button.Checked += (s, e) => Show(current.Id, null);
-                _switcher.Children.Add(button);
-
-                _menuList.Items.Add(new ListBoxItem
-                {
-                    Content = Dotted(workspace, withPurpose: true),
-                    Tag = workspace.Id,
-                    IsSelected = ReferenceEquals(workspace, _workspace),
-                });
-            }
-        }
-
-        private void BuildTabs()
-        {
-            _tabs.Children.Clear();
-
-            var strip = _workspace.HasTabStrip ? Visibility.Visible : Visibility.Collapsed;
-            if (_tabRule != null) _tabRule.Visibility = strip;
-            if (_tabsHost != null) _tabsHost.Visibility = strip;
-
-            if (!_workspace.HasTabStrip) return;
-
-            foreach (var tab in _workspace.Tabs)
-            {
-                var current = tab;
-
-                var button = new ToggleButton
-                {
-                    Content = tab.Title,
-                    IsChecked = ReferenceEquals(tab, _tab),
-                    ToolTip = tab.Summary,
-                };
-
-                button.Wearing("TabBtn");
-                button.Checked += (s, e) => Show(_workspace.Id, current.Id);
-                _tabs.Children.Add(button);
-            }
+            // At the launcher there is nowhere back to, so the button that goes there is not
+            // offered - a control that does nothing is worse than one that is not there.
+            _back.Visibility = launcher ? Visibility.Collapsed : Visibility.Visible;
+            _open.Margin = new Thickness(launcher ? 2 : 0, 0, 0, 0);
         }
 
         private void ShowContent()
         {
-            var purpose = _workspace.HasTabStrip ? _tab?.Summary ?? string.Empty : string.Empty;
+            var purpose = _tool?.Purpose ?? string.Empty;
 
             _purpose.Text = purpose;
             _purposeBar.Visibility = purpose.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-            _content.Content = TabViews.For(_workspace, _tab, Go);
+            _content.Content = ToolViews.Panel(_tool, Go);
         }
 
         /// <summary>
-        /// Navigate to a "workspace/tab" route, for the screens that offer a way onward.
+        /// Open a tool by name, from the launcher or from a screen that offers a way onward.
         ///
-        /// Home is the reason this exists: a front door whose three steps do not take you to them
-        /// is a poster, not a front door.
+        /// A panel tool takes over this pane; anything else opens its own window. Either way the
+        /// caller says a tool's name and does not have to know which of the two it is.
         /// </summary>
-        private void Go(string route)
+        /// <param name="toolId">Which tool.</param>
+        private void Go(string toolId)
         {
-            var (workspace, tab) = Workspaces.Route(route);
-            if (workspace != null) Show(workspace.Id, tab?.Id);
+            var problem = ToolViews.Open(toolId, tool => Show(tool.Id));
+
+            if (problem != null) Ui.Told(problem);
         }
 
         private bool _hooked;
@@ -651,18 +499,16 @@ namespace CamelWorks.UI.Shell
             _busy.IsIndeterminate = running;
             _busy.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
 
-            // Navigation is closed while work is running.
+            // The way out is closed while work is running.
             //
             // The Navisworks API is main-thread-only, so a job runs on the UI thread and keeps the
             // pane alive by pumping the dispatcher. Pumping processes input, which is what makes
-            // Stop clickable — and also what would let someone change tab or workspace half way
+            // Stop clickable — and also what would let someone leave for another tool half way
             // through a traversal, tearing down the screen the job is still writing into.
             //
             // Stop lives inside the content and stays enabled, so this closes the way out without
             // closing the way to cancel.
-            _switcher.IsEnabled = !running;
-            _switcherNarrow.IsEnabled = !running;
-            _tabs.IsEnabled = !running;
+            _back.IsEnabled = !running;
             _search.IsEnabled = !running;
 
             if (running && _pop != null) _pop.IsOpen = false;
@@ -680,25 +526,6 @@ namespace CamelWorks.UI.Shell
         {
             _theme.ToolTip = Skin.ModeName;
             ShowContent();
-        }
-
-        private void Reflow(double width)
-        {
-            var narrow = width > 0 && width < NarrowWidth;
-            if (narrow == _narrow) return;
-
-            _narrow = narrow;
-            _switcher.Visibility = narrow ? Visibility.Collapsed : Visibility.Visible;
-            _switcherNarrow.Visibility = narrow ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private void PickNarrow()
-        {
-            if (!(_menuList.SelectedItem is ListBoxItem item) || !(item.Tag is string id)) return;
-            if (string.Equals(id, _workspace.Id, StringComparison.Ordinal)) return;
-
-            _menu.IsOpen = false;
-            Show(id, null);
         }
 
         private void Filter()
@@ -720,23 +547,26 @@ namespace CamelWorks.UI.Shell
         }
 
         /// <summary>
-        /// One search hit: what the tool is called, and which part of the product it is in.
+        /// One search hit: what the tool is called, and what it is trying to do.
         ///
-        /// The section matters as much as the name. "Report" is four different things in a
-        /// coordination tool, and a list of bare titles makes the user open three of them.
+        /// It used to show the "workspace/tab" the tool lived at, which told somebody where to
+        /// click rather than what they would get. "Report" is four different things in a
+        /// coordination tool, and only the sentence tells them apart.
         /// </summary>
         private static UIElement Result(RibbonCommand command)
         {
             var stack = new StackPanel();
             stack.Children.Add(new TextBlock { Text = command.Title, FontWeight = FontWeights.SemiBold });
 
-            var route = command.Route;
+            var purpose = Tools.Find(command.ToolId)?.Purpose;
 
-            if (!string.IsNullOrEmpty(route))
-            {
-                var where = route!.Replace("/", "  ·  ");
-                stack.Children.Add(new TextBlock { Text = where }.Wearing("Hint"));
-            }
+            if (!string.IsNullOrEmpty(purpose))
+                stack.Children.Add(new TextBlock
+                {
+                    Text = purpose,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 320,
+                }.Wearing("Hint"));
 
             return stack;
         }
@@ -751,13 +581,11 @@ namespace CamelWorks.UI.Shell
         {
             var item = _searchResults.SelectedItem as ListBoxItem;
             var command = item?.Tag as RibbonCommand;
-            if (command?.Route == null) return;
 
-            var (workspace, tab) = Workspaces.Route(command.Route);
-            if (workspace == null) return;
+            if (command?.ToolId == null) return;
 
             Clear();
-            Show(workspace.Id, tab?.Id);
+            Go(command.ToolId!);
         }
     }
 }

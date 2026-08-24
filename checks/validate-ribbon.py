@@ -26,8 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
 EXPECTED_COMMANDS = 27
-EXPECTED_TABS = 18
-EXPECTED_SWITCHER = 7
+EXPECTED_TOOLS = 41
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
 MAX_PER_COLUMN = 3
@@ -134,50 +133,43 @@ def main():
         if missing:
             problems |= fail(f"{name} is missing: {', '.join(sorted(missing))}")
 
-    # Every route must name a workspace and a tab that exist.
-    workspaces_source = read("Shell/Workspaces.cs")
+    # Every button must name a tool that exists, and no two buttons may name the same one.
+    #
+    # This replaced a check that routes named a real "workspace/tab". Under that model three
+    # buttons routed to a tab another button already opened - Headroom onto Clash Triage, Merge
+    # onto BCF, Excel onto Data Manager - and the check passed every time, because each route
+    # named a real place. It just happened to be somebody else's.
+    tools_source = read("Shell/Tools.cs")
+    tools = set(re.findall(r'Of\("([a-z]+)", "', tools_source))
 
-    workspaces = re.findall(r'new Workspace\("(\w+)", "([^"]+)", (\w+), hasTabStrip: (true|false),(.*?)\)\),\n',
-                            workspaces_source, re.S)
+    if len(tools) != EXPECTED_TOOLS:
+        problems |= fail(f"{len(tools)} tools in the registry, expected {EXPECTED_TOOLS}")
 
-    tabs = {}
-    switcher = 0
-    tab_total = 0
+    # Every tool that shows a surface has to name its one main action.
+    for tool_id, shape, action in re.findall(
+            r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),(?:.|\n)*?\n\s+(null|"[^"]*")\),',
+            tools_source):
+        if shape in ("Act", "Menu"):
+            continue
+        if action == "null" and tool_id != "help":
+            problems |= fail(f'tool "{tool_id}" is a {shape} with no main action')
 
-    for wid, _title, pane, has_strip, body in workspaces:
-        ids = re.findall(r'new WorkspaceTab\("([^"]+)"', body)
-        tabs[wid] = ids
-        if pane == "MainPane":
-            switcher += 1
-        if has_strip == "true":
-            tab_total += len(ids)
+    named = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
+    seen = {}
 
-    if switcher != EXPECTED_SWITCHER:
-        problems |= fail(f"{switcher} switcher entries in the main pane, expected {EXPECTED_SWITCHER}")
-
-    if tab_total != EXPECTED_TABS:
-        problems |= fail(f"{tab_total} tabs across the tabbed workspaces, expected {EXPECTED_TABS}")
-
-    for route in re.findall(r'CommandKind\.Pane, "([^"]+)"', catalogue_source):
-        workspace, _, tab = route.partition("/")
-        if workspace not in tabs:
-            problems |= fail(f'route "{route}" names no workspace')
-        elif tab and tab not in tabs[workspace]:
-            problems |= fail(f'route "{route}" names no tab in {workspace}')
-
-    # The catalogue's Pane entries carry their route as the third argument of the Pane helper, so
-    # pull them from there too — a Pane command with no route would silently open nothing.
-    pane_ids = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
-    for cid, route in pane_ids:
-        workspace, _, tab = route.partition("/")
-        if workspace not in tabs:
-            problems |= fail(f"{cid} routes to a workspace that does not exist: {route}")
+    for cid, tool_id in named:
+        if tool_id not in tools:
+            problems |= fail(f"{cid} names a tool that does not exist: {tool_id}")
+        if tool_id in seen:
+            problems |= fail(f"{cid} and {seen[tool_id]} both open \"{tool_id}\" - "
+                             f"two buttons doing the identical thing")
+        seen[tool_id] = cid
 
     if problems:
         return 1
 
     print(f"ribbon consistent: {len(xaml)} commands, {stacks} stacks, "
-          f"{switcher} switcher entries, {tab_total} tabs")
+          f"{len(tools)} tools, no two buttons on the same one")
     return 0
 
 

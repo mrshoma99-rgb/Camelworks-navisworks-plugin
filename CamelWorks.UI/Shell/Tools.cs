@@ -117,6 +117,11 @@ namespace CamelWorks.UI.Shell
                + "week coordinating against it.",
                "Check this federation"),
 
+            Of("setup", "Project Setup", ToolShape.Window, Glyph.Tune,
+               "What CamelWorks already worked out about this job on its own, with an override on "
+               + "every line. Skippable - nothing waits on it.",
+               "Keep these settings"),
+
             Of("project", "Project Profile", ToolShape.Window, Glyph.Tune,
                "Everything this job's settings are, what CamelWorks worked out on its own, and "
                + "where each one came from.",

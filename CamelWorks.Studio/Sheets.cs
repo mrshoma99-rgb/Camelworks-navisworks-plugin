@@ -79,7 +79,7 @@ namespace CamelWorks.Studio
             new Sheet { Id = "states", Title = "Empty, wrong, done", Height = 900, Builder = _ => States(), Widths = new[] { 470 } },
         };
 
-        private static UIElement Shell() => new ShellView(Workspaces.MainPane);
+        private static UIElement Shell() => new ShellView(ShellView.MainPane);
 
         internal static UIElement Page(params UIElement?[] children)
         {

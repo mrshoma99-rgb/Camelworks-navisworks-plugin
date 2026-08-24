@@ -34,11 +34,10 @@ namespace CamelWorks.UI
         protected abstract string PaneId { get; }
 
         /// <summary>Bring the pane to a workspace and tab.</summary>
-        /// <param name="workspaceId">The workspace.</param>
-        /// <param name="tabId">The tab, or null for the workspace's first.</param>
-        public void Show(string? workspaceId, string? tabId)
+        /// <param name="toolId">Which tool, or null for the launcher.</param>
+        public void Show(string? toolId)
         {
-            _shell?.Show(workspaceId, tabId);
+            _shell?.Show(toolId);
         }
 
         /// <inheritdoc />
@@ -83,7 +82,7 @@ namespace CamelWorks.UI
     public class CamelWorksPane : CamelWorksPaneBase
     {
         /// <inheritdoc />
-        protected override string PaneId => Workspaces.MainPane;
+        protected override string PaneId => ShellView.MainPane;
     }
 
     /// <summary>
@@ -104,6 +103,6 @@ namespace CamelWorks.UI
     public class CamelWorksAutomatePane : CamelWorksPaneBase
     {
         /// <inheritdoc />
-        protected override string PaneId => Workspaces.AutomatePane;
+        protected override string PaneId => ShellView.AutomatePane;
     }
 }

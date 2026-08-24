@@ -1384,6 +1384,21 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Say something to the user that has nowhere else to go.
+        ///
+        /// A ribbon button that cannot open its tool has no screen to write the reason on yet, so
+        /// it says it here rather than doing nothing - a button that appears to do nothing is the
+        /// one failure a user cannot report.
+        /// </summary>
+        /// <param name="message">What went wrong, in words.</param>
+        public static void Told(string? message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+
+            MessageBox.Show(message, "CamelWorks", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
         /// One tool in a list of them: what it is called, what it is for, and what it will do.
         ///
         /// The whole card is the button, because a row with a small button on the end makes
