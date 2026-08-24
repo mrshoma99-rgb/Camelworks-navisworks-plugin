@@ -1417,7 +1417,13 @@ namespace CamelWorks.UI.Views
             // The glyph size and gutter a banner uses, so the text columns agree. An empty state
             // and a notice are one device — an icon and a sentence — and a 22-pixel glyph over a
             // 12-pixel gutter put this one's words nine pixels right of every banner under it.
-            row.Children.Add(Glyph(Glyphs.Empty, 16, "Faint", new Thickness(0, 1, 9, 0)));
+            //
+            // Top, not centre. Glyph centres itself, which is right beside one wrapped paragraph
+            // and wrong beside a heading and a line under it: at 16 pixels it settled between the
+            // two and read as belonging to the second one.
+            var mark = Glyph(Glyphs.Empty, 16, "Faint", new Thickness(0, 3, 9, 0));
+            mark.VerticalAlignment = VerticalAlignment.Top;
+            row.Children.Add(mark);
             Grid.SetColumn(text, 1);
             row.Children.Add(text);
 

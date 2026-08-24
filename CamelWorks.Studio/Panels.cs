@@ -69,7 +69,7 @@ namespace CamelWorks.Studio
 
                 Ui.Finding(true, "Placement", "1 model has been moved by the federation since the last sweep",
                     "Nobody is told when this happens, and every clash from that moment on is in the wrong place.",
-                    "Put it back below, then run the clash tests again.",
+                    "Run the clash tests again once it is back.",
                     "MEP r4.nwc"),
                 Ui.Across(Ui.Button("Put MEP r4 back where it was", () => { })),
 
