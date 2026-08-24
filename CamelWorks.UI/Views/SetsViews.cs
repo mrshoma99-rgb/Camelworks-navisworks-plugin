@@ -122,6 +122,8 @@ namespace CamelWorks.UI.Views
                              + "have matches nothing."),
                     new TreeScreen(session, RedrawSaved).Build(),
                     Ui.Rule(),
+                    Schedule(),
+                    Ui.Rule(),
                     Ui.Eyebrow("Saved sets"),
                     Ui.Small("Kept in the project file, so they travel with the job."),
                     _saved));
@@ -300,6 +302,29 @@ namespace CamelWorks.UI.Views
                     child.Margin = new Thickness(0, 0, 5, 0);
 
                 return row;
+            }
+
+            /// <summary>
+            /// The way to forty sets at once.
+            ///
+            /// This screen makes one set from an expression, which is the right tool for the set
+            /// you are thinking about now. It is the wrong tool for the six disciplines' worth a
+            /// job starts with, which arrive as a spreadsheet and want reading, not retyping.
+            /// </summary>
+            private UIElement Schedule()
+            {
+                var open = Ui.Button("Open a schedule from a spreadsheet...", () =>
+                {
+                    var problem = ScheduleWindow.Show();
+                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
+                });
+
+                return Ui.Stack(
+                    Ui.Eyebrow("Many sets at once"),
+                    Ui.Small("Already have the sets as a spreadsheet - a row per condition, or a row "
+                             + "per set with a column per property? Read it rather than retyping it, "
+                             + "and run the same schedule again when the next revision lands."),
+                    Ui.Actions(open));
             }
 
             private void RedrawSaved(Session session)

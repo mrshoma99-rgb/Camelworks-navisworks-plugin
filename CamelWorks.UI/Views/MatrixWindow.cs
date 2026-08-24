@@ -65,15 +65,12 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
 
             private readonly SheetMapping _mapping = new SheetMapping();
-            private readonly StackPanel _preview = Ui.Stack();
             private readonly StackPanel _grid = Ui.Stack();
             private readonly StackPanel _legendRows = Ui.Stack();
             private readonly StackPanel _warnings = Ui.Stack();
             private readonly StackPanel _output = Ui.Stack();
-            private readonly ComboBox _sheets = Ui.Choice(Array.Empty<string>(), null, null, 200);
-            private readonly TextBox _file;
+            private readonly SheetSource _sheet = new SheetSource();
 
-            private WorkbookTables? _book;
             private MatrixGrid _matrix = new MatrixGrid();
             private MatrixLegend _legend = new MatrixLegend();
             private MatrixBuild? _plan;
@@ -81,8 +78,6 @@ namespace CamelWorks.UI.Views
             internal Editor(Session session)
             {
                 _session = session;
-                _file = Ui.Text(string.Empty, "The workbook the matrix is in", _ => { }, 320);
-
                 View = Build();
             }
 
@@ -110,147 +105,16 @@ namespace CamelWorks.UI.Views
             // Left: where the matrix is, and what the sheet looks like
             // ---------------------------------------------------------------------------------
 
-            private UIElement Source()
-            {
-                var open = Ui.Button("Open it", () =>
-                {
-                    _warnings.Children.Clear();
-
-                    var path = _file.Text.Trim();
-
-                    if (path.Length == 0 || !File.Exists(path))
-                    {
-                        Warn("There is no file at that path.");
-                        return;
-                    }
-
-                    try
-                    {
-                        _book = XlsxReader.Read(File.ReadAllBytes(path));
-                    }
-                    catch (IOException error)
-                    {
-                        Warn("Could not open it: " + error.Message);
-                        return;
-                    }
-
-                    if (_book == null || !_book.IsUsable)
-                    {
-                        Warn(_book?.Problem ?? "Nothing could be read from that file.");
-                        return;
-                    }
-
-                    // Items, not ItemsSource: Ui.Choice fills Items, and WPF refuses ItemsSource
-                    // on a box that has any. This would have thrown on the first workbook opened.
-                    _sheets.Items.Clear();
-                    foreach (var sheet in _book.Sheets) _sheets.Items.Add(sheet.Name);
-                    _sheets.SelectedIndex = 0;
-
-                    ShowPreview();
-                });
-
-                return Ui.Stack(
+            private UIElement Source() =>
+                Ui.Stack(
                     Ui.Eyebrow("The spreadsheet"),
-                    Ui.PathField("Workbook", _file, PathKind.Open,
-                                 "Excel workbook|*.xlsx;*.xlsm|All files|*.*"),
-                    Ui.Actions(open),
-                    Ui.Field("Sheet", _sheets),
+                    _sheet.Picker(),
                     Ui.Small("Nobody's matrix is laid out like anybody else's, so nothing is assumed "
                              + "about where things are. The preview below is the sheet as it stands; "
                              + "read the row and column numbers off it and fill them in."));
-            }
-
-            private UIElement Mapping()
-            {
-                var rows = Ui.Stack(
-                    Ui.Eyebrow("Where things are"),
-                    Ui.Pair(Number("Name column", _mapping.NameColumn, v => _mapping.NameColumn = v),
-                            Number("Set column", _mapping.SetColumn, v => _mapping.SetColumn = v)),
-                    Ui.Pair(Number("Number column", _mapping.NumberColumn, v => _mapping.NumberColumn = v),
-                            Number("Code column", _mapping.CodeColumn, v => _mapping.CodeColumn = v)),
-                    Ui.Pair(Number("First category row", _mapping.FirstRow, v => _mapping.FirstRow = v),
-                            Number("First grid column", _mapping.FirstBodyColumn, v => _mapping.FirstBodyColumn = v)),
-                    Ui.Pair(Number("Numbers across the top", _mapping.HeaderNumberRow, v => _mapping.HeaderNumberRow = v),
-                            Number("Sets across the top", _mapping.HeaderSetRow, v => _mapping.HeaderSetRow = v)),
-                    Ui.Small("A zero means the sheet does not have that one. The columns across the "
-                             + "top are matched back to the categories down the side by number, then "
-                             + "by set name - never by position, so a spacer column costs nothing."));
-
-                var read = Ui.Runner("Read the matrix", _warnings, job => Read(job));
-
-                return Ui.Stack(rows, Ui.Actions(read));
-            }
-
-            private Panel Number(string label, int value, Action<int> set) =>
-                Ui.Field(label, Ui.Text(value.ToString(CultureInfo.InvariantCulture), text =>
-                {
-                    if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-                        && parsed >= 0) set(parsed);
-                }, 70));
 
             private UIElement Preview() =>
-                Ui.Stack(Ui.Eyebrow("The sheet as it stands"), _preview);
-
-            private void ShowPreview()
-            {
-                _preview.Children.Clear();
-
-                var sheet = Chosen();
-                if (sheet == null) return;
-
-                var cells = SheetMatrix.Preview(sheet, 12, 10);
-
-                // Row and column numbers along the edges, because the whole point of the preview is
-                // reading coordinates off it into the mapping above.
-                var table = new Grid();
-                table.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                for (var c = 0; c < 10; c++)
-                    table.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(74) });
-
-                table.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                for (var c = 0; c < 10; c++)
-                {
-                    var head = Ui.Small((c + 1).ToString(CultureInfo.InvariantCulture));
-                    head.HorizontalAlignment = HorizontalAlignment.Center;
-                    Grid.SetRow(head, 0);
-                    Grid.SetColumn(head, c + 1);
-                    table.Children.Add(head);
-                }
-
-                for (var r = 0; r < cells.Count; r++)
-                {
-                    table.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                    var head = Ui.Small((r + 1).ToString(CultureInfo.InvariantCulture));
-                    head.Margin = new Thickness(0, 0, 6, 0);
-                    Grid.SetRow(head, r + 1);
-                    Grid.SetColumn(head, 0);
-                    table.Children.Add(head);
-
-                    for (var c = 0; c < cells[r].Count; c++)
-                    {
-                        var text = cells[r][c];
-                        if (text.Length == 0) continue;
-
-                        var cell = Ui.Small(text.Length > 12 ? text.Substring(0, 11) + "…" : text);
-                        cell.ToolTip = text;
-                        Grid.SetRow(cell, r + 1);
-                        Grid.SetColumn(cell, c + 1);
-                        table.Children.Add(cell);
-                    }
-                }
-
-                _preview.Children.Add(table);
-            }
-
-            private SheetTable? Chosen()
-            {
-                if (_book == null) return null;
-
-                return _sheets.SelectedItem is string name ? _book.Sheet(name) : _book.First;
-            }
+                Ui.Stack(Ui.Eyebrow("The sheet as it stands"), _sheet.Preview());
 
             // ---------------------------------------------------------------------------------
             // Right: the matrix, its legend, and the tests
@@ -260,7 +124,7 @@ namespace CamelWorks.UI.Views
             {
                 job.Say("Reading the sheet...");
 
-                var read = SheetMatrix.Read(Chosen(), _mapping);
+                var read = SheetMatrix.Read(_sheet.Chosen, _mapping);
 
                 _matrix = read.Grid;
                 _legend = _legend.Covering(read.Grid);
@@ -503,11 +367,6 @@ namespace CamelWorks.UI.Views
                     "created " + Ui.Count(made, "clash test") + " from the matrix");
             }
 
-            private void Warn(string message)
-            {
-                _warnings.Children.Clear();
-                _warnings.Children.Add(Ui.Problem(message));
-            }
         }
     }
 }
