@@ -124,6 +124,12 @@ jobs:
       - name: Check no progress pump sits behind a count gate
         run: python3 checks/validate-pump.py
 
+      # There is no C# compiler on the Linux job, so a mistyped field name only shows up on Windows
+      # twenty minutes later. This catches the one way it happens: a replacement whose search string
+      # was a suffix of a longer identifier.
+      - name: Check every underscore field is declared where it is used
+        run: python3 checks/validate-fields.py
+
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
       # fails at the first click.

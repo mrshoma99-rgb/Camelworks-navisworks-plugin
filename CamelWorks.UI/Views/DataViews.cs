@@ -261,7 +261,7 @@ namespace CamelWorks.UI.Views
 
                 _diff = diff;
 
-                _into.Children.Add(Ui.Diff(diff));
+                _status.Children.Add(Ui.Diff(diff));
 
                 ShowApply();
             }
@@ -640,7 +640,7 @@ namespace CamelWorks.UI.Views
 
                 _diff = diff;
 
-                _into.Children.Add(Ui.Diff(diff));
+                _status.Children.Add(Ui.Diff(diff));
 
                 ShowApply();
             }
