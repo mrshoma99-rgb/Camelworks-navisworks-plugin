@@ -1383,6 +1383,145 @@ namespace CamelWorks.UI.Views
             }
         }
 
+        /// <summary>One step of a wizard: what it is called, and the surface it shows.</summary>
+        public sealed class Step
+        {
+            /// <summary>Name one.</summary>
+            /// <param name="title">What the step is called, in two or three words.</param>
+            /// <param name="body">Its surface.</param>
+            /// <param name="ready">
+            /// Null when the step is finished, or the reason it is not, which is shown beside a
+            /// disabled Next. A step with no check is always finished.
+            /// </param>
+            public Step(string title, Func<UIElement> body, Func<string?>? ready = null)
+            {
+                Title = title;
+                Body = body;
+                Ready = ready;
+            }
+
+            /// <summary>What the step is called.</summary>
+            public string Title { get; }
+
+            /// <summary>Its surface.</summary>
+            public Func<UIElement> Body { get; }
+
+            /// <summary>Why it is not finished, or null when it is.</summary>
+            public Func<string?>? Ready { get; }
+        }
+
+        /// <summary>
+        /// Several decisions taken in order, because each one depends on the last.
+        ///
+        /// <b>Only where the dependency is real.</b> You cannot map a spreadsheet's columns before
+        /// you have read the spreadsheet, and you cannot preview a write before you have mapped
+        /// them. Where the decisions are independent a wizard is a form with extra clicks, and a
+        /// form is the better answer.
+        ///
+        /// <b>The irreversible thing lives on the last step and nowhere else.</b> That is most of
+        /// the value: a screen showing every control at once puts "Write it into the model" beside
+        /// the box you are still typing a file path into.
+        /// </summary>
+        /// <param name="steps">The steps, in order.</param>
+        /// <param name="finish">The caption of the main action, on the last step.</param>
+        /// <param name="onFinish">What the main action does.</param>
+        public static UIElement Steps(IReadOnlyList<Step> steps, string finish, Action onFinish)
+        {
+            if (steps == null || steps.Count == 0) return Stack();
+
+            var at = 0;
+            var rail = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
+            var body = new ContentControl();
+            var why = Small(string.Empty);
+            var back = Quiet("Back", () => { });
+            var next = Primary("Next", () => { });
+            var actions = Actions(back, next, why);
+
+            void Draw()
+            {
+                rail.Children.Clear();
+
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var here = i;
+                    var done = i < at;
+                    var now = i == at;
+
+                    var pip = new Border
+                    {
+                        Width = 22,
+                        Height = 22,
+                        CornerRadius = new CornerRadius(11),
+                        Margin = new Thickness(i == 0 ? 0 : 8, 0, 7, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            FontSize = 11,
+                            Foreground = now || done
+                                ? (System.Windows.Media.Brush)System.Windows.Media.Brushes.White
+                                : null,
+                        },
+                    };
+
+                    pip.Tint(Border.BackgroundProperty, now || done ? "Accent" : "Track");
+
+                    var label = new TextBlock
+                    {
+                        Text = steps[here].Title,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        FontWeight = now ? FontWeights.SemiBold : FontWeights.Normal,
+                    };
+
+                    if (!now) label.Wearing("Hint");
+
+                    // A step already finished can be gone back to; one not reached yet cannot be
+                    // jumped to, because the step after it is built out of the answer to this one.
+                    if (done)
+                    {
+                        var jump = new System.Windows.Controls.Button { Content = label };
+
+                        jump.Wearing("LinkBtn");
+                        jump.Click += (s, e) => { at = here; Draw(); };
+
+                        rail.Children.Add(pip);
+                        rail.Children.Add(jump);
+                    }
+                    else
+                    {
+                        rail.Children.Add(pip);
+                        rail.Children.Add(label);
+                    }
+                }
+
+                body.Content = steps[at].Body();
+
+                var last = at == steps.Count - 1;
+                var stop = steps[at].Ready?.Invoke();
+
+                back.Visibility = at == 0 ? Visibility.Collapsed : Visibility.Visible;
+                next.Content = last ? finish : "Next";
+                next.IsEnabled = stop == null;
+                why.Text = stop ?? string.Empty;
+                why.Visibility = stop == null ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            back.Click += (s, e) => { if (at > 0) { at--; Draw(); } };
+
+            next.Click += (s, e) =>
+            {
+                if (at < steps.Count - 1) { at++; Draw(); return; }
+
+                onFinish?.Invoke();
+            };
+
+            Draw();
+
+            return Stack(rail, body, Rule(), actions);
+        }
+
         /// <summary>
         /// Say something to the user that has nowhere else to go.
         ///

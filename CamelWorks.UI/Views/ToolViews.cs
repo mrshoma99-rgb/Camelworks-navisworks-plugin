@@ -52,7 +52,9 @@ namespace CamelWorks.UI.Views
                 case "compile": return CompileWindow.Show();
                 case "restructure": return RestructureWindow.Show();
                 case "ids": return IdsWindow.Show();
-                case "help": return HelpWindow.Show();
+                // The one window that returns nothing: Help is the screen that has to work when
+                // the rest of the product will not, so it never refuses.
+                case "help": HelpWindow.Show(); return null;
                 case "export": return ExportWindow.Show();
 
                 // The five that were five collapsible sections of one window. They share a

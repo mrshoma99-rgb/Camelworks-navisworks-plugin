@@ -35,36 +35,38 @@ SOURCE = ("https://raw.githubusercontent.com/google/material-design-icons/master
 # near-black because the Navisworks ribbon is light on every supported release.
 INK = (0x33, 0x38, 0x3D)
 
-# One colour per workspace, and the reason the tools stop looking alike.
+# One colour per ribbon panel, and the reason the tools stop looking alike.
 #
 # Twenty-seven near-black outline glyphs in one ribbon tab is twenty-seven of the same button: the
 # eye has nothing to sort them by, so every trip to the ribbon is a read rather than a glance.
-# Tinting by workspace gives the row a structure that matches the one the pane already has - the
-# switcher marks each workspace with the same colour, so a rust icon and the rust dot beside
-# "Coordinate" are the same fact stated twice.
+# Tinting by panel gives the row a structure that matches the grouping already printed under it.
+#
+# It used to tint by workspace, read out of a command's "Coordinate/Triage" route. There are no
+# workspaces now - a button opens a tool, not a tab - so the grouping comes from the ribbon markup
+# itself, which is where a button's panel was always actually decided.
 #
 # These values are the light column of Skin.cs's Fam.* rows and have to stay that way. The dark
 # column is not used here: the Navisworks ribbon is light on every supported release, which is why
 # there is one icon set rather than two.
+# Keyed on the panel titles exactly as the markup writes them, entity and all, so the two are
+# obviously the same string rather than nearly the same one.
 FAMILY_INK = {
-    "Home":       (0x57, 0x61, 0x6C),
-    "Project":    (0x0F, 0x76, 0x6E),
-    "Coordinate": (0xC2, 0x41, 0x0C),
-    "Compare":    (0x6D, 0x46, 0xC8),
-    "Data":       (0x03, 0x69, 0xA1),
-    "Sets":       (0xB4, 0x53, 0x09),
-    "Batch":      (0x4D, 0x7C, 0x0F),
-    "Automate":   (0xBE, 0x18, 0x5D),
+    "Home":               (0x57, 0x61, 0x6C),
+    "Project":            (0x0F, 0x76, 0x6E),
+    "Coordinate":         (0xC2, 0x41, 0x0C),
+    "Compare":            (0x6D, 0x46, 0xC8),
+    "Data":               (0x03, 0x69, 0xA1),
+    "Sets &amp; Views":   (0xB4, 0x53, 0x09),
+    "Deliver &amp; Automate": (0x4D, 0x7C, 0x0F),
 }
 
-# The commands that open no pane, so the catalogue has no route to read a workspace out of. Named
-# here rather than given the fallback ink, because "Review" being the same colour as the clash
-# tools is the whole point of colouring them.
+# Kept for the two panes that carry no RibbonPanel of their own in the markup, and as the answer
+# for anything the markup grouping cannot place.
 LOOSE = {
     "FixLinks":   "Project",
     "Review":     "Coordinate",
     "Baseline":   "Compare",
-    "SectionBox": "Sets",
+    "SectionBox": "Sets &amp; Views",
     "Export":     "Project",
     "ExportIfc":  "Project",
     "Help":       "Home",
@@ -402,17 +404,28 @@ def commands():
 
 
 def families():
-    """Which workspace each command belongs to, read from the catalogue rather than restated.
+    """Which ribbon panel each command sits in, read from the markup rather than restated.
 
-    The catalogue already says where every pane command goes - "Coordinate/Triage" - and that is
-    the same fact a colour is about to encode. Reading it means a command that moves workspace
-    changes colour by itself, instead of keeping the old one until somebody notices.
+    The markup already groups the buttons under a titled RibbonPanelSource, and that grouping is
+    the same fact a colour is about to encode. Reading it means a button moved from one panel to
+    another changes colour by itself, instead of keeping the old one until somebody notices.
     """
-    source = (ROOT / "CamelWorks.UI" / "Shell" / "CommandCatalogue.cs").read_text(encoding="utf-8")
+    source = (ROOT / "CamelWorks.UI" / "CamelWorks.xaml").read_text(encoding="utf-8")
 
     found = dict(LOOSE)
-    for command, workspace in re.findall(r'"ID_CW_(\w+)"\s*,\s*"[^"]*"\s*,\s*"(\w+)/', source):
-        found[command] = workspace
+    panel = None
+
+    for line in source.splitlines():
+        title = re.search(r'<RibbonPanelSource[^>]*\sTitle="([^"]+)"', line)
+
+        if title:
+            panel = title.group(1)
+            continue
+
+        button = re.search(r'Id="ID_CW_(\w+)"', line)
+
+        if button and panel:
+            found[button.group(1)] = panel
 
     return found
 
@@ -440,13 +453,13 @@ def main():
     homeless = [c for c in declared if c not in homes]
 
     if homeless:
-        print("FAIL: no workspace known for: " + ", ".join(homeless), file=sys.stderr)
+        print("FAIL: no ribbon panel known for: " + ", ".join(homeless), file=sys.stderr)
         problems = 1
 
     strange = sorted({f for f in homes.values() if f not in FAMILY_INK})
 
     if strange:
-        print("FAIL: no colour for workspace: " + ", ".join(strange), file=sys.stderr)
+        print("FAIL: no colour for ribbon panel: " + ", ".join(strange), file=sys.stderr)
         problems = 1
 
     if args.check:
@@ -461,7 +474,7 @@ def main():
             return 1
 
         print(f"icons complete: {len(declared)} commands x {len(SIZES)} sizes, "
-              f"{len(set(homes[c] for c in declared))} workspace colours")
+              f"{len(set(homes[c] for c in declared))} panel colours")
         return 0
 
     if problems:
