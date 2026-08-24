@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using CamelWorks.Core.Automation;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;

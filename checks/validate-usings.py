@@ -12,6 +12,10 @@ the Navisworks API, where a wrong answer would be noise.
 Two things stop it crying wolf, both learned from a first draft that produced fifty-three false
 positives on a clean tree:
 
+It also knows one fixed table of framework types - the WPF names this repository actually uses -
+because CamelWorks.UI compiles only on a Windows runner and a missing `using System.Windows.Controls`
+is otherwise invisible until CI says so.
+
   * Only type POSITIONS count - `new X`, `X.Member`, `<X>`, `(X)`, `is X`, `as X`, `typeof(X)`,
     and a declaration `X name,` / `X name)` / `X name =` / `X name;`.
     A property or a string that happens to share a name with a type is not a use of it.
@@ -63,6 +67,49 @@ POSITIONS = [
 QUALIFIED = re.compile(r'\b[\w.]+\.([A-Z]\w+)\b')
 
 
+# The framework types this repository actually uses, and where they live.
+#
+# The rule above only knows types THIS repository declares, which is what keeps it honest - it has
+# a real index rather than a guess. That leaves one hole big enough to matter: CamelWorks.UI can
+# only be compiled on a Windows runner, so a WPF type used without its namespace is invisible here
+# and costs the full round trip. It cost exactly that for `Panel` on a screen whose file imported
+# System.Windows but not System.Windows.Controls.
+#
+# So: a small, fixed table. A name that lives in more than one namespace is listed under every one
+# of them - importing any of its homes satisfies it, which is what the compiler thinks too, and
+# `MessageBox` is in both System.Windows and System.Windows.Forms. A name whose home is not certain
+# is left out entirely: `Path` is in System.IO and System.Windows.Shapes, `Image`, `Style`,
+# `Binding` and `Run` are each in two places, and a table that guessed would be worse than none.
+FRAMEWORK = {
+    "System.Windows": [
+        "Window", "Thickness", "Visibility", "GridLength", "GridUnitType", "FrameworkElement",
+        "UIElement", "DependencyProperty", "HorizontalAlignment", "VerticalAlignment",
+        "TextWrapping", "TextAlignment", "RoutedEventArgs", "MessageBox", "SizeToContent",
+        "WindowStartupLocation", "WindowState", "ResizeMode", "FontWeights", "FontStyles",
+    ],
+    "System.Windows.Controls": [
+        "Panel", "StackPanel", "Grid", "Border", "TextBox", "TextBlock", "ComboBox",
+        "ComboBoxItem", "Button", "CheckBox", "ListView", "ListViewItem", "GridView",
+        "GridViewColumn", "ScrollViewer", "Viewbox", "Canvas", "ColumnDefinition",
+        "RowDefinition", "Orientation", "SelectionMode", "ProgressBar", "Separator",
+        "RadioButton", "TabControl", "TabItem", "Expander", "ItemsControl", "DockPanel",
+        "WrapPanel", "ScrollBarVisibility",
+    ],
+    "System.Windows.Media": [
+        "Brush", "SolidColorBrush", "Colors", "Brushes", "FontFamily", "PathGeometry",
+        "ScaleTransform", "TranslateTransform", "DrawingImage", "Stretch", "GeometryDrawing",
+    ],
+    "System.Windows.Input": ["KeyEventArgs", "MouseButtonEventArgs", "Cursors"],
+    "System.Windows.Shapes": ["Rectangle", "Ellipse", "Polygon", "Polyline"],
+    "System.Windows.Threading": ["DispatcherTimer", "DispatcherPriority"],
+    "Microsoft.Win32": ["OpenFileDialog", "SaveFileDialog"],
+
+    # The ribbon plug-in talks to the host through Windows Forms, so this name has two homes and
+    # both of them count.
+    "System.Windows.Forms": ["MessageBox"],
+}
+
+
 def sources():
     for path in sorted(ROOT.rglob("*.cs")):
         if "/obj/" in str(path) or "/bin/" in str(path):
@@ -88,6 +135,10 @@ def main():
 
         for name in DECLARES.findall(text):
             home.setdefault(name, set()).add(namespace.group(1))
+
+    for namespace, names in FRAMEWORK.items():
+        for name in names:
+            home.setdefault(name, set()).add(namespace)
 
     problems = 0
     checked = 0
