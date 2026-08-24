@@ -66,6 +66,7 @@ namespace CamelWorks.Studio
             new Sheet { Id = "controls", Title = "Every control", Height = 2100, Builder = _ => Controls(), Widths = new[] { 470 } },
             new Sheet { Id = "sets", Title = "Sets", Height = 1500, Builder = _ => SetsPane(), Widths = new[] { 470, 640 } },
             new Sheet { Id = "appearance", Title = "Appearance", Height = 1200, Builder = _ => Appearance(), Widths = new[] { 470 } },
+            new Sheet { Id = "takeoff", Title = "Takeoff", Height = 900, Builder = _ => Takeoff(), Widths = new[] { 470 } },
             new Sheet
             {
                 Id = "working",
@@ -176,8 +177,8 @@ namespace CamelWorks.Studio
                 Row("Category", "is", "Walls"),
                 Row("Level", "is", "Level 04"),
                 Ui.Across(
-                    Ui.Quiet("and...", () => { }),
-                    Ui.Quiet("Add an OR group", () => { })));
+                    Ui.Quiet("+ and...", () => { }),
+                    Ui.Quiet("+ Add an OR group", () => { })));
 
             return Page(
                 Ui.Marked(Glyphs.Filter, "Rule", "One set, built from conditions.",
@@ -407,10 +408,14 @@ namespace CamelWorks.Studio
                 Ui.Pill("Metres"),
                 Ui.Pill("4 clash tests"));
 
+            var where = Ui.Stack(
+                new TextBlock { Text = "PROJECT FILE" }.Wearing("Caps"),
+                Ui.Code("D:\\Projects\\Riverside\\Riverside.cwproj"));
+
+            where.Margin = new Thickness(0, 8, 0, 0);
+
             return Page(
-                Ui.Marked(Glyphs.Model, "Riverside — Block B", null,
-                    chips,
-                    Ui.Line("Project file  D:\\Projects\\Riverside\\Riverside.cwproj", 0.7)),
+                Ui.Marked(Glyphs.Model, "Riverside — Block B", null, chips, where),
 
                 Ui.Marked(Glyphs.Clock, "The week",
                     "Reconcile, regroup, report. Each opens where the work actually happens.",
@@ -479,6 +484,41 @@ namespace CamelWorks.Studio
             yield return new TableRow(null, "Report", "Issued 96 issues to 4 parties", "Yesterday");
             yield return new TableRow(null, "Regroup", "Grouped 1,284 clashes into 96", "Yesterday");
             yield return new TableRow(null, "Reconcile", "Brought in 6 models", "2 days ago");
+        }
+
+        /// <summary>
+        /// Takeoff, reconstructed.
+        ///
+        /// Here because it is the screen most at risk of still reading as a form: four settings, a
+        /// folded group of two more, and one button. If the card, the well and the pairing do not
+        /// rescue this one they have not rescued anything.
+        /// </summary>
+        private static UIElement Takeoff()
+        {
+            return Page(
+                Ui.Marked(Glyphs.Table, "Takeoff",
+                    "Sums whatever the elements carry. Pick a second axis and it becomes a pivot.",
+                    Ui.Form(
+                        Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
+                        Ui.Pair(
+                            Ui.Field("Measure", Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, "Volume", null)),
+                            Ui.Field("Rows", Ui.Text("Level", null, 100))),
+                        Ui.Field("Columns", Ui.Text(string.Empty, "nothing — a flat list", null, 140))),
+                    Ui.Section("If the values need tidying first", "Off — values read exactly as they are", false,
+                        Ui.Field("Take the number matching", Ui.Text(string.Empty, null, 200)),
+                        Ui.Field("When it has no unit, read it as", Ui.Choice(new[] { "leave it", "m3", "m2", "m" }, "leave it", null))),
+                    Ui.Actions(Ui.Primary("Sum it", () => { }))),
+
+                Ui.Marked(Glyphs.Table, "Result", null,
+                    Ui.Table(Sums(), ("Level", 130), ("Volume", 0), ("Elements", 80))));
+        }
+
+        private static IEnumerable<TableRow> Sums()
+        {
+            yield return new TableRow(null, "Level 00", "412.8 m³", "1,204");
+            yield return new TableRow(null, "Level 01", "388.1 m³", "1,118");
+            yield return new TableRow(null, "Level 02", "377.6 m³", "1,090");
+            yield return new TableRow(null, "Unreadable", "—", "17") { Tone = Tone.Warn };
         }
 
         private static UIElement States()
