@@ -392,6 +392,16 @@ namespace CamelWorks.UI.Shell
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = workspace.Title, FontWeight = FontWeights.SemiBold });
 
+            // On the chip, the count. A docked pane is narrow at every width anybody docks it at,
+            // so this chip is the only door to the other six workspaces — and "Home ⌄" on its own
+            // reads as a breadcrumb rather than as the thing you press to find everything else.
+            if (!withPurpose)
+                text.Children.Add(new TextBlock
+                {
+                    Text = Ui.Count(Workspaces.All.Count, "workspace"),
+                    Margin = new Thickness(0, 1, 0, 0),
+                }.Wearing("Hint"));
+
             if (withPurpose)
                 text.Children.Add(new TextBlock
                 {

@@ -241,7 +241,7 @@ namespace CamelWorks.UI.Views
                         + "half the faults worth reporting are about where a file is.", 0.85),
                 Ui.Note("It writes a file and sends nothing. Nothing in CamelWorks contacts a server, "
                         + "and a support bundle that uploaded itself would be the one place it did."),
-                Ui.Field("Write to", path),
+                Ui.PathField("Write to", path, PathKind.Save),
                 Ui.Across(write),
                 status);
         }
@@ -354,7 +354,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var line in SampleProject.Explains) body.Children.Add(Ui.Line("- " + line, 0.8));
 
-            body.Children.Add(Ui.Field("Write to", path));
+            body.Children.Add(Ui.PathField("Write to", path, PathKind.Save));
             body.Children.Add(Ui.Across(write));
             body.Children.Add(status);
 

@@ -73,11 +73,13 @@ namespace CamelWorks.UI.Views
 
             var past = history.Count == 0
                 ? (UIElement)Ui.Empty("Nothing has run yet.", "The result of every run is kept here.")
+                // Two columns, not three. Job plus When plus Outcome at 300 and 120 leaves the
+                // outcome about thirty pixels, and the only rows anybody reads in a run history
+                // are the ones that say why something stopped.
                 : Ui.Table(history.Select(e => new TableRow(e,
-                        e.Summary,
-                        ActivityLog.Ago(e.WhenTicks, session.NowTicks),
-                        e.Detail ?? string.Empty)).ToList(),
-                    ("Run", 300), ("When", 120), ("", 0));
+                        string.IsNullOrEmpty(e.Detail) ? e.Summary : e.Summary + " — " + e.Detail,
+                        ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList(),
+                    ("Run", 0), ("When", 110));
 
             return Ui.Scroll(Ui.Stack(
                 Ui.Marked(Glyphs.Play, "Jobs", null, body, log),

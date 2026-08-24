@@ -83,7 +83,7 @@ namespace CamelWorks.UI.Views
                 Ui.Heading("Fix broken links"),
                 head,
                 list,
-                Ui.Field("Look in", folder),
+                Ui.PathField("Look in", folder, PathKind.Folder),
                 Ui.Across(look),
                 results,
                 Ui.Note("Navisworks offers no way for a plug-in to re-point an existing model at a new "

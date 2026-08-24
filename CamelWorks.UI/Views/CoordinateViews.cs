@@ -953,6 +953,9 @@ namespace CamelWorks.UI.Views
         /// and it is the one no clash test at any tolerance will ever find — there is air between
         /// them. So it belongs beside the clash tests, which is where it is run from.
         /// </summary>
+        /// <summary>The project's own length unit, or metres before a document is open.</summary>
+        private static string Unit() => Host.Current?.Profile.Units.LengthUnit ?? "m";
+
         private static UIElement HeadroomCard()
         {
             var results = Ui.Stack();
@@ -1072,7 +1075,7 @@ namespace CamelWorks.UI.Views
 
             return Ui.Marked(Glyphs.Layers, "Clear height",
                 "The check a clash test cannot do: a duct 1.9 m above a corridor clashes with nothing.",
-                Ui.Form(Ui.Field("Minimum clear height (m)", minimum)),
+                Ui.Form(Ui.Field("Minimum clear height (" + Unit() + ")", minimum)),
                 run,
                 Ui.Section("What counts as a floor", "Floors and slabs, under everything else", false,
                     Ui.Form(
@@ -1095,6 +1098,11 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static UIElement FreezeCard()
         {
+            // Two panels, not one. Ui.Runner clears its output on every press, and the record of
+            // what is currently frozen — with the Unfreeze button under it — used to live in the
+            // same panel the two runners write to. Pressing "Change notice" deleted the way out.
+            // The comment on this method says the unfreeze is always visible; now it is.
+            var state = Ui.Stack();
             var results = Ui.Stack();
 
             var scope = Ui.Text(string.Empty, null, 220);
@@ -1104,19 +1112,8 @@ namespace CamelWorks.UI.Views
             var freeze = Ui.Runner("Freeze what is on the board", results,
                 job => DoFreeze(results, scope, signatory, release, job));
 
-            var notice = Ui.Runner("Change notice", results, job => DoNotice(results, job));
-
-            var card = Ui.Card("Freeze",
-                "Sign-off and fabrication release are the same record, and both come with a change notice",
-                Ui.Field("What is being frozen", scope),
-                Ui.Field("Signed by", signatory),
-                Ui.Field("Release reference", release),
-                Ui.Across(freeze, notice),
-                Ui.Note("A freeze records where every element on the board is, right now. Nothing "
-                        + "edits it afterwards: the change notice is the difference between that "
-                        + "record and the model as it stands, and it is the thing that stops a "
-                        + "hanger being made to a drawing three weeks old."),
-                results);
+            var notice = Ui.Runner("Change notice", results, primary: false,
+                work: job => DoNotice(results, job));
 
             var session = Host.Current;
 
@@ -1126,23 +1123,23 @@ namespace CamelWorks.UI.Views
 
                 if (held != null)
                 {
-                    results.Children.Add(Ui.Line(held.Describe(), 1, true));
+                    state.Children.Add(Ui.Line(held.Describe(), 1, true));
 
                     if (!held.IsIntact)
-                        results.Children.Add(Ui.Problem(
+                        state.Children.Add(Ui.Problem(
                             "That record no longer hashes to its own contents. It has been edited in "
                             + "the project file, by hand or by a merge, and what it says was agreed "
                             + "is no longer what it says it was."));
 
-                    results.Children.Add(Ui.Button("Unfreeze", () =>
+                    state.Children.Add(Ui.Button("Unfreeze", () =>
                     {
-                        results.Children.Clear();
+                        state.Children.Clear();
 
                         session.Store.Section(ProjectStore.ClashSection).Remove("freeze");
 
-                        results.Children.Add(session.Store.Save()
-                            ? Ui.Line("Unfrozen. Nothing on the board changed - only the record that "
-                                      + "it had been agreed.", 1, true)
+                        state.Children.Add(session.Store.Save()
+                            ? Ui.Done("Unfrozen. Nothing on the board changed - only the record that "
+                                      + "it had been agreed.")
                             : Ui.Problem(session.Store.LastSaveProblem
                                          ?? "Could not write the project file."));
 
@@ -1151,7 +1148,19 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            return card;
+            return Ui.Marked(Glyphs.Save, "Freeze",
+                "Sign-off and fabrication release are the same record, and both come with a change "
+                + "notice.",
+                state,
+                Ui.Form(
+                    Ui.Field("What is being frozen", scope),
+                    Ui.Pair(Ui.Field("Signed by", signatory), Ui.Field("Release reference", release))),
+                Ui.Across(freeze, notice),
+                Ui.Small("A freeze records where every element on the board is, right now. Nothing "
+                         + "edits it afterwards: the change notice is the difference between that "
+                         + "record and the model as it stands, and it is the thing that stops a "
+                         + "hanger being made to a drawing three weeks old."),
+                results);
         }
 
         /// <summary>Record where everything on the board is, right now.</summary>
@@ -1899,10 +1908,13 @@ namespace CamelWorks.UI.Views
                 // Headroom sits here rather than on the board. It is a test - it is run to produce
                 // findings, exactly like a clash test - and it was on Triage only because its
                 // findings look like clashes. What a screen is for is the act, not the output.
+                //
+                // _runs is inside _list because that is where the button that fills it is; the
+                // matrix keeps _results inside its own card for the same reason. An answer at the
+                // top of a panel, produced by a button at the bottom of it, is off screen at the
+                // moment it arrives.
                 return Ui.Scroll(Ui.Stack(
                     _list,
-                    _results,
-                    _runs,
                     Ui.Rule(),
                     Matrix(),
                     HeadroomCard()));
@@ -1948,9 +1960,19 @@ namespace CamelWorks.UI.Views
                 _list.Children.Add(Ui.Table(rows,
                     ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
 
-                if (stale.Count > 0 && session.Clash.CanEdit)
-                    _list.Children.Add(Ui.Runner("Run the " + stale.Count + " that never have", _runs,
-                        job => Run(stale, job)));
+                if (session.Clash.CanEdit)
+                {
+                    // The Monday task is "six models landed, run everything again", and the only
+                    // run control used to be the one for tests that had never run at all.
+                    _list.Children.Add(Ui.Runner("Run all " + Ui.Count(tests.Count, "test"), _runs,
+                        job => Run(tests, job)));
+
+                    if (stale.Count > 0)
+                        _list.Children.Add(Ui.Runner("Run only the " + stale.Count + " that never have",
+                            _runs, primary: false, work: job => Run(stale, job)));
+                }
+
+                _list.Children.Add(_runs);
             }
 
             /// <summary>The builder.</summary>
@@ -1962,7 +1984,7 @@ namespace CamelWorks.UI.Views
                 var columns = Ui.Choice(axes, _columns, pick => _columns = pick);
                 var diagonal = Ui.Check("Include each side against itself", _selfPairs, v => _selfPairs = v);
 
-                var build = Ui.Runner("Show me the grid", _grid, job =>
+                var build = Ui.Runner("Show me the grid", _grid, primary: false, work: job =>
                 {
                     _plan = null;
 
@@ -1998,13 +2020,14 @@ namespace CamelWorks.UI.Views
                     Ui.Form(Ui.Pair(Ui.Field("Rows", rows), Ui.Field("Columns", columns))),
                     build,
                     Ui.Section("How the tests are made",
-                        "Named " + _pattern.Text + ", at " + _tolerance.Text + " m", false,
+                        () => _pattern.Text + " at " + _tolerance.Text + " m", false,
                         Ui.Form(
                             Ui.Field("Name pattern", _pattern),
                             Ui.Field("Tolerance (m)", _tolerance),
                             Ui.Field("Put them in folder", _folder)),
                         diagonal),
-                    _grid);
+                    _grid,
+                    _results);
             }
 
             /// <summary>The grid, with a tick on every row that is going to be made.</summary>
@@ -2519,9 +2542,14 @@ namespace CamelWorks.UI.Views
                                  + "week's is the most common reason a trade builds from the wrong "
                                  + "information."),
                         Ui.Section("Where it goes, and what else is in it",
-                            "Beside the document, with a key plan", false,
+                            () => (_path.Text.Trim().Length == 0 ? "Beside the document" : "To a folder")
+                                  + (_perParty ? " · one file per party" : string.Empty)
+                                  + (_keyPlan ? " · with a key plan" : string.Empty)
+                                  + (_pictures ? " · with pictures" : string.Empty),
+                            false,
                             Ui.Form(
-                                Ui.Field("Write to", _path, "blank writes it beside the document"),
+                                Ui.PathField("Write to", _path, PathKind.Folder,
+                                         hint: "blank writes it beside the document"),
                                 Ui.Field("Name it", _template,
                                          "carries " + string.Join(", ", Deliverable.Tokens))),
                             changed,
@@ -3667,17 +3695,21 @@ namespace CamelWorks.UI.Views
                     Ui.Form(Ui.Pair(
                         Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
                                                     pick => asSheet = pick == "Spreadsheet")),
-                        Ui.Field("For", forWhom, "Only used by the spreadsheet."))),
-                    Ui.Actions(send)),
-
-                Ui.Section("How it is written", "BCF 2.1 · a view on every topic", false,
-                    Ui.Form(
-                        Ui.Pair(Ui.Field("Version", picker), Ui.Field("Snapshots", snapshotBox)),
-                        Ui.Field("Write to", outFile))),
+                        Ui.Field("For", forWhom, "one party's rows, on the spreadsheet"))),
+                    Ui.Actions(send),
+                    Ui.Section("How it is written",
+                        () => (asSheet ? "A spreadsheet for " + party : "BCF " + version)
+                              + (asSheet || !snapshots ? string.Empty : " · a view on every topic"),
+                        false,
+                        Ui.Form(
+                            Ui.Pair(Ui.Field("Version", picker), Ui.Field("Snapshots", snapshotBox)),
+                            Ui.PathField("Write to", outFile, PathKind.Save,
+                                         "BCF|*.bcf|Excel|*.xlsx|All files|*.*")))),
 
                 Ui.Marked(Glyphs.Model, "Read the answers back",
                     "This one changes the board, so it shows you what it would do first.",
-                    Ui.Form(Ui.Field("File", inFile)),
+                    Ui.Form(Ui.PathField("File", inFile, PathKind.Open,
+                                         "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*")),
                     Ui.Actions(read)),
 
                 results));

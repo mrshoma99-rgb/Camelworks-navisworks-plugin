@@ -75,6 +75,9 @@ namespace CamelWorks.UI.Views
             var rows = Ui.Stack();
             var step = 0;
 
+            // Only the first undone step leads. Set once, read by every row after it.
+            var led = false;
+
             foreach (var kind in ActivityKind.Cycle)
             {
                 step++;
@@ -100,9 +103,13 @@ namespace CamelWorks.UI.Views
                 Grid.SetColumn(left, 1);
                 line.Children.Add(left);
 
-                // The step nobody has done yet is the one that should look like the thing to press.
-                // Once it has been done, it steps back and lets the next one lead.
-                var button = never
+                // The FIRST step nobody has done yet is the one that should look like the thing to
+                // press. On a project's first day all three are undone, and three blue buttons is
+                // the same as none.
+                var lead = never && !led;
+                if (never) led = true;
+
+                var button = lead
                     ? Ui.Primary(GoLabel(kind), () => goTo(RouteFor(kind)))
                     : Ui.Button(GoLabel(kind), () => goTo(RouteFor(kind)));
 
@@ -157,11 +164,18 @@ namespace CamelWorks.UI.Views
             _ => "Coordinate/Report",
         };
 
+        /// <summary>
+        /// What the step's button says.
+        ///
+        /// The row is labelled with a verb — Reconcile, Regroup, Report — and the button used to
+        /// be labelled with a place: Models, Board, Reports. Two vocabularies for one step, and
+        /// the first of the three places is a tab called Health.
+        /// </summary>
         private static string GoLabel(string kind) => kind switch
         {
-            ActivityKind.Reconcile => "Models",
-            ActivityKind.Regroup => "Board",
-            _ => "Reports",
+            ActivityKind.Reconcile => "Check the models",
+            ActivityKind.Regroup => "Open the board",
+            _ => "Write the report",
         };
 
         private static UIElement Recent(Session session)

@@ -377,11 +377,12 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Stack(
                     Ui.Eyebrow("Send one out"),
-                    Ui.Form(Ui.Field("Write to", _out, "blank writes it to your documents")),
+                    Ui.Form(Ui.PathField("Write to", _out, PathKind.Save, "Excel|*.xlsx|All files|*.*",
+                                         "blank writes it to your documents")),
                     write,
 
                     Ui.Eyebrow("Bring it back"),
-                    Ui.Form(Ui.Field("Read back", _in)),
+                    Ui.Form(Ui.PathField("Read back", _in, PathKind.Open, "Excel|*.xlsx|All files|*.*")),
                     read,
 
                     Ui.Small("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
@@ -575,7 +576,7 @@ namespace CamelWorks.UI.Views
                     name.Text = Suggested(pick);
                 });
 
-                var preview = Ui.Runner("Show me what would change", _status,
+                var preview = Ui.Runner("Show me what it would write", _status,
                     inner => Preview(inner, name.Text));
 
                 _status.Children.Add(Ui.Field("Bring back the column", picker));
@@ -1215,15 +1216,30 @@ namespace CamelWorks.UI.Views
 
                     _actions.Children.Add(Ui.Across(
                         Ui.Button("Rename it", () => Rename(column, census.Present)),
-                        Ui.Button("Remove it from " + Ui.Count(census.Present, "element"),
-                                  () => Remove(column, census.Present))));
+
+                        // Red, and asked twice. Stripping a column off forty thousand elements is
+                        // the harshest act on this tab and it used to be the same grey rectangle
+                        // as the rename beside it.
+                        Ui.Danger("Remove it from " + Ui.Count(census.Present, "element"), () =>
+                        {
+                            _actions.Children.Clear();
+
+                            _actions.Children.Add(Ui.Danger(
+                                "Yes, remove \"" + column + "\" from "
+                                + Ui.Count(census.Present, "element"),
+                                () => Remove(column, census.Present)));
+
+                            _actions.Children.Add(Ui.Small("Ctrl+Z will not bring it back."));
+                        })));
                 });
 
-                return Ui.Card("Rename or remove a column",
+                return Ui.Marked(Glyphs.Tune, "Rename or remove a column",
                     "Only columns in CamelWorks' own tab. Renaming what the authoring tool wrote would "
                     + "make the model disagree with the model it came from.",
-                    Ui.Field("Column", _column),
-                    Ui.Field("New name", _renamed),
+                    Ui.Form(Ui.Pair(
+                        Ui.Field("Column", _column, "as it is spelled in the "
+                                                    + NavWriteTransaction.TabName + " tab"),
+                        Ui.Field("New name", _renamed))),
                     count,
                     _status,
                     _actions);
@@ -1399,6 +1415,34 @@ namespace CamelWorks.UI.Views
                             + "\"Level 02\" are two levels here. Worth a look at the table below "
                             + "before anything is reported by level."));
 
+                    // The three sources as one control rather than two footnotes. They were
+                    // Ui.Link, which reads as commentary — and a coordinator who disagrees with a
+                    // derived answer wants the other answer, not a sentence describing it.
+                    var sources = new List<string>();
+                    var byName = new Dictionary<string, LevelSet>(StringComparer.Ordinal);
+
+                    foreach (var source in new[] { fromGrid, fromModel, guessed })
+                    {
+                        if (source.Bands.Count == 0) continue;
+
+                        var name = Named(source) + " (" + source.Bands.Count.ToString(CultureInfo.InvariantCulture) + ")";
+
+                        if (byName.ContainsKey(name)) continue;
+
+                        sources.Add(name);
+                        byName[name] = source;
+                    }
+
+                    if (sources.Count > 1)
+                        results.Children.Add(Ui.Field("Worked out from",
+                            Ui.Choice(sources, Named(levels) + " ("
+                                      + levels.Bands.Count.ToString(CultureInfo.InvariantCulture) + ")",
+                                      pick =>
+                                      {
+                                          if (byName.TryGetValue(pick, out var swap) && swap.Source != levels.Source)
+                                              Show(swap);
+                                      }, 260)));
+
                     var rows = levels.Bands.Select(b => new TableRow(b,
                         b.Name,
                         units.Bare(b.Elevation),
@@ -1410,20 +1454,7 @@ namespace CamelWorks.UI.Views
                         ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
                         ("Elements", 110), ("Source", 110)));
 
-                    // The first question anybody asks a derived answer is "compared to what", and
-                    // both alternatives are already computed. They used to be two grey lines
-                    // saying what would have happened; a coordinator who disagrees with the answer
-                    // wants the other one, not a description of it.
-                    foreach (var other in new[] { fromGrid, fromModel, guessed })
-                    {
-                        if (other.Source == levels.Source || other.Bands.Count == 0) continue;
-
-                        var swap = other;
-
-                        results.Children.Add(Ui.Link(
-                            Named(swap) + " gives " + Ui.Count(swap.Bands.Count, "level")
-                            + " - use those instead", () => Show(swap)));
-                    }
+                    results.Children.Add(Ui.Tally(rows.Count, levels.Bands.Count, "level"));
 
                     after.Children.Add(Ui.Rule());
                     after.Children.Add(Stamp(session, levels, items));
@@ -1641,7 +1672,7 @@ namespace CamelWorks.UI.Views
                     // Off until somebody sets them, and a property that already reads as a quantity
                     // needs neither - so this is the definition of a group that should not be
                     // occupying the screen of everyone who does not need it.
-                    Ui.Section("If the values need tidying first", Tidying(), false,
+                    Ui.Section("If the values need tidying first", Tidying, false,
                         Ui.Small("Both of these are off until you set them. A property that already "
                                  + "reads as a quantity needs neither."),
                         Ui.Field("Take the number matching", _clean),
@@ -1732,7 +1763,8 @@ namespace CamelWorks.UI.Views
                 if (wide) Wide(session, pivot);
                 else Narrow(session, flat);
 
-                _output.Children.Add(Ui.Field("Write to", _path));
+                _output.Children.Add(Ui.PathField("Write to", _path, PathKind.Save,
+                                                  "Excel|*.xlsx|CSV|*.csv|All files|*.*"));
                 _output.Children.Add(Ui.Across(Ui.Button("Write it to a spreadsheet", () => Export(session))));
             }
 
@@ -1882,7 +1914,8 @@ namespace CamelWorks.UI.Views
             private void Export(Session session)
             {
                 _output.Children.Clear();
-                _output.Children.Add(Ui.Field("Write to", _path));
+                _output.Children.Add(Ui.PathField("Write to", _path, PathKind.Save,
+                                                  "Excel|*.xlsx|CSV|*.csv|All files|*.*"));
 
                 var file = _path.Text.Trim();
 

@@ -47,6 +47,12 @@ namespace CamelWorks.UI.Views
         /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
         private const string IntakeKey = "intake";
 
+        /// <summary>The check whose findings the put-it-back buttons answer.</summary>
+        private const string Placed = "Placement";
+
+        /// <summary>The check whose findings the folder search answers.</summary>
+        private const string Federated = "The federation";
+
         /// <summary>
         /// The sweep: every built-in check, one traversal, one verdict.
         ///
@@ -81,11 +87,27 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Answer(review));
                 results.Children.Add(Ui.Small(reading.Explain(session)));
 
-                foreach (var finding in review.Findings) results.Children.Add(Found(finding));
+                // The remedy goes under the finding that asks for it. A fix appended after five
+                // findings is a fix nobody connects to the one that said "put it back below".
+                foreach (var finding in review.Findings)
+                {
+                    results.Children.Add(Found(finding));
+
+                    if (finding.Check == Placed && actions.Children.Count > 0)
+                    {
+                        results.Children.Add(actions);
+                        actions = Ui.Stack();
+                    }
+
+                    if (finding.Check == Federated && loaded.AnyMissing)
+                    {
+                        results.Children.Add(Repoint(session));
+                        loaded = (loaded.Table, false);
+                    }
+                }
 
                 foreach (var skipped in review.Missing) results.Children.Add(Ui.Small("Not checked: " + skipped));
 
-                if (loaded.AnyMissing) results.Children.Add(Repoint(session));
                 if (actions.Children.Count > 0) results.Children.Add(actions);
 
                 results.Children.Add(Ui.Section("What is loaded",
@@ -139,7 +161,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static (UIElement Table, bool AnyMissing) Loaded(Session session, FederationReview review)
         {
-            const string Check = "The federation";
+            const string Check = Federated;
 
             var savedAt = FileTime(session.SavedPath);
             var rows = new List<TableRow>();
@@ -368,7 +390,7 @@ namespace CamelWorks.UI.Views
         private static void Placement(Session session, ModelIntake intake,
                                       FederationReview review, Panel actions)
         {
-            const string Check = "Placement";
+            const string Check = Placed;
 
             var carried = session.Model.Models.Where(m => m.HasTransform).ToList();
 
@@ -380,7 +402,7 @@ namespace CamelWorks.UI.Views
                     + " has been moved by the federation since the last sweep",
                     "Nobody is told when this happens, and every clash from that moment on is in "
                     + "the wrong place.",
-                    "Put it back below, then run the clash tests again.",
+                    "Run the clash tests again once it is back.",
                     intake.Moved.Select(m => m.DisplayName).ToList());
 
                 foreach (var model in intake.Moved)
@@ -524,7 +546,7 @@ namespace CamelWorks.UI.Views
             });
 
             source.Fold = Ui.Section("Which property carries the code",
-                source.Table + ", read from a property of the same name", false,
+                () => source.Table + " · " + source.Property, false,
                 Ui.Form(
                     Ui.Field("Table", picker),
                     Ui.Field("Property", property, "\"Category / Name\", or a bare name for any category")));
@@ -679,7 +701,7 @@ namespace CamelWorks.UI.Views
                 "Answer an IDS — the openBIM way of writing information requirements down — against "
                 + "this federation. Point it at the file and press the button; there is nothing else "
                 + "to fill in.",
-                Ui.Form(Ui.Field("IDS file", path)),
+                Ui.Form(Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*")),
                 run,
                 Ui.Section("Where the IFC class is read from", "wherever the readers put it", false,
                     Ui.Form(Ui.Field("IFC class from", classSource,
@@ -1128,17 +1150,22 @@ namespace CamelWorks.UI.Views
             // The project file's own problems are reported here, where the file is, rather than
             // on the front door where they were three banners between the user and their week.
             var file = Ui.Stack(Ui.Split("Project file", session.Store.Where));
+            var broken = Ui.Stack();
 
             if (session.Store.UsedBackup)
-                file.Children.Add(Ui.Note("The project file could not be read and its backup was used "
-                                          + "instead. Nothing is lost that was saved before the last write."));
+                broken.Children.Add(Ui.Note("The project file could not be read and its backup was used "
+                                            + "instead. Nothing is lost that was saved before the last write."));
 
             if (session.Store.ConcurrencyNote.Length > 0)
-                file.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
+                broken.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
 
+            // The failures first when there are any. A tab reporting that the project file could
+            // not be read, and putting that below thirty rows of settings, is a tab that has
+            // filed its own alarm at the bottom of the scroll.
             return Ui.Scroll(Ui.Stack(
+                broken,
                 Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null,
-                          rows, Ui.Actions(save, reset), status),
+                          Ui.Form(rows), Ui.Actions(save, reset), status),
                 file));
         }
 
@@ -1232,7 +1259,7 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Stack(
-                Ui.Field("Search a folder for them", folder),
+                Ui.PathField("Search a folder for them", folder, PathKind.Folder),
                 run,
                 results);
         }

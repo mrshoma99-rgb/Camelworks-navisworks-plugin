@@ -128,7 +128,7 @@ namespace CamelWorks.UI.Views
 
             private UIElement Actions(Session session)
             {
-                var preview = Ui.Runner("Run", _results, job =>
+                var preview = Ui.Runner("Select what it catches", _results, job =>
                 {
                     var plan = DnfCompiler.Compile(Expression());
 
@@ -475,7 +475,7 @@ namespace CamelWorks.UI.Views
                     Show(plan, rows.Count);
                 });
 
-                return Ui.Section("Make a set for every value of a property", Summary(), false,
+                return Ui.Section("Make a set for every value of a property", Summary, false,
                     Ui.Small("One property makes a flat run of sets; a second and a third nest them "
                              + "into real folders. Every set is a rule rather than a list, so one made "
                              + "today still covers the walls somebody adds tomorrow — and it carries "
@@ -821,13 +821,14 @@ namespace CamelWorks.UI.Views
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
                 });
 
-                var reset = Ui.Button("Show everything", () =>
+                // The inverse of Apply, and it has to exist: a panel that paints a federation and
+                // cannot un-paint it is one people apply once and then work around. It used to be
+                // called "Show everything" and only restored visibility, which is a caption
+                // promising a reset over a control that does not perform one.
+                var reset = Ui.Runner("Put the model back", _results, primary: false, work: job =>
                 {
-                    _results.Children.Clear();
+                    job.Say("Resolving layers...");
 
-                    // Deliberately not "clear all overrides": that would also throw away colouring
-                    // somebody applied by hand outside CamelWorks.
-                    //
                     // One resolver for the whole pass, because it caches: ten layers over the same
                     // saved set would otherwise run the same search ten times.
                     var resolver = new HostResolver(session);
@@ -837,10 +838,29 @@ namespace CamelWorks.UI.Views
                         foreach (var key in resolver.Resolve(layer.Target))
                             all.Add(key);
 
-                    session.View.SetVisible(all.ToList(), true);
+                    var covered = all.ToList();
 
-                    _results.Children.Add(Ui.Line("Un-hid " + Ui.Count(all.Count, "element")
-                                                  + " the stack covers. Colours are left alone.", 0.8));
+                    job.Say("Reading what the model looks like now...");
+                    var current = session.View.ReadAppearance(covered);
+
+                    // Somebody else's colouring stays. Clearing an override CamelWorks did not
+                    // author, because it happened to be on an element a layer covers, is how a
+                    // tool loses a colleague's afternoon.
+                    var foreign = new HashSet<ElementKey>(
+                        current.Where(state => state.IsForeign).Select(state => state.Key));
+
+                    var ours = covered.Where(key => !foreign.Contains(key)).ToList();
+
+                    session.View.ClearOverrides(ours);
+                    session.View.SetVisible(covered, true);
+
+                    _results.Children.Add(Ui.Done("Took the stack back off "
+                                                  + Ui.Count(ours.Count, "element") + "."));
+
+                    if (foreign.Count > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(foreign.Count, "element")
+                            + " kept an override CamelWorks did not author. They are visible again "
+                            + "but still coloured, because that colour is somebody else's work."));
                 });
 
                 return Ui.Across(apply, save, reset);
@@ -1446,7 +1466,8 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Section("Render them to images", "1920 x 1080, numbered in order", false,
                     Ui.Form(Ui.Pair(
-                        Ui.Field("Write into", into, "blank writes them to your documents"),
+                        Ui.PathField("Write into", into, PathKind.Folder,
+                                     hint: "blank writes them to your documents"),
                         Ui.Field("Size", size))),
                     render,
                     Ui.Small("The camera goes back where it was when the run finishes."));

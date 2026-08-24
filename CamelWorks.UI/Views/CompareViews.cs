@@ -130,7 +130,7 @@ namespace CamelWorks.UI.Views
             // raw model, so this is a card almost nobody has to open - but a row somebody disagrees
             // with still needs an answer better than "the tool said so", and folding a thing away
             // only costs nothing while the fold itself says what it will do.
-            return Ui.Section("What counts as a change", Settings.Describe(), false,
+            return Ui.Section("What counts as a change", () => Settings.Describe(), false,
                 Ui.Field("Move over", Ui.Text(
                     Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture),
                     text =>
@@ -396,6 +396,13 @@ namespace CamelWorks.UI.Views
 
             private string Many(ChangeBucket bucket) =>
                 _result.CountIn(bucket).ToString("N0", CultureInfo.InvariantCulture);
+
+            /// <summary>How many elements the comparison found something to say about.</summary>
+            private string Touched() =>
+                (_result.CountIn(ChangeBucket.Added)
+                 + _result.CountIn(ChangeBucket.Removed)
+                 + _result.CountIn(ChangeBucket.Moved)
+                 + _result.CountIn(ChangeBucket.Changed)).ToString("N0", CultureInfo.InvariantCulture);
 
             private UIElement Filters()
             {
@@ -690,7 +697,8 @@ namespace CamelWorks.UI.Views
 
             private UIElement Keep()
             {
-                var stamp = Ui.Runner("Stamp it into the properties", output: _output, primary: false, work: job =>
+                var stamp = Ui.Runner("Stamp " + Touched() + " changes into the properties",
+                                      output: _output, primary: false, work: job =>
                 {
                     // The adapter writes every custom property into one tab of its own, whatever
                     // category it was handed. Core names that tab by a literal it cannot check
@@ -801,9 +809,20 @@ namespace CamelWorks.UI.Views
                     Report();
                 });
 
-                // Four zero-argument commands. They took three cards and a paragraph between them;
-                // they are one row. What the stamp writes is said by the stamp, after it runs.
-                return Ui.Stack(Ui.Actions(stamp, unstamp, raise, report), Walk());
+                // Four zero-argument commands, in two groups that are not the same kind of act.
+                // Saving a report and raising issues produce something new; stamping writes into
+                // the model itself and Ctrl+Z does not reach it. One row of four identical
+                // outlines put those on the same footing, which is exactly the footing a write
+                // must not share with an export.
+                return Ui.Stack(
+                    Ui.Eyebrow("Take it away"),
+                    Ui.Across(report, raise),
+                    Walk(),
+                    Ui.Rule(),
+                    Ui.Eyebrow("Write it into the model"),
+                    Ui.Across(stamp, unstamp),
+                    Ui.Small("Ctrl+Z does not undo a property write. \"Take the stamp off\" is the "
+                             + "way back, and it clears only what the stamp wrote."));
             }
 
             private void Report()
@@ -901,6 +920,9 @@ namespace CamelWorks.UI.Views
 
             listed.Children.Add(Ui.Stack(
                 table,
+                // Named and asked twice. A red button whose only description of its target is
+                // "the selected one" is a button that deletes something you cannot check first,
+                // and a baseline is a week of history nothing else in the product can rebuild.
                 Ui.Danger("Delete the selected one", () =>
                 {
                     results.Children.Clear();
@@ -913,11 +935,16 @@ namespace CamelWorks.UI.Views
 
                     var gone = picked;
 
-                    results.Children.Add(store.Delete(gone)
-                        ? Ui.Line("Deleted " + gone.Describe() + ".", 0.8)
-                        : Ui.Problem(store.LastProblem ?? "It could not be deleted."));
+                    results.Children.Add(Ui.Danger("Yes, delete " + gone.Describe(), () =>
+                    {
+                        results.Children.Clear();
 
-                    Redraw(store, listed, results);
+                        results.Children.Add(store.Delete(gone)
+                            ? Ui.Done("Deleted " + gone.Describe() + ".")
+                            : Ui.Problem(store.LastProblem ?? "It could not be deleted."));
+
+                        Redraw(store, listed, results);
+                    }));
                 })));
         }
 

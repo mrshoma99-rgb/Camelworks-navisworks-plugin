@@ -13,6 +13,19 @@ using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
 {
+    /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
+    public enum PathKind
+    {
+        /// <summary>A file that already exists.</summary>
+        Open = 0,
+
+        /// <summary>A file to be written, which need not exist yet.</summary>
+        Save = 1,
+
+        /// <summary>A folder.</summary>
+        Folder = 2,
+    }
+
     /// <summary>How a value reads: neutral, good, worth attention, or wrong.</summary>
     public enum Tone
     {
@@ -519,6 +532,14 @@ namespace CamelWorks.UI.Views
             if (first is FrameworkElement lead)
             {
                 lead.Margin = new Thickness(0, 0, 8, 5);
+
+                // The ranking this method exists for, which it used to describe and not perform:
+                // it set a wider margin on the first child and nothing else, so a row of three
+                // came out as three identical grey rectangles — the exact failure the comment
+                // above claims to fix. A Runner is left alone; it was told at its own call site
+                // whether it leads, and a row can hold one that deliberately does not.
+                if (lead is System.Windows.Controls.Button button) button.Wearing("PrimaryBtn");
+
                 panel.Children.Add(lead);
             }
             else if (first != null)
@@ -729,8 +750,25 @@ namespace CamelWorks.UI.Views
         /// <param name="summary">What it is currently set to, shown while it is folded.</param>
         /// <param name="open">Whether it starts open.</param>
         /// <param name="body">The contents.</param>
-        public static Border Section(string title, string? summary, bool open, params UIElement?[] body)
+        public static Border Section(string title, string? summary, bool open, params UIElement?[] body) =>
+            Section(title, () => summary ?? string.Empty, open, body);
+
+        /// <summary>
+        /// A disclosure whose header line is recomputed every time it closes.
+        ///
+        /// The whole argument for folding an option away is that the closed header still says what
+        /// it is set to. A summary captured once, when the panel was built, says what it was set
+        /// to before anybody touched it — which on the BCF card meant picking 3.0, folding it, and
+        /// reading "BCF 2.1" on the header of the thing you had just changed.
+        /// </summary>
+        /// <param name="title">What is inside.</param>
+        /// <param name="summary">What it is currently set to, asked again on every collapse.</param>
+        /// <param name="open">Whether it starts open.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Section(string title, Func<string> summary, bool open, params UIElement?[] body)
         {
+            if (summary == null) throw new ArgumentNullException(nameof(summary));
+
             var chevron = Glyph(open ? Glyphs.Down : Glyphs.Right, 14, "Muted");
 
             var caption = new TextBlock
@@ -741,9 +779,11 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(8, 0, 10, 0),
             }.Wearing("Body");
 
+            var said = summary();
+
             var state = new TextBlock
             {
-                Text = summary ?? string.Empty,
+                Text = said,
 
                 // NoWrap as well as trimming: the Hint style wraps, and wrapping beats trimming,
                 // so a long summary broke onto a second right-aligned line instead of ending in an
@@ -754,7 +794,7 @@ namespace CamelWorks.UI.Views
                 HorizontalAlignment = HorizontalAlignment.Right,
                 TextAlignment = TextAlignment.Right,
                 Margin = new Thickness(12, 0, 0, 0),
-                Visibility = open || string.IsNullOrEmpty(summary) ? Visibility.Collapsed : Visibility.Visible,
+                Visibility = open || string.IsNullOrEmpty(said) ? Visibility.Collapsed : Visibility.Visible,
             }.Wearing("Hint");
 
             var header = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand };
@@ -782,7 +822,12 @@ namespace CamelWorks.UI.Views
             {
                 shown = !shown;
                 contents.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
-                state.Visibility = shown || string.IsNullOrEmpty(summary) ? Visibility.Collapsed : Visibility.Visible;
+
+                if (!shown) state.Text = summary();
+
+                state.Visibility = shown || string.IsNullOrEmpty(state.Text)
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
 
                 chevron.Child = Arrow(shown ? Glyphs.Down : Glyphs.Right, "Muted");
             };
@@ -825,6 +870,127 @@ namespace CamelWorks.UI.Views
             };
 
             return frame.Tint(Border.BorderBrushProperty, stop ? "RedBd" : "AmberBd");
+        }
+
+        /// <summary>
+        /// A path, and the dialog that saves somebody alt-tabbing to Explorer to copy one.
+        ///
+        /// Sixteen fields in this product asked for a path and offered a bare text box. Typing an
+        /// absolute path from memory is not something anybody does; what they actually do is open
+        /// Explorer, navigate to the file, copy the address bar and come back — which is the whole
+        /// task, done by hand, in front of a tool that could have asked.
+        /// </summary>
+        /// <param name="label">What the path is for.</param>
+        /// <param name="box">The text box holding it. Its width is handed to the row.</param>
+        /// <param name="kind">Whether it is a file to open, a file to write, or a folder.</param>
+        /// <param name="filter">A dialog filter, as "What it is|*.ext". Ignored for a folder.</param>
+        /// <param name="hint">The line under it, or null.</param>
+        public static Panel PathField(string label, TextBox box, PathKind kind,
+                                      string filter = "All files|*.*", string? hint = null)
+        {
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // The box asked for a comfortable width when it was made. In a 470-pixel pane with a
+            // button beside it there is no such width, and a MinWidth the column cannot honour
+            // pushes the button off the edge.
+            box.MinWidth = 90;
+            row.Children.Add(box);
+
+            var browse = Button("Browse", () => Pick(box, kind, filter));
+            browse.Margin = new Thickness(6, 0, 0, 0);
+            Grid.SetColumn(browse, 1);
+            row.Children.Add(browse);
+
+            return Field(label, row, hint);
+        }
+
+        /// <summary>
+        /// The dialog itself.
+        ///
+        /// Nothing is written here and nothing is read: it puts a path in a box, and the button
+        /// that does the work still does the work. So a save dialog does not warn about
+        /// overwriting — it has not been asked to overwrite anything yet, and the tool that will
+        /// says so itself when it runs.
+        /// </summary>
+        private static void Pick(TextBox box, PathKind kind, string filter)
+        {
+            var typed = box.Text.Trim();
+
+            try
+            {
+                if (kind == PathKind.Save)
+                {
+                    var save = new Microsoft.Win32.SaveFileDialog
+                    {
+                        Filter = filter,
+                        OverwritePrompt = false,
+                        AddExtension = true,
+                    };
+
+                    Start(save, typed);
+
+                    if (save.ShowDialog() == true) box.Text = save.FileName;
+                    return;
+                }
+
+                var folder = kind == PathKind.Folder;
+
+                // WPF on .NET Framework has no folder dialog, and pulling WinForms into a
+                // Navisworks add-in for one is a poor trade. A file dialog with a filter that
+                // matches nothing shows folders and nothing else, which is the dialog we wanted;
+                // the title says what to do with it rather than leaving somebody hunting for a
+                // file that is not there.
+                var open = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = folder ? "Folders|*.camelworks-no-such-file" : filter,
+                    CheckFileExists = !folder,
+                    CheckPathExists = true,
+                    ValidateNames = !folder,
+                    FileName = folder ? "(this folder)" : string.Empty,
+                    Title = folder ? "Open the folder you want, then press Open" : "Pick a file",
+                };
+
+                Start(open, typed);
+
+                if (open.ShowDialog() != true) return;
+
+                box.Text = folder
+                    ? System.IO.Path.GetDirectoryName(open.FileName) ?? typed
+                    : open.FileName;
+            }
+            catch (Exception)
+            {
+                // A dialog that will not open is not a reason to take the pane down with it, and
+                // the box is still there to be typed into.
+            }
+        }
+
+        /// <summary>Open the dialog where the box is already pointing, if that is anywhere real.</summary>
+        private static void Start(Microsoft.Win32.FileDialog dialog, string typed)
+        {
+            if (typed.Length == 0) return;
+
+            try
+            {
+                var directory = System.IO.Directory.Exists(typed)
+                    ? typed
+                    : System.IO.Path.GetDirectoryName(typed);
+
+                if (!string.IsNullOrEmpty(directory) && System.IO.Directory.Exists(directory))
+                    dialog.InitialDirectory = directory!;
+
+                if (!System.IO.Directory.Exists(typed))
+                {
+                    var name = System.IO.Path.GetFileName(typed);
+                    if (name.Length > 0) dialog.FileName = name;
+                }
+            }
+            catch (Exception)
+            {
+                // A path the OS will not even parse. The dialog opens wherever it likes.
+            }
         }
 
         /// <summary>A hairline between two groups of things.</summary>
