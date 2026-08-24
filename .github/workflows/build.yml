@@ -24,10 +24,18 @@ jobs:
     runs-on: windows-latest
     env:
       CI: "true"
+    # The two ends on a pull request, all four on main and on a tag.
+    #
+    # Windows minutes bill at twice the rate of Linux, and four of these ran on every push. The
+    # years bracket the API surface: a change that compiles against both the oldest and the newest
+    # supported release has nowhere left to break in the two between them, and anything that does
+    # is caught before a release rather than after one, because main and every tag still build all
+    # four. Two jobs saved per push, against a risk that only exists in the window between merging
+    # and tagging.
     strategy:
       fail-fast: false
       matrix:
-        year: ["2024", "2025", "2026", "2027"]
+        year: ${{ github.event_name == 'pull_request' && fromJSON('["2024","2027"]') || fromJSON('["2024","2025","2026","2027"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
