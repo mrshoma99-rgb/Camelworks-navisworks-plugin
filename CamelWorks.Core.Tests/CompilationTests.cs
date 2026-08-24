@@ -258,17 +258,15 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void A_combined_NWC_is_called_out_as_the_thing_it_cannot_be()
+        public void An_NWC_is_refused_as_the_thing_no_open_document_can_write()
         {
-            var recipe = new CompileRecipe("Weekly") { Format = Compilation.Nwc };
+            var recipe = new CompileRecipe("Weekly") { Format = Compilation.Nwc, Stamped = false };
 
-            var plan = Compilation.Plan(new[]
-            {
-                File(@"C:\Drops\Tower_Rev03.rvt"),
-                File(@"C:\Drops\Podium_RevA.rvt"),
-            }, recipe);
+            var plan = Compilation.Plan(new[] { File(@"C:\Drops\Tower_Rev03.rvt") }, recipe);
 
-            Assert.Contains(plan.Notes, n => n.Contains("An NWC holds one model", StringComparison.Ordinal));
+            Assert.Equal("Weekly.nwd", plan.Jobs[0].Output);
+            Assert.Contains(plan.Notes, n => n.Contains("exporter writes", StringComparison.Ordinal));
+            Assert.DoesNotContain(Compilation.Nwc, Compilation.Writable);
         }
 
         [Fact]
@@ -276,9 +274,18 @@ namespace CamelWorks.Core.Tests
         {
             var recipe = new CompileRecipe("Weekly") { Format = ".zip", Stamped = false };
 
-            Assert.EndsWith(".nwd",
-                Compilation.Plan(new[] { File(@"C:\Drops\Tower_Rev03.rvt") }, recipe).Jobs[0].Output,
-                StringComparison.Ordinal);
+            var plan = Compilation.Plan(new[] { File(@"C:\Drops\Tower_Rev03.rvt") }, recipe);
+
+            Assert.Equal("Weekly.nwd", plan.Jobs[0].Output);
+            Assert.Contains(plan.Notes, n => n.Contains("\".zip\" is not a format", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void A_saved_recipe_keeps_the_format_it_was_asked_for_even_when_it_is_refused()
+        {
+            var recipe = new CompileRecipe("Weekly") { Format = Compilation.Nwc };
+
+            Assert.Equal(Compilation.Nwc, CompileRecipe.FromJson(recipe.ToJson()).Format);
         }
 
         // ---- Refusals --------------------------------------------------------------------

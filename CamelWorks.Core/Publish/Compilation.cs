@@ -247,9 +247,10 @@ namespace CamelWorks.Core.Publish
 
             var format = (json["format"].AsString() ?? string.Empty).Trim();
 
-            recipe.Format = Compilation.Writable.Contains(format, StringComparer.OrdinalIgnoreCase)
-                ? format.ToLowerInvariant()
-                : Compilation.Nwd;
+            // Kept as written rather than corrected here: a recipe saved when the tool could
+            // write a format it no longer can should say what it was asked for, and Plan is where
+            // the fact that it cannot is reported.
+            recipe.Format = format.Length == 0 ? Compilation.Nwd : format.ToLowerInvariant();
 
             recipe.Folder = json["folder"].AsString();
             recipe.NewestOnly = json["newestOnly"].AsBool(true);
@@ -461,8 +462,15 @@ namespace CamelWorks.Core.Publish
         /// <summary>How many files one run will take.</summary>
         public const int MaxSources = 2000;
 
-        /// <summary>What a compilation can write.</summary>
-        public static IReadOnlyList<string> Writable { get; } = new[] { Nwd, Nwf, Nwc };
+        /// <summary>
+        /// What a compilation can write.
+        ///
+        /// NWD and NWF, and not NWC, because those are the two a host can be asked to save a
+        /// document as. An NWC is a cache the authoring tool's own exporter produces from a native
+        /// model; nothing that has a document open can write one, and offering it would be offering
+        /// a button that could only ever apologise.
+        /// </summary>
+        public static IReadOnlyList<string> Writable { get; } = new[] { Nwd, Nwf };
 
         /// <summary>
         /// What Navisworks will take in.
@@ -637,10 +645,7 @@ namespace CamelWorks.Core.Publish
                                          : string.Empty)
                     + (unreadable.Count > 0 ? "Navisworks does not read those formats." : string.Empty));
 
-            var format = Writable.Contains(wanted.Format, StringComparer.OrdinalIgnoreCase)
-                ? wanted.Format.ToLowerInvariant()
-                : Nwd;
-
+            var format = Format(wanted.Format, notes);
             var jobs = new List<CompileJob>();
 
             if (wanted.Mode == CompileMode.Combine)
@@ -664,11 +669,6 @@ namespace CamelWorks.Core.Publish
                               + " wanted by more than one file, so the last one written wins. Turn "
                               + "off \"newest only\" and they are all there, or rename the sources.");
             }
-
-            if (format == Nwc && wanted.Mode == CompileMode.Combine)
-                notes.Add("An NWC holds one model, not a federation. A combined NWC will be the "
-                          + "last file appended and nothing else - NWD is what a federation is "
-                          + "written as.");
 
             return new CompilePlan(wanted, jobs, superseded, missing, unreadable, notes, null);
         }
@@ -822,6 +822,27 @@ namespace CamelWorks.Core.Publish
             if (stamped && !string.IsNullOrWhiteSpace(stamp)) name += " " + stamp!.Trim();
 
             return name + extension;
+        }
+
+        /// <summary>
+        /// The format that will actually be written, saying so when it is not the one asked for.
+        /// </summary>
+        /// <param name="wanted">What the recipe says.</param>
+        /// <param name="notes">Where to say what happened.</param>
+        private static string Format(string? wanted, IList<string> notes)
+        {
+            var asked = (wanted ?? string.Empty).Trim().ToLowerInvariant();
+
+            if (Writable.Contains(asked, StringComparer.OrdinalIgnoreCase)) return asked;
+
+            notes.Add(asked == Nwc
+                ? "An NWC is a cache the authoring tool's own exporter writes from a native model - "
+                  + "nothing with a document open can produce one. This is written as NWD, which is "
+                  + "what a federation is saved as."
+                : "\"" + asked + "\" is not a format a document can be saved as. This is written "
+                  + "as NWD.");
+
+            return Nwd;
         }
 
         private static IReadOnlyList<SourceFile> Newest(IReadOnlyList<SourceFile> files,

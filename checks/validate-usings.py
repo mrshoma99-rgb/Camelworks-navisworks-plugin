@@ -43,7 +43,10 @@ POSITIONS = [
     re.compile(r'\bis\s+([A-Z]\w+)\b'),
     re.compile(r'\bas\s+([A-Z]\w+)\b'),
     re.compile(r'\btypeof\(\s*([A-Z]\w+)\s*\)'),
-    re.compile(r'\b([A-Z]\w+)\.\w+'),
+    # Not preceded by a dot: `Colour.Parse(...)` names a type, `book.Sheets.Count` names a
+    # property on an instance that happens to share a name with one. The second cost a false
+    # positive on a screen whose workbook has a Sheets property and whose repo has a Sheets class.
+    re.compile(r'(?<![.\w])([A-Z]\w+)\.\w+'),
 
     # A declaration: a type, then a name, then the end of it. Added after a parameter typed
     # `IFileSystem? fs = null` slipped through every position above and cost a CI round trip -
