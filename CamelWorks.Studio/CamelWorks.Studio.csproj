@@ -1,17 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
 
   <!--
-    The design harness.
+    The design harness. How to run it is on CamelWorks.Studio.Program, because an XML comment
+    cannot contain a double hyphen and every command line here needs two of them.
 
     CamelWorks.UI is a Navisworks dock pane, which normally means the only way to look at it is to
-    install a plug-in into a licensed CAD application and click through to the screen you changed.
+    install a plug-in into a licensed CAD application and click through to the screen that changed.
     That is a bad enough loop to iterate a layout in that layouts stop being iterated.
 
     It does not have to be. The pane is ordinary WPF built out of one widget vocabulary, so this
-    runs the same controls in a plain window:
-
-        dotnet run --project CamelWorks.Studio                       look at them
-        dotnet run --project CamelWorks.Studio -- --shoot out\shots  write them to PNG
+    runs the same controls in a plain window, either to look at or to write out as PNGs.
 
     There is no Autodesk assembly beside this executable and that is deliberate. Anything that
     reaches the host throws where it is touched, TabViews catches it and shows the failure in the

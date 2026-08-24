@@ -13,6 +13,14 @@ namespace CamelWorks.Studio
 {
     /// <summary>
     /// The design harness: CamelWorks' own controls, in a plain window, with no Navisworks.
+    ///
+    /// <code>
+    /// dotnet run --project CamelWorks.Studio                          look at them
+    /// dotnet run --project CamelWorks.Studio -- --shoot out\shots     write them to PNG
+    /// </code>
+    ///
+    /// The second form draws every page in both themes at all three pane widths and exits, which
+    /// is what the ui-shots workflow runs on every push that touches the UI.
     /// </summary>
     public static class Program
     {
