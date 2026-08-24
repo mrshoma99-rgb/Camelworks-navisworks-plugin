@@ -2485,9 +2485,19 @@ namespace CamelWorks.UI.Views
                 var parties = new List<string> { Everyone, Nobody };
                 if (session != null) parties.AddRange(session.Profile.Parties);
 
-                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format, f => _format = f);
-                var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m => _mode = m);
-                var audience = Ui.Choice(parties, _audience, a => _audience = a);
+                // The three explanations that used to sit in a stack of amber notes, one per
+                // template, all visible at once. Only one of them is ever about the report being
+                // written, and which one is a thing the screen already knows.
+                var what = Ui.Small(Explain(_mode));
+
+                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format, f => _format = f, 120);
+                var audience = Ui.Choice(parties, _audience, a => _audience = a, 180);
+
+                var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
+                {
+                    _mode = m;
+                    what.Text = Explain(m);
+                });
 
                 var changed = Ui.Check("Only what the last run had not seen", _changedOnly, v => _changedOnly = v);
                 var pictures = Ui.Check("A picture of each group", _pictures, v => _pictures = v);
@@ -2497,33 +2507,46 @@ namespace CamelWorks.UI.Views
                 var write = Ui.Runner("Write the report", _results, Write);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Marked(Glyphs.Report, "Report", "One file, from a built-in template.",
+                    Ui.Marked(Glyphs.Report, "Write a report",
+                        "One file, from a built-in template. Nothing to set up first.",
                         Ui.Form(
-                            Ui.Field("Format", format),
                             Ui.Field("Contents", mode),
-                            Ui.Field("For", audience),
-                            Ui.Field("Write to", _path),
-                            Ui.Field("Name it", _template))),
-                    Ui.Note("The name carries " + string.Join(", ", Deliverable.Tokens)
-                            + ". Each issue takes the next revision letter and its cover says which "
-                            + "one it supersedes - a PDF in an inbox that looks exactly like last "
-                            + "week's is the most common reason a trade builds from the wrong "
-                            + "information."),
-                    changed,
-                    pictures,
-                    plan,
-                    split,
-                    Ui.Note("A picture moves your view while it runs and puts it back afterwards. On a "
-                            + "board of two hundred groups that is two hundred renders, so it is off "
-                            + "until you ask for it."),
-                    Ui.Note("The field pack is the same board set for a site cabin: one issue per page, "
-                            + "type big enough to read one-handed, and a line to sign against. The "
-                            + "penetration schedule is every service that goes through structure - what "
-                            + "the model says it is and where, with no opening size derived and no host "
-                            + "thickness inferred, because those are numbers somebody cuts concrete from."),
-                    write,
-                    _results));
+                            what,
+                            Ui.Pair(Ui.Field("For", audience), Ui.Field("Format", format))),
+                        write,
+                        Ui.Small("Each issue takes the next revision letter and its cover says which "
+                                 + "one it supersedes. A PDF in an inbox that looks exactly like last "
+                                 + "week's is the most common reason a trade builds from the wrong "
+                                 + "information."),
+                        Ui.Section("Where it goes, and what else is in it",
+                            "Beside the document, with a key plan", false,
+                            Ui.Form(
+                                Ui.Field("Write to", _path, "blank writes it beside the document"),
+                                Ui.Field("Name it", _template,
+                                         "carries " + string.Join(", ", Deliverable.Tokens))),
+                            changed,
+                            plan,
+                            split,
+                            pictures,
+                            Ui.Small("A picture moves your view while it runs and puts it back "
+                                     + "afterwards. On a board of two hundred groups that is two "
+                                     + "hundred renders, so it is off until you ask for it.")),
+                        _results)));
             }
+
+            /// <summary>What the chosen template actually produces, in the reader's terms.</summary>
+            private static string Explain(string mode) => mode switch
+            {
+                FieldPack => "The same board set for a site cabin: one issue per page, type big "
+                             + "enough to read one-handed, and a line to sign against.",
+
+                Penetration => "Every service that goes through structure - what the model says it "
+                               + "is and where. No opening size derived and no host thickness "
+                               + "inferred, because those are numbers somebody cuts concrete from.",
+
+                _ => "The whole board, laid out for a desk: every issue with its clashes, party "
+                     + "and priority.",
+            };
 
             private void Write(Job job)
             {

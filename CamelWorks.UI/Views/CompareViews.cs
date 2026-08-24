@@ -66,8 +66,7 @@ namespace CamelWorks.UI.Views
         {
             var session = Host.Current;
 
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Compare"), Ui.Problem(Host.NoModel)));
+            if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
             var store = StoreFor(session);
             var baselines = store.Baselines();
@@ -75,56 +74,53 @@ namespace CamelWorks.UI.Views
 
             var holding = BaselineModels.Of(LastBaseline, session.Model.Models, PhysicalFileSystem.Instance);
 
-            var body = Ui.Stack(
-                Ui.Heading("Compare"),
-                Ui.Sub("What changed since a baseline. Added, removed, moved and changed — with the "
-                       + "evidence for each match, and a plain list of what this baseline cannot answer."),
+            // Said before the button rather than discovered in the results: with the old revision
+            // appended, a fresh comparison sees both revisions at once, pairs the baseline model to
+            // itself, and reports that nothing changed.
+            var warning = BaselineModels.IsHoldingBoth(holding)
+                ? Ui.Note("An older revision is open in this document — it was brought in to show "
+                          + "what was removed. Comparing again now would compare the baseline "
+                          + "against itself and report no changes. Take it back out on the "
+                          + "Changes tab first.")
+                : null;
 
-                // Said before the button rather than discovered in the results: with the old
-                // revision appended, a fresh comparison sees both revisions at once, pairs the
-                // baseline model to itself, and reports that nothing changed.
-                BaselineModels.IsHoldingBoth(holding)
-                    ? Ui.Note("An older revision is open in this document — it was brought in to show "
-                              + "what was removed. Comparing again now would compare the baseline "
-                              + "against itself and report no changes. Take it back out on the "
-                              + "Changes tab first.")
-                    : null,
-
-                Against(session, store, baselines, results),
-                Terms(),
-                Ui.Runner("Compare", results, job => Go(session, store, results, job)),
-                results);
-
-            return Ui.Scroll(body);
-        }
-
-        private static UIElement Against(Session session, SnapshotStore store,
-                                         IReadOnlyList<BaselineEntry> baselines, StackPanel results)
-        {
             if (baselines.Count == 0)
-            {
-                // The whole of the first-run experience. No form, no template, no settings — one
-                // button, and from next week the tab is useful.
-                return Ui.Card("No baseline yet",
-                    "Nothing has been recorded for this document, so there is nothing to compare "
-                    + "against. Take one now and every comparison from here on has something to work from.",
-                    Ui.Line(SnapshotBuilder.Estimate(Guess(session), Settings.Watch), 0.75),
-                    Take(session, store, results),
-                    store.IsMemoryOnly
-                        ? Ui.Note("This document has never been saved, so there is nowhere beside it "
-                                  + "to keep a baseline. Save the document first.")
-                        : Ui.Line("It will be kept in " + store.Folder + ".", 0.7));
-            }
+                return Ui.Scroll(Ui.Stack(warning, First(session, store, results), Terms(), results));
 
             var labels = baselines.Select(b => b.Describe()).ToList();
 
             if (_pickedBaseline == null || !labels.Contains(_pickedBaseline))
                 _pickedBaseline = labels[0];
 
-            return Ui.Card("Compare against", "The most recent is picked for you.",
-                Ui.Field("Baseline", Ui.Choice(labels, _pickedBaseline, pick => _pickedBaseline = pick, 320)),
-                Ui.Across(Take(session, store, results)));
+            return Ui.Scroll(Ui.Stack(
+                warning,
+                Ui.Form(Ui.Field("Compare against",
+                    Ui.Choice(labels, _pickedBaseline, pick => _pickedBaseline = pick, 320),
+                    "the most recent is picked for you")),
+                Ui.Runner("Compare", results, job => Go(session, store, results, job)),
+                Terms(),
+                Ui.Section("Record a new baseline", "the model as it stands right now", false,
+                    Take(session, store, results, primary: false)),
+                results));
         }
+
+        /// <summary>
+        /// The whole of the first-run experience.
+        ///
+        /// No form, no template, no settings — one button, and from next week the tab is useful.
+        /// This one keeps its card, because here the empty state is the answer rather than a
+        /// preamble to one.
+        /// </summary>
+        private static UIElement First(Session session, SnapshotStore store, StackPanel results) =>
+            Ui.Marked(Glyphs.Compare, "No baseline yet",
+                "Nothing has been recorded for this document, so there is nothing to compare "
+                + "against. Take one now and every comparison from here on has something to work from.",
+                Ui.Line(SnapshotBuilder.Estimate(Guess(session), Settings.Watch), 0.75),
+                Take(session, store, results),
+                store.IsMemoryOnly
+                    ? Ui.Note("This document has never been saved, so there is nowhere beside it "
+                              + "to keep a baseline. Save the document first.")
+                    : Ui.Line("It will be kept in " + store.Folder + ".", 0.7));
 
         private static UIElement Terms()
         {
@@ -135,8 +131,6 @@ namespace CamelWorks.UI.Views
             // with still needs an answer better than "the tool said so", and folding a thing away
             // only costs nothing while the fold itself says what it will do.
             return Ui.Section("What counts as a change", Settings.Describe(), false,
-                Ui.Small("Every default here works on a raw model."),
-
                 Ui.Field("Move over", Ui.Text(
                     Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture),
                     text =>
@@ -144,10 +138,9 @@ namespace CamelWorks.UI.Views
                         if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
                             && value >= 0)
                             Settings.Tolerance = value;
-                    }, 90)),
-
-                Ui.Small("Model units. Below this an element has not moved — which is what stops a "
-                         + "re-export's floating-point noise reading as a moved federation."),
+                    }, 90),
+                    "model units. Below this an element has not moved, which is what stops a "
+                    + "re-export's floating-point noise reading as a moved federation"),
 
                 Ui.Field("Properties", Ui.Choice(watch, Show(Settings.Watch), pick =>
                     Settings.Watch = pick == "Every property" ? PropertyWatch.All
@@ -173,9 +166,8 @@ namespace CamelWorks.UI.Views
                         if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
                             && value >= 0)
                             _triangleCap = value;
-                    }, 90)),
-
-                Ui.Small("Elements. Zero means no limit."),
+                    }, 90),
+                    "elements. Zero means no limit"),
 
                 Ui.Small("The triangles are the only way to see an element remodelled inside its own "
                          + "bounding box — a duct rerouted through the same opening, a stair rebuilt "
@@ -863,13 +855,16 @@ namespace CamelWorks.UI.Views
 
             Redraw(store, listed, results);
 
+            // Neither half is in a card. Recording is what the tab is for and the list is what
+            // recording produced; boxing both made one act and its own history read as two tools
+            // of equal weight.
             return Ui.Scroll(Ui.Stack(
-                Ui.Card("Record one now",
-                    "Give it a name you will recognise in three months — an issue number, a "
-                    + "milestone, a date.",
-                    Take(session, store, results, () => Redraw(store, listed, results))),
-                listed,
-                results));
+                Ui.Small("Give it a name you will recognise in three months — an issue number, a "
+                         + "milestone, a date."),
+                Take(session, store, results, () => Redraw(store, listed, results)),
+                results,
+                Ui.Rule(),
+                listed));
         }
 
         private static void Redraw(SnapshotStore store, StackPanel listed, StackPanel results)
@@ -883,7 +878,7 @@ namespace CamelWorks.UI.Views
                 listed.Children.Add(Ui.Empty("Nothing recorded yet.",
                     store.IsMemoryOnly
                         ? "This document has never been saved, so there is nowhere beside it to keep one."
-                        : "Take one above. It is the whole of the setup."));
+                        : "Take one with the button above. It is the whole of the setup."));
                 return;
             }
 
@@ -901,7 +896,10 @@ namespace CamelWorks.UI.Views
                 ("Baseline", 200), ("Taken", 150), ("Elements", 80), ("Models", 70), ("Properties", 0))
                 .OnPick(item => picked = item as BaselineEntry);
 
-            listed.Children.Add(Ui.Card("Recorded", store.Folder ?? "nowhere — this document is unsaved",
+            listed.Children.Add(Ui.Eyebrow("Recorded"));
+            listed.Children.Add(Ui.Small(store.Folder ?? "nowhere — this document is unsaved"));
+
+            listed.Children.Add(Ui.Stack(
                 table,
                 Ui.Danger("Delete the selected one", () =>
                 {
@@ -928,13 +926,13 @@ namespace CamelWorks.UI.Views
         // -------------------------------------------------------------------------------------
 
         private static UIElement Take(Session session, SnapshotStore store, StackPanel results,
-                                      Action? afterwards = null)
+                                      Action? afterwards = null, bool primary = true)
         {
             var label = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             var field = Ui.Text(label, text => label = text ?? string.Empty, 220);
 
-            var button = Ui.Runner("Take a baseline", results, job =>
+            var button = Ui.Runner("Take a baseline", results, primary: primary, work: job =>
             {
                 job.Say("Walking the model...");
 

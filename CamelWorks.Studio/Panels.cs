@@ -319,21 +319,35 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Report() => Sheets.Page(
-            Ui.Marked(Glyphs.Report, "Report", "One file, from a built-in template.",
+            Ui.Marked(Glyphs.Report, "Write a report",
+                "One file, from a built-in template. Nothing to set up first.",
                 Ui.Form(
-                    Ui.Field("Format", Ui.Segmented(new[] { "PDF", "XLSX", "HTML" }, "PDF", null)),
+                    Ui.Field("Contents", Ui.Choice(
+                        new[] { "Full report", "Field pack - one issue per page", "Penetration schedule" },
+                        "Full report", null, 280)),
+                    Ui.Small("The whole board, laid out for a desk: every issue with its clashes, "
+                             + "party and priority."),
                     Ui.Pair(
-                        Ui.Field("Contents", Ui.Choice(new[] { "Everything", "New only", "Per party" }, "Everything", null)),
-                        Ui.Field("For", Ui.Choice(new[] { "The team", "The client", "Site" }, "The team", null))),
-                    Ui.Field("Write to", Ui.Text("D:\\Projects\\Riverside\\Reports", null, 260)),
-                    Ui.Field("Name it", Ui.Text("{project} — week {week}", null, 220),
-                             "The name carries the project, the week and the party.")),
-                Ui.Actions(Ui.Primary("Write the report", () => { }), Ui.Button("Write a worksheet", () => { }))),
-
-            Ui.Marked(Glyphs.Camera, "Pictures", "A key plan and a view per issue.",
-                Ui.Toggle("Put a rendered view on every issue", true, null),
-                Ui.Toggle("Put a key plan on the cover", true, null),
-                Ui.Small("Rendering moves the camera once per issue and puts it back at the end.")));
+                        Ui.Field("For", Ui.Choice(new[] { "Everyone", "Only the unassigned", "Mechanical" }, "Everyone", null, 180)),
+                        Ui.Field("Format", Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, "PDF", null, 120)))),
+                Ui.Actions(Ui.Primary("Write the report", () => { })),
+                Ui.Small("Each issue takes the next revision letter and its cover says which one it "
+                         + "supersedes. A PDF in an inbox that looks exactly like last week's is the "
+                         + "most common reason a trade builds from the wrong information."),
+                Ui.Section("Where it goes, and what else is in it",
+                    "Beside the document, with a key plan", false,
+                    Ui.Form(
+                        Ui.Field("Write to", Ui.Text(string.Empty, "beside the document", null, 260),
+                                 "blank writes it beside the document"),
+                        Ui.Field("Name it", Ui.Text("{project} - {date} - {party}", null, 260),
+                                 "carries {project}, {date}, {party}, {rev}")),
+                    Ui.Check("Only what the last run had not seen", false, null),
+                    Ui.Check("A plan of the site with every issue marked", true, null),
+                    Ui.Check("One file per party, not one file", false, null),
+                    Ui.Check("A picture of each group", false, null),
+                    Ui.Small("A picture moves your view while it runs and puts it back afterwards. "
+                             + "On a board of two hundred groups that is two hundred renders, so it "
+                             + "is off until you ask for it."))));
 
         private static UIElement Bcf() => Sheets.Page(
             Ui.Marked(Glyphs.Onward, "Export", "BCF 2.1 or 3.0, with a camera on every topic.",
@@ -354,23 +368,26 @@ namespace CamelWorks.Studio
         // -----------------------------------------------------------------------------------
 
         private static UIElement CompareRun() => Sheets.Page(
-            Ui.Marked(Glyphs.Compare, "Compare against", "Pick a baseline and see what changed.",
-                Ui.Form(Ui.Field("Baseline", Ui.Choice(
-                    new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null))),
-                Ui.Section("What counts as a change",
-                           "moves over 0.001 model units · standard properties compared · GUID, tree path or shape",
-                           false,
-                           Ui.Small("Every default here works on a raw model."),
-                           Ui.Form(
-                               Ui.Pair(
-                                   Ui.Field("Move over", Ui.Text("0.001", null, 80)),
-                                   Ui.Field("Properties", Ui.Choice(new[] { "Standard list", "Every property", "No properties" }, "Standard list", null))),
-                               Ui.Field("Match on", Ui.Choice(new[] { "GUID, tree path or shape", "GUID or tree path", "GUID only" }, "GUID, tree path or shape", null))),
-                           Ui.Toggle("Read the actual triangles", false, null)),
-                Ui.Actions(Ui.Primary("Compare", () => { }))),
+            Ui.Form(Ui.Field("Compare against", Ui.Choice(
+                new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null, 320),
+                "the most recent is picked for you")),
 
-            Ui.Marked(Glyphs.Save, "Keep it", "A baseline is a snapshot beside the document, not a copy of it.",
-                Ui.Actions(Ui.Primary("Take a baseline", () => { }))),
+            Ui.Actions(Ui.Primary("Compare", () => { })),
+
+            Ui.Section("What counts as a change",
+                "moves over 0.001 model units · standard properties compared · GUID, tree path or shape",
+                false,
+                Ui.Form(
+                    Ui.Pair(
+                        Ui.Field("Move over", Ui.Text("0.001", null, 80),
+                                 "model units. Below this an element has not moved"),
+                        Ui.Field("Properties", Ui.Choice(new[] { "Standard list", "Every property", "No properties" }, "Standard list", null))),
+                    Ui.Field("Match on", Ui.Choice(new[] { "GUID, tree path or shape", "GUID or tree path", "GUID only" }, "GUID, tree path or shape", null))),
+                Ui.Toggle("Read the actual triangles", false, null)),
+
+            Ui.Section("Record a new baseline", "the model as it stands right now", false,
+                Ui.Form(Ui.Field("Call it", Ui.Text("2026-08-24", null, 220))),
+                Ui.Actions(Ui.Button("Take a baseline", () => { }))),
 
             Ui.Marked(Glyphs.Model, "Which model was held to be which", null,
                 Ui.Table(Pairing(), ("Baseline", 150), ("Now", 0), ("Matched on", 96))));
@@ -424,15 +441,18 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Baselines() => Sheets.Page(
-            Ui.Marked(Glyphs.Save, "Record one now",
-                "Kept beside the document, so a job handed over arrives with its history.",
-                Ui.Form(Ui.Field("Call it", Ui.Text("Week 33 — Friday issue", null, 240))),
-                Ui.Actions(Ui.Primary("Take a baseline", () => { }))),
+            Ui.Small("Give it a name you will recognise in three months — an issue number, a "
+                     + "milestone, a date."),
+            Ui.Form(Ui.Field("Call it", Ui.Text("Week 33 — Friday issue", null, 240))),
+            Ui.Actions(Ui.Primary("Take a baseline", () => { })),
 
-            Ui.Marked(Glyphs.Clock, "Recorded", null,
-                Ui.Table(BaselineRows(), ("Baseline", 172), ("Elements", 0), ("Taken", 96)),
-                Ui.Actions(Ui.Button("Compare against this one", () => { }),
-                           Ui.Danger("Delete the selected one", () => { }))));
+            Ui.Rule(),
+
+            Ui.Eyebrow("Recorded"),
+            Ui.Small(@"D:\Projects\Riverside\.camelworks\baselines"),
+            Ui.Table(BaselineRows(), ("Baseline", 172), ("Elements", 0), ("Taken", 96)),
+            Ui.Actions(Ui.Button("Compare against this one", () => { }),
+                       Ui.Danger("Delete the selected one", () => { })));
 
         private static IEnumerable<TableRow> BaselineRows()
         {
