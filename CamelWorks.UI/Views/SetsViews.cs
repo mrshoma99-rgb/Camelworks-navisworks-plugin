@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Appearance;
 using CamelWorks.Core.Identity;
@@ -101,30 +102,34 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null)
-                    return Ui.Scroll(Ui.Stack(Ui.Heading("Sets"), Ui.Sub(Host.NoModel)));
+                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
                 Redraw();
                 RedrawSaved(session);
 
+                // Building one set is what the tab is, so it is not in a box. Generating many is a
+                // second act with a different consequence, and it earns the fold below.
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Sets"),
-                    Ui.Sub("Groups are ORed together; conditions inside a group are ANDed. Any condition can "
-                           + "be negated, and a negation compiles to a subtraction rather than a not-equals — "
-                           + "those are different sets, because a host condition on a property an element does "
-                           + "not have matches nothing."),
-                    Ui.Card("Rule", null, _editor),
-                    Ui.Field("Name", _name),
+                    Ui.Form(
+                        _editor,
+                        Ui.Rule(),
+                        Ui.Field("Name", _name, "how it reads in the Navisworks selection tree")),
                     Actions(session),
                     _results,
-                    new FamilyScreen(session, RedrawSaved).Build(),
+                    Ui.Small("Groups are ORed together; conditions inside a group are ANDed. A negated "
+                             + "condition compiles to a subtraction rather than a not-equals — those are "
+                             + "different sets, because a host condition on a property an element does not "
+                             + "have matches nothing."),
                     new TreeScreen(session, RedrawSaved).Build(),
-                    Ui.Card("Saved sets", "Kept in the project file, so they travel with the job.", _saved)));
+                    Ui.Rule(),
+                    Ui.Eyebrow("Saved sets"),
+                    Ui.Small("Kept in the project file, so they travel with the job."),
+                    _saved));
             }
 
             private UIElement Actions(Session session)
             {
-                var preview = Ui.Runner("Run", _results, job =>
+                var preview = Ui.Runner("Select what it catches", _results, job =>
                 {
                     var plan = DnfCompiler.Compile(Expression());
 
@@ -171,13 +176,13 @@ namespace CamelWorks.UI.Views
                     session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
 
                     _results.Children.Add(session.Store.Save()
-                        ? Ui.Line("Saved.", 0.8)
+                        ? Ui.Done("Saved.")
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
                     RedrawSaved(session);
                 });
 
-                var publish = Ui.Runner("Publish as a Navisworks set", _results, job =>
+                var publish = Ui.Runner("Publish as a Navisworks set", _results, primary: false, work: job =>
                 {
                     var title = _name.Text.Trim();
 
@@ -199,7 +204,7 @@ namespace CamelWorks.UI.Views
                                   + "than one search, and Navisworks search sets can only hold one."));
                 });
 
-                return Ui.Across(save, preview, publish);
+                return Ui.Actions(preview, save, publish);
             }
 
             private SetExpression Expression()
@@ -264,13 +269,12 @@ namespace CamelWorks.UI.Views
                     foreach (var condition in group.ToList())
                         _editor.Children.Add(Row(group, condition));
 
-                    var add = Ui.Button("and...", () => { group.Add(new Condition()); Redraw(); });
-                    add.MinWidth = 70;
+                    var add = Ui.Quiet("+ and...", () => { group.Add(new Condition()); Redraw(); });
                     _editor.Children.Add(Ui.Across(add));
                 }
 
                 _editor.Children.Add(Ui.Across(
-                    Ui.Button("Add an OR group", () => { _groups.Add(new List<Condition>()); Redraw(); })));
+                    Ui.Quiet("+ Add an OR group", () => { _groups.Add(new List<Condition>()); Redraw(); })));
             }
 
             private UIElement Row(List<Condition> group, Condition condition)
@@ -289,9 +293,8 @@ namespace CamelWorks.UI.Views
 
                 row.Children.Add(Ui.Text(condition.Value, v => condition.Value = v, 130));
 
-                var remove = Ui.Button("x", () => { group.Remove(condition); Redraw(); });
-                remove.MinWidth = 26;
-                row.Children.Add(remove);
+                row.Children.Add(Ui.Icon(Glyphs.Close, "Remove this condition",
+                                         () => { group.Remove(condition); Redraw(); }));
 
                 foreach (var child in row.Children.OfType<FrameworkElement>())
                     child.Margin = new Thickness(0, 0, 5, 0);
@@ -365,278 +368,23 @@ namespace CamelWorks.UI.Views
                 expression is AndExpression all ? all.Parts : new[] { expression };
         }
 
+
         // ===================================================================================
-        // Generating a family of sets
+        // Generating sets in bulk
         // ===================================================================================
 
         /// <summary>
-        /// One set per level, per discipline, per zone — made in one pass instead of one at a time.
+        /// One set per value of a property — and, given two or three, filed into real folders.
         ///
         /// This is an hour of clicking that gets done on every job, from a list somebody reads off
         /// the properties panel. The list is already in the model, and a single pass produces both
-        /// the values and how many elements carry each one — which is the number that decides
+        /// the values and how many elements carry each one, which is the number that decides
         /// whether a set is worth having at all.
         ///
-        /// Nothing has to be set up first. The property boxes start on the two things every
-        /// federation has an answer for, and the run tells you what it found rather than making you
-        /// know in advance.
-        /// </summary>
-        private sealed class FamilyScreen
-        {
-            private readonly Session _session;
-            private readonly Action<Session> _refresh;
-
-            private readonly TextBox _category = Ui.Text("Element", null, 150);
-            private readonly TextBox _property = Ui.Text("Level", null, 150);
-            private readonly TextBox _pattern = Ui.Text("{value}", null, 180);
-            private readonly TextBox _floor = Ui.Text("1", null, 60);
-            private readonly StackPanel _preview = Ui.Stack();
-            private readonly StackPanel _status = Ui.Stack();
-
-            private SetFamilyPlan? _plan;
-
-            internal FamilyScreen(Session session, Action<Session> refresh)
-            {
-                _session = session;
-                _refresh = refresh;
-            }
-
-            internal UIElement Build()
-            {
-                var scope = WholeModel;
-                var picker = Ui.Choice(new[] { WholeModel, Selection }, scope, pick => scope = pick);
-
-                var look = Ui.Runner("See what it would make", _preview, job =>
-                {
-                    _plan = null;
-                    _status.Children.Clear();
-
-                    var category = _category.Text.Trim();
-                    var property = _property.Text.Trim();
-
-                    if (category.Length == 0 || property.Length == 0)
-                    {
-                        _preview.Children.Add(Ui.Problem("Name the property to split on first."));
-                        return;
-                    }
-
-                    job.Say("Reading the model...");
-
-                    var values = new List<string?>();
-                    var traversal = scope == Selection
-                        ? TraversalScope.CurrentSelection
-                        : TraversalScope.WholeDocument;
-
-                    foreach (var item in _session.Model.Traverse(traversal))
-                    {
-                        if (values.Count % 2000 == 0 && !job.Step(values.Count, "elements read")) return;
-                        values.Add(item.Property(category, property));
-                    }
-
-                    if (values.Count == 0)
-                    {
-                        _preview.Children.Add(Ui.Empty("Nothing in scope.",
-                            scope == Selection
-                                ? "Select some elements, or switch the scope to the whole model."
-                                : "No models are loaded."));
-                        return;
-                    }
-
-                    var library = SetLibrary.FromJson(_session.Store.Section(ProjectStore.SetsSection)["items"]);
-
-                    var plan = SetFamily.Of(category, property, values, new FamilyOptions
-                    {
-                        NamePattern = _pattern.Text,
-                        Floor = Floor(_floor.Text),
-                        Existing = library.Sets.Select(set => set.Name).ToList(),
-                    });
-
-                    _plan = plan;
-                    Show(plan, values.Count);
-                });
-
-                return Ui.Card("Make a family of sets",
-                    "One set per value of a property. Each one is a rule, not a list, so a set made "
-                    + "today still covers the walls somebody adds tomorrow.",
-                    Ui.Field("Scope", picker),
-                    Ui.Field("Property tab", _category),
-                    Ui.Field("Property", _property),
-                    Ui.Field("Name pattern", _pattern),
-                    Ui.Field("Skip values under", _floor),
-                    look,
-                    _preview,
-                    _status);
-            }
-
-            private void Show(SetFamilyPlan plan, int scanned)
-            {
-                _preview.Children.Add(Ui.Line(plan.Explain(), 1, true));
-                _preview.Children.Add(Ui.Line(Ui.Count(scanned, "element") + " read", 0.6));
-
-                if (plan.Sets.Count == 0)
-                {
-                    _preview.Children.Add(Ui.Empty("Nothing to split on.",
-                        "No element in scope carries \"" + plan.Category + " / " + plan.Property
-                        + "\". Check the spelling against the properties panel — the tab name matters "
-                        + "as much as the property name."));
-                    return;
-                }
-
-                foreach (var set in plan.Sets)
-                {
-                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
-                    var proposed = set;
-
-                    row.Children.Add(Ui.Check(string.Empty, set.IsSelected, v => proposed.IsSelected = v));
-                    row.Children.Add(Ui.Line(set.Name, 1, true));
-                    row.Children.Add(Ui.Line(Ui.Count(set.Elements, "element"), 0.7));
-
-                    if (set.Note != null) row.Children.Add(Ui.Pill(set.Note, Tone.Warn));
-
-                    foreach (var child in row.Children.OfType<FrameworkElement>())
-                        child.Margin = new Thickness(0, 0, 8, 0);
-
-                    _preview.Children.Add(row);
-                }
-
-                if (plan.Blanks > 0)
-                    _preview.Children.Add(Ui.Note(Ui.Count(plan.Blanks, "element")
-                        + " carry no value for this property and are in none of these sets. They are "
-                        + "not an \"unassigned\" set: an element with no level is one somebody has to "
-                        + "look at, and collecting them would make that gap look handled."));
-
-                _preview.Children.Add(Ui.Across(
-                    Ui.Button("Save the ticked ones", Save),
-                    Ui.Button("Save and publish them", Publish)));
-            }
-
-            /// <summary>Write the ticked sets into the project file.</summary>
-            private void Save()
-            {
-                _status.Children.Clear();
-
-                var wanted = Wanted();
-                if (wanted == null) return;
-
-                var library = SetLibrary.FromJson(_session.Store.Section(ProjectStore.SetsSection)["items"]);
-
-                foreach (var set in wanted)
-                {
-                    var existing = library.Sets.FirstOrDefault(
-                        s => string.Equals(s.Name, set.Name, StringComparison.OrdinalIgnoreCase));
-
-                    library.Put(new SavedSet(existing?.Id ?? library.NextId("set"), set.Name, set.Expression)
-                    {
-                        Note = "One of a family split on " + _plan!.Category + " / " + _plan.Property + ".",
-                    });
-                }
-
-                _session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
-
-                _status.Children.Add(_session.Store.Save()
-                    ? Ui.Line("Saved " + Ui.Count(wanted.Count, "set") + " to the project.", 1, true)
-                    : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                _session.Record(ActivityKind.Reconcile,
-                    "made " + Ui.Count(wanted.Count, "set") + " split on " + _plan!.Property);
-
-                _refresh(_session);
-            }
-
-            /// <summary>
-            /// Write them, then push each one into the host as a native search set.
-            ///
-            /// Saved first and published second, deliberately: publishing is the half that can fail
-            /// per set, and a family that saved cleanly and published nine of eleven is recoverable.
-            /// A family that published and then failed to save is eleven host sets nobody can find
-            /// again from CamelWorks.
-            /// </summary>
-            private void Publish()
-            {
-                Save();
-
-                var wanted = Wanted();
-                if (wanted == null) return;
-
-                var published = 0;
-                var live = 0;
-                var refused = new List<string>();
-
-                foreach (var set in wanted)
-                {
-                    try
-                    {
-                        var outcome = _session.Search.Publish(set.Name, DnfCompiler.Compile(set.Expression));
-
-                        published++;
-                        if (outcome.IsLive) live++;
-                    }
-                    catch (Exception e)
-                    {
-                        // Named, not counted, and the loop carries on. A family where two of eleven
-                        // were refused is a family with two holes in it, and a total does not say
-                        // which two.
-                        refused.Add(set.Name + " - " + Ui.Describe(e));
-                    }
-                }
-
-                _status.Children.Add(Ui.Line("Published " + Ui.Count(published, "set")
-                    + " into the host's selection sets.", 1, true));
-
-                if (live < published)
-                    _status.Children.Add(Ui.Note(Ui.Count(published - live, "set")
-                        + " went in as a fixed list of elements rather than a live search, because the "
-                        + "host could not express the rule as a search. Those will not pick up elements "
-                        + "added later; the CamelWorks set will."));
-
-                foreach (var problem in refused) _status.Children.Add(Ui.Problem(problem));
-
-                if (refused.Count > 0)
-                    _status.Children.Add(Ui.Note("Every set here is saved in the project whatever the host "
-                        + "did with it, so a refusal costs nothing but a second attempt."));
-
-                _session.Record(ActivityKind.Export, "published " + Ui.Count(published, "set"));
-            }
-
-            /// <summary>The ticked sets, or null with a message when there are none.</summary>
-            private IReadOnlyList<ProposedSet>? Wanted()
-            {
-                var plan = _plan;
-
-                if (plan == null)
-                {
-                    _status.Children.Add(Ui.Line("Press the button above first.", 0.8));
-                    return null;
-                }
-
-                var wanted = plan.Sets.Where(s => s.IsSelected).ToList();
-
-                if (wanted.Count == 0)
-                {
-                    _status.Children.Add(Ui.Line("Nothing is ticked.", 0.8));
-                    return null;
-                }
-
-                return wanted;
-            }
-
-            private static int Floor(string? text) =>
-                int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0
-                    ? value
-                    : FamilyOptions.DefaultFloor;
-        }
-
-        // ===================================================================================
-        // A whole library at once
-        // ===================================================================================
-
-        /// <summary>
-        /// The nested version: level, then discipline, then category, filed into real folders.
-        ///
-        /// The single-property generator above makes one flat run of sets. This makes the library —
-        /// a folder per level holding a folder per discipline holding a set per category, which is
-        /// what the Selection Tree on a real job looks like and what somebody otherwise assembles by
-        /// hand over an afternoon, once per project, differently each time.
+        /// With two or three properties it makes the library — a folder per level holding a folder
+        /// per discipline holding a set per category, which is what the Selection Tree on a real
+        /// job looks like and what somebody otherwise assembles by hand over an afternoon, once per
+        /// project, differently each time.
         ///
         /// Three properties deep and no further, and it refuses rather than truncating past its
         /// ceiling. Both are deliberate and both are explained on screen rather than enforced
@@ -652,7 +400,7 @@ namespace CamelWorks.UI.Views
 
             private readonly TextBox _category = Ui.Text("Element", null, 150);
             private readonly TextBox _first = Ui.Text("Level", null, 140);
-            private readonly TextBox _second = Ui.Text("Discipline", null, 140);
+            private readonly TextBox _second = Ui.Text(string.Empty, null, 140);
             private readonly TextBox _third = Ui.Text(string.Empty, null, 140);
             private readonly TextBox _pattern = Ui.Text("{value}", null, 160);
             private readonly TextBox _floor = Ui.Text("1", null, 60);
@@ -728,19 +476,41 @@ namespace CamelWorks.UI.Views
                     Show(plan, rows.Count);
                 });
 
-                return Ui.Card("Make a whole library, in folders",
-                    "Up to three properties, nested. Every set is a rule that carries its whole path, so it "
-                    + "still means the same thing if somebody drags it out of its folder.",
-                    Ui.Field("Scope", picker),
-                    Ui.Field("Property tab", _category),
-                    Ui.Field("Split on", _first),
-                    Ui.Field("Then on", _second),
-                    Ui.Field("Then on", _third),
-                    Ui.Field("Set name", _pattern),
-                    Ui.Field("Skip branches under", _floor),
+                return Ui.Section("Make a set for every value of a property", Summary, false,
+                    Ui.Small("One property makes a flat run of sets; a second and a third nest them "
+                             + "into real folders. Every set is a rule rather than a list, so one made "
+                             + "today still covers the walls somebody adds tomorrow — and it carries "
+                             + "its whole path, so it still means the same thing if it is dragged out "
+                             + "of its folder."),
+                    Ui.Form(
+                        Ui.Pair(Ui.Field("Scope", picker), Ui.Field("Property tab", _category)),
+                        Ui.Field("Split on", _first),
+                        Ui.Pair(
+                            Ui.Field("Then on", _second, "optional — a folder per value"),
+                            Ui.Field("Then on", _third, "optional")),
+                        Ui.Pair(
+                            Ui.Field("Set name", _pattern, "{value} becomes the value"),
+                            Ui.Field("Skip branches under", _floor))),
                     look,
                     _preview,
                     _status);
+            }
+
+            /// <summary>What this generator is set to, on one line, for the folded header.</summary>
+            private string Summary()
+            {
+                var split = new List<string>();
+
+                foreach (var box in new[] { _first, _second, _third })
+                    if (!string.IsNullOrWhiteSpace(box.Text)) split.Add(box.Text.Trim());
+
+                if (split.Count == 0) return "Nothing to split on yet";
+
+                var floor = Floor(_floor.Text);
+
+                return "Split on " + string.Join(", then ", split)
+                       + (floor > 1 ? " · " + floor.ToString(CultureInfo.InvariantCulture) + " element minimum"
+                                    : string.Empty);
             }
 
             private void Show(SetTreePlan plan, int scanned)
@@ -842,7 +612,7 @@ namespace CamelWorks.UI.Views
                 _session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
 
                 _status.Children.Add(_session.Store.Save()
-                    ? Ui.Line("Saved " + Ui.Count(wanted.Count, "set") + " to the project.", 1, true)
+                    ? Ui.Done("Saved " + Ui.Count(wanted.Count, "set") + " to the project.")
                     : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
 
                 _session.Record(ActivityKind.Reconcile,
@@ -893,8 +663,8 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                _status.Children.Add(Ui.Line("Published " + Ui.Count(published, "set")
-                    + " into the host's selection sets, in folders.", 1, true));
+                _status.Children.Add(Ui.Done("Published " + Ui.Count(published, "set")
+                    + " into the host's selection sets, in folders."));
 
                 if (live < published)
                     _status.Children.Add(Ui.Note(Ui.Count(published - live, "set")
@@ -977,23 +747,22 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null)
-                    return Ui.Scroll(Ui.Stack(Ui.Heading("Appearance"), Ui.Sub(Host.NoModel)));
+                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
                 _layers.AddRange(LayerStackJson.Read(session.Store.Section(ProjectStore.LayersSection)["stack"]));
 
                 Redraw(session);
                 BuildAdder(session);
 
+                // The stack is what this tab is, so it is not in a box: the layers, then the
+                // button that puts them on the model, then the two things you can do next.
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Appearance"),
-                    Ui.Sub("Every override and every hidden element, as a stack of named layers. The layer at "
-                           + "the top wins, property by property — a layer that only sets a colour leaves "
-                           + "visibility to the one underneath."),
-                    Ui.Card("Layers", "Top of the list wins.", _stack),
-                    _adder,
+                    Ui.Eyebrow("Top of the list wins"),
+                    _stack,
                     Actions(session),
                     _results,
+                    _adder,
+                    Ui.Rule(),
                     Elsewhere(session)));
             }
 
@@ -1030,7 +799,7 @@ namespace CamelWorks.UI.Views
                         job.Say("Applying...");
                         Execute(session, plan);
 
-                        _results.Children.Add(Ui.Line("Applied.", 1, true));
+                        _results.Children.Add(Ui.Done("Applied."));
                         session.Record(ActivityKind.Appearance, "applied the appearance stack: " + plan.Explain());
                     }
 
@@ -1049,17 +818,18 @@ namespace CamelWorks.UI.Views
                     session.Store.Section(ProjectStore.LayersSection).Set("stack", LayerStackJson.Write(_layers));
 
                     _results.Children.Add(session.Store.Save()
-                        ? Ui.Line("Saved to " + session.Store.Where + ".", 0.8)
+                        ? Ui.Done("Saved to " + session.Store.Where + ".")
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
                 });
 
-                var reset = Ui.Button("Show everything", () =>
+                // The inverse of Apply, and it has to exist: a panel that paints a federation and
+                // cannot un-paint it is one people apply once and then work around. It used to be
+                // called "Show everything" and only restored visibility, which is a caption
+                // promising a reset over a control that does not perform one.
+                var reset = Ui.Runner("Put the model back", _results, primary: false, work: job =>
                 {
-                    _results.Children.Clear();
+                    job.Say("Resolving layers...");
 
-                    // Deliberately not "clear all overrides": that would also throw away colouring
-                    // somebody applied by hand outside CamelWorks.
-                    //
                     // One resolver for the whole pass, because it caches: ten layers over the same
                     // saved set would otherwise run the same search ten times.
                     var resolver = new HostResolver(session);
@@ -1069,10 +839,29 @@ namespace CamelWorks.UI.Views
                         foreach (var key in resolver.Resolve(layer.Target))
                             all.Add(key);
 
-                    session.View.SetVisible(all.ToList(), true);
+                    var covered = all.ToList();
 
-                    _results.Children.Add(Ui.Line("Un-hid " + Ui.Count(all.Count, "element")
-                                                  + " the stack covers. Colours are left alone.", 0.8));
+                    job.Say("Reading what the model looks like now...");
+                    var current = session.View.ReadAppearance(covered);
+
+                    // Somebody else's colouring stays. Clearing an override CamelWorks did not
+                    // author, because it happened to be on an element a layer covers, is how a
+                    // tool loses a colleague's afternoon.
+                    var foreign = new HashSet<ElementKey>(
+                        current.Where(state => state.IsForeign).Select(state => state.Key));
+
+                    var ours = covered.Where(key => !foreign.Contains(key)).ToList();
+
+                    session.View.ClearOverrides(ours);
+                    session.View.SetVisible(covered, true);
+
+                    _results.Children.Add(Ui.Done("Took the stack back off "
+                                                  + Ui.Count(ours.Count, "element") + "."));
+
+                    if (foreign.Count > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(foreign.Count, "element")
+                            + " kept an override CamelWorks did not author. They are visible again "
+                            + "but still coloured, because that colour is somebody else's work."));
                 });
 
                 return Ui.Across(apply, save, reset);
@@ -1168,7 +957,7 @@ namespace CamelWorks.UI.Views
                     _foreign.Children.Add(Ui.Across(SelectButton(session), AdoptButton(session), PutBackButton(session)));
                 });
 
-                return Ui.Card("What else is going on",
+                return Ui.Marked(Glyphs.Find, "What else is going on",
                     "Everything hidden or overridden that no layer above accounts for. Reading it is a "
                     + "pass over the whole federation, so it happens when you ask rather than when the "
                     + "tab opens.",
@@ -1266,6 +1055,7 @@ namespace CamelWorks.UI.Views
                     var row = new WrapPanel { Margin = new Thickness(0, 3, 0, 3) };
 
                     row.Children.Add(Ui.Check(string.Empty, layer.IsEnabled, v => layer.IsEnabled = v));
+                    row.Children.Add(Swatch(layer));
 
                     row.Children.Add(Ui.Line(layer.Name, 1, true));
                     row.Children.Add(Ui.Pill(layer.Target.ReResolves ? "rule" : "fixed",
@@ -1273,9 +1063,14 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(Ui.Line(layer.Target.Description, 0.7));
                     row.Children.Add(Ui.Line(Effects(layer), 0.85));
 
-                    var up = Ui.Button("up", () => Move(session, index, 1));
-                    var down = Ui.Button("down", () => Move(session, index, -1));
-                    var drop = Ui.Button("remove", () => { _layers.RemoveAt(index); Redraw(session); });
+                    var up = Ui.Icon(Glyphs.Up, "Move this layer up, so it wins over the ones below",
+                                     () => Move(session, index, 1));
+
+                    var down = Ui.Icon(Glyphs.Down, "Move this layer down",
+                                       () => Move(session, index, -1));
+
+                    var drop = Ui.Icon(Glyphs.Bin, "Remove this layer",
+                                       () => { _layers.RemoveAt(index); Redraw(session); });
 
                     foreach (var button in new[] { up, down, drop }) button.MinWidth = 54;
 
@@ -1291,6 +1086,44 @@ namespace CamelWorks.UI.Views
                     if (!string.IsNullOrEmpty(layer.Note))
                         _stack.Children.Add(Ui.Line(layer.Note!, 0.6));
                 }
+            }
+
+            /// <summary>
+            /// The colour this layer puts on the model, as a chip.
+            ///
+            /// The literal colour, never a Tone. A layers panel that paints a federation and shows
+            /// no colour anywhere is asking somebody to remember what "Level 04 only" is set to —
+            /// and a chip drawn from the theme's own red would be a preview of the pane rather
+            /// than of the model, and would change when somebody switched to dark.
+            /// </summary>
+            /// <param name="layer">The layer.</param>
+            private static UIElement Swatch(AppearanceLayer layer)
+            {
+                var chip = new Border
+                {
+                    Width = 12,
+                    Height = 12,
+                    CornerRadius = new CornerRadius(3),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    BorderThickness = new Thickness(1),
+                };
+
+                chip.Tint(Border.BorderBrushProperty, "BdStrong");
+
+                if (layer.Colour.HasValue)
+                {
+                    var colour = layer.Colour.Value;
+
+                    chip.Background = new SolidColorBrush(
+                        Color.FromRgb(colour.R, colour.G, colour.B));
+
+                    return chip;
+                }
+
+                // No colour of its own. Left as the outline, so a layer that only hides or only
+                // fades does not claim a colour it never writes.
+                chip.Tint(Border.BackgroundProperty, "Track");
+                return chip;
             }
 
             private static string Effects(AppearanceLayer layer)
@@ -1388,14 +1221,15 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                _adder.Children.Add(Ui.Card("Add a layer", null,
-                    Ui.Field("Name", name),
-                    Ui.Field("Covers", source),
-                    Ui.Field("Visibility", visibility),
-                    Ui.Field("Colour (#rrggbb)", colour),
-                    Ui.Field("Transparency (0-1)", transparency),
-                    Ui.Field("Why", note),
-                    Ui.Across(add)));
+                _adder.Children.Add(Ui.Section("Add a layer",
+                    "hidden or coloured, over whatever you point it at", false,
+                    Ui.Form(
+                        Ui.Pair(Ui.Field("Name", name), Ui.Field("Covers", source)),
+                        Ui.Pair(Ui.Field("Visibility", visibility),
+                                Ui.Field("Colour (#rrggbb)", colour)),
+                        Ui.Pair(Ui.Field("Transparency (0-1)", transparency),
+                                Ui.Field("Why", note))),
+                    add));
             }
         }
 
@@ -1404,18 +1238,20 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>
-        /// Bulk rename and renumber, re-folder, batch render, copy overrides, a walkthrough saved
-        /// from the board, and a delete by name.
+        /// The saved viewpoints, and the five things worth doing to a run of them at once.
         ///
-        /// All of it is one call away in the host's API and none of it is anywhere in the host's
-        /// UI. Navisworks will render a viewpoint off-screen, move one between folders and rewrite
-        /// one from the current view — one viewpoint at a time, by hand, which is why a coordination
-        /// pack is still made with a snipping tool.
+        /// It used to be seven cards, three of which asked you to type what the names started
+        /// with — which is a selection mechanism invented to work around a list that could not be
+        /// selected in. The list can be selected in now, so the verbs act on what is ticked and
+        /// three text boxes and a "count them" step disappear.
         /// </summary>
         private sealed class ViewpointScreen
         {
             private readonly StackPanel _list = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
+
+            /// <summary>The table itself, so the verbs below it can read what is ticked.</summary>
+            private ListView? _table;
 
             private string _size = "1920 x 1080";
 
@@ -1423,17 +1259,63 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null)
-                    return Ui.Scroll(Ui.Stack(Ui.Heading("Viewpoints"), Ui.Sub(Host.NoModel)));
+                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
                 Redraw(session);
 
+                var save = Ui.Runner("Save this view", _results, primary: true, work: _ =>
+                {
+                    var view = session.Viewpoints.SaveCurrent(
+                        "View " + (session.Viewpoints.All().Count + 1).ToString(CultureInfo.InvariantCulture));
+
+                    _results.Children.Add(Ui.Done("Saved \"" + view.Name + "\"."));
+                    Redraw(session);
+                });
+
+                return Ui.Scroll(Ui.Stack(
+                    save,
+                    _list,
+                    Ui.Small("Tick the ones to act on. With nothing ticked, everything below acts on "
+                             + "all of them — except deleting, which never does."),
+                    Rename(session),
+                    Refolder(session),
+                    Render(session),
+                    CopyOverrides(session),
+                    Sweep(session),
+                    _results,
+                    Ui.Rule(),
+                    Walkthrough(session)));
+            }
+
+            /// <summary>
+            /// The viewpoints the verbs act on: the ticked ones, or all of them.
+            ///
+            /// Falling back to all of them is right for four of the five verbs — renaming or
+            /// filing a whole document's worth is the common case — and wrong for the fifth, so
+            /// deleting asks for the ticks itself rather than taking this answer.
+            /// </summary>
+            private IReadOnlyList<SavedView> Chosen(Session session)
+            {
+                var ticked = Ticked();
+
+                return ticked.Count > 0 ? ticked : session.Viewpoints.All();
+            }
+
+            /// <summary>Only what is ticked, which may be nothing.</summary>
+            private IReadOnlyList<SavedView> Ticked() =>
+                _table == null
+                    ? Array.Empty<SavedView>()
+                    : _table.PickedMany().OfType<SavedView>().ToList();
+
+            /// <summary>Renaming and renumbering, in one pattern.</summary>
+            private UIElement Rename(Session session)
+            {
                 var pattern = Ui.Text("{n}. {name}", null, 200);
                 var start = Ui.Text("1", null, 60);
 
-                var renumber = Ui.Runner("Rename all", _results, job =>
+                var run = Ui.Runner("Rename them", _results, primary: false, work: job =>
                 {
-                    var views = session.Viewpoints.All();
+                    var views = Chosen(session);
 
                     if (!int.TryParse(start.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
                         n = 1;
@@ -1442,7 +1324,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var view in views)
                     {
-                        if (!job.Step(done, "renamed")) break;
+                        if (!job.Step(done, views.Count, "renamed")) break;
 
                         var name = pattern.Text
                             .Replace("{n}", n.ToString("00", CultureInfo.InvariantCulture))
@@ -1458,39 +1340,322 @@ namespace CamelWorks.UI.Views
                         n++;
                     }
 
-                    _results.Children.Add(Ui.Line("Renamed " + Ui.Count(done, "viewpoint") + ".", 1, true));
+                    _results.Children.Add(Ui.Done("Renamed " + Ui.Count(done, "viewpoint") + "."));
                     Redraw(session);
                 });
 
-                var save = Ui.Button("Save this view", () =>
+                return Ui.Section("Rename them",
+                    () => pattern.Text.Replace("{n}", start.Text.PadLeft(2, '0'))
+                                      .Replace("{name}", "Riser at core")
+                                      .Replace("{folder}", "Coordination"),
+                    false,
+                    Ui.Form(Ui.Pair(
+                        Ui.Field("Pattern", pattern, "{n} the number, {name} the current name, "
+                                                     + "{folder} the folder"),
+                        Ui.Field("Start at", start))),
+                    run);
+            }
+
+            /// <summary>
+            /// Move viewpoints into a folder, in bulk.
+            ///
+            /// The host has folders in the Saved Viewpoints panel and gives you one way to use
+            /// them: drag, one viewpoint at a time. Forty viewpoints saved out of a clash run land
+            /// flat in the root, and filing them is forty drags nobody does — so they stay in the
+            /// root, and the next run's forty land on top of them.
+            /// </summary>
+            private UIElement Refolder(Session session)
+            {
+                var into = Ui.Text("Coordination", null, 180);
+
+                var move = Ui.Runner("Move them", _results, primary: false, work: job =>
                 {
-                    _results.Children.Clear();
+                    var wanted = into.Text.Trim();
+                    var moving = Chosen(session);
 
-                    var view = session.Viewpoints.SaveCurrent(
-                        "View " + (session.Viewpoints.All().Count + 1).ToString(CultureInfo.InvariantCulture));
+                    var moved = 0;
+                    var already = 0;
+                    var refused = 0;
 
-                    _results.Children.Add(Ui.Line("Saved \"" + view.Name + "\".", 0.8));
+                    foreach (var view in moving)
+                    {
+                        if (!job.Step(moved, moving.Count, "moved")) break;
+
+                        // Already there is not a move and not a failure. Counting it as either
+                        // would make a re-run of the same sweep read as though it had done work.
+                        if (string.Equals(view.Folder ?? string.Empty, wanted, StringComparison.OrdinalIgnoreCase))
+                        {
+                            already++;
+                            continue;
+                        }
+
+                        if (session.Viewpoints.MoveTo(view.Id, wanted.Length == 0 ? null : wanted) == null)
+                            refused++;
+                        else
+                            moved++;
+                    }
+
+                    _results.Children.Add(Ui.Done("Moved " + Ui.Count(moved, "viewpoint")
+                        + (wanted.Length == 0 ? " to the top level." : " into \"" + wanted + "\".")));
+
+                    if (already > 0)
+                        _results.Children.Add(Ui.Line(Ui.Count(already, "viewpoint")
+                            + " were already there and were left alone.", 0.7));
+
+                    if (refused > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
+                            + " could not be moved. A viewpoint the host will not take out of its folder "
+                            + "keeps its old place rather than being lost, so nothing has gone missing."));
+
+                    session.Record(ActivityKind.Export, "filed " + Ui.Count(moved, "viewpoint"));
                     Redraw(session);
                 });
 
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Viewpoints"),
-                    Ui.Sub("A saved viewpoint carries the overrides that were in force when it was made, so "
-                           + "applying one changes what the Appearance stack says is true. The list says which "
-                           + "ones do."),
-                    Ui.Across(save),
-                    Ui.Card("Rename in bulk",
-                        "{n} is the number, {name} the current name, {folder} the folder.",
-                        Ui.Field("Pattern", pattern),
-                        Ui.Field("Start at", start),
-                        renumber),
-                    Walkthrough(session),
-                    _results,
-                    Ui.Card("Saved viewpoints", null, _list),
-                    Refolder(session),
-                    Render(session),
-                    CopyOverrides(session),
-                    Sweep(session)));
+                return Ui.Section("File them into a folder", () => into.Text.Trim(), false,
+                    Ui.Form(Ui.Field("Into folder", into, "made if it is not there; one already in "
+                                                          + "it is left where it is")),
+                    move);
+            }
+
+            /// <summary>
+            /// Render viewpoints to PNGs, in one pass.
+            ///
+            /// The thing a coordination pack is made of, and the reason people still take
+            /// screenshots one at a time with the snipping tool. The host renders a viewpoint
+            /// off-screen perfectly well and has never offered to do it for all of them.
+            ///
+            /// The camera is borrowed for the whole run and put back at the end, so a batch over
+            /// eighty viewpoints does not leave somebody looking at the eightieth.
+            /// </summary>
+            private UIElement Render(Session session)
+            {
+                var into = Ui.Text(string.Empty, null, 340);
+                var size = Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080",
+                                     pick => _size = pick);
+
+                var render = Ui.Runner("Render them", _results, primary: false, work: job =>
+                {
+                    var views = Chosen(session);
+                    var folder = into.Text.Trim();
+
+                    if (folder.Length == 0)
+                    {
+                        folder = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                            Deliverable.Safe(session.Profile.ProjectName + " viewpoints"));
+
+                        into.Text = folder;
+                    }
+
+                    try { Directory.CreateDirectory(folder); }
+                    catch (Exception e)
+                    {
+                        _results.Children.Add(Ui.Problem("Could not make that folder: " + Ui.Describe(e)));
+                        return;
+                    }
+
+                    var (width, height) = Size(_size);
+
+                    var written = 0;
+                    var blank = 0;
+                    var failed = new List<string>();
+                    var n = 1;
+
+                    using (session.View.BorrowCamera())
+                    {
+                        foreach (var view in views)
+                        {
+                            if (!job.Step(written, views.Count, "rendered")) break;
+
+                            job.Say("Rendering " + view.Name + "...");
+
+                            try
+                            {
+                                session.Viewpoints.Apply(view.Id);
+
+                                var png = session.View.Capture(width, height);
+
+                                // Null is the documented answer from a machine that cannot render
+                                // off-screen. Writing a zero-byte PNG so the count looks right
+                                // would hand somebody a pack of broken files.
+                                if (png == null || png.Length == 0) { blank++; n++; continue; }
+
+                                var name = n.ToString("000", CultureInfo.InvariantCulture)
+                                         + " - " + Deliverable.Safe(view.Name) + ".png";
+
+                                File.WriteAllBytes(Path.Combine(folder, name), png);
+                                written++;
+                            }
+                            catch (Exception e)
+                            {
+                                failed.Add(view.Name + " - " + Ui.Describe(e));
+                            }
+
+                            n++;
+                        }
+                    }
+
+                    _results.Children.Add(Ui.Done("Wrote " + Ui.Count(written, "image") + " to " + folder + "."));
+
+                    if (blank > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(blank, "viewpoint")
+                            + " produced no image. Off-screen rendering is not available in every "
+                            + "configuration - a machine with no graphics context, a document still "
+                            + "loading. Nothing was written for those rather than an empty file."));
+
+                    foreach (var problem in failed.Take(6)) _results.Children.Add(Ui.Problem(problem));
+
+                    session.Record(ActivityKind.Export, "rendered " + Ui.Count(written, "viewpoint"));
+                });
+
+                return Ui.Section("Render them to images", () => _size, false,
+                    Ui.Form(Ui.Pair(
+                        Ui.PathField("Write into", into, PathKind.Folder,
+                                     hint: "blank writes them to your documents"),
+                        Ui.Field("Size", size))),
+                    render,
+                    Ui.Small("The camera goes back where it was when the run finishes."));
+            }
+
+            /// <summary>The chosen render size.</summary>
+            private static (int Width, int Height) Size(string choice) => choice switch
+            {
+                "1280 x 720" => (1280, 720),
+                "2560 x 1440" => (2560, 1440),
+                _ => (1920, 1080),
+            };
+
+            /// <summary>
+            /// Give a run of viewpoints the overrides one of them carries.
+            ///
+            /// Somebody sets up the colours once — services by system, structure greyed back — and
+            /// then has forty viewpoints that do not have them, because the overrides were saved
+            /// into whichever one happened to be current at the time.
+            ///
+            /// The cost is stated where the button is and not buried: the host's only way to
+            /// rewrite a saved viewpoint replaces its redlines too, so a viewpoint somebody drew on
+            /// loses the drawing. There is no call that does one without the other.
+            /// </summary>
+            private UIElement CopyOverrides(Session session)
+            {
+                var views = session.Viewpoints.All();
+
+                if (views.Count < 2) return Ui.Stack();
+
+                var names = views.Select(v => v.ToString()).ToList();
+
+                var from = names[0];
+                var source = Ui.Choice(names, from, pick => from = pick, 260);
+
+                var copy = Ui.Runner("Copy them across", _results, primary: false, work: job =>
+                {
+                    var chosen = session.Viewpoints.All()
+                        .FirstOrDefault(v => string.Equals(v.ToString(), from, StringComparison.Ordinal));
+
+                    if (string.IsNullOrEmpty(chosen.Id))
+                    {
+                        _results.Children.Add(Ui.Problem("That viewpoint is no longer in the document."));
+                        return;
+                    }
+
+                    var targets = Chosen(session)
+                        .Where(v => !string.Equals(v.Id, chosen.Id, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    if (targets.Count == 0)
+                    {
+                        _results.Children.Add(Ui.Line("There is nothing else to put them on.", 0.8));
+                        return;
+                    }
+
+                    var done = 0;
+                    var refused = 0;
+
+                    using (session.View.BorrowCamera())
+                    {
+                        foreach (var target in targets)
+                        {
+                            if (!job.Step(done, targets.Count, "copied")) break;
+
+                            if (session.Viewpoints.CopyOverrides(chosen.Id, target.Id)) done++;
+                            else refused++;
+                        }
+                    }
+
+                    _results.Children.Add(Ui.Done("Copied the overrides onto " + Ui.Count(done, "viewpoint")
+                        + "."));
+
+                    if (refused > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
+                            + " were left exactly as they were, because the host would not rewrite them. "
+                            + "A refusal costs nothing: none of them has been changed."));
+
+                    session.Record(ActivityKind.Export,
+                        "copied viewpoint overrides onto " + Ui.Count(done, "viewpoint"));
+
+                    Redraw(session);
+                });
+
+                return Ui.Section("Copy overrides onto the rest", "from " + names[0], false,
+                    Ui.Form(Ui.Field("Take them from", source)),
+                    copy,
+                    Ui.Note("Rewriting a saved viewpoint replaces its redlines with the source's. That is "
+                            + "the host's own behaviour and there is no call that avoids it, so a viewpoint "
+                            + "somebody has drawn on will lose the drawing. Nothing else about the target "
+                            + "changes - not its name, not its folder, not its camera."));
+            }
+
+            /// <summary>
+            /// Delete a run of viewpoints.
+            ///
+            /// The only bulk delete worth having and the one that has to be hardest to do by
+            /// accident. A week of generated walkthroughs is exactly the thing that needs clearing
+            /// out before the next one, and doing it one right-click at a time is why people stop
+            /// generating them. It is the one verb here that will not fall back to "all of them":
+            /// an empty selection deleting the document's viewpoints is not a thing to offer.
+            /// </summary>
+            private UIElement Sweep(Session session)
+            {
+                var status = Ui.Stack();
+
+                var ask = Ui.Danger("Delete the ticked ones", () =>
+                {
+                    status.Children.Clear();
+
+                    var doomed = Ticked();
+
+                    if (doomed.Count == 0)
+                    {
+                        status.Children.Add(Ui.Problem("Nothing is ticked. Deleting will not fall back "
+                            + "to every viewpoint in the document, which is what the other verbs here "
+                            + "do and the one thing this one must not."));
+
+                        return;
+                    }
+
+                    status.Children.Add(Ui.Line(Ui.Count(doomed.Count, "viewpoint") + ": "
+                        + string.Join(", ", doomed.Take(6).Select(v => v.Name))
+                        + (doomed.Count > 6 ? ", ..." : string.Empty), 0.8));
+
+                    status.Children.Add(Ui.Danger("Yes, delete " + Ui.Count(doomed.Count, "viewpoint"), () =>
+                    {
+                        var gone = 0;
+
+                        foreach (var view in doomed)
+                        {
+                            session.Viewpoints.Delete(view.Id);
+                            gone++;
+                        }
+
+                        status.Children.Add(Ui.Done("Deleted " + Ui.Count(gone, "viewpoint")
+                            + ". Ctrl+Z will not bring them back; save the document only when you are sure."));
+
+                        session.Record(ActivityKind.Export, "deleted " + Ui.Count(gone, "viewpoint"));
+                        Redraw(session);
+                    }));
+                });
+
+                return Ui.Section("Delete them", "asks once more first", false, ask, status).Grave();
             }
 
             /// <summary>
@@ -1532,7 +1697,7 @@ namespace CamelWorks.UI.Views
 
                         foreach (var group in board.Groups)
                         {
-                            if (!job.Step(made, "viewpoints saved")) break;
+                            if (!job.Step(made, board.Groups.Count, "viewpoints saved")) break;
 
                             var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
 
@@ -1554,403 +1719,37 @@ namespace CamelWorks.UI.Views
                         }
                     }
 
-                    _results.Children.Add(Ui.Line("Saved " + Ui.Count(made, "viewpoint")
-                        + (into.Length == 0 ? "." : " into \"" + into + "\"."), 1, true));
+                    _results.Children.Add(Ui.Done("Saved " + Ui.Count(made, "viewpoint")
+                        + (into.Length == 0 ? "." : " into \"" + into + "\".")));
 
                     if (empty > 0)
                         _results.Children.Add(Ui.Note(Ui.Count(empty, "group")
                             + " had no positioned results to frame, so no viewpoint was made for "
                             + (empty == 1 ? "it" : "them") + "."));
 
-                    _results.Children.Add(Ui.Note("Each one carries the overrides that were in force when it "
-                        + "was made. If you want them clean, apply the Appearance stack you want first and "
-                        + "make them again."));
-
                     session.Record(ActivityKind.Export, "saved " + Ui.Count(made, "viewpoint")
                                                         + " from the board");
                     Redraw(session);
                 });
 
-                return Ui.Card("A viewpoint per issue",
-                    "The walkthrough a coordination meeting is actually run from.",
-                    Ui.Field("Folder", folder),
-                    Ui.Field("Name pattern", pattern),
-                    Ui.Note("{n} is the number, {group} the group, {who} the party it is assigned to, "
-                            + "{count} how many clashes are in it."),
-                    make);
+                return Ui.Marked(Glyphs.Camera, "A viewpoint per issue",
+                    "The walkthrough a coordination meeting is actually run from: one saved view per "
+                    + "group on the board, framed on the group.",
+                    Ui.Form(Ui.Pair(
+                        Ui.Field("Folder", folder),
+                        Ui.Field("Name pattern", pattern,
+                                 "like \"01. Duct through transfer beam\" — {n} number, {group} "
+                                 + "group, {who} party, {count} clashes"))),
+                    make,
+                    Ui.Small("Each one carries the overrides that were in force when it was made. If "
+                             + "you want them clean, apply the Appearance stack you want first and "
+                             + "make them again."));
             }
-
-            /// <summary>
-            /// Delete every viewpoint whose name starts with something.
-            ///
-            /// The only bulk delete worth having and the one that has to be hardest to do by
-            /// accident. A week of generated walkthroughs is exactly the thing that needs clearing
-            /// out before the next one, and doing it one right-click at a time is why people stop
-            /// generating them.
-            /// </summary>
-
-            /// <summary>
-            /// Move viewpoints into a folder, in bulk.
-            ///
-            /// The host has folders in the Saved Viewpoints panel and gives you one way to use
-            /// them: drag, one viewpoint at a time. Forty viewpoints saved out of a clash run land
-            /// flat in the root, and filing them is forty drags nobody does — so they stay in the
-            /// root, and the next run's forty land on top of them.
-            /// </summary>
-            private UIElement Refolder(Session session)
-            {
-                var starts = Ui.Text(string.Empty, null, 180);
-                var into = Ui.Text("Coordination", null, 180);
-                var status = Ui.Stack();
-
-                var move = Ui.Runner("Move them", status, job =>
-                {
-                    var prefix = starts.Text.Trim();
-
-                    if (prefix.Length == 0)
-                    {
-                        status.Children.Add(Ui.Problem("Type what their names start with. An empty box would "
-                            + "move every viewpoint in the document, which is not something to offer by "
-                            + "accident."));
-                        return;
-                    }
-
-                    var wanted = into.Text.Trim();
-                    var moving = Matching(session, prefix);
-
-                    if (moving.Count == 0)
-                    {
-                        status.Children.Add(Ui.Line("Nothing starts with \"" + prefix + "\".", 0.8));
-                        return;
-                    }
-
-                    var moved = 0;
-                    var already = 0;
-                    var refused = 0;
-
-                    foreach (var view in moving)
-                    {
-                        if (!job.Step(moved, "moved")) break;
-
-                        // Already there is not a move and not a failure. Counting it as either
-                        // would make a re-run of the same sweep read as though it had done work.
-                        if (string.Equals(view.Folder ?? string.Empty, wanted, StringComparison.OrdinalIgnoreCase))
-                        {
-                            already++;
-                            continue;
-                        }
-
-                        if (session.Viewpoints.MoveTo(view.Id, wanted.Length == 0 ? null : wanted) == null)
-                            refused++;
-                        else
-                            moved++;
-                    }
-
-                    status.Children.Add(Ui.Line("Moved " + Ui.Count(moved, "viewpoint")
-                        + (wanted.Length == 0 ? " to the top level." : " into \"" + wanted + "\"."), 1, true));
-
-                    if (already > 0)
-                        status.Children.Add(Ui.Line(Ui.Count(already, "viewpoint")
-                            + " were already there and were left alone.", 0.7));
-
-                    if (refused > 0)
-                        status.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
-                            + " could not be moved. A viewpoint the host will not take out of its folder "
-                            + "keeps its old place rather than being lost, so nothing has gone missing."));
-
-                    session.Record(ActivityKind.Export, "filed " + Ui.Count(moved, "viewpoint"));
-                    Redraw(session);
-                });
-
-                return Ui.Card("File them into a folder",
-                    "Everything whose name starts with what you type. The folder is made if it is not "
-                    + "there; a viewpoint already in it is left where it is.",
-                    Ui.Field("Names starting with", starts),
-                    Ui.Field("Into folder", into),
-                    move,
-                    status);
-            }
-
-            /// <summary>
-            /// Render every viewpoint to a PNG, in one pass.
-            ///
-            /// The thing a coordination pack is made of, and the reason people still take
-            /// screenshots one at a time with the snipping tool. The host renders a viewpoint
-            /// off-screen perfectly well and has never offered to do it for all of them.
-            ///
-            /// The camera is borrowed for the whole run and put back at the end, so a batch over
-            /// eighty viewpoints does not leave somebody looking at the eightieth.
-            /// </summary>
-            private UIElement Render(Session session)
-            {
-                var into = Ui.Text(string.Empty, null, 340);
-                var size = Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080",
-                                     pick => _size = pick);
-                var status = Ui.Stack();
-
-                var render = Ui.Runner("Render them all", status, job =>
-                {
-                    var folder = into.Text.Trim();
-
-                    if (folder.Length == 0)
-                    {
-                        status.Children.Add(Ui.Problem("Say where to write them."));
-                        return;
-                    }
-
-                    var views = session.Viewpoints.All();
-
-                    if (views.Count == 0)
-                    {
-                        status.Children.Add(Ui.Line("There are no saved viewpoints to render.", 0.8));
-                        return;
-                    }
-
-                    try { Directory.CreateDirectory(folder); }
-                    catch (Exception e)
-                    {
-                        status.Children.Add(Ui.Problem("Could not make that folder: " + Ui.Describe(e)));
-                        return;
-                    }
-
-                    var (width, height) = Size(_size);
-
-                    var written = 0;
-                    var blank = 0;
-                    var failed = new List<string>();
-                    var n = 1;
-
-                    using (session.View.BorrowCamera())
-                    {
-                        foreach (var view in views)
-                        {
-                            if (!job.Step(written, "rendered")) break;
-
-                            job.Say("Rendering " + view.Name + "...");
-
-                            try
-                            {
-                                session.Viewpoints.Apply(view.Id);
-
-                                var png = session.View.Capture(width, height);
-
-                                // Null is the documented answer from a machine that cannot render
-                                // off-screen. Writing a zero-byte PNG so the count looks right
-                                // would hand somebody a pack of broken files.
-                                if (png == null || png.Length == 0) { blank++; n++; continue; }
-
-                                var name = n.ToString("000", CultureInfo.InvariantCulture)
-                                         + " - " + Deliverable.Safe(view.Name) + ".png";
-
-                                File.WriteAllBytes(Path.Combine(folder, name), png);
-                                written++;
-                            }
-                            catch (Exception e)
-                            {
-                                failed.Add(view.Name + " - " + Ui.Describe(e));
-                            }
-
-                            n++;
-                        }
-                    }
-
-                    status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "image") + " to " + folder + ".",
-                                                1, true));
-
-                    if (blank > 0)
-                        status.Children.Add(Ui.Note(Ui.Count(blank, "viewpoint")
-                            + " produced no image. Off-screen rendering is not available in every "
-                            + "configuration - a machine with no graphics context, a document still "
-                            + "loading. Nothing was written for those rather than an empty file."));
-
-                    foreach (var problem in failed.Take(6)) status.Children.Add(Ui.Problem(problem));
-
-                    session.Record(ActivityKind.Export, "rendered " + Ui.Count(written, "viewpoint"));
-                });
-
-                return Ui.Card("Render every viewpoint to an image",
-                    "One PNG per saved viewpoint, numbered in the order they are in. The camera goes back "
-                    + "where it was when the run finishes.",
-                    Ui.Field("Write into", into),
-                    Ui.Field("Size", size),
-                    render,
-                    status);
-            }
-
-            /// <summary>The chosen render size.</summary>
-            private static (int Width, int Height) Size(string choice) => choice switch
-            {
-                "1280 x 720" => (1280, 720),
-                "2560 x 1440" => (2560, 1440),
-                _ => (1920, 1080),
-            };
-
-            /// <summary>
-            /// Give a run of viewpoints the overrides one of them carries.
-            ///
-            /// Somebody sets up the colours once — services by system, structure greyed back — and
-            /// then has forty viewpoints that do not have them, because the overrides were saved
-            /// into whichever one happened to be current at the time.
-            ///
-            /// The cost is stated on the card and not buried: the host's only way to rewrite a
-            /// saved viewpoint replaces its redlines too, so a viewpoint somebody drew on loses the
-            /// drawing. There is no call that does one without the other.
-            /// </summary>
-            private UIElement CopyOverrides(Session session)
-            {
-                var status = Ui.Stack();
-                var views = session.Viewpoints.All();
-
-                if (views.Count < 2)
-                    return Ui.Card("Copy overrides onto other viewpoints",
-                        "Needs at least two saved viewpoints: one to take the overrides from and one to "
-                        + "put them on.",
-                        Ui.Line(Ui.Count(views.Count, "viewpoint") + " saved.", 0.7));
-
-                var names = views.Select(v => v.ToString()).ToList();
-
-                var from = names[0];
-                var source = Ui.Choice(names, from, pick => from = pick);
-
-                var starts = Ui.Text(string.Empty, null, 180);
-
-                var copy = Ui.Runner("Copy them across", status, job =>
-                {
-                    var prefix = starts.Text.Trim();
-
-                    if (prefix.Length == 0)
-                    {
-                        status.Children.Add(Ui.Problem("Type what the targets' names start with. An empty "
-                            + "box would rewrite every viewpoint in the document, and rewriting one "
-                            + "discards its redlines."));
-                        return;
-                    }
-
-                    var chosen = session.Viewpoints.All()
-                        .FirstOrDefault(v => string.Equals(v.ToString(), from, StringComparison.Ordinal));
-
-                    if (string.IsNullOrEmpty(chosen.Id))
-                    {
-                        status.Children.Add(Ui.Problem("That viewpoint is no longer in the document."));
-                        return;
-                    }
-
-                    var targets = Matching(session, prefix)
-                        .Where(v => !string.Equals(v.Id, chosen.Id, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-
-                    if (targets.Count == 0)
-                    {
-                        status.Children.Add(Ui.Line("Nothing else starts with \"" + prefix + "\".", 0.8));
-                        return;
-                    }
-
-                    var done = 0;
-                    var refused = 0;
-
-                    using (session.View.BorrowCamera())
-                    {
-                        foreach (var target in targets)
-                        {
-                            if (!job.Step(done, "copied")) break;
-
-                            if (session.Viewpoints.CopyOverrides(chosen.Id, target.Id)) done++;
-                            else refused++;
-                        }
-                    }
-
-                    status.Children.Add(Ui.Line("Copied the overrides onto " + Ui.Count(done, "viewpoint")
-                        + ".", 1, true));
-
-                    if (refused > 0)
-                        status.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
-                            + " were left exactly as they were, because the host would not rewrite them. "
-                            + "A refusal costs nothing: none of them has been changed."));
-
-                    session.Record(ActivityKind.Export,
-                        "copied viewpoint overrides onto " + Ui.Count(done, "viewpoint"));
-
-                    Redraw(session);
-                });
-
-                return Ui.Card("Copy overrides onto other viewpoints",
-                    "Takes the colours and hidden elements from one saved viewpoint and puts them on every "
-                    + "viewpoint whose name starts with what you type. Each one keeps its own camera.",
-                    Ui.Field("Take them from", source),
-                    Ui.Field("Put them on names starting with", starts),
-                    Ui.Note("Rewriting a saved viewpoint replaces its redlines with the source's. That is "
-                            + "the host's own behaviour and there is no call that avoids it, so a viewpoint "
-                            + "somebody has drawn on will lose the drawing. Nothing else about the target "
-                            + "changes - not its name, not its folder, not its camera."),
-                    copy,
-                    status);
-            }
-
-            private UIElement Sweep(Session session)
-            {
-                var starts = Ui.Text(string.Empty, null, 200);
-                var status = Ui.Stack();
-
-                var count = Ui.Button("Count them", () =>
-                {
-                    status.Children.Clear();
-
-                    var prefix = starts.Text.Trim();
-
-                    if (prefix.Length == 0)
-                    {
-                        status.Children.Add(Ui.Problem("Type what their names start with. An empty box would "
-                            + "match every viewpoint in the document, which is not something to offer by "
-                            + "accident."));
-                        return;
-                    }
-
-                    var doomed = Matching(session, prefix);
-
-                    if (doomed.Count == 0)
-                    {
-                        status.Children.Add(Ui.Line("Nothing starts with \"" + prefix + "\".", 0.8));
-                        return;
-                    }
-
-                    status.Children.Add(Ui.Line(Ui.Count(doomed.Count, "viewpoint") + " start with \""
-                        + prefix + "\": " + string.Join(", ", doomed.Take(6).Select(v => v.Name))
-                        + (doomed.Count > 6 ? ", ..." : string.Empty), 0.8));
-
-                    status.Children.Add(Ui.Button("Delete " + Ui.Count(doomed.Count, "viewpoint"), () =>
-                    {
-                        var gone = 0;
-
-                        foreach (var view in doomed)
-                        {
-                            session.Viewpoints.Delete(view.Id);
-                            gone++;
-                        }
-
-                        status.Children.Add(Ui.Line("Deleted " + Ui.Count(gone, "viewpoint")
-                            + ". Ctrl+Z will not bring them back; save the document only when you are sure.",
-                            1, true));
-
-                        session.Record(ActivityKind.Export, "deleted " + Ui.Count(gone, "viewpoint"));
-                        Redraw(session);
-                    }));
-                });
-
-                return Ui.Card("Clear out a batch",
-                    "Deletes by name, and counts before it does anything.",
-                    Ui.Field("Names starting with", starts),
-                    Ui.Across(count),
-                    status);
-            }
-
-            private static IReadOnlyList<SavedView> Matching(Session session, string prefix) =>
-                session.Viewpoints.All()
-                    .Where(v => v.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
 
             private void Redraw(Session session)
             {
                 _list.Children.Clear();
+                _table = null;
 
                 var views = session.Viewpoints.All();
 
@@ -1967,12 +1766,20 @@ namespace CamelWorks.UI.Views
                     v.HasOverrides ? "carries overrides" : string.Empty,
                     v.HasRedlines ? "has redlines" : string.Empty)).ToList();
 
-                _list.Children.Add(Ui.Table(rows,
-                    ("Viewpoint", 200), ("Folder", 120), ("", 130), ("", 0))
-                    .OnPick(item =>
-                    {
-                        if (item is SavedView view) session.Viewpoints.Apply(view.Id);
-                    }));
+                var table = Ui.Table(rows,
+                    ("Viewpoint", 200), ("Folder", 120), ("", 130), ("", 0)).Multi();
+
+                // The camera follows a single tick and stays put for several. Flying the view to
+                // the first of eight viewpoints somebody is selecting in order to delete them is
+                // the host's own worst habit, not one to copy.
+                table.OnPick(item =>
+                {
+                    if (table.PickedMany().Count == 1 && item is SavedView view)
+                        session.Viewpoints.Apply(view.Id);
+                });
+
+                _table = table;
+                _list.Children.Add(table);
             }
         }
     }

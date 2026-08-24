@@ -53,7 +53,8 @@ removed a row from the board.
 
 **Headroom.** Clear height between a walkable surface and whatever is above it — the check a clash
 test cannot do, because a duct 1.9 m over a corridor clashes with nothing. One row per surface, the
-position reported at the overlap, and a spatial grid whose oversized bucket every query searches.
+position reported at the overlap, and a spatial grid whose oversized bucket every query searches. It
+is run from Coordinate ▸ Tests, beside the clash tests, because it is one.
 
 **Sets.** Boolean set algebra compiled to disjunctive normal form — the only shape the host can run
 — with negation compiled to a subtraction rather than a negated operator, because those are not the
@@ -104,24 +105,23 @@ Tool searches symptom phrasing, not just command names.
 | Screen | What it does |
 |---|---|
 | Home | The weekly cycle with the state filled in, and the way to each step |
-| Health | Six checks over geometry, placement and data |
-| Setup | What was derived, why, and an override per line |
-| Models | The federation, and whether each source has moved on since the file was saved |
+| Health | One sweep over one pass of the models — placement, geometry, arrivals, codes and the federation itself — ranked worst first into one verdict; and the client's own IDS |
+| Setup | What was derived, why, an override per line, and the way back to derived |
 | Export IFC | Opens the exporter's own panel |
-| Triage | The board, filtered and searched; edit statuses and hand grouping; raise an issue no clash produced; undo |
-| Tests | The engine's tests, and a matrix builder that creates and runs them |
+| Triage | The board, filtered and searched; what changed since the last run; edit statuses and hand grouping; raise an issue no clash produced; freeze it; undo |
+| Tests | The engine's tests, a matrix builder that creates and runs them, and the clear-height check no clash test can do |
 | Rules | The pipeline, edited through one editor that draws every rule |
 | Report | PDF, XLSX or HTML, one file per party, filtered to what changed, with a picture per group |
 | BCF | Export with cameras and components; read a reply back and reconcile it against the board |
 | Compare → Run | Pick a baseline, set what counts as a change, and go; the scoreboard, the per-model tally with the reason each pairing was made, and what this baseline cannot answer |
 | Compare → Changes | The change list, filtered and searched; paint it, walk it as viewpoints, stamp it into the properties, raise it on the board, or write the report |
 | Compare → Baselines | What has been recorded and when, kept beside the document |
-| Data | Every property folded to one row; a write you see before you make it; formulas; rename and remove a column |
-| Levels & zones | Derived levels, and stamping them onto elements |
+| Data | Every property folded to one row, and one write pipeline — a typed value, a formula, a code table or a spreadsheet — previewed element by element before anything is written |
+| Levels | Derived levels, and stamping them onto elements |
 | Takeoff | One axis or two, over a scope, out to a spreadsheet |
-| Sets | The boolean builder, plus a whole family generated from one property |
+| Sets | The boolean builder, plus a generator that makes a set per value of a property and nests them into folders given two or three |
 | Appearance | The layers system, and everything hidden or overridden that no layer accounts for |
-| Viewpoints | Bulk rename and renumber, a walkthrough per board group, and a bulk delete |
+| Viewpoints | Tick a run of them and rename, refile, render, copy overrides or delete; plus a walkthrough saved from the board |
 | Jobs | Saved graphs, run without opening the canvas |
 | Canvas | The node graph editor, over twenty-two nodes including the coordination ones |
 

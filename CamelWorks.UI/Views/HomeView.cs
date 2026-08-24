@@ -37,6 +37,9 @@ namespace CamelWorks.UI.Views
 
         private static UIElement Header(Session session)
         {
+            var name = Ui.Eyebrow(session.Profile.ProjectName);
+            name.Margin = new Thickness(0, 0, 0, 6);
+
             var chips = Ui.Across(
                 Ui.Pill(Ui.Count(session.Model.Models.Count, "model")),
                 Ui.Pill(session.Document.Units.ToString()),
@@ -44,63 +47,115 @@ namespace CamelWorks.UI.Views
                     ? Ui.Count(session.Clash.Tests().Count, "clash test")
                     : "no clash engine", session.Clash.IsAvailable ? Tone.Plain : Tone.Warn));
 
-            var body = Ui.Stack(chips, Ui.Line("Project file " + session.Store.Where, 0.7));
+            // The project file belongs where its problems are reported, which is Setup.
+            var body = Ui.Stack(name, chips);
 
-            // A seat without the clash engine is not a seat without the coordination work, and the
-            // one place somebody looks to find that out is the chip that just told them so.
-            if (!session.Clash.IsAvailable)
-                body.Children.Add(Ui.Note("This Navisworks edition has no Clash Detective, so tests "
-                    + "cannot be run here. The board still opens: CamelWorks rebuilds it from what "
-                    + "the project file recorded the last time a Manage seat ran, and triage, "
-                    + "assignment, reports and BCF all work on it."));
-
-            if (session.Store.UsedBackup)
-                body.Children.Add(Ui.Note("The project file could not be read and its backup was used instead. "
-                                          + "Nothing is lost that was saved before the last write."));
-
+            // The warn-toned chip above already says there is no clash engine; a sixty-word banner
+            // saying it again is the front door explaining itself instead of showing the week.
+            // Backup-used and concurrency are facts about a file rather than about this week, and
+            // they are reported on Setup, where the file is. Read-only is the one that stops every
+            // button in the product, so it is the one that stays.
             if (session.Store.IsReadOnly)
                 body.Children.Add(Ui.Note(session.Store.ReadOnlyReason ?? string.Empty));
 
-            if (session.Store.ConcurrencyNote.Length > 0)
-                body.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
-
-            return Ui.Card(session.Profile.ProjectName, null, body);
+            return body;
         }
 
+        /// <summary>
+        /// The three steps of the week, as three steps.
+        ///
+        /// This was three stacked paragraphs with a small grey button at the end of each: the same
+        /// information, arranged so that nothing on the front door of the product looked more
+        /// important than anything else. A numbered marker in the step's own colour, the state as a
+        /// chip rather than a sentence, and one weighted action per row is the difference between
+        /// a page somebody reads and a page somebody uses.
+        /// </summary>
         private static UIElement Cycle(Session session, Action<string> goTo)
         {
             var rows = Ui.Stack();
+            var step = 0;
+
+            // Only the first undone step leads. Set once, read by every row after it.
+            var led = false;
 
             foreach (var kind in ActivityKind.Cycle)
             {
-                var latest = session.Store.Activity.Latest(kind);
+                step++;
 
-                var line = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+                var latest = session.Store.Activity.Latest(kind);
+                var never = latest == null;
+
+                var line = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+                line.Children.Add(Marker(step, kind));
+
                 var left = Ui.Stack(
                     Ui.Line(ActivityKind.Title(kind), 1, true),
-                    Ui.Line(latest == null
-                        ? ActivityKind.Purpose(kind)
-                        : latest.Summary, 0.75),
-                    Ui.Line(latest == null
-                        ? "Never on this project."
-                        : ActivityLog.Ago(latest.WhenTicks, session.NowTicks), 0.55));
+                    Ui.Line(never ? ActivityKind.Purpose(kind) : latest!.Summary, 0.75),
+                    Ui.Across(never
+                        ? Ui.Pill("Not done yet", Tone.Warn)
+                        : Ui.Pill(ActivityLog.Ago(latest!.WhenTicks, session.NowTicks), Tone.Good)));
 
+                left.Margin = new Thickness(11, 0, 10, 0);
+                Grid.SetColumn(left, 1);
                 line.Children.Add(left);
 
-                var button = Ui.Button(GoLabel(kind), () => goTo(RouteFor(kind)));
+                // The FIRST step nobody has done yet is the one that should look like the thing to
+                // press. On a project's first day all three are undone, and three blue buttons is
+                // the same as none.
+                var lead = never && !led;
+                if (never) led = true;
+
+                var button = lead
+                    ? Ui.Primary(GoLabel(kind), () => goTo(RouteFor(kind)))
+                    : Ui.Button(GoLabel(kind), () => goTo(RouteFor(kind)));
+
                 button.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumn(button, 1);
+                Grid.SetColumn(button, 2);
                 line.Children.Add(button);
 
                 rows.Children.Add(line);
+                if (step < ActivityKind.Cycle.Count) rows.Children.Add(Ui.Rule());
             }
 
-            return Ui.Card("The week",
+            return Ui.Marked(Glyphs.Clock, "The week",
                 "Reconcile, regroup, report. Each opens where the work actually happens.", rows);
         }
+
+        /// <summary>The step's number, in the colour of the workspace it opens.</summary>
+        private static UIElement Marker(int step, string kind)
+        {
+            var badge = new Border
+            {
+                Width = 26,
+                Height = 26,
+                CornerRadius = new CornerRadius(13),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 0, 0),
+                Child = new TextBlock
+                {
+                    Text = step.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 12,
+                    Foreground = System.Windows.Media.Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+
+            badge.SetResourceReference(Border.BackgroundProperty, "Fam." + FamilyOf(kind));
+            return badge;
+        }
+
+        private static string FamilyOf(string kind) => kind switch
+        {
+            ActivityKind.Reconcile => "Project",
+            ActivityKind.Regroup => "Coordinate",
+            _ => "Coordinate",
+        };
 
         private static string RouteFor(string kind) => kind switch
         {
@@ -109,11 +164,18 @@ namespace CamelWorks.UI.Views
             _ => "Coordinate/Report",
         };
 
+        /// <summary>
+        /// What the step's button says.
+        ///
+        /// The row is labelled with a verb — Reconcile, Regroup, Report — and the button used to
+        /// be labelled with a place: Models, Board, Reports. Two vocabularies for one step, and
+        /// the first of the three places is a tab called Health.
+        /// </summary>
         private static string GoLabel(string kind) => kind switch
         {
-            ActivityKind.Reconcile => "Models",
-            ActivityKind.Regroup => "Board",
-            _ => "Reports",
+            ActivityKind.Reconcile => "Check the models",
+            ActivityKind.Regroup => "Open the board",
+            _ => "Write the report",
         };
 
         private static UIElement Recent(Session session)
@@ -121,7 +183,7 @@ namespace CamelWorks.UI.Views
             var entries = session.Store.Activity.Entries.Take(12).ToList();
 
             if (entries.Count == 0)
-                return Ui.Card("Recent", null,
+                return Ui.Marked(Glyphs.Report, "Recent", null,
                     Ui.Empty("Nothing has happened on this project yet.",
                         "CamelWorks writes a line here every time it changes the model, produces a "
                         + "report or runs the rules — so a project handed over mid-job says what was done to it."));
@@ -131,8 +193,8 @@ namespace CamelWorks.UI.Views
                 e.Summary,
                 ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList();
 
-            return Ui.Card("Recent", null,
-                Ui.Table(rows, ("What", 110), ("", 0), ("When", 110)));
+            return Ui.Marked(Glyphs.Report, "Recent", null,
+                Ui.Table(rows, ("What", 110), ("Happened", 0), ("When", 110)));
         }
     }
 }

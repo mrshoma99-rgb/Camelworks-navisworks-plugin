@@ -167,7 +167,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 results.Children.Add(Ui.Line(written.Explain(), 1, true));
-                results.Children.Add(Ui.Line("Written to " + file + ".", 0.8));
+                results.Children.Add(Ui.Done("Written to " + file + "."));
 
                 foreach (var note in written.Notes) results.Children.Add(Ui.Note(note));
 
@@ -196,7 +196,7 @@ namespace CamelWorks.UI.Views
                         + "viewpoints, sets and layers. This is geometry, not a model - if somebody "
                         + "is going to ask you for a property, they want IFC and not this.", 0.85),
                 Ui.Field("Colour", colours),
-                Ui.Field("Write to", path),
+                Ui.PathField("Write to", path, PathKind.Save),
                 run,
                 results);
         }
@@ -365,7 +365,7 @@ namespace CamelWorks.UI.Views
                 Ui.Field("Format", formats),
                 Ui.Field("Property tab", tab),
                 Ui.Field("Properties", names),
-                Ui.Field("Write to", path),
+                Ui.PathField("Write to", path, PathKind.Save),
                 run,
                 results);
         }

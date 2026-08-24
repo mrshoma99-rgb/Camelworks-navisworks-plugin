@@ -102,17 +102,15 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0)));
 
                 editor.Children.Clear();
-                editor.Children.Add(Writer(session, keys));
+                editor.Children.Add(Writes(session, keys));
                 editor.Children.Add(new ColumnScreen(session, keys).Build());
-                editor.Children.Add(new ExcelScreen(session, keys).Build());
-                editor.Children.Add(new CodeScreen(session, keys).Build());
             });
 
+            // Reading is the hinge: the scope above it, what it found below it, and the things
+            // you can then do to what it found below that. None of the three is in a card - one
+            // act and its own output boxed separately read as two unrelated tools.
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Data"),
-                Ui.Sub("Every property the elements carry, folded to one row each, with what varies said "
-                       + "plainly rather than shown as the first element's value."),
-                Ui.Field("Scope", picker),
+                Ui.Form(Ui.Field("Scope", picker)),
                 read,
                 results,
                 editor));
@@ -133,10 +131,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class CodeScreen
         {
-            private const string Keep = "leave it alone";
-
-            private const string Replace = "replace it";
-
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -161,11 +155,9 @@ namespace CamelWorks.UI.Views
                     _session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
 
                 if (tables.IsEmpty)
-                    return Ui.Card("Assign a code",
-                        "Needs a code table",
-                        Ui.Empty("No code tables on this project.",
-                            "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
-                            + "client sent. Everything else here works without one."));
+                    return Ui.Empty("No code tables on this project.",
+                        "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
+                        + "client sent. Every other way of writing a value works without one.");
 
                 _table = tables.Find(tables.Names[0]);
 
@@ -177,27 +169,38 @@ namespace CamelWorks.UI.Views
 
                 _target.Text = tables.Names[0];
 
-                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
-                {
-                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
-                    if (_diff != null) ShowApply();
-                });
-
                 var preview = Ui.Runner("Show me what would change", _status, Preview);
 
-                return Ui.Card("Assign a code",
-                    "Reads a property, puts it through the table, and writes only what the table lists",
-                    Ui.Field("Table", picker),
-                    Ui.Field("Read from", _source),
-                    Ui.Field("Write as", _target),
-                    Ui.Field("Existing values", policy),
-                    Ui.Across(preview),
-                    Ui.Note("\"Read from\" is a property on the elements, written as \"Category / Name\". "
-                            + "A value the table does not list is left alone and counted, never "
-                            + "written and never guessed at."),
+                return Ui.Stack(
+                    Ui.Form(
+                        Ui.Field("Table", picker),
+                        Ui.Field("Read from", _source, "a property on the elements, as \"Category / Name\""),
+                        Ui.Field("Write as", _target)),
+                    preview,
+                    Ui.Small("A value the table does not list is left alone and counted, never "
+                             + "written and never guessed at."),
                     _status,
                     _applyRow);
             }
+
+            /// <summary>
+            /// Whether an element that already holds a value gets written over.
+            ///
+            /// Set from the one picker on the panel rather than owned here. Three write tools each
+            /// with their own copy of this choice is three chances to have set the safe one and be
+            /// looking at the other, over the single irreversible thing this product does.
+            /// </summary>
+            internal ExistingValues Existing
+            {
+                get => _existing;
+
+                set
+                {
+                    _existing = value;
+                    if (_diff != null) ShowApply();
+                }
+            }
+
 
             /// <summary>Read the source, check it against the table, and show the coverage and the diff.</summary>
             private void Preview(Job job)
@@ -347,11 +350,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class ExcelScreen
         {
-            /// <summary>What the picker says for each policy.</summary>
-            private const string Keep = "leave it alone";
-
-            private const string Replace = "replace it";
-
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -374,29 +372,45 @@ namespace CamelWorks.UI.Views
 
             internal UIElement Build()
             {
-                var write = Ui.Runner("Write a sheet", _status, Out);
+                var write = Ui.Runner("Write a sheet", _status, Out, primary: false);
                 var read = Ui.Runner("Read a sheet back", _status, In);
 
-                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
-                {
-                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
-                    if (_diff != null) ShowApply();
-                });
+                return Ui.Stack(
+                    Ui.Eyebrow("Send one out"),
+                    Ui.Form(Ui.PathField("Write to", _out, PathKind.Save, "Excel|*.xlsx|All files|*.*",
+                                         "blank writes it to your documents")),
+                    write,
 
-                return Ui.Card("Excel",
-                    "Out with an identity column, back in through the same preview as any other write",
-                    Ui.Field("Write to", _out),
-                    Ui.Across(write),
-                    Ui.Field("Read back", _in),
-                    Ui.Field("Existing values", policy),
-                    Ui.Across(read),
-                    Ui.Note("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
-                            + "returned row is matched to an element, it is never written back, and "
-                            + "deleting it makes the sheet unreadable. Rows that match nothing are "
-                            + "counted and named rather than skipped."),
+                    Ui.Eyebrow("Bring it back"),
+                    Ui.Form(Ui.PathField("Read back", _in, PathKind.Open, "Excel|*.xlsx|All files|*.*")),
+                    read,
+
+                    Ui.Small("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
+                             + "returned row is matched to an element, it is never written back, and "
+                             + "deleting it makes the sheet unreadable. Rows that match nothing are "
+                             + "counted and named rather than skipped."),
                     _status,
                     _applyRow);
             }
+
+            /// <summary>
+            /// Whether an element that already holds a value gets written over.
+            ///
+            /// Set from the one picker on the panel rather than owned here. Three write tools each
+            /// with their own copy of this choice is three chances to have set the safe one and be
+            /// looking at the other, over the single irreversible thing this product does.
+            /// </summary>
+            internal ExistingValues Existing
+            {
+                get => _existing;
+
+                set
+                {
+                    _existing = value;
+                    if (_diff != null) ShowApply();
+                }
+            }
+
 
             /// <summary>Every property these elements carry, one column each, plus the identity.</summary>
             private void Out(Job job)
@@ -562,7 +576,7 @@ namespace CamelWorks.UI.Views
                     name.Text = Suggested(pick);
                 });
 
-                var preview = Ui.Runner("Show me what would change", _status,
+                var preview = Ui.Runner("Show me what it would write", _status,
                     inner => Preview(inner, name.Text));
 
                 _status.Children.Add(Ui.Field("Bring back the column", picker));
@@ -706,8 +720,76 @@ namespace CamelWorks.UI.Views
         /// writes to is exactly the set that was read, and offering to write before then would mean
         /// guessing at what.
         /// </summary>
-        private static UIElement Writer(Session session, IReadOnlyList<ElementKey> keys) =>
-            new WriteScreen(session, keys).Build();
+        /// <summary>What the overwrite picker says for each policy.</summary>
+        private const string KeepThem = "leave it alone";
+
+        private const string ReplaceThem = "replace it";
+
+        /// <summary>
+        /// One write pipeline, with a picker for where the value comes from.
+        ///
+        /// It used to be four cards side by side — write a property, assign a code, read a
+        /// spreadsheet back, rename a column — which read as four tools of equal weight when three
+        /// of them are the same tool taking its value from somewhere else. Worse, each of the
+        /// three carried its own "if a value is already there" and each defaulted to the safe
+        /// answer independently, so the screen offered three chances to have set the safe one and
+        /// be looking at the other. There is one now, above everything it governs.
+        ///
+        /// Renaming a column stays separate. It changes the shape of the data rather than its
+        /// values, and it is the one act here that is not a write.
+        /// </summary>
+        private static UIElement Writes(Session session, IReadOnlyList<ElementKey> keys)
+        {
+            var typed = new WriteScreen(session, keys);
+            var worked = new WriteScreen(session, keys);
+            var coded = new CodeScreen(session, keys);
+            var sheet = new ExcelScreen(session, keys);
+
+            var slots = new (string Name, UIElement Body, Action<ExistingValues> Told)[]
+            {
+                ("a value you type", typed.Build(false), v => typed.Existing = v),
+                ("a formula over other properties", worked.Build(true), v => worked.Existing = v),
+                ("a code table", coded.Build(), v => coded.Existing = v),
+                ("a spreadsheet, out and back", sheet.Build(), v => sheet.Existing = v),
+            };
+
+            var body = Ui.Stack();
+
+            foreach (var slot in slots)
+            {
+                slot.Body.Visibility = Visibility.Collapsed;
+                body.Children.Add(slot.Body);
+            }
+
+            slots[0].Body.Visibility = Visibility.Visible;
+
+            var source = Ui.Choice(slots.Select(slot => slot.Name).ToList(), slots[0].Name, pick =>
+            {
+                foreach (var slot in slots)
+                    slot.Body.Visibility = slot.Name == pick ? Visibility.Visible : Visibility.Collapsed;
+            }, 260);
+
+            // Not folded, deliberately. Every other option on this screen can be wrong and cost a
+            // second run; this one can be wrong and cost somebody else's afternoon of work, so it
+            // is on the glass with the thing it governs.
+            var policy = Ui.Choice(new[] { KeepThem, ReplaceThem }, KeepThem, pick =>
+            {
+                var told = pick == ReplaceThem ? ExistingValues.Overwrite : ExistingValues.Keep;
+                foreach (var slot in slots) slot.Told(told);
+            });
+
+            return Ui.Marked(Glyphs.Save, "Write to the elements",
+                "Into a tab of its own called \"" + NavWriteTransaction.TabName + "\", so it is never "
+                + "mixed with the authoring tool's data. Nothing is written until you have seen the "
+                + "diff, element by element.",
+                Ui.Form(
+                    Ui.Field("The value comes from", source),
+                    Ui.Field("If a value is already there", policy)),
+                body,
+                Ui.Small("Ctrl+Z will not undo a write. Navisworks does not put property writes on "
+                         + "its undo stack, so CamelWorks records what it changed in the project "
+                         + "file instead of pretending otherwise."));
+        }
 
         /// <summary>
         /// Writing a property, in two steps, and never over somebody else's answer by accident.
@@ -725,11 +807,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class WriteScreen
         {
-            /// <summary>What the picker says for each policy.</summary>
-            private const string Keep = "leave it alone";
-
-            private const string Replace = "replace it";
-
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -755,15 +832,35 @@ namespace CamelWorks.UI.Views
                 _keys = keys;
             }
 
-            internal UIElement Build()
+            /// <summary>The writer for one kind of value.</summary>
+            /// <param name="worked">Whether the value is a formula rather than one typed in.</param>
+            internal UIElement Build(bool worked)
             {
-                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
-                {
-                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
-                    if (_diff != null) ShowApply();
-                });
+                _how = worked ? Worked : Fixed;
 
-                var how = Ui.Choice(new[] { Fixed, Worked }, _how, pick => _how = pick);
+                // One input, never both. A screen showing a Value box and a Formula box at once is
+                // asking which of them it is going to use, and answering in a third field.
+                var input = worked
+                    ? Ui.Field("Formula", _formula, "reads other properties: {Element/Mark}")
+                    : Ui.Field("Value", _value);
+
+                // The syntax goes below the well rather than inside it: it is reference material
+                // about a field, not another thing to fill in.
+                var help = worked
+                    ? Ui.Section("What a formula can do",
+                        "join with &, arithmetic with + - * /, six functions", false,
+                        Ui.Small("Join text with & and do arithmetic with + - * / — two different "
+                                 + "operators on purpose, because one that did both would turn a "
+                                 + "door reference of \"12\" and a level of \"3\" into 15 instead "
+                                 + "of \"12-3\". An element missing something the formula needs is "
+                                 + "left alone rather than written a zero."),
+                        Ui.Small("regex(value, pattern) pulls out what the brackets caught and "
+                                 + "regex(value, pattern, replacement) rewrites; "
+                                 + "unit(number, \"mm\", \"m\") moves a number between units; "
+                                 + "lookup(value, \"Uniclass\") reads a code table and gives "
+                                 + "nothing for a value it does not list; upper, lower and trim "
+                                 + "tidy."))
+                    : null;
 
                 var preview = Ui.Runner("Show me what would change", _status, job =>
                 {
@@ -843,32 +940,34 @@ namespace CamelWorks.UI.Views
                     ShowApply();
                 });
 
-                return Ui.Card("Write a property",
-                    "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
-                    + "\", so it is never mixed with the authoring tool's data.",
-                    Ui.Field("Name", _name),
-                    Ui.Field("The value is", how),
-                    Ui.Field("Value", _value),
-                    Ui.Field("Formula", _formula),
-                    Ui.Note("A formula reads other properties: {Element/Mark}. Join text with & and do "
-                            + "arithmetic with + - * / — two different operators on purpose, because one "
-                            + "that did both would turn a door reference of \"12\" and a level of \"3\" "
-                            + "into 15 instead of \"12-3\". An element missing something the formula "
-                            + "needs is left alone rather than written a zero."),
-                    Ui.Note("Six functions, and each earns its place by being something a property "
-                            + "genuinely needs doing to it: regex(value, pattern) pulls out what the "
-                            + "brackets caught and regex(value, pattern, replacement) rewrites; "
-                            + "unit(number, \"mm\", \"m\") moves a number between units; "
-                            + "lookup(value, \"Uniclass\") reads a code table and gives nothing for a "
-                            + "value it does not list; upper, lower and trim tidy."),
-                    Ui.Field("If a value is already there", policy),
+                return Ui.Stack(
+                    Ui.Form(
+                        Ui.Field("Name", _name),
+                        input),
+                    help,
                     preview,
-                    Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its "
-                            + "undo stack, so CamelWorks records what it changed in the project file "
-                            + "instead of pretending otherwise."),
                     _status,
                     _applyRow);
             }
+
+            /// <summary>
+            /// Whether an element that already holds a value gets written over.
+            ///
+            /// Set from the one picker on the panel rather than owned here. Three write tools each
+            /// with their own copy of this choice is three chances to have set the safe one and be
+            /// looking at the other, over the single irreversible thing this product does.
+            /// </summary>
+            internal ExistingValues Existing
+            {
+                get => _existing;
+
+                set
+                {
+                    _existing = value;
+                    if (_diff != null) ShowApply();
+                }
+            }
+
 
             /// <summary>
             /// The button that actually writes, labelled with what it is about to do.
@@ -890,8 +989,8 @@ namespace CamelWorks.UI.Views
                 {
                     _applyRow.Children.Add(Ui.Note(
                         "Nothing would be written: every element in scope already holds a value, and "
-                        + "existing values are being left alone. Switch to \"" + Replace
-                        + "\" if replacing them is what you meant."));
+                        + "existing values are being left alone. Change what happens to a value that "
+                        + "is already there, above, if replacing them is what you meant."));
                     return;
                 }
 
@@ -1117,15 +1216,30 @@ namespace CamelWorks.UI.Views
 
                     _actions.Children.Add(Ui.Across(
                         Ui.Button("Rename it", () => Rename(column, census.Present)),
-                        Ui.Button("Remove it from " + Ui.Count(census.Present, "element"),
-                                  () => Remove(column, census.Present))));
+
+                        // Red, and asked twice. Stripping a column off forty thousand elements is
+                        // the harshest act on this tab and it used to be the same grey rectangle
+                        // as the rename beside it.
+                        Ui.Danger("Remove it from " + Ui.Count(census.Present, "element"), () =>
+                        {
+                            _actions.Children.Clear();
+
+                            _actions.Children.Add(Ui.Danger(
+                                "Yes, remove \"" + column + "\" from "
+                                + Ui.Count(census.Present, "element"),
+                                () => Remove(column, census.Present)));
+
+                            _actions.Children.Add(Ui.Small("Ctrl+Z will not bring it back."));
+                        })));
                 });
 
-                return Ui.Card("Rename or remove a column",
+                return Ui.Marked(Glyphs.Tune, "Rename or remove a column",
                     "Only columns in CamelWorks' own tab. Renaming what the authoring tool wrote would "
                     + "make the model disagree with the model it came from.",
-                    Ui.Field("Column", _column),
-                    Ui.Field("New name", _renamed),
+                    Ui.Form(Ui.Pair(
+                        Ui.Field("Column", _column, "as it is spelled in the "
+                                                    + NavWriteTransaction.TabName + " tab"),
+                        Ui.Field("New name", _renamed))),
                     count,
                     _status,
                     _actions);
@@ -1198,8 +1312,8 @@ namespace CamelWorks.UI.Views
                     removed = write.Commit();
                 }
 
-                _actions.Children.Add(Ui.Line("Removed from " + Ui.Count(removed, "element")
-                    + (removed == carriers ? "." : " of " + carriers + "."), 1, true));
+                _actions.Children.Add(Ui.Done("Removed from " + Ui.Count(removed, "element")
+                    + (removed == carriers ? "." : " of " + carriers + ".")));
 
                 _actions.Children.Add(Ui.Note("What those elements held is in the project journal. "
                     + "Ctrl+Z does not reach a property write, so that record is the way back."));
@@ -1259,83 +1373,110 @@ namespace CamelWorks.UI.Views
                 // that is on the drawing, a level property is one authored fact per model, and a
                 // histogram is an honest guess.
                 var fromModel = LevelSet.FromModel(named);
+                var guessed = LevelSet.Derive(elevations);
 
-                var levels = fromGrid.Bands.Count > 0 ? fromGrid
+                var chosen = fromGrid.Bands.Count > 0 ? fromGrid
                            : fromModel.Bands.Count > 0 ? fromModel
-                           : LevelSet.Derive(elevations);
-
-                results.Children.Add(Ui.Line(levels.ToString(), 1, true));
-                results.Children.Add(Ui.Line(levels.Provenance(), 0.75));
-
-                if (levels.Source == LevelSource.Grid && grids.Name != null)
-                    results.Children.Add(Ui.Line("Grid system: " + grids.Name, 0.6));
-
-                // What each unused source would have said. A coordinator who disagrees with the
-                // answer needs to see the alternative before deciding the tool is wrong, and the
-                // numbers are already computed.
-                Alternatives(results, levels, fromModel, named.Count);
-
-                if (levels.Bands.Count == 0)
-                {
-                    results.Children.Add(Ui.Empty("No levels.",
-                        "Nothing loaded carries a grid, a level property, or geometry to infer them from."));
-                    return;
-                }
+                           : guessed;
 
                 var units = session.Profile.Units;
 
-                var rows = levels.Bands.Select(b => new TableRow(b,
-                    b.Name,
-                    units.Bare(b.Elevation),
-                    b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
-                    b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
-                                                                                 : "from the model")).ToList();
+                // Declared as a local function rather than assembled inline, because choosing a
+                // different source has to redraw everything under it - including the two stamps,
+                // which write whichever set is on screen.
+                void Show(LevelSet levels)
+                {
+                    results.Children.Clear();
+                    after.Children.Clear();
 
-                results.Children.Add(Ui.Table(rows,
-                    ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
-                    ("Elements", 110), ("Source", 110)));
+                    results.Children.Add(Ui.Line(levels.ToString(), 1, true));
+                    results.Children.Add(Ui.Line(levels.Provenance(), 0.75));
 
-                after.Children.Clear();
-                after.Children.Add(Stamp(session, levels, items));
-                after.Children.Add(GridStamp(session, grids));
+                    if (levels.Source == LevelSource.Grid && grids.Name != null)
+                        results.Children.Add(Ui.Small("Grid system: " + grids.Name));
+
+                    if (levels.Bands.Count == 0)
+                    {
+                        results.Children.Add(Ui.Empty("No levels.",
+                            "Nothing loaded carries a grid, a level property, or geometry to infer "
+                            + "them from."));
+
+                        return;
+                    }
+
+                    // Many more property levels than a building has storeys is the signature of
+                    // disciplines spelling the same storey differently, and it is worth naming
+                    // rather than leaving somebody to notice "L02" and "Level 02" sitting next to
+                    // each other in a report.
+                    if (levels.Source == LevelSource.Property && levels.Bands.Count > 25)
+                        results.Children.Add(Ui.Note(Ui.Count(levels.Bands.Count, "distinct level")
+                            + " is more than most buildings have storeys. That usually means two "
+                            + "disciplines spell the same storey differently - \"L02\" and "
+                            + "\"Level 02\" are two levels here. Worth a look at the table below "
+                            + "before anything is reported by level."));
+
+                    // The three sources as one control rather than two footnotes. They were
+                    // Ui.Link, which reads as commentary — and a coordinator who disagrees with a
+                    // derived answer wants the other answer, not a sentence describing it.
+                    var sources = new List<string>();
+                    var byName = new Dictionary<string, LevelSet>(StringComparer.Ordinal);
+
+                    foreach (var source in new[] { fromGrid, fromModel, guessed })
+                    {
+                        if (source.Bands.Count == 0) continue;
+
+                        var name = Named(source) + " (" + source.Bands.Count.ToString(CultureInfo.InvariantCulture) + ")";
+
+                        if (byName.ContainsKey(name)) continue;
+
+                        sources.Add(name);
+                        byName[name] = source;
+                    }
+
+                    if (sources.Count > 1)
+                        results.Children.Add(Ui.Field("Worked out from",
+                            Ui.Choice(sources, Named(levels) + " ("
+                                      + levels.Bands.Count.ToString(CultureInfo.InvariantCulture) + ")",
+                                      pick =>
+                                      {
+                                          if (byName.TryGetValue(pick, out var swap) && swap.Source != levels.Source)
+                                              Show(swap);
+                                      }, 260)));
+
+                    var rows = levels.Bands.Select(b => new TableRow(b,
+                        b.Name,
+                        units.Bare(b.Elevation),
+                        b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
+                        b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
+                                                                                     : "from the model")).ToList();
+
+                    results.Children.Add(Ui.Table(rows,
+                        ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
+                        ("Elements", 110), ("Source", 110)));
+
+                    results.Children.Add(Ui.Tally(rows.Count, levels.Bands.Count, "level"));
+
+                    after.Children.Add(Ui.Rule());
+                    after.Children.Add(Stamp(session, levels, items));
+                    after.Children.Add(GridStamp(session, grids));
+                }
+
+                Show(chosen);
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Levels & zones"),
-                Ui.Sub("The coordination grid where the federation has one, the models' own levels where "
-                       + "they have them, and a height histogram where neither — and it says which, "
-                       + "because a level called \"Level +3.600\" is honest about being a guess in a way "
-                       + "that \"Level 2\" is not."),
                 run,
                 results,
                 after));
         }
 
-        /// <summary>
-        /// What the sources that were not used would have said.
-        ///
-        /// Shown because the first question anybody asks a derived answer is "compared to what".
-        /// Both alternatives are already computed by the time the chain has picked one, so the only
-        /// cost of showing them is four lines, and the cost of not showing them is a coordinator
-        /// re-running the tool three ways to find out.
-        /// </summary>
-        private static void Alternatives(Panel into, LevelSet chosen, LevelSet property,
-                                         int propertyReadings)
+        /// <summary>Where a set of levels came from, as a sentence can use it.</summary>
+        private static string Named(LevelSet levels) => levels.Source switch
         {
-            if (chosen.Source == LevelSource.Grid && property.Bands.Count > 0)
-                into.Children.Add(Ui.Line("The models' own level property would have given "
-                    + Ui.Count(property.Bands.Count, "level") + " instead, from "
-                    + Ui.Count(propertyReadings, "reading") + ".", 0.6));
-
-            // Many more property levels than a building has storeys is the signature of disciplines
-            // spelling the same storey differently, and it is worth naming rather than leaving
-            // somebody to notice "L02" and "Level 02" sitting next to each other in a report.
-            if (chosen.Source == LevelSource.Property && property.Bands.Count > 25)
-                into.Children.Add(Ui.Note(Ui.Count(property.Bands.Count, "distinct level")
-                    + " is more than most buildings have storeys. That usually means two disciplines "
-                    + "spell the same storey differently - \"L02\" and \"Level 02\" are two levels "
-                    + "here. Worth a look at the table below before anything is reported by level."));
-        }
+            LevelSource.Grid => "The coordination grid",
+            LevelSource.Property => "The models' own level property",
+            _ => "A histogram of element heights",
+        };
 
         /// <summary>
         /// Write the grid reference onto every element.
@@ -1347,16 +1488,14 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static UIElement GridStamp(Session session, NavGrids grids)
         {
-            if (grids.System == null)
-                return Ui.Card("Put the grid reference on the elements",
-                    "Nothing loaded carries a coordination grid, so there is no reference to write. "
-                    + "Grids come across from Revit and from IFC files that carry IfcGrid; a model "
-                    + "exported without one has none to find.",
-                    Ui.Line("No grid in this federation.", 0.7));
+            // Nothing at all rather than a card explaining its own absence. A federation with no
+            // grid has nothing to write, and a box saying so is a permanent reminder of a feature
+            // that does not apply to this job.
+            if (grids.System == null) return Ui.Stack();
 
             var status = Ui.Stack();
 
-            var apply = Ui.Runner("Stamp the grid reference onto every element", status, job =>
+            var apply = Ui.Runner("Stamp the grid reference onto every element", status, primary: false, work: job =>
             {
                 using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
                 {
@@ -1400,11 +1539,11 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Ui.Card("Put the grid reference on the elements",
-                "Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
-                + "\" grid system, so clash grouping, set rules and reports can all say \"C-4\" "
-                + "instead of a coordinate.",
+            return Ui.Stack(
                 apply,
+                Ui.Small("Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
+                         + "\" grid system, so clash grouping, set rules and reports can all say "
+                         + "\"C-4\" instead of a coordinate."),
                 status);
         }
 
@@ -1413,7 +1552,7 @@ namespace CamelWorks.UI.Views
         {
             var status = Ui.Stack();
 
-            var apply = Ui.Runner("Stamp the level onto every element", status, job =>
+            var apply = Ui.Runner("Stamp the level onto every element", status, primary: false, work: job =>
             {
                 using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign levels"))
                 {
@@ -1445,10 +1584,11 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Ui.Card("Put the level on the elements",
-                "Writes Level into the CamelWorks tab, so clash grouping, reports and set rules can all "
-                + "use it — including on models that never had a level property to begin with.",
+            return Ui.Stack(
                 apply,
+                Ui.Small("Writes Level into the CamelWorks tab, so clash grouping, reports and set "
+                         + "rules can all use it — including on models that never had a level "
+                         + "property to begin with."),
                 status);
         }
 
@@ -1518,28 +1658,55 @@ namespace CamelWorks.UI.Views
                 var run = Ui.Runner("Sum it", _results, Run);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Takeoff"),
-                    Ui.Sub("Sums whatever the elements carry, with no mapping table to build first. Pick a "
-                           + "second axis and it becomes a pivot: concrete by level, ductwork by system."),
-                    Ui.Field("Scope", scope),
-                    Ui.Field("Measure", measure),
-                    Ui.Field("Rows", rows),
-                    Ui.Field("Columns", down),
-                    Ui.Card("If the values need tidying first",
-                        "Both of these are off until you set them. A property that already reads as a "
-                        + "quantity needs neither.",
+                    Ui.Form(
+                        Ui.Field("Scope", scope),
+                        Ui.Pair(
+                            Ui.Field("Measure", measure),
+                            Ui.Field("Rows", rows)),
+                        Ui.Field("Columns", down, "Leave it to get a flat list.")),
+
+                    run,
+
+                    // Below the action, not between the user and it. It is off for almost
+                    // everybody, and its folded line says so.
+                    // Off until somebody sets them, and a property that already reads as a quantity
+                    // needs neither - so this is the definition of a group that should not be
+                    // occupying the screen of everyone who does not need it.
+                    Ui.Section("If the values need tidying first", Tidying, false,
+                        Ui.Small("Both of these are off until you set them. A property that already "
+                                 + "reads as a quantity needs neither."),
                         Ui.Field("Take the number matching", _clean),
                         Ui.Across(
-                            Ui.Button("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
-                            Ui.Button("Clear it", () => _clean.Text = string.Empty)),
+                            Ui.Quiet("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
+                            Ui.Quiet("Clear it", () => _clean.Text = string.Empty)),
                         Ui.Field("When it has no unit, read it as", assume),
                         Ui.Note("Nothing here invents a number. A pattern that matches nothing leaves the "
                                 + "value alone, so the takeoff still counts it unreadable and names it - "
                                 + "turning what it could not clean into a zero would move the failure out "
                                 + "of a line that admits it and into a total that is quietly wrong.")),
-                    run,
+
                     _results,
                     _output));
+            }
+
+            /// <summary>
+            /// What the tidying is set to, on one line, for the folded header.
+            ///
+            /// Folding a group of settings away is only free while the fold says what it will do.
+            /// "Off" is the answer most people need, and it is the answer that lets them stop
+            /// reading.
+            /// </summary>
+            private string Tidying()
+            {
+                var pattern = _clean.Text?.Trim() ?? string.Empty;
+                var unit = _assume == NoUnit ? null : _assume;
+
+                if (pattern.Length == 0 && unit == null) return "Off — values read exactly as they are";
+
+                if (pattern.Length == 0) return "Unitless values read as " + unit;
+
+                return "Taking the number matching " + pattern
+                       + (unit == null ? string.Empty : ", unitless read as " + unit);
             }
 
             private void Run(Job job)
@@ -1596,7 +1763,8 @@ namespace CamelWorks.UI.Views
                 if (wide) Wide(session, pivot);
                 else Narrow(session, flat);
 
-                _output.Children.Add(Ui.Field("Write to", _path));
+                _output.Children.Add(Ui.PathField("Write to", _path, PathKind.Save,
+                                                  "Excel|*.xlsx|CSV|*.csv|All files|*.*"));
                 _output.Children.Add(Ui.Across(Ui.Button("Write it to a spreadsheet", () => Export(session))));
             }
 
@@ -1746,7 +1914,8 @@ namespace CamelWorks.UI.Views
             private void Export(Session session)
             {
                 _output.Children.Clear();
-                _output.Children.Add(Ui.Field("Write to", _path));
+                _output.Children.Add(Ui.PathField("Write to", _path, PathKind.Save,
+                                                  "Excel|*.xlsx|CSV|*.csv|All files|*.*"));
 
                 var file = _path.Text.Trim();
 

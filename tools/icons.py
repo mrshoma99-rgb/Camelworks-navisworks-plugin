@@ -31,10 +31,44 @@ OUT = ROOT / "CamelWorks.UI" / "Resources"
 SOURCE = ("https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/"
           "{name}/materialsymbolsoutlined/{name}_24px.svg")
 
-# The glyph colour. Autodesk's own ribbon icons are near-black because the Navisworks ribbon is
-# light on every supported release; a theme-aware second set is a design deliverable, not something
-# to guess at here.
+# The glyph colour when a command belongs to no workspace. Autodesk's own ribbon icons are
+# near-black because the Navisworks ribbon is light on every supported release.
 INK = (0x33, 0x38, 0x3D)
+
+# One colour per workspace, and the reason the tools stop looking alike.
+#
+# Twenty-seven near-black outline glyphs in one ribbon tab is twenty-seven of the same button: the
+# eye has nothing to sort them by, so every trip to the ribbon is a read rather than a glance.
+# Tinting by workspace gives the row a structure that matches the one the pane already has - the
+# switcher marks each workspace with the same colour, so a rust icon and the rust dot beside
+# "Coordinate" are the same fact stated twice.
+#
+# These values are the light column of Skin.cs's Fam.* rows and have to stay that way. The dark
+# column is not used here: the Navisworks ribbon is light on every supported release, which is why
+# there is one icon set rather than two.
+FAMILY_INK = {
+    "Home":       (0x57, 0x61, 0x6C),
+    "Project":    (0x0F, 0x76, 0x6E),
+    "Coordinate": (0xC2, 0x41, 0x0C),
+    "Compare":    (0x6D, 0x46, 0xC8),
+    "Data":       (0x03, 0x69, 0xA1),
+    "Sets":       (0xB4, 0x53, 0x09),
+    "Batch":      (0x4D, 0x7C, 0x0F),
+    "Automate":   (0xBE, 0x18, 0x5D),
+}
+
+# The commands that open no pane, so the catalogue has no route to read a workspace out of. Named
+# here rather than given the fallback ink, because "Review" being the same colour as the clash
+# tools is the whole point of colouring them.
+LOOSE = {
+    "FixLinks":   "Project",
+    "Review":     "Coordinate",
+    "Baseline":   "Compare",
+    "SectionBox": "Sets",
+    "Export":     "Project",
+    "ExportIfc":  "Project",
+    "Help":       "Home",
+}
 
 SIZES = (16, 32)
 
@@ -346,7 +380,7 @@ def png(cover, size, ink):
             + chunk(b"IEND", b""))
 
 
-def render(svg, size):
+def render(svg, size, ink=INK):
     view = [float(v) for v in re.search(r'viewBox="([^"]+)"', svg).group(1).split()]
 
     polygons = []
@@ -356,7 +390,7 @@ def render(svg, size):
     if not polygons:
         raise ValueError("the SVG has no path data")
 
-    return png(coverage(polygons, size, view), size, INK)
+    return png(coverage(polygons, size, view), size, ink)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -365,6 +399,22 @@ def commands():
     """The command ids the ribbon declares, so the icon set can be checked against them."""
     source = (ROOT / "CamelWorks.UI" / "CamelWorksPlugin.cs").read_text(encoding="utf-8")
     return sorted(set(re.findall(r'\[Command\("ID_CW_(\w+)"', source)))
+
+
+def families():
+    """Which workspace each command belongs to, read from the catalogue rather than restated.
+
+    The catalogue already says where every pane command goes - "Coordinate/Triage" - and that is
+    the same fact a colour is about to encode. Reading it means a command that moves workspace
+    changes colour by itself, instead of keeping the old one until somebody notices.
+    """
+    source = (ROOT / "CamelWorks.UI" / "Shell" / "CommandCatalogue.cs").read_text(encoding="utf-8")
+
+    found = dict(LOOSE)
+    for command, workspace in re.findall(r'"ID_CW_(\w+)"\s*,\s*"[^"]*"\s*,\s*"(\w+)/', source):
+        found[command] = workspace
+
+    return found
 
 
 def main():
@@ -386,6 +436,19 @@ def main():
         print("FAIL: icons named for commands that do not exist: " + ", ".join(extra), file=sys.stderr)
         problems = 1
 
+    homes = families()
+    homeless = [c for c in declared if c not in homes]
+
+    if homeless:
+        print("FAIL: no workspace known for: " + ", ".join(homeless), file=sys.stderr)
+        problems = 1
+
+    strange = sorted({f for f in homes.values() if f not in FAMILY_INK})
+
+    if strange:
+        print("FAIL: no colour for workspace: " + ", ".join(strange), file=sys.stderr)
+        problems = 1
+
     if args.check:
         for command in declared:
             for size in SIZES:
@@ -397,7 +460,8 @@ def main():
         if problems:
             return 1
 
-        print(f"icons complete: {len(declared)} commands x {len(SIZES)} sizes")
+        print(f"icons complete: {len(declared)} commands x {len(SIZES)} sizes, "
+              f"{len(set(homes[c] for c in declared))} workspace colours")
         return 0
 
     if problems:
@@ -416,10 +480,13 @@ def main():
             problems = 1
             continue
 
-        for size in SIZES:
-            (OUT / f"{command}_{size}.png").write_bytes(render(svg, size))
+        home = homes.get(command)
+        ink = FAMILY_INK.get(home, INK)
 
-        print(f"  {command:<15} {symbol}")
+        for size in SIZES:
+            (OUT / f"{command}_{size}.png").write_bytes(render(svg, size, ink))
+
+        print(f"  {command:<15} {symbol:<16} {home or '-'}")
 
     return 1 if problems else 0
 

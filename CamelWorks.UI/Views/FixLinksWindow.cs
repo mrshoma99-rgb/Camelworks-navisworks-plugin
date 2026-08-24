@@ -83,7 +83,7 @@ namespace CamelWorks.UI.Views
                 Ui.Heading("Fix broken links"),
                 head,
                 list,
-                Ui.Field("Look in", folder),
+                Ui.PathField("Look in", folder, PathKind.Folder),
                 Ui.Across(look),
                 results,
                 Ui.Note("Navisworks offers no way for a plug-in to re-point an existing model at a new "
@@ -148,7 +148,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var model in broken)
             {
-                if (!job.Step(looked++, "models checked")) return;
+                if (!job.Step(looked++, broken.Count, "models checked")) return;
 
                 var name = System.IO.Path.GetFileName(model.SourcePath);
 

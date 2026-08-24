@@ -222,7 +222,7 @@ namespace CamelWorks.UI.Views
                 {
                     System.IO.File.WriteAllText(file, BundleText(), new System.Text.UTF8Encoding(true));
 
-                    status.Children.Add(Ui.Line("Written to " + file + ".", 1, true));
+                    status.Children.Add(Ui.Done("Written to " + file + "."));
                     status.Children.Add(Ui.Line("Open it and read it before you send it.", 0.7));
                 }
                 catch (Exception e)
@@ -241,7 +241,7 @@ namespace CamelWorks.UI.Views
                         + "half the faults worth reporting are about where a file is.", 0.85),
                 Ui.Note("It writes a file and sends nothing. Nothing in CamelWorks contacts a server, "
                         + "and a support bundle that uploaded itself would be the one place it did."),
-                Ui.Field("Write to", path),
+                Ui.PathField("Write to", path, PathKind.Save),
                 Ui.Across(write),
                 status);
         }
@@ -261,6 +261,12 @@ namespace CamelWorks.UI.Views
                                     + " (numbers read as \"" + (1234.5).ToString("0.#") + "\")",
                 "OS               " + Environment.OSVersion,
                 ".NET             " + Environment.Version,
+                "Theme            " + Skin.ModeName + (Skin.IsDark ? " (dark)" : " (light)"),
+
+                // Worth a line even when it is fine. A skin that failed to load leaves a pane that
+                // works perfectly and looks twenty years old, and the person reporting that has no
+                // way to tell it from a design decision.
+                "Skin             " + (Skin.Problem ?? "loaded"),
                 string.Empty,
             };
 
@@ -332,7 +338,7 @@ namespace CamelWorks.UI.Views
                     var note = System.IO.Path.ChangeExtension(file, ".txt");
                     System.IO.File.WriteAllText(note, SampleProject.ReadMe());
 
-                    status.Children.Add(Ui.Line("Written to " + file + ", with a note beside it.", 1, true));
+                    status.Children.Add(Ui.Done("Written to " + file + ", with a note beside it."));
                 }
                 catch (Exception e)
                 {
@@ -348,7 +354,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var line in SampleProject.Explains) body.Children.Add(Ui.Line("- " + line, 0.8));
 
-            body.Children.Add(Ui.Field("Write to", path));
+            body.Children.Add(Ui.PathField("Write to", path, PathKind.Save));
             body.Children.Add(Ui.Across(write));
             body.Children.Add(status);
 

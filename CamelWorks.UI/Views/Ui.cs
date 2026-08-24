@@ -6,11 +6,26 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
 {
+    /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
+    public enum PathKind
+    {
+        /// <summary>A file that already exists.</summary>
+        Open = 0,
+
+        /// <summary>A file to be written, which need not exist yet.</summary>
+        Save = 1,
+
+        /// <summary>A folder.</summary>
+        Folder = 2,
+    }
+
     /// <summary>How a value reads: neutral, good, worth attention, or wrong.</summary>
     public enum Tone
     {
@@ -75,21 +90,36 @@ namespace CamelWorks.UI.Views
     /// <b>This is not a background thread, and it cannot be.</b> The Navisworks API is
     /// main-thread-only: reading a property from another thread is undefined behaviour, not a
     /// slower version of the same thing. So the work runs on the UI thread and pumps the dispatcher
-    /// between chunks, which is what lets the status line update and the Cancel button be clickable
-    /// at all. Cancellation therefore happens between chunks, never inside one — stated plainly
-    /// here because a Cancel button that takes twenty seconds to notice looks broken unless you
-    /// know why.
+    /// between chunks, which is what lets the progress bar move and the Stop button be clickable at
+    /// all. Cancellation therefore happens between chunks, never inside one — stated plainly here
+    /// because a Stop button that takes twenty seconds to notice looks broken unless you know why.
+    ///
+    /// Give it a <see cref="Total"/> whenever the count is known before the loop starts. The
+    /// difference between "12,300 of 29,000, about 20s left" and a bar that could mean anything is
+    /// the difference between waiting and force-quitting Navisworks.
     /// </summary>
     public sealed class Job
     {
+        // Fast enough to read as motion, slow enough that pumping does not cost more than the work
+        // it is reporting on. The old value was 250ms, which on a fast loop looked like a hang
+        // between updates.
+        private const int PumpEveryMs = 90;
+
         private readonly Dispatcher? _dispatcher;
         private readonly TextBlock? _status;
+        private readonly ProgressBar? _bar;
         private readonly System.Diagnostics.Stopwatch _sincePump = System.Diagnostics.Stopwatch.StartNew();
+        private readonly System.Diagnostics.Stopwatch _since = System.Diagnostics.Stopwatch.StartNew();
 
-        internal Job(Dispatcher? dispatcher, TextBlock? status)
+        private long _total;
+        private long _done;
+        private string _what = string.Empty;
+
+        internal Job(Dispatcher? dispatcher, TextBlock? status, ProgressBar? bar)
         {
             _dispatcher = dispatcher;
             _status = status;
+            _bar = bar;
         }
 
         /// <summary>
@@ -99,25 +129,41 @@ namespace CamelWorks.UI.Views
         /// takes a job. The alternative is a second copy of every service that does not report
         /// progress, which is how two code paths start disagreeing.
         /// </summary>
-        internal static Job Silent() => new Job(null, null);
+        internal static Job Silent() => new Job(null, null, null);
 
         /// <summary>Set when the user has asked to stop.</summary>
         public bool IsCancelled { get; internal set; }
 
-        /// <summary>Say what is happening. Repaints at most a few times a second.</summary>
+        /// <summary>How long this has been running.</summary>
+        public TimeSpan Elapsed => _since.Elapsed;
+
+        /// <summary>
+        /// How many items there are in total, when that is known before the loop starts.
+        ///
+        /// Setting it turns the bar from "something is happening" into "this is how far through it
+        /// is and roughly how much longer". Leave it at zero when the count genuinely is not known
+        /// — a wrong total is worse than none, because a bar that reaches the end and keeps going
+        /// tells the user the tool is lying to them.
+        /// </summary>
+        public long Total
+        {
+            get => _total;
+
+            set
+            {
+                _total = value < 0 ? 0 : value;
+                Paint(force: true);
+            }
+        }
+
+        /// <summary>Say what is happening. Repaints a few times a second, not on every call.</summary>
         /// <param name="message">One short line.</param>
         public void Say(string message)
         {
-            if (_status == null || _dispatcher == null) return;
-
-            _status.Text = message;
-
-            // Pumping on every call would cost more than the work. A quarter second is fast enough
-            // to read and slow enough not to dominate.
-            if (_sincePump.ElapsedMilliseconds < 250) return;
-
-            _sincePump.Restart();
-            _dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
+            _what = message ?? string.Empty;
+            _done = 0;
+            _total = 0;
+            Paint(force: false);
         }
 
         /// <summary>
@@ -128,9 +174,93 @@ namespace CamelWorks.UI.Views
         /// <returns>False once the user has cancelled.</returns>
         public bool Step(int done, string what)
         {
-            Say(done.ToString("N0", CultureInfo.InvariantCulture) + " " + what);
+            _done = done;
+            _what = what ?? string.Empty;
+            Paint(force: false);
             return !IsCancelled;
         }
+
+        /// <summary>
+        /// Report progress against a known total, and ask whether to keep going.
+        /// </summary>
+        /// <param name="done">How many items are finished.</param>
+        /// <param name="total">How many there are altogether.</param>
+        /// <param name="what">What the items are, for the status line.</param>
+        /// <returns>False once the user has cancelled.</returns>
+        public bool Step(int done, int total, string what)
+        {
+            _total = total < 0 ? 0 : total;
+            return Step(done, what);
+        }
+
+        /// <summary>
+        /// Push whatever has been reported onto the screen, and let the pane breathe.
+        ///
+        /// Invoking an empty action at <see cref="DispatcherPriority.Background"/> is what drains
+        /// everything above it first — layout, render, and input, which is the Stop button. It is
+        /// the only reason any of this is clickable while work is running.
+        /// </summary>
+        private void Paint(bool force)
+        {
+            if (_status == null || _dispatcher == null) return;
+            if (!force && _sincePump.ElapsedMilliseconds < PumpEveryMs) return;
+
+            _sincePump.Restart();
+
+            _status.Text = Describe();
+
+            if (_bar != null)
+            {
+                if (_total > 0)
+                {
+                    _bar.IsIndeterminate = false;
+                    _bar.Maximum = _total;
+                    _bar.Value = Math.Min(_done, _total);
+                }
+                else
+                {
+                    _bar.IsIndeterminate = true;
+                }
+            }
+
+            _dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
+        }
+
+        private string Describe()
+        {
+            var seconds = _since.Elapsed.TotalSeconds;
+            var clock = seconds < 60
+                ? ((int)seconds).ToString(CultureInfo.InvariantCulture) + "s"
+                : ((int)(seconds / 60)).ToString(CultureInfo.InvariantCulture) + "m "
+                  + ((int)(seconds % 60)).ToString(CultureInfo.InvariantCulture) + "s";
+
+            if (_total <= 0)
+                return string.IsNullOrEmpty(_what) ? "Working... " + clock : _what + "  ·  " + clock;
+
+            var percent = (int)Math.Round(100.0 * _done / _total);
+
+            var line = percent.ToString(CultureInfo.InvariantCulture) + "%  ·  "
+                       + _done.ToString("N0", CultureInfo.InvariantCulture) + " of "
+                       + _total.ToString("N0", CultureInfo.InvariantCulture)
+                       + (string.IsNullOrEmpty(_what) ? string.Empty : " " + _what)
+                       + "  ·  " + clock;
+
+            // Only offered once there is enough of a rate to extrapolate from. A "2 minutes left"
+            // computed off the first fifty elements is a number that will be wrong by an order of
+            // magnitude, and being wrong about this is what makes people stop believing the bar.
+            if (_done > 200 && seconds > 2)
+            {
+                var left = (_total - _done) * seconds / _done;
+                if (left > 3) line += ",  about " + Rough(left) + " left";
+            }
+
+            return line;
+        }
+
+        private static string Rough(double seconds) =>
+            seconds < 60 ? ((int)seconds).ToString(CultureInfo.InvariantCulture) + "s"
+            : seconds < 3600 ? ((int)Math.Round(seconds / 60)).ToString(CultureInfo.InvariantCulture) + " min"
+            : ((int)Math.Round(seconds / 3600)).ToString(CultureInfo.InvariantCulture) + " hr";
     }
 
     /// <summary>
@@ -139,7 +269,10 @@ namespace CamelWorks.UI.Views
     /// Written once and shared so that sixteen screens cannot each invent their own spacing, their
     /// own idea of an empty state, and their own way of saying something went wrong. Built in code
     /// rather than XAML because almost every screen's content is driven by data the shell holds,
-    /// and templates for that would be more markup than the code they replace.
+    /// and templates for that would be more markup than the code they replace — but every colour,
+    /// font size and control shape comes from <see cref="Skin"/> by key, never resolved here, so
+    /// that switching the theme repaints what is already on screen instead of requiring every
+    /// screen to be rebuilt.
     /// </summary>
     public static class Ui
     {
@@ -154,6 +287,17 @@ namespace CamelWorks.UI.Views
         /// which build produced them.
         /// </summary>
         public static string Release { get; } = ReadRelease();
+
+        /// <summary>
+        /// Raised when a run starts or finishes, with how many are in flight.
+        ///
+        /// The shell listens so that a job started on one tab is still visibly running after you
+        /// switch to another — otherwise the answer to "did I actually press it?" is to press it
+        /// again, which is how two exports end up fighting over one file.
+        /// </summary>
+        public static event EventHandler<int>? Running;
+
+        private static int _running;
 
         private static string ReadRelease()
         {
@@ -177,42 +321,109 @@ namespace CamelWorks.UI.Views
         }
 
         // -----------------------------------------------------------------------------------
+        // Painting
+        //
+        // Everything below reaches the palette through these two. A brush resolved at build time
+        // is a brush that stays light when the pane goes dark, which is the bug the exporter's
+        // own pre-flight rows had to be rebuilt to work around.
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>Bind one property to a palette key, so it repaints when the theme changes.</summary>
+        /// <param name="element">What to paint.</param>
+        /// <param name="property">Which property.</param>
+        /// <param name="key">The palette key.</param>
+        /// <typeparam name="T">Anything that can hold a resource reference.</typeparam>
+        public static T Tint<T>(this T element, DependencyProperty property, string key)
+            where T : FrameworkElement
+        {
+            element.SetResourceReference(property, key);
+            return element;
+        }
+
+        /// <summary>Give something one of the skin's named styles.</summary>
+        /// <param name="element">What to style.</param>
+        /// <param name="key">The style key.</param>
+        /// <typeparam name="T">Anything that can hold a style.</typeparam>
+        public static T Wearing<T>(this T element, string key) where T : FrameworkElement
+        {
+            element.SetResourceReference(FrameworkElement.StyleProperty, key);
+            return element;
+        }
+
+        // -----------------------------------------------------------------------------------
         // Type
         // -----------------------------------------------------------------------------------
 
         /// <summary>A screen or card title.</summary>
         /// <param name="text">The title.</param>
-        public static TextBlock Heading(string text) => new TextBlock
-        {
-            Text = text,
-            FontSize = 15,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 3),
-        };
+        public static TextBlock Heading(string text) =>
+            new TextBlock
+            {
+                Text = text,
+
+                // Wrapping is set here as well as in the style on purpose. It is the one property
+                // whose absence is not cosmetic: a skin that fails to load would otherwise give a
+                // pane whose every line runs off the right edge, unreadable rather than plain.
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 2),
+            }.Wearing("Head");
 
         /// <summary>The line under a title that says what the screen is for.</summary>
         /// <param name="text">The line.</param>
-        public static TextBlock Sub(string text) => new TextBlock
-        {
-            Text = text,
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.75,
-            Margin = new Thickness(0, 0, 0, 2),
-        };
+        public static TextBlock Sub(string text) =>
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 4),
+            }.Wearing("Lbl");
 
-        /// <summary>An ordinary line of text.</summary>
+        /// <summary>
+        /// An ordinary line of text.
+        ///
+        /// The <paramref name="opacity"/> argument is honoured as intent rather than as a number:
+        /// anything below full reads as "secondary", and secondary text is drawn in the palette's
+        /// muted ink at full strength. Grey text is legible; black text at 70% is a smear, and at
+        /// the small sizes this pane uses the difference is the whole of it.
+        /// </summary>
         /// <param name="text">The text.</param>
         /// <param name="opacity">How prominent it is.</param>
         /// <param name="bold">Whether to emphasise it.</param>
-        public static TextBlock Line(string text, double opacity = 1, bool bold = false) => new TextBlock
+        public static TextBlock Line(string text, double opacity = 1, bool bold = false)
         {
-            Text = text,
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = opacity,
-            FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
-            Margin = new Thickness(0, bold ? 6 : 1, 0, 0),
-        };
+            var block = new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
+                Margin = new Thickness(0, bold ? 6 : 1, 0, 0),
+            };
+
+            block.Wearing("Body");
+            if (opacity < 0.95) block.Tint(TextBlock.ForegroundProperty, opacity < 0.7 ? "Faint" : "Muted");
+
+            return block;
+        }
+
+        /// <summary>Small print: the sentence under a control that explains it.</summary>
+        /// <param name="text">The text.</param>
+        public static TextBlock Small(string text) =>
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 3, 0, 0),
+            }.Wearing("Hint");
+
+        /// <summary>An identifier, a path or a hash — anything that must not be read as prose.</summary>
+        /// <param name="text">The text.</param>
+        public static TextBlock Code(string text) =>
+            new TextBlock { Text = text }.Wearing("Mono");
+
+        /// <summary>A small upper-case label above a group of things.</summary>
+        /// <param name="text">The label.</param>
+        public static TextBlock Eyebrow(string text) =>
+            new TextBlock { Text = (text ?? string.Empty).ToUpperInvariant() }.Wearing("Caps");
 
         /// <summary>A number and its label, for a scoreboard.</summary>
         /// <param name="value">The number, already formatted.</param>
@@ -220,34 +431,61 @@ namespace CamelWorks.UI.Views
         /// <param name="tone">How it reads.</param>
         public static UIElement Figure(string value, string label, Tone tone = Tone.Plain)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 0, 22, 6) };
+            var panel = new StackPanel { Margin = new Thickness(0, 0, 18, 6), MinWidth = 64 };
 
-            panel.Children.Add(new TextBlock
+            var number = new TextBlock
             {
                 Text = value,
-                FontSize = 22,
+                FontSize = 24,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = Ink(tone),
-            });
+                Foreground = Skin.Ink(tone),
+            };
 
-            panel.Children.Add(new TextBlock { Text = label, Opacity = 0.7, TextWrapping = TextWrapping.Wrap });
+            // Digits in a scoreboard have to line up column to column; proportional figures make
+            // three numbers of the same magnitude look like three different magnitudes.
+            TextOptions.SetTextFormattingMode(number, TextFormattingMode.Ideal);
+            number.SetValue(System.Windows.Documents.Typography.NumeralAlignmentProperty, FontNumeralAlignment.Tabular);
+
+            panel.Children.Add(number);
+            panel.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap }.Wearing("Hint"));
             return panel;
         }
 
         /// <summary>A small labelled pill, for status and counts.</summary>
         /// <param name="text">What it says.</param>
         /// <param name="tone">How it reads.</param>
-        public static UIElement Pill(string text, Tone tone = Tone.Plain) => new Border
+        public static UIElement Pill(string text, Tone tone = Tone.Plain)
         {
-            Background = Wash(tone),
-            BorderBrush = Ink(tone),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(7, 1, 7, 1),
-            Margin = new Thickness(0, 0, 5, 3),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock { Text = text, FontSize = 11, Foreground = Ink(tone) },
-        };
+            var label = new TextBlock
+            {
+                Text = text,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = Skin.Ink(tone),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var pill = new Border
+            {
+                Background = Skin.Wash(tone),
+                BorderBrush = Skin.Edge(tone),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(8, 2, 8, 2),
+                Margin = new Thickness(0, 0, 5, 3),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = label,
+            };
+
+            if (tone == Tone.Plain)
+            {
+                pill.Tint(Border.BackgroundProperty, "Nav");
+                pill.Tint(Border.BorderBrushProperty, "Bd");
+                label.Tint(TextBlock.ForegroundProperty, "Muted");
+            }
+
+            return pill;
+        }
 
         // -----------------------------------------------------------------------------------
         // Layout
@@ -271,7 +509,52 @@ namespace CamelWorks.UI.Views
             foreach (var child in children)
             {
                 if (child == null) continue;
-                if (child is FrameworkElement element) element.Margin = new Thickness(0, 0, 6, 4);
+                if (child is FrameworkElement element) element.Margin = new Thickness(0, 0, 6, 5);
+                panel.Children.Add(child);
+            }
+
+            return panel;
+        }
+
+        /// <summary>
+        /// A row of actions, with the important one first and the rest quieter.
+        ///
+        /// Given as one call rather than three buttons in an <see cref="Across"/> because the point
+        /// is the ranking: on the screens this replaces, Run, Save and Publish were three
+        /// identical grey rectangles and the user had to read all three every time.
+        /// </summary>
+        /// <param name="first">The action the screen is for. Rendered as the primary.</param>
+        /// <param name="rest">Everything else, rendered quieter.</param>
+        public static Panel Actions(UIElement? first, params UIElement?[] rest)
+        {
+            // Gap below as well as above. The five-pixel per-child bottom margin is the gutter
+            // between two buttons that wrap onto a second line; using it as the gutter under the
+            // whole row welded every action row to whatever came next — most often the fold of
+            // options it is supposed to sit above.
+            var panel = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, Gap) };
+
+            if (first is FrameworkElement lead)
+            {
+                lead.Margin = new Thickness(0, 0, 8, Gap);
+
+                // The ranking this method exists for, which it used to describe and not perform:
+                // it set a wider margin on the first child and nothing else, so a row of three
+                // came out as three identical grey rectangles — the exact failure the comment
+                // above claims to fix. A Runner is left alone; it was told at its own call site
+                // whether it leads, and a row can hold one that deliberately does not.
+                if (lead is System.Windows.Controls.Button button) button.Wearing("PrimaryBtn");
+
+                panel.Children.Add(lead);
+            }
+            else if (first != null)
+            {
+                panel.Children.Add(first);
+            }
+
+            foreach (var child in rest)
+            {
+                if (child == null) continue;
+                if (child is FrameworkElement element) element.Margin = new Thickness(0, 0, 6, Gap);
                 panel.Children.Add(child);
             }
 
@@ -284,7 +567,10 @@ namespace CamelWorks.UI.Views
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(10),
+            // Four at the bottom, not sixteen. The last card carries its own ten, and the two
+            // together left every panel with twice the air below it that it has above.
+            Padding = new Thickness(12, 12, 12, 4),
+            Background = Brushes.Transparent,
             Content = content,
         };
 
@@ -292,23 +578,493 @@ namespace CamelWorks.UI.Views
         /// <param name="title">The block's title.</param>
         /// <param name="subtitle">One line saying what it is for, or null.</param>
         /// <param name="body">The contents.</param>
-        public static Border Card(string title, string? subtitle, params UIElement?[] body)
+        public static Border Card(string title, string? subtitle, params UIElement?[] body) =>
+            Build(null, title, subtitle, body);
+
+        /// <summary>
+        /// A titled block with a mark on it.
+        ///
+        /// The mark is not decoration. A screen of five white rectangles with five bold lines on
+        /// them gives the eye nothing to sort by, so finding the card you were just looking at
+        /// means reading all five titles again. A glyph is what makes a card findable without
+        /// reading, which is the whole of "do not depend on the text".
+        /// </summary>
+        /// <param name="glyph">One of <see cref="Glyphs"/>.</param>
+        /// <param name="title">The block's title.</param>
+        /// <param name="subtitle">One line saying what it is for, or null.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Marked(string glyph, string title, string? subtitle, params UIElement?[] body) =>
+            Build(glyph, title, subtitle, body);
+
+        // Deliberately not an overload of Card. A trailing params array absorbs anything, so
+        // Card("A", "B", null, body) fits the three-parameter form as readily as the four and the
+        // compiler is entitled to refuse to choose between them. One name, one shape.
+        private static Border Build(string? glyph, string title, string? subtitle, params UIElement?[] body)
         {
             var panel = new StackPanel();
-            panel.Children.Add(Heading(title));
+
+            if (!string.IsNullOrEmpty(title))
+            {
+                if (glyph == null)
+                {
+                    panel.Children.Add(Heading(title));
+                }
+                else
+                {
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+                    row.Children.Add(Glyph(glyph, 17, "Accent", new Thickness(0, 0, 9, 0)));
+
+                    var caption = Heading(title);
+                    caption.Margin = new Thickness(0);
+                    caption.VerticalAlignment = VerticalAlignment.Center;
+                    row.Children.Add(caption);
+
+                    panel.Children.Add(row);
+                }
+            }
+
             if (subtitle != null) panel.Children.Add(Sub(subtitle));
+            if (!string.IsNullOrEmpty(title)) panel.Children.Add(HeaderRule());
 
             foreach (var child in body) if (child != null) panel.Children.Add(child);
 
-            return new Border
+            var card = new Border { Child = panel };
+            card.Wearing("CardStyle");
+            return card;
+        }
+
+        private static UIElement HeaderRule() => new Border
+        {
+            Height = 1,
+            Margin = new Thickness(0, 7, 0, 10),
+        }.Tint(Border.BackgroundProperty, "Bd");
+
+        /// <summary>
+        /// A card that is one step of an ordered sequence.
+        ///
+        /// Where a screen is a pipeline — suppress, then group, then assign — the order is the
+        /// thing somebody has to understand first, and a sentence at the top saying so is the
+        /// weakest way to say it. A number on each card says it without being read, and then the
+        /// sentence can go.
+        /// </summary>
+        /// <param name="step">Which step this is, from one.</param>
+        /// <param name="title">The step's title.</param>
+        /// <param name="subtitle">One line saying what it does, or null.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Numbered(int step, string title, string? subtitle, params UIElement?[] body)
+        {
+            var badge = new Border
             {
-                BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(10),
-                Margin = new Thickness(0, 0, 0, Gap),
-                Child = panel,
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(11),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 9, 0),
+                Child = new TextBlock
+                {
+                    Text = step.ToString(CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 11,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
             };
+
+            badge.Tint(Border.BackgroundProperty, "Accent");
+
+            var panel = new StackPanel();
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+
+            row.Children.Add(badge);
+
+            var caption = Heading(title);
+            caption.Margin = new Thickness(0);
+            caption.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(caption);
+
+            panel.Children.Add(row);
+            if (subtitle != null) panel.Children.Add(Sub(subtitle));
+            panel.Children.Add(HeaderRule());
+
+            foreach (var child in body) if (child != null) panel.Children.Add(child);
+
+            var card = new Border { Child = panel };
+            card.Wearing("CardStyle");
+            return card;
+        }
+
+        /// <summary>
+        /// How much of a list is on the screen.
+        ///
+        /// A table that shows five rows of a hundred and says nothing about the other ninety-five
+        /// is a table somebody will read as the whole answer. Cheap to say, and the one number
+        /// that stops a screen quietly lying about its own completeness.
+        /// </summary>
+        /// <param name="shown">How many rows are on the screen.</param>
+        /// <param name="total">How many there are altogether.</param>
+        /// <param name="unit">What they are, singular.</param>
+        public static UIElement Tally(int shown, int total, string unit)
+        {
+            var text = shown >= total
+                ? Count(total, unit)
+                : "Showing " + shown.ToString("N0", CultureInfo.InvariantCulture) + " of " + Count(total, unit);
+
+            return new TextBlock { Text = text, Margin = new Thickness(0, 5, 0, 0) }.Wearing("Hint");
+        }
+
+        /// <summary>
+        /// The surface a card's inputs sit on.
+        ///
+        /// Without it a card is a title and then a column of labelled boxes, which is a
+        /// spreadsheet with a heading on it. Putting the inputs on their own tinted panel is what
+        /// separates "the part you fill in" from "the part that tells you things" — and it is what
+        /// lets the action underneath read as the end of the card rather than one more row.
+        /// </summary>
+        /// <param name="fields">The inputs.</param>
+        public static Border Form(params UIElement?[] fields)
+        {
+            var panel = new StackPanel();
+            var real = 0;
+
+            foreach (var child in fields)
+            {
+                if (child == null) continue;
+
+                // A Field carries its own bottom margin; a bare line of prose between two of them
+                // does not, and comes out welded to the label underneath it. Given the same
+                // spacing here rather than at every call site that puts a note in a form.
+                if (child is TextBlock note && note.Margin.Bottom == 0)
+                    note.Margin = new Thickness(0, 0, 0, 10);
+                else
+                    real++;
+
+                panel.Children.Add(child);
+            }
+
+            var frame = new Border { Child = panel };
+
+            // A grey well around one input is decoration, and at 470 pixels it is decoration that
+            // costs 26 of them — inside a card that has already spent 24 on its own padding. One
+            // field gets the card's surface; two or more get a surface of their own.
+            if (real > 1) frame.Wearing("FormStyle");
+
+            return frame;
+        }
+
+        /// <summary>
+        /// A block that starts folded up, with its state on the header line.
+        ///
+        /// This is the answer to a pane where every option of every tool was on screen at once. A
+        /// section that is closed still says what it is set to, so folding something away never
+        /// costs you the ability to see what it will do — which is the only reason folding is
+        /// acceptable in a tool people have to trust before pressing Run.
+        /// </summary>
+        /// <param name="title">The section's title.</param>
+        /// <param name="summary">What it is currently set to, shown while it is folded.</param>
+        /// <param name="open">Whether it starts open.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Section(string title, string? summary, bool open, params UIElement?[] body) =>
+            Section(title, () => summary ?? string.Empty, open, body);
+
+        /// <summary>
+        /// A disclosure whose header line is recomputed every time it closes.
+        ///
+        /// The whole argument for folding an option away is that the closed header still says what
+        /// it is set to. A summary captured once, when the panel was built, says what it was set
+        /// to before anybody touched it — which on the BCF card meant picking 3.0, folding it, and
+        /// reading "BCF 2.1" on the header of the thing you had just changed.
+        /// </summary>
+        /// <param name="title">What is inside.</param>
+        /// <param name="summary">What it is currently set to, asked again on every collapse.</param>
+        /// <param name="open">Whether it starts open.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Section(string title, Func<string> summary, bool open, params UIElement?[] body)
+        {
+            if (summary == null) throw new ArgumentNullException(nameof(summary));
+
+            var chevron = Glyph(open ? Glyphs.Down : Glyphs.Right, 14, "Muted");
+
+            var caption = new TextBlock
+            {
+                Text = title,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 10, 0),
+            }.Wearing("Body");
+
+            var said = summary();
+
+            var state = new TextBlock
+            {
+                Text = said,
+
+                // NoWrap as well as trimming: the Hint style wraps, and wrapping beats trimming,
+                // so a long summary broke onto a second right-aligned line instead of ending in an
+                // ellipsis. A folded header is one line by definition.
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                TextAlignment = TextAlignment.Right,
+                Margin = new Thickness(12, 0, 0, 0),
+                Visibility = open || string.IsNullOrEmpty(said) ? Visibility.Collapsed : Visibility.Visible,
+            }.Wearing("Hint");
+
+            var header = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            header.Children.Add(chevron);
+            Grid.SetColumn(caption, 1);
+            header.Children.Add(caption);
+            Grid.SetColumn(state, 2);
+            header.Children.Add(state);
+
+            var contents = new StackPanel
+            {
+                Margin = new Thickness(0, 10, 0, 0),
+                Visibility = open ? Visibility.Visible : Visibility.Collapsed,
+            };
+
+            foreach (var child in body) if (child != null) contents.Children.Add(child);
+
+            var shown = open;
+
+            header.MouseLeftButtonUp += (s, e) =>
+            {
+                shown = !shown;
+                contents.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+
+                if (!shown) state.Text = summary();
+
+                state.Visibility = shown || string.IsNullOrEmpty(state.Text)
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+
+                chevron.Child = Arrow(shown ? Glyphs.Down : Glyphs.Right, "Muted");
+            };
+
+            var card = new Border { Child = Stack(header, contents) };
+            card.Wearing("SectionStyle");
+            return card;
+        }
+
+        /// <summary>
+        /// Mark a disclosure as holding something that destroys data.
+        ///
+        /// Five folds in a column, one of which deletes the user's viewpoints and four of which
+        /// rename or re-file them, is five identical grey bars. The fold still folds — the act
+        /// inside it is not one anybody performs by accident once it is open — but it stops
+        /// looking exactly like the four that cannot hurt anybody.
+        /// </summary>
+        /// <param name="section">A section from <see cref="Section(string, string?, bool, UIElement?[])"/>.</param>
+        public static Border Grave(this Border section)
+        {
+            section.BorderThickness = new Thickness(3, 1, 1, 1);
+            section.Tint(Border.BorderBrushProperty, "RedBd");
+            return section;
+        }
+
+        /// <summary>
+        /// One thing a check found, weighted by how badly it came out.
+        ///
+        /// A left edge rather than a whole tinted box. A screen that answers with eleven amber
+        /// cards is shouting at somebody who has one real problem to fix, and the point of ranking
+        /// findings is lost the moment they all look equally loud.
+        /// </summary>
+        /// <param name="stop">Whether this one has to be settled before the work is worth doing.</param>
+        /// <param name="check">Which check found it.</param>
+        /// <param name="headline">The finding in one line.</param>
+        /// <param name="detail">Why it matters, or null.</param>
+        /// <param name="fix">What to do about it, or null when there is nothing to do but know.</param>
+        /// <param name="examples">A handful of the things concerned, already joined, or null.</param>
+        public static UIElement Finding(bool stop, string check, string headline,
+                                        string? detail = null, string? fix = null, string? examples = null)
+        {
+            var body = Stack(
+                Across(Pill(stop ? "Settle this" : "Worth a look", stop ? Tone.Bad : Tone.Warn), Small(check)),
+                Line(headline, 1, true));
+
+            if (detail != null) body.Children.Add(Line(detail, 0.8));
+
+            // The fix reads at full weight and the reason does not. They were both Line(…, 0.8),
+            // which put "nobody is told when this happens" and "put it back, then run the tests
+            // again" in the same voice — and only one of them is something to go and do.
+            if (fix != null)
+            {
+                var todo = Line(fix, 1);
+                todo.Margin = new Thickness(0, 3, 0, 0);
+                body.Children.Add(todo);
+            }
+
+            if (examples != null) body.Children.Add(Small("e.g. " + examples));
+
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(3, 0, 0, 0),
+                Padding = new Thickness(12, 2, 0, 2),
+                Margin = new Thickness(0, Gap, 0, 0),
+                Child = body,
+            };
+
+            return frame.Tint(Border.BorderBrushProperty, stop ? "RedBd" : "AmberBd");
+        }
+
+        /// <summary>
+        /// A path, and the dialog that saves somebody alt-tabbing to Explorer to copy one.
+        ///
+        /// Sixteen fields in this product asked for a path and offered a bare text box. Typing an
+        /// absolute path from memory is not something anybody does; what they actually do is open
+        /// Explorer, navigate to the file, copy the address bar and come back — which is the whole
+        /// task, done by hand, in front of a tool that could have asked.
+        /// </summary>
+        /// <param name="label">What the path is for.</param>
+        /// <param name="box">The text box holding it. Its width is handed to the row.</param>
+        /// <param name="kind">Whether it is a file to open, a file to write, or a folder.</param>
+        /// <param name="filter">A dialog filter, as "What it is|*.ext". Ignored for a folder.</param>
+        /// <param name="hint">The line under it, or null.</param>
+        public static Panel PathField(string label, TextBox box, PathKind kind,
+                                      string filter = "All files|*.*", string? hint = null)
+        {
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            // The box asked for a comfortable width when it was made. In a 470-pixel pane with a
+            // button beside it there is no such width, and a MinWidth the column cannot honour
+            // pushes the button off the edge.
+            box.MinWidth = 90;
+            row.Children.Add(box);
+
+            var browse = Button("Browse", () => Pick(box, kind, filter));
+            browse.Margin = new Thickness(6, 0, 0, 0);
+            Grid.SetColumn(browse, 1);
+            row.Children.Add(browse);
+
+            return Field(label, row, hint);
+        }
+
+        /// <summary>
+        /// The dialog itself.
+        ///
+        /// Nothing is written here and nothing is read: it puts a path in a box, and the button
+        /// that does the work still does the work. So a save dialog does not warn about
+        /// overwriting — it has not been asked to overwrite anything yet, and the tool that will
+        /// says so itself when it runs.
+        /// </summary>
+        private static void Pick(TextBox box, PathKind kind, string filter)
+        {
+            var typed = box.Text.Trim();
+
+            try
+            {
+                if (kind == PathKind.Save)
+                {
+                    var save = new Microsoft.Win32.SaveFileDialog
+                    {
+                        Filter = filter,
+                        OverwritePrompt = false,
+                        AddExtension = true,
+                    };
+
+                    Start(save, typed);
+
+                    if (save.ShowDialog() == true) box.Text = save.FileName;
+                    return;
+                }
+
+                var folder = kind == PathKind.Folder;
+
+                // WPF on .NET Framework has no folder dialog, and pulling WinForms into a
+                // Navisworks add-in for one is a poor trade. A file dialog with a filter that
+                // matches nothing shows folders and nothing else, which is the dialog we wanted;
+                // the title says what to do with it rather than leaving somebody hunting for a
+                // file that is not there.
+                var open = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = folder ? "Folders|*.camelworks-no-such-file" : filter,
+                    CheckFileExists = !folder,
+                    CheckPathExists = true,
+                    ValidateNames = !folder,
+                    FileName = folder ? "(this folder)" : string.Empty,
+                    Title = folder ? "Open the folder you want, then press Open" : "Pick a file",
+                };
+
+                Start(open, typed);
+
+                if (open.ShowDialog() != true) return;
+
+                box.Text = folder
+                    ? System.IO.Path.GetDirectoryName(open.FileName) ?? typed
+                    : open.FileName;
+            }
+            catch (Exception)
+            {
+                // A dialog that will not open is not a reason to take the pane down with it, and
+                // the box is still there to be typed into.
+            }
+        }
+
+        /// <summary>Open the dialog where the box is already pointing, if that is anywhere real.</summary>
+        private static void Start(Microsoft.Win32.FileDialog dialog, string typed)
+        {
+            if (typed.Length == 0) return;
+
+            try
+            {
+                var directory = System.IO.Directory.Exists(typed)
+                    ? typed
+                    : System.IO.Path.GetDirectoryName(typed);
+
+                if (!string.IsNullOrEmpty(directory) && System.IO.Directory.Exists(directory))
+                    dialog.InitialDirectory = directory!;
+
+                if (!System.IO.Directory.Exists(typed))
+                {
+                    var name = System.IO.Path.GetFileName(typed);
+                    if (name.Length > 0) dialog.FileName = name;
+                }
+            }
+            catch (Exception)
+            {
+                // A path the OS will not even parse. The dialog opens wherever it likes.
+            }
+        }
+
+        /// <summary>A hairline between two groups of things.</summary>
+        public static UIElement Rule() => new Border
+        {
+            Height = 1,
+            Margin = new Thickness(0, Gap, 0, Gap),
+        }.Tint(Border.BackgroundProperty, "Bd");
+
+        /// <summary>A label on the left and its value on the right, as one row.</summary>
+        /// <param name="label">What it is.</param>
+        /// <param name="value">What it says.</param>
+        /// <param name="tone">How the value reads.</param>
+        public static UIElement Split(string label, string value, Tone tone = Tone.Plain)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            grid.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center }.Wearing("Lbl"));
+
+            var right = new TextBlock
+            {
+                Text = value,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Right,
+            }.Wearing("Body");
+
+            if (tone != Tone.Plain) right.Foreground = Skin.Ink(tone);
+
+            Grid.SetColumn(right, 1);
+            grid.Children.Add(right);
+            return grid;
         }
 
         // -----------------------------------------------------------------------------------
@@ -318,30 +1074,91 @@ namespace CamelWorks.UI.Views
         /// <summary>A button.</summary>
         /// <param name="caption">What it says.</param>
         /// <param name="onClick">What it does.</param>
-        public static System.Windows.Controls.Button Button(string caption, Action onClick)
+        public static System.Windows.Controls.Button Button(string caption, Action onClick) =>
+            Press(caption, onClick, null);
+
+        /// <summary>
+        /// The one action a screen is for.
+        ///
+        /// There should be at most one of these visible at a time. Two primaries is the same as
+        /// none: it puts the decision of which one matters back on the reader.
+        /// </summary>
+        /// <param name="caption">What it says.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Primary(string caption, Action onClick) =>
+            Press(caption, onClick, "PrimaryBtn");
+
+        /// <summary>A supporting action, with no border until it is hovered.</summary>
+        /// <param name="caption">What it says.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Quiet(string caption, Action onClick) =>
+            Press(caption, onClick, "QuietBtn");
+
+        /// <summary>An action that removes or overwrites something.</summary>
+        /// <param name="caption">What it says.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Danger(string caption, Action onClick) =>
+            Press(caption, onClick, "DangerBtn");
+
+        /// <summary>Something that reads as a link rather than a button.</summary>
+        /// <param name="caption">What it says.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Link(string caption, Action onClick) =>
+            Press(caption, onClick, "LinkBtn");
+
+        /// <summary>
+        /// A square action on a row: remove it, move it up, move it down.
+        ///
+        /// These were text buttons reading "x", "up" and "down". Three words of prose per row, on
+        /// a screen with twenty rows, is sixty words of chrome competing with the content.
+        /// </summary>
+        /// <param name="glyph">One of <see cref="Glyphs"/>.</param>
+        /// <param name="tip">What it does, as a tooltip. Row buttons have no caption to read.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Icon(string glyph, string tip, Action onClick)
         {
             var button = new System.Windows.Controls.Button
             {
-                Content = caption,
-                Padding = new Thickness(12, 4, 12, 4),
-                MinWidth = 90,
+                // Through Glyph, not Arrow: a raw path draws at its own 24-unit size, which inside
+                // a 26-pixel button is a cross that fills the row it is meant to sit beside.
+                Content = Glyph(glyph, 15, "Muted"),
+                ToolTip = tip,
             };
+
+            button.Wearing("RowBtn");
+            if (onClick != null) button.Click += (s, e) => onClick();
+            return button;
+        }
+
+        private static System.Windows.Controls.Button Press(string caption, Action onClick, string? style)
+        {
+            var button = new System.Windows.Controls.Button { Content = caption };
+
+            if (style != null) button.Wearing(style);
+            else button.MinWidth = 88;
 
             if (onClick != null) button.Click += (s, e) => onClick();
             return button;
         }
 
-        /// <summary>A text box that reports every change.</summary>
+        /// <summary>
+        /// A text box that reports every change.
+        ///
+        /// <paramref name="width"/> is a floor rather than a fixed size: in a row it holds the
+        /// old width, and in a stacked field it grows to the pane. A dock pane is 470 device
+        /// pixels wide at its narrowest, and a fixed 180-pixel box beside a 120-pixel label wasted
+        /// a third of that on nothing.
+        /// </summary>
         /// <param name="value">Starting value.</param>
         /// <param name="onChanged">Called on each keystroke.</param>
-        /// <param name="width">How wide.</param>
+        /// <param name="width">The narrowest it may be.</param>
         public static TextBox Text(string? value, Action<string>? onChanged, double width = 180)
         {
             var box = new TextBox
             {
                 Text = value ?? string.Empty,
-                Width = width,
-                Padding = new Thickness(4, 2, 4, 2),
+                MinWidth = width,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
@@ -349,15 +1166,35 @@ namespace CamelWorks.UI.Views
             return box;
         }
 
+        /// <summary>A text box with grey example text in it until something is typed.</summary>
+        /// <param name="value">Starting value.</param>
+        /// <param name="placeholder">What to show while it is empty. An example, not an instruction.</param>
+        /// <param name="onChanged">Called on each keystroke.</param>
+        /// <param name="width">The narrowest it may be.</param>
+        public static TextBox Text(string? value, string placeholder, Action<string>? onChanged, double width = 180)
+        {
+            var box = Text(value, onChanged, width);
+
+            // The skin's TextBox template shows Tag as the placeholder, so every text field in the
+            // product gets one the same way and none of them can drift out of position.
+            box.Tag = placeholder;
+            return box;
+        }
+
         /// <summary>A dropdown of fixed options.</summary>
         /// <param name="options">What can be picked.</param>
         /// <param name="selected">What is picked now, or null.</param>
         /// <param name="onChanged">Called with the new pick.</param>
-        /// <param name="width">How wide.</param>
+        /// <param name="width">The narrowest it may be.</param>
         public static ComboBox Choice(IEnumerable<string> options, string? selected,
                                       Action<string>? onChanged, double width = 170)
         {
-            var box = new ComboBox { Width = width, VerticalAlignment = VerticalAlignment.Center };
+            var box = new ComboBox
+            {
+                MinWidth = width,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
 
             foreach (var option in options) box.Items.Add(option);
 
@@ -372,6 +1209,71 @@ namespace CamelWorks.UI.Views
             return box;
         }
 
+        /// <summary>
+        /// Two to four exclusive choices, all visible at once.
+        ///
+        /// A dropdown hides the alternatives until it is opened, which for a choice of three is
+        /// one click and one guess too many. Above four options a dropdown is still right, and
+        /// this falls back to one.
+        /// </summary>
+        /// <param name="options">The choices, in order.</param>
+        /// <param name="selected">Which is picked now, or null for the first.</param>
+        /// <param name="onChanged">Called with the new pick.</param>
+        public static UIElement Segmented(IReadOnlyList<string> options, string? selected, Action<string>? onChanged)
+        {
+            if (options == null || options.Count == 0) return Stack();
+            if (options.Count > 4) return Choice(options, selected, onChanged);
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            var buttons = new List<ToggleButton>();
+
+            foreach (var option in options)
+            {
+                var pick = option;
+
+                var button = new ToggleButton
+                {
+                    Content = option,
+                    IsChecked = string.Equals(option, selected, StringComparison.Ordinal)
+                                || (selected == null && ReferenceEquals(option, options[0])),
+                };
+
+                button.Wearing("Segment");
+
+                button.Checked += (s, e) =>
+                {
+                    foreach (var other in buttons)
+                        if (!ReferenceEquals(other, button)) other.IsChecked = false;
+
+                    onChanged?.Invoke(pick);
+                };
+
+                // Clicking the one already on must not turn everything off and leave no choice
+                // made at all.
+                button.Unchecked += (s, e) =>
+                {
+                    if (!buttons.Any(b => b.IsChecked == true)) button.IsChecked = true;
+                };
+
+                buttons.Add(button);
+                row.Children.Add(button);
+            }
+
+            if (!buttons.Any(b => b.IsChecked == true)) buttons[0].IsChecked = true;
+
+            var frame = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Child = row,
+            };
+
+            frame.Tint(Border.BackgroundProperty, "Nav");
+            frame.Tint(Border.BorderBrushProperty, "Bd");
+            return frame;
+        }
+
         /// <summary>A checkbox.</summary>
         /// <param name="caption">What it says.</param>
         /// <param name="value">Whether it starts ticked.</param>
@@ -383,7 +1285,7 @@ namespace CamelWorks.UI.Views
                 Content = caption,
                 IsChecked = value,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 3, 0, 3),
+                Margin = new Thickness(0, 4, 0, 4),
             };
 
             if (onChanged != null)
@@ -395,25 +1297,72 @@ namespace CamelWorks.UI.Views
             return box;
         }
 
-        /// <summary>A control with a label in front of it.</summary>
+        /// <summary>
+        /// An on/off setting, drawn as a switch rather than a tick.
+        ///
+        /// A tick means "include this one" in a list; a switch means "this behaviour is on". They
+        /// were the same control, and a column of them read as a list of things to select from.
+        /// </summary>
+        /// <param name="caption">What it says.</param>
+        /// <param name="value">Whether it starts on.</param>
+        /// <param name="onChanged">Called with the new state.</param>
+        public static CheckBox Toggle(string caption, bool value, Action<bool>? onChanged)
+        {
+            var box = Check(caption, value, onChanged);
+            box.Wearing("Switch");
+            return box;
+        }
+
+        /// <summary>
+        /// A control with its label above it.
+        ///
+        /// Above rather than in front: the pane is 470 device pixels at its narrowest, and a
+        /// 120-pixel label column in front of a 180-pixel box left the control with less room than
+        /// the word describing it.
+        /// </summary>
         /// <param name="label">The label.</param>
         /// <param name="control">The control.</param>
-        public static Panel Field(string label, UIElement control)
+        public static Panel Field(string label, UIElement control) => Field(label, control, null);
+
+        /// <summary>A control with its label above it and a sentence of explanation below.</summary>
+        /// <param name="label">The label.</param>
+        /// <param name="control">The control.</param>
+        /// <param name="hint">One line saying what to put in it, or null.</param>
+        public static Panel Field(string label, UIElement control, string? hint)
         {
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 3) };
+            var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
 
             panel.Children.Add(new TextBlock
             {
                 Text = label,
-                Opacity = 0.75,
-                MinWidth = 120,
                 TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-            });
+                Margin = new Thickness(0, 0, 0, 4),
+            }.Wearing("Lbl"));
 
+            // Deliberately not touching the control's alignment. Text and Choice already ask to
+            // stretch; Segmented asks not to, because a three-way switch pulled across a whole
+            // pane stops reading as a switch. Overriding here took that decision away from both.
             panel.Children.Add(control);
+
+            if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
+
             return panel;
+        }
+
+        /// <summary>Two fields side by side, so a narrow pane is not one column of boxes.</summary>
+        /// <param name="left">The first field.</param>
+        /// <param name="right">The second field.</param>
+        public static Panel Pair(UIElement left, UIElement right)
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            grid.Children.Add(left);
+            Grid.SetColumn(right, 2);
+            grid.Children.Add(right);
+            return grid;
         }
 
         // -----------------------------------------------------------------------------------
@@ -428,34 +1377,173 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="what">What was looked for.</param>
         /// <param name="why">Why there is nothing, or what to try.</param>
-        public static UIElement Empty(string what, string why) => Stack(
-            Line(what, 1, true),
-            Line(why, 0.7));
+        public static UIElement Empty(string what, string why) => Empty(what, why, null, null);
+
+        /// <summary>
+        /// An empty result, with the thing to do about it.
+        ///
+        /// "No clashes matched these rules" tells somebody what happened. A button that clears the
+        /// rules tells them what to do about it, which is the difference between a dead end and a
+        /// screen. Where there is an obvious next step, it belongs here rather than in a sentence
+        /// telling them where to find it.
+        /// </summary>
+        /// <param name="what">What was looked for.</param>
+        /// <param name="why">Why there is nothing, or what to try.</param>
+        /// <param name="caption">What the way out says, or null for none.</param>
+        /// <param name="onClick">The way out.</param>
+        public static UIElement Empty(string what, string why, string? caption, Action? onClick)
+        {
+            var text = Stack(
+                new TextBlock
+                {
+                    Text = what,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontWeight = FontWeights.SemiBold,
+                }.Wearing("Body"),
+                new TextBlock
+                {
+                    Text = why,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 3, 0, 0),
+                }.Wearing("Lbl"));
+
+            // A Grid, not a horizontal StackPanel. A stack offers its children infinite width, so
+            // wrapping never engages and the second sentence of an empty state runs off the right
+            // of the pane - which is how "Loosen one, or clear the rules" became "Loosen one, o".
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            // The glyph size and gutter a banner uses, so the text columns agree. An empty state
+            // and a notice are one device — an icon and a sentence — and a 22-pixel glyph over a
+            // 12-pixel gutter put this one's words nine pixels right of every banner under it.
+            //
+            // Top, not centre. Glyph centres itself, which is right beside one wrapped paragraph
+            // and wrong beside a heading and a line under it: at 16 pixels it settled between the
+            // two and read as belonging to the second one.
+            var mark = Glyph(Glyphs.Empty, 16, "Faint", new Thickness(0, 3, 9, 0));
+            mark.VerticalAlignment = VerticalAlignment.Top;
+            row.Children.Add(mark);
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(14),
+                Margin = new Thickness(0, 4, 0, 4),
+                Child = row,
+            };
+
+            if (caption != null && onClick != null)
+                text.Children.Add(new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 10, 0, 0),
+                    Children = { Button(caption, onClick) },
+                });
+
+            frame.Tint(Border.BorderBrushProperty, "Bd");
+            frame.Tint(Border.BackgroundProperty, "Card2");
+            return frame;
+        }
 
         /// <summary>Something failed, and this says what.</summary>
         /// <param name="message">The failure, in the user's terms.</param>
-        public static UIElement Problem(string message) => new Border
-        {
-            Background = Wash(Tone.Bad),
-            BorderBrush = Ink(Tone.Bad),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(8),
-            Margin = new Thickness(0, Gap, 0, 0),
-            Child = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Foreground = Ink(Tone.Bad) },
-        };
+        public static UIElement Problem(string message) =>
+            Banner(message, Glyphs.Error, "RedBg", "RedBd", "RedTx");
 
         /// <summary>Something worth knowing before pressing the button.</summary>
         /// <param name="message">The note.</param>
-        public static UIElement Note(string message) => new Border
+        public static UIElement Note(string message) =>
+            Banner(message, Glyphs.Warn, "AmberBg", "AmberBd", "AmberTx");
+
+        /// <summary>Something that went right, said once.</summary>
+        /// <param name="message">What happened.</param>
+        public static UIElement Done(string message) =>
+            Banner(message, Glyphs.Tick, "OkBg", "OkBd", "Ok");
+
+        /// <summary>Background worth having, that nobody has to act on.</summary>
+        /// <param name="message">The note.</param>
+        public static UIElement Info(string message) =>
+            Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx");
+
+        private static UIElement Banner(string message, string glyph, string wash, string edge, string ink)
         {
-            Background = Wash(Tone.Warn),
-            BorderThickness = new Thickness(0, 0, 0, 0),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(8),
-            Margin = new Thickness(0, 4, 0, 4),
-            Child = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
-        };
+            var text = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12,
+                LineHeight = 17,
+            }.Tint(TextBlock.ForegroundProperty, ink);
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            row.Children.Add(Glyph(glyph, 16, ink, new Thickness(0, 1, 9, 0)));
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(11, 9, 11, 9),
+                Margin = new Thickness(0, 5, 0, 5),
+                Child = row,
+            };
+
+            frame.Tint(Border.BackgroundProperty, wash);
+            frame.Tint(Border.BorderBrushProperty, edge);
+            return frame;
+        }
+
+        // -----------------------------------------------------------------------------------
+        // Glyphs
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// One drawn glyph, in a box of the size asked for.
+        ///
+        /// Drawn from path data rather than loaded from a file because these appear inside panes
+        /// the user can theme: a PNG is one colour for ever, and a grey glyph on a dark card is
+        /// the detail that makes a plug-in look unfinished.
+        /// </summary>
+        /// <param name="data">Path data, in a 24-unit box. One of <see cref="Glyphs"/>.</param>
+        /// <param name="size">How big to draw it.</param>
+        /// <param name="key">Which palette key to draw it in.</param>
+        /// <param name="margin">Space around it.</param>
+        public static Viewbox Glyph(string data, double size, string key, Thickness margin = default)
+        {
+            return new Viewbox
+            {
+                Width = size,
+                Height = size,
+                Margin = margin,
+                VerticalAlignment = VerticalAlignment.Center,
+                Stretch = Stretch.Uniform,
+                Child = Arrow(data, key),
+            };
+        }
+
+        private static System.Windows.Shapes.Path Arrow(string data, string key)
+        {
+            var path = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse(data),
+                StrokeThickness = 2,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                StrokeLineJoin = PenLineJoin.Round,
+                Stretch = Stretch.None,
+            };
+
+            path.Tint(System.Windows.Shapes.Shape.StrokeProperty, key);
+            return path;
+        }
 
         // -----------------------------------------------------------------------------------
         // Tables
@@ -467,28 +1555,144 @@ namespace CamelWorks.UI.Views
         public static ListView Table(IEnumerable<TableRow> rows, params (string Header, double Width)[] columns)
         {
             var grid = new GridView { AllowsColumnReorder = false };
+            var flexible = new List<GridViewColumn>();
+            var fixedWidth = 0.0;
 
             for (var i = 0; i < columns.Length; i++)
             {
+                // A CellTemplate rather than DisplayMemberBinding, which produces a bare TextBlock
+                // with no trimming — so a cell too narrow for its text was cut mid-word with no
+                // ellipsis, and the one row anybody reads in a run history is the one that says
+                // why something stopped.
                 var column = new GridViewColumn
                 {
                     Header = columns[i].Header,
-                    DisplayMemberBinding = new Binding("[" + i.ToString(CultureInfo.InvariantCulture) + "]"),
+                    CellTemplate = Cell(i, Numeric(columns[i].Header)),
                 };
 
-                if (columns[i].Width > 0) column.Width = columns[i].Width;
+                if (columns[i].Width > 0)
+                {
+                    column.Width = columns[i].Width;
+                    fixedWidth += columns[i].Width;
+                }
+                else
+                {
+                    flexible.Add(column);
+                }
+
                 grid.Columns.Add(column);
             }
 
-            return new ListView
+            var table = new ListView
             {
                 View = grid,
                 ItemsSource = rows.ToList(),
                 MaxHeight = 420,
-                Margin = new Thickness(0, Gap, 0, 0),
+                Margin = new Thickness(0, Gap, 0, 2),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+
+            // A column given a width of zero takes what is left, shared with any other, rather
+            // than being left to size itself to its content.
+            //
+            // Auto-sizing is what a GridViewColumn does with no width, and what it does is measure
+            // once and settle on something narrower than the text it then clips - "12 minutes ago"
+            // arriving as "12 mi" with eighty pixels of empty pane to its right. Measuring against
+            // the pane instead is both correct and what a table in a dock pane should do anyway,
+            // since the pane is resized far more often than the data changes.
+            if (flexible.Count > 0)
+            {
+                void Fit()
+                {
+                    // The room a vertical scrollbar and the two borders take. Guessed slightly
+                    // high: a column two pixels short of the edge looks intentional, and one two
+                    // pixels over brings a horizontal scrollbar the pane has no room for.
+                    var spare = table.ActualWidth - fixedWidth - 28;
+                    if (spare <= 0) return;
+
+                    var each = Math.Max(70, spare / flexible.Count);
+                    foreach (var column in flexible) column.Width = each;
+                }
+
+                table.SizeChanged += (s, e) => Fit();
+                table.Loaded += (s, e) => Fit();
+            }
+
+            // A 3px bar down the left of the row, not the row's text.
+            //
+            // Painting every cell with the tone made a job name green in one row and red in the
+            // next, and turned a Model column into a rainbow — colouring the one fact on the row
+            // that is the same in every row. The bar says the same thing and says it once.
+            table.ItemContainerGenerator.StatusChanged += (s, e) =>
+            {
+                if (table.ItemContainerGenerator.Status != System.Windows.Controls.Primitives.GeneratorStatus.ContainersGenerated)
+                    return;
+
+                foreach (var item in table.Items)
+                {
+                    if (!(item is TableRow row)) continue;
+                    if (!(table.ItemContainerGenerator.ContainerFromItem(item) is ListViewItem container)) continue;
+
+                    if (row.Tone != Tone.Plain) container.BorderBrush = Skin.Ink(row.Tone);
+                }
+            };
+
+            return table;
         }
+
+        /// <summary>
+        /// One cell: trimmed rather than cut, and with the whole value on a tooltip.
+        /// </summary>
+        /// <param name="index">Which cell of the row.</param>
+        /// <param name="numeric">Whether to line the digits up on the right.</param>
+        private static DataTemplate Cell(int index, bool numeric)
+        {
+            var binding = new Binding("[" + index.ToString(CultureInfo.InvariantCulture) + "]");
+            var text = new FrameworkElementFactory(typeof(TextBlock));
+
+            text.SetBinding(TextBlock.TextProperty, binding);
+            text.SetBinding(FrameworkElement.ToolTipProperty, binding);
+            text.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+
+            if (numeric)
+            {
+                // Digits in a column have to line up column to column, exactly as Figure already
+                // takes the trouble to do. Left-aligned, "412" sat under the "8,2" of "8,204".
+                text.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Right);
+                text.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+
+                text.SetValue(System.Windows.Documents.Typography.NumeralAlignmentProperty,
+                              FontNumeralAlignment.Tabular);
+            }
+
+            return new DataTemplate { VisualTree = text };
+        }
+
+        /// <summary>
+        /// Whether a column holds numbers, from what it is called.
+        ///
+        /// By name rather than by a flag on every call site: nineteen panels build tables and the
+        /// headings they use for counts are a short, stable list.
+        /// </summary>
+        /// <param name="header">The column heading.</param>
+        private static bool Numeric(string? header)
+        {
+            if (string.IsNullOrEmpty(header)) return false;
+
+            foreach (var word in NumberHeadings)
+                if (header!.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+            return false;
+        }
+
+        /// <summary>Column headings whose cells are counts or measurements.</summary>
+        private static readonly string[] NumberHeadings =
+        {
+            "Elements", "Clashes", "Results", "Count", "Size", "Rows", "Models", "Added",
+            "Removed", "Moved", "Changed", "Pass", "Fail", "Applies to", "Total", "Clear (",
+            "Elevation", "Nodes",
+        };
 
         /// <summary>Call back when a row is picked.</summary>
         /// <param name="table">The table.</param>
@@ -538,46 +1742,101 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// A button that runs something long, with a status line and a Cancel.
+        /// A button that runs something long, with a progress bar, a running count and a Stop.
         ///
         /// Nothing in this product runs when a screen opens; everything runs from one of these.
         /// That is what keeps clicking a tab from freezing a federation of half a million elements,
         /// and it is also what makes the zero-setup rule honest — the button works on a raw model
         /// with nothing configured.
+        ///
+        /// <b>The first thing it does is paint itself.</b> The old version set a status line and
+        /// then called the work, which meant that a job which never reported progress showed
+        /// nothing at all: the pane simply stopped responding, and Navisworks looked hung. It now
+        /// pumps the dispatcher once before the work begins, so the disabled button, the moving bar
+        /// and the Stop are on screen before anything slow starts.
         /// </summary>
         /// <param name="caption">What the button says.</param>
         /// <param name="output">Where results are written. Cleared on each run.</param>
         /// <param name="work">The work. Check <see cref="Job.IsCancelled"/> in any loop.</param>
-        public static Panel Runner(string caption, Panel output, Action<Job> work)
+        /// <param name="primary">
+        /// Whether this is the action the card is for. False for the second long-running button on
+        /// a card: two primaries is the same as none, because the reader still has to work out
+        /// which of them the screen wanted them to press.
+        /// </param>
+        public static Panel Runner(string caption, Panel output, Action<Job> work, bool primary = true)
         {
-            var status = new TextBlock { Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center };
-            var cancel = new System.Windows.Controls.Button
+            var status = new TextBlock
             {
-                Content = "Stop",
-                Padding = new Thickness(10, 4, 10, 4),
-                Visibility = Visibility.Collapsed,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            }.Wearing("Hint");
+
+            var bar = new ProgressBar
+            {
+                IsIndeterminate = true,
+                Margin = new Thickness(0, 0, 0, 6),
             };
 
-            Job? running = null;
-            cancel.Click += (s, e) => { if (running != null) running.IsCancelled = true; };
+            var stop = new System.Windows.Controls.Button { Content = "Stop" };
+            stop.Wearing("Btn");
 
-            var go = new System.Windows.Controls.Button { Content = caption, Padding = new Thickness(12, 4, 12, 4), MinWidth = 110 };
+            var go = new System.Windows.Controls.Button { Content = caption };
+            go.Wearing(primary ? "PrimaryBtn" : "Btn");
+
+            Job? running = null;
+            stop.Click += (s, e) =>
+            {
+                if (running == null) return;
+                running.IsCancelled = true;
+                status.Text = "Stopping at the end of this batch...";
+            };
+
+            // Folded away rather than left in place empty, so a screen at rest is not a column of
+            // blank strips where its progress bars will one day be.
+            var progress = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 8, 0, 0) };
+            progress.Children.Add(bar);
+            progress.Children.Add(status);
+
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, 0) };
+            buttons.Children.Add(go);
+            buttons.Children.Add(new Border { Width = 8 });
+            buttons.Children.Add(stop);
+
+            stop.Visibility = Visibility.Collapsed;
 
             go.Click += (s, e) =>
             {
                 output.Children.Clear();
 
                 go.IsEnabled = false;
-                cancel.Visibility = Visibility.Visible;
-                status.Text = "Working...";
+                stop.Visibility = Visibility.Visible;
+                progress.Visibility = Visibility.Visible;
+                bar.IsIndeterminate = true;
+                bar.Value = 0;
+                status.Text = "Starting...";
 
-                var job = new Job(go.Dispatcher, status);
+                Mouse.OverrideCursor = Cursors.Wait;
+                Began();
+
+                var job = new Job(go.Dispatcher, status, bar);
                 running = job;
+
+                // Everything above this line has to be on the glass before anything below it runs.
+                // Without this one call, a job whose first act is a thirty-second host query shows
+                // the user an unchanged pane and a frozen Navisworks.
+                go.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
 
                 try
                 {
                     work(job);
-                    status.Text = job.IsCancelled ? "Stopped." : string.Empty;
+
+                    status.Text = job.IsCancelled
+                        ? "Stopped after " + Seconds(job.Elapsed) + "."
+                        : "Finished in " + Seconds(job.Elapsed) + ".";
+
+                    bar.IsIndeterminate = false;
+                    bar.Maximum = 1;
+                    bar.Value = 1;
                 }
                 catch (Exception ex)
                 {
@@ -586,23 +1845,37 @@ namespace CamelWorks.UI.Views
                     // see a crash instead of a sentence about what failed.
                     output.Children.Clear();
                     output.Children.Add(Problem(Describe(ex)));
-                    status.Text = string.Empty;
+                    progress.Visibility = Visibility.Collapsed;
                 }
                 finally
                 {
                     running = null;
                     go.IsEnabled = true;
-                    cancel.Visibility = Visibility.Collapsed;
+                    stop.Visibility = Visibility.Collapsed;
+                    Mouse.OverrideCursor = null;
+                    Ended();
                 }
             };
 
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, 4) };
-            panel.Children.Add(go);
-            panel.Children.Add(new Border { Width = 6 });
-            panel.Children.Add(cancel);
-            panel.Children.Add(new Border { Width = 10 });
-            panel.Children.Add(status);
-            return panel;
+            return Stack(buttons, progress);
+        }
+
+        private static string Seconds(TimeSpan span) =>
+            span.TotalSeconds < 1 ? "under a second"
+            : span.TotalSeconds < 60 ? ((int)span.TotalSeconds).ToString(CultureInfo.InvariantCulture) + "s"
+            : ((int)span.TotalMinutes).ToString(CultureInfo.InvariantCulture) + "m "
+              + span.Seconds.ToString(CultureInfo.InvariantCulture) + "s";
+
+        private static void Began()
+        {
+            _running++;
+            Running?.Invoke(null, _running);
+        }
+
+        private static void Ended()
+        {
+            if (_running > 0) _running--;
+            Running?.Invoke(null, _running);
         }
 
         /// <summary>
@@ -639,28 +1912,107 @@ namespace CamelWorks.UI.Views
 
         /// <summary>The text colour for a tone.</summary>
         /// <param name="tone">The tone.</param>
-        public static Brush Ink(Tone tone) => tone switch
-        {
-            Tone.Good => new SolidColorBrush(Color.FromRgb(0x1E, 0x7A, 0x46)),
-            Tone.Warn => new SolidColorBrush(Color.FromRgb(0x8A, 0x5A, 0x00)),
-            Tone.Bad => new SolidColorBrush(Color.FromRgb(0xA3, 0x2A, 0x2A)),
-            _ => SystemColors.ControlTextBrush,
-        };
+        public static Brush Ink(Tone tone) => Skin.Ink(tone);
 
         /// <summary>The background wash for a tone.</summary>
         /// <param name="tone">The tone.</param>
-        public static Brush Wash(Tone tone) => tone switch
-        {
-            Tone.Good => new SolidColorBrush(Color.FromArgb(28, 0x1E, 0x7A, 0x46)),
-            Tone.Warn => new SolidColorBrush(Color.FromArgb(30, 0xC8, 0x8A, 0x00)),
-            Tone.Bad => new SolidColorBrush(Color.FromArgb(28, 0xA3, 0x2A, 0x2A)),
-            _ => Brushes.Transparent,
-        };
+        public static Brush Wash(Tone tone) => Skin.Wash(tone);
 
         /// <summary>A count with its unit, pluralised.</summary>
         /// <param name="count">How many.</param>
         /// <param name="unit">What of, singular.</param>
         public static string Count(int count, string unit) =>
             count.ToString("N0", CultureInfo.InvariantCulture) + " " + unit + (count == 1 ? string.Empty : "s");
+    }
+
+    /// <summary>
+    /// The glyph shapes, as path data in a 24-unit box.
+    ///
+    /// Stroked outlines rather than filled shapes, so one set works on a light card and a dark one
+    /// with nothing but a change of brush, and so a glyph at 14 pixels and the same glyph at 22 are
+    /// the same drawing rather than two files.
+    /// </summary>
+    public static class Glyphs
+    {
+        /// <summary>A chevron pointing down: an open section.</summary>
+        public const string Down = "M6,9 L12,15 L18,9";
+
+        /// <summary>A chevron pointing right: a folded section.</summary>
+        public const string Right = "M9,6 L15,12 L9,18";
+
+        /// <summary>A chevron pointing up.</summary>
+        public const string Up = "M6,15 L12,9 L18,15";
+
+        /// <summary>A cross: remove this one.</summary>
+        public const string Close = "M6,6 L18,18 M18,6 L6,18";
+
+        /// <summary>A tick: this went right.</summary>
+        public const string Tick = "M5,13 L10,17.5 L19,6.5";
+
+        /// <summary>A plus: add another.</summary>
+        public const string Add = "M12,5 L12,19 M5,12 L19,12";
+
+        /// <summary>A bin: delete this.</summary>
+        public const string Bin = "M5,7 L19,7 M10,7 L10,4 L14,4 L14,7 M6.5,7 L7.7,20 L16.3,20 L17.5,7";
+
+        /// <summary>A magnifier: find something.</summary>
+        public const string Find = "M11,4 A7,7 0 1 0 11.01,4 M16.2,16.2 L21,21";
+
+        /// <summary>A warning triangle.</summary>
+        public const string Warn = "M12,3.5 L22,20 L2,20 Z M12,9.5 L12,14 M12,16.8 L12,17.2";
+
+        /// <summary>A crossed circle: this failed.</summary>
+        public const string Error = "M12,3 A9,9 0 1 0 12.01,3 M8.8,8.8 L15.2,15.2 M15.2,8.8 L8.8,15.2";
+
+        /// <summary>An i in a circle: worth knowing.</summary>
+        public const string Info = "M12,3 A9,9 0 1 0 12.01,3 M12,11 L12,16.5 M12,7.5 L12,7.9";
+
+        /// <summary>An open box: there is nothing here.</summary>
+        public const string Empty = "M4,7.5 L12,3.5 L20,7.5 L20,16.5 L12,20.5 L4,16.5 Z M4,7.5 L12,11.5 L20,7.5 M12,11.5 L12,20.5";
+
+        /// <summary>A moon: the theme control.</summary>
+        public const string Theme = "M20,13.5 A8.5,8.5 0 1 1 10.5,4 A6.6,6.6 0 0 0 20,13.5 Z";
+
+        /// <summary>A stack of sheets: models, or a federation.</summary>
+        public const string Model = "M12,3 L21,7.5 L12,12 L3,7.5 Z M3,12 L12,16.5 L21,12 M3,16.5 L12,21 L21,16.5";
+
+        /// <summary>Overlapping panes: appearance layers.</summary>
+        public const string Layers = "M4,9 L11,9 L11,20 L4,20 Z M13,4 L20,4 L20,15 L13,15 Z";
+
+        /// <summary>Two shapes meeting: a clash.</summary>
+        public const string Clash = "M4,12 L11,12 M13,12 L20,12 M12,4 L12,11 M12,13 L12,20 M9,9 L15,15 M15,9 L9,15";
+
+        /// <summary>Two panels side by side: a comparison.</summary>
+        public const string Compare = "M11,4 L11,20 M4,7 L8,7 L8,17 L4,17 Z M16,7 L20,7 L20,17 L16,17 Z";
+
+        /// <summary>A grid: a table of values.</summary>
+        public const string Table = "M3,5 L21,5 L21,19 L3,19 Z M3,10 L21,10 M3,14.5 L21,14.5 M9,10 L9,19 M15,10 L15,19";
+
+        /// <summary>A folder.</summary>
+        public const string Folder = "M3,6.5 L9.5,6.5 L11.5,9 L21,9 L21,19 L3,19 Z";
+
+        /// <summary>A disk: saved somewhere it will still be tomorrow.</summary>
+        public const string Save = "M4,4 L16,4 L20,8 L20,20 L4,20 Z M8,4 L8,10 L15,10 L15,4 M8,20 L8,14 L16,14 L16,20";
+
+        /// <summary>A triangle: run it.</summary>
+        public const string Play = "M8,5 L19,12 L8,19 Z";
+
+        /// <summary>A camera: a saved viewpoint.</summary>
+        public const string Camera = "M3,8.5 L7,8.5 L9,5.5 L15,5.5 L17,8.5 L21,8.5 L21,19 L3,19 Z M12,14 A3.2,3.2 0 1 0 12.01,14";
+
+        /// <summary>A funnel: a rule or a set.</summary>
+        public const string Filter = "M3,5 L21,5 L14,13 L14,20 L10,18 L10,13 Z";
+
+        /// <summary>A page: a report.</summary>
+        public const string Report = "M6,3 L15,3 L19,7 L19,21 L6,21 Z M15,3 L15,7 L19,7 M9,12 L16,12 M9,16 L16,16";
+
+        /// <summary>A clock: when it last happened.</summary>
+        public const string Clock = "M12,3 A9,9 0 1 0 12.01,3 M12,7 L12,12.5 L16,14.5";
+
+        /// <summary>A dial: settings and thresholds.</summary>
+        public const string Tune = "M4,7 L20,7 M4,17 L20,17 M9,4.5 L9,9.5 M15,14.5 L15,19.5";
+
+        /// <summary>An arrow onward: this takes you somewhere.</summary>
+        public const string Onward = "M5,12 L18,12 M13,7 L18,12 L13,17";
     }
 }

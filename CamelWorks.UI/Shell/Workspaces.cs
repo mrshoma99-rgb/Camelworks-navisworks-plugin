@@ -96,10 +96,10 @@ namespace CamelWorks.UI.Shell
 
             new Workspace("Coordinate", "Coordinate", MainPane, hasTabStrip: true,
                 new WorkspaceTab("Triage", "Triage",
-                    "The board. Opens populated, grouped by a default stack, with the funnel showing "
-                    + "how the engine's count became this one."),
+                    "Every clash the tests found, grouped into the issues somebody actually fixes."),
                 new WorkspaceTab("Tests", "Tests",
-                    "The clash matrix, and what each test last did."),
+                    "What each test last did, and two ways to make more: a clash matrix, and the "
+                    + "clear-height check no clash test can do."),
                 new WorkspaceTab("Rules", "Rules",
                     "Suppress and flag, then group, then assign — one pipeline, previewed before it "
                     + "is applied."),
@@ -122,7 +122,7 @@ namespace CamelWorks.UI.Shell
             new Workspace("Data", "Data", MainPane, hasTabStrip: true,
                 new WorkspaceTab("Data", "Data",
                     "Browse and edit properties in one place, including calculated columns."),
-                new WorkspaceTab("Zones", "Levels & zones",
+                new WorkspaceTab("Zones", "Levels",
                     "Derives levels from whatever the model has — grids, then a height histogram — "
                     + "and says which source it used."),
                 new WorkspaceTab("Takeoff", "Takeoff",
@@ -142,7 +142,8 @@ namespace CamelWorks.UI.Shell
 
             new Workspace("Batch", "Batch", MainPane, hasTabStrip: true,
                 new WorkspaceTab("Jobs", "Jobs",
-                    "Jobs and their run history. \"Job from this document\" in one click.")),
+                    "Saved jobs and what each one last did. One click turns this document into "
+                    + "another.")),
 
             new Workspace("Automate", "Automate", AutomatePane, hasTabStrip: false,
                 new WorkspaceTab("Canvas", "Canvas",

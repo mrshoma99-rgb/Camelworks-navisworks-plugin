@@ -1,8 +1,22 @@
 name: build
 
+# Once per push, not twice.
+#
+# "on: push" plus "on: pull_request" fires both for every push to a branch that has a pull request
+# open, so the six-job matrix ran twice - twelve jobs, ten of them Windows, and Windows minutes
+# bill at twice the rate. A branch is covered by the pull_request trigger from the moment its
+# pull request exists, which is before anybody is reading its results.
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
+
+# A push that supersedes another cancels it. Pushing three times in five minutes used to leave
+# three full matrices racing, and only the last one's answer was ever read.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
@@ -10,10 +24,18 @@ jobs:
     runs-on: windows-latest
     env:
       CI: "true"
+    # The two ends on a pull request, all four on main and on a tag.
+    #
+    # Windows minutes bill at twice the rate of Linux, and four of these ran on every push. The
+    # years bracket the API surface: a change that compiles against both the oldest and the newest
+    # supported release has nowhere left to break in the two between them, and anything that does
+    # is caught before a release rather than after one, because main and every tag still build all
+    # four. Two jobs saved per push, against a risk that only exists in the window between merging
+    # and tagging.
     strategy:
       fail-fast: false
       matrix:
-        year: ["2024", "2025", "2026", "2027"]
+        year: ${{ github.event_name == 'pull_request' && fromJSON('["2024","2027"]') || fromJSON('["2024","2025","2026","2027"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,6 +73,12 @@ jobs:
       - name: Build installer (Release)
         run: dotnet build installer/CamelWorks.Installer/CamelWorks.Installer.csproj -c Release
 
+      # The design harness is not part of the product and no bundle names it, but it references
+      # the whole widget vocabulary, so building it here is what stops it rotting the first time
+      # a control gains an argument.
+      - name: Build the design harness (Release)
+        run: dotnet build CamelWorks.Studio/CamelWorks.Studio.csproj -c Release
+
   # CamelWorks.Core is netstandard2.0 with no Autodesk reference, so it builds AND its tests run
   # here. That is the whole point of the seam: the clash pipeline, the set compiler, the appearance
   # fold, the graph runner, BCF and the report writers are all proved without a Navisworks anywhere.
@@ -86,8 +114,9 @@ jobs:
           checks/validate-pdf.sh
 
       # A command lives in three places - the ribbon markup, the [Command] attribute and the
-      # catalogue - and nothing in the compiler connects them.
-      - name: Check the ribbon, the plug-in and the catalogue agree
+      # catalogue - and nothing in the compiler connects them. The markup's shape is checked here
+      # too, because the project file ships it as loose content and nothing compiles it at all.
+      - name: Check the ribbon markup, the plug-in and the catalogue agree
         run: python3 checks/validate-ribbon.py
 
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
@@ -122,6 +151,24 @@ jobs:
       # There is no .NET SDK on the machine these files are written on, so nothing else finds it.
       - name: Check every param tag names a real parameter
         run: python3 checks/validate-docs.py
+
+      # A duplicate x:Key makes the whole skin throw while it is being built, so every control
+      # comes up in Windows' own styling and nothing anywhere says why - which looks exactly like
+      # a design decision. The XAML compiles either way.
+      - name: Check the skin has no repeated or missing keys
+        run: python3 checks/validate-skin.py
+
+      # The harness is what people are handed when they review the UI, so a harness that draws a
+      # button the product does not have is worse than no harness at all. It has drifted four
+      # times in one branch; captions are the cheapest half of it to hold to account.
+      - name: Check the harness draws what the panels draw
+        run: python3 checks/validate-harness.py
+
+      # A health rule with no grade still shows on the verdict, ranked below everything that
+      # matters. Nothing about that is a compile error or a failing test - the finding just sorts
+      # itself to the bottom, which is the one outcome ranking the findings exists to prevent.
+      - name: Check every health rule is graded
+        run: python3 checks/validate-health-grades.py
 
       # The release gate from the harvest protocol: the only company named anywhere in this tree
       # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
