@@ -3778,6 +3778,8 @@ namespace CamelWorks.UI.Views
                                          "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*")),
                     Ui.Actions(read)),
 
+                Together(),
+
                 results));
         }
 
@@ -4085,6 +4087,170 @@ namespace CamelWorks.UI.Views
         /// Nothing is applied until somebody presses the button, and what the button would do is on
         /// the screen above it, row by row.
         /// </summary>
+        /// <summary>
+        /// Six packs come back on Thursday. This is where they become one.
+        ///
+        /// The single-file read above answers "what did they say"; this answers "what did all of
+        /// them say", which is the question a coordinator actually has and the one they were
+        /// answering by opening six files and retyping. It lands on the same board through the same
+        /// path, so a merged return behaves exactly like a single one from here on.
+        /// </summary>
+        private static UIElement Together()
+        {
+            const string Ask = "leave it and tell me";
+            const string Latest = "take the most recent";
+
+            var files = Ui.Stack();
+            var results = Ui.Stack();
+            var rows = new List<TextBox>();
+
+            var policy = StatusConflicts.Ask;
+
+            void AddRow(string? path)
+            {
+                var box = Ui.Text(path ?? string.Empty, null, 300);
+                rows.Add(box);
+
+                var row = Ui.PathField("Returned pack " + rows.Count.ToString(CultureInfo.InvariantCulture),
+                                       box, PathKind.Open, "BCF|*.bcf|All files|*.*");
+
+                files.Children.Add(row);
+            }
+
+            AddRow(null);
+            AddRow(null);
+
+            var more = Ui.Quiet("Another one", () => AddRow(null));
+
+            var merge = Ui.Runner("Bring them together", results, job =>
+            {
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Problem(Host.NoModel)); return; }
+
+                var returns = new List<MergeReturn>();
+                var baseline = new List<BcfTopic>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var box in rows)
+                {
+                    var file = box.Text.Trim();
+                    if (file.Length == 0) continue;
+
+                    if (!File.Exists(file))
+                    {
+                        results.Children.Add(Ui.Problem("There is no file at " + file + "."));
+                        return;
+                    }
+
+                    job.Say("Reading " + System.IO.Path.GetFileName(file) + "...");
+
+                    using (var stream = File.OpenRead(file))
+                    {
+                        var read = BcfReader.Read(stream);
+
+                        foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
+
+                        // The party is the file's own name. Asking somebody to type "Mechanical"
+                        // beside a file called Mechanical.bcf is asking them to do the tool's job,
+                        // and the name is what the conflict list has to say out loud anyway.
+                        returns.Add(new MergeReturn(System.IO.Path.GetFileNameWithoutExtension(file), read.Topics));
+
+                        // The pack as it went out is not always to hand, so it is reconstructed from
+                        // the first sight of each topic. That is right by construction: every return
+                        // starts from the same pack, so the first copy of a topic IS the baseline
+                        // until somebody has changed it.
+                        foreach (var topic in read.Topics)
+                            if (seen.Add(topic.Guid)) baseline.Add(Copy(topic));
+                    }
+                }
+
+                if (returns.Count < 2)
+                {
+                    results.Children.Add(Ui.Empty("Give it two or more.",
+                        "One pack on its own is what the section above is for."));
+                    return;
+                }
+
+                job.Say("Merging...");
+                var merged = BcfMerge.Merge(baseline, returns, policy);
+
+                results.Children.Add(Ui.Line(merged.Explain(), 1, true));
+
+                results.Children.Add(Ui.Across(
+                    Ui.Pill(Ui.Count(merged.Changed, "answer"), merged.Changed > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Pill(Ui.Count(merged.Comments, "comment")),
+                    Ui.Pill(Ui.Count(merged.Added, "raised"), merged.Added > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Pill(Ui.Count(merged.Conflicts.Count, "disagreement"),
+                            merged.Conflicts.Count > 0 ? Tone.Warn : Tone.Plain)));
+
+                if (merged.Conflicts.Count > 0)
+                {
+                    results.Children.Add(Ui.Eyebrow("Nobody won these"));
+
+                    var clashRows = merged.Conflicts.Take(100).Select(c => new TableRow(c,
+                        c.Title,
+                        c.Field,
+                        c.Baseline,
+                        string.Join("; ", c.Answers.Select(a => a.Party + ": " + a.Value)))
+                    {
+                        Tone = Tone.Warn,
+                    }).ToList();
+
+                    results.Children.Add(Ui.Table(clashRows,
+                        ("Issue", 200), ("On", 90), ("Still says", 90), ("They said", 0)));
+
+                    results.Children.Add(Ui.Note("These kept what they had. Two people who answered "
+                        + "the same issue differently were sent the same pack at the same time and "
+                        + "neither saw the other, so neither answer wins by being an answer. Every "
+                        + "comment from both is on the topic below, which is usually enough to "
+                        + "settle it."));
+                }
+
+                Remember(session, merged.Topics.Select(t => t.Guid));
+                Reply(session, merged.Topics, results);
+
+                session.Record(ActivityKind.Exchange,
+                    "merged " + Ui.Count(returns.Count, "returned pack"), merged.Explain());
+            });
+
+            return Ui.Marked(Glyphs.Layers, "Bring several answers together",
+                "Six packs went out on Monday and six come back on Thursday, each holding the same "
+                + "issues with a handful answered. This reads all of them at once.",
+                files,
+                Ui.Actions(more),
+                Ui.Field("When two people disagree",
+                         Ui.Segmented(new[] { Ask, Latest }, Ask,
+                                      pick => policy = pick == Latest ? StatusConflicts.Latest : StatusConflicts.Ask),
+                         "Leaving it is right when the packs went out together, which is the usual "
+                         + "case. Take the most recent when reviews were sequential and a later "
+                         + "reviewer saw the earlier answer."),
+                Ui.Actions(merge),
+                results);
+        }
+
+        /// <summary>
+        /// A topic as it was before anybody answered, for use as the baseline.
+        ///
+        /// Only the fields a return can change are reset; everything else is what the pack carried.
+        /// </summary>
+        private static BcfTopic Copy(BcfTopic from)
+        {
+            var copy = new BcfTopic(from.Guid, from.Title, from.CreationDate, from.CreationAuthor)
+            {
+                TopicType = from.TopicType,
+                TopicStatus = from.TopicStatus,
+                Priority = from.Priority,
+                Stage = from.Stage,
+                Description = from.Description,
+                AssignedTo = from.AssignedTo,
+                DueDate = from.DueDate,
+            };
+
+            foreach (var viewpoint in from.Viewpoints) copy.Viewpoints.Add(viewpoint);
+
+            return copy;
+        }
+
         private static void Reply(Session session, IReadOnlyList<BcfTopic> topics, Panel results)
         {
             var board = LastBoard;
