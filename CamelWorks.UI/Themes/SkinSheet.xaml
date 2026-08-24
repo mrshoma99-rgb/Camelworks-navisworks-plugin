@@ -785,9 +785,13 @@
         <ControlTemplate TargetType="ListViewItem">
           <Border x:Name="b" Background="Transparent" BorderBrush="{DynamicResource Bd}"
                   BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}">
+            <!-- Columns comes through the attached property, which is how the framework's own
+                 GridView item template does it. A RelativeSource lookup at the parent ListView
+                 compiles, binds to nothing, and renders every row blank with its headers intact -
+                 which looks like a data problem rather than a template one. -->
             <GridViewRowPresenter Content="{TemplateBinding Content}" VerticalAlignment="Center"
                                   SnapsToDevicePixels="True"
-                                  Columns="{Binding Path=(GridView.ColumnCollection), RelativeSource={RelativeSource AncestorType={x:Type ListView}}}"/>
+                                  Columns="{TemplateBinding GridView.ColumnCollection}"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">

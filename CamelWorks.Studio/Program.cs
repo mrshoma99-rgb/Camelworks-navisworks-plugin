@@ -189,8 +189,15 @@ namespace CamelWorks.Studio
             window.UpdateLayout();
             Pump();
 
-            // A page that takes its own picture has done so by now; one that does not gets taken
-            // here, settled.
+            // A page with something to set in motion does it now, laid out and pumped, and takes
+            // its own picture from inside whatever it started.
+            if (sheet.Drive != null)
+            {
+                sheet.Drive(host);
+                Pump();
+            }
+
+            // Anything that did not photograph itself gets taken here, settled.
             Shoot();
 
             if (shown) window.Close();

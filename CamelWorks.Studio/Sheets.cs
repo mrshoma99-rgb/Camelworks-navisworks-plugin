@@ -26,6 +26,16 @@ namespace CamelWorks.Studio
         /// </summary>
         public Func<Action, UIElement> Builder { get; set; } = _ => new Border();
 
+        /// <summary>
+        /// Something to do to the laid-out page before the picture is taken, or null.
+        ///
+        /// The page showing work in flight uses it to press its own button. Relying on Loaded for
+        /// that did not work: the harness had finished pumping before the handler's queued click
+        /// came round, and the result was a photograph of a button at rest silently standing in
+        /// for a photograph of a running job.
+        /// </summary>
+        public Action<FrameworkElement>? Drive { get; set; }
+
         /// <summary>Which pane widths to draw it at, or null for all of them.</summary>
         public int[]? Widths { get; set; }
 
@@ -55,7 +65,15 @@ namespace CamelWorks.Studio
             new Sheet { Id = "controls", Title = "Every control", Height = 2100, Builder = _ => Controls(), Widths = new[] { 470 } },
             new Sheet { Id = "sets", Title = "Sets", Height = 1500, Builder = _ => SetsPane(), Widths = new[] { 470, 640 } },
             new Sheet { Id = "appearance", Title = "Appearance", Height = 1200, Builder = _ => Appearance(), Widths = new[] { 470 } },
-            new Sheet { Id = "working", Title = "Work in flight", Height = 700, Builder = Working, Widths = new[] { 470 } },
+            new Sheet
+            {
+                Id = "working",
+                Title = "Work in flight",
+                Height = 700,
+                Builder = Working,
+                Widths = new[] { 470 },
+                Drive = host => Click(host, "Compare with the baseline"),
+            },
             new Sheet { Id = "states", Title = "Empty, wrong, done", Height = 900, Builder = _ => States(), Widths = new[] { 470 } },
         };
 
@@ -326,7 +344,7 @@ namespace CamelWorks.Studio
                 shoot();
             });
 
-            var page = Page(
+            return Page(
                 Ui.Heading("Compare"),
                 Ui.Sub("Pick a baseline and see what changed."),
                 Ui.Card("Run", null,
@@ -336,15 +354,6 @@ namespace CamelWorks.Studio
                         Ui.Toggle("Read the actual triangles", false, null)),
                     runner,
                     output));
-
-            // Started once the tree is up, at a priority below layout, so the picture is of a run
-            // that is genuinely in flight rather than of a button that has not been drawn yet.
-            if (page is FrameworkElement element)
-                element.Loaded += (s, e) => element.Dispatcher.BeginInvoke(
-                    System.Windows.Threading.DispatcherPriority.ContextIdle,
-                    new Action(() => Click(runner, "Compare with the baseline")));
-
-            return page;
         }
 
         private static void Click(DependencyObject root, string caption)

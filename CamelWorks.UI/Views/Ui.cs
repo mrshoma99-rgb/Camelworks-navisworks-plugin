@@ -595,6 +595,8 @@ namespace CamelWorks.UI.Views
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Right,
+                TextAlignment = TextAlignment.Right,
+                Margin = new Thickness(12, 0, 0, 0),
                 Visibility = open || string.IsNullOrEmpty(summary) ? Visibility.Collapsed : Visibility.Visible,
             }.Wearing("Hint");
 
@@ -719,7 +721,9 @@ namespace CamelWorks.UI.Views
         {
             var button = new System.Windows.Controls.Button
             {
-                Content = Arrow(glyph, "Muted"),
+                // Through Glyph, not Arrow: a raw path draws at its own 24-unit size, which inside
+                // a 26-pixel button is a cross that fills the row it is meant to sit beside.
+                Content = Glyph(glyph, 15, "Muted"),
                 ToolTip = tip,
             };
 
@@ -937,9 +941,9 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 0, 0, 4),
             }.Wearing("Lbl"));
 
-            if (control is FrameworkElement element && double.IsNaN(element.Width))
-                element.HorizontalAlignment = HorizontalAlignment.Stretch;
-
+            // Deliberately not touching the control's alignment. Text and Choice already ask to
+            // stretch; Segmented asks not to, because a three-way switch pulled across a whole
+            // pane stops reading as a switch. Overriding here took that decision away from both.
             panel.Children.Add(control);
 
             if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
