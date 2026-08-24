@@ -191,7 +191,7 @@
   <!-- The surface a card's inputs sit on. Without it a card is a title and then a column of
        labelled boxes, which is a spreadsheet with a heading. -->
   <Style x:Key="FormStyle" TargetType="Border">
-    <Setter Property="Background" Value="{DynamicResource Card2}"/>
+    <Setter Property="Background" Value="{DynamicResource Bg}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource Bd}"/>
     <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="CornerRadius" Value="9"/>
@@ -343,14 +343,14 @@
   <!-- No border and no fill until hovered. For the third and fourth action on a card, which
        should be reachable without competing with the first. -->
   <Style x:Key="QuietBtn" TargetType="Button">
-    <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
     <Setter Property="Padding" Value="9,5"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Border x:Name="b" Background="{DynamicResource Nav}" BorderBrush="Transparent" BorderThickness="1"
+          <Border x:Name="b" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
                   CornerRadius="7" Padding="{TemplateBinding Padding}">
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>

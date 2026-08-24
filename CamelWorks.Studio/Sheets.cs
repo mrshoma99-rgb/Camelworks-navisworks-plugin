@@ -180,9 +180,6 @@ namespace CamelWorks.Studio
                     Ui.Quiet("Add an OR group", () => { })));
 
             return Page(
-                Ui.Heading("Sets"),
-                Ui.Sub("Boolean set building, compiled down to native Navisworks search sets."),
-
                 Ui.Marked(Glyphs.Filter, "Rule", "One set, built from conditions.",
                     Ui.Form(
                         conditions,
@@ -254,9 +251,6 @@ namespace CamelWorks.Studio
         private static UIElement Appearance()
         {
             return Page(
-                Ui.Heading("Appearance"),
-                Ui.Sub("What is hidden, what is overridden, by which layer."),
-
                 Ui.Marked(Glyphs.Layers, "Layers", "Top of the list wins.",
                     Layer("Clashing elements", "Red, opaque", Tone.Bad),
                     Layer("Level 04 only", "Everything else 85% transparent", Tone.Plain),
@@ -355,8 +349,6 @@ namespace CamelWorks.Studio
             });
 
             return Page(
-                Ui.Heading("Compare"),
-                Ui.Sub("Pick a baseline and see what changed."),
                 Ui.Marked(Glyphs.Compare, "Run", "Pick a baseline and see what changed.",
                     Ui.Form(
                     Ui.Field("Baseline", Ui.Choice(new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null))),

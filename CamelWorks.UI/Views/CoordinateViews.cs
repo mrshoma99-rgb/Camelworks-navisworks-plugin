@@ -706,10 +706,6 @@ namespace CamelWorks.UI.Views
                 });
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Triage"),
-                    Ui.Sub("The engine's results, grouped into work. The funnel says how a count of several "
-                           + "thousand became this one — every row removed is accounted for rather than "
-                           + "quietly dropped."),
                     run,
                     _summary,
                     Ui.Across(Ui.Field("Show", _preset), Ui.Field("Find", _search)),
@@ -1861,9 +1857,6 @@ namespace CamelWorks.UI.Views
                 Redraw();
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Tests"),
-                    Ui.Sub("The clash engine's own tests. A test that has never run contributes nothing to "
-                           + "the board, which is worth seeing before wondering where the clashes went."),
                     _list,
                     Matrix(),
                     _results,
@@ -2172,10 +2165,6 @@ namespace CamelWorks.UI.Views
                 });
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Rules"),
-                    Ui.Sub("Suppress and flag first, then group, then assign. The order is fixed because it is "
-                           + "the only one that makes sense: assigning a group is only meaningful once the "
-                           + "group exists, and grouping noise wastes the grouping."),
                     Ui.Note("With nothing here, the board still works: it groups by model pair, then level, "
                             + "then proximity, and assigns nothing. These rules are how you narrow that, not "
                             + "how you switch it on."),
@@ -2461,15 +2450,13 @@ namespace CamelWorks.UI.Views
                 var write = Ui.Runner("Write the report", _results, Write);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Report"),
-                    Ui.Sub("Of the board as it stands. Nothing to lay out first — the template is built in, "
-                           + "and the numbers on the cover are the funnel's, so the report and the screen "
-                           + "agree."),
-                    Ui.Field("Format", format),
-                    Ui.Field("Contents", mode),
-                    Ui.Field("For", audience),
-                    Ui.Field("Write to", _path),
-                    Ui.Field("Name it", _template),
+                    Ui.Marked(Glyphs.Report, "Report", "One file, from a built-in template.",
+                        Ui.Form(
+                            Ui.Field("Format", format),
+                            Ui.Field("Contents", mode),
+                            Ui.Field("For", audience),
+                            Ui.Field("Write to", _path),
+                            Ui.Field("Name it", _template))),
                     Ui.Note("The name carries " + string.Join(", ", Deliverable.Tokens)
                             + ". Each issue takes the next revision letter and its cover says which "
                             + "one it supersedes - a PDF in an inbox that looks exactly like last "
@@ -3576,12 +3563,11 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("BCF"),
-                Ui.Sub("One neutral model, both versions. 2.1 is what most tools still read; 3.0 keeps the "
-                       + "camera's aspect ratio, which 2.1 has nowhere to put."),
-                Ui.Field("Version", picker),
-                Ui.Field("File", path),
-                snapshotBox,
+                Ui.Marked(Glyphs.Onward, "Export", "BCF 2.1 or 3.0, with a camera on every topic.",
+                    Ui.Form(
+                        Ui.Field("Version", picker),
+                        Ui.Field("File", path),
+                        snapshotBox)),
                 Ui.Note("A topic with no viewpoint is a sentence about a problem somewhere in a "
                         + "federation. Every topic CamelWorks writes carries a camera and the elements "
                         + "involved; the snapshot is the part that moves your view while it runs, and "

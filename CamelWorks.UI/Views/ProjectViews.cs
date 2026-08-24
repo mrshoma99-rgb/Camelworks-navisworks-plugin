@@ -627,9 +627,6 @@ namespace CamelWorks.UI.Views
                 return Ui.Scroll(Ui.Stack(Ui.Heading("Profile"), Ui.Sub(Host.NoModel)));
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Profile"),
-                Ui.Sub("What this project keeps beside the model. Created when you first change "
-                       + "something and never before; nothing anywhere waits for it."),
                 Ui.Line("Kept " + session.Store.Where, 0.75),
                 Parties(session),
                 Codes(session),
@@ -916,9 +913,6 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Setup"),
-                Ui.Sub("Everything here already has a value, worked out from the model. You never have "
-                       + "to visit this screen; change a line only when the guess is wrong."),
                 Ui.Card("Derived values", null, rows),
                 Ui.Across(save),
                 status));
@@ -1153,11 +1147,6 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Export IFC"),
-                Ui.Sub("Writes IFC4 or IFC2x3 from whatever is loaded, including geometry Navisworks itself "
-                       + "cannot export. The exporter is a separate plug-in with its own panel; CamelWorks "
-                       + "opens it rather than re-hosting it, because two copies of one settings form must "
-                       + "not disagree."),
                 Ui.Across(open),
                 status));
         }

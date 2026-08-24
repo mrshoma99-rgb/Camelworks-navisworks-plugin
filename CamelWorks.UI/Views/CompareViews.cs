@@ -858,9 +858,6 @@ namespace CamelWorks.UI.Views
             Redraw(store, listed, results);
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Baselines"),
-                Ui.Sub("What has been recorded, and when. Kept beside the document rather than in "
-                       + "your own folder, so a job handed over arrives with its history."),
                 Ui.Card("Record one now",
                     "Give it a name you will recognise in three months — an issue number, a "
                     + "milestone, a date.",

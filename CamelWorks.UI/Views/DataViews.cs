@@ -109,11 +109,11 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Data"),
-                Ui.Sub("Every property the elements carry, folded to one row each, with what varies said "
-                       + "plainly rather than shown as the first element's value."),
-                Ui.Field("Scope", picker),
-                read,
+                Ui.Marked(Glyphs.Table, "Properties", "Every property the elements carry, folded to one "
+                          + "row each, with what varies said plainly rather than shown as the first "
+                          + "element's value.",
+                    Ui.Form(Ui.Field("Scope", picker)),
+                    read),
                 results,
                 editor));
         }
@@ -1301,11 +1301,6 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Levels & zones"),
-                Ui.Sub("The coordination grid where the federation has one, the models' own levels where "
-                       + "they have them, and a height histogram where neither — and it says which, "
-                       + "because a level called \"Level +3.600\" is honest about being a guess in a way "
-                       + "that \"Level 2\" is not."),
                 run,
                 results,
                 after));
@@ -1518,13 +1513,14 @@ namespace CamelWorks.UI.Views
                 var run = Ui.Runner("Sum it", _results, Run);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Takeoff"),
-                    Ui.Sub("Sums whatever the elements carry, with no mapping table to build first. Pick a "
-                           + "second axis and it becomes a pivot: concrete by level, ductwork by system."),
-                    Ui.Field("Scope", scope),
-                    Ui.Field("Measure", measure),
-                    Ui.Field("Rows", rows),
-                    Ui.Field("Columns", down),
+                    Ui.Marked(Glyphs.Table, "Takeoff", "Sums whatever the elements carry. Pick a second "
+                              + "axis and it becomes a pivot.",
+                        Ui.Form(
+                            Ui.Field("Scope", scope),
+                            Ui.Pair(
+                                Ui.Field("Measure", measure),
+                                Ui.Field("Rows", rows)),
+                            Ui.Field("Columns", down)),
                     // Off until somebody sets them, and a property that already reads as a quantity
                     // needs neither - so this is the definition of a group that should not be
                     // occupying the screen of everyone who does not need it.
@@ -1540,7 +1536,7 @@ namespace CamelWorks.UI.Views
                                 + "value alone, so the takeoff still counts it unreadable and names it - "
                                 + "turning what it could not clean into a zero would move the failure out "
                                 + "of a line that admits it and into a total that is quietly wrong.")),
-                    run,
+                        run),
                     _results,
                     _output));
             }

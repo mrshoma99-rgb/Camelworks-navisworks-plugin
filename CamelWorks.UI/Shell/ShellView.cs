@@ -404,6 +404,11 @@ namespace CamelWorks.UI.Shell
             var row = new StackPanel { Orientation = Orientation.Horizontal };
             row.Children.Add(dot);
             row.Children.Add(text);
+
+            // Only on the chip. In the menu the row is the choice, and a chevron on each of seven
+            // choices would say that every one of them opens something further.
+            if (!withPurpose) row.Children.Add(Ui.Glyph(Glyphs.Down, 12, "Muted", new Thickness(8, 1, 0, 0)));
+
             return row;
         }
 
@@ -483,7 +488,7 @@ namespace CamelWorks.UI.Shell
 
         private void ShowContent()
         {
-            var purpose = _tab?.Summary ?? string.Empty;
+            var purpose = _workspace.HasTabStrip ? _tab?.Summary ?? string.Empty : string.Empty;
 
             _purpose.Text = purpose;
             _purposeBar.Visibility = purpose.Length > 0 ? Visibility.Visible : Visibility.Collapsed;

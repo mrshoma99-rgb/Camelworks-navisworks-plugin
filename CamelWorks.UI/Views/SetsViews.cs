@@ -1027,10 +1027,6 @@ namespace CamelWorks.UI.Views
                 BuildAdder(session);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Appearance"),
-                    Ui.Sub("Every override and every hidden element, as a stack of named layers. The layer at "
-                           + "the top wins, property by property — a layer that only sets a colour leaves "
-                           + "visibility to the one underneath."),
                     Ui.Marked(Glyphs.Layers, "Layers", "Top of the list wins.", _stack),
                     _adder,
                     Actions(session),
@@ -1520,10 +1516,6 @@ namespace CamelWorks.UI.Views
                 });
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Viewpoints"),
-                    Ui.Sub("A saved viewpoint carries the overrides that were in force when it was made, so "
-                           + "applying one changes what the Appearance stack says is true. The list says which "
-                           + "ones do."),
                     Ui.Across(save),
                     Ui.Card("Rename in bulk",
                         "{n} is the number, {name} the current name, {folder} the folder.",

@@ -80,8 +80,6 @@ namespace CamelWorks.UI.Views
                     ("Run", 300), ("When", 120), ("", 0));
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Jobs"),
-                Ui.Sub("Saved graphs, run without opening the canvas."),
                 FromThisDocument(session),
                 Ui.Card("Jobs", null, body),
                 log,

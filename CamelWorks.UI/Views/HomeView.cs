@@ -44,7 +44,13 @@ namespace CamelWorks.UI.Views
                     ? Ui.Count(session.Clash.Tests().Count, "clash test")
                     : "no clash engine", session.Clash.IsAvailable ? Tone.Plain : Tone.Warn));
 
-            var body = Ui.Stack(chips, Ui.Line("Project file " + session.Store.Where, 0.7));
+            var where = Ui.Stack(
+                new TextBlock { Text = "PROJECT FILE" }.Wearing("Caps"),
+                Ui.Code(session.Store.Where));
+
+            where.Margin = new Thickness(0, 8, 0, 0);
+
+            var body = Ui.Stack(chips, where);
 
             // A seat without the clash engine is not a seat without the coordination work, and the
             // one place somebody looks to find that out is the chip that just told them so.

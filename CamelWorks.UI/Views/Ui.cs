@@ -418,7 +418,7 @@ namespace CamelWorks.UI.Views
         /// <param name="tone">How it reads.</param>
         public static UIElement Figure(string value, string label, Tone tone = Tone.Plain)
         {
-            var panel = new StackPanel { Margin = new Thickness(0, 0, 20, 6) };
+            var panel = new StackPanel { Margin = new Thickness(0, 0, 18, 6), MinWidth = 64 };
 
             var number = new TextBlock
             {
