@@ -552,7 +552,7 @@ namespace CamelWorks.UI.Views
         /// <param name="subtitle">One line saying what it is for, or null.</param>
         /// <param name="body">The contents.</param>
         public static Border Card(string title, string? subtitle, params UIElement?[] body) =>
-            Card((string?)null, title, subtitle, body);
+            Build(null, title, subtitle, body);
 
         /// <summary>
         /// A titled block with a mark on it.
@@ -562,11 +562,17 @@ namespace CamelWorks.UI.Views
         /// means reading all five titles again. A glyph is what makes a card findable without
         /// reading, which is the whole of "do not depend on the text".
         /// </summary>
-        /// <param name="glyph">One of <see cref="Glyphs"/>, or null for no mark.</param>
+        /// <param name="glyph">One of <see cref="Glyphs"/>.</param>
         /// <param name="title">The block's title.</param>
         /// <param name="subtitle">One line saying what it is for, or null.</param>
         /// <param name="body">The contents.</param>
-        public static Border Card(string? glyph, string title, string? subtitle, params UIElement?[] body)
+        public static Border Marked(string glyph, string title, string? subtitle, params UIElement?[] body) =>
+            Build(glyph, title, subtitle, body);
+
+        // Deliberately not an overload of Card. A trailing params array absorbs anything, so
+        // Card("A", "B", null, body) fits the three-parameter form as readily as the four and the
+        // compiler is entitled to refuse to choose between them. One name, one shape.
+        private static Border Build(string? glyph, string title, string? subtitle, params UIElement?[] body)
         {
             var panel = new StackPanel();
 

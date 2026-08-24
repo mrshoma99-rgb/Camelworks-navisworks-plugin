@@ -64,7 +64,7 @@ namespace CamelWorks.UI.Views
             if (session.Store.ConcurrencyNote.Length > 0)
                 body.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
 
-            return Ui.Card(Glyphs.Model, session.Profile.ProjectName, null, body);
+            return Ui.Marked(Glyphs.Model, session.Profile.ProjectName, null, body);
         }
 
         /// <summary>
@@ -120,7 +120,7 @@ namespace CamelWorks.UI.Views
                 if (step < ActivityKind.Cycle.Count) rows.Children.Add(Ui.Rule());
             }
 
-            return Ui.Card(Glyphs.Clock, "The week",
+            return Ui.Marked(Glyphs.Clock, "The week",
                 "Reconcile, regroup, report. Each opens where the work actually happens.", rows);
         }
 
@@ -145,11 +145,11 @@ namespace CamelWorks.UI.Views
                 },
             };
 
-            badge.SetResourceReference(Border.BackgroundProperty, "Fam." + Workspace(kind));
+            badge.SetResourceReference(Border.BackgroundProperty, "Fam." + FamilyOf(kind));
             return badge;
         }
 
-        private static string Workspace(string kind) => kind switch
+        private static string FamilyOf(string kind) => kind switch
         {
             ActivityKind.Reconcile => "Project",
             ActivityKind.Regroup => "Coordinate",
@@ -175,7 +175,7 @@ namespace CamelWorks.UI.Views
             var entries = session.Store.Activity.Entries.Take(12).ToList();
 
             if (entries.Count == 0)
-                return Ui.Card(Glyphs.Report, "Recent", null,
+                return Ui.Marked(Glyphs.Report, "Recent", null,
                     Ui.Empty("Nothing has happened on this project yet.",
                         "CamelWorks writes a line here every time it changes the model, produces a "
                         + "report or runs the rules — so a project handed over mid-job says what was done to it."));
@@ -185,7 +185,7 @@ namespace CamelWorks.UI.Views
                 e.Summary,
                 ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList();
 
-            return Ui.Card(Glyphs.Report, "Recent", null,
+            return Ui.Marked(Glyphs.Report, "Recent", null,
                 Ui.Table(rows, ("What", 110), ("", 0), ("When", 110)));
         }
     }

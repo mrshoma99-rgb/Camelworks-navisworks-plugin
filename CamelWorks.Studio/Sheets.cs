@@ -106,7 +106,7 @@ namespace CamelWorks.Studio
                 Ui.Heading("Every control, in one place"),
                 Ui.Sub("The vocabulary all sixteen screens are built from."),
 
-                Ui.Card(Glyphs.Report, "Type", null,
+                Ui.Marked(Glyphs.Report, "Type", null,
                     Ui.Eyebrow("Eyebrow"),
                     Ui.Heading("A card heading"),
                     Ui.Sub("The line under it that says what the card is for."),
@@ -115,9 +115,9 @@ namespace CamelWorks.Studio
                     Ui.Small("Small print: the sentence under a control that explains what to put in it."),
                     Ui.Code("D:\\Projects\\Riverside\\Models\\ARC-Riverside-Block-B-r7.nwc")),
 
-                Ui.Card(Glyphs.Table, "Numbers and status", null, figures, pills),
+                Ui.Marked(Glyphs.Table, "Numbers and status", null, figures, pills),
 
-                Ui.Card(Glyphs.Tune, "Fields", null,
+                Ui.Marked(Glyphs.Tune, "Fields", null,
                     Ui.Form(
                     Ui.Field("Set name", Ui.Text("Level 04 — mechanical", null, 200), "Shown in the Navisworks selection tree."),
                     Ui.Field("Property tab", Ui.Choice(new[] { "Element", "Item", "Revit Type", "IFC" }, "Element", null)),
@@ -128,7 +128,7 @@ namespace CamelWorks.Studio
                     Ui.Toggle("Publish into folders as well as saving", true, null),
                     Ui.Check("Include elements with no value", false, null))),
 
-                Ui.Card(Glyphs.Play, "Buttons", null,
+                Ui.Marked(Glyphs.Play, "Buttons", null,
                     Ui.Across(
                         Ui.Primary("Run the comparison", () => { }),
                         Ui.Button("Save to project", () => { }),
@@ -145,7 +145,7 @@ namespace CamelWorks.Studio
                     Ui.Toggle("Read the actual triangles", false, null),
                     Ui.Small("Slow on a large federation, and the only way to notice an element that was remodelled in place.")),
 
-                Ui.Card(Glyphs.Table, "A table", null,
+                Ui.Marked(Glyphs.Table, "A table", null,
                     Ui.Table(Rows(),
                         ("Element", 150), ("Model", 110), ("What changed", 0))));
         }
@@ -183,7 +183,7 @@ namespace CamelWorks.Studio
                 Ui.Heading("Sets"),
                 Ui.Sub("Boolean set building, compiled down to native Navisworks search sets."),
 
-                Ui.Card(Glyphs.Filter, "Rule", "One set, built from conditions.",
+                Ui.Marked(Glyphs.Filter, "Rule", "One set, built from conditions.",
                     Ui.Form(
                         conditions,
                         Ui.Rule(),
@@ -215,7 +215,7 @@ namespace CamelWorks.Studio
                     Ui.Field("Skip branches under", Ui.Text("1", null, 60)),
                     Ui.Actions(Ui.Primary("See the library it would make", () => { }))),
 
-                Ui.Card(Glyphs.Save, "Saved sets", "Kept in the project file, so they travel with the job.",
+                Ui.Marked(Glyphs.Save, "Saved sets", "Kept in the project file, so they travel with the job.",
                     Ui.Table(Saved(), ("Set", 200), ("Elements", 80), ("Last run", 0))));
         }
 
@@ -257,7 +257,7 @@ namespace CamelWorks.Studio
                 Ui.Heading("Appearance"),
                 Ui.Sub("What is hidden, what is overridden, by which layer."),
 
-                Ui.Card(Glyphs.Layers, "Layers", "Top of the list wins.",
+                Ui.Marked(Glyphs.Layers, "Layers", "Top of the list wins.",
                     Layer("Clashing elements", "Red, opaque", Tone.Bad),
                     Layer("Level 04 only", "Everything else 85% transparent", Tone.Plain),
                     Layer("Temporary works", "Hidden", Tone.Warn),
@@ -357,7 +357,7 @@ namespace CamelWorks.Studio
             return Page(
                 Ui.Heading("Compare"),
                 Ui.Sub("Pick a baseline and see what changed."),
-                Ui.Card(Glyphs.Compare, "Run", "Pick a baseline and see what changed.",
+                Ui.Marked(Glyphs.Compare, "Run", "Pick a baseline and see what changed.",
                     Ui.Form(
                     Ui.Field("Baseline", Ui.Choice(new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null))),
                     Ui.Section("What counts as a change", "1 mm · standard properties · no triangle read", false,
@@ -416,11 +416,11 @@ namespace CamelWorks.Studio
                 Ui.Pill("4 clash tests"));
 
             return Page(
-                Ui.Card(Glyphs.Model, "Riverside — Block B", null,
+                Ui.Marked(Glyphs.Model, "Riverside — Block B", null,
                     chips,
                     Ui.Line("Project file  D:\\Projects\\Riverside\\Riverside.cwproj", 0.7)),
 
-                Ui.Card(Glyphs.Clock, "The week",
+                Ui.Marked(Glyphs.Clock, "The week",
                     "Reconcile, regroup, report. Each opens where the work actually happens.",
                     Step(1, "Project", "Reconcile", "Six models came in on Friday; two moved.", "2 days ago", false),
                     Ui.Rule(),
@@ -428,7 +428,7 @@ namespace CamelWorks.Studio
                     Ui.Rule(),
                     Step(3, "Coordinate", "Report", "Send this week's out.", null, true)),
 
-                Ui.Card(Glyphs.Report, "Recent", null,
+                Ui.Marked(Glyphs.Report, "Recent", null,
                     Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96))));
         }
 
@@ -495,7 +495,7 @@ namespace CamelWorks.Studio
                 Ui.Heading("What a screen says when it has nothing to say"),
                 Ui.Sub("Every one of these is an answer. A blank panel is a bug report."),
 
-                Ui.Card(Glyphs.Info, "States", null,
+                Ui.Marked(Glyphs.Info, "States", null,
                     Ui.Empty("No clashes matched these rules",
                              "Every clash in the four tests was suppressed by a rule.",
                              "Clear the rules", () => { }),

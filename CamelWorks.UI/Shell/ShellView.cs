@@ -153,7 +153,6 @@ namespace CamelWorks.UI.Shell
             _search.TextChanged += (s, e) => Filter();
             _search.PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape) Clear(); };
             _searchResults.SelectionChanged += (s, e) => Jump();
-            _switcherNarrow.SelectionChanged += (s, e) => PickNarrow();
             SizeChanged += (s, e) => Reflow(e.NewSize.Width);
 
             // A job started on one tab must still look like it is running after you switch to
@@ -378,7 +377,7 @@ namespace CamelWorks.UI.Shell
         }
 
         /// <summary>A workspace's colour dot beside its name.</summary>
-        private static UIElement Marked(Workspace workspace, bool withPurpose)
+        private static UIElement Dotted(Workspace workspace, bool withPurpose)
         {
             var dot = new System.Windows.Shapes.Ellipse
             {
@@ -414,7 +413,7 @@ namespace CamelWorks.UI.Shell
             _menuList.Items.Clear();
 
             _where.Text = _workspace.Title + (_tab == null || !_workspace.HasTabStrip ? string.Empty : "  ·  " + _tab.Title);
-            _switcherNarrow.Content = Marked(_workspace, withPurpose: false);
+            _switcherNarrow.Content = Dotted(_workspace, withPurpose: false);
 
             foreach (var workspace in Workspaces.All.Where(w => w.PaneId == _paneId))
             {
@@ -451,7 +450,7 @@ namespace CamelWorks.UI.Shell
 
                 _menuList.Items.Add(new ListBoxItem
                 {
-                    Content = Marked(workspace, withPurpose: true),
+                    Content = Dotted(workspace, withPurpose: true),
                     Tag = workspace.Id,
                     IsSelected = ReferenceEquals(workspace, _workspace),
                 });

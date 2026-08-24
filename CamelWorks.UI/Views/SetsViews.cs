@@ -108,7 +108,7 @@ namespace CamelWorks.UI.Views
                 RedrawSaved(session);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Card(Glyphs.Filter, "Rule", "One set, built from conditions.",
+                    Ui.Marked(Glyphs.Filter, "Rule", "One set, built from conditions.",
                         Ui.Form(
                             _editor,
                             Ui.Rule(),
@@ -121,7 +121,7 @@ namespace CamelWorks.UI.Views
                                  + "have matches nothing.")),
                     new FamilyScreen(session, RedrawSaved).Build(),
                     new TreeScreen(session, RedrawSaved).Build(),
-                    Ui.Card(Glyphs.Save, "Saved sets",
+                    Ui.Marked(Glyphs.Save, "Saved sets",
                             "Kept in the project file, so they travel with the job.", _saved)));
             }
 
@@ -1031,7 +1031,7 @@ namespace CamelWorks.UI.Views
                     Ui.Sub("Every override and every hidden element, as a stack of named layers. The layer at "
                            + "the top wins, property by property — a layer that only sets a colour leaves "
                            + "visibility to the one underneath."),
-                    Ui.Card(Glyphs.Layers, "Layers", "Top of the list wins.", _stack),
+                    Ui.Marked(Glyphs.Layers, "Layers", "Top of the list wins.", _stack),
                     _adder,
                     Actions(session),
                     _results,
