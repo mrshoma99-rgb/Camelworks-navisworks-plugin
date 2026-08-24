@@ -40,7 +40,9 @@ namespace CamelWorks.UI.Shell
         private readonly TextBlock _purpose = new TextBlock();
         private readonly Border _purposeBar;
         private readonly StackPanel _tabs = new StackPanel { Orientation = Orientation.Horizontal };
-        private readonly Border _tabStrip;
+        private Border? _tabRule;
+        private ScrollViewer? _tabsHost;
+        private System.Windows.Controls.Primitives.Popup? _pop;
         private readonly Border _rail;
         private readonly TextBox _search = new TextBox { MinWidth = 130, Tag = "Find a tool" };
         private readonly ListBox _searchResults = new ListBox { MaxHeight = 260 };
@@ -84,18 +86,19 @@ namespace CamelWorks.UI.Shell
             Grid.SetRow(_busy, 1);
             root.Children.Add(_busy);
 
-            _rail = new Border { Padding = new Thickness(8, 6, 8, 6), Child = SwitcherRow() };
+            // The workspace and its tabs share one row.
+            //
+            // They were two stacked strips, which spent about fifty pixels of a pane that is often
+            // only six hundred tall saying twice over where you are. The workspace name is the
+            // heading and the tabs are its children, so a divider between them reads them as
+            // equals; side by side with a rule between, the hierarchy is the layout.
+            _rail = new Border { Padding = new Thickness(8, 5, 8, 5), Child = SwitcherRow() };
             _rail.Tint(Border.BackgroundProperty, "Nav");
             _rail.Tint(Border.BorderBrushProperty, "Bd");
             _rail.BorderThickness = new Thickness(0, 0, 0, 1);
             Grid.SetRow(_rail, 2);
             root.Children.Add(_rail);
 
-            _tabStrip = new Border { Padding = new Thickness(8, 0, 8, 0), Child = _tabs };
-            _tabStrip.Tint(Border.BorderBrushProperty, "Bd");
-            _tabStrip.BorderThickness = new Thickness(0, 0, 0, 1);
-            Grid.SetRow(_tabStrip, 3);
-            root.Children.Add(_tabStrip);
 
             // One line saying what the tab is for, on the screen rather than in a tooltip.
             //
@@ -113,19 +116,12 @@ namespace CamelWorks.UI.Shell
             var body = new Grid();
             body.Children.Add(_content);
 
-            // Collapsed with the list inside it, not just around it. A bordered white panel with
-            // nothing in it still paints, and at the pane's narrowest that empty strip lay across
-            // the top of every screen looking like a rendering fault.
             _results = new Border
             {
-                Visibility = Visibility.Collapsed,
                 Child = _searchResults,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(9),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Width = 340,
-                Margin = new Thickness(0, 4, 8, 0),
+                Margin = new Thickness(8),
                 Effect = new System.Windows.Media.Effects.DropShadowEffect
                 {
                     BlurRadius = 16,
@@ -136,7 +132,31 @@ namespace CamelWorks.UI.Shell
 
             _results.Tint(Border.BackgroundProperty, "Card");
             _results.Tint(Border.BorderBrushProperty, "Bd");
-            body.Children.Add(_results);
+
+            // The results hang off the search box, not off the screen.
+            //
+            // They used to be a panel pinned to the top-right of the content area, which in a pane
+            // this narrow put them a long way from the box that produced them - far enough that
+            // they read as something the current screen had done. A Popup placed under its own
+            // field is the ordinary behaviour of a search box, and it draws over the content
+            // instead of pushing it, so nothing below moves while you type.
+            //
+            // AllowsTransparency carries the rounded corners and the shadow; without it the popup
+            // paints a square opaque window behind both.
+            _pop = new System.Windows.Controls.Primitives.Popup
+            {
+                PlacementTarget = _search,
+                Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                HorizontalOffset = -8,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.Fade,
+                Child = _results,
+            };
+
+            // In the logical tree, so the palette keys inside it resolve. A Popup renders in its
+            // own window but still looks its resources up through its parent.
+            body.Children.Add(_pop);
 
             Grid.SetRow(body, 5);
             root.Children.Add(body);
@@ -153,6 +173,10 @@ namespace CamelWorks.UI.Shell
             _search.TextChanged += (s, e) => Filter();
             _search.PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape) Clear(); };
             _searchResults.SelectionChanged += (s, e) => Jump();
+
+            // The list is at least as wide as the field it drops from, and never wider than the
+            // pane. A fixed width looked deliberate at one pane size and wrong at the other two.
+            _search.SizeChanged += (s, e) => _searchResults.MinWidth = Math.Max(0, _search.ActualWidth);
             SizeChanged += (s, e) => Reflow(e.NewSize.Width);
 
             // A job started on one tab must still look like it is running after you switch to
@@ -216,15 +240,7 @@ namespace CamelWorks.UI.Shell
                 CornerRadius = new CornerRadius(8),
                 Background = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock
-                {
-                    Text = "CW",
-                    Foreground = Brushes.White,
-                    FontSize = 11,
-                    FontWeight = FontWeights.Bold,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
+                Child = Mark(),
             };
 
             grid.Children.Add(mark);
@@ -326,6 +342,62 @@ namespace CamelWorks.UI.Shell
         /// it any sense of which part of the product you were in, disappeared. It is a marked chip
         /// now, and what it opens says what each workspace is for rather than only naming it.
         /// </summary>
+        /// <summary>
+        /// The BIMCamel mark, drawn as a white silhouette.
+        ///
+        /// The mark ships as near-black ink on transparency, which is right on paper and invisible
+        /// on a blue header. Rather than keep a second, lighter copy of the same artwork in sync,
+        /// the alpha channel is used as an opacity mask over a white fill: one file, and it comes
+        /// out the right colour on any ground we put it on.
+        ///
+        /// Best-effort. A missing or unreadable file falls back to the letters, because a brand
+        /// mark that fails to load should cost the header its polish, not its identity.
+        /// </summary>
+        private static UIElement Mark()
+        {
+            try
+            {
+                var beside = System.IO.Path.GetDirectoryName(
+                    typeof(ShellView).Assembly.Location) ?? string.Empty;
+
+                var file = System.IO.Path.Combine(beside, "Resources", "BimCamelMark.png");
+
+                if (System.IO.File.Exists(file))
+                {
+                    var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(file);
+                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+
+                    return new System.Windows.Shapes.Rectangle
+                    {
+                        Width = 18,
+                        Height = 18,
+                        Fill = Brushes.White,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        OpacityMask = new ImageBrush(bitmap) { Stretch = Stretch.Uniform },
+                    };
+                }
+            }
+            catch (Exception)
+            {
+                // Fall through to the letters.
+            }
+
+            return new TextBlock
+            {
+                Text = "CW",
+                Foreground = Brushes.White,
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+        }
+
         private UIElement SwitcherRow()
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -356,6 +428,36 @@ namespace CamelWorks.UI.Shell
 
             row.Children.Add(_switcherNarrow);
             row.Children.Add(_switcher);
+
+            var rule = new Border
+            {
+                Width = 1,
+                Margin = new Thickness(10, 3, 10, 3),
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
+            rule.Tint(Border.BackgroundProperty, "Bd");
+
+            _tabRule = rule;
+            row.Children.Add(rule);
+
+            // The tabs scroll rather than wrap. A second line of tabs would put the row back to the
+            // two-row height this change exists to reclaim.
+            _tabsHost = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalAlignment = VerticalAlignment.Center,
+                Content = _tabs,
+            };
+
+            var scroller = _tabsHost;
+            scroller.PreviewMouseWheel += (s, e) =>
+            {
+                scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset - e.Delta);
+                e.Handled = true;
+            };
+
+            row.Children.Add(scroller);
             return row;
         }
 
@@ -475,7 +577,10 @@ namespace CamelWorks.UI.Shell
         private void BuildTabs()
         {
             _tabs.Children.Clear();
-            _tabStrip.Visibility = _workspace.HasTabStrip ? Visibility.Visible : Visibility.Collapsed;
+
+            var strip = _workspace.HasTabStrip ? Visibility.Visible : Visibility.Collapsed;
+            if (_tabRule != null) _tabRule.Visibility = strip;
+            if (_tabsHost != null) _tabsHost.Visibility = strip;
 
             if (!_workspace.HasTabStrip) return;
 
@@ -545,6 +650,22 @@ namespace CamelWorks.UI.Shell
             // element is work nobody can see.
             _busy.IsIndeterminate = running;
             _busy.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+
+            // Navigation is closed while work is running.
+            //
+            // The Navisworks API is main-thread-only, so a job runs on the UI thread and keeps the
+            // pane alive by pumping the dispatcher. Pumping processes input, which is what makes
+            // Stop clickable — and also what would let someone change tab or workspace half way
+            // through a traversal, tearing down the screen the job is still writing into.
+            //
+            // Stop lives inside the content and stays enabled, so this closes the way out without
+            // closing the way to cancel.
+            _switcher.IsEnabled = !running;
+            _switcherNarrow.IsEnabled = !running;
+            _tabs.IsEnabled = !running;
+            _search.IsEnabled = !running;
+
+            if (running && _pop != null) _pop.IsOpen = false;
         }
 
         /// <summary>
@@ -586,7 +707,7 @@ namespace CamelWorks.UI.Shell
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                _results.Visibility = Visibility.Collapsed;
+                if (_pop != null) _pop.IsOpen = false;
                 return;
             }
 
@@ -595,7 +716,7 @@ namespace CamelWorks.UI.Shell
             foreach (var command in CommandCatalogue.Search(query).Take(12))
                 _searchResults.Items.Add(new ListBoxItem { Content = Result(command), Tag = command });
 
-            _results.Visibility = _searchResults.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (_pop != null) _pop.IsOpen = _searchResults.Items.Count > 0;
         }
 
         /// <summary>
@@ -623,7 +744,7 @@ namespace CamelWorks.UI.Shell
         private void Clear()
         {
             _search.Text = string.Empty;
-            _results.Visibility = Visibility.Collapsed;
+            if (_pop != null) _pop.IsOpen = false;
         }
 
         private void Jump()

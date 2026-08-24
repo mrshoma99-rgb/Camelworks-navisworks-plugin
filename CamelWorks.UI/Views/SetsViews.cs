@@ -452,7 +452,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var item in _session.Model.Traverse(traversal))
                     {
-                        if (rows.Count % 2000 == 0 && !job.Step(rows.Count, "elements read")) return;
+                        if (!job.Step(rows.Count, "elements read")) return;
 
                         rows.Add(properties.Select(p => item.Property(category, p)).ToList());
                     }
@@ -897,7 +897,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                     {
-                        if (keys.Count % 2000 == 0 && !job.Step(keys.Count, "elements listed")) return;
+                        if (!job.Step(keys.Count, "elements listed")) return;
                         if (item.HasGeometry) keys.Add(item.Key);
                     }
 

@@ -244,7 +244,8 @@ namespace CamelWorks.UI.Views
 
             foreach (var item in hydrated.Items)
             {
-                if (read++ % 500 == 0 && !job.Step(read, "results described")) return null;
+                read++;
+                if (!job.Step(read, "results described")) return null;
 
                 // Everything except the coordinates is re-derived from the elements themselves,
                 // which Simulate reads perfectly well. Only the clash engine is missing.
@@ -305,7 +306,7 @@ namespace CamelWorks.UI.Views
                 if (!item.HasGeometry) continue;
                 elevations.Add(item.Bounds.MinZ * scale);
 
-                if (elevations.Count % 5000 == 0 && !job.Step(elevations.Count, "elements measured"))
+                if (!job.Step(elevations.Count, "elements measured"))
                     return LevelSet.Empty;
             }
 

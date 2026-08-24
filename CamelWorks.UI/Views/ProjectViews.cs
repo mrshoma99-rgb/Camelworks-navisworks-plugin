@@ -263,8 +263,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
             {
-                if (reading.Elements.Count % 2000 == 0
-                    && !job.Step(reading.Elements.Count, "elements read")) return null;
+                if (!job.Step(reading.Elements.Count, "elements read")) return null;
 
                 var bounds = item.Bounds;
 
@@ -633,7 +632,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                 {
-                    if (projection.Read % 2000 == 0 && !job.Step(projection.Read, "elements read")) return;
+                    if (!job.Step(projection.Read, "elements read")) return;
 
                     var element = projection.From(item);
                     if (element != null) elements.Add(element);
@@ -1025,7 +1024,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
             {
-                if (read % 2000 == 0 && !job.Step(read, "elements read")) { read = -1; return carrying; }
+                if (!job.Step(read, "elements read")) { read = -1; return carrying; }
 
                 read++;
 

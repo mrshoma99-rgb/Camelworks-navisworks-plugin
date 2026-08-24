@@ -119,6 +119,11 @@ jobs:
       - name: Check the ribbon markup, the plug-in and the catalogue agree
         run: python3 checks/validate-ribbon.py
 
+      # Job.Step() rate-limits its own dispatcher pump. A call site that gates it behind an item
+      # counter turns that time limit into a count limit, and the host freezes between pumps.
+      - name: Check no progress pump sits behind a count gate
+        run: python3 checks/validate-pump.py
+
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
       # fails at the first click.
