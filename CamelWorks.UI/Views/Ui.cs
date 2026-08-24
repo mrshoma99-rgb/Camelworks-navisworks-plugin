@@ -1131,6 +1131,8 @@ namespace CamelWorks.UI.Views
         public static ListView Table(IEnumerable<TableRow> rows, params (string Header, double Width)[] columns)
         {
             var grid = new GridView { AllowsColumnReorder = false };
+            var flexible = new List<GridViewColumn>();
+            var fixedWidth = 0.0;
 
             for (var i = 0; i < columns.Length; i++)
             {
@@ -1140,7 +1142,16 @@ namespace CamelWorks.UI.Views
                     DisplayMemberBinding = new Binding("[" + i.ToString(CultureInfo.InvariantCulture) + "]"),
                 };
 
-                if (columns[i].Width > 0) column.Width = columns[i].Width;
+                if (columns[i].Width > 0)
+                {
+                    column.Width = columns[i].Width;
+                    fixedWidth += columns[i].Width;
+                }
+                else
+                {
+                    flexible.Add(column);
+                }
+
                 grid.Columns.Add(column);
             }
 
@@ -1152,6 +1163,32 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, Gap, 0, 2),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+
+            // A column given a width of zero takes what is left, shared with any other, rather
+            // than being left to size itself to its content.
+            //
+            // Auto-sizing is what a GridViewColumn does with no width, and what it does is measure
+            // once and settle on something narrower than the text it then clips - "12 minutes ago"
+            // arriving as "12 mi" with eighty pixels of empty pane to its right. Measuring against
+            // the pane instead is both correct and what a table in a dock pane should do anyway,
+            // since the pane is resized far more often than the data changes.
+            if (flexible.Count > 0)
+            {
+                void Fit()
+                {
+                    // The room a vertical scrollbar and the two borders take. Guessed slightly
+                    // high: a column two pixels short of the edge looks intentional, and one two
+                    // pixels over brings a horizontal scrollbar the pane has no room for.
+                    var spare = table.ActualWidth - fixedWidth - 28;
+                    if (spare <= 0) return;
+
+                    var each = Math.Max(70, spare / flexible.Count);
+                    foreach (var column in flexible) column.Width = each;
+                }
+
+                table.SizeChanged += (s, e) => Fit();
+                table.Loaded += (s, e) => Fit();
+            }
 
             // The row's own tone paints its text. Done as a container-generated hook rather than an
             // ItemContainerStyle trigger because the tone lives on the row object, and a trigger

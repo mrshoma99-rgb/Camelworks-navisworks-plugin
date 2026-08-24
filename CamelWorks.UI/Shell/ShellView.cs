@@ -38,7 +38,8 @@ namespace CamelWorks.UI.Shell
         private readonly Border _tabStrip;
         private readonly Border _rail;
         private readonly TextBox _search = new TextBox { MinWidth = 130, Tag = "Find a tool" };
-        private readonly ListBox _searchResults = new ListBox { MaxHeight = 260, Visibility = Visibility.Collapsed };
+        private readonly ListBox _searchResults = new ListBox { MaxHeight = 260 };
+        private readonly Border _results;
         private readonly ContentControl _content = new ContentControl();
         private readonly TextBlock _where = new TextBlock();
         private readonly ProgressBar _busy = new ProgressBar { Height = 3, Visibility = Visibility.Collapsed };
@@ -93,8 +94,12 @@ namespace CamelWorks.UI.Shell
             var body = new Grid();
             body.Children.Add(_content);
 
-            var results = new Border
+            // Collapsed with the list inside it, not just around it. A bordered white panel with
+            // nothing in it still paints, and at the pane's narrowest that empty strip lay across
+            // the top of every screen looking like a rendering fault.
+            _results = new Border
             {
+                Visibility = Visibility.Collapsed,
                 Child = _searchResults,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(9),
@@ -110,9 +115,9 @@ namespace CamelWorks.UI.Shell
                 },
             };
 
-            results.Tint(Border.BackgroundProperty, "Card");
-            results.Tint(Border.BorderBrushProperty, "Bd");
-            body.Children.Add(results);
+            _results.Tint(Border.BackgroundProperty, "Card");
+            _results.Tint(Border.BorderBrushProperty, "Bd");
+            body.Children.Add(_results);
 
             Grid.SetRow(body, 4);
             root.Children.Add(body);
@@ -243,11 +248,11 @@ namespace CamelWorks.UI.Shell
             return bar;
         }
 
-        private Border? _searchFrame;
+        private Border? _searchBox;
 
         private Border SearchBox()
         {
-            if (_searchFrame != null) return _searchFrame;
+            if (_searchBox != null) return _searchBox;
 
             _search.Background = Brushes.Transparent;
             _search.Foreground = Brushes.White;
@@ -286,7 +291,7 @@ namespace CamelWorks.UI.Shell
             row.Children.Add(_search);
 
             frame.Child = row;
-            _searchFrame = frame;
+            _searchBox = frame;
             return frame;
         }
 
@@ -453,7 +458,7 @@ namespace CamelWorks.UI.Shell
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                _searchResults.Visibility = Visibility.Collapsed;
+                _results.Visibility = Visibility.Collapsed;
                 return;
             }
 
@@ -462,7 +467,7 @@ namespace CamelWorks.UI.Shell
             foreach (var command in CommandCatalogue.Search(query).Take(12))
                 _searchResults.Items.Add(new ListBoxItem { Content = Result(command), Tag = command });
 
-            _searchResults.Visibility = _searchResults.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _results.Visibility = _searchResults.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>
@@ -490,7 +495,7 @@ namespace CamelWorks.UI.Shell
         private void Clear()
         {
             _search.Text = string.Empty;
-            _searchResults.Visibility = Visibility.Collapsed;
+            _results.Visibility = Visibility.Collapsed;
         }
 
         private void Jump()
