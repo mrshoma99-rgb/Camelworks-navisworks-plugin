@@ -112,5 +112,81 @@ namespace CamelWorks.Core.Testing
         /// <inheritdoc />
         public void Csv(string path, TableBlock table) =>
             Did.Add("csv:" + path + " (" + table.Rows.Count + " rows)");
+
+        /// <inheritdoc />
+        public TableBlock Pivot(IReadOnlyList<ElementKey> keys, string measure, string rows, string columns)
+        {
+            Did.Add("pivot:" + measure + " " + rows + " by " + columns + " x" + keys.Count);
+
+            var table = new TableBlock(rows, columns, "Total");
+            table.Row(rows, columns, keys.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return table;
+        }
+
+        /// <inheritdoc />
+        public TableBlock Health()
+        {
+            Did.Add("health");
+
+            var table = new TableBlock("Finding", "What to do", "Examples");
+            table.Row("Two models sit on top of each other", "Check the shared coordinates", "ARC, STR");
+            return table;
+        }
+
+        /// <summary>How many tests <see cref="RunClashTests"/> pretends to run.</summary>
+        public int TestsToRun { get; set; } = 3;
+
+        /// <inheritdoc />
+        public int RunClashTests(bool all)
+        {
+            Did.Add(all ? "run:every test" : "run:never run");
+            return TestsToRun;
+        }
+
+        /// <inheritdoc />
+        public void Bcf(string path, string version, bool snapshots) =>
+            Did.Add("bcf:" + version + " " + path + (snapshots ? " with pictures" : string.Empty));
+
+        /// <summary>How many viewpoints <see cref="Walkthrough"/> pretends to save.</summary>
+        public int ViewpointsToSave { get; set; } = 4;
+
+        /// <inheritdoc />
+        public int Walkthrough(string folder, string pattern)
+        {
+            Did.Add("walkthrough:" + folder + " as " + pattern);
+            return ViewpointsToSave;
+        }
+
+        /// <inheritdoc />
+        /// <summary>Files this fake will refuse to append.</summary>
+        public HashSet<string> Unappendable { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>What a refresh reports having changed.</summary>
+        public bool AnythingChanged { get; set; } = true;
+
+        /// <inheritdoc />
+        public bool Append(string path)
+        {
+            Did.Add("append " + path);
+            return !Unappendable.Contains(path);
+        }
+
+        /// <inheritdoc />
+        public bool RefreshModels()
+        {
+            Did.Add("refresh");
+            return AnythingChanged;
+        }
+
+        /// <inheritdoc />
+        public bool Save(string path)
+        {
+            Did.Add("save " + path);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public void PublishSet(string name, IReadOnlyList<ElementKey> keys) =>
+            Did.Add("publish:" + name + " x" + keys.Count);
     }
 }

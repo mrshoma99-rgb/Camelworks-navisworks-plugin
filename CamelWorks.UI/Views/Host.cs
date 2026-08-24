@@ -141,7 +141,11 @@ namespace CamelWorks.UI.Views
 
                 var store = ProjectStore.Open(PhysicalFileSystem.Instance, saved, UserDirectory);
 
-                var profile = ProjectProfile.Derive(model.Models, saved, Environment.UserName);
+                // The host's units seed the project's, once. After that the project keeps its own:
+                // switching the display to millimetres to read a dimension must not reissue every
+                // report in different units from last week's.
+                var profile = ProjectProfile.Derive(model.Models, saved, Environment.UserName,
+                                                    document.Units.ToString());
                 profile.ApplyOverrides(store.Section(ProjectStore.ProfileSection));
 
                 var clash = LoadClash(model, out var problem);
@@ -243,6 +247,15 @@ namespace CamelWorks.UI.Views
 
             public System.Collections.Generic.IReadOnlyList<ClashResultInfo> Results(string testId) =>
                 Array.Empty<ClashResultInfo>();
+
+            public bool CanEdit => false;
+
+            public ClashTestInfo? Create(ClashTestSpec spec) => null;
+
+            public bool Run(string testId) => false;
+
+            public string? LastProblem =>
+                "There is no clash engine in this Navisworks edition, so tests cannot be made or run.";
         }
     }
 }

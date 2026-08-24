@@ -149,11 +149,29 @@ namespace CamelWorks.Core.Testing
             Scope = ElementKey.ScopeOf(sourcePath);
         }
 
+        /// <summary>When the source was last written. Settable, so a test can stage a revision.</summary>
+        public DateTimeOffset? SourceModifiedUtc { get; set; }
+
+        /// <summary>How big the source is. Settable, so a test can stage a revision.</summary>
+        public long? SourceBytes { get; set; }
+
+        /// <summary>The unit the model was authored in.</summary>
+        public string? ModelUnits { get; set; }
+
+        /// <summary>True when the host is holding this model somewhere other than where it was authored.</summary>
+        public bool HasTransform { get; set; }
+
+        /// <summary>Where the federation is holding it. Settable, so a test can stage a move.</summary>
+        public IReadOnlyList<double>? Placement { get; set; }
+
         /// <inheritdoc />
         public string DisplayName { get; }
 
         /// <inheritdoc />
         public string SourcePath { get; }
+
+        /// <summary>The file the host has open for this model. Defaults to the source path.</summary>
+        public string? LoadedPath { get; set; }
 
         /// <inheritdoc />
         public string Scope { get; }

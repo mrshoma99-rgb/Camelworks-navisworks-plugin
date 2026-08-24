@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Project
@@ -80,11 +81,23 @@ namespace CamelWorks.Core.Project
         /// <summary>Proximity band in metres for grouping clashes that are really one problem.</summary>
         public const string ClashProximity = "clash.proximity";
 
+        /// <summary>How close two tests' results have to be, in metres, to be the same conflict.</summary>
+        public const string DuplicateBand = "clash.duplicateBand";
+
         /// <summary>The parties a clash can be assigned to, comma separated.</summary>
         public const string Parties = "coordinate.parties";
 
+        /// <summary>What this project calls its priorities, comma separated, most urgent first.</summary>
+        public const string Priorities = "coordinate.priorities";
+
         /// <summary>Where levels come from: the model's own, or inferred from geometry.</summary>
         public const string LevelSource = "data.levels";
+
+        /// <summary>How lengths are written on every screen and in every export.</summary>
+        public const string Units = "units.length";
+
+        /// <summary>The finest inch fraction to round to, when lengths are written in feet and inches.</summary>
+        public const string InchFraction = "units.inchFraction";
 
         /// <summary>Prefix for a per-model discipline setting. The rest of the key is the model scope.</summary>
         public const string DisciplinePrefix = "discipline.";
@@ -281,14 +294,31 @@ namespace CamelWorks.Core.Project
         /// <summary>Proximity band in metres for grouping.</summary>
         public double ClashProximity => Number(ProfileKeys.ClashProximity, 5.0);
 
+        /// <summary>How close two tests' results have to be to count as the same conflict, in metres.</summary>
+        public double DuplicateBand => Number(ProfileKeys.DuplicateBand, 1.0);
+
         /// <summary>The parties a clash can be assigned to.</summary>
-        public IReadOnlyList<string> Parties =>
-            (Value(ProfileKeys.Parties) ?? string.Empty)
+        public IReadOnlyList<string> Parties => Listed(ProfileKeys.Parties);
+
+        /// <summary>What this project calls its priorities, most urgent first.</summary>
+        public IReadOnlyList<string> Priorities => Listed(ProfileKeys.Priorities);
+
+        private IReadOnlyList<string> Listed(string key) =>
+            (Value(key) ?? string.Empty)
                 .Split(',')
                 .Select(p => p.Trim())
                 .Where(p => p.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+        /// <summary>
+        /// How this project writes a length. Every screen and every export goes through it.
+        ///
+        /// Seeded once from the model's own units and then left alone: a coordinator who switches
+        /// the host to millimetres to read a dimension must not thereby reissue every report in
+        /// different units from last week's.
+        /// </summary>
+        public Measure Units => Measure.Of(Value(ProfileKeys.Units), (int)Number(ProfileKeys.InchFraction, 16));
 
         /// <summary>The discipline in force for a model scope, or null when none was worked out.</summary>
         /// <param name="modelScope">The scope, as <c>IModelSource.Scope</c> reports it.</param>
@@ -304,8 +334,12 @@ namespace CamelWorks.Core.Project
         /// <param name="models">The loaded models. An empty list is fine and still yields a profile.</param>
         /// <param name="documentPath">The saved document's path, when it has one.</param>
         /// <param name="user">Who is working, for the author line.</param>
+        /// <param name="hostUnits">
+        /// What the host says the model is in. Seeds the project's unit choice once; null is fine
+        /// and means metres.
+        /// </param>
         public static ProjectProfile Derive(IReadOnlyList<IModelSource>? models, string? documentPath = null,
-                                            string? user = null)
+                                            string? user = null, string? hostUnits = null)
         {
             var sources = models ?? Array.Empty<IModelSource>();
 
@@ -323,6 +357,9 @@ namespace CamelWorks.Core.Project
 
             settings.Add(new ProfileSetting(ProfileKeys.ClashProximity, "Grouping distance (m)", "5",
                 "clashes within 5 m of each other are usually one problem seen three times"));
+
+            settings.Add(new ProfileSetting(ProfileKeys.DuplicateBand, "Same-conflict distance (m)", "1",
+                "two tests reporting a hit within 1 m of each other are reporting the same conflict"));
 
             var disciplines = new List<string>();
 
@@ -348,11 +385,47 @@ namespace CamelWorks.Core.Project
                     ? "one per discipline found in the loaded models"
                     : "no disciplines could be read from the model names"));
 
+            var (units, unitsBecause) = DeriveUnits(hostUnits);
+
+            settings.Add(new ProfileSetting(ProfileKeys.Units, "Lengths in", units, unitsBecause,
+                Measure.Choices));
+
+            settings.Add(new ProfileSetting(ProfileKeys.InchFraction, "Inch fraction", "16",
+                "sixteenths, which is what a tape measure is marked in - only used when lengths are "
+                + "in feet and inches",
+                Measure.Denominators.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList()));
+
+            settings.Add(new ProfileSetting(ProfileKeys.Priorities, "Priorities", "High, Medium, Low",
+                "the three every coordination board settles on when nobody states otherwise"));
+
             settings.Add(new ProfileSetting(ProfileKeys.LevelSource, "Levels from", "Model, then geometry",
                 "the model's own level property where it has one, and a height histogram where it does not",
                 new[] { "Model, then geometry", "Model only", "Geometry only" }));
 
             return new ProjectProfile(settings);
+        }
+
+        /// <summary>
+        /// What to write lengths in, read once from whatever the host says the model is in.
+        ///
+        /// Read once, deliberately. This is a project setting, not a follower: the alternative is a
+        /// product whose reports change units when somebody toggles the host display to check a
+        /// dimension, which is how two revisions of the same drawing end up disagreeing.
+        /// </summary>
+        private static (string Units, string Because) DeriveUnits(string? hostUnits)
+        {
+            if (string.IsNullOrWhiteSpace(hostUnits))
+                return (Measure.Choices[0], "nothing said what the model is in, so metres");
+
+            var said = hostUnits!.Trim();
+            var system = Measure.Of(said).System;
+
+            var chosen = system == UnitSystem.Imperial ? Measure.Choices[2]
+                       : system == UnitSystem.Millimetres ? Measure.Choices[1]
+                       : Measure.Choices[0];
+
+            return (chosen, "read once from the model's units (" + said
+                          + ") - it does not follow the host after that");
         }
 
         private static (string? Name, string Because) DeriveName(IReadOnlyList<IModelSource> models, string? documentPath)

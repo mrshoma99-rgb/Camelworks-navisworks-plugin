@@ -9,9 +9,10 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The ribbon commands that act rather than open a screen.
     ///
-    /// There are two, and both earn it: sectioning is something you do while looking at the model,
-    /// so putting it behind a panel would mean covering the thing being sectioned; and Help is the
-    /// one screen that must work when the rest of the product will not.
+    /// Each of them earns it. Sectioning is something you do while looking at the model, so putting
+    /// it behind a panel would mean covering the thing being sectioned; review is the same, one
+    /// group at a time; and Help is the one screen that must work when the rest of the product
+    /// will not.
     /// </summary>
     public static class Actions
     {
@@ -28,6 +29,10 @@ namespace CamelWorks.UI.Views
             switch (commandId)
             {
                 case "ID_CW_SectionBox": return SectionBox();
+                case "ID_CW_Review": return ReviewWindow.Show();
+                case "ID_CW_FixLinks": return FixLinksWindow.Show();
+                case "ID_CW_Export": return ExportWindow.Show();
+                case "ID_CW_Baseline": return CompareViews.BaselineNow();
                 default: return null;
             }
         }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using CamelWorks.Core.Identity;
 
@@ -49,6 +50,45 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>Fit the camera to the given elements, with a context margin in model units.</summary>
         void ZoomTo(IReadOnlyList<ElementKey> keys, double marginMetres);
+
+        /// <summary>Fit the camera to a box, in metres.</summary>
+        /// <param name="box">What has to be visible.</param>
+        void FrameBox(BoundingBox box);
+
+        /// <summary>
+        /// Look straight down at a box, orthographic, so a render of it is a plan.
+        ///
+        /// Orthographic because a perspective plan is not a plan: markers near the edges land where
+        /// the projection put them rather than where the thing is, and a reader scaling off it gets
+        /// a different answer at every corner.
+        ///
+        /// Returns false when the host refuses, which is an ordinary outcome — a 2D sheet view has
+        /// no camera to rotate — and the caller prints the report without the plan rather than
+        /// failing the export.
+        /// </summary>
+        /// <param name="box">What has to be visible, in metres.</param>
+        bool LookDown(BoundingBox box);
+
+        /// <summary>
+        /// Remember where the camera is, and put it back when the returned handle is disposed.
+        ///
+        /// A <c>using</c> rather than a save/restore pair, because anything that moves the camera in
+        /// a loop - exporting a snapshot per clash group, say - has to put it back afterwards, and
+        /// a pair of calls is a pair somebody eventually only writes half of. Leaving a coordinator
+        /// looking at the last clash of a hundred is a small betrayal they will remember.
+        /// </summary>
+        IDisposable BorrowCamera();
+
+        /// <summary>
+        /// Render what the camera can see, as PNG bytes, or null when the host cannot.
+        ///
+        /// Null rather than an exception: an export that wanted snapshots and could not get them
+        /// should still write the file, note that the images are missing, and let the receiving
+        /// tool show the camera instead.
+        /// </summary>
+        /// <param name="width">Pixels.</param>
+        /// <param name="height">Pixels.</param>
+        byte[]? Capture(int width, int height);
 
         /// <summary>Set a section box around the given elements, with a context margin.</summary>
         void SetSectionBox(BoundingBox box, double marginMetres);

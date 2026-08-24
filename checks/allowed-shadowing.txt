@@ -1,0 +1,12 @@
+# Members that share a name with a Core type they can see, and are fine as they are.
+#
+# Shadowing only bites when the type is then used by its bare name in a value position inside the
+# same class. These three are not: two implement IGraphHost members whose names the interface
+# fixes, and the third is a tab entry point named after its tab. Every other case is a landmine —
+# a private helper called Measure makes the Measure type unreachable in the whole class, and the
+# error lands wherever the type was used rather than where the helper was declared.
+#
+# One entry per line: path:member
+CamelWorks.UI/Views/DataViews.cs:Takeoff
+CamelWorks.UI/Views/NavGraphHost.cs:Colour
+CamelWorks.UI/Views/NavGraphHost.cs:Takeoff

@@ -15,8 +15,55 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Full source path, used to derive <see cref="ElementKey.ScopeOf"/>.</summary>
         string SourcePath { get; }
 
+        /// <summary>
+        /// The file the host actually has open for this model, or null when it will not say.
+        ///
+        /// <b>Not the same thing as <see cref="SourcePath"/>, and the difference is the point.</b>
+        /// SourcePath is the CAD file a model was first converted from — an X-drive Revit path
+        /// nobody outside the authoring office can reach, and one that names no particular
+        /// revision. This is the NWC or NWD sitting in this week's issue folder: the thing that
+        /// can be handed to somebody, and the thing that can be appended again later to look at a
+        /// revision that is no longer the current one.
+        /// </summary>
+        string? LoadedPath { get; }
+
         /// <summary>The scope hash every key from this model carries.</summary>
         string Scope { get; }
+
+        /// <summary>
+        /// When the source file was last written, UTC, or null when it cannot be read.
+        ///
+        /// The most-asked question in a Wednesday coordination meeting is "which revision of the
+        /// structural model was this run against", and the only honest answer is the file's own
+        /// timestamp. Null is ordinary — the source may be on a share that is offline, or gone.
+        /// </summary>
+        DateTimeOffset? SourceModifiedUtc { get; }
+
+        /// <summary>How many bytes the source file is, or null when it cannot be read.</summary>
+        long? SourceBytes { get; }
+
+        /// <summary>The unit this model was authored in, as the host names it, or null.</summary>
+        string? ModelUnits { get; }
+
+        /// <summary>
+        /// True when the host is holding this model somewhere other than where it was authored.
+        ///
+        /// A transform is legitimate — it is how a survey-grid model is brought onto a project
+        /// grid — and it is also the classic silent killer: nobody notices one being applied, and
+        /// every clash from that moment on is in the wrong place.
+        /// </summary>
+        bool HasTransform { get; }
+
+        /// <summary>
+        /// Where the federation is holding this model: nine numbers of rotation and scale, then
+        /// three of translation, row by row. Null when the host will not say.
+        ///
+        /// Recorded so a placement that changes can be put back. A transform is applied by somebody
+        /// dragging a model in the units-and-transform dialog, nobody notices, and every clash from
+        /// that moment is in the wrong place — and without the previous numbers the only fix is to
+        /// remember what they were.
+        /// </summary>
+        IReadOnlyList<double>? Placement { get; }
     }
 
     /// <summary>

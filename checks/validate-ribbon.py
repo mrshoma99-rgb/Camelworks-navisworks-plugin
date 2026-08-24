@@ -17,9 +17,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
-EXPECTED_COMMANDS = 25
-EXPECTED_TABS = 16
-EXPECTED_SWITCHER = 6
+EXPECTED_COMMANDS = 27
+EXPECTED_TABS = 19
+EXPECTED_SWITCHER = 7
 
 
 def read(path):

@@ -232,10 +232,17 @@ namespace CamelWorks.Core.Tests
 
     public class NodeCatalogueTests
     {
-        // The two that cannot run unconfigured, and why: both write a file, and there is no
-        // defensible default path. Every other node in the catalogue has to run on the settings it
+        // The five that cannot run unconfigured, and why: every one of them names a file, and there
+        // is no defensible default path for any of them. Three write one and two read or replace
+        // one, which is the same problem from the other side - "append the file at no path" has no
+        // sensible reading either. Every other node in the catalogue has to run on the settings it
         // is born with, or the canvas is not zero-setup.
-        private static readonly string[] NeedAPath = { "report.write", "csv.write" };
+        //
+        // In catalogue order, because that is the order the check below produces them in.
+        private static readonly string[] NeedAPath =
+        {
+            "clash.bcf", "report.write", "model.append", "model.save", "csv.write",
+        };
 
         private static Graph WithInputs(NodeKind kind)
         {
@@ -279,8 +286,12 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void Only_the_two_file_writers_need_configuring_before_they_run()
+        public void Only_the_file_writers_need_configuring_before_they_run()
         {
+            // The list is exact on purpose. A node that quietly joined it would be a node somebody
+            // drops on the canvas, presses Run, and gets nothing from — which is the zero-setup
+            // rule failing in the one place it is easiest not to notice.
+
             var needConfiguring = NodeCatalogue.All
                 .Where(kind => !GraphRunner.Run(WithInputs(kind), new FakeGraphHost(6))
                                            .Steps.First(s => s.NodeId == "subject").Ran)
@@ -318,6 +329,100 @@ namespace CamelWorks.Core.Tests
             foreach (var kind in NodeCatalogue.All)
                 foreach (var setting in kind.Settings.Where(s => s.Kind == SettingKind.Choice))
                     Assert.Contains(setting.Default, setting.Choices);
+        }
+    }
+    public class CoordinationNodeTests
+    {
+        private static GraphNode Node(string id, string kind, params (string Key, string Value)[] settings)
+        {
+            var node = new GraphNode(id, kind);
+            foreach (var setting in settings) node.Settings[setting.Key] = setting.Value;
+            return node;
+        }
+
+        [Fact]
+        public void The_coordination_nodes_reach_the_services_the_ribbon_calls()
+        {
+            // Not a test of what they do — that is tested where the services live. A test that the
+            // canvas can reach them at all, which is the thing that silently was not true.
+            var graph = new Graph();
+
+            graph.Nodes.Add(Node("run", "clash.run", ("which", "Every test")));
+            graph.Nodes.Add(Node("bcf", "clash.bcf", ("path", @"C:\out\issues.bcfzip"), ("version", "3.0")));
+            graph.Nodes.Add(Node("views", "clash.viewpoints", ("folder", "Week 12")));
+            graph.Nodes.Add(Node("health", "health.check"));
+
+            var host = new FakeGraphHost();
+            var run = GraphRunner.Run(graph, host);
+
+            Assert.True(run.Steps.All(s => s.Ran), string.Join("; ", run.Steps.Select(s => s.ToString())));
+
+            Assert.Contains("run:every test", host.Did);
+            Assert.Contains(host.Did, d => d.StartsWith("bcf:3.0", StringComparison.Ordinal));
+            Assert.Contains(host.Did, d => d.StartsWith("walkthrough:Week 12", StringComparison.Ordinal));
+            Assert.Contains("health", host.Did);
+        }
+
+        [Fact]
+        public void A_run_that_found_no_test_to_run_is_not_a_failure()
+        {
+            // It is what a graph run the morning after a full run looks like, and colouring it red
+            // teaches people to ignore the colour.
+            var graph = new Graph();
+            graph.Nodes.Add(Node("run", "clash.run"));
+
+            var host = new FakeGraphHost { TestsToRun = 0 };
+            var run = GraphRunner.Run(graph, host);
+
+            var step = Assert.Single(run.Steps);
+
+            Assert.True(step.Ran);
+            Assert.Contains("no test needed running", step.Outcome);
+        }
+
+        [Fact]
+        public void A_deliver_node_with_nowhere_to_write_stops_rather_than_guessing()
+        {
+            var graph = new Graph();
+            graph.Nodes.Add(Node("bcf", "clash.bcf", ("path", "  ")));
+
+            var run = GraphRunner.Run(graph, new FakeGraphHost());
+
+            Assert.False(Assert.Single(run.Steps).Ran);
+        }
+
+        [Fact]
+        public void Publishing_a_set_needs_a_name_and_carries_the_elements_it_was_given()
+        {
+            var graph = new Graph();
+            graph.Nodes.Add(Node("all", "input.everything"));
+            graph.Nodes.Add(Node("publish", "sets.publish", ("name", "Week 12 working set")));
+            graph.Connect(new GraphWire("all", "out", "publish", "in"));
+
+            var host = new FakeGraphHost();
+            GraphRunner.Run(graph, host);
+
+            Assert.Contains(host.Did, d => d.StartsWith("publish:Week 12 working set", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void A_pivot_hands_its_table_on_to_whatever_writes_it()
+        {
+            var graph = new Graph();
+            graph.Nodes.Add(Node("all", "input.everything"));
+            graph.Nodes.Add(Node("pivot", "data.pivot", ("measure", "Volume"), ("rows", "Category"),
+                                 ("columns", "Level")));
+            graph.Nodes.Add(Node("csv", "csv.write", ("path", @"C:\out\pivot.csv")));
+
+            graph.Connect(new GraphWire("all", "out", "pivot", "in"));
+            graph.Connect(new GraphWire("pivot", "out", "csv", "in"));
+
+            var host = new FakeGraphHost();
+            var run = GraphRunner.Run(graph, host);
+
+            Assert.True(run.Steps.All(s => s.Ran), string.Join("; ", run.Steps.Select(s => s.ToString())));
+            Assert.Contains(host.Did, d => d.StartsWith("pivot:Volume", StringComparison.Ordinal));
+            Assert.Contains(host.Did, d => d.StartsWith("csv:", StringComparison.Ordinal));
         }
     }
 }

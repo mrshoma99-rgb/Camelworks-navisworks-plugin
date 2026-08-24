@@ -96,7 +96,7 @@ carry the clash `Tests` property the other three do.
 
 ## UI — built and wired
 
-Five ribbon panels, twenty-five buttons, two dock panes, six switcher entries, sixteen tabs. Find a
+Six ribbon panels, twenty-seven buttons, two dock panes, seven switcher entries, nineteen tabs. Find a
 Tool searches symptom phrasing, not just command names.
 
 **Every tab does real work:**
@@ -108,27 +108,61 @@ Tool searches symptom phrasing, not just command names.
 | Setup | What was derived, why, and an override per line |
 | Models | The federation, and whether each source has moved on since the file was saved |
 | Export IFC | Opens the exporter's own panel |
-| Triage | The board over the clash engine, plus the headroom check |
-| Tests | The engine's tests and when each last ran |
+| Triage | The board, filtered and searched; edit statuses and hand grouping; raise an issue no clash produced; undo |
+| Tests | The engine's tests, and a matrix builder that creates and runs them |
 | Rules | The pipeline, edited through one editor that draws every rule |
-| Report | PDF, XLSX or HTML of the board as it stands |
-| BCF | Export as one topic per group; import with a new-versus-seen preview |
-| Data | Every property folded to one row, and a write with a preview |
+| Report | PDF, XLSX or HTML, one file per party, filtered to what changed, with a picture per group |
+| BCF | Export with cameras and components; read a reply back and reconcile it against the board |
+| Compare → Run | Pick a baseline, set what counts as a change, and go; the scoreboard, the per-model tally with the reason each pairing was made, and what this baseline cannot answer |
+| Compare → Changes | The change list, filtered and searched; paint it, walk it as viewpoints, stamp it into the properties, raise it on the board, or write the report |
+| Compare → Baselines | What has been recorded and when, kept beside the document |
+| Data | Every property folded to one row; a write you see before you make it; formulas; rename and remove a column |
 | Levels & zones | Derived levels, and stamping them onto elements |
-| Takeoff | Sums with the unreadable named rather than dropped |
-| Sets | The boolean builder, published as native sets |
-| Appearance | The layers system |
-| Viewpoints | Bulk rename and renumber |
+| Takeoff | One axis or two, over a scope, out to a spreadsheet |
+| Sets | The boolean builder, plus a whole family generated from one property |
+| Appearance | The layers system, and everything hidden or overridden that no layer accounts for |
+| Viewpoints | Bulk rename and renumber, a walkthrough per board group, and a bulk delete |
 | Jobs | Saved graphs, run without opening the canvas |
-| Canvas | The node graph editor |
+| Canvas | The node graph editor, over twenty-two nodes including the coordination ones |
 
-The two commands that are not screens both earn it: Section Box acts on the model you are looking
-at, and Help is a window because it has to work when the panel does not.
+The three commands that are not screens each earn it: Section Box acts on the model you are looking
+at, Baseline is a one-click weekly habit that should not need a screen, and Help is a window because
+it has to work when the panel does not.
 
 **Icons** are Google Material Symbols (Apache-2.0, attributed in `NOTICE`), fetched and rasterised by
 `tools/icons.py` and committed. The tool is in the repository rather than the PNGs alone, so the set
 is reproducible and each button's symbol is on the record. There is one set, drawn for a light
 ribbon; a theme-aware second set is a design job.
+
+---
+
+## What the second pass added
+
+The first pass built the structure: every service, every screen, every button. The second closed the
+gap between a tab existing and a tab doing the job somebody opens it for.
+
+| Added | Why it was missing mattered |
+|---|---|
+| BCF cameras, components and snapshots | A topic with no viewpoint is a sentence about a problem somewhere in a federation |
+| Duplicate collapse in the funnel | Two tests reporting one pipe through one wall is one problem assigned twice and closed once |
+| Triage filters, delta column, regression banner | The week's first question was not answerable without scrolling |
+| Board editing: statuses, hand grouping, undo | Carry-over exists to preserve human judgements and there was nowhere to make one |
+| Issues no clash produced | Most of what goes wrong in a federation is not an intersection |
+| The BCF reply leg | An issue that goes out and never comes back is a spreadsheet with extra steps |
+| IDS against the federation | Employers' requirements arrive as IDS files and nothing could read one against a model |
+| The clash matrix builder | Thirty-six Add Test clicks is why a matrix stops covering the federation it was drawn for |
+| The board on Simulate | Most seats on most jobs have no Clash Detective, and none of the work built on the board is clash detection |
+| Appearance foreign state | The layer list said what CamelWorks intended and nothing about what anybody else had done |
+| The write preview, and formulas | Writing into a model is the one destructive thing here, and Ctrl+Z does not reach it |
+| Set families | One set per level, per discipline, per system: an hour of clicking on every job |
+| The takeoff pivot and its export | One axis says how much, two say where, and where is what a programme is built from |
+| Reports per party, filtered, with pictures | The single whole-board report is the one nobody sends |
+| A viewpoint per issue | The walkthrough a coordination meeting is run from, and never has time to make |
+| Six coordination nodes on the canvas | The automation half could not do the half of the job the product is named for |
+
+Two guards were added at the same time, both because CI caught something the local checks could not:
+a list of 471 WPF and Navisworks type names that a Core public type may not shadow, and a check that
+the only company named anywhere in the tree is BIMCamel.
 
 ---
 
@@ -144,3 +178,15 @@ ribbon; a theme-aware second set is a design job.
   read, so validating our own reading of somebody else's file would prove nothing anyway.
 - **Nothing runs unattended.** A job runs when you run it, in the Navisworks you have open. There is
   no scheduler and no headless mode, and Help says so.
+- **There is no CamelWorks entry on the selection tree's right-click menu, and there cannot be.**
+  The Navisworks .NET API has no context-menu extension point: the plug-in kinds are AddIn,
+  ClashResultAction, CommandHandler, Custom, DockPane, EventWatcher, FileProtocol,
+  HomeScreenExtension, Input, Render and Tool, and none of them attaches to a context menu. This was
+  checked against the 2027 reference assembly rather than assumed. The nearest thing the API does
+  offer is `ClashResultActionPlugin`, which adds an entry to the right-click menu on a clash result —
+  but it is Manage-only and would have to live in a module the bundle declares, which would make a
+  Simulate seat load an assembly that is not there. The Simulate story is worth more than the menu
+  entry, so the menu entry is the thing that goes.
+- **No multi-file batch.** A graph runs over the document you have open, not over a folder of NWFs.
+  Opening documents is a host capability with real failure modes and no way to verify it from here;
+  the scope decision left it reopened and it stays reopened.

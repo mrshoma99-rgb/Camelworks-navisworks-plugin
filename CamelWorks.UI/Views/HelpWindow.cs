@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using CamelWorks.Core.Project;
 using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
@@ -45,7 +47,12 @@ namespace CamelWorks.UI.Views
                     Ui.Line("The weekly cycle is the front door: bring in the new models, run the rules "
                             + "over what that broke, send out the result.", 0.85),
                     Ui.Line("Find a tool, top right of the panel, searches what things do as well as what "
-                            + "they are called. \"Why is this thing hidden\" finds Appearance.", 0.85)),
+                            + "they are called. \"Why is this thing hidden\" finds Appearance.", 0.85),
+                    Ui.Line("Compare reads bounding boxes by default and can read the actual triangles "
+                            + "instead — the only way to see an element remodelled inside its own "
+                            + "envelope. It costs a geometry pass per element, so it is a tick box on "
+                            + "both the baseline and the run: a signature on one side compares against "
+                            + "nothing, and Compare says so before you spend the time.", 0.85)),
 
                 Ui.Card("What it will not do",
                     "Each of these is a real limit, not a missing feature list.",
@@ -62,11 +69,33 @@ namespace CamelWorks.UI.Views
                     Bullet("A set built from a rule that needs more than one search is saved as a fixed "
                            + "selection set, because a Navisworks search set holds one search. CamelWorks says "
                            + "which you got rather than letting you find out later."),
+                    Bullet("Showing a removed element needs the old revision to still be a file. "
+                           + "Compare will open it for you — the baseline records which file each "
+                           + "model was loaded from — and the removed elements then paint red beside "
+                           + "the current ones. What cannot be recovered is a model issued by "
+                           + "overwriting one file in place: those bytes are gone, and Compare says so "
+                           + "rather than looking for them. Issuing each revision into its own folder "
+                           + "is what makes the difference."),
+                    Bullet("A square duct turned about its own run is invisible to any comparison "
+                           + "here. Shape comes from the bounding box, which decides moved, resized "
+                           + "and a quarter turn about an axis; a rotation that leaves the box "
+                           + "identical leaves nothing to see. Reading the actual triangles does not "
+                           + "help with this one either — the triangles move with the element."),
+                    Bullet("Comparing two different files needs somebody to say which model is which. "
+                           + "CamelWorks pairs them by path, then by name, then by name with the revision "
+                           + "marker taken off, and says on every row which rule paired it and why. Where "
+                           + "two candidates fit equally well it pairs neither and asks, because guessing "
+                           + "reports a whole discipline as rebuilt."),
                     Bullet("There is one icon set, drawn for a light ribbon. On a dark Navisworks theme "
                            + "the glyphs are darker than ideal; a theme-aware second set is a design "
                            + "job rather than something to guess at.")),
 
-                Diagnostics());
+                Shortcuts(),
+                Diagnostics(),
+                SelfTestCard(),
+                Bundle(),
+                Sample(),
+                Updates());
 
             var window = new Window
             {
@@ -86,6 +115,285 @@ namespace CamelWorks.UI.Views
         }
 
         private static UIElement Bullet(string text) => Ui.Line("- " + text, 0.85);
+
+        /// <summary>
+        /// The keys, and only the keys that exist.
+        ///
+        /// A shortcuts list that includes one the product does not have is worse than no list: it
+        /// sends somebody pressing a key that does nothing and then doubting the rest of the page.
+        /// Review mode is where the keys are, because that is the one screen somebody works through
+        /// a hundred items on without wanting to reach for the mouse.
+        /// </summary>
+        private static UIElement Shortcuts() => Ui.Card("Keys",
+            "In Review mode, opened from the ribbon while the board is loaded.",
+            Key("N  or  →", "the next issue"),
+            Key("P  or  ←", "the one before"),
+            Key("1", "mark it reviewed"),
+            Key("2", "mark it approved"),
+            Key("3", "mark it resolved"),
+            Key("0", "put it back to active"),
+            Key("B", "section box around this issue, on and off"),
+            Key("A", "write a note on it"),
+            Ui.Note("Everywhere else, the product is buttons. Navisworks owns the keyboard while its "
+                    + "own windows have focus, and a plug-in that claimed Ctrl+F or F2 for itself would "
+                    + "take it away from something the host already does."));
+
+        private static UIElement Key(string keys, string what)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 2) };
+
+            row.Children.Add(new TextBlock
+            {
+                Text = keys,
+                FontFamily = new System.Windows.Media.FontFamily("Consolas, Courier New, monospace"),
+                Width = 110,
+            });
+
+            row.Children.Add(Ui.Line(what, 0.85));
+            return row;
+        }
+
+        /// <summary>
+        /// The contract suite, on the machine where it matters.
+        ///
+        /// A thousand tests run on every push and none of them run where the product actually
+        /// breaks. What breaks in the field is not the logic - that is the assembly CI built - it
+        /// is the environment: a locale whose decimal separator is a comma, a temp folder nobody
+        /// can write to, a compression stack a security agent has replaced. Those are invisible to
+        /// CI by construction and they are what a support email is about.
+        /// </summary>
+        private static UIElement SelfTestCard()
+        {
+            var output = Ui.Stack();
+
+            var run = Ui.Button("Run the self-test", () =>
+            {
+                output.Children.Clear();
+
+                var report = SelfTest.Run(Scratch());
+
+                output.Children.Add(Ui.Line(report.Explain(), 1, true));
+
+                foreach (var result in report.Results)
+                    output.Children.Add(Ui.Line(
+                        (result.Passed ? "ok    " : "FAIL  ") + result.Area + " / " + result.Name
+                        + " - " + result.Detail,
+                        result.Passed ? 0.75 : 1));
+
+                output.Children.Add(report.IsClean
+                    ? Ui.Line("Nothing is wrong with this installation that these checks can see.", 0.85)
+                    : Ui.Problem("Quote the failing lines above in a bug report - they say which part "
+                                 + "of the platform this build is not getting on with."));
+            });
+
+            return Ui.Card("Run the self-test",
+                "Ten checks against the things that differ from machine to machine rather than "
+                + "against the logic. Takes a moment and needs no model open.",
+                Ui.Across(run),
+                output);
+        }
+
+        /// <summary>
+        /// Everything worth quoting, as one file.
+        ///
+        /// <b>It writes a file rather than sending anything.</b> Nothing in CamelWorks phones home,
+        /// and a support bundle that uploaded itself would be the one place it did. What goes in it
+        /// is listed on the card before the button is pressed, because a bundle whose contents are a
+        /// surprise is one nobody at a firm with a security policy is allowed to send.
+        /// </summary>
+        private static UIElement Bundle()
+        {
+            var path = Ui.Text(Suggested("camelworks-support.txt"), null, 360);
+            var status = Ui.Stack();
+
+            var write = Ui.Button("Write the bundle", () =>
+            {
+                status.Children.Clear();
+
+                var file = path.Text.Trim();
+
+                if (file.Length == 0)
+                {
+                    status.Children.Add(Ui.Problem("Say where to write it."));
+                    return;
+                }
+
+                try
+                {
+                    System.IO.File.WriteAllText(file, BundleText(), new System.Text.UTF8Encoding(true));
+
+                    status.Children.Add(Ui.Line("Written to " + file + ".", 1, true));
+                    status.Children.Add(Ui.Line("Open it and read it before you send it.", 0.7));
+                }
+                catch (Exception e)
+                {
+                    status.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                }
+            });
+
+            return Ui.Card("Copy a support bundle",
+                "One text file with everything a bug report needs.",
+                Ui.Line("What goes in it: the build number, this machine's Navisworks version and "
+                        + "culture, the diagnostics above, the self-test result, and the last twenty "
+                        + "lines of this project's activity log.", 0.85),
+                Ui.Line("What does not: any part of your model, any property value, any element, and "
+                        + "the contents of no file. Model and project file paths are in it, because "
+                        + "half the faults worth reporting are about where a file is.", 0.85),
+                Ui.Note("It writes a file and sends nothing. Nothing in CamelWorks contacts a server, "
+                        + "and a support bundle that uploaded itself would be the one place it did."),
+                Ui.Field("Write to", path),
+                Ui.Across(write),
+                status);
+        }
+
+        /// <summary>The bundle's contents, assembled the same way every time.</summary>
+        private static string BundleText()
+        {
+            var lines = new List<string>
+            {
+                "CamelWorks support bundle",
+                "=========================",
+                string.Empty,
+                "Build            " + Ui.Release,
+                "Navisworks       " + NavisworksVersion(),
+                "Installed in     " + Folder(Assembly.GetExecutingAssembly()),
+                "Culture          " + CultureInfo.CurrentCulture.Name
+                                    + " (numbers read as \"" + (1234.5).ToString("0.#") + "\")",
+                "OS               " + Environment.OSVersion,
+                ".NET             " + Environment.Version,
+                string.Empty,
+            };
+
+            var session = Host.Current;
+
+            if (session == null)
+            {
+                lines.Add("Document         nothing open");
+            }
+            else
+            {
+                lines.Add("Document         " + (session.SavedPath ?? "never saved"));
+                lines.Add("Models           " + session.Model.Models.Count.ToString(CultureInfo.InvariantCulture));
+                lines.Add("Units            " + session.Document.Units);
+                lines.Add("Project file     " + (session.Store.Path ?? "memory only"));
+                lines.Add("Stored on        " + session.Store.Substrate);
+                lines.Add("Project state    " + session.Store.Outcome.ToString().ToLowerInvariant()
+                                              + (session.Store.UsedBackup ? ", recovered from backup" : string.Empty));
+
+                lines.Add("Clash engine     " + (session.Clash.IsAvailable
+                    ? session.Clash.Tests().Count.ToString(CultureInfo.InvariantCulture) + " tests"
+                    : session.ClashProblem ?? "unavailable"));
+            }
+
+            lines.Add(string.Empty);
+            lines.Add(SelfTest.Run(Scratch()).ToText());
+
+            if (session != null)
+            {
+                lines.Add(string.Empty);
+                lines.Add("Recent activity");
+                lines.Add("---------------");
+
+                // Summaries only, and only twenty. An activity line says "took off volume by
+                // category: 412 elements" - what was done, never what it was done to.
+                foreach (var entry in session.Store.Activity.Entries.Take(20))
+                    lines.Add(ActivityLog.Ago(entry.WhenTicks, session.NowTicks) + "  " + entry.Summary);
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        /// <summary>
+        /// The sample project, written where somebody can open it.
+        /// </summary>
+        private static UIElement Sample()
+        {
+            var path = Ui.Text(Suggested(SampleProject.FileName), null, 360);
+            var status = Ui.Stack();
+
+            var write = Ui.Button("Write the sample project", () =>
+            {
+                status.Children.Clear();
+
+                var file = path.Text.Trim();
+
+                if (file.Length == 0)
+                {
+                    status.Children.Add(Ui.Problem("Say where to write it."));
+                    return;
+                }
+
+                try
+                {
+                    System.IO.File.WriteAllText(file, SampleProject.Write(DateTime.UtcNow.Ticks));
+
+                    // The note beside it, so the file is not an unexplained blob of JSON in
+                    // somebody's Documents folder a fortnight later.
+                    var note = System.IO.Path.ChangeExtension(file, ".txt");
+                    System.IO.File.WriteAllText(note, SampleProject.ReadMe());
+
+                    status.Children.Add(Ui.Line("Written to " + file + ", with a note beside it.", 1, true));
+                }
+                catch (Exception e)
+                {
+                    status.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                }
+            });
+
+            var body = Ui.Stack();
+
+            body.Children.Add(Ui.Line("Every screen works with nothing set up, which is the point of "
+                + "the product and also the reason nobody ever sees what a set-up project looks like. "
+                + "This is one, on a made-up job.", 0.85));
+
+            foreach (var line in SampleProject.Explains) body.Children.Add(Ui.Line("- " + line, 0.8));
+
+            body.Children.Add(Ui.Field("Write to", path));
+            body.Children.Add(Ui.Across(write));
+            body.Children.Add(status);
+
+            return Ui.Card("A worked example project", "For reading, not for working in.", body);
+        }
+
+        /// <summary>
+        /// Which build this is, and where a newer one lives.
+        ///
+        /// <b>It does not check.</b> A plug-in that reaches the internet on startup is one a firm's
+        /// security team has to have an opinion about, and the opinion is usually no. The version is
+        /// here and the address is here; looking is a decision somebody makes.
+        /// </summary>
+        private static UIElement Updates() => Ui.Card("Updates",
+            "There is no update check, and there is no telemetry.",
+            Ui.Field("This build", Ui.Line(Ui.Release, 0.85)),
+            Ui.Field("Newer ones", Ui.Line("bimcamel.com", 0.85)),
+            Ui.Line("Nothing in CamelWorks contacts a server - not to check a version, not to count "
+                    + "an install, not to report a crash. That is a deliberate limit and it has a "
+                    + "cost: you find out about a new build by looking.", 0.85),
+            Ui.Line("A newer build reads a project file this one wrote. An older build shown a file "
+                    + "from a newer one opens it read-only and says so, rather than writing a version "
+                    + "back over settings it does not understand.", 0.85));
+
+        /// <summary>A path in the user's own folder, so the box is never empty.</summary>
+        private static string Suggested(string file)
+        {
+            try
+            {
+                var folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+                return string.IsNullOrEmpty(folder) ? file : System.IO.Path.Combine(folder, file);
+            }
+            catch (Exception)
+            {
+                return file;
+            }
+        }
+
+        /// <summary>Somewhere the self-test may write, or null when there is nowhere.</summary>
+        private static string? Scratch()
+        {
+            try { return System.IO.Path.GetTempPath(); }
+            catch (Exception) { return null; }
+        }
 
         private static UIElement Diagnostics()
         {

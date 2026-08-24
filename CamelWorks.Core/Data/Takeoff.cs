@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Measurement;
 
 namespace CamelWorks.Core.Data
 {
@@ -72,14 +73,20 @@ namespace CamelWorks.Core.Data
         public bool IsComplete => Unreadable == 0 && !MixedKinds;
 
         /// <inheritdoc />
-        public override string ToString()
+        public override string ToString() => Describe(null);
+
+        /// <summary>
+        /// The same line with the total in the project's units.
+        /// </summary>
+        /// <param name="units">The formatter, or null for base SI.</param>
+        public string Describe(Measure? units)
         {
             var s = Name + " — " + Count.ToString("N0", CultureInfo.InvariantCulture)
                   + (Count == 1 ? " element" : " elements");
 
             if (MixedKinds) return s + " · no total: the values are not all the same kind of measurement";
 
-            if (Total != null) s += " · " + Total.Value;
+            if (Total != null) s += " · " + Total.Value.Show(units);
             if (Unreadable > 0)
                 s += " · " + Unreadable.ToString("N0", CultureInfo.InvariantCulture) + " values unreadable";
 
@@ -126,14 +133,24 @@ namespace CamelWorks.Core.Data
         public bool IsComplete => Groups.All(g => g.IsComplete);
 
         /// <summary>The one-line readout.</summary>
-        public override string ToString()
+        public override string ToString() => Describe(null);
+
+        /// <summary>
+        /// The same summary with the total in the project's units.
+        ///
+        /// The sum itself always runs in base SI. Converting once, at the end, is what stops a
+        /// hundred thousand additions each carrying a conversion's rounding — and it is why the
+        /// stored total and the one on screen can differ in unit without ever differing in value.
+        /// </summary>
+        /// <param name="units">The formatter, or null for base SI.</param>
+        public string Describe(Measure? units)
         {
             var s = Count.ToString("N0", CultureInfo.InvariantCulture) + " elements in "
                   + Groups.Count.ToString(CultureInfo.InvariantCulture)
                   + (Groups.Count == 1 ? " group" : " groups");
 
             var total = Total;
-            if (total != null) s += " · " + total.Value;
+            if (total != null) s += " · " + total.Value.Show(units);
 
             if (Unreadable > 0)
                 s += " · " + Unreadable.ToString("N0", CultureInfo.InvariantCulture)

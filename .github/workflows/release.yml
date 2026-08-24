@@ -161,7 +161,26 @@ jobs:
           native search sets, BCF 2.1 and 3.0, reports, and a node canvas over the same services the
           buttons drive.
 
-          Everything works on a raw model with nothing configured. Clash tools need Navisworks
+          ## Model compare
+
+          Navisworks exposes no comparison through its API at all, so this is built from scratch:
+          what changed between two revisions, painted onto the model in colour, walked as
+          viewpoints, stamped into the properties so the host's own search finds it, raised on the
+          board, and written out as a report.
+
+          It says how it knows. Which model was held to be which and on what evidence, which rung
+          each element match rested on, and a plain list of what a given baseline cannot answer.
+          Where two models fit a pairing equally well it pairs neither and asks, because guessing
+          reports a whole discipline as rebuilt.
+
+          A removed element is shown by opening the revision it is still in - the baseline records
+          which file each model was loaded from - and put back afterwards. What cannot be recovered
+          is a model issued by overwriting one file in place, and it says so by name.
+
+          ## Everything else
+
+          Everything works on a raw model with nothing configured; for compare that means one button
+          takes the first baseline and there is nothing else to set up. Clash tools need Navisworks
           Manage; the rest runs on Simulate too.
 
           ## Install

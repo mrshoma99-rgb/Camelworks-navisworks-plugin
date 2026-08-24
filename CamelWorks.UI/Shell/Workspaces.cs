@@ -59,7 +59,7 @@ namespace CamelWorks.UI.Shell
     }
 
     /// <summary>
-    /// The navigation model: two panes, six switcher entries, sixteen tabs.
+    /// The navigation model: two panes, seven switcher entries, nineteen tabs.
     ///
     /// Held as data rather than as markup because three separate things have to agree on it — the
     /// ribbon's routing targets, the shell's switcher, and the command catalogue behind Find a
@@ -88,8 +88,9 @@ namespace CamelWorks.UI.Shell
                     + "model with nothing configured."),
                 new WorkspaceTab("Setup", "Setup",
                     "What CamelWorks already derived, with an override on each line. Skippable."),
-                new WorkspaceTab("Models", "Models",
-                    "The federation: what is loaded, from where, and when it was last refreshed."),
+                new WorkspaceTab("Profile", "Profile",
+                    "Responsible parties, priorities and code tables. Created lazily; nothing blocks "
+                    + "on it."),
                 new WorkspaceTab("Export", "Export IFC",
                     "The IFC exporter, full pane.")),
 
@@ -106,6 +107,17 @@ namespace CamelWorks.UI.Shell
                     "PDF, XLSX or HTML from a built-in template. Nothing to configure first."),
                 new WorkspaceTab("BCF", "BCF",
                     "Export and import, BCF 2.1 and 3.0, with a conflict preview on the way in.")),
+
+            new Workspace("Compare", "Compare", MainPane, hasTabStrip: true,
+                new WorkspaceTab("Run", "Run",
+                    "Pick a baseline and see what changed. With no baseline yet, one button makes "
+                    + "one — that is the whole of the setup."),
+                new WorkspaceTab("Changes", "Changes",
+                    "The change list, filterable, with what each element was and is. Paint it onto "
+                    + "the model, stamp it into the properties, or send it out as a report."),
+                new WorkspaceTab("Baselines", "Baselines",
+                    "What has been recorded, when, and how much of it. Kept beside the document so "
+                    + "a job handed over arrives with its history.")),
 
             new Workspace("Data", "Data", MainPane, hasTabStrip: true,
                 new WorkspaceTab("Data", "Data",

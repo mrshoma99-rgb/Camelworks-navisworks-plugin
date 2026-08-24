@@ -37,7 +37,7 @@ namespace CamelWorks.UI.Views
 
                     case "Project/Health": return ProjectViews.Health();
                     case "Project/Setup": return ProjectViews.Setup();
-                    case "Project/Models": return ProjectViews.Models();
+                    case "Project/Profile": return ProjectViews.Profile();
                     case "Project/Export": return ProjectViews.ExportIfc();
 
                     case "Coordinate/Triage": return CoordinateViews.Triage();
@@ -45,6 +45,10 @@ namespace CamelWorks.UI.Views
                     case "Coordinate/Rules": return CoordinateViews.Rules();
                     case "Coordinate/Report": return CoordinateViews.Report();
                     case "Coordinate/BCF": return CoordinateViews.Bcf();
+
+                    case "Compare/Run": return CompareViews.Run();
+                    case "Compare/Changes": return CompareViews.Changes();
+                    case "Compare/Baselines": return CompareViews.Baselines();
 
                     case "Data/Data": return DataViews.Manager();
                     case "Data/Zones": return DataViews.Zones();

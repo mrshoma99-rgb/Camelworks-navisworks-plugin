@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -144,6 +145,36 @@ namespace CamelWorks.UI.Views
     {
         /// <summary>The gap used between stacked things, everywhere.</summary>
         public const double Gap = 8;
+
+        /// <summary>
+        /// Which CamelWorks this is, read from the assembly rather than kept as a constant.
+        ///
+        /// A constant is a second place for the version to live and therefore a place for it to be
+        /// wrong, and the one thing a report cover and a support bundle must not be wrong about is
+        /// which build produced them.
+        /// </summary>
+        public static string Release { get; } = ReadRelease();
+
+        private static string ReadRelease()
+        {
+            try
+            {
+                var assembly = typeof(Ui).Assembly;
+
+                var info = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                                   ?.InformationalVersion;
+
+                if (!string.IsNullOrWhiteSpace(info)) return info!;
+
+                return assembly.GetName().Version?.ToString() ?? "unknown";
+            }
+            catch (Exception)
+            {
+                // A build with no version attributes at all is a development build, and saying so
+                // is better than a report cover that claims a version nobody can look up.
+                return "unknown";
+            }
+        }
 
         // -----------------------------------------------------------------------------------
         // Type
@@ -475,6 +506,32 @@ namespace CamelWorks.UI.Views
         /// <summary>The item behind the selected row, or null.</summary>
         /// <param name="table">The table.</param>
         public static object? Picked(this ListView table) => (table.SelectedItem as TableRow)?.Source;
+
+        /// <summary>
+        /// Let more than one row be picked at once.
+        ///
+        /// Extended rather than Multiple: click, shift-click and control-click are what every list
+        /// on the machine already does, and a list where a plain click adds to the selection
+        /// instead of replacing it surprises people into selecting things they did not mean to.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        public static ListView Multi(this ListView table)
+        {
+            table.SelectionMode = SelectionMode.Extended;
+            return table;
+        }
+
+        /// <summary>The items behind every selected row, in the order the table holds them.</summary>
+        /// <param name="table">The table.</param>
+        public static IReadOnlyList<object> PickedMany(this ListView table)
+        {
+            var picked = new List<object>();
+
+            foreach (var selected in table.SelectedItems)
+                if (selected is TableRow row && row.Source != null) picked.Add(row.Source);
+
+            return picked;
+        }
 
         // -----------------------------------------------------------------------------------
         // Running work

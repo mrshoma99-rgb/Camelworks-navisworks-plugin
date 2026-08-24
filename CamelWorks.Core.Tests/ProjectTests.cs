@@ -54,6 +54,13 @@ namespace CamelWorks.Core.Tests
             public string DisplayName { get; }
             public string SourcePath { get; }
             public string Scope => ElementKey.ScopeOf(SourcePath);
+            public string? LoadedPath => SourcePath;
+
+            public DateTimeOffset? SourceModifiedUtc => null;
+            public long? SourceBytes => null;
+            public string? ModelUnits => null;
+            public bool HasTransform => false;
+            public IReadOnlyList<double>? Placement => null;
         }
 
         [Fact]
@@ -66,6 +73,7 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Untitled project", profile.ProjectName);
             Assert.Equal(0.010, profile.ClashTolerance);
             Assert.Equal(5.0, profile.ClashProximity);
+            Assert.Equal(1.0, profile.DuplicateBand);
             Assert.Empty(profile.Parties);
             Assert.Contains(profile.Settings, s => s.Key == ProfileKeys.LevelSource);
         }

@@ -9,6 +9,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -35,6 +36,50 @@ namespace CamelWorks.UI.Views
         /// <summary>What the last board was of, for a report's cover.</summary>
         internal static string? LastBoardLabel { get; private set; }
 
+        /// <summary>How many of a group's results are listed when it is opened.</summary>
+        private const int DetailCap = 300;
+
+        /// <summary>How many elements a raised issue records.</summary>
+        private const int IssueElementCap = 200;
+
+        /// <summary>
+        /// The results the last run found back again, by identity.
+        ///
+        /// A regression is not a status. Carry-over sets a returning result to Active, since it has
+        /// a history and New would be a lie, and records it in the delta instead — so the only way
+        /// to know a result came back is to hold the delta's list. The board's items and the
+        /// delta's are the same objects, which is what makes identity the right test.
+        /// </summary>
+        internal static HashSet<ClashItem> Regressed()
+        {
+            var regressed = new HashSet<ClashItem>();
+            var delta = LastDelta;
+
+            if (delta != null) foreach (var item in delta.Regressed) regressed.Add(item);
+
+            return regressed;
+        }
+
+        /// <summary>
+        /// Whether a group holds anything the last run had not already seen.
+        ///
+        /// Shared by Triage and the report on purpose. Two screens with their own idea of what
+        /// "changed" means is how somebody filters a board to eleven groups, reports the same
+        /// filter, and gets nine.
+        /// </summary>
+        /// <param name="group">The group.</param>
+        /// <param name="regressed">What came back, from <see cref="Regressed"/>.</param>
+        internal static bool Changed(ClashGroup group, ICollection<ClashItem> regressed) =>
+            group.Items.Any(i => i.Status == FindingStatus.New || regressed.Contains(i));
+
+        /// <summary>
+        /// What changed between the last board and the one before it.
+        ///
+        /// Held beside the board rather than recomputed, because carry-over runs against the
+        /// snapshot the run then overwrites — ask again afterwards and every answer is "unchanged".
+        /// </summary>
+        internal static ClashDelta? LastDelta { get; private set; }
+
         // ===================================================================================
         // Building the board
         // ===================================================================================
@@ -49,11 +94,7 @@ namespace CamelWorks.UI.Views
         /// </summary>
         internal static ClashPipelineResult? Build(Session session, Job job, ICollection<string> notes)
         {
-            if (!session.Clash.IsAvailable)
-            {
-                notes.Add(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.");
-                return null;
-            }
+            if (!session.Clash.IsAvailable) return Hydrate(session, job, notes);
 
             var scale = session.MetresPerUnit;
             var items = new List<ClashItem>();
@@ -93,31 +134,151 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
+            // Cross-test duplicates go first, before anything counts or carries over. Two tests
+            // that both report one pipe through one wall are one problem; leaving both on the board
+            // means the same conflict is assigned twice, reported twice, and closed once.
+            job.Say("Collapsing duplicates...");
+
+            var collapse = DuplicateCollapse.Across(items, session.Profile.DuplicateBand);
+            var survivors = collapse.Kept;
+
             job.Say("Carrying over the last run...");
 
             var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
             var snapshot = Snapshot(session);
-            var delta = ClashCarryOver.Apply(items, snapshot);
+            var delta = ClashCarryOver.Apply(survivors, snapshot);
 
             job.Say("Applying rules...");
 
             var options = rules.ToOptions(session.Profile.ClashProximity);
+            options.CollapsedDuplicates = collapse.Count;
 
             // Read from the file rather than from the snapshot. A hand assignment is a decision
             // about a group, not about a run — reading it off the previous run would mean losing
             // every assignment the first time somebody opens the board on a machine that has not
             // run it before.
             options.Decisions = Decisions(session);
+            options.PinnedGroups = Pinned(session);
 
-            var board = ClashPipeline.Run(items, options);
+            // After carry-over, never before. A raised issue is not something the clash engine
+            // reported, so comparing it against the previous run would find it missing from the
+            // engine's results and call it resolved every single week.
+            var everything = new List<ClashItem>(survivors);
+            var issues = Issues(session);
+            var raised = issues.Open();
+            everything.AddRange(raised);
+
+            var board = ClashPipeline.Run(everything, options);
+
+            Instruct(board, issues);
+
+            if (raised.Count > 0)
+                notes.Add(Ui.Count(raised.Count, "issue") + " raised by hand "
+                          + (raised.Count == 1 ? "is" : "are") + " on this board alongside the engine's "
+                          + "results. They group, assign, report and export like anything else; the "
+                          + "test column says where they came from.");
 
             notes.Add(delta.ToString());
+
+            if (collapse.Count > 0)
+                notes.Add(Ui.Count(collapse.Count, "result")
+                          + " were the same conflict found by more than one test, and were folded "
+                          + "into the one the funnel keeps. They are counted, not hidden.");
             if (rules.IsDefault) notes.Add("Nothing is configured, so the built-in rules ran: " + board.Funnel);
 
             LastBoard = board;
             LastBoardLabel = session.Profile.ProjectName;
+            LastDelta = delta;
 
             Save(session, board);
+            return board;
+        }
+
+        /// <summary>
+        /// Rebuild the board from the project file when there is no clash engine to read.
+        ///
+        /// This is the promise that makes CamelWorks worth installing on a Simulate seat, which is
+        /// most of the seats on most jobs. Simulate has no Clash Detective, so tests cannot be read
+        /// and cannot be run — but triaging a board, assigning it, reporting on it and issuing BCF
+        /// are not clash detection, and the project file already carries enough to reconstruct what
+        /// a Manage seat last ran.
+        ///
+        /// The result is labelled as a record rather than a reading, every time, because the one
+        /// way this feature could do harm is by looking like a live board. It is not saved back
+        /// either: writing a lower-fidelity copy over the record it came from would lose the
+        /// coordinates the next Manage run needs to carry status across.
+        /// </summary>
+        private static ClashPipelineResult? Hydrate(Session session, Job job, ICollection<string> notes)
+        {
+            job.Say("Reading the last recorded run...");
+
+            var snapshot = Snapshot(session);
+            var hydrated = ClashHydration.From(snapshot, session.MetresPerUnit);
+
+            if (hydrated.IsEmpty)
+            {
+                notes.Add(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.");
+                notes.Add("There is no recorded run in this project either, so there is nothing to open. "
+                          + "A board comes from a Navisworks Manage seat running the tests once; after "
+                          + "that this seat can triage, assign, report and issue it.");
+                return null;
+            }
+
+            var scale = session.MetresPerUnit;
+            var levels = Levels(session, job, scale);
+
+            job.Say("Describing " + Ui.Count(hydrated.Items.Count, "result") + "...");
+
+            var read = 0;
+
+            foreach (var item in hydrated.Items)
+            {
+                if (read++ % 500 == 0 && !job.Step(read, "results described")) return null;
+
+                // Everything except the coordinates is re-derived from the elements themselves,
+                // which Simulate reads perfectly well. Only the clash engine is missing.
+                item.ModelA = ModelOf(session, item.Key.A);
+                item.ModelB = ModelOf(session, item.Key.B);
+                item.DisciplineA = session.Profile.DisciplineOf(item.Key.A.ModelScope);
+                item.DisciplineB = session.Profile.DisciplineOf(item.Key.B.ModelScope);
+                item.CategoryA = CategoryOf(session, item.Key.A);
+                item.CategoryB = CategoryOf(session, item.Key.B);
+                item.Level = levels.LevelAt(item.Z);
+            }
+
+            job.Say("Applying rules...");
+
+            var rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
+            var options = rules.ToOptions(session.Profile.ClashProximity);
+            options.Decisions = Decisions(session);
+            options.PinnedGroups = Pinned(session);
+
+            var raised = Issues(session);
+
+            var everything = new List<ClashItem>(hydrated.Items);
+            everything.AddRange(raised.Open());
+
+            var board = ClashPipeline.Run(everything, options);
+
+            Instruct(board, raised);
+
+            notes.Add(hydrated.Explain());
+            notes.Add("This board was rebuilt from what the project file recorded, because this "
+                      + "Navisworks edition has no clash engine. Everything on it can be triaged, "
+                      + "assigned, reported and issued as BCF. Two things it cannot do: run a test, "
+                      + "and notice a conflict that has appeared since the run it came from.");
+
+            if (hydrated.Unusable > 0)
+                notes.Add(Ui.Count(hydrated.Unusable, "record")
+                          + " in the project file could not be read back and are missing from this board.");
+
+            LastBoard = board;
+            LastBoardLabel = hydrated.Label ?? session.Profile.ProjectName;
+
+            // No delta and no save. There was no run to compare against, and writing this board
+            // back over the record it came from would replace real clash points with cell centres.
+            LastDelta = null;
+
             return board;
         }
 
@@ -168,7 +329,144 @@ namespace CamelWorks.UI.Views
             return new ClashSnapshot(records, Decisions(session));
         }
 
-        /// <summary>The assignments made by hand, which outrank the rules and survive a re-run.</summary>
+        /// <summary>
+        /// The board as it stood before the last run, for the per-party comparison.
+        ///
+        /// Only the two figures the ledger needs — the party counts and when they were taken. The
+        /// records themselves are already read by <see cref="Snapshot"/> for carry-over, and
+        /// reading them twice to count them a second way would be work for nothing.
+        /// </summary>
+        private static ClashSnapshot? Previous(Session session)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var parties = section["previousParties"];
+
+            if (parties.Kind != JsonKind.Object || parties.Keys.Count == 0) return null;
+
+            var open = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var party in parties.Keys) open[party] = (int)parties[party].AsLong();
+
+            var taken = section["previousTaken"];
+
+            return new ClashSnapshot(Array.Empty<ClashRecord>(), null, null, open,
+                taken.Kind == JsonKind.Number
+                    ? DateTimeOffset.FromUnixTimeSeconds(taken.AsLong())
+                    : (DateTimeOffset?)null);
+        }
+
+        /// <summary>
+        /// The groups people made by hand, which the rules must never re-derive.
+        ///
+        /// Read from the project file rather than from the last snapshot, for the same reason
+        /// assignments are: a pin is a decision about the work, not about a run, and reading it off
+        /// the previous run would mean losing every one the first time somebody opens the board on
+        /// a machine that has not run it before.
+        /// </summary>
+        private static IReadOnlyDictionary<string, IReadOnlyList<string>> Pinned(Session session)
+        {
+            var pinned = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            var saved = session.Store.Section(ProjectStore.ClashSection)["pinned"];
+
+            foreach (var name in saved.Keys)
+            {
+                var keys = saved[name].Items
+                    .Select(k => k.AsString())
+                    .Where(k => !string.IsNullOrEmpty(k))
+                    .Select(k => k!)
+                    .ToList();
+
+                if (keys.Count > 0) pinned[name] = keys;
+            }
+
+            return pinned;
+        }
+
+        /// <summary>Put results into a hand-made group, and write it down.</summary>
+        private static void Pin(Session session, string name, IEnumerable<ClashItem> items)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var saved = section["pinned"];
+
+            if (saved.Kind != JsonKind.Object)
+            {
+                saved = JsonValue.Object();
+                section.Set("pinned", saved);
+            }
+
+            var keys = new List<string>();
+            var moving = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var item in items)
+            {
+                keys.Add(item.Key.ToString());
+                moving.Add(item.Key.ToString());
+            }
+
+            // A result belongs to exactly one hand-made group. Leaving it in its old one as well
+            // would make which group it lands in depend on dictionary order, which is the kind of
+            // thing that looks like the board losing track of a decision.
+            foreach (var existing in saved.Keys.ToList())
+            {
+                if (string.Equals(existing, name, StringComparison.Ordinal)) continue;
+
+                var left = saved[existing].Items
+                    .Select(k => k.AsString())
+                    .Where(k => !string.IsNullOrEmpty(k) && !moving.Contains(k!))
+                    .Select(k => k!)
+                    .ToList();
+
+                if (left.Count == 0) saved.Remove(existing);
+                else saved.Set(existing, JsonValue.Array(left.Select(JsonValue.String)));
+            }
+
+            if (saved[name].Kind == JsonKind.Array)
+                foreach (var already in saved[name].Items)
+                {
+                    var text = already.AsString();
+                    if (text != null && !moving.Contains(text)) keys.Add(text);
+                }
+
+            saved.Set(name, JsonValue.Array(keys.Select(JsonValue.String)));
+        }
+
+        /// <summary>Stop treating a group as hand-made, so the rules decide it again.</summary>
+        private static void Unpin(Session session, string name)
+        {
+            var saved = session.Store.Section(ProjectStore.ClashSection)["pinned"];
+            if (saved.Kind == JsonKind.Object) saved.Remove(name);
+        }
+
+        /// <summary>
+        /// Carry an issue's own instruction onto the group it became.
+        ///
+        /// The decisions map still wins where it has one, so instructing the group afterwards is
+        /// not undone by the issue's record the next time the board loads.
+        /// </summary>
+        /// <param name="board">The board that has just been built.</param>
+        /// <param name="issues">Every issue raised on this project.</param>
+        private static void Instruct(ClashPipelineResult board, ManualIssueList issues)
+        {
+            foreach (var issue in issues.Issues)
+            {
+                if (!issue.Instruction.IsStated) continue;
+
+                var group = board.Groups.FirstOrDefault(g =>
+                    string.Equals(g.Name, issue.Title, StringComparison.Ordinal));
+
+                if (group != null && !group.Instruction.IsStated) group.Instruct(issue.Instruction);
+            }
+        }
+
+        /// <summary>Every issue somebody raised on this project, from the project file.</summary>
+        internal static ManualIssueList Issues(Session session) =>
+            ManualIssueList.FromJson(session.Store.Section(ProjectStore.ClashSection)["issues"]);
+
+        /// <summary>Write the issue list back.</summary>
+        private static void SaveIssues(Session session, ManualIssueList issues) =>
+            session.Store.Section(ProjectStore.ClashSection).Set("issues", issues.ToJson());
+
+        /// <summary>The decisions made by hand, which outrank the rules and survive a re-run.</summary>
         private static IReadOnlyDictionary<string, GroupDecision> Decisions(Session session)
         {
             var decisions = new Dictionary<string, GroupDecision>(StringComparer.Ordinal);
@@ -176,16 +474,95 @@ namespace CamelWorks.UI.Views
 
             foreach (var name in saved.Keys)
                 decisions[name] = new GroupDecision(saved[name]["party"].AsString(),
-                                                   saved[name]["priority"].AsString());
+                                                   saved[name]["priority"].AsString(),
+                                                   Resolution.FromJson(saved[name]["instruction"]));
 
             return decisions;
         }
 
-        private static void Save(Session session, ClashPipelineResult board)
+        /// <summary>
+        /// Write one decision about a group into the project file, merging with what is there.
+        ///
+        /// Merging, not replacing: assigning a group and instructing it are two separate actions on
+        /// two separate days, and a writer that replaced the record would silently drop whichever
+        /// one was done first.
+        /// </summary>
+        /// <param name="session">The session.</param>
+        /// <param name="group">The group's name, which is its identity across runs.</param>
+        /// <param name="party">The responsible party, or null to leave it alone.</param>
+        /// <param name="priority">The priority, or null to leave it alone.</param>
+        /// <param name="instruction">What to do about it, or null to leave it alone.</param>
+        private static void Remember(Session session, string group, string? party = null,
+                                     string? priority = null, Resolution? instruction = null)
         {
-            var snapshot = ClashSnapshot.Of(board);
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var decisions = section["decisions"];
 
-            var array = JsonValue.Array(snapshot.Records.Select(r =>
+            if (decisions.Kind != JsonKind.Object)
+            {
+                decisions = JsonValue.Object();
+                section.Set("decisions", decisions);
+            }
+
+            var decision = decisions[group];
+
+            if (decision.Kind != JsonKind.Object)
+            {
+                decision = JsonValue.Object();
+                decisions.Set(group, decision);
+            }
+
+            if (party != null) decision.Set("party", JsonValue.String(party));
+            if (priority != null) decision.Set("priority", JsonValue.String(priority));
+
+            if (instruction == null) return;
+
+            if (instruction.IsStated) decision.Set("instruction", instruction.ToJson());
+            else decision.Remove("instruction");
+        }
+
+        /// <summary>
+        /// Write the board down, keeping the version it replaces.
+        ///
+        /// One step of history, not a stack. Every board edit is small and immediately visible, so
+        /// the mistake people actually make is the last one — and a product that offered ten steps
+        /// of undo over a file two people share would be promising something it cannot honour the
+        /// moment the other person saves.
+        /// </summary>
+        /// <param name="session">The session.</param>
+        /// <param name="board">The board to record.</param>
+        /// <param name="summary">What to write in the activity log.</param>
+        private static void Save(Session session, ClashPipelineResult board, string? summary = null)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var previous = section["snapshot"];
+
+            if (previous.Kind == JsonKind.Array)
+            {
+                section.Set("previous", previous);
+                Shift(section, "parties", "previousParties");
+                Shift(section, "taken", "previousTaken");
+            }
+
+            var taken = DateTimeOffset.UtcNow;
+            var snapshot = ClashSnapshot.Of(board, takenUtc: taken);
+
+            // Per-party open counts ride with the snapshot rather than being re-derived from it: a
+            // record carries its group, not its party, and answering "what did Mechanical have open
+            // last week" through this week's assignment rules would restate history every time
+            // somebody re-assigned a group.
+            var parties = JsonValue.Object();
+            foreach (var entry in snapshot.OpenByParty) parties.Set(entry.Key, JsonValue.Number(entry.Value));
+
+            section.Set("parties", parties);
+            section.Set("taken", JsonValue.Number(taken.ToUnixTimeSeconds()));
+
+            // Raised issues are kept in their own list and left out of the snapshot. The snapshot
+            // is what the next run's carry-over compares the ENGINE's results against, and a record
+            // the engine can never produce would read as resolved on every single run.
+            var array = JsonValue.Array(snapshot.Records
+                .Where(r => !string.Equals(r.TestName, ManualIssue.RaisedByHand, StringComparison.Ordinal))
+                .Select(r =>
             {
                 var json = JsonValue.Object()
                     .Set("key", JsonValue.String(r.Key.ToString()))
@@ -197,8 +574,57 @@ namespace CamelWorks.UI.Views
                 return json;
             }));
 
-            session.Store.Section(ProjectStore.ClashSection).Set("snapshot", array);
-            session.Record(ActivityKind.Regroup, "ran the rules: " + board.Funnel);
+            section.Set("snapshot", array);
+            session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
+        }
+
+        /// <summary>True when there is a version of the board to go back to.</summary>
+        private static bool CanRewind(Session session) =>
+            session.Store.Section(ProjectStore.ClashSection)["previous"].Kind == JsonKind.Array;
+
+        /// <summary>
+        /// Put back the board as it was before the last edit.
+        ///
+        /// Swaps rather than pops, so pressing Undo twice puts you back where you started. That is
+        /// what a single-step undo has to do — one that only went one way would leave somebody who
+        /// undid the wrong thing with no way forward.
+        /// </summary>
+        private static bool Rewind(Session session)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var previous = section["previous"];
+
+            if (previous.Kind != JsonKind.Array) return false;
+
+            var current = section["snapshot"];
+
+            section.Set("snapshot", previous);
+            if (current.Kind == JsonKind.Array) section.Set("previous", current);
+            else section.Remove("previous");
+
+            Swap(section, "parties", "previousParties");
+            Swap(section, "taken", "previousTaken");
+
+            return session.Store.Save();
+        }
+
+        /// <summary>Move one key's value to another, clearing the source.</summary>
+        private static void Shift(JsonValue section, string from, string to)
+        {
+            var value = section[from];
+
+            if (value.Kind == JsonKind.Null) section.Remove(to);
+            else section.Set(to, value);
+        }
+
+        /// <summary>Exchange two keys, so an undo of an undo lands back where it started.</summary>
+        private static void Swap(JsonValue section, string a, string b)
+        {
+            var first = section[a];
+            var second = section[b];
+
+            if (second.Kind == JsonKind.Null) section.Remove(a); else section.Set(a, second);
+            if (first.Kind == JsonKind.Null) section.Remove(b); else section.Set(b, first);
         }
 
         // ===================================================================================
@@ -206,70 +632,281 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>The board.</summary>
-        public static UIElement Triage()
+        public static UIElement Triage() => new TriageScreen().Build();
+
+        /// <summary>
+        /// The board, held as an object because it filters without reloading.
+        ///
+        /// Reading the clash engine and running the rules over a federation is the expensive part,
+        /// and a board that had to redo it to answer "just show me the unassigned ones" would make
+        /// the filter something you use once and then stop using.
+        /// </summary>
+        private sealed class TriageScreen
         {
-            var results = Ui.Stack();
-            var detail = Ui.Stack();
+            /// <summary>Everything.</summary>
+            private const string All = "Everything";
 
-            var run = Ui.Runner("Load the board", results, job =>
+            /// <summary>Only groups nobody owns.</summary>
+            private const string Unassigned = "Unassigned";
+
+            /// <summary>Only groups the last run had not seen, or that came back.</summary>
+            private const string Changed = "New or back again";
+
+            /// <summary>Only groups assigned to whoever is sitting here.</summary>
+            private const string Mine = "Mine";
+
+            private readonly StackPanel _summary = Ui.Stack();
+            private readonly StackPanel _rows = Ui.Stack();
+            private readonly StackPanel _detail = Ui.Stack();
+            private readonly TextBox _search;
+            private readonly ComboBox _preset;
+
+            /// <summary>
+            /// The results this run found back again, by reference.
+            ///
+            /// A regression is not a status. Carry-over sets a returning result to Active — it has
+            /// a history, so New would be a lie — and records it in the delta instead, which means
+            /// the only way to know a row came back is to hold the delta's list. The board's items
+            /// and the delta's are the same objects, so identity is the right test.
+            /// </summary>
+            private HashSet<ClashItem> _regressed = new HashSet<ClashItem>();
+
+            private ClashPipelineResult? _board;
+            private ClashDelta? _delta;
+            private Session? _session;
+
+            internal TriageScreen()
             {
-                var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+                _search = Ui.Text(string.Empty, _ => Redraw(), 220);
+                _preset = Ui.Choice(new[] { All, Unassigned, Changed, Mine }, All, _ => Redraw(), 170);
+            }
 
-                var notes = new List<string>();
-                var board = Build(session, job, notes);
-
-                foreach (var note in notes) results.Children.Add(Ui.Note(note));
-
-                if (board == null) return;
-
-                results.Children.Add(Ui.Across(
-                    Ui.Figure(board.Funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                    Ui.Figure(board.Funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "groups"),
-                    Ui.Figure(board.Funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
-                        board.Funnel.Unassigned > 0 ? Tone.Warn : Tone.Good),
-                    Ui.Figure(board.Funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed")));
-
-                results.Children.Add(Ui.Line(board.Funnel.ToString(), 0.8));
-
-                if (board.Funnel.RulesApplied.Count > 0)
-                    results.Children.Add(Ui.Line("Rules: " + string.Join(", ", board.Funnel.RulesApplied), 0.6));
-
-                if (board.Groups.Count == 0)
+            internal UIElement Build()
+            {
+                var run = Ui.Runner("Load the board", _summary, job =>
                 {
-                    results.Children.Add(Ui.Empty("Nothing on the board.",
+                    _session = Host.Current;
+                    _rows.Children.Clear();
+                    _detail.Children.Clear();
+
+                    if (_session == null) { _summary.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                    var notes = new List<string>();
+                    _board = CoordinateViews.Build(_session, job, notes);
+                    _delta = LastDelta;
+
+                    _regressed = Regressed();
+
+                    foreach (var note in notes) _summary.Children.Add(Ui.Note(note));
+
+                    if (_board == null) return;
+
+                    Summarise();
+                    Redraw();
+                });
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Triage"),
+                    Ui.Sub("The engine's results, grouped into work. The funnel says how a count of several "
+                           + "thousand became this one — every row removed is accounted for rather than "
+                           + "quietly dropped."),
+                    run,
+                    _summary,
+                    Ui.Across(Ui.Field("Show", _preset), Ui.Field("Find", _search)),
+                    _rows,
+                    _detail,
+                    new RaiseScreen().Build(),
+                    FreezeCard(),
+                    HeadroomCard()));
+            }
+
+            /// <summary>
+            /// The funnel, and what changed since the last run.
+            ///
+            /// The delta goes above the board rather than in a column, because it is the first
+            /// question of the week and the last one anybody wants to derive by scrolling: what is
+            /// new, and what did we already fix and has come back.
+            /// </summary>
+            private void Summarise()
+            {
+                var board = _board!;
+                var funnel = board.Funnel;
+
+                _summary.Children.Add(Ui.Across(
+                    Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
+                    Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "groups"),
+                    Ui.Figure(funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
+                        funnel.Unassigned > 0 ? Tone.Warn : Tone.Good),
+                    Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed")));
+
+                if (_delta != null)
+                {
+                    var regressed = _delta.Regressed.Count;
+
+                    _summary.Children.Add(Ui.Across(
+                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
+                            _delta.New.Count > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture), "still there"),
+                        Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone",
+                            _delta.Resolved.Count > 0 ? Tone.Good : Tone.Plain),
+                        Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
+                            regressed > 0 ? Tone.Bad : Tone.Plain)));
+
+                    if (regressed > 0)
+                        _summary.Children.Add(Ui.Problem(
+                            Ui.Count(regressed, "clash") + " that a previous run recorded as resolved is "
+                            + "back. Something that was fixed has been undone, or a model went backwards — "
+                            + "either way it is the first thing to look at this week."));
+
+                    if (_delta.WeakMatches > 0)
+                        _summary.Children.Add(Ui.Note(
+                            Ui.Count(_delta.WeakMatches, "result")
+                            + " matched the last run only on a weak key, because the elements involved "
+                            + "carry no stable identity. Their history is a best guess."));
+                }
+
+                // Who owes what, above the board. The count of clashes is a fact about the model;
+                // this is a fact about the week, and it is the one the meeting is actually about.
+                var session = Host.Current;
+
+                if (session != null)
+                {
+                    var ledger = PartyLedger.Of(board.Groups, Previous(session), LastBoardLabel,
+                                                DateTimeOffset.UtcNow);
+
+                    if (ledger.Lines.Count > 0)
+                    {
+                        _summary.Children.Add(Ui.Line(ledger.Explain(), 0.85, true));
+
+                        _summary.Children.Add(Ui.Line(string.Join("   ",
+                            ledger.Lines.Take(6).Select(l => l.ToString())), 0.7));
+                    }
+                }
+
+                _summary.Children.Add(Ui.Line(funnel.ToString(), 0.8));
+
+                if (funnel.RulesApplied.Count > 0)
+                    _summary.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.6));
+            }
+
+            /// <summary>Which groups the preset and the search box leave.</summary>
+            private IReadOnlyList<ClashGroup> Filtered()
+            {
+                if (_board == null) return Array.Empty<ClashGroup>();
+
+                var preset = _preset.SelectedItem as string ?? All;
+                var query = _search.Text.Trim();
+                var me = _session?.Profile.Author;
+
+                return _board.Groups.Where(group =>
+                    Passes(group, preset, me) && Matches(group, query)).ToList();
+            }
+
+            private bool Passes(ClashGroup group, string preset, string? me) => preset switch
+            {
+                Unassigned => group.AssignedTo == null,
+                Changed => CoordinateViews.Changed(group, _regressed),
+                Mine => me != null && string.Equals(group.AssignedTo, me, StringComparison.OrdinalIgnoreCase),
+                _ => true,
+            };
+
+            /// <summary>
+            /// Free text against everything on the row and everything in it.
+            ///
+            /// Searching the items as well as the group is the point: "level 3" and "AHU-02" are
+            /// how people describe where a problem is, and neither is necessarily in the group's
+            /// name.
+            /// </summary>
+            private static bool Matches(ClashGroup group, string query)
+            {
+                if (query.Length == 0) return true;
+
+                if (Has(group.Name, query) || Has(group.AssignedTo, query) || Has(group.Priority, query))
+                    return true;
+
+                foreach (var item in group.Items)
+                    if (Has(item.TestName, query) || Has(item.Level, query) || Has(item.ModelPair, query)
+                        || Has(item.CategoryA, query) || Has(item.CategoryB, query)
+                        || Has(item.Grid, query) || Has(item.Zone, query))
+                        return true;
+
+                return false;
+            }
+
+            private static bool Has(string? text, string query) =>
+                text != null && text.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            private void Redraw()
+            {
+                _rows.Children.Clear();
+
+                if (_board == null) return;
+
+                if (_board.Groups.Count == 0)
+                {
+                    _rows.Children.Add(Ui.Empty("Nothing on the board.",
                         "Every result was suppressed by a rule. The funnel above says by which."));
                     return;
                 }
 
-                var rows = board.Groups.Select(g => new TableRow(g,
+                var groups = Filtered();
+
+                if (groups.Count == 0)
+                {
+                    _rows.Children.Add(Ui.Empty("Nothing matches.",
+                        "The board has " + Ui.Count(_board.Groups.Count, "group")
+                        + "; none of them match this filter."));
+                    return;
+                }
+
+                if (groups.Count < _board.Groups.Count)
+                    _rows.Children.Add(Ui.Line("Showing " + groups.Count + " of "
+                                               + _board.Groups.Count + " groups.", 0.6));
+
+                var rows = groups.Select(g => new TableRow(g,
                     g.Name,
                     g.Items.Count.ToString("N0", CultureInfo.InvariantCulture),
+                    Change(g),
                     g.AssignedTo ?? "-",
                     g.Priority ?? string.Empty,
                     g.IsPinned ? "pinned" : string.Empty)
                 {
-                    Tone = g.AssignedTo == null ? Tone.Warn : Tone.Plain,
+                    Tone = ToneOf(g),
                 }).ToList();
 
-                results.Children.Add(Ui.Table(rows,
-                    ("Group", 220), ("Clashes", 80), ("Assigned to", 120), ("Priority", 90), ("", 0))
+                _rows.Children.Add(Ui.Table(rows,
+                    ("Group", 210), ("Clashes", 70), ("Since last run", 120),
+                    ("Assigned to", 110), ("Priority", 80), ("", 0))
                     .OnPick(item =>
                     {
-                        detail.Children.Clear();
-                        if (item is ClashGroup group) detail.Children.Add(Detail(session, group));
+                        _detail.Children.Clear();
+                        if (item is ClashGroup group && _session != null)
+                            _detail.Children.Add(Detail(_session, group));
                     }));
-            });
+            }
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Triage"),
-                Ui.Sub("The engine's results, grouped into work. The funnel says how a count of several "
-                       + "thousand became this one — every row removed is accounted for rather than "
-                       + "quietly dropped."),
-                run,
-                results,
-                detail,
-                HeadroomCard()));
+            /// <summary>What happened to a group since the last run, on one line.</summary>
+            private string Change(ClashGroup group)
+            {
+                if (_delta == null) return string.Empty;
+
+                var fresh = group.Items.Count(i => i.Status == FindingStatus.New);
+                var back = group.Items.Count(i => _regressed.Contains(i));
+
+                if (back > 0 && fresh > 0) return back + " back, " + fresh + " new";
+                if (back > 0) return back + " back";
+                if (fresh == group.Items.Count) return "all new";
+                if (fresh > 0) return fresh + " new";
+
+                return "unchanged";
+            }
+
+            private Tone ToneOf(ClashGroup group)
+            {
+                if (group.Items.Any(i => _regressed.Contains(i))) return Tone.Bad;
+                if (group.AssignedTo == null) return Tone.Warn;
+                return Tone.Plain;
+            }
         }
 
         // ===================================================================================
@@ -302,10 +939,12 @@ namespace CamelWorks.UI.Views
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                if (!double.TryParse(minimum.Text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                     out var height) || height <= 0)
+                var units = session.Profile.Units;
+
+                if (!units.TryRead(minimum.Text, out var height) || height <= 0)
                 {
-                    results.Children.Add(Ui.Line("Type a height in metres, like 2.100.", 0.8));
+                    results.Children.Add(Ui.Line("Type a clear height, like " + units.Length(2.1)
+                        + ". A bare number is read in " + units.LengthUnit + ".", 0.8));
                     return;
                 }
 
@@ -366,23 +1005,21 @@ namespace CamelWorks.UI.Views
                 if (found.Spans.Count == 0)
                 {
                     results.Children.Add(Ui.Empty("Nothing is too low.",
-                        "Every surface has at least " + height.ToString("0.000", CultureInfo.InvariantCulture)
-                        + " m of clear height above it."));
+                        "Every surface has at least " + units.Length(height) + " of clear height above it."));
                     return;
                 }
 
                 var rows = found.Spans.Take(300).Select(span => new TableRow(span,
-                    span.Clear.ToString("0.000", CultureInfo.InvariantCulture),
+                    units.Bare(span.Clear),
                     span.Obstruction.Name,
                     span.Floor.Name,
-                    span.X.ToString("0.0", CultureInfo.InvariantCulture) + ", "
-                        + span.Y.ToString("0.0", CultureInfo.InvariantCulture))
+                    units.Bare(span.X) + ", " + units.Bare(span.Y))
                 {
                     Tone = span.Clear < height * 0.8 ? Tone.Bad : Tone.Warn,
                 }).ToList();
 
                 results.Children.Add(Ui.Table(rows,
-                    ("Clear (m)", 90), ("Under", 190), ("Over", 190), ("At", 0))
+                    ("Clear (" + units.LengthUnit + ")", 90), ("Under", 190), ("Over", 190), ("At", 0))
                     .OnPick(item =>
                     {
                         if (!(item is HeadroomSpan span)) return;
@@ -410,6 +1047,242 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Sign-off and fabrication release, and what has moved since.
+        ///
+        /// Two things a coordination board has to be able to say and cannot: this level was signed
+        /// off on the fourteenth, and these hangers were released to fabrication on the twentieth.
+        /// Both are the same act — somebody put their name to a state of the model — and both are
+        /// worthless unless the tool can afterwards say what has changed since. So it is one
+        /// mechanism, and the Change Notice is the half that earns it.
+        ///
+        /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
+        /// not to enter.
+        /// </summary>
+        private static UIElement FreezeCard()
+        {
+            var results = Ui.Stack();
+
+            var scope = Ui.Text(string.Empty, null, 220);
+            var signatory = Ui.Text(string.Empty, null, 180);
+            var release = Ui.Text(string.Empty, null, 140);
+
+            var freeze = Ui.Runner("Freeze what is on the board", results,
+                job => DoFreeze(results, scope, signatory, release, job));
+
+            var notice = Ui.Runner("Change notice", results, job => DoNotice(results, job));
+
+            var card = Ui.Card("Freeze",
+                "Sign-off and fabrication release are the same record, and both come with a change notice",
+                Ui.Field("What is being frozen", scope),
+                Ui.Field("Signed by", signatory),
+                Ui.Field("Release reference", release),
+                Ui.Across(freeze, notice),
+                Ui.Note("A freeze records where every element on the board is, right now. Nothing "
+                        + "edits it afterwards: the change notice is the difference between that "
+                        + "record and the model as it stands, and it is the thing that stops a "
+                        + "hanger being made to a drawing three weeks old."),
+                results);
+
+            var session = Host.Current;
+
+            if (session != null)
+            {
+                var held = Frozen(session);
+
+                if (held != null)
+                {
+                    results.Children.Add(Ui.Line(held.Describe(), 1, true));
+
+                    if (!held.IsIntact)
+                        results.Children.Add(Ui.Problem(
+                            "That record no longer hashes to its own contents. It has been edited in "
+                            + "the project file, by hand or by a merge, and what it says was agreed "
+                            + "is no longer what it says it was."));
+
+                    results.Children.Add(Ui.Button("Unfreeze", () =>
+                    {
+                        results.Children.Clear();
+
+                        session.Store.Section(ProjectStore.ClashSection).Remove("freeze");
+
+                        results.Children.Add(session.Store.Save()
+                            ? Ui.Line("Unfrozen. Nothing on the board changed - only the record that "
+                                      + "it had been agreed.", 1, true)
+                            : Ui.Problem(session.Store.LastSaveProblem
+                                         ?? "Could not write the project file."));
+
+                        session.Record(ActivityKind.Regroup, "unfroze " + held.Scope);
+                    }));
+                }
+            }
+
+            return card;
+        }
+
+        /// <summary>Record where everything on the board is, right now.</summary>
+        private static void DoFreeze(Panel results, TextBox scope, TextBox signatory, TextBox release,
+                                     Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board first. A freeze is of the board, and "
+                    + "without one there is nothing to agree to."));
+                return;
+            }
+
+            var elements = new List<FrozenElement>();
+            var groups = new List<string>();
+            var missing = 0;
+            var read = 0;
+
+            var metres = session.MetresPerUnit;
+
+            foreach (var group in board.Groups)
+            {
+                groups.Add(group.Name);
+
+                foreach (var item in group.Items)
+                {
+                    foreach (var key in new[] { item.Key.A, item.Key.B })
+                    {
+                        if (!job.Step(read++, "elements read")) return;
+
+                        var element = session.Model.Resolve(key);
+
+                        if (element == null) { missing++; continue; }
+
+                        var b = element.Bounds;
+
+                        elements.Add(new FrozenElement(key, new BoundingBox(
+                            b.MinX * metres, b.MinY * metres, b.MinZ * metres,
+                            b.MaxX * metres, b.MaxY * metres, b.MaxZ * metres)));
+                    }
+                }
+            }
+
+            var record = Freeze.Of(
+                scope.Text.Trim().Length == 0 ? LastBoardLabel : scope.Text,
+                Environment.UserName,
+                DateTimeOffset.UtcNow,
+                groups,
+                elements,
+                signatory.Text,
+                release.Text);
+
+            session.Store.Section(ProjectStore.ClashSection).Set("freeze", record.ToJson());
+
+            results.Children.Add(session.Store.Save()
+                ? Ui.Line(record.Describe(), 1, true)
+                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+            if (missing > 0)
+                results.Children.Add(Ui.Note(Ui.Count(missing, "element")
+                    + " on the board could not be found in the model and are not in the record. "
+                    + "They cannot be reported on later either, which is worth knowing now."));
+
+            session.Record(ActivityKind.Regroup, record.Describe());
+        }
+
+        /// <summary>What has moved since somebody put their name to it.</summary>
+        private static void DoNotice(Panel results, Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var held = Frozen(session);
+
+            if (held == null)
+            {
+                results.Children.Add(Ui.Empty("Nothing is frozen.",
+                    "Freeze the board first. A change notice is the difference between a record "
+                    + "somebody agreed to and the model as it stands."));
+                return;
+            }
+
+            var units = session.Profile.Units;
+            var metres = session.MetresPerUnit;
+
+            var now = new Dictionary<string, BoundingBox>(StringComparer.Ordinal);
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            var read = 0;
+
+            foreach (var frozen in held.Elements)
+            {
+                if (!job.Step(read++, "elements checked")) return;
+
+                var element = session.Model.Resolve(frozen.Key);
+                if (element == null) continue;
+
+                var b = element.Bounds;
+
+                now[frozen.Key.ToString()] = new BoundingBox(
+                    b.MinX * metres, b.MinY * metres, b.MinZ * metres,
+                    b.MaxX * metres, b.MaxY * metres, b.MaxZ * metres);
+
+                names[frozen.Key.ToString()] = element.DisplayName;
+            }
+
+            var notice = held.Since(now);
+
+            results.Children.Add(Ui.Line(notice.Explain(units), 1, true));
+
+            if (notice.IsClear) return;
+
+            var rows = notice.Changes.Take(400).Select(c => new TableRow(c,
+                names.TryGetValue(c.Was.Key.ToString(), out var name) ? name : c.Was.Key.ToString(),
+                c.Describe(units),
+                c.Moved > 0 ? units.Bare(c.Moved) : string.Empty,
+                c.Resized > 0 ? units.Bare(c.Resized) : string.Empty)
+            {
+                Tone = c.IsMissing ? Tone.Bad : Tone.Warn,
+            }).ToList();
+
+            results.Children.Add(Ui.Table(rows,
+                ("Element", 240), ("What changed", 200),
+                ("Moved (" + units.LengthUnit + ")", 110),
+                ("Resized (" + units.LengthUnit + ")", 0))
+                .OnPick(item =>
+                {
+                    if (!(item is FrozenChange change)) return;
+
+                    var keys = new[] { change.Was.Key };
+                    session.Model.Select(keys);
+                    session.View.ZoomTo(keys, 2.0);
+                }));
+
+            session.Record(ActivityKind.Report, "produced a change notice: " + notice.Explain(units));
+        }
+
+        /// <summary>
+        /// The groups still worth looking at, in board order.
+        ///
+        /// Anything with a member that is not approved or resolved. A review that walked the
+        /// closed ones too would spend most of an afternoon on work that is already done.
+        /// </summary>
+        /// <param name="board">The board.</param>
+        internal static IReadOnlyList<ClashGroup> Reviewable(ClashPipelineResult board) =>
+            board.Groups
+                 .Where(g => g.Items.Count == 0 || g.Items.Any(i => FindingStatusLattice.IsOpen(i.Status)))
+                 .ToList();
+
+        /// <summary>Write the board down from outside this class, keeping the version it replaces.</summary>
+        /// <param name="session">The session.</param>
+        /// <param name="board">The board to record.</param>
+        /// <param name="summary">What to write in the activity log.</param>
+        internal static void SaveBoard(Session session, ClashPipelineResult board, string summary) =>
+            Save(session, board, summary);
+
+        /// <summary>The freeze this project holds, or null.</summary>
+        private static Freeze? Frozen(Session session) =>
+            Freeze.FromJson(session.Store.Section(ProjectStore.ClashSection)["freeze"]);
+
+        /// <summary>
         /// Whether an element reads as something people walk on.
         ///
         /// A guess, and a stated one — the alternative is asking the user to build a set before
@@ -428,11 +1301,19 @@ namespace CamelWorks.UI.Views
             return false;
         }
 
+        /// <summary>
+        /// One group, opened: what is in it, and the four things a coordinator does to it.
+        ///
+        /// Assign it, group some of it differently, mark what has been dealt with, and change your
+        /// mind. Until now the board could be read and filtered but not edited, which meant the
+        /// statuses carry-over exists to preserve had no way of ever being set — the whole
+        /// human-judgement half of the pipeline was unreachable from the product.
+        /// </summary>
         private static UIElement Detail(Session session, ClashGroup group)
         {
             var status = Ui.Stack();
 
-            var rows = group.Items.Take(300).Select(item => new TableRow(item,
+            var rows = group.Items.Take(DetailCap).Select(item => new TableRow(item,
                 item.TestName,
                 item.Level ?? "-",
                 item.ModelPair,
@@ -441,6 +1322,7 @@ namespace CamelWorks.UI.Views
 
             var table = Ui.Table(rows,
                 ("Test", 130), ("Level", 90), ("Models", 170), ("What", 170), ("Status", 90))
+                .Multi()
                 .OnPick(item =>
                 {
                     if (!(item is ClashItem clash)) return;
@@ -460,17 +1342,7 @@ namespace CamelWorks.UI.Views
             {
                 status.Children.Clear();
                 group.AssignByHand(party);
-
-                var section = session.Store.Section(ProjectStore.ClashSection);
-                var decisions = section["decisions"];
-
-                if (decisions.Kind != JsonKind.Object)
-                {
-                    decisions = JsonValue.Object();
-                    section.Set("decisions", decisions);
-                }
-
-                decisions.Set(group.Name, JsonValue.Object().Set("party", JsonValue.String(party)));
+                Remember(session, group.Name, party);
 
                 status.Children.Add(session.Store.Save()
                     ? Ui.Line("\"" + group.Name + "\" goes to " + party
@@ -478,12 +1350,456 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
             });
 
+            // --- what to do about it ------------------------------------------------------
+            // Four typed fields rather than a comment box. A comment cannot be drawn as an arrow,
+            // cannot be checked against next week's model, and means three things to three readers.
+            var units = session.Profile.Units;
+
+            var verb = group.Instruction.ActionWord;
+            var verbPicker = Ui.Choice(Resolution.Actions, verb, v => verb = v);
+
+            var way = group.Instruction.DirectionWord;
+            var wayPicker = Ui.Choice(Resolution.Directions, way, v => way = v);
+
+            var howFar = Ui.Text(group.Instruction.Amount.HasValue
+                ? units.Bare(group.Instruction.Amount.Value) : string.Empty, null, 90);
+
+            var why = Ui.Text(group.Instruction.Note ?? string.Empty, null, 260);
+
+            var stated = Ui.Line(group.Instruction.Describe(units), 0.85);
+
+            var instruct = Ui.Button("Record what to do", () =>
+            {
+                status.Children.Clear();
+
+                var action = Resolution.ActionOf(verb);
+
+                double? amount = null;
+
+                if (!string.IsNullOrWhiteSpace(howFar.Text))
+                {
+                    if (!units.TryRead(howFar.Text, out var read))
+                    {
+                        status.Children.Add(Ui.Problem("\"" + howFar.Text.Trim()
+                            + "\" is not a distance. A bare number is read in "
+                            + units.LengthUnit + "."));
+                        return;
+                    }
+
+                    amount = read;
+                }
+
+                // The picked row names the element, when one is picked. Otherwise the instruction
+                // is about the group, which is the honest answer when nobody said otherwise.
+                var picked = table.PickedMany().OfType<ClashItem>().FirstOrDefault();
+
+                var instruction = new Resolution(action,
+                    picked?.CategoryA,
+                    Resolution.AxisOf(way),
+                    amount,
+                    why.Text,
+                    picked?.Key.A.ToString());
+
+                group.Instruct(instruction);
+                Remember(session, group.Name, instruction: instruction);
+
+                stated.Text = instruction.Describe(units);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line(instruction.IsStated
+                        ? "Recorded. It prints under this group in the report, draws as an arrow in "
+                          + "review, and survives the next run - no rule can restate it."
+                        : "Cleared. The report will say the resolution is not stated, which is the "
+                          + "truth and reads better than a blank line.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+            });
+
+            var newGroup = Ui.Text(group.Name + " - split", null, 200);
+
+            var regroup = Ui.Button("Move the picked ones", () =>
+            {
+                status.Children.Clear();
+
+                var picked = table.PickedMany().OfType<ClashItem>().ToList();
+                var name = newGroup.Text.Trim();
+
+                if (picked.Count == 0)
+                {
+                    status.Children.Add(Ui.Line("Pick the results to move first. "
+                        + "Shift-click and control-click work here the way they do everywhere else.", 0.8));
+                    return;
+                }
+
+                if (name.Length == 0)
+                {
+                    status.Children.Add(Ui.Line("Give the group a name first.", 0.8));
+                    return;
+                }
+
+                Pin(session, name, picked);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line(Ui.Count(picked.Count, "result") + " will be in \"" + name
+                              + "\" from the next load. A hand-made group is never re-derived, so the "
+                              + "rules will leave it alone.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+            });
+
+            var release = group.IsPinned
+                ? Ui.Button("Let the rules decide this again", () =>
+                {
+                    status.Children.Clear();
+                    Unpin(session, group.Name);
+
+                    status.Children.Add(session.Store.Save()
+                        ? Ui.Line("\"" + group.Name + "\" is no longer hand-made. The next load will group "
+                                  + "its results by the rule stack.", 0.8)
+                        : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+                })
+                : null;
+
+            var mark = FindingStatus.Reviewed;
+            var marks = new[] { "Reviewed", "Approved", "Resolved", "Active" };
+
+            var marker = Ui.Choice(marks, "Reviewed", pick =>
+                mark = Enum.TryParse<FindingStatus>(pick, out var parsed) ? parsed : FindingStatus.Reviewed);
+
+            var apply = Ui.Button("Mark them", () =>
+            {
+                status.Children.Clear();
+
+                var board = LastBoard;
+                if (board == null) { status.Children.Add(Ui.Line("Load the board first.", 0.8)); return; }
+
+                var picked = table.PickedMany().OfType<ClashItem>().ToList();
+                if (picked.Count == 0) picked = group.Items.ToList();
+
+                foreach (var item in picked) item.Status = mark;
+
+                Save(session, board, "marked " + Ui.Count(picked.Count, "result") + " as " + mark);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Line(Ui.Count(picked.Count, "result") + " marked " + mark
+                              + ". Reviewed and Approved are the two the next run will not recompute — "
+                              + "they are the only judgements the engine cannot make for itself.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                Redraw(table, group);
+            });
+
+            var undo = CanRewind(session)
+                ? Ui.Button("Undo the last board edit", () =>
+                {
+                    status.Children.Clear();
+
+                    status.Children.Add(Rewind(session)
+                        ? Ui.Line("Put back. Load the board again to see it — and pressing this a second "
+                                  + "time brings the edit back, so an undo of the wrong thing is not a "
+                                  + "one-way door.", 0.8)
+                        : Ui.Problem(session.Store.LastSaveProblem
+                                     ?? "There is no earlier version of the board to go back to."));
+                })
+                : null;
+
             return Ui.Card(group.Name,
-                Ui.Count(group.Items.Count, "clash") + (group.Items.Count > 300 ? ", first 300 shown" : string.Empty),
+                Ui.Count(group.Items.Count, "clash")
+                + (group.Items.Count > DetailCap ? ", first " + DetailCap + " shown" : string.Empty)
+                + (group.IsPinned ? " - made by hand" : string.Empty),
                 Ui.Field("Assign to", picker),
-                Ui.Across(assign),
+                Ui.Across(assign, release, undo),
+                Ui.Field("What to do", verbPicker),
+                Ui.Field("Which way", wayPicker),
+                Ui.Field("How far (" + units.LengthUnit + ")", howFar),
+                Ui.Field("Note", why),
+                Ui.Across(instruct),
+                stated,
+                Ui.Note("Pick a row first and the instruction names that element and starts its arrow "
+                        + "there; leave everything unpicked and it is about the group. A group nobody "
+                        + "has instructed prints \"" + Resolution.Unstated.ToLowerInvariant()
+                        + "\" rather than a blank line."),
+                Ui.Field("Move picked into", newGroup),
+                Ui.Across(regroup),
+                Ui.Field("Mark picked as", marker),
+                Ui.Across(apply),
+                Ui.Note("Marking changes the board, not the model. Navisworks keeps its own status on "
+                        + "each clash result and CamelWorks does not write into it: two tools disagreeing "
+                        + "about whether something is resolved is worse than one of them not knowing."),
                 status,
                 table);
+        }
+
+        /// <summary>Repaint the status column in place, so a mark shows without reloading the board.</summary>
+        private static void Redraw(ListView table, ClashGroup group)
+        {
+            table.ItemsSource = group.Items.Take(DetailCap).Select(item => new TableRow(item,
+                item.TestName,
+                item.Level ?? "-",
+                item.ModelPair,
+                (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
+                item.Status.ToString())).ToList();
+        }
+
+        /// <summary>
+        /// Raising a coordination problem the clash engine cannot see.
+        ///
+        /// A door swinging into an escape route, a valve with nowhere to be pulled to, an access
+        /// route that stops at a wall, a riser with no builder's work opening. None of them are
+        /// intersections, all of them are coordination, and none of them can be raised in a tool
+        /// whose board only knows what the engine said — so they end up in a spreadsheet beside the
+        /// board, reported separately and closed where nobody can see them next to the work they
+        /// belong with.
+        ///
+        /// The elements come from the current selection, which is where the person already is when
+        /// they notice. Nothing else is required: a title is enough, and every other box has an
+        /// answer already.
+        /// </summary>
+        private sealed class RaiseScreen
+        {
+            private readonly TextBox _title = Ui.Text(string.Empty, null, 260);
+            private readonly TextBox _note = Ui.Text(string.Empty, null, 340);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _list = Ui.Stack();
+
+            private string? _party;
+            private string _priority = "Medium";
+
+            internal UIElement Build()
+            {
+                var session = Host.Current;
+                if (session == null) return Ui.Stack();
+
+                var parties = new List<string> { "Unassigned" };
+                parties.AddRange(session.Profile.Parties);
+                _party = parties[0];
+
+                var who = Ui.Choice(parties, _party, p => _party = p);
+                var how = Ui.Choice(new[] { "High", "Medium", "Low" }, _priority, p => _priority = p);
+
+                Redraw(session);
+
+                return Ui.Card("Raise an issue",
+                    "For what the clash engine cannot see. It joins the board and behaves like "
+                    + "everything else on it.",
+                    Ui.Field("What is wrong", _title),
+                    Ui.Field("More", _note),
+                    Ui.Field("Who", who),
+                    Ui.Field("Priority", how),
+                    Ui.Across(Ui.Button("Raise it against the selection", () => Raise(session))),
+                    Ui.Note("The elements come from what is selected in the model right now. Select the "
+                            + "door and the corridor, not the whole level — a viewpoint that opens on "
+                            + "half a building tells the reader nothing."),
+                    _status,
+                    _list);
+            }
+
+            private void Raise(Session session)
+            {
+                _status.Children.Clear();
+
+                var title = _title.Text.Trim();
+
+                if (title.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Say what is wrong first. One line is enough."));
+                    return;
+                }
+
+                var selected = session.Model.SelectedKeys();
+
+                if (selected.Count == 0)
+                {
+                    _status.Children.Add(Ui.Problem(
+                        "Nothing is selected. An issue with no elements is a note nobody can find "
+                        + "again, so CamelWorks will not make one."));
+                    return;
+                }
+
+                // Two participants because that is what a board identity is made of. One selected
+                // element pairs with itself, which is a real pair and a stable key.
+                var first = selected[0];
+                var second = selected.Count > 1 ? selected[1] : first;
+
+                double x = 0, y = 0, z = 0;
+                var counted = 0;
+
+                foreach (var key in selected)
+                {
+                    var item = session.Model.Resolve(key);
+                    if (item == null) continue;
+
+                    var bounds = item.Bounds;
+                    x += bounds.CentreX; y += bounds.CentreY; z += bounds.CentreZ;
+                    counted++;
+                }
+
+                if (counted > 0) { x /= counted; y /= counted; z /= counted; }
+
+                var issues = Issues(session);
+                var scale = session.MetresPerUnit;
+
+                // The key is made from the raw host-unit centroid, the way a clash key is, and then
+                // kept forever. The metres go on the issue for everything that reads coordinates.
+                var issue = new ManualIssue(issues.NextId(), ClashKey.Create(first, second, x, y, z), title)
+                {
+                    Note = _note.Text.Trim().Length == 0 ? null : _note.Text.Trim(),
+                    AssignedTo = _party == "Unassigned" ? null : _party,
+                    Priority = _priority,
+                    Level = LevelOf(session, selected),
+                    Author = session.Profile.Author,
+                    RaisedTicks = DateTime.UtcNow.Ticks,
+                    X = x * scale,
+                    Y = y * scale,
+                    Z = z * scale,
+                };
+
+                foreach (var key in selected.Take(IssueElementCap)) issue.Elements.Add(key);
+
+                issues.Put(issue);
+                SaveIssues(session, issues);
+
+                if (issue.AssignedTo != null) Decide(session, issue.Title, issue.AssignedTo, issue.Priority);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Raised against " + Ui.Count(selected.Count, "element")
+                              + ". Load the board to see it — it will be its own group, named after "
+                              + "the title, and the rules will leave it alone.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                session.Record(ActivityKind.Regroup, "raised an issue: " + title);
+
+                _title.Text = string.Empty;
+                _note.Text = string.Empty;
+
+                Redraw(session);
+            }
+
+            /// <summary>What is already raised, and a way to close or delete one.</summary>
+            private void Redraw(Session session)
+            {
+                _list.Children.Clear();
+
+                var issues = Issues(session);
+
+                if (issues.Unreadable > 0)
+                    _list.Children.Add(Ui.Note(Ui.Count(issues.Unreadable, "issue")
+                        + " in the project file could not be read back. They are still in the file; "
+                        + "CamelWorks has not deleted them."));
+
+                if (issues.Issues.Count == 0) return;
+
+                var open = issues.Issues.Count(i => i.Status != FindingStatus.Resolved);
+
+                _list.Children.Add(Ui.Line(Ui.Count(open, "issue") + " open, "
+                    + (issues.Issues.Count - open).ToString(CultureInfo.InvariantCulture)
+                    + " closed and kept as a record.", 0.7));
+
+                var rows = issues.Issues.Select(i => new TableRow(i,
+                    i.Title,
+                    i.AssignedTo ?? "unassigned",
+                    i.Priority ?? string.Empty,
+                    i.Status.ToString(),
+                    i.RaisedTicks > 0
+                        ? new DateTime(i.RaisedTicks).ToLocalTime().ToString("d MMM", CultureInfo.InvariantCulture)
+                        : string.Empty)
+                {
+                    Tone = i.Status == FindingStatus.Resolved ? Tone.Good : Tone.Warn,
+                }).ToList();
+
+                var table = Ui.Table(rows,
+                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Status", 90), ("Raised", 70));
+
+                ManualIssue? picked = null;
+                table.OnPick(item => picked = item as ManualIssue);
+
+                _list.Children.Add(table);
+
+                _list.Children.Add(Ui.Across(
+                    Ui.Button("Show me", () =>
+                    {
+                        if (picked == null || picked.Elements.Count == 0) return;
+
+                        // Materialised once: the seam takes IReadOnlyList, which IList is not, and
+                        // both calls want the same list rather than two copies of it.
+                        var keys = picked.Elements.ToList();
+
+                        session.Model.Select(keys);
+                        session.View.ZoomTo(keys, 2.0);
+                    }),
+                    Ui.Button("Close it", () => Close(session, picked)),
+                    Ui.Button("Delete it", () => Delete(session, picked))));
+            }
+
+            private void Close(Session session, ManualIssue? picked)
+            {
+                _status.Children.Clear();
+
+                if (picked == null) { _status.Children.Add(Ui.Line("Pick one first.", 0.8)); return; }
+
+                var issues = Issues(session);
+                var issue = issues.Find(picked.Id);
+
+                if (issue == null) return;
+
+                issue.Status = FindingStatus.Resolved;
+                SaveIssues(session, issues);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Closed. It stays in this list as a record and leaves the board.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                session.Record(ActivityKind.Regroup, "closed an issue: " + issue.Title);
+                Redraw(session);
+            }
+
+            /// <summary>
+            /// Delete rather than close, for the one raised by mistake.
+            ///
+            /// Closing keeps the record because the record is the evidence the work happened.
+            /// Deleting exists for the typo, and says which of the two it is doing.
+            /// </summary>
+            private void Delete(Session session, ManualIssue? picked)
+            {
+                _status.Children.Clear();
+
+                if (picked == null) { _status.Children.Add(Ui.Line("Pick one first.", 0.8)); return; }
+
+                var issues = Issues(session);
+                issues.Remove(picked.Id);
+                SaveIssues(session, issues);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Line("Deleted. Closing keeps the record; deleting is for the one raised by "
+                              + "mistake, and this was the second.", 0.8)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                session.Record(ActivityKind.Regroup, "deleted an issue: " + picked.Title);
+                Redraw(session);
+            }
+
+            /// <summary>
+            /// The level of the first element that carries one.
+            ///
+            /// Read off the element rather than worked out from the height, because building the
+            /// level set means a pass over the whole federation and raising an issue should not
+            /// take a minute.
+            /// </summary>
+            private static string? LevelOf(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                foreach (var key in keys.Take(IssueElementCap))
+                {
+                    var item = session.Model.Resolve(key);
+                    if (item == null) continue;
+
+                    var level = item.Property("Element", "Level") ?? item.Property("Item", "Layer");
+                    if (!string.IsNullOrWhiteSpace(level)) return level!.Trim();
+                }
+
+                return null;
+            }
+
+            /// <summary>Record the party against the group the issue will become.</summary>
+            private static void Decide(Session session, string group, string party, string? priority) =>
+                Remember(session, group, party, priority);
         }
 
         // ===================================================================================
@@ -491,52 +1807,331 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>What the clash engine holds, and when each test last ran.</summary>
-        public static UIElement Tests()
+        public static UIElement Tests() => new TestsScreen().Build();
+
+        /// <summary>
+        /// The engine's tests, and a way to stop making them by hand.
+        ///
+        /// Building a discipline matrix in Clash Detective is an afternoon: Add Test, pick two
+        /// selections, set a tolerance, name it, thirty-six times. It is not difficult and that is
+        /// exactly the problem — it is long enough to be done once and then never redone when a
+        /// model is added, which is how a matrix quietly stops covering the federation it was
+        /// drawn for.
+        /// </summary>
+        private sealed class TestsScreen
         {
-            var session = Host.Current;
+            private const string ByDiscipline = "Discipline";
+            private const string ByModel = "Model";
 
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Tests"), Ui.Sub(Host.NoModel)));
+            private readonly StackPanel _list = Ui.Stack();
+            private readonly StackPanel _grid = Ui.Stack();
+            private readonly StackPanel _results = Ui.Stack();
 
-            if (!session.Clash.IsAvailable)
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Tests"),
-                    Ui.Note(session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
+            /// <summary>
+            /// Where a run reports, kept apart from where creating reports.
+            ///
+            /// Not tidiness: a Runner clears its own output panel when pressed, so a "Run them"
+            /// button living in the panel it writes to would delete itself on the way in.
+            /// </summary>
+            private readonly StackPanel _runs = Ui.Stack();
 
-            var tests = session.Clash.Tests();
+            private readonly TextBox _pattern = Ui.Text("{a} vs {b}", null, 200);
+            private readonly TextBox _tolerance = Ui.Text("0.010", null, 80);
+            private readonly TextBox _folder = Ui.Text(string.Empty, null, 150);
 
-            if (tests.Count == 0)
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Tests"),
-                    Ui.Empty("No clash tests in this document.",
-                        "Set them up in Clash Detective. CamelWorks reads the results and turns them into "
-                        + "work; it does not replace the engine that produces them.")));
+            private string _rows = ByDiscipline;
+            private string _columns = ByDiscipline;
+            private bool _selfPairs;
 
-            var rows = tests.Select(t => new TableRow(t,
-                t.Name,
-                t.Folder ?? string.Empty,
-                t.ResultCount.ToString("N0", CultureInfo.InvariantCulture),
-                t.LastRunTicks > 0
-                    ? new DateTime(t.LastRunTicks).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)
-                    : "never run")
+            private Session? _session;
+            private MatrixPlan? _plan;
+
+            internal UIElement Build()
             {
-                Tone = t.LastRunTicks > 0 ? Tone.Plain : Tone.Warn,
-            }).ToList();
+                _session = Host.Current;
 
-            var stale = tests.Count(t => t.LastRunTicks <= 0);
+                if (_session == null)
+                    return Ui.Scroll(Ui.Stack(Ui.Heading("Tests"), Ui.Sub(Host.NoModel)));
 
-            var body = Ui.Stack(
-                Ui.Across(
+                if (!_session.Clash.IsAvailable)
+                    return Ui.Scroll(Ui.Stack(
+                        Ui.Heading("Tests"),
+                        Ui.Note(_session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
+
+                Redraw();
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Tests"),
+                    Ui.Sub("The clash engine's own tests. A test that has never run contributes nothing to "
+                           + "the board, which is worth seeing before wondering where the clashes went."),
+                    _list,
+                    Matrix(),
+                    _results,
+                    _runs));
+            }
+
+            /// <summary>The tests as they stand, and the one action worth having beside them.</summary>
+            private void Redraw()
+            {
+                _list.Children.Clear();
+
+                var session = _session;
+                if (session == null) return;
+
+                var tests = session.Clash.Tests();
+
+                if (tests.Count == 0)
+                {
+                    _list.Children.Add(Ui.Empty("No clash tests in this document.",
+                        "Build a matrix below, or set them up in Clash Detective. CamelWorks reads the "
+                        + "results and turns them into work; it does not replace the engine that "
+                        + "produces them."));
+                    return;
+                }
+
+                var rows = tests.Select(t => new TableRow(t,
+                    t.Name,
+                    t.Folder ?? string.Empty,
+                    t.ResultCount.ToString("N0", CultureInfo.InvariantCulture),
+                    t.LastRunTicks > 0
+                        ? new DateTime(t.LastRunTicks).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)
+                        : "never run")
+                {
+                    Tone = t.LastRunTicks > 0 ? Tone.Plain : Tone.Warn,
+                }).ToList();
+
+                var stale = tests.Where(t => t.LastRunTicks <= 0).ToList();
+
+                _list.Children.Add(Ui.Across(
                     Ui.Pill(Ui.Count(tests.Count, "test")),
                     Ui.Pill(Ui.Count(tests.Sum(t => t.ResultCount), "result")),
-                    stale > 0 ? Ui.Pill(stale + " never run", Tone.Warn) : null),
-                Ui.Table(rows, ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
+                    stale.Count > 0 ? Ui.Pill(stale.Count + " never run", Tone.Warn) : null));
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Tests"),
-                Ui.Sub("The clash engine's own tests. A test that has never run contributes nothing to the "
-                       + "board, which is worth seeing before wondering where the clashes went."),
-                body));
+                _list.Children.Add(Ui.Table(rows,
+                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
+
+                if (stale.Count > 0 && session.Clash.CanEdit)
+                    _list.Children.Add(Ui.Runner("Run the " + stale.Count + " that never have", _runs,
+                        job => Run(stale, job)));
+            }
+
+            /// <summary>The builder.</summary>
+            private UIElement Matrix()
+            {
+                var axes = new[] { ByDiscipline, ByModel };
+
+                var rows = Ui.Choice(axes, _rows, pick => _rows = pick);
+                var columns = Ui.Choice(axes, _columns, pick => _columns = pick);
+                var diagonal = Ui.Check("Include each side against itself", _selfPairs, v => _selfPairs = v);
+
+                var build = Ui.Runner("Show me the grid", _grid, job =>
+                {
+                    _plan = null;
+
+                    var session = _session;
+                    if (session == null) return;
+
+                    var a = Sides(session, _rows);
+                    var b = Sides(session, _columns);
+
+                    if (a.Count == 0 || b.Count == 0)
+                    {
+                        _grid.Children.Add(Ui.Empty("Nothing to pair up.",
+                            "No models are loaded, so there is nothing on either axis."));
+                        return;
+                    }
+
+                    var plan = ClashMatrix.Build(a, b, new MatrixOptions
+                    {
+                        Tolerance = Metres(_tolerance.Text),
+                        SelfPairs = _selfPairs,
+                        NamePattern = _pattern.Text,
+                        Existing = session.Clash.Tests().Select(t => t.Name).ToList(),
+                    });
+
+                    _plan = plan;
+                    Show(plan);
+                });
+
+                return Ui.Card("Build a matrix",
+                    "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
+                    + "be set up first: the disciplines come from what CamelWorks already worked out about "
+                    + "the models that are loaded.",
+                    Ui.Field("Rows", rows),
+                    Ui.Field("Columns", columns),
+                    Ui.Field("Name pattern", _pattern),
+                    Ui.Field("Tolerance (m)", _tolerance),
+                    Ui.Field("Put them in folder", _folder),
+                    diagonal,
+                    build,
+                    _grid);
+            }
+
+            /// <summary>The grid, with a tick on every row that is going to be made.</summary>
+            private void Show(MatrixPlan plan)
+            {
+                _grid.Children.Add(Ui.Line(plan.Explain(), 1, true));
+
+                foreach (var test in plan.Tests)
+                {
+                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+                    var proposed = test;
+
+                    row.Children.Add(Ui.Check(string.Empty, test.IsSelected, v => proposed.IsSelected = v));
+                    row.Children.Add(Ui.Line(test.Name, 1, true));
+                    row.Children.Add(Ui.Line(test.A + "  x  " + test.B, 0.7));
+
+                    if (test.Note != null) row.Children.Add(Ui.Pill(test.Note, Tone.Warn));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    _grid.Children.Add(row);
+                }
+
+                var session = _session;
+
+                if (session != null && !session.Clash.CanEdit)
+                {
+                    _grid.Children.Add(Ui.Problem(
+                        "This document will not take new clash tests — it is open read-only, or the host "
+                        + "is holding its clash data. The grid above is still the right answer; it just "
+                        + "cannot be created from here."));
+                    return;
+                }
+
+                _grid.Children.Add(Ui.Runner("Create the ticked ones", _results, Create));
+            }
+
+            private void Create(Job job)
+            {
+                var session = _session;
+                var plan = _plan;
+
+                if (session == null || plan == null) return;
+
+                var wanted = plan.Tests.Where(t => t.IsSelected).ToList();
+
+                if (wanted.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty("Nothing is ticked.",
+                        "Every row was either already in the document or has an empty side. Tick the ones "
+                        + "you want anyway, or change the axes."));
+                    return;
+                }
+
+                var folder = _folder.Text.Trim();
+                var made = new List<ClashTestInfo>();
+                var refused = new List<string>();
+
+                foreach (var test in wanted)
+                {
+                    if (!job.Step(made.Count, "tests made")) break;
+
+                    var created = session.Clash.Create(test.ToSpec(folder.Length == 0 ? null : folder));
+
+                    if (created != null) made.Add(created.Value);
+                    else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
+                }
+
+                _results.Children.Add(Ui.Line("Made " + Ui.Count(made.Count, "test") + ".", 1, true));
+
+                // Named individually rather than counted. A matrix where four of thirty-six failed is
+                // a matrix with four holes in it, and a count does not say which four.
+                foreach (var problem in refused) _results.Children.Add(Ui.Problem(problem));
+
+                if (made.Count > 0)
+                {
+                    session.Record(ActivityKind.Regroup,
+                        "built a clash matrix: " + Ui.Count(made.Count, "test"));
+
+                    _results.Children.Add(Ui.Runner("Run them", _runs, inner => Run(made, inner)));
+                }
+
+                Redraw();
+            }
+
+            /// <summary>
+            /// Run tests one at a time, reporting as it goes.
+            ///
+            /// One at a time rather than the host's run-everything, because running everything also
+            /// re-runs the tests somebody else is halfway through triaging, and a matrix build is
+            /// not a reason to throw away their afternoon.
+            /// </summary>
+            private void Run(IReadOnlyList<ClashTestInfo> tests, Job job)
+            {
+                var session = _session;
+                if (session == null) return;
+
+                var ran = 0;
+                var refused = new List<string>();
+
+                foreach (var test in tests)
+                {
+                    job.Say("Running " + test.Name + "...");
+                    if (!job.Step(ran, "tests run")) break;
+
+                    if (session.Clash.Run(test.Id)) ran++;
+                    else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
+                }
+
+                _runs.Children.Add(Ui.Line("Ran " + Ui.Count(ran, "test") + ".", 1, true));
+
+                foreach (var problem in refused) _runs.Children.Add(Ui.Problem(problem));
+
+                if (ran > 0)
+                {
+                    _runs.Children.Add(Ui.Note("Load the board in Triage to see what they found. "
+                        + "CamelWorks does not read results automatically — a run that takes ten minutes "
+                        + "should not also decide when you look at it."));
+
+                    session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "test"));
+                }
+
+                Redraw();
+            }
+
+            /// <summary>
+            /// One axis, worked out from what is already known rather than from a form.
+            ///
+            /// The discipline of a model is something the profile already derived from its filename
+            /// on the day it was loaded, so a discipline matrix needs nothing configured — which is
+            /// the whole difference between a builder somebody uses and one they mean to set up
+            /// properly one day.
+            /// </summary>
+            private static IReadOnlyList<MatrixSide> Sides(Session session, string axis)
+            {
+                var models = session.Model.Models;
+
+                if (axis == ByModel)
+                    return models
+                        .Select(m => new MatrixSide(m.DisplayName, ClashSide.Model(m.Scope)))
+                        .ToList();
+
+                var byDiscipline = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var model in models)
+                {
+                    var discipline = session.Profile.DisciplineOf(model.Scope) ?? "Unassigned";
+
+                    if (!byDiscipline.TryGetValue(discipline, out var scopes))
+                        byDiscipline[discipline] = scopes = new List<string>();
+
+                    scopes.Add(model.Scope);
+                }
+
+                return byDiscipline
+                    .OrderBy(d => d.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(d => new MatrixSide(d.Key, ClashSide.Models(d.Value)))
+                    .ToList();
+            }
+
+            /// <summary>Read the tolerance box, falling back rather than refusing.</summary>
+            private static double Metres(string? text) =>
+                double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+                && value >= 0
+                    ? value
+                    : MatrixOptions.DefaultTolerance;
         }
 
         // ===================================================================================
@@ -810,49 +2405,411 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
-        public static UIElement Report()
-        {
-            var results = Ui.Stack();
-            var path = Ui.Text(string.Empty, null, 340);
-            var format = "PDF";
-            var picker = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, format, f => format = f);
+        public static UIElement Report() => new ReportScreen().Build();
 
-            var write = Ui.Runner("Write the report", results, job =>
+        /// <summary>
+        /// The report, and who it is for.
+        ///
+        /// A single report of the whole board is the one nobody sends. What actually leaves the
+        /// office on a Friday is one list per subcontractor, holding their groups and nothing else,
+        /// and producing those by hand from a full report is an afternoon of filtering and saving.
+        /// So the audience is part of writing it, and "one file each" is a checkbox rather than a
+        /// morning.
+        /// </summary>
+        private sealed class ReportScreen
+        {
+            /// <summary>The audience that means everybody.</summary>
+            private const string Everyone = "Everyone";
+
+            /// <summary>The audience that means the groups nobody owns yet.</summary>
+            private const string Nobody = "Only the unassigned";
+
+            /// <summary>The whole board, laid out for a desk.</summary>
+            private const string FullReport = "Full report";
+
+            /// <summary>One issue per page in large type, for a hand and a wall.</summary>
+            private const string FieldPack = "Field pack - one issue per page";
+
+            /// <summary>Services through structure, for the pour.</summary>
+            private const string Penetration = "Penetration schedule";
+
+            private readonly StackPanel _results = Ui.Stack();
+            private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _template = Ui.Text(Deliverable.DefaultTemplate, null, 340);
+
+            private string _format = "PDF";
+            private string _mode = FullReport;
+            private string _audience = Everyone;
+            private bool _changedOnly;
+            private bool _pictures;
+            private bool _keyPlan = true;
+            private bool _perParty;
+
+            internal UIElement Build()
             {
                 var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var parties = new List<string> { Everyone, Nobody };
+                if (session != null) parties.AddRange(session.Profile.Parties);
+
+                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format, f => _format = f);
+                var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m => _mode = m);
+                var audience = Ui.Choice(parties, _audience, a => _audience = a);
+
+                var changed = Ui.Check("Only what the last run had not seen", _changedOnly, v => _changedOnly = v);
+                var pictures = Ui.Check("A picture of each group", _pictures, v => _pictures = v);
+                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan, v => _keyPlan = v);
+                var split = Ui.Check("One file per party, not one file", _perParty, v => _perParty = v);
+
+                var write = Ui.Runner("Write the report", _results, Write);
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Report"),
+                    Ui.Sub("Of the board as it stands. Nothing to lay out first — the template is built in, "
+                           + "and the numbers on the cover are the funnel's, so the report and the screen "
+                           + "agree."),
+                    Ui.Field("Format", format),
+                    Ui.Field("Contents", mode),
+                    Ui.Field("For", audience),
+                    Ui.Field("Write to", _path),
+                    Ui.Field("Name it", _template),
+                    Ui.Note("The name carries " + string.Join(", ", Deliverable.Tokens)
+                            + ". Each issue takes the next revision letter and its cover says which "
+                            + "one it supersedes - a PDF in an inbox that looks exactly like last "
+                            + "week's is the most common reason a trade builds from the wrong "
+                            + "information."),
+                    changed,
+                    pictures,
+                    plan,
+                    split,
+                    Ui.Note("A picture moves your view while it runs and puts it back afterwards. On a "
+                            + "board of two hundred groups that is two hundred renders, so it is off "
+                            + "until you ask for it."),
+                    Ui.Note("The field pack is the same board set for a site cabin: one issue per page, "
+                            + "type big enough to read one-handed, and a line to sign against. The "
+                            + "penetration schedule is every service that goes through structure - what "
+                            + "the model says it is and where, with no opening size derived and no host "
+                            + "thickness inferred, because those are numbers somebody cuts concrete from."),
+                    write,
+                    _results));
+            }
+
+            private void Write(Job job)
+            {
+                var session = Host.Current;
+                if (session == null) { _results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var board = LastBoard;
 
                 if (board == null)
                 {
                     var notes = new List<string>();
-                    board = Build(session, job, notes);
-                    foreach (var note in notes) results.Children.Add(Ui.Note(note));
+
+                    // Qualified: this class has its own Build(), and an unqualified call binds to
+                    // it rather than to the board builder.
+                    board = CoordinateViews.Build(session, job, notes);
+
+                    foreach (var note in notes) _results.Children.Add(Ui.Note(note));
                 }
 
                 if (board == null) return;
 
-                var file = path.Text.Trim();
+                var regressed = Regressed();
 
-                if (file.Length == 0)
+                if (_perParty)
                 {
-                    file = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-                        session.Profile.ProjectName + " clash report." + format.ToLowerInvariant());
-
-                    path.Text = file;
+                    WriteEach(session, board, regressed, job);
+                    return;
                 }
 
+                var groups = Chosen(board, _audience, regressed);
+
+                if (groups.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty("Nothing to report.",
+                        "No group on the board matches that filter. That is a real answer — it is what "
+                        + "an empty week looks like — but check the audience if you were expecting one."));
+                    return;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var was = LastIssue(session, _audience);
+                var revision = Deliverable.NextRevision(was?.Revision);
+
+                var file = Where(session, _audience, revision, now);
+
                 job.Say("Building the report...");
-                var document = Document(session, board);
+
+                var document = Shape(session, board, groups, _audience, regressed,
+                                     Pictures(session, groups, job), revision, was, job);
 
                 job.Say("Writing...");
+                Emit(file, document, Flat(session, groups));
 
-                switch (format)
+                Issued(session, _audience, new ReportIssue(revision, now, System.IO.Path.GetFileName(file)));
+                session.Store.Save();
+
+                _results.Children.Add(Ui.Line("Wrote revision " + revision + " to " + file, 1, true));
+
+                if (was != null) _results.Children.Add(Ui.Line(was.Supersedes, 0.8));
+
+                session.Record(ActivityKind.Report,
+                    "wrote a " + _format + " clash report, revision " + revision, file);
+            }
+
+            /// <summary>
+            /// One file per party, which is what a coordination meeting actually ends with.
+            ///
+            /// A party with nothing on the board gets no file rather than an empty one. Sending
+            /// somebody a report that says nothing is how a report stops being read.
+            /// </summary>
+            private void WriteEach(Session session, ClashPipelineResult board,
+                                   ICollection<ClashItem> regressed, Job job)
+            {
+                var parties = board.Groups
+                    .Select(g => g.AssignedTo)
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Select(p => p!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                var unassigned = Chosen(board, Nobody, regressed);
+                if (unassigned.Count > 0) parties.Add(Nobody);
+
+                if (parties.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty("Nobody to write to.",
+                        "No group on the board is assigned, and there are no unassigned ones either."));
+                    return;
+                }
+
+                var written = 0;
+
+                foreach (var party in parties)
+                {
+                    if (!job.Step(written, "files written")) break;
+
+                    var groups = Chosen(board, party, regressed);
+                    if (groups.Count == 0) continue;
+
+                    var now = DateTimeOffset.UtcNow;
+                    var was = LastIssue(session, party);
+                    var revision = Deliverable.NextRevision(was?.Revision);
+
+                    var file = Where(session, party, revision, now);
+
+                    job.Say("Writing " + party + "...");
+
+                    var document = Shape(session, board, groups, party, regressed,
+                                         Pictures(session, groups, job), revision, was, job);
+
+                    Emit(file, document, Flat(session, groups));
+
+                    // Each party has its own revision letter, because each party has its own
+                    // sequence of issues and telling Mechanical they are on revision F because
+                    // Structures has had five would be a lie about their own history.
+                    Issued(session, party, new ReportIssue(revision, now, System.IO.Path.GetFileName(file)));
+
+                    _results.Children.Add(Ui.Line(party + " - rev " + revision + " - "
+                        + Ui.Count(groups.Count, "group") + " - " + file, 0.8));
+
+                    written++;
+                }
+
+                session.Store.Save();
+
+                _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
+
+                session.Record(ActivityKind.Report,
+                    "wrote " + Ui.Count(written, "clash report") + ", one per party");
+            }
+
+            /// <summary>Which groups belong in a report for this audience.</summary>
+            private IReadOnlyList<ClashGroup> Chosen(ClashPipelineResult board, string audience,
+                                                     ICollection<ClashItem> regressed)
+            {
+                var groups = board.Groups.Where(g =>
+                    audience == Everyone
+                    || (audience == Nobody && g.AssignedTo == null)
+                    || string.Equals(g.AssignedTo, audience, StringComparison.OrdinalIgnoreCase));
+
+                if (_changedOnly) groups = groups.Where(g => Changed(g, regressed));
+
+                return groups.ToList();
+            }
+
+            /// <summary>Where the file goes, made from the audience so two reports never collide.</summary>
+            private string Where(Session session, string audience, string revision, DateTimeOffset issued)
+            {
+                var typed = _path.Text.Trim();
+                var extension = "." + _format.ToLowerInvariant();
+
+                var stem = Deliverable.Name(_template.Text, session.Profile.ProjectName,
+                                            audience == Everyone ? null : audience, revision, issued);
+
+                if (typed.Length == 0)
+                {
+                    var made = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        stem + extension);
+
+                    if (!_perParty) _path.Text = made;
+                    return made;
+                }
+
+                if (!_perParty) return typed;
+
+                // One box, several files: the typed path becomes the folder and the stem, and each
+                // party's name is added. Otherwise the last party written would be the only file
+                // left on disk, which is the kind of thing somebody discovers on Monday.
+                //
+                // System.IO.Path here rather than Core's separator-agnostic helper: this assembly
+                // only ever runs on Windows, where Path is the one that is right about backslashes.
+                var directory = System.IO.Path.GetDirectoryName(typed) ?? string.Empty;
+                var name = System.IO.Path.GetFileNameWithoutExtension(typed);
+
+                return System.IO.Path.Combine(directory,
+                    Deliverable.Safe(name + " - " + audience + " - Rev " + revision) + extension);
+            }
+
+            /// <summary>
+            /// What this issue is called, and what it replaces.
+            ///
+            /// The most common cause of a trade building from the wrong information is a PDF in an
+            /// inbox that looks exactly like last week's, so every issue takes the next revision and
+            /// says on its cover which one it supersedes.
+            /// </summary>
+            private static ReportIssue? LastIssue(Session session, string audience) =>
+                Deliverable.Read(session.Store.Section(ProjectStore.ClashSection)["issued"])
+                    .TryGetValue(audience, out var issue) ? issue : null;
+
+            /// <summary>Record what just went out, so the next one knows what it supersedes.</summary>
+            private static void Issued(Session session, string audience, ReportIssue issue)
+            {
+                var section = session.Store.Section(ProjectStore.ClashSection);
+
+                // Copied key by key: Dictionary has a constructor taking IDictionary and one taking
+                // a capacity, and an IReadOnlyDictionary silently matches neither.
+                var register = new Dictionary<string, ReportIssue>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var entry in Deliverable.Read(section["issued"])) register[entry.Key] = entry.Value;
+
+                register[audience] = issue;
+
+                section.Set("issued", Deliverable.Write(register));
+            }
+
+            /// <summary>
+            /// One rendered view per group, or nothing when they were not asked for.
+            ///
+            /// The camera is borrowed once for the whole run and put back at the end. Doing it per
+            /// group would still be correct and would leave the view visibly jumping back and forth
+            /// for as long as the report takes.
+            /// </summary>
+            /// <summary>How wide the site plan is rendered. One pixel of a 400 m site is 250 mm.</summary>
+            private const int PlanWidth = 1600;
+
+            /// <summary>How tall the site plan is rendered.</summary>
+            private const int PlanHeight = 1200;
+
+            /// <summary>
+            /// One top-down plan of everything on the board, with a numbered marker per group.
+            ///
+            /// Rendered once per report, not once per group: it is the page a reader turns back to,
+            /// and forty renders of the same plan would be forty identical pages.
+            ///
+            /// The camera is borrowed and returned like the group pictures, and the whole thing is
+            /// skipped rather than failed when the host will not give a plan view — a 2D sheet has
+            /// no camera to rotate, and a report without a key plan is still a report.
+            /// </summary>
+            private ImageBlock? Plan(Session session, IReadOnlyList<ClashGroup> groups, Job job,
+                                     out BoundingBox framed)
+            {
+                framed = default;
+
+                if (!_keyPlan || groups.Count == 0) return null;
+
+                var site = KeyPlan.Extent(groups.SelectMany(g => g.Items).Select(i => (i.X, i.Y, i.Z)));
+                if (site == null) return null;
+
+                framed = KeyPlan.Frame(site.Value, PlanWidth, PlanHeight);
+
+                job.Say("Rendering the site plan...");
+
+                byte[]? png;
+
+                using (session.View.BorrowCamera())
+                {
+                    if (!session.View.LookDown(framed)) return null;
+
+                    png = session.View.Capture(PlanWidth, PlanHeight);
+                }
+
+                if (png == null || png.Length == 0) return null;
+
+                var block = new ImageBlock(png, "Every issue on this report, seen from above");
+
+                var number = 0;
+
+                foreach (var group in groups)
+                {
+                    number++;
+
+                    var first = group.Items.FirstOrDefault();
+                    if (first == null) continue;
+
+                    var at = KeyPlan.At(framed, first.X, first.Y);
+
+                    block.Callouts.Add(new Callout(number, at.X, at.Y));
+                }
+
+                return block;
+            }
+
+            private IReadOnlyDictionary<string, byte[]> Pictures(Session session,
+                                                                 IReadOnlyList<ClashGroup> groups, Job job)
+            {
+                var images = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+                if (!_pictures) return images;
+
+                using (session.View.BorrowCamera())
+                {
+                    var done = 0;
+
+                    foreach (var group in groups)
+                    {
+                        if (!job.Step(done++, "views rendered")) break;
+
+                        job.Say("Rendering " + group.Name + "...");
+
+                        var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
+                        if (points.Count == 0) continue;
+
+                        session.View.FrameBox(BoxOf(points));
+
+                        var png = session.View.Capture(1280, 720);
+                        if (png != null && png.Length > 0) images[group.Name] = png;
+                    }
+                }
+
+                return images;
+            }
+
+            /// <summary>
+            /// Write it out, in whichever of the three shapes was asked for.
+            ///
+            /// The spreadsheet gets the same content as a flat table rather than the laid-out
+            /// document: a field pack pasted into Excel one issue per sheet would be unusable, and
+            /// what somebody wants from a spreadsheet is rows they can sort.
+            /// </summary>
+            private void Emit(string file, ReportDocument document, TableBlock flat)
+            {
+                switch (_format)
                 {
                     case "XLSX":
-                        File.WriteAllBytes(file, XlsxWriter.Write("Clashes", Table(board)));
+                        File.WriteAllBytes(file, XlsxWriter.Write(SheetName, flat));
                         break;
 
                     case "HTML":
@@ -861,39 +2818,86 @@ namespace CamelWorks.UI.Views
 
                     default:
                     {
-                        using (var stream = File.Create(file)) PdfReportWriter.Write(stream, document);
+                        using (var stream = File.Create(file))
+                            PdfReportWriter.Write(stream, document,
+                                _mode == FieldPack ? PdfReportWriter.FieldPackType : 1);
+
                         break;
                     }
                 }
+            }
 
-                results.Children.Add(Ui.Line("Wrote " + file, 1, true));
-                session.Record(ActivityKind.Report, "wrote a " + format + " clash report", file);
-            });
+            /// <summary>What the one worksheet is called.</summary>
+            private string SheetName =>
+                _mode == Penetration ? "Penetrations" : _mode == FieldPack ? "Field pack" : "Clashes";
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Report"),
-                Ui.Sub("Of the board as it stands. Nothing to lay out first — the template is built in, and "
-                       + "the numbers on the cover are the funnel's, so the report and the screen agree."),
-                Ui.Field("Format", picker),
-                Ui.Field("Write to", path),
-                write,
-                results));
+            /// <summary>The document, in whichever of the three shapes was asked for.</summary>
+            private ReportDocument Shape(Session session, ClashPipelineResult board,
+                                         IReadOnlyList<ClashGroup> groups, string audience,
+                                         ICollection<ClashItem> regressed,
+                                         IReadOnlyDictionary<string, byte[]> images,
+                                         string revision, ReportIssue? was, Job job)
+            {
+                if (_mode == FieldPack)
+                    return FieldPackOf(session, groups, audience, images, revision, was);
+
+                if (_mode == Penetration)
+                    return PenetrationsOf(session, board, groups, audience, revision, was);
+
+                var plan = Plan(session, groups, job, out var framed);
+
+                return Document(session, board, groups, audience, regressed, images, revision, was,
+                                plan, framed, PlanWidth);
+            }
+
+            /// <summary>The flat table that goes into a spreadsheet.</summary>
+            private TableBlock Flat(Session session, IReadOnlyList<ClashGroup> groups)
+            {
+                var units = session.Profile.Units;
+
+                if (_mode == Penetration) return Schedule(session, groups).Table(units);
+                if (_mode == FieldPack) return FieldTable(groups, units);
+
+                return Table(groups, units);
+            }
         }
 
-        private static ReportDocument Document(Session session, ClashPipelineResult board)
+        /// <summary>
+        /// The report itself: the funnel, what changed, the groups and every clash.
+        ///
+        /// The funnel is always of the whole board even when the report is of one party's share of
+        /// it, and says so. A report that reproduced the funnel over a filtered subset would show a
+        /// subcontractor a number that does not match the coordinator's screen, and the argument
+        /// that follows is about the tool rather than the building.
+        /// </summary>
+        private static ReportDocument Document(Session session, ClashPipelineResult board,
+                                               IReadOnlyList<ClashGroup> groups, string audience,
+                                               ICollection<ClashItem> regressed,
+                                               IReadOnlyDictionary<string, byte[]> images,
+                                               string? revision = null, ReportIssue? supersedes = null,
+                                               ImageBlock? plan = null, BoundingBox framed = default,
+                                               int planWidth = 0)
         {
+            var whole = groups.Count == board.Groups.Count;
+
             var document = new ReportDocument(session.Profile.ProjectName + " — clash report")
             {
-                Subtitle = "Produced by CamelWorks",
+                Subtitle = whole ? "Produced by CamelWorks" : "For " + audience + ", produced by CamelWorks",
             };
 
             document.Fact("Project", session.Profile.ProjectName);
             document.Fact("Author", session.Profile.Author);
             document.Fact("Date", DateTime.Now.ToString("d MMMM yyyy", CultureInfo.InvariantCulture));
+            if (revision != null) document.Fact("Revision", revision);
+            if (!whole) document.Fact("For", audience);
             document.Fact("From the engine", board.Funnel.Input.ToString("N0", CultureInfo.InvariantCulture));
-            document.Fact("On the board", board.Groups.Sum(g => g.Items.Count).ToString("N0", CultureInfo.InvariantCulture));
-            document.Fact("Groups", board.Groups.Count.ToString("N0", CultureInfo.InvariantCulture));
-            document.Fact("Unassigned", board.Funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture));
+            document.Fact("In this report", groups.Sum(g => g.Items.Count).ToString("N0", CultureInfo.InvariantCulture));
+            document.Fact("Groups", groups.Count.ToString("N0", CultureInfo.InvariantCulture));
+
+            if (whole)
+                document.Fact("Unassigned", board.Funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture));
+
+            if (supersedes != null) document.Paragraph(supersedes.Supersedes);
 
             document.Heading("How this list was produced");
             document.Paragraph(board.Funnel.ToString());
@@ -903,34 +2907,519 @@ namespace CamelWorks.UI.Views
                 + "and what remains. A report that quietly showed a smaller number than the engine found "
                 + "would be worse than no report.");
 
+            if (!whole)
+                document.Paragraph(
+                    "Those figures are of the whole board. This report covers " + audience.ToLowerInvariant()
+                    + " — " + Ui.Count(groups.Count, "group") + " of "
+                    + board.Groups.Count.ToString("N0", CultureInfo.InvariantCulture)
+                    + " — so that the numbers here and on the coordinator's screen are the same numbers.");
+
+            Since(document, groups, regressed);
+            WhoOwesWhat(document, session, board, whole ? null : audience);
+            WhereOnSite(document, session, groups, plan, framed, planWidth);
+
             document.Heading("Groups");
-            document.Add(Summary(board));
+            document.Add(Summary(groups, session.Profile.Units));
+
+            if (images.Count > 0) Pictures(document, groups, images, session.Profile.Units);
 
             document.PageBreak();
             document.Heading("Every clash");
-            document.Add(Table(board));
+            document.Add(Table(groups, session.Profile.Units));
+
+            WhatItWasRunAgainst(document, session);
+            WhatIsNotShown(document, session);
 
             return document;
         }
 
-        private static TableBlock Summary(ClashPipelineResult board)
+        /// <summary>
+        /// One plan of the site with every issue marked on it, and what it can and cannot resolve.
+        ///
+        /// A report full of close-up renders answers "what does this look like" and never answers
+        /// "where is it". One plan answers the second question for forty issues at once.
+        /// </summary>
+        private static void WhereOnSite(ReportDocument document, Session session,
+                                        IReadOnlyList<ClashGroup> groups, ImageBlock? plan,
+                                        BoundingBox framed, int planWidth)
         {
-            var table = new TableBlock("Group", "Clashes", "Assigned to", "Priority");
+            if (plan == null) return;
 
-            foreach (var group in board.Groups)
-                table.Row(group.Name,
-                    group.Items.Count.ToString("N0", CultureInfo.InvariantCulture),
-                    group.AssignedTo ?? "unassigned",
-                    group.Priority ?? string.Empty);
+            document.PageBreak();
+            document.Heading("Where on the site");
+            document.Add(plan);
+
+            var number = 0;
+
+            document.Add(KeyPlan.Legend(groups.Select(g =>
+            {
+                number++;
+
+                var first = g.Items.FirstOrDefault();
+
+                return (number, g.Name, g.AssignedTo, first?.Level);
+            })));
+
+            document.Paragraph(KeyPlan.Resolution(framed, planWidth, session.Profile.Units));
+        }
+
+        /// <summary>
+        /// What this report could not show.
+        ///
+        /// Its own block so it cannot be forgotten. The redline line is the honest one: a
+        /// coordinator who has marked up a viewpoint has every reason to expect the words to come
+        /// out in the report, and finding out on site that they did not is worse than being told
+        /// here.
+        /// </summary>
+        private static void WhatIsNotShown(ReportDocument document, Session session)
+        {
+            var disclosure = new DisclosureBlock("Not shown in this report");
+
+            var marked = 0;
+
+            try
+            {
+                marked = session.Viewpoints.All().Count(v => v.HasRedlines);
+            }
+            catch (Exception)
+            {
+                // A host that cannot list viewpoints simply contributes no line.
+            }
+
+            if (marked > 0)
+                disclosure.Line("Redline mark-ups on " + Ui.Count(marked, "saved viewpoint")
+                    + ". Navisworks exposes no supported way for a plug-in to read the text of a "
+                    + "redline: the drawing objects live behind an internal state handle the public "
+                    + "API never hands out, and neither the .NET nor the COM surface enumerates them. "
+                    + "Anything written on those viewpoints has to be read in Navisworks.");
+
+            if (disclosure.Lines.Count > 0) document.Add(disclosure);
+        }
+
+        /// <summary>
+        /// The same board, set for a site cabin.
+        ///
+        /// Portrait, one issue per page, type big enough to read one-handed off a phone, and a line
+        /// to sign against. Nobody had watched a foreman pinch-zoom a forty-page landscape PDF, and
+        /// it is the difference between a report that gets used on site and one that gets printed
+        /// and left in the cabin.
+        ///
+        /// No funnel, no manifest, no per-party ledger: those are a coordinator's questions, and
+        /// putting them in front of somebody holding a spanner is how the page that matters gets
+        /// missed.
+        /// </summary>
+        private static ReportDocument FieldPackOf(Session session, IReadOnlyList<ClashGroup> groups,
+                                                  string audience,
+                                                  IReadOnlyDictionary<string, byte[]> images,
+                                                  string revision, ReportIssue? was)
+        {
+            var units = session.Profile.Units;
+
+            var document = new ReportDocument(session.Profile.ProjectName + " — field pack")
+            {
+                Subtitle = audience,
+            };
+
+            document.Fact("Project", session.Profile.ProjectName);
+            document.Fact("For", audience);
+            document.Fact("Revision", revision);
+            document.Fact("Date", DateTime.Now.ToString("d MMMM yyyy", CultureInfo.InvariantCulture));
+            document.Fact("Issues", Ui.Count(groups.Sum(g => g.Items.Count), "clash"));
+
+            if (was != null) document.Paragraph(was.Supersedes);
+
+            document.Paragraph("One page per issue. Each page says where it is, what to do about it, "
+                               + "and has a line to sign when it is done.");
+
+            var number = 0;
+
+            foreach (var group in groups)
+            {
+                document.PageBreak();
+
+                number++;
+
+                document.Heading(number.ToString(CultureInfo.InvariantCulture) + ". " + group.Name);
+
+                if (images.TryGetValue(group.Name, out var png))
+                    document.Add(new ImageBlock(png, group.AssignedTo ?? PartyLedger.Nobody));
+
+                document.Add(new ParagraphBlock(group.Instruction.Describe(units)) { IsBold = true });
+
+                document.Add(WhereItIs(group, units));
+                document.Add(SignHere());
+            }
+
+            return document;
+        }
+
+        /// <summary>Where the issue is, in as few rows as it can be said in.</summary>
+        private static TableBlock WhereItIs(ClashGroup group, Measure units)
+        {
+            var table = new TableBlock("Where", "What");
+
+            var first = group.Items.FirstOrDefault();
+
+            table.Row("Level", first?.Level ?? Measure.Nothing);
+            table.Row("Models", first?.ModelPair ?? Measure.Nothing);
+
+            table.Row("Setting out (" + units.LengthUnit + ")",
+                first == null ? Measure.Nothing
+                    : units.Bare(first.X) + ", " + units.Bare(first.Y) + ", " + units.Bare(first.Z));
+
+            table.Row("Responsible", group.AssignedTo ?? PartyLedger.Nobody);
+            table.Row("Clashes in this issue", Ui.Count(group.Items.Count, "clash"));
 
             return table;
         }
 
-        private static TableBlock Table(ClashPipelineResult board)
+        /// <summary>
+        /// A line to sign against.
+        ///
+        /// A table rather than a block of its own, so it renders on all three outputs without any
+        /// of the three writers learning a new shape. The row is empty because somebody fills it in
+        /// with a pen.
+        /// </summary>
+        private static TableBlock SignHere()
         {
-            var table = new TableBlock("Group", "Test", "Level", "Models", "What", "Status", "X", "Y", "Z");
+            var table = new TableBlock("Fixed by", "Date", "Signature");
 
-            foreach (var group in board.Groups)
+            table.Row(" ", " ", " ");
+
+            return table;
+        }
+
+        /// <summary>The field pack as a flat table, for the spreadsheet.</summary>
+        private static TableBlock FieldTable(IReadOnlyList<ClashGroup> groups, Measure units)
+        {
+            var axis = " (" + units.LengthUnit + ")";
+
+            var table = new TableBlock("#", "Issue", "Level", "Models", "Responsible",
+                                       "X" + axis, "Y" + axis, "Z" + axis,
+                                       "What to do", "Fixed by", "Date");
+
+            var number = 0;
+
+            foreach (var group in groups)
+            {
+                var first = group.Items.FirstOrDefault();
+
+                number++;
+
+                table.Row(number.ToString(CultureInfo.InvariantCulture),
+                          group.Name,
+                          first?.Level ?? string.Empty,
+                          first?.ModelPair ?? string.Empty,
+                          group.AssignedTo ?? PartyLedger.Nobody,
+                          first == null ? string.Empty : units.Bare(first.X),
+                          first == null ? string.Empty : units.Bare(first.Y),
+                          first == null ? string.Empty : units.Bare(first.Z),
+                          group.Instruction.Describe(units),
+                          string.Empty, string.Empty);
+            }
+
+            return table;
+        }
+
+        /// <summary>
+        /// Every service that goes through structure, as a schedule.
+        ///
+        /// On a concrete frame the pour date is the one immovable date on the programme, and this
+        /// list is what has to be right before it — today produced by reading a clash board and
+        /// retyping it into a spreadsheet, which is the same list one transcription error later.
+        /// </summary>
+        private static ReportDocument PenetrationsOf(Session session, ClashPipelineResult board,
+                                                     IReadOnlyList<ClashGroup> groups, string audience,
+                                                     string revision, ReportIssue? was)
+        {
+            var units = session.Profile.Units;
+            var schedule = Schedule(session, groups);
+
+            var document = new ReportDocument(session.Profile.ProjectName + " — penetration schedule")
+            {
+                Subtitle = audience,
+            };
+
+            document.Fact("Project", session.Profile.ProjectName);
+            document.Fact("For", audience);
+            document.Fact("Revision", revision);
+            document.Fact("Date", DateTime.Now.ToString("d MMMM yyyy", CultureInfo.InvariantCulture));
+            document.Fact("Penetrations", Ui.Count(schedule.Lines.Count, "penetration"));
+
+            if (was != null) document.Paragraph(was.Supersedes);
+
+            document.Heading("Services through structure");
+            document.Paragraph(schedule.Explain());
+
+            if (schedule.IsEmpty)
+            {
+                document.Paragraph(
+                    "Nothing on this board pairs a service with a piece of structure. That is a real "
+                    + "answer on a steel frame or an early-stage model; on a concrete frame with MEP "
+                    + "loaded it more likely means the categories in these models do not name their "
+                    + "elements as ducts, pipes, walls and slabs.");
+
+                return document;
+            }
+
+            document.Add(schedule.Table(units));
+
+            document.Paragraph(
+                "Sizes and systems are what the model states, not what CamelWorks worked out. No "
+                + "opening size is derived and no host thickness is inferred: both are numbers "
+                + "somebody cuts concrete from, and neither is this tool's to guess.");
+
+            WhatItWasRunAgainst(document, session);
+
+            return document;
+        }
+
+        /// <summary>
+        /// Pick the penetrations out of the board.
+        ///
+        /// One line per result rather than per group, because a group of eight ducts through one
+        /// wall is eight sleeves and the schedule is a list of sleeves.
+        /// </summary>
+        private static PenetrationSchedule Schedule(Session session, IReadOnlyList<ClashGroup> groups)
+        {
+            var lines = new List<PenetrationLine>();
+            var considered = 0;
+
+            foreach (var group in groups)
+            {
+                foreach (var item in group.Items)
+                {
+                    considered++;
+
+                    var a = session.Model.Resolve(item.Key.A);
+                    var b = session.Model.Resolve(item.Key.B);
+
+                    var serviceIsA = Penetrations.ServiceIsA(
+                        item.CategoryA ?? a?.Category, a?.TypeName,
+                        item.CategoryB ?? b?.Category, b?.TypeName);
+
+                    if (serviceIsA == null) continue;
+
+                    var service = serviceIsA.Value ? a : b;
+                    var host = serviceIsA.Value ? b : a;
+
+                    var serviceName = service?.DisplayName
+                                      ?? (serviceIsA.Value ? item.CategoryA : item.CategoryB);
+
+                    var hostName = host?.DisplayName
+                                   ?? (serviceIsA.Value ? item.CategoryB : item.CategoryA);
+
+                    lines.Add(new PenetrationLine(group.Name, serviceName ?? "(unnamed)",
+                                                  hostName ?? "(unnamed)")
+                    {
+                        Size = Size(service),
+                        SystemName = service?.Property("Element", "System Name")
+                                     ?? service?.Property("Item", "System")
+                                     ?? service?.Property("Element", "System Classification"),
+                        HostType = host?.TypeName,
+                        Level = item.Level,
+                        Party = group.AssignedTo,
+                        X = item.X, Y = item.Y, Z = item.Z,
+                        Status = item.Status,
+                    });
+                }
+            }
+
+            return Penetrations.Of(lines, considered);
+        }
+
+        /// <summary>
+        /// The service's size, as the model states it.
+        ///
+        /// Read, never derived. A round duct carries a diameter, a rectangular one carries width
+        /// and height, and a tool that inferred one from a bounding box would be handing somebody a
+        /// number to cut concrete from that no engineer had ever seen.
+        /// </summary>
+        private static string? Size(IModelItem? item)
+        {
+            if (item == null) return null;
+
+            var stated = item.Property("Element", "Size") ?? item.Property("Item", "Size");
+            if (!string.IsNullOrWhiteSpace(stated)) return stated!.Trim();
+
+            var diameter = item.Property("Element", "Diameter");
+            if (!string.IsNullOrWhiteSpace(diameter)) return diameter!.Trim();
+
+            var width = item.Property("Element", "Width");
+            var height = item.Property("Element", "Height");
+
+            if (!string.IsNullOrWhiteSpace(width) && !string.IsNullOrWhiteSpace(height))
+                return width!.Trim() + " x " + height!.Trim();
+
+            return null;
+        }
+
+        /// <summary>
+        /// Who owes what, and whether last week's list got shorter.
+        ///
+        /// The board's own figures, always of the whole board even on a report for one party — the
+        /// point of the block is that everybody's copy carries the same numbers, so the meeting is
+        /// about the building rather than about whose report is right.
+        /// </summary>
+        private static void WhoOwesWhat(ReportDocument document, Session session,
+                                        ClashPipelineResult board, string? audience)
+        {
+            var ledger = PartyLedger.Of(board.Groups, Previous(session),
+                                        audience ?? LastBoardLabel, DateTimeOffset.UtcNow);
+
+            if (ledger.Lines.Count == 0) return;
+
+            document.Heading("Who owes what");
+            document.Add(ledger.Table());
+            document.Paragraph(ledger.Provenance());
+        }
+
+        /// <summary>
+        /// The manifest: every model this run was run against, and every test that produced it.
+        ///
+        /// "Which revision of the structural model was this run against?" is the first question in
+        /// the Wednesday meeting and the only question six months later, and a report that cannot
+        /// answer it is a screenshot with a logo.
+        /// </summary>
+        private static void WhatItWasRunAgainst(ReportDocument document, Session session)
+        {
+            var manifest = ModelManifest.Of(session.Model.Models, session.Profile,
+                                            TestRecords(session), version: Ui.Release,
+                                            takenUtc: DateTimeOffset.UtcNow);
+
+            if (manifest.IsEmpty && manifest.Tests.Count == 0) return;
+
+            document.PageBreak();
+            document.Heading("What this was run against");
+            document.Paragraph(manifest.Explain());
+
+            if (!manifest.IsEmpty) document.Add(manifest.ModelTable(session.Profile.Units));
+
+            if (manifest.Tests.Count > 0)
+            {
+                document.Heading("Tests", 2);
+                document.Add(manifest.TestTable());
+            }
+
+            document.Paragraph(
+                "Timestamps are of the source files as this run read them, in UTC. A model with no "
+                + "readable source is shown as such rather than left blank: an unreachable share and "
+                + "a file that has never changed are different facts.");
+        }
+
+        /// <summary>
+        /// A host last-run time as an instant.
+        ///
+        /// The host hands back a bare <c>DateTime</c> with no kind, which on a desktop API means
+        /// local time — the same reading the Tests screen makes. Stated here once rather than
+        /// guessed at in two places, so the report and the screen cannot disagree by an hour.
+        /// </summary>
+        internal static DateTimeOffset? RunAt(long ticks) =>
+            ticks > 0 ? new DateTimeOffset(new DateTime(ticks, DateTimeKind.Local)) : (DateTimeOffset?)null;
+
+        /// <summary>One record per clash test the host holds, or nothing on an edition with no engine.</summary>
+        private static IReadOnlyList<TestRecord> TestRecords(Session session)
+        {
+            var clash = session.Clash;
+            if (clash == null || !clash.IsAvailable) return Array.Empty<TestRecord>();
+
+            var records = new List<TestRecord>();
+
+            foreach (var test in clash.Tests())
+                records.Add(new TestRecord(test.Name, RunAt(test.LastRunTicks), test.ResultCount));
+
+            return records;
+        }
+
+        /// <summary>
+        /// What changed since the last run, when there is a last run to compare against.
+        ///
+        /// First after the funnel, because it is the first question of every coordination meeting
+        /// and the one a reader should not have to derive by comparing two PDFs.
+        /// </summary>
+        private static void Since(ReportDocument document, IReadOnlyList<ClashGroup> groups,
+                                  ICollection<ClashItem> regressed)
+        {
+            var delta = LastDelta;
+            if (delta == null) return;
+
+            var fresh = groups.Sum(g => g.Items.Count(i => i.Status == FindingStatus.New));
+            var back = groups.Sum(g => g.Items.Count(i => regressed.Contains(i)));
+
+            document.Heading("Since the last run");
+
+            document.Paragraph(fresh.ToString("N0", CultureInfo.InvariantCulture) + " new, "
+                + back.ToString("N0", CultureInfo.InvariantCulture) + " back again, "
+                + delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture)
+                + " gone from the model since the previous run.");
+
+            if (back > 0)
+                document.Paragraph(
+                    "Something recorded as resolved is in this list again. Either a fix was undone or a "
+                    + "model went backwards, and it is the first thing to look at — native clash detection "
+                    + "cannot tell you this at all, because the result simply reappears looking new.");
+
+            if (delta.WeakMatches > 0)
+                document.Paragraph(delta.WeakMatches.ToString("N0", CultureInfo.InvariantCulture)
+                    + " of these matched the previous run only on a geometry-derived key, because the "
+                    + "elements involved carry no stable identity. Their history is a best guess.");
+        }
+
+        /// <summary>
+        /// A rendered view of each group that produced one, with its own heading and its instruction.
+        ///
+        /// The instruction goes directly under the image, in bold, because that pairing is the whole
+        /// deliverable: a picture of the problem and one sentence saying what to do about it. A
+        /// group nobody has instructed says so rather than leaving a gap the reader has to
+        /// interpret.
+        /// </summary>
+        private static void Pictures(ReportDocument document, IReadOnlyList<ClashGroup> groups,
+                                     IReadOnlyDictionary<string, byte[]> images, Measure units)
+        {
+            document.PageBreak();
+            document.Heading("Where they are");
+
+            foreach (var group in groups)
+            {
+                if (!images.TryGetValue(group.Name, out var png)) continue;
+
+                document.Heading(group.Name, 2);
+                document.Add(new ImageBlock(png,
+                    Ui.Count(group.Items.Count, "clash") + " - " + (group.AssignedTo ?? "unassigned")));
+
+                document.Add(new ParagraphBlock(group.Instruction.Describe(units)) { IsBold = true });
+            }
+        }
+
+        private static TableBlock Summary(IReadOnlyList<ClashGroup> groups, Measure units)
+        {
+            var table = new TableBlock("Group", "Clashes", "Assigned to", "Priority", "What to do");
+
+            foreach (var group in groups)
+                table.Row(group.Name,
+                    group.Items.Count.ToString("N0", CultureInfo.InvariantCulture),
+                    group.AssignedTo ?? "unassigned",
+                    group.Priority ?? string.Empty,
+                    group.Instruction.Describe(units));
+
+            return table;
+        }
+
+        /// <summary>
+        /// Every clash, with its setting-out coordinates in the project's own units.
+        ///
+        /// The unit is in the heading rather than in four hundred cells, and it comes from the
+        /// project profile rather than from whatever the host display happens to be set to — a
+        /// report reissued in different units from last week's is how a trade sets out twice.
+        /// </summary>
+        private static TableBlock Table(IReadOnlyList<ClashGroup> groups, Measure units)
+        {
+            var axis = " (" + units.LengthUnit + ")";
+
+            var table = new TableBlock("Group", "Test", "Level", "Models", "What", "Status",
+                                       "X" + axis, "Y" + axis, "Z" + axis);
+
+            foreach (var group in groups)
                 foreach (var item in group.Items)
                     table.Row(group.Name,
                         item.TestName,
@@ -938,9 +3427,9 @@ namespace CamelWorks.UI.Views
                         item.ModelPair,
                         (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
                         item.Status.ToString(),
-                        item.X.ToString("0.00", CultureInfo.InvariantCulture),
-                        item.Y.ToString("0.00", CultureInfo.InvariantCulture),
-                        item.Z.ToString("0.00", CultureInfo.InvariantCulture));
+                        units.Bare(item.X),
+                        units.Bare(item.Y),
+                        units.Bare(item.Z));
 
             return table;
         }
@@ -956,6 +3445,9 @@ namespace CamelWorks.UI.Views
             var path = Ui.Text(string.Empty, null, 340);
             var version = "2.1";
             var picker = Ui.Choice(new[] { "2.1", "3.0" }, version, v => version = v);
+
+            var snapshots = true;
+            var snapshotBox = Ui.Check("Include a snapshot of each group", snapshots, v => snapshots = v);
 
             var export = Ui.Runner("Export the board", results, job =>
             {
@@ -985,7 +3477,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 job.Say("Building topics...");
-                var topics = Topics(session, board);
+                var topics = TopicsOf(session, board, snapshots, job);
 
                 job.Say("Writing...");
 
@@ -998,7 +3490,23 @@ namespace CamelWorks.UI.Views
                     results.Children.Add(Ui.Line(result.ToString(), 1, true));
 
                     foreach (var note in result.Notes) results.Children.Add(Ui.Note(note));
+
+                    if (result.UnresolvableComponents > 0)
+                        results.Children.Add(Ui.Note(
+                            Ui.Count(result.UnresolvableComponents, "element")
+                            + " could not be named by an IFC GlobalId, because the model they came from "
+                            + "did not carry one. They are written with CamelWorks' own identity instead, "
+                            + "so the topic still says which elements it means — a receiving tool just "
+                            + "cannot select them for you."));
+
+                    if (snapshots && result.Snapshots == 0 && result.Viewpoints > 0)
+                        results.Children.Add(Ui.Note(
+                            "Navisworks would not render the snapshots, so the file carries cameras "
+                            + "without images. Every viewpoint still opens on its clash."));
                 }
+
+                RememberSent(session, board);
+                session.Store.Save();
 
                 results.Children.Add(Ui.Line("Wrote " + file, 0.8));
                 session.Record(ActivityKind.Exchange, "exported BCF " + version, file);
@@ -1063,6 +3571,8 @@ namespace CamelWorks.UI.Views
                     results.Children.Add(Ui.Note("CamelWorks has recorded which topics it has seen, so the "
                         + "same file read again reports nothing new. It does not write them into the model: "
                         + "somebody else's issue list is theirs until you decide what to do with it."));
+
+                    Reply(session, read.Topics, results);
                 }
 
                 session.Record(ActivityKind.Exchange, "read a BCF file", file);
@@ -1074,11 +3584,488 @@ namespace CamelWorks.UI.Views
                        + "camera's aspect ratio, which 2.1 has nowhere to put."),
                 Ui.Field("Version", picker),
                 Ui.Field("File", path),
+                snapshotBox,
+                Ui.Note("A topic with no viewpoint is a sentence about a problem somewhere in a "
+                        + "federation. Every topic CamelWorks writes carries a camera and the elements "
+                        + "involved; the snapshot is the part that moves your view while it runs, and "
+                        + "your camera is put back afterwards."),
                 Ui.Across(export, import),
+                Worksheet(),
                 results));
         }
 
+        /// <summary>
+        /// The worksheet leg: the same issues, for a far end that has Excel and not a BCF reader.
+        ///
+        /// BCF assumes the other side has a tool that reads BCF. Most of the other sides on a real
+        /// project have Excel, and a coordinator who sends a .bcfzip to a fabricator gets a phone
+        /// call. So the same issues go out as a sheet with two empty columns, and come back through
+        /// the same merge policy as a returned BCF file - including the rule that a stale "Open"
+        /// does not undo an approval.
+        /// </summary>
+        private static UIElement Worksheet()
+        {
+            var results = Ui.Stack();
+            var path = Ui.Text(string.Empty, null, 340);
+
+            var session = Host.Current;
+
+            var parties = new List<string> { "Everyone" };
+            if (session != null) parties.AddRange(session.Profile.Parties);
+
+            var party = parties[0];
+            var picker = Ui.Choice(parties, party, p => party = p);
+
+            var write = Ui.Runner("Write a worksheet", results, job =>
+                WriteSheet(results, path, party, job));
+
+            var read = Ui.Runner("Read one back", results, job => ReadSheet(results, path, job));
+
+            return Ui.Card("Worksheet",
+                "For a far end that has Excel and not a BCF reader",
+                Ui.Field("For", picker),
+                Ui.Field("File", path),
+                Ui.Across(write, read),
+                Ui.Note(IssueSheet.Instructions()),
+                results);
+        }
+
+        /// <summary>Write the open issues out, one row each, with two columns to fill in.</summary>
+        private static void WriteSheet(Panel results, TextBox path, string party, Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board in Triage first. The worksheet is of the "
+                    + "board, and without one there is nothing to send."));
+                return;
+            }
+
+            var units = session.Profile.Units;
+            var everyone = string.Equals(party, "Everyone", StringComparison.Ordinal);
+
+            var lines = new List<IssueLine>();
+
+            foreach (var group in board.Groups)
+            {
+                if (!everyone && !string.Equals(group.AssignedTo, party, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Open issues only. Sending somebody a list of what they already closed is how a
+                // list stops being read.
+                if (group.Items.Count > 0 && group.Items.All(i => FindingStatusLattice.IsClosed(i.Status)))
+                    continue;
+
+                var first = group.Items.FirstOrDefault();
+
+                lines.Add(new IssueLine(group.Name)
+                {
+                    Party = group.AssignedTo,
+                    Level = first?.Level,
+                    Location = first == null ? null : IssueSheet.Where(first.X, first.Y, first.Z, units),
+                    Description = first == null
+                        ? Ui.Count(group.Items.Count, "clash")
+                        : (first.CategoryA ?? "?") + " against " + (first.CategoryB ?? "?")
+                          + " - " + Ui.Count(group.Items.Count, "clash"),
+                    Instruction = group.Instruction.IsStated ? group.Instruction.Describe(units) : null,
+                    Status = group.Items.Count == 0
+                        ? FindingStatus.Active
+                        : group.Items.Min(i => i.Status),
+                });
+            }
+
+            if (lines.Count == 0)
+            {
+                results.Children.Add(Ui.Empty("Nothing open to send.",
+                    everyone
+                        ? "Every group on the board is approved or resolved."
+                        : "Nothing open on the board is with " + party + "."));
+                return;
+            }
+
+            var file = path.Text.Trim();
+
+            if (file.Length == 0)
+            {
+                file = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    Deliverable.Safe(session.Profile.ProjectName + " issues - " + party) + ".xlsx");
+
+                path.Text = file;
+            }
+
+            job.Say("Writing " + Ui.Count(lines.Count, "issue") + "...");
+
+            try
+            {
+                File.WriteAllBytes(file, XlsxWriter.Write(new[] { IssueSheet.Write(party, lines) }));
+            }
+            catch (Exception error)
+            {
+                results.Children.Add(Ui.Problem("Could not write it: " + error.Message));
+                return;
+            }
+
+            RememberSheet(session, lines);
+
+            results.Children.Add(Ui.Line("Wrote " + Ui.Count(lines.Count, "issue") + " to " + file, 1, true));
+
+            session.Record(ActivityKind.Exchange,
+                "wrote an issue worksheet for " + party + " - " + Ui.Count(lines.Count, "issue"), file);
+        }
+
+        /// <summary>Read a returned worksheet and show what it would do, before doing any of it.</summary>
+        private static void ReadSheet(Panel results, TextBox path, Job job)
+        {
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board in Triage and read this sheet again. "
+                    + "Without a board there is nothing to reconcile against."));
+                return;
+            }
+
+            var file = path.Text.Trim();
+
+            if (file.Length == 0)
+            {
+                results.Children.Add(Ui.Problem("Say which file to read back."));
+                return;
+            }
+
+            job.Say("Reading the sheet...");
+
+            byte[] bytes;
+
+            try
+            {
+                bytes = File.ReadAllBytes(file);
+            }
+            catch (Exception error)
+            {
+                results.Children.Add(Ui.Problem("Could not read it: " + error.Message));
+                return;
+            }
+
+            var book = XlsxReader.Read(bytes);
+
+            if (!book.IsUsable)
+            {
+                results.Children.Add(Ui.Problem(book.Problem ?? "Nothing could be read from that file."));
+                return;
+            }
+
+            // The record of what was sent, with the current board laid over it: the record survives
+            // a re-run that renamed a group, and the board is right about what it is called today.
+            var sent = SentSheets(session);
+            foreach (var group in board.Groups) sent[IssueSheet.IdOf(group.Name)] = group.Name;
+
+            var current = new Dictionary<string, FindingStatus>(StringComparer.Ordinal);
+
+            foreach (var group in board.Groups)
+                current[group.Name] = group.Items.Count == 0
+                    ? FindingStatus.Active
+                    : group.Items.Min(i => i.Status);
+
+            var report = IssueSheet.Read(book.First, sent, current);
+
+            results.Children.Add(Ui.Line(report.Explain(), 1, true));
+
+            if (report.Problem != null)
+            {
+                results.Children.Add(Ui.Problem(report.Problem));
+                return;
+            }
+
+            if (report.Unmatched.Count > 0)
+                results.Children.Add(Ui.Problem(
+                    Ui.Count(report.Unmatched.Count, "row") + " name an issue this project never sent "
+                    + "- rows " + string.Join(", ", report.Unmatched.Take(8).Select(r => r.Number))
+                    + ". Somebody added them, or they came from another package. They are somebody's "
+                    + "list and not this board's status to change."));
+
+            if (report.Duplicates.Count > 0)
+                results.Children.Add(Ui.Problem(
+                    Ui.Count(report.Duplicates.Count, "row") + " repeat an issue an earlier row already "
+                    + "answered. The first row wins."));
+
+            if (report.Blank > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Blank, "row")
+                    + " carry a response but no issue id, so there is no way to tell which issue "
+                    + "they are about."));
+
+            if (report.Matched.Count == 0) return;
+
+            var rows = report.Matched.Select(m => new TableRow(m,
+                m.Group,
+                m.UnknownStatus ?? (m.Incoming == null ? "-" : FindingStatusLattice.ToName(m.Incoming.Value)),
+                FindingStatusLattice.ToName(m.Current),
+                m.Changes ? FindingStatusLattice.ToName(m.Merged) : "-",
+                m.Note ?? string.Empty)
+            {
+                Tone = m.UnknownStatus != null ? Tone.Warn
+                     : m.IsReopen && m.Changes ? Tone.Bad
+                     : m.Changes ? Tone.Good
+                     : Tone.Plain,
+            }).ToList();
+
+            results.Children.Add(Ui.Table(rows,
+                ("Issue", 200), ("They say", 110), ("The board says", 110),
+                ("Would become", 110), ("What they wrote", 0)));
+
+            if (report.Refused > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Refused, "row")
+                    + " asked for a status lower than the board holds and will stay where they are. "
+                    + "The sheet went out before those decisions were made, and a stale \"Open\" must "
+                    + "not undo an approval nobody has disputed. A deliberate re-open is different "
+                    + "and is honoured."));
+
+            if (report.Changes == 0)
+            {
+                results.Children.Add(Ui.Empty("Nothing to apply.",
+                    "The board already agrees with everything on that sheet."));
+                return;
+            }
+
+            results.Children.Add(Ui.Button("Apply " + Ui.Count(report.Changes, "change") + " to the board",
+                () => ApplySheet(session, board, report, results)));
+
+            session.Record(ActivityKind.Exchange, "read an issue worksheet", file);
+        }
+
+        /// <summary>Write a returned worksheet into the board, one group at a time.</summary>
+        private static void ApplySheet(Session session, ClashPipelineResult board,
+                                       IssueSheetReport report, Panel results)
+        {
+            var moved = 0;
+            var groups = 0;
+
+            foreach (var response in report.Matched.Where(m => m.Changes))
+            {
+                var group = board.Groups.FirstOrDefault(
+                    g => string.Equals(g.Name, response.Group, StringComparison.Ordinal));
+
+                if (group == null) continue;
+
+                groups++;
+
+                foreach (var item in group.Items)
+                {
+                    // Per item, and promote-only unless the sheet re-opened it. Applying the merged
+                    // status flat would demote rows somebody had already taken further.
+                    var next = response.IsReopen
+                        ? response.Merged
+                        : FindingStatusLattice.Merge(item.Status, response.Merged);
+
+                    if (next == item.Status) continue;
+
+                    item.Status = next;
+                    moved++;
+                }
+            }
+
+            Save(session, board, "applied a returned worksheet to " + Ui.Count(groups, "group"));
+
+            results.Children.Add(session.Store.Save()
+                ? Ui.Line("Applied to " + Ui.Count(groups, "group") + ", " + Ui.Count(moved, "result")
+                          + " moved. Load the board again to see it.", 1, true)
+                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+            results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
+                + "in Triage, and it puts back the board as it was before this."));
+
+            session.Record(ActivityKind.Exchange,
+                "applied a returned worksheet: " + Ui.Count(groups, "group") + " moved");
+        }
+
+        /// <summary>Which board group each issue id this project has sent out came from.</summary>
+        private static Dictionary<string, string> SentSheets(Session session)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var saved = session.Store.Section(ProjectStore.ClashSection)["sheetIssues"];
+
+            foreach (var id in saved.Keys)
+            {
+                var group = saved[id].AsString();
+                if (!string.IsNullOrEmpty(group)) map[id] = group!;
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// Record what this worksheet sent, so a reply is readable a fortnight later.
+        ///
+        /// The id is derived from the group name, so it could be recomputed - but only while the
+        /// board still holds that group under that name, and a reply usually arrives after a re-run
+        /// has renamed something.
+        /// </summary>
+        private static void RememberSheet(Session session, IEnumerable<IssueLine> lines)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var saved = section["sheetIssues"];
+
+            if (saved.Kind != JsonKind.Object)
+            {
+                saved = JsonValue.Object();
+                section.Set("sheetIssues", saved);
+            }
+
+            foreach (var line in lines) saved.Set(line.IssueId, JsonValue.String(line.Group));
+
+            session.Store.Save();
+        }
+
         /// <summary>Topic GUIDs this project has already been shown.</summary>
+        /// <summary>
+        /// The half of BCF that makes it worth having: what a returned file says about this board.
+        ///
+        /// An issue that goes out and never comes back is a spreadsheet with extra steps. A reply
+        /// carries somebody else's opinion of statuses this board already holds, and the whole
+        /// difficulty is reconciling the two without either side quietly losing a decision.
+        ///
+        /// Nothing is applied until somebody presses the button, and what the button would do is on
+        /// the screen above it, row by row.
+        /// </summary>
+        private static void Reply(Session session, IReadOnlyList<BcfTopic> topics, Panel results)
+        {
+            var board = LastBoard;
+
+            if (board == null)
+            {
+                results.Children.Add(Ui.Note("Load the board in Triage and read this file again to see "
+                    + "what it says about it. Without a board there is nothing to reconcile against."));
+                return;
+            }
+
+            // The record of what was sent, with the current board laid over it: the record survives
+            // a re-run that renamed a group, and the board is right about what it is called today.
+            var sent = Sent(session);
+            foreach (var group in board.Groups) sent[BcfGuid.For(group.Id)] = group.Name;
+
+            var current = new Dictionary<string, FindingStatus>(StringComparer.Ordinal);
+
+            foreach (var group in board.Groups)
+            {
+                // The least-progressed member. A group is only resolved when everything in it is,
+                // and calling it resolved because one row was would close work that is still open.
+                current[group.Name] = group.Items.Count == 0
+                    ? FindingStatus.Active
+                    : group.Items.Min(i => i.Status);
+            }
+
+            var report = BcfResponse.Read(topics, sent, current);
+
+            if (report.Matched.Count == 0)
+            {
+                results.Children.Add(Ui.Note("None of these topics came from this project, so there is "
+                    + "nothing on the board to reconcile. Read them as somebody else's list."));
+                return;
+            }
+
+            results.Children.Add(Ui.Line("What this reply says about the board", 1, true));
+            results.Children.Add(Ui.Line(report.Explain(), 0.8));
+
+            var rows = report.Matched.Select(m => new TableRow(m,
+                m.GroupName,
+                m.Topic.TopicStatus,
+                FindingStatusLattice.ToName(m.Current),
+                m.Changes ? FindingStatusLattice.ToName(m.Merged) : "-",
+                m.UnknownStatus != null ? "not a status we know"
+                    : m.Refused ? "kept where it is"
+                    : m.IsReopen && m.Changes ? "re-opened"
+                    : string.Empty)
+            {
+                Tone = m.UnknownStatus != null ? Tone.Warn
+                     : m.IsReopen && m.Changes ? Tone.Bad
+                     : m.Changes ? Tone.Good
+                     : Tone.Plain,
+            }).ToList();
+
+            results.Children.Add(Ui.Table(rows,
+                ("Group", 200), ("The file says", 120), ("The board says", 110),
+                ("Would become", 110), ("", 0)));
+
+            if (report.Refused > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Refused, "topic")
+                    + " asked for a status lower than the board holds and will stay where they are. "
+                    + "The file was exported before those decisions were made, and a stale \"Open\" "
+                    + "must not undo an approval nobody has disputed. A deliberate re-open is "
+                    + "different and is honoured."));
+
+            if (report.Unknown > 0)
+                results.Children.Add(Ui.Note(Ui.Count(report.Unknown, "topic")
+                    + " carry a status word CamelWorks does not recognise. BCF lets every project "
+                    + "define its own, so those are shown and left alone rather than mapped onto a "
+                    + "guess."));
+
+            if (report.Changes == 0)
+            {
+                results.Children.Add(Ui.Empty("Nothing to apply.",
+                    "The board already agrees with everything in this file that CamelWorks can act on."));
+                return;
+            }
+
+            results.Children.Add(Ui.Button("Apply " + Ui.Count(report.Changes, "change") + " to the board",
+                () => Apply(session, board, report, results)));
+        }
+
+        /// <summary>Write the reply into the board, one group at a time.</summary>
+        private static void Apply(Session session, ClashPipelineResult board,
+                                  BcfResponseReport report, Panel results)
+        {
+            var moved = 0;
+            var groups = 0;
+
+            foreach (var response in report.Matched.Where(m => m.Changes))
+            {
+                var group = board.Groups.FirstOrDefault(
+                    g => string.Equals(g.Name, response.GroupName, StringComparison.Ordinal));
+
+                if (group == null) continue;
+
+                groups++;
+
+                foreach (var item in group.Items)
+                {
+                    // Per item, and promote-only unless the file re-opened it. Applying the group's
+                    // merged status flat would demote the rows somebody had already taken further.
+                    var next = response.IsReopen
+                        ? response.Merged
+                        : FindingStatusLattice.Merge(item.Status, response.Merged);
+
+                    if (next == item.Status) continue;
+
+                    item.Status = next;
+                    moved++;
+                }
+
+                if (response.AssignedTo != null && group.AssignedTo == null)
+                    group.AssignByHand(response.AssignedTo);
+            }
+
+            Save(session, board, "applied a BCF reply to " + Ui.Count(groups, "group"));
+
+            results.Children.Add(session.Store.Save()
+                ? Ui.Line("Applied to " + Ui.Count(groups, "group") + ", "
+                          + Ui.Count(moved, "result") + " moved. Load the board again to see it.", 1, true)
+                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+            results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
+                + "in Triage, and it puts back the board as it was before this."));
+
+            session.Record(ActivityKind.Exchange,
+                "applied a BCF reply: " + Ui.Count(groups, "group") + " moved");
+        }
+
         private static HashSet<string> Known(Session session)
         {
             var saved = session.Store.Section(ProjectStore.ClashSection)["bcfTopics"];
@@ -1100,33 +4087,186 @@ namespace CamelWorks.UI.Views
             session.Store.Save();
         }
 
-        private static IReadOnlyList<BcfTopic> Topics(Session session, ClashPipelineResult board)
+        /// <summary>
+        /// Which board group each topic this project has exported came from.
+        ///
+        /// Written at export and read when a file comes back. The topic GUID is derived from the
+        /// group id, so it could be recomputed from the board — but only while the board still
+        /// holds that group under that id, and a reply usually arrives after a re-run has moved
+        /// things. The record is what makes a reply readable a fortnight later.
+        /// </summary>
+        private static Dictionary<string, string> Sent(Session session)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            var saved = session.Store.Section(ProjectStore.ClashSection)["bcfGroups"];
+
+            foreach (var guid in saved.Keys)
+            {
+                var group = saved[guid].AsString();
+                if (!string.IsNullOrEmpty(group)) map[guid] = group!;
+            }
+
+            return map;
+        }
+
+        /// <summary>Record what this export sent, so the reply can be matched to it.</summary>
+        private static void RememberSent(Session session, ClashPipelineResult board)
+        {
+            var section = session.Store.Section(ProjectStore.ClashSection);
+            var saved = section["bcfGroups"];
+
+            if (saved.Kind != JsonKind.Object)
+            {
+                saved = JsonValue.Object();
+                section.Set("bcfGroups", saved);
+            }
+
+            foreach (var group in board.Groups)
+                saved.Set(BcfGuid.For(group.Id), JsonValue.String(group.Name));
+        }
+
+        /// <summary>How many components one viewpoint will name before it stops.</summary>
+        private const int ComponentCap = 400;
+
+        /// <summary>How big a snapshot is. Big enough to read, small enough that a hundred fit in a file.</summary>
+        private const int SnapshotWidth = 1280;
+
+        /// <summary>How big a snapshot is.</summary>
+        private const int SnapshotHeight = 720;
+
+        /// <summary>
+        /// One BCF topic per group, with its camera, its components and optionally its picture.
+        ///
+        /// Shared with the graph so an overnight run writes the same file the button does. A second
+        /// implementation of "what a topic is" is how the automated export and the manual one come
+        /// to disagree about something a client is reading.
+        /// </summary>
+        /// <param name="session">The document.</param>
+        /// <param name="board">The board to export.</param>
+        /// <param name="snapshots">Whether to render a picture per topic.</param>
+        /// <param name="job">Progress, or <see cref="Job.Silent"/>.</param>
+        internal static IReadOnlyList<BcfTopic> TopicsOf(Session session, ClashPipelineResult board,
+                                                         bool snapshots, Job job)
         {
             var topics = new List<BcfTopic>();
             var author = session.Profile.Author;
             var now = new DateTimeOffset(DateTime.UtcNow);
 
-            foreach (var group in board.Groups)
+            // The camera is moved once per group when snapshots are on, and put back at the end
+            // whatever happens. Leaving a coordinator looking at the last clash of a hundred is a
+            // small betrayal they would remember.
+            using (var camera = snapshots ? session.View.BorrowCamera() : null)
             {
-                // One topic per group, not per clash. A group is the unit somebody fixes; a BCF file
-                // with one topic per penetration is the export everybody complains about.
-                var topic = new BcfTopic(BcfGuid.For(group.Id), group.Name, now, author)
+                foreach (var group in board.Groups)
                 {
-                    TopicType = "Clash",
-                    TopicStatus = "Open",
-                    AssignedTo = group.AssignedTo,
-                    Priority = group.Priority,
-                    Description = Ui.Count(group.Items.Count, "clash") + " in " + group.Name
-                                  + ". " + board.Funnel,
-                };
+                    if (!job.Step(topics.Count, "topics built")) break;
 
-                foreach (var label in new[] { group.Items.FirstOrDefault()?.Level, group.Items.FirstOrDefault()?.ModelPair })
-                    if (!string.IsNullOrEmpty(label)) topic.Labels.Add(label!);
+                    // One topic per group, not per clash. A group is the unit somebody fixes; a BCF
+                    // file with one topic per penetration is the export everybody complains about.
+                    var topic = new BcfTopic(BcfGuid.For(group.Id), group.Name, now, author)
+                    {
+                        TopicType = "Clash",
+                        TopicStatus = "Open",
+                        AssignedTo = group.AssignedTo,
+                        Priority = group.Priority,
+                        Description = Ui.Count(group.Items.Count, "clash") + " in " + group.Name + ". " + board.Funnel,
+                    };
 
-                topics.Add(topic);
+                    foreach (var label in new[] { group.Items.FirstOrDefault()?.Level,
+                                                  group.Items.FirstOrDefault()?.ModelPair })
+                        if (!string.IsNullOrEmpty(label)) topic.Labels.Add(label!);
+
+                    topic.Viewpoints.Add(Viewpoint(session, group, snapshots));
+                    topics.Add(topic);
+                }
             }
 
             return topics;
         }
+
+        /// <summary>
+        /// The viewpoint that makes a topic worth receiving.
+        ///
+        /// A topic with no viewpoint is a sentence about a problem somewhere in a federation. The
+        /// camera says where to stand, and the components say which two things to look at — without
+        /// both, the person opening it in another tool has to go and find the clash themselves,
+        /// which is the entire job the file was supposed to save them.
+        /// </summary>
+        private static BcfViewpoint Viewpoint(Session session, ClashGroup group, bool snapshot)
+        {
+            var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
+            var framing = BcfFraming.Around(points);
+
+            var viewpoint = new BcfViewpoint(group.Id) { Camera = framing.ToCamera() };
+
+            var named = 0;
+
+            foreach (var item in group.Items)
+            {
+                if (named >= ComponentCap) break;
+
+                viewpoint.Selection.Add(Component(session, item.Key.A));
+                viewpoint.Selection.Add(Component(session, item.Key.B));
+                named += 2;
+            }
+
+            if (!snapshot) return viewpoint;
+
+            session.View.FrameBox(BoxOf(points));
+            viewpoint.Snapshot = session.View.Capture(SnapshotWidth, SnapshotHeight);
+
+            return viewpoint;
+        }
+
+        /// <summary>
+        /// The box a group occupies, in metres, never degenerate.
+        ///
+        /// Shared with the Viewpoints tab so a saved walkthrough frames its issue exactly the way
+        /// the BCF viewpoints and the report's pictures do. Three framings that drifted apart would
+        /// be three different opinions about where a problem is.
+        /// </summary>
+        /// <param name="points">Every clash point in the group, in metres.</param>
+        internal static BoundingBox BoxOf(IReadOnlyList<(double X, double Y, double Z)> points)
+        {
+            if (points.Count == 0) return new BoundingBox(-1, -1, -1, 1, 1, 1);
+
+            double minX = points[0].X, maxX = minX, minY = points[0].Y, maxY = minY,
+                   minZ = points[0].Z, maxZ = minZ;
+
+            foreach (var (x, y, z) in points)
+            {
+                minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+                minZ = Math.Min(minZ, z); maxZ = Math.Max(maxZ, z);
+            }
+
+            // A group of one clash is a single point, and a zero-size box frames nothing.
+            const double margin = 1.5;
+
+            return new BoundingBox(minX - margin, minY - margin, minZ - margin,
+                                   maxX + margin, maxY + margin, maxZ + margin);
+        }
+
+        /// <summary>
+        /// One element, as BCF names elements.
+        ///
+        /// BCF identifies by IFC GlobalId, which a federation only has where a model came from IFC.
+        /// Where it does not, the component is written with CamelWorks' own key as the authoring
+        /// tool id and no GlobalId — which the writer counts and the export reports, rather than
+        /// writing a Revit element id into a field a viewer will look up and not find.
+        /// </summary>
+        private static BcfComponent Component(Session session, ElementKey key)
+        {
+            var item = session.Model.Resolve(key);
+
+            var guid = item == null ? null : IfcGuid.OrNull(
+                item.Property("IFC", "GlobalId")
+                ?? item.Property("Element", "IFC GUID")
+                ?? item.Property("Item", "GUID")
+                ?? item.Property("Element", "GUID"));
+
+            return new BcfComponent(guid, key.ToString(), "CamelWorks");
+        }
+
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
 
@@ -77,15 +78,150 @@ namespace CamelWorks.Nav
             var found = Find(viewId);
             if (found == null) return;
 
-            // The host has no rename: a SavedItem's name is fixed once it is in the collection, and
-            // the only editable form is a copy. Remove-then-add is therefore the whole operation,
-            // and it moves the viewpoint to the end of its folder — a real cost, worth stating
-            // rather than hiding, since the alternative is not offering rename at all.
-            var copy = (SavedViewpoint)found.CreateCopy();
-            copy.DisplayName = newName;
+            // EditDisplayName, not remove-then-add. The collection edits the item where it stands,
+            // so a bulk rename of forty viewpoints leaves all forty in the order the coordinator
+            // put them in — where remove-then-add moves each one to the end of its folder and
+            // reverses the list as a side effect of doing its job.
+            Host.SavedViewpoints.EditDisplayName(found, newName);
+        }
 
-            Host.SavedViewpoints.Remove(found);
-            Host.SavedViewpoints.AddCopy(copy);
+        /// <inheritdoc />
+        public string? MoveTo(string viewId, string? folder)
+        {
+            var found = Find(viewId);
+            if (found == null) return null;
+
+            var name = found.DisplayName ?? string.Empty;
+
+            // Compared as paths rather than as objects. The host hands back a fresh wrapper around
+            // the same native folder on every access, so ReferenceEquals says "different" about
+            // two handles on one folder — and the viewpoint would be taken out of its position and
+            // put back at the end of the folder it was already in.
+            var here = FolderOf(viewId);
+            var there = string.IsNullOrWhiteSpace(folder) ? null : folder!.Trim().Trim('/');
+
+            if (string.Equals(here ?? string.Empty, there ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+                return PathOf(there, name);
+
+            var wanted = Folder(there);
+
+            var copy = (SavedViewpoint)found.CreateCopy();
+            copy.DisplayName = name;
+
+            Host.SavedViewpoints.Remove(Parent(found), found);
+            Host.SavedViewpoints.AddCopy(wanted, copy);
+
+            return PathOf(there, name);
+        }
+
+        /// <inheritdoc />
+        public bool CopyOverrides(string fromViewId, string toViewId)
+        {
+            if (string.Equals(fromViewId, toViewId, StringComparison.OrdinalIgnoreCase)) return false;
+
+            var source = Find(fromViewId);
+            var target = Find(toViewId);
+
+            if (source == null || target == null) return false;
+
+            var parent = Parent(target);
+            var index = IndexOf(parent, target);
+
+            if (index < 0) return false;
+
+            var name = target.DisplayName ?? string.Empty;
+
+            // The camera has to be read before the source is applied, because applying it is what
+            // moves the camera.
+            var camera = target.Viewpoint?.CreateCopy();
+
+            // Restore the source: this is what puts its overrides into the running view, and it is
+            // the only way to get at them — GetAppearanceOverrides reads them but nothing writes
+            // them onto another viewpoint.
+            Host.SavedViewpoints.CurrentSavedViewpoint = source;
+
+            // Camera back to where the target had it, so this copies the overrides and not the
+            // view. A "copy overrides" that quietly moved the camera would be a different feature.
+            if (camera != null) Host.CurrentViewpoint.CopyFrom(camera);
+
+            var made = Host.SavedViewpoints.CaptureRuntimeOverrides();
+
+            // CaptureRuntimeOverrides rather than ReplaceFromCurrentView: the latter is documented
+            // as updating the viewpoint, redlines and visibility, and says nothing about material
+            // overrides. Half of "copy overrides" is not the feature.
+            if (made == null) return false;
+
+            made.DisplayName = name;
+
+            // In place, at the same index, so the target keeps its position in the folder.
+            Host.SavedViewpoints.ReplaceWithCopy(parent, index, made);
+            return true;
+        }
+
+        /// <summary>Find or make the folder chain, and hand back the group to add into.</summary>
+        private GroupItem Folder(string? path)
+        {
+            GroupItem parent = Host.SavedViewpoints.RootItem;
+
+            if (string.IsNullOrWhiteSpace(path)) return parent;
+
+            foreach (var wanted in path!.Split('/'))
+            {
+                if (string.IsNullOrWhiteSpace(wanted)) continue;
+
+                var name = wanted.Trim();
+
+                var found = Children(parent).OfType<FolderItem>().FirstOrDefault(
+                    f => string.Equals(f.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+                if (found == null)
+                {
+                    Host.SavedViewpoints.AddCopy(parent, new FolderItem { DisplayName = name });
+
+                    found = Children(parent).OfType<FolderItem>().LastOrDefault(
+                        f => string.Equals(f.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+                    // The host refused the folder. The root is a worse answer than the folder asked
+                    // for and a much better one than losing the viewpoint.
+                    if (found == null) return parent;
+                }
+
+                parent = found;
+            }
+
+            return parent;
+        }
+
+        /// <summary>The group an item sits in, or the root.</summary>
+        private GroupItem Parent(SavedItem item)
+        {
+            try { return item.Parent ?? Host.SavedViewpoints.RootItem; }
+            catch (Exception) { return Host.SavedViewpoints.RootItem; }
+        }
+
+        /// <summary>Where an item sits in its group, or -1.</summary>
+        private static int IndexOf(GroupItem group, SavedItem item)
+        {
+            var children = Children(group);
+
+            for (var i = 0; i < children.Count; i++)
+                if (ReferenceEquals(children[i], item)
+                    || string.Equals(children[i].DisplayName, item.DisplayName, StringComparison.Ordinal))
+                    return i;
+
+            return -1;
+        }
+
+        /// <summary>The children of a group, as a list, and empty rather than null.</summary>
+        private static IReadOnlyList<SavedItem> Children(GroupItem? group)
+        {
+            var items = new List<SavedItem>();
+
+            if (group?.Children == null) return items;
+
+            foreach (SavedItem child in group.Children) items.Add(child);
+
+            return items;
         }
 
         /// <inheritdoc />
@@ -113,7 +249,23 @@ namespace CamelWorks.Nav
         private static void Collect(SavedItemCollection items, string? folder, List<SavedView> views)
         {
             Walk(items, folder, (item, path) =>
-                views.Add(new SavedView(path, item.DisplayName ?? string.Empty, FolderOf(path), false, false)));
+                views.Add(new SavedView(path, item.DisplayName ?? string.Empty, FolderOf(path),
+                                        HasOverrides(item),
+                                        // Not knowable. See SavedView.HasRedlines for why.
+                                        false)));
+        }
+
+        /// <summary>
+        /// Whether a viewpoint carries appearance state of its own.
+        ///
+        /// Both kinds count. A viewpoint that only hides things changes what the Appearance stack
+        /// says is true just as surely as one that recolours them, and a list that flagged the
+        /// second but not the first would let the more common one through unannounced.
+        /// </summary>
+        private static bool HasOverrides(SavedViewpoint item)
+        {
+            try { return item.ContainsAppearanceOverrides || item.ContainsVisibilityOverrides; }
+            catch (Exception) { return false; }
         }
 
         private static void Walk(SavedItemCollection items, string? folder, Action<SavedViewpoint, string> visit)

@@ -50,6 +50,9 @@ namespace CamelWorks.Core.Project
         /// <summary>Section holding the activity log.</summary>
         public const string ActivitySection = "activity";
 
+        /// <summary>What the last health check saw: the model manifest it compares against.</summary>
+        public const string ModelsSection = "models";
+
         private readonly IFileSystem _fs;
         private readonly VersionedDocument _document;
 

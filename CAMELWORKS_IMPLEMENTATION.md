@@ -238,7 +238,7 @@ they live only in Project ▸ Profile ▸ Model writes, each showing an affected
 | **Review** | `[A]` | Review mode on the board's current filter and scope |
 | Clash Tests | `[P:Coordinate/Tests]` | Matrix builder + Run. One click = every model vs every other; S1 imports the project's own spreadsheet |
 | Clash Rules | `[P:Coordinate/Rules]` | Suppress & Flag → Group → Assign, one pipeline. A derived default stack runs before you touch it |
-| **Headroom** | `[P:Coordinate/Triage]` | F1 — floor set × target set as a BetterSets expression, emitting Findings onto the board |
+| **Headroom** | `[P:Coordinate/Triage]` | F1 — floor set × target set as a Set Builder expression, emitting Findings onto the board |
 | Clash Report | `[P:Coordinate/Report]` | PDF / XLSX / HTML from a built-in template. Field pack (R3) is an output mode |
 | BCF ▾ | `[P:Coordinate/BCF]` | Export · Import — real BCF 2.1 and 3.0 (X1–X3) |
 | Merge | `[P:Coordinate/BCF]` | M1 — one conflict preview for inbound BCF **and** inbound reviewer files. Runs on Simulate |

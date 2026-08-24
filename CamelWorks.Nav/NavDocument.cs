@@ -15,10 +15,57 @@ namespace CamelWorks.Nav
         {
             Model = model;
             SourcePath = NavKeys.SourcePathOf(model) ?? string.Empty;
+
+            // FileName, deliberately, where SourcePathOf prefers SourceFileName: this is the file
+            // on disk right now, and re-appending the CAD path would open whatever that file has
+            // become rather than the revision this model is.
+            try
+            {
+                LoadedPath = model.FileName;
+            }
+            catch (Exception)
+            {
+                LoadedPath = null;
+            }
             Scope = NavKeys.ScopeOf(model);
             DisplayName = System.IO.Path.GetFileName(SourcePath);
             if (string.IsNullOrEmpty(DisplayName)) DisplayName = "(unnamed model)";
+
+            // Read once, at load. The manifest is a record of what this run saw, and re-reading the
+            // share every time a report is written would make two reports of the same run disagree.
+            try
+            {
+                var file = new System.IO.FileInfo(SourcePath);
+
+                if (file.Exists)
+                {
+                    SourceModifiedUtc = new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
+                    SourceBytes = file.Length;
+                }
+            }
+            catch (Exception)
+            {
+                // An unreadable path is an ordinary answer, not an error: the source may be on a
+                // share that is offline, on a drive nobody mapped, or genuinely gone.
+            }
+
+            try
+            {
+                ModelUnits = model.Units.ToString();
+
+                var transform = model.Transform;
+
+                HasTransform = !transform.IsIdentity();
+                Placement = Twelve(transform);
+            }
+            catch (Exception)
+            {
+                ModelUnits = null;
+            }
         }
+
+        /// <summary>The file the host has open for this model. See <see cref="IModelSource.LoadedPath"/>.</summary>
+        public string? LoadedPath { get; }
 
         /// <summary>The host model.</summary>
         public Model Model { get; }
@@ -31,6 +78,50 @@ namespace CamelWorks.Nav
 
         /// <inheritdoc />
         public string Scope { get; }
+
+        /// <inheritdoc />
+        public DateTimeOffset? SourceModifiedUtc { get; }
+
+        /// <inheritdoc />
+        public long? SourceBytes { get; }
+
+        /// <inheritdoc />
+        public string? ModelUnits { get; }
+
+        /// <inheritdoc />
+        public bool HasTransform { get; }
+
+        /// <inheritdoc />
+        public IReadOnlyList<double>? Placement { get; }
+
+        /// <summary>The transform as twelve numbers: the linear part row by row, then translation.</summary>
+        internal static IReadOnlyList<double> Twelve(Transform3D transform)
+        {
+            var linear = transform.Linear;
+            var move = transform.Translation;
+
+            return new[]
+            {
+                linear.Get(0, 0), linear.Get(0, 1), linear.Get(0, 2),
+                linear.Get(1, 0), linear.Get(1, 1), linear.Get(1, 2),
+                linear.Get(2, 0), linear.Get(2, 1), linear.Get(2, 2),
+                move.X, move.Y, move.Z,
+            };
+        }
+
+        /// <summary>Twelve numbers back into a transform, or null when they are not twelve.</summary>
+        /// <param name="numbers">The placement, as <see cref="Placement"/> writes it.</param>
+        internal static Transform3D? From(IReadOnlyList<double>? numbers)
+        {
+            if (numbers == null || numbers.Count != 12) return null;
+
+            var linear = new Matrix3(
+                numbers[0], numbers[1], numbers[2],
+                numbers[3], numbers[4], numbers[5],
+                numbers[6], numbers[7], numbers[8]);
+
+            return new Transform3D(linear, new Vector3D(numbers[9], numbers[10], numbers[11]));
+        }
     }
 
     /// <summary>One element.</summary>
@@ -244,6 +335,44 @@ namespace CamelWorks.Nav
                     collection.Add(item);
 
             return collection;
+        }
+
+        /// <summary>
+        /// Put a model back where it was.
+        ///
+        /// The counterpart of recording the placement, and the reason recording it is worth doing.
+        /// The host takes units and transform together, so the model's current units are handed
+        /// straight back — this moves a model and never re-scales one.
+        /// </summary>
+        /// <param name="model">The model to move.</param>
+        /// <param name="placement">Twelve numbers, as <c>IModelSource.Placement</c> writes them.</param>
+        /// <returns>Null when it worked, or why it did not.</returns>
+        public string? Restore(IModelSource model, IReadOnlyList<double>? placement)
+        {
+            if (!(model is NavModelSource source)) return "that is not a model this document holds";
+
+            var transform = NavModelSource.From(placement);
+
+            if (transform == null)
+                return "there is no recorded placement for " + model.DisplayName + " to go back to";
+
+            try
+            {
+                // On the model collection, not on the document: the document's own overload takes
+                // an index pair and is not the one that moves a model.
+                Document.Models.SetModelUnitsAndTransform(source.Model, source.Model.Units, transform,
+                                                          source.Model.IsTransformReflected);
+
+                // Everything handed out so far points into a tree that has just moved. A stale
+                // handle that looks fresh is worse than one that says it is stale.
+                Invalidate();
+
+                return null;
+            }
+            catch (Exception error)
+            {
+                return "the host refused to move " + model.DisplayName + ": " + error.Message;
+            }
         }
 
         /// <summary>

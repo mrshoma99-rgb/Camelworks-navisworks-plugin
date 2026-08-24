@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Measurement;
 
 namespace CamelWorks.Core.Data
 {
@@ -126,6 +127,28 @@ namespace CamelWorks.Core.Data
         /// <summary>Multiply by a plain number.</summary>
         public Quantity Times(double factor) => new Quantity(Value * factor, Kind);
 
+        /// <summary>
+        /// Every unit this understands, in the order a person reads them.
+        ///
+        /// Exposed rather than duplicated. A screen that offers a unit picker and a parser that
+        /// accepts units are the same vocabulary, and two copies of it drift the first time one
+        /// gains an entry — leaving a picker that offers "in2" and a parser that reads every such
+        /// value as unreadable.
+        /// </summary>
+        public static IReadOnlyList<string> KnownUnits => Vocabulary;
+
+        /// <summary>Whether a unit word is one this understands.</summary>
+        /// <param name="unit">The word, as somebody wrote it.</param>
+        public static bool Knows(string? unit) =>
+            !string.IsNullOrWhiteSpace(unit) && Units.ContainsKey(unit!.Trim());
+
+        /// <summary>What kind of thing a unit measures, or <see cref="QuantityKind.Scalar"/>.</summary>
+        /// <param name="unit">The word, as somebody wrote it.</param>
+        public static QuantityKind KindOf(string? unit) =>
+            !string.IsNullOrWhiteSpace(unit) && Units.TryGetValue(unit!.Trim(), out var found)
+                ? found.Kind
+                : QuantityKind.Scalar;
+
         /// <summary>The unit symbol for this kind.</summary>
         public string Unit => Kind switch
         {
@@ -142,6 +165,32 @@ namespace CamelWorks.Core.Data
         {
             var number = Value.ToString("0.###", CultureInfo.InvariantCulture);
             return Unit.Length == 0 ? number : number + " " + Unit;
+        }
+
+        /// <summary>
+        /// The same quantity in the units the project works in.
+        ///
+        /// <see cref="ToString"/> gives base SI, which is what the arithmetic runs in and what a
+        /// stored value should be. It is not what a person on a job in feet wants to read off a
+        /// takeoff, and converting at the screen rather than in the sum is what keeps a hundred
+        /// thousand additions from each carrying a conversion's rounding.
+        ///
+        /// Mass has no place in the shared formatter - there is no imperial-versus-metric decision
+        /// to make about a kilogram on a coordination report - so it reads as it always did.
+        /// </summary>
+        /// <param name="units">The project's formatter.</param>
+        public string Show(Measure? units)
+        {
+            if (units == null) return ToString();
+
+            return Kind switch
+            {
+                QuantityKind.Length => units.Length(Value),
+                QuantityKind.Area => units.Area(Value),
+                QuantityKind.Volume => units.Volume(Value),
+                QuantityKind.Angle => units.Angle(Value),
+                _ => ToString(),
+            };
         }
 
         /// <inheritdoc />
@@ -196,6 +245,15 @@ namespace CamelWorks.Core.Data
                 ["deg"] = (1, QuantityKind.Angle),
                 ["rad"] = (180 / Math.PI, QuantityKind.Angle),
             };
+
+        // Declared after Units, and not before it. Static field initialisers run in the order they
+        // are written, so a list built from Units above its own declaration reads a null
+        // dictionary and takes the type's static constructor with it.
+        private static readonly IReadOnlyList<string> Vocabulary = Units.Keys
+            .OrderBy(u => Units[u].Kind)
+            .ThenBy(u => Units[u].Factor)
+            .ThenBy(u => u, StringComparer.Ordinal)
+            .ToList();
 
         private static (string Number, string Unit)? SplitNumber(string text)
         {

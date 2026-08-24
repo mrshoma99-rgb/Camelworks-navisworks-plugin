@@ -77,7 +77,7 @@ namespace CamelWorks.UI.Shell
     /// </summary>
     public static class CommandCatalogue
     {
-        /// <summary>All twenty-five, in ribbon order.</summary>
+        /// <summary>All twenty-seven, in ribbon order.</summary>
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
             // Panel 1 — Project
@@ -92,13 +92,13 @@ namespace CamelWorks.UI.Shell
                 new[] { "configure", "settings", "options", "preferences" },
                 new[] { "where do I set this up", "do I have to configure it first" }),
 
-            Pane("ID_CW_FixLinks", "Fix Broken Links", "Project/Models",
+            Act("ID_CW_FixLinks", "Fix Broken Links",
                 "Find the sources a loaded model can no longer see, and what changed since the "
                 + "federation was saved.",
                 new[] { "missing model", "relink", "repath", "broken reference" },
                 new[] { "model did not load", "file not found", "the NWF points at the wrong folder" }),
 
-            Pane("ID_CW_ProjectProfile", "Project Profile", "Project/Setup",
+            Pane("ID_CW_ProjectProfile", "Project Profile", "Project/Profile",
                 "What this project's settings are, where each came from, and an override on each line.",
                 new[] { "template", "profile", "preset" },
                 new[] { "set this up the same way on the next job" }),
@@ -111,8 +111,8 @@ namespace CamelWorks.UI.Shell
                 new[] { "too many clashes", "thousands of results", "the same clash forty times",
                         "one pipe through forty joists", "where do I even start" }),
 
-            Pane("ID_CW_Review", "Review", "Coordinate/Triage",
-                "The board, on the group you were last looking at.",
+            Act("ID_CW_Review", "Review",
+                "One group at a time, over the model, with both hands on the keyboard.",
                 new[] { "walk the clashes", "go through results", "sign off" },
                 new[] { "I need to go through these one at a time" }),
 
@@ -147,7 +147,23 @@ namespace CamelWorks.UI.Shell
                 new[] { "combine", "reconcile", "incoming", "conflicts" },
                 new[] { "two people reviewed the same clashes", "whose version wins" }),
 
-            // Panel 3 — Data
+            // Panel 3 — Compare
+            Pane("ID_CW_Compare", "Compare", "Compare/Run",
+                "What changed since a baseline: added, removed, moved and changed, painted onto "
+                + "the model. Works on a raw model — take a baseline and you are set up.",
+                new[] { "diff", "difference", "revision", "version", "what changed", "model compare" },
+                new[] { "what changed since last week", "which model did they update",
+                        "the architect moved something and did not say",
+                        "is this the same model as last month", "did anything move",
+                        "I cannot tell what is different" }),
+
+            Act("ID_CW_Baseline", "Baseline",
+                "Record what the model is right now, so a comparison next week has something to "
+                + "compare against.",
+                new[] { "snapshot", "record", "mark", "freeze", "capture" },
+                new[] { "save what it looks like now", "I want to compare against this later" }),
+
+            // Panel 4 — Data
             Pane("ID_CW_DataManager", "Data Manager", "Data/Data",
                 "Browse and edit properties in one place, with calculated columns.",
                 new[] { "properties", "parameters", "attributes", "edit data" },
@@ -169,7 +185,7 @@ namespace CamelWorks.UI.Shell
                 new[] { "quantities", "measure", "counts", "schedule", "qto" },
                 new[] { "how much of this is there", "I need quantities out of the model" }),
 
-            // Panel 4 — Sets & Views
+            // Panel 5 — Sets & Views
             Pane("ID_CW_Sets", "Sets", "Sets/Sets",
                 "Boolean set building, compiled down to native search sets.",
                 new[] { "search sets", "selection sets", "filters", "find items" },
@@ -193,7 +209,7 @@ namespace CamelWorks.UI.Shell
                 new[] { "section", "clip", "cut", "crop" },
                 new[] { "I cannot see inside", "turning sectioning off loses my box" }),
 
-            // Panel 5 — Deliver & Automate
+            // Panel 6 — Deliver & Automate
             Pane("ID_CW_Batch", "Batch", "Batch/Jobs",
                 "Jobs and their run history. A job from this document in one click.",
                 new[] { "automation", "scheduled", "overnight", "unattended" },
@@ -209,11 +225,11 @@ namespace CamelWorks.UI.Shell
                 new[] { "ifc", "openbim export", "ifc4", "ifc2x3" },
                 new[] { "they want IFC", "export to IFC" }),
 
-            Pane("ID_CW_Export", "Export", "Project/Export",
-                "IFC from the exporter's own panel; spreadsheets and CSV from the screen that "
-                + "produced the numbers.",
-                new[] { "gltf", "glb", "csv", "xlsx", "web viewer" },
-                new[] { "put this on the web", "send them the geometry" }),
+            Act("ID_CW_Export", "Export",
+                "Geometry as a GLB a browser opens, or the properties as a spreadsheet.",
+                new[] { "gltf", "glb", "csv", "xlsx", "web viewer", "3d", "share the model" },
+                new[] { "put this on the web", "send them the geometry",
+                        "they cannot open an nwd", "send it to the client" }),
 
             Dialog("ID_CW_Help", "Help",
                 "Guide, limitations, shortcuts, Find a Tool, sample project, diagnostics, updates, about.",

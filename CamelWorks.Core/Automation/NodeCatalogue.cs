@@ -80,10 +80,12 @@ namespace CamelWorks.Core.Automation
     public sealed class NodeKind
     {
         internal NodeKind(string id, string group, string title, string summary,
-                          NodePort[] inputs, NodePort[] outputs, NodeSetting[] settings)
+                          NodePort[] inputs, NodePort[] outputs, NodeSetting[] settings,
+                          bool foundational = false)
         {
             Id = id; Group = group; Title = title; Summary = summary;
             Inputs = inputs; Outputs = outputs; Settings = settings;
+            Foundational = foundational;
         }
 
         /// <summary>Stable id, written to the file.</summary>
@@ -106,6 +108,17 @@ namespace CamelWorks.Core.Automation
 
         /// <summary>What it needs told.</summary>
         public IReadOnlyList<NodeSetting> Settings { get; }
+
+        /// <summary>
+        /// True when everything after this node depends on it having worked.
+        ///
+        /// The steps that assemble the federation. They carry no wires - nothing downstream can be
+        /// "skipped for want of an input" the way a colour node is - and yet a clash report over
+        /// three models where four were meant is exactly the quietly-wrong answer that gets
+        /// believed. So the runner stops on one of these rather than carrying on into a job that no
+        /// longer means what it says.
+        /// </summary>
+        public bool Foundational { get; }
 
         /// <summary>A port by id, input or output.</summary>
         /// <param name="portId">The port id.</param>
@@ -218,9 +231,58 @@ namespace CamelWorks.Core.Automation
                     Choice("group", "Group by", "Category", "Category", "Type", "Model", "Level"),
                 }),
 
+            new NodeKind("data.pivot", "Data", "Pivot",
+                "Sums a measure across two axes at once - concrete by level, ductwork by system.",
+                new[] { Keys("in", "elements") }, new[] { Table("out", "table") },
+                new[]
+                {
+                    Choice("measure", "Measure", "Volume", "Volume", "Area", "Length", "Count"),
+                    Choice("rows", "Rows", "Category",
+                        "Category", "Type", "Model", "Level", "Discipline", "System"),
+                    Choice("columns", "Columns", "Level",
+                        "Category", "Type", "Model", "Level", "Discipline", "System"),
+                }),
+
+            new NodeKind("health.check", "Data", "Health check",
+                "Runs the built-in model checks and hands on what they found.",
+                None, new[] { Table("out", "table") }, NoSettings),
+
             new NodeKind("clash.board", "Data", "Clash board",
                 "The board as the rules leave it, as a table.",
                 None, new[] { Table("out", "table") }, NoSettings),
+
+            new NodeKind("clash.run", "Coordinate", "Run the tests",
+                "Runs the clash tests in the document, so the board that follows is of today.",
+                None, None,
+                new[]
+                {
+                    Choice("which", "Run", "Only ones that never have",
+                        "Only ones that never have", "Every test"),
+                }),
+
+            new NodeKind("clash.bcf", "Coordinate", "Export BCF",
+                "Writes the board as a BCF file, cameras and components included.",
+                None, None,
+                new[]
+                {
+                    Text("path", "File"),
+                    Choice("version", "Version", "2.1", "2.1", "3.0"),
+                    Choice("snapshots", "Pictures", "No", "No", "Yes"),
+                }),
+
+            new NodeKind("clash.viewpoints", "Coordinate", "Save a walkthrough",
+                "One saved viewpoint per group on the board, framed on the group.",
+                None, None,
+                new[]
+                {
+                    Text("folder", "Folder", "Coordination"),
+                    Text("pattern", "Name pattern", "{n}. {group}"),
+                }),
+
+            new NodeKind("sets.publish", "Deliver", "Publish a set",
+                "Puts the elements into the host's selection sets, where anybody can find them.",
+                new[] { Keys("in", "elements") }, None,
+                new[] { Text("name", "Set name", "CamelWorks working set") }),
 
             new NodeKind("report.write", "Deliver", "Report",
                 "Writes the table as a PDF, spreadsheet or web page.",
@@ -231,6 +293,25 @@ namespace CamelWorks.Core.Automation
                     Choice("format", "Format", "PDF", "PDF", "XLSX", "HTML"),
                     Text("title", "Title", "CamelWorks report"),
                 }),
+
+            new NodeKind("model.append", "Model", "Append a file",
+                "Adds a file to the federation, the way File > Append does. The step that makes an "
+                + "overnight job possible: a job that assembles its own federation does not need "
+                + "somebody to have assembled it first.",
+                None, None,
+                new[] { Text("path", "File") }, foundational: true),
+
+            new NodeKind("model.refresh", "Model", "Refresh from disk",
+                "Reloads every model whose file has changed since it was opened, so what follows is "
+                + "about today's models rather than Tuesday's.",
+                None, None, NoSettings, foundational: true),
+
+            new NodeKind("model.save", "Model", "Save the federation",
+                "Writes the document out. The extension decides it: .nwf keeps the links so the next "
+                + "refresh still works, .nwd bakes the geometry in so somebody without the source "
+                + "files can open it.",
+                None, None,
+                new[] { Text("path", "File") }, foundational: true),
 
             new NodeKind("csv.write", "Deliver", "CSV",
                 "Writes the table as comma-separated text.",

@@ -137,6 +137,162 @@ namespace CamelWorks.Nav
             return outcome;
         }
 
+        /// <summary>
+        /// Save a plan as a native set inside a folder, with a note saying what it searches for.
+        ///
+        /// Navisworks has had folders in the Sets panel forever and no way to make one except by
+        /// right-clicking, which is why a generated family of forty sets normally lands as forty
+        /// entries in one flat list. A family that arrives already filed is the difference between
+        /// a library somebody uses and a list somebody scrolls past.
+        ///
+        /// The comment matters as much as the folder. A colleague who does not have CamelWorks
+        /// installed can select the set in the host's own panel and read exactly what it matches,
+        /// which is the difference between a generated set that gets trusted and one that gets
+        /// deleted the first time somebody cannot explain it.
+        /// </summary>
+        /// <param name="folders">The folder path, outermost first. Empty or null for the top.</param>
+        /// <param name="name">What to call the set, inside its folder.</param>
+        /// <param name="plan">The compiled expression.</param>
+        /// <param name="comment">What to write on it, or null for nothing.</param>
+        public SearchOutcome PublishInFolder(IReadOnlyList<string>? folders, string name,
+                                             SearchPlan plan, string? comment)
+        {
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is required", nameof(name));
+
+            var outcome = Run(plan);
+
+            var set = outcome.IsLive && plan.Clauses.Count == 1
+                ? new SelectionSet(NativeSearch(plan.Clauses[0])!)
+                : new SelectionSet(outcome.Items);
+
+            set.DisplayName = name;
+
+            var parent = EnsureFolder(folders);
+
+            // Replace rather than duplicate, and scoped to the folder: two sets called "Ducts" in
+            // two different level folders are two different sets, and treating them as one name
+            // would leave the second overwriting the first.
+            var existing = Children(parent)
+                .OfType<SelectionSet>()
+                .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null) _document.Document.SelectionSets.Remove(parent, existing);
+
+            _document.Document.SelectionSets.AddCopy(parent, set);
+
+            if (!string.IsNullOrWhiteSpace(comment))
+            {
+                // AddCopy copies, so the object we just built is not the one in the document. The
+                // comment has to go on the copy, which is the last thing in the parent now.
+                var added = Children(parent).OfType<SelectionSet>().LastOrDefault(
+                    s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+                if (added != null)
+                {
+                    try
+                    {
+                        _document.Document.SelectionSets.AddComment(
+                            added, new Comment(comment, CommentStatus.New));
+                    }
+                    catch (Exception)
+                    {
+                        // A set that published without its note is still the set. Losing the whole
+                        // publish because the comment would not attach is the worse trade.
+                    }
+                }
+            }
+
+            return outcome;
+        }
+
+        /// <summary>
+        /// Find or make the folder chain, and hand back the group to add into.
+        ///
+        /// Matched case-insensitively against what is already there, so re-running a family with
+        /// one value changed fills the existing folders rather than making "Level 01" beside
+        /// "LEVEL 01".
+        /// </summary>
+        /// <param name="folders">The path, outermost first.</param>
+        /// <returns>The group to add into. The root when the path is empty or cannot be made.</returns>
+        public GroupItem EnsureFolder(IReadOnlyList<string>? folders)
+        {
+            GroupItem parent = _document.Document.SelectionSets.RootItem;
+
+            if (folders == null) return parent;
+
+            foreach (var wanted in folders)
+            {
+                if (string.IsNullOrWhiteSpace(wanted)) continue;
+
+                var name = wanted.Trim();
+
+                var found = Children(parent).OfType<FolderItem>().FirstOrDefault(
+                    f => string.Equals(f.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+                if (found == null)
+                {
+                    _document.Document.SelectionSets.AddCopy(parent, new FolderItem { DisplayName = name });
+
+                    found = Children(parent).OfType<FolderItem>().LastOrDefault(
+                        f => string.Equals(f.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+                    // The host refused the folder. Better one flat set at the level above than an
+                    // exception that loses the rest of the family.
+                    if (found == null) return parent;
+                }
+
+                parent = found;
+            }
+
+            return parent;
+        }
+
+        /// <summary>The children of a group, as a list, and empty rather than null.</summary>
+        private static IReadOnlyList<SavedItem> Children(GroupItem? group)
+        {
+            var items = new List<SavedItem>();
+
+            if (group?.Children == null) return items;
+
+            foreach (SavedItem child in group.Children) items.Add(child);
+
+            return items;
+        }
+
+        /// <summary>
+        /// Publish a fixed list of elements as a host selection set.
+        ///
+        /// The other Publish takes a rule and prefers a live search, because a set that re-runs
+        /// keeps up with the model. This one is for elements that arrived by some other route — a
+        /// graph's working set, a hand selection — where there is no rule to save and pretending
+        /// there is one would produce a set that quietly means something different tomorrow.
+        /// </summary>
+        /// <param name="name">The set's name. An existing set of that name is replaced.</param>
+        /// <param name="keys">The elements.</param>
+        /// <returns>How many of them still resolved.</returns>
+        public int PublishKeys(string name, IReadOnlyList<ElementKey> keys)
+        {
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is required", nameof(name));
+            if (keys == null) throw new ArgumentNullException(nameof(keys));
+
+            var items = new ModelItemCollection();
+
+            foreach (var key in keys)
+            {
+                if (_document.Resolve(key) is NavModelItem resolved) items.Add(resolved.Item);
+            }
+
+            var set = new SelectionSet(items) { DisplayName = name };
+
+            var existing = _document.Sets()
+                .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null) _document.Document.SelectionSets.Remove(existing);
+
+            _document.Document.SelectionSets.AddCopy(set);
+            return items.Count;
+        }
+
         private IEnumerable<ModelItem> RunClause(SearchClause clause, ICollection<string> notes)
         {
             ModelItemCollection working;

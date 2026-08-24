@@ -219,11 +219,11 @@ namespace CamelWorks.Core.Tests
             return document;
         }
 
-        private static byte[] Write(ReportDocument document)
+        private static byte[] Write(ReportDocument document, double typeScale = 1)
         {
             using (var buffer = new MemoryStream())
             {
-                PdfReportWriter.Write(buffer, document);
+                PdfReportWriter.Write(buffer, document, typeScale);
                 return buffer.ToArray();
             }
         }
@@ -367,6 +367,45 @@ namespace CamelWorks.Core.Tests
             var text = AsText(Write(document));
 
             Assert.Contains(@"Riser 3 \(agreed\) \\ north", text, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_bold_paragraph_is_set_in_the_bold_font()
+        {
+            var plain = new ReportDocument("t");
+            plain.Blocks.Add(new ParagraphBlock("Move the duct 150 mm down"));
+
+            var bold = new ReportDocument("t");
+            bold.Blocks.Add(new ParagraphBlock("Move the duct 150 mm down") { IsBold = true });
+
+            Assert.DoesNotContain("/F2 9.5 Tf", AsText(Write(plain)), StringComparison.Ordinal);
+            Assert.Contains("/F2 9.5 Tf", AsText(Write(bold)), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void The_field_pack_sets_the_same_words_larger()
+        {
+            // A foreman reading one-handed off a phone in a site cabin cannot read nine-point body
+            // text, and the whole point of the mode is that it is the same content.
+            var document = new ReportDocument("t");
+            document.Blocks.Add(new ParagraphBlock("Move the duct 150 mm down"));
+
+            var normal = AsText(Write(document));
+            var large = AsText(Write(document, PdfReportWriter.FieldPackType));
+
+            Assert.Contains("/F1 9.5 Tf", normal, StringComparison.Ordinal);
+            Assert.Contains("/F1 15.2 Tf", large, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_type_scale_nobody_asked_for_is_clamped_rather_than_obeyed()
+        {
+            var document = new ReportDocument("t");
+            document.Blocks.Add(new ParagraphBlock("Move the duct"));
+
+            Assert.Contains("/F1 9.5 Tf", AsText(Write(document, 0.1)), StringComparison.Ordinal);
+            Assert.Contains("/F1 9.5 Tf", AsText(Write(document, double.NaN)), StringComparison.Ordinal);
+            Assert.Contains("/F1 23.75 Tf", AsText(Write(document, 99)), StringComparison.Ordinal);
         }
 
         [Fact]

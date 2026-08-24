@@ -30,16 +30,30 @@ namespace CamelWorks.Core.Report
         /// <summary>Margin in points, a shade over two centimetres.</summary>
         public const double Margin = 56;
 
+        /// <summary>
+        /// How much bigger than normal to set the type.
+        ///
+        /// One number, because there is exactly one reason to want it: a field pack read
+        /// one-handed off a phone or a wall in a site cabin, where the nine-point body text of an
+        /// office deliverable is unreadable. Everything scales together — body, headings, table
+        /// cells and line spacing — so a wider column is a wider column and not a broken layout.
+        /// </summary>
+        public const double FieldPackType = 1.6;
+
         /// <summary>Write the report.</summary>
         /// <param name="output">Where to write. Left open.</param>
         /// <param name="document">The report.</param>
-        public static void Write(Stream output, ReportDocument document)
+        /// <param name="typeScale">
+        /// How much bigger than normal to set the type. 1 is the office deliverable;
+        /// <see cref="FieldPackType"/> is the site one. Clamped to between 1 and 2.5.
+        /// </param>
+        public static void Write(Stream output, ReportDocument document, double typeScale = 1)
         {
             if (output == null) throw new ArgumentNullException(nameof(output));
             if (document == null) throw new ArgumentNullException(nameof(document));
 
             var pdf = new Pdf();
-            var layout = new Layout(pdf);
+            var layout = new Layout(pdf, typeScale);
 
             layout.Cover(document);
 
@@ -48,7 +62,9 @@ namespace CamelWorks.Core.Report
                 switch (block)
                 {
                     case HeadingBlock heading: layout.Heading(heading); break;
-                    case ParagraphBlock paragraph: layout.Paragraph(paragraph.Text); break;
+                    case ParagraphBlock paragraph:
+                        layout.Paragraph(paragraph.Text, paragraph.IsBold);
+                        break;
                     case PageBreakBlock _: layout.NewPage(); break;
                     case TableBlock table: layout.Table(table); break;
                     case ImageBlock image: layout.Image(image); break;
@@ -67,9 +83,10 @@ namespace CamelWorks.Core.Report
 
         private sealed class Layout
         {
-            private const double BodySize = 9.5;
-            private const double Leading = 13;
+            private const double NormalBody = 9.5;
+            private const double NormalLeading = 13;
 
+            private readonly double _scale;
             private readonly Pdf _pdf;
             private readonly StringBuilder _content = new StringBuilder();
             private readonly List<string> _images = new List<string>();
@@ -77,7 +94,15 @@ namespace CamelWorks.Core.Report
             private int _pageNumber;
             private bool _open;
 
-            internal Layout(Pdf pdf) => _pdf = pdf;
+            internal Layout(Pdf pdf, double scale)
+            {
+                _pdf = pdf;
+                _scale = double.IsNaN(scale) ? 1 : Math.Min(2.5, Math.Max(1, scale));
+            }
+
+            private double BodySize => NormalBody * _scale;
+
+            private double Leading => NormalLeading * _scale;
 
             private double Right => PageWidth - Margin;
 
@@ -88,12 +113,12 @@ namespace CamelWorks.Core.Report
                 Open();
 
                 _y = PageHeight - Margin - 120;
-                Text(document.Title, Margin, _y, 24, bold: true);
+                Text(document.Title, Margin, _y, 24 * _scale, bold: true);
                 _y -= 30;
 
                 if (!string.IsNullOrWhiteSpace(document.Subtitle))
                 {
-                    Text(document.Subtitle!, Margin, _y, 12, bold: false, grey: 0.35);
+                    Text(document.Subtitle!, Margin, _y, 12 * _scale, bold: false, grey: 0.35);
                     _y -= 24;
                 }
 
@@ -112,7 +137,7 @@ namespace CamelWorks.Core.Report
 
             internal void Heading(HeadingBlock heading)
             {
-                var size = heading.Level <= 1 ? 16 : heading.Level == 2 ? 12.5 : 10.5;
+                var size = (heading.Level <= 1 ? 16 : heading.Level == 2 ? 12.5 : 10.5) * _scale;
 
                 Need(size + 14);
                 _y -= size * 0.6;
@@ -126,14 +151,14 @@ namespace CamelWorks.Core.Report
                 }
             }
 
-            internal void Paragraph(string? text)
+            internal void Paragraph(string? text, bool bold = false)
             {
                 if (string.IsNullOrWhiteSpace(text)) return;
 
-                foreach (var line in Wrap(text!, Usable, BodySize, bold: false))
+                foreach (var line in Wrap(text!, Usable, BodySize, bold))
                 {
                     Need(Leading);
-                    Text(line, Margin, _y, BodySize, bold: false);
+                    Text(line, Margin, _y, BodySize, bold);
                     _y -= Leading;
                 }
 
@@ -356,7 +381,8 @@ namespace CamelWorks.Core.Report
 
                     foreach (var row in table.Rows)
                         if (i < row.Count)
-                            weights[i] = Math.Max(weights[i], Math.Min(220, Width(row[i] ?? string.Empty, BodySize, false)));
+                            weights[i] = Math.Max(weights[i],
+                                Math.Min(220 * _scale, Width(row[i] ?? string.Empty, BodySize, false)));
                 }
 
                 var total = weights.Sum();
@@ -372,7 +398,7 @@ namespace CamelWorks.Core.Report
                 for (var i = 0; i < widths.Length && i < cells.Count; i++)
                     lines = Math.Max(lines, Wrap(cells[i] ?? string.Empty, widths[i] - 8, BodySize, bold).Count);
 
-                return (lines * 11.5) + 5;
+                return (lines * 11.5 * _scale) + 5;
             }
 
             private void HeaderRow(TableBlock table, double[] widths, double height)
@@ -392,12 +418,12 @@ namespace CamelWorks.Core.Report
                 for (var i = 0; i < widths.Length; i++)
                 {
                     var text = i < cells.Count ? cells[i] ?? string.Empty : string.Empty;
-                    var y = top - 8;
+                    var y = top - 8 * _scale;
 
                     foreach (var line in Wrap(text, widths[i] - 8, BodySize, bold))
                     {
                         Text(line, x + 4, y, BodySize, bold);
-                        y -= 11.5;
+                        y -= 11.5 * _scale;
                     }
 
                     x += widths[i];

@@ -37,6 +37,28 @@ namespace CamelWorks.Core.Data
             Name + " @ " + Elevation.ToString("0.###", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Where a set of levels came from, best first.</summary>
+    public enum LevelSource
+    {
+        /// <summary>There are none.</summary>
+        None = 0,
+
+        /// <summary>
+        /// The coordination grid the federation shares.
+        ///
+        /// The strongest source there is: a grid system is the thing every discipline set out
+        /// against, its level names are the ones on the drawings, and nobody has to agree to use
+        /// it because they already did.
+        /// </summary>
+        Grid = 1,
+
+        /// <summary>A Level property the models carry.</summary>
+        Property = 2,
+
+        /// <summary>A histogram of where elements actually sit.</summary>
+        Inferred = 3,
+    }
+
     /// <summary>
     /// The levels of a federation, whether the model had any or not.
     ///
@@ -54,9 +76,13 @@ namespace CamelWorks.Core.Data
     /// </summary>
     public sealed class LevelSet
     {
-        private LevelSet(IReadOnlyList<LevelBand> bands, int elementsConsidered, int discarded)
+        private LevelSet(IReadOnlyList<LevelBand> bands, int elementsConsidered, int discarded,
+                         LevelSource source)
         {
-            Bands = bands; ElementsConsidered = elementsConsidered; DiscardedClusters = discarded;
+            Bands = bands;
+            ElementsConsidered = elementsConsidered;
+            DiscardedClusters = discarded;
+            Source = bands.Count == 0 ? LevelSource.None : source;
         }
 
         /// <summary>Default clustering resolution in metres — a floor slab's worth.</summary>
@@ -83,14 +109,48 @@ namespace CamelWorks.Core.Data
         /// <summary>True when the levels came from the model rather than from geometry.</summary>
         public bool IsFromModel => Bands.Count > 0 && !Bands[0].IsDerived;
 
+        /// <summary>Which of the three sources produced these.</summary>
+        public LevelSource Source { get; }
+
+        /// <summary>
+        /// What the source is, and what it therefore misses.
+        ///
+        /// Every one of the three is wrong in its own way, and a coordinator reading a report broken
+        /// down by level needs to know which way. Naming the source without naming its blind spot
+        /// is only half the disclosure.
+        /// </summary>
+        public string Provenance() => Source switch
+        {
+            LevelSource.Grid =>
+                "Read from the coordination grid. These are the level names on the drawings. Anything "
+                + "outside the grid's extent still lands in the nearest band, so a detached plant "
+                + "building will be filed under whatever level it is level with.",
+
+            LevelSource.Property =>
+                "Read from the models' own Level property. Exactly what each author meant - and each "
+                + "author separately, so two disciplines that spell the same storey differently give "
+                + "you two levels here.",
+
+            LevelSource.Inferred =>
+                "The models carry no grid and no usable level property, so these were inferred from a "
+                + "histogram of element base heights. They are named after their elevation and never "
+                + "numbered: a level called \"Level +3.600\" is honest about being a guess in a way "
+                + "that \"Level 2\" is not.",
+
+            _ => "Nothing loaded carries a grid, a level property, or geometry to infer them from.",
+        };
+
         /// <summary>Nothing at all — a model with no levels and no geometry to guess from.</summary>
-        public static LevelSet Empty { get; } = new LevelSet(Array.Empty<LevelBand>(), 0, 0);
+        public static LevelSet Empty { get; } =
+            new LevelSet(Array.Empty<LevelBand>(), 0, 0, LevelSource.None);
 
         /// <summary>
         /// The levels the model itself declares.
         /// </summary>
         /// <param name="levels">Name and floor elevation pairs, in any order.</param>
-        public static LevelSet FromModel(IEnumerable<KeyValuePair<string, double>> levels)
+        /// <param name="source">Which source these came from.</param>
+        public static LevelSet FromModel(IEnumerable<KeyValuePair<string, double>> levels,
+                                         LevelSource source = LevelSource.Property)
         {
             if (levels == null) throw new ArgumentNullException(nameof(levels));
 
@@ -102,8 +162,20 @@ namespace CamelWorks.Core.Data
                 .ThenBy(l => l.Key, StringComparer.Ordinal)
                 .ToList();
 
-            return new LevelSet(Band(ordered, derived: false, support: null), 0, 0);
+            return new LevelSet(Band(ordered, derived: false, support: null), 0, 0, source);
         }
+
+        /// <summary>
+        /// The levels the coordination grid declares.
+        ///
+        /// Same shape as <see cref="FromModel"/> and a different provenance, which is the whole
+        /// difference: a grid level is one authored fact with one name, where a level property is
+        /// one authored fact per model, and three models spelling a storey three ways is a
+        /// federation with three levels where the building has one.
+        /// </summary>
+        /// <param name="levels">Name and elevation pairs from the grid, in any order.</param>
+        public static LevelSet FromGrid(IEnumerable<KeyValuePair<string, double>> levels) =>
+            FromModel(levels, LevelSource.Grid);
 
         /// <summary>
         /// Infer the levels from where things actually sit.
@@ -159,7 +231,8 @@ namespace CamelWorks.Core.Data
                 return new LevelSet(
                     new[] { new LevelBand(NameFor(lowest), lowest, double.PositiveInfinity, true, values.Count) },
                     values.Count,
-                    merged.Count);
+                    merged.Count,
+                    LevelSource.Inferred);
             }
 
             var pairs = kept.Select(c => new KeyValuePair<string, double>(NameFor(c.Elevation), c.Elevation)).ToList();
@@ -167,7 +240,8 @@ namespace CamelWorks.Core.Data
 
             return new LevelSet(Band(pairs, derived: true, support: supports),
                                 values.Count,
-                                merged.Count - kept.Count);
+                                merged.Count - kept.Count,
+                                LevelSource.Inferred);
         }
 
         /// <summary>
@@ -216,7 +290,12 @@ namespace CamelWorks.Core.Data
 
             var s = Bands.Count.ToString(CultureInfo.InvariantCulture)
                   + (Bands.Count == 1 ? " level" : " levels")
-                  + (IsFromModel ? " from the model" : " inferred from geometry");
+                  + Source switch
+                    {
+                        LevelSource.Grid => " from the coordination grid",
+                        LevelSource.Property => " from the models' level property",
+                        _ => " inferred from geometry",
+                    };
 
             if (DiscardedClusters > 0)
                 s += " · " + DiscardedClusters.ToString(CultureInfo.InvariantCulture)

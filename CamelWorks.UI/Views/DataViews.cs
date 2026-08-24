@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Report;
 using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
@@ -99,6 +103,9 @@ namespace CamelWorks.UI.Views
 
                 editor.Children.Clear();
                 editor.Children.Add(Writer(session, keys));
+                editor.Children.Add(new ColumnScreen(session, keys).Build());
+                editor.Children.Add(new ExcelScreen(session, keys).Build());
+                editor.Children.Add(new CodeScreen(session, keys).Build());
             });
 
             return Ui.Scroll(Ui.Stack(
@@ -112,61 +119,1094 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Assign a code, and refuse anything the table does not list.
+        ///
+        /// The point is the refusal. A lookup that silently passes an unlisted value is a lookup
+        /// that does nothing — the whole reason a project keeps a code list is that "L3-MECH-01"
+        /// and "L03 MECH 1" are the same thing to a person and two different things to every
+        /// downstream tool, and the only moment either can be caught is the moment somebody writes
+        /// one.
+        ///
+        /// So it reads a property, puts each value through the table, and writes only what comes
+        /// back — in the table's own spelling, so a column ends up with one form of each code
+        /// rather than four. What it refused is counted and named.
+        /// </summary>
+        private sealed class CodeScreen
+        {
+            private const string Keep = "leave it alone";
+
+            private const string Replace = "replace it";
+
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _source = Ui.Text("Element / Classification", null, 240);
+            private readonly TextBox _target = Ui.Text("Code", null, 160);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _applyRow = Ui.Stack();
+
+            private ExistingValues _existing = ExistingValues.Keep;
+            private CodeTable? _table;
+            private WriteDiff? _diff;
+
+            internal CodeScreen(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var tables = CodeTables.FromJson(
+                    _session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+
+                if (tables.IsEmpty)
+                    return Ui.Card("Assign a code",
+                        "Needs a code table",
+                        Ui.Empty("No code tables on this project.",
+                            "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
+                            + "client sent. Everything else here works without one."));
+
+                _table = tables.Find(tables.Names[0]);
+
+                var picker = Ui.Choice(tables.Names, tables.Names[0], pick =>
+                {
+                    _table = tables.Find(pick);
+                    _target.Text = pick;
+                });
+
+                _target.Text = tables.Names[0];
+
+                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
+                {
+                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
+                    if (_diff != null) ShowApply();
+                });
+
+                var preview = Ui.Runner("Show me what would change", _status, Preview);
+
+                return Ui.Card("Assign a code",
+                    "Reads a property, puts it through the table, and writes only what the table lists",
+                    Ui.Field("Table", picker),
+                    Ui.Field("Read from", _source),
+                    Ui.Field("Write as", _target),
+                    Ui.Field("Existing values", policy),
+                    Ui.Across(preview),
+                    Ui.Note("\"Read from\" is a property on the elements, written as \"Category / Name\". "
+                            + "A value the table does not list is left alone and counted, never "
+                            + "written and never guessed at."),
+                    _status,
+                    _applyRow);
+            }
+
+            /// <summary>Read the source, check it against the table, and show the coverage and the diff.</summary>
+            private void Preview(Job job)
+            {
+                _applyRow.Children.Clear();
+                _diff = null;
+
+                var table = _table;
+                if (table == null) return;
+
+                var target = _target.Text.Trim();
+
+                if (target.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Give the property a name to write as."));
+                    return;
+                }
+
+                var (category, name) = Split(_source.Text);
+
+                if (name.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem(
+                        "Say which property to read, as \"Category / Name\" - for example "
+                        + "\"Element / Classification\"."));
+
+                    return;
+                }
+
+                job.Say("Reading " + name + "...");
+
+                var values = new List<string?>();
+
+                foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    values.Add(entry.Value?.Property(category, name));
+
+                var coverage = table.Check(values);
+
+                _status.Children.Add(Ui.Line(coverage.Explain(), 1, true));
+
+                _status.Children.Add(Ui.Across(
+                    Ui.Figure(Measure.Count(coverage.Coded), "in the table",
+                              coverage.Coded > 0 ? Tone.Good : Tone.Plain),
+                    Ui.Figure(Measure.Count(coverage.Uncoded), "carry nothing"),
+                    Ui.Figure(Measure.Count(coverage.Invalid), "not in the table",
+                              coverage.Invalid > 0 ? Tone.Bad : Tone.Good)));
+
+                if (coverage.InvalidValues.Count > 0)
+                    _status.Children.Add(Ui.Problem("Not in " + table.Name + ": "
+                        + string.Join(", ", coverage.InvalidValues.Take(10))
+                        + ". Those elements are left alone. Either the table is missing a row or the "
+                        + "model is carrying a value nobody agreed to."));
+
+                var diff = PropertyDiff.Of(NavWriteTransaction.TabName, target,
+                    PropertyDiff.Resolve(_session.Model, _keys),
+                    item => table.Canonical(item.Property(category, name))
+                            ?? item.Property(NavWriteTransaction.TabName, target));
+
+                _diff = diff;
+
+                _status.Children.Add(Ui.Line(diff.Explain(), 0.85));
+
+                if (diff.Changes.Count > 0)
+                {
+                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
+                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
+
+                    _status.Children.Add(Ui.Table(rows,
+                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
+                }
+
+                ShowApply();
+            }
+
+            /// <summary>"Category / Name" into its two halves. A bare name means any category.</summary>
+            private static (string Category, string Name) Split(string? text)
+            {
+                var whole = (text ?? string.Empty).Trim();
+                var slash = whole.IndexOf('/');
+
+                return slash < 0
+                    ? (string.Empty, whole)
+                    : (whole.Substring(0, slash).Trim(), whole.Substring(slash + 1).Trim());
+            }
+
+            private void ShowApply()
+            {
+                _applyRow.Children.Clear();
+
+                var diff = _diff;
+                if (diff == null) return;
+
+                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+
+                if (count == 0)
+                {
+                    _applyRow.Children.Add(Ui.Note("Nothing would be written with that policy."));
+                    return;
+                }
+
+                _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(count, "element"), () => Apply(diff)));
+            }
+
+            private void Apply(WriteDiff diff)
+            {
+                _applyRow.Children.Clear();
+
+                var target = _target.Text.Trim();
+                int written;
+
+                using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: code " + target))
+                {
+                    foreach (var change in diff.Changes)
+                    {
+                        if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
+
+                        write.SetProperty(change.Key, NavWriteTransaction.TabName, target, change.After);
+                    }
+
+                    written = write.Commit();
+                }
+
+                _status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element")
+                    + ", every one of them a value " + (_table?.Name ?? "the table") + " lists.", 1, true));
+
+                _session.Record(ActivityKind.Write,
+                    "assigned " + target + " from a code table onto " + Ui.Count(written, "element"));
+
+                _diff = null;
+            }
+        }
+
+        /// <summary>
+        /// Out to a spreadsheet and back again, keyed.
+        ///
+        /// Sending properties out is a courtesy; taking them back is the feature. The whole reason
+        /// a project exports a schedule is that somebody is going to fill in a column, and a tool
+        /// that cannot read it back has moved the retyping rather than removed it.
+        ///
+        /// The sheet carries a written identity column so a returned row is matched on what it is
+        /// rather than on what it is called — every keyed import in this industry matches on a mark
+        /// or a description, and every one of them breaks the first time two doors are called
+        /// "D-12". That column is the one column the import may never write back.
+        ///
+        /// Coming back in goes through exactly the same preview as any other write: a diff, element
+        /// by element, before anything touches the model.
+        /// </summary>
+        private sealed class ExcelScreen
+        {
+            /// <summary>What the picker says for each policy.</summary>
+            private const string Keep = "leave it alone";
+
+            private const string Replace = "replace it";
+
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _out = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _in = Ui.Text(string.Empty, null, 340);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _applyRow = Ui.Stack();
+
+            private ExistingValues _existing = ExistingValues.Keep;
+            private SheetImportReport? _read;
+            private string? _column;
+            private string _property = string.Empty;
+            private WriteDiff? _diff;
+
+            internal ExcelScreen(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var write = Ui.Runner("Write a sheet", _status, Out);
+                var read = Ui.Runner("Read a sheet back", _status, In);
+
+                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
+                {
+                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
+                    if (_diff != null) ShowApply();
+                });
+
+                return Ui.Card("Excel",
+                    "Out with an identity column, back in through the same preview as any other write",
+                    Ui.Field("Write to", _out),
+                    Ui.Across(write),
+                    Ui.Field("Read back", _in),
+                    Ui.Field("Existing values", policy),
+                    Ui.Across(read),
+                    Ui.Note("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
+                            + "returned row is matched to an element, it is never written back, and "
+                            + "deleting it makes the sheet unreadable. Rows that match nothing are "
+                            + "counted and named rather than skipped."),
+                    _status,
+                    _applyRow);
+            }
+
+            /// <summary>Every property these elements carry, one column each, plus the identity.</summary>
+            private void Out(Job job)
+            {
+                _applyRow.Children.Clear();
+
+                var path = _out.Text.Trim();
+
+                if (path.Length == 0)
+                {
+                    path = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        Deliverable.Safe(_session.Profile.ProjectName + " properties") + ".xlsx");
+
+                    _out.Text = path;
+                }
+
+                job.Say("Reading properties...");
+
+                var columns = new List<string>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var rows = new List<(ElementKey Key, string Name, Dictionary<string, string?> Values)>();
+
+                var read = 0;
+
+                foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                {
+                    if (!job.Step(read++, "elements read")) return;
+                    if (entry.Value == null) continue;
+
+                    var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var property in entry.Value.Properties())
+                    {
+                        var name = property.Category + " / " + property.Name;
+
+                        if (seen.Add(name)) columns.Add(name);
+
+                        values[name] = property.Value;
+                    }
+
+                    rows.Add((entry.Key, entry.Value.DisplayName, values));
+                }
+
+                if (rows.Count == 0)
+                {
+                    _status.Children.Add(Ui.Empty("Nothing to write.",
+                        "None of the elements that were read could be found in the model any more. "
+                        + "Read the properties again."));
+                    return;
+                }
+
+                // Alphabetical after the two fixed columns, so a sheet somebody opens next week has
+                // the columns where they were last week.
+                columns.Sort(StringComparer.OrdinalIgnoreCase);
+
+                var sheet = new XlsxSheet("Properties");
+
+                var header = new List<string?> { SheetImport.KeyHeading, "Element" };
+                header.AddRange(columns);
+                sheet.Row(header.ToArray());
+
+                foreach (var row in rows)
+                {
+                    var cells = new List<string?> { row.Key.ToString(), row.Name };
+
+                    foreach (var column in columns)
+                        cells.Add(row.Values.TryGetValue(column, out var value) ? value : null);
+
+                    sheet.Row(cells.ToArray());
+                }
+
+                job.Say("Writing...");
+
+                try
+                {
+                    System.IO.File.WriteAllBytes(path, XlsxWriter.Write(new[] { sheet }));
+                }
+                catch (Exception error)
+                {
+                    _status.Children.Add(Ui.Problem("Could not write it: " + error.Message));
+                    return;
+                }
+
+                _in.Text = path;
+
+                _status.Children.Add(Ui.Line("Wrote " + Ui.Count(rows.Count, "element") + " and "
+                    + Ui.Count(columns.Count, "property") + " to " + path, 1, true));
+
+                _session.Record(ActivityKind.Export, "wrote properties to a spreadsheet", path);
+            }
+
+            /// <summary>Read a returned sheet, match it, and show what would change.</summary>
+            private void In(Job job)
+            {
+                _applyRow.Children.Clear();
+                _diff = null;
+
+                var path = _in.Text.Trim();
+
+                if (path.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Say which file to read back."));
+                    return;
+                }
+
+                byte[] bytes;
+
+                try
+                {
+                    bytes = System.IO.File.ReadAllBytes(path);
+                }
+                catch (Exception error)
+                {
+                    _status.Children.Add(Ui.Problem("Could not read it: " + error.Message));
+                    return;
+                }
+
+                job.Say("Reading the sheet...");
+
+                var book = XlsxReader.Read(bytes);
+
+                if (!book.IsUsable)
+                {
+                    _status.Children.Add(Ui.Problem(book.Problem ?? "Nothing could be read from that file."));
+                    return;
+                }
+
+                var known = new HashSet<string>(_keys.Select(k => k.ToString()), StringComparer.Ordinal);
+
+                var report = SheetImport.Of(book.Sheet("Properties") ?? book.First, known);
+                _read = report;
+
+                _status.Children.Add(Ui.Line(report.Explain(), 1, true));
+
+                if (report.Problem != null)
+                {
+                    _status.Children.Add(Ui.Problem(report.Problem));
+                    return;
+                }
+
+                Unplaceable(report);
+
+                if (!report.IsUsable) return;
+
+                var writable = report.Writable.Where(w => !string.Equals(w, "Element",
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (writable.Count == 0)
+                {
+                    _status.Children.Add(Ui.Empty("Nothing to bring back.",
+                        "That sheet has an identity column and nothing else worth writing."));
+                    return;
+                }
+
+                _column = writable[0];
+                _property = Suggested(_column);
+
+                var name = Ui.Text(_property, null, 200);
+                var picker = Ui.Choice(writable, _column, pick =>
+                {
+                    _column = pick;
+                    name.Text = Suggested(pick);
+                });
+
+                var preview = Ui.Runner("Show me what would change", _status,
+                    inner => Preview(inner, name.Text));
+
+                _status.Children.Add(Ui.Field("Bring back the column", picker));
+                _status.Children.Add(Ui.Field("Write it as", name));
+                _status.Children.Add(Ui.Across(preview));
+            }
+
+            /// <summary>What a sheet column should be called on the element, before anybody edits it.</summary>
+            private static string Suggested(string? column)
+            {
+                if (string.IsNullOrWhiteSpace(column)) return "Value";
+
+                var slash = column!.LastIndexOf('/');
+
+                return slash < 0 ? column.Trim() : column.Substring(slash + 1).Trim();
+            }
+
+            /// <summary>Say what could not be placed, in full, before offering to write anything.</summary>
+            private void Unplaceable(SheetImportReport report)
+            {
+                if (report.Unmatched.Count > 0)
+                    _status.Children.Add(Ui.Problem(
+                        Ui.Count(report.Unmatched.Count, "row") + " in that sheet match no element in "
+                        + "scope - rows " + string.Join(", ", report.Unmatched.Take(8).Select(r => r.Number))
+                        + (report.Unmatched.Count > 8 ? " and more" : string.Empty)
+                        + ". They were added after the export, belong to another package, or name "
+                        + "elements this model no longer has. Nothing will be written for them."));
+
+                if (report.Duplicates.Count > 0)
+                    _status.Children.Add(Ui.Problem(
+                        Ui.Count(report.Duplicates.Count, "row") + " repeat an identity an earlier row "
+                        + "already claimed - rows "
+                        + string.Join(", ", report.Duplicates.Take(8).Select(r => r.Number))
+                        + ". The first row wins and these are ignored."));
+
+                if (report.Blank > 0)
+                    _status.Children.Add(Ui.Note(
+                        Ui.Count(report.Blank, "row") + " carry values but no identity, so there is no "
+                        + "way to tell which element they are about."));
+            }
+
+            /// <summary>The diff, from the chosen column, through the same path as every other write.</summary>
+            private void Preview(Job job, string property)
+            {
+                _applyRow.Children.Clear();
+                _diff = null;
+
+                var report = _read;
+                if (report == null) return;
+
+                var name = property.Trim();
+
+                if (name.Length == 0)
+                {
+                    _status.Children.Add(Ui.Problem("Give the property a name first."));
+                    return;
+                }
+
+                _property = name;
+
+                var values = report.Column(report.ColumnOf(_column));
+
+                job.Say("Reading what is there now...");
+
+                var diff = PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                    PropertyDiff.Resolve(_session.Model, _keys),
+                    item => values.TryGetValue(item.Key.ToString(), out var value)
+                        ? value
+                        : item.Property(NavWriteTransaction.TabName, name));
+
+                _diff = diff;
+
+                _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
+
+                if (diff.Changes.Count > 0)
+                {
+                    var rows = diff.Changes.Take(200).Select(c => new TableRow(c,
+                        c.Label, c.Before ?? "-", c.After ?? "-", c.Kind.ToString())).ToList();
+
+                    _status.Children.Add(Ui.Table(rows,
+                        ("Element", 220), ("There now", 140), ("Would be", 140), ("", 0)));
+                }
+
+                ShowApply();
+            }
+
+            private void ShowApply()
+            {
+                _applyRow.Children.Clear();
+
+                var diff = _diff;
+                if (diff == null) return;
+
+                var count = diff.Changes.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
+
+                if (count == 0)
+                {
+                    _applyRow.Children.Add(Ui.Note("Nothing would be written with that policy."));
+                    return;
+                }
+
+                _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(count, "element"), () => Apply(diff)));
+            }
+
+            private void Apply(WriteDiff diff)
+            {
+                _applyRow.Children.Clear();
+
+                int written;
+
+                using (var write = new NavWriteTransaction(_session.Model,
+                           "CamelWorks: " + _property + " from a spreadsheet"))
+                {
+                    // Queued from the diff rather than from the scope, so an element already
+                    // holding the value is not written to at all - and an element the sheet said
+                    // nothing about is not touched, because its "after" is its "before".
+                    foreach (var change in diff.Changes)
+                    {
+                        if (!PropertyDiff.ShouldWrite(change.Kind, _existing)) continue;
+
+                        write.SetProperty(change.Key, NavWriteTransaction.TabName, _property, change.After);
+                    }
+
+                    written = write.Commit();
+                }
+
+                _status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
+
+                _session.Record(ActivityKind.Write,
+                    "brought " + _property + " back from a spreadsheet onto "
+                    + Ui.Count(written, "element"));
+
+                // The diff describes a model that no longer exists. Pressing the button twice would
+                // report a second write of nothing and read as if the first had failed.
+                _diff = null;
+            }
+        }
+
+        /// <summary>
         /// The write half, built only once something has been read — because the set of elements it
         /// writes to is exactly the set that was read, and offering to write before then would mean
         /// guessing at what.
         /// </summary>
-        private static UIElement Writer(Session session, IReadOnlyList<ElementKey> keys)
+        private static UIElement Writer(Session session, IReadOnlyList<ElementKey> keys) =>
+            new WriteScreen(session, keys).Build();
+
+        /// <summary>
+        /// Writing a property, in two steps, and never over somebody else's answer by accident.
+        ///
+        /// Writing into a model is the one destructive thing CamelWorks does, and it is destructive
+        /// in a way Ctrl+Z does not reach — Navisworks does not put user-defined property writes on
+        /// its undo stack. So the button that writes is not the button you press first. You see the
+        /// diff, element by element, and then you decide.
+        ///
+        /// <b>Existing values are kept unless you say otherwise.</b> The failure this prevents is
+        /// mundane and expensive: a coordinator runs a zoning rule on Tuesday, a colleague runs
+        /// their own on Wednesday, and the first person's answers are gone with nothing to say they
+        /// were ever there. Keeping is the default; replacing is a choice made in front of a count
+        /// of exactly what would be replaced.
+        /// </summary>
+        private sealed class WriteScreen
         {
-            var name = Ui.Text("Zone", null, 150);
-            var value = Ui.Text(string.Empty, null, 200);
-            var status = Ui.Stack();
+            /// <summary>What the picker says for each policy.</summary>
+            private const string Keep = "leave it alone";
 
-            var apply = Ui.Runner("Write to " + Ui.Count(keys.Count, "element"), status, job =>
+            private const string Replace = "replace it";
+
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            /// <summary>What the value picker says for each of the two ways to make one.</summary>
+            private const string Fixed = "the same for every element";
+
+            private const string Worked = "worked out from other properties";
+
+            private readonly TextBox _name = Ui.Text("Zone", null, 150);
+            private readonly TextBox _value = Ui.Text(string.Empty, null, 200);
+            private readonly TextBox _formula = Ui.Text(string.Empty, null, 340);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _applyRow = Ui.Stack();
+
+            private ExistingValues _existing = ExistingValues.Keep;
+            private string _how = Fixed;
+            private WriteDiff? _diff;
+            private Formula? _parsed;
+
+            internal WriteScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
-                if (name.Text.Trim().Length == 0)
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
                 {
-                    status.Children.Add(Ui.Line("Give the property a name first.", 0.8));
-                    return;
-                }
+                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
+                    if (_diff != null) ShowApply();
+                });
 
-                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: set " + name.Text.Trim()))
+                var how = Ui.Choice(new[] { Fixed, Worked }, _how, pick => _how = pick);
+
+                var preview = Ui.Runner("Show me what would change", _status, job =>
                 {
-                    foreach (var key in keys)
-                        write.SetProperty(key, NavWriteTransaction.TabName, name.Text.Trim(), value.Text);
+                    _diff = null;
+                    _parsed = null;
+                    _applyRow.Children.Clear();
 
-                    var preview = write.Preview();
+                    var name = _name.Text.Trim();
 
-                    if (preview.IsEmpty)
+                    if (name.Length == 0)
                     {
-                        status.Children.Add(Ui.Empty("Nothing to write.", "None of those elements still resolve."));
+                        _status.Children.Add(Ui.Problem("Give the property a name first."));
                         return;
                     }
 
-                    job.Say("Writing...");
-                    var written = write.Commit();
+                    if (_how == Worked && !Read()) return;
 
-                    status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
+                    job.Say("Reading what is there now...");
 
-                    if (preview.Unresolved.Count > 0)
-                        status.Children.Add(Ui.Line(Ui.Count(preview.Unresolved.Count, "element")
-                            + " could not be found and were skipped.", 0.7));
+                    var diff = _parsed == null
+                        ? PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                            PropertyDiff.Resolve(_session.Model, _keys), _value.Text)
+                        : PropertyDiff.Of(NavWriteTransaction.TabName, name,
+                            PropertyDiff.Resolve(_session.Model, _keys), ValueOf(_parsed));
 
-                    session.Record(ActivityKind.Write,
-                        "set " + name.Text.Trim() + " on " + Ui.Count(written, "element"));
+                    _diff = diff;
+
+                    if (_parsed != null) Unworkable(diff);
+
+                    _status.Children.Add(Ui.Line(diff.Explain(), 1, true));
+
+                    _status.Children.Add(Ui.Across(
+                        Ui.Figure(diff.Added.ToString("N0", CultureInfo.InvariantCulture), "to add",
+                                  diff.Added > 0 ? Tone.Good : Tone.Plain),
+                        Ui.Figure(diff.Changed.ToString("N0", CultureInfo.InvariantCulture), "already set",
+                                  diff.Changed > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(diff.Cleared.ToString("N0", CultureInfo.InvariantCulture), "would empty",
+                                  diff.Cleared > 0 ? Tone.Bad : Tone.Plain),
+                        Ui.Figure(diff.Unchanged.ToString("N0", CultureInfo.InvariantCulture), "already right")));
+
+                    if (diff.Before.Count > 0)
+                        _status.Children.Add(Ui.Line("There now: "
+                            + string.Join(", ", diff.Before.Select(v => v.ToString())), 0.7));
+
+                    if (diff.Changes.Count > 0)
+                    {
+                        var rows = diff.Changes.Select(c => new TableRow(c,
+                            c.Label,
+                            c.Before ?? "-",
+                            c.After ?? "-",
+                            Word(c.Kind))
+                        {
+                            Tone = c.Kind == WriteChange.Added ? Tone.Good : Tone.Warn,
+                        }).ToList();
+
+                        _status.Children.Add(Ui.Table(rows,
+                            ("Element", 200), ("Now", 130), ("Would become", 130), ("", 0)));
+
+                        if (diff.Added + diff.Changed + diff.Cleared > diff.Changes.Count)
+                            _status.Children.Add(Ui.Line("First " + diff.Changes.Count
+                                + " of them; the counts above are all of them.", 0.6));
+                    }
+
+                    if (diff.Missing.Count > 0)
+                        _status.Children.Add(Ui.Note(Ui.Count(diff.Missing.Count, "element")
+                            + " no longer resolve and will be skipped. They were read before the model "
+                            + "changed under them; re-read the scope to see the current answer."));
+
+                    if (diff.IsEmpty)
+                    {
+                        _status.Children.Add(Ui.Empty("Nothing to write.",
+                            "Every element in scope already holds exactly this value. Writing it "
+                            + "again would be a few hundred thousand host calls to no effect."));
+                        return;
+                    }
+
+                    ShowApply();
+                });
+
+                return Ui.Card("Write a property",
+                    "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
+                    + "\", so it is never mixed with the authoring tool's data.",
+                    Ui.Field("Name", _name),
+                    Ui.Field("The value is", how),
+                    Ui.Field("Value", _value),
+                    Ui.Field("Formula", _formula),
+                    Ui.Note("A formula reads other properties: {Element/Mark}. Join text with & and do "
+                            + "arithmetic with + - * / — two different operators on purpose, because one "
+                            + "that did both would turn a door reference of \"12\" and a level of \"3\" "
+                            + "into 15 instead of \"12-3\". An element missing something the formula "
+                            + "needs is left alone rather than written a zero."),
+                    Ui.Note("Six functions, and each earns its place by being something a property "
+                            + "genuinely needs doing to it: regex(value, pattern) pulls out what the "
+                            + "brackets caught and regex(value, pattern, replacement) rewrites; "
+                            + "unit(number, \"mm\", \"m\") moves a number between units; "
+                            + "lookup(value, \"Uniclass\") reads a code table and gives nothing for a "
+                            + "value it does not list; upper, lower and trim tidy."),
+                    Ui.Field("If a value is already there", policy),
+                    preview,
+                    Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its "
+                            + "undo stack, so CamelWorks records what it changed in the project file "
+                            + "instead of pretending otherwise."),
+                    _status,
+                    _applyRow);
+            }
+
+            /// <summary>
+            /// The button that actually writes, labelled with what it is about to do.
+            ///
+            /// It says the number rather than saying "Apply", because the number is the thing worth
+            /// checking and a button that hides it is asking you to trust a screen you have already
+            /// scrolled past.
+            /// </summary>
+            private void ShowApply()
+            {
+                _applyRow.Children.Clear();
+
+                var diff = _diff;
+                if (diff == null) return;
+
+                var writes = diff.Writes(_existing);
+
+                if (writes == 0)
+                {
+                    _applyRow.Children.Add(Ui.Note(
+                        "Nothing would be written: every element in scope already holds a value, and "
+                        + "existing values are being left alone. Switch to \"" + Replace
+                        + "\" if replacing them is what you meant."));
+                    return;
                 }
-            });
 
-            return Ui.Card("Write a property",
-                "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
-                + "\", so it is never mixed with the authoring tool's data.",
-                Ui.Field("Name", name),
-                Ui.Field("Value", value),
-                apply,
-                Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its undo "
-                        + "stack, so CamelWorks records what it changed in the project file instead of "
-                        + "pretending otherwise."),
-                status);
+                var skipped = diff.Added + diff.Changed + diff.Cleared - writes;
+
+                _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(writes, "element"), () => Apply(diff)));
+
+                if (skipped > 0)
+                    _applyRow.Children.Add(Ui.Line(Ui.Count(skipped, "element")
+                        + " will be left as they are because they already hold something.", 0.7));
+            }
+
+            private void Apply(WriteDiff diff)
+            {
+                var name = diff.Name;
+                var written = 0;
+
+                using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: set " + name))
+                {
+                    // Queued from the diff rather than from the scope, so an element that already
+                    // holds the value is not written to at all. On a federation that is the
+                    // difference between a re-run costing nothing and costing a minute.
+                    var text = _value.Text;
+                    var formula = _parsed;
+
+                    Func<IModelItem, string?> value;
+
+                    if (formula != null) value = ValueOf(formula);
+                    else value = _ => text;
+
+                    foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    {
+                        var item = entry.Value;
+                        if (item == null) continue;
+
+                        var next = value(item);
+
+                        // A formula that could not be worked out for this element writes nothing at
+                        // all, rather than emptying whatever is there. Leaving it alone is the same
+                        // rule the preview counted it under.
+                        if (_parsed != null && next == null) continue;
+
+                        var kind = PropertyDiff.Classify(item.Property(NavWriteTransaction.TabName, name), next);
+
+                        if (!PropertyDiff.ShouldWrite(kind, _existing)) continue;
+
+                        write.SetProperty(entry.Key, NavWriteTransaction.TabName, name, next);
+                    }
+
+                    written = write.Commit();
+                }
+
+                _applyRow.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
+
+                if (_existing == ExistingValues.Overwrite && diff.Changed > 0)
+                    _applyRow.Children.Add(Ui.Note(Ui.Count(diff.Changed, "element")
+                        + " held a different value and now hold this one. What they held is in the "
+                        + "project journal, which is the only way back."));
+
+                _session.Record(ActivityKind.Write,
+                    "set " + name + " on " + Ui.Count(written, "element")
+                    + (_existing == ExistingValues.Overwrite ? ", replacing existing values" : ""));
+
+                // The diff describes a model that no longer exists. Making the button press once is
+                // not a nicety: pressing it twice would report a second write of nothing and read as
+                // if the first had failed.
+                _diff = null;
+            }
+
+            /// <summary>
+            /// Read the formula box, reporting what is wrong with it rather than refusing silently.
+            /// </summary>
+            private bool Read()
+            {
+                var formula = Formula.Parse(_formula.Text);
+
+                if (!formula.IsUsable)
+                {
+                    _status.Children.Add(Ui.Problem(formula.Problem ?? "That is not a formula."));
+                    return false;
+                }
+
+                _parsed = formula;
+
+                _status.Children.Add(Ui.Line("Reads " + string.Join(", ",
+                    formula.References.Select(r => r.ToString())) + ".", 0.6));
+
+                return true;
+            }
+
+            /// <summary>The value function for a formula: null for an element it cannot be worked out for.</summary>
+            private Func<IModelItem, string?> ValueOf(Formula formula)
+            {
+                var lookup = Lookup(_session);
+
+                return item => formula.Evaluate((category, name) => category.Length == 0
+                    ? AnyTab(item, name)
+                    : item.Property(category, name), lookup).Value;
+            }
+
+            /// <summary>
+            /// The code-table reader a formula's lookup() uses, or null when the project keeps none.
+            ///
+            /// Read once per preview rather than per element: a federation is a hundred thousand
+            /// elements and the tables do not change while a formula runs.
+            /// </summary>
+            internal static Func<string, string, string?>? Lookup(Session session)
+            {
+                var tables = CodeTables.FromJson(
+                    session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+
+                if (tables.IsEmpty) return null;
+
+                return (table, value) =>
+                {
+                    var found = tables.Find(table)?.Find(value);
+
+                    return found?.Description ?? found?.Code;
+                };
+            }
+
+            /// <summary>
+            /// A property by name, whichever tab it is under.
+            ///
+            /// What somebody means when they write {Level} rather than {Element/Level}. The first
+            /// match wins, and the tab is worth naming when a federation carries the same property
+            /// name under two of them — which the note on the card says.
+            /// </summary>
+            private static string? AnyTab(IModelItem item, string name)
+            {
+                foreach (var property in item.Properties())
+                {
+                    if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(property.Value))
+                        return property.Value;
+                }
+
+                return null;
+            }
+
+            /// <summary>Say how many elements the formula could not be worked out for.</summary>
+            private void Unworkable(WriteDiff diff)
+            {
+                // Everything the formula produced nothing for lands in Unchanged, because a null
+                // value against a property that is not there is no change. Naming that number is
+                // the difference between "it did nothing" and "it did nothing to these".
+                var blank = diff.Unchanged;
+                if (blank <= 0) return;
+
+                _status.Children.Add(Ui.Note(Ui.Count(blank, "element")
+                    + " either already hold this value or carry nothing the formula needs. The ones "
+                    + "missing a property are left alone rather than written an empty value — an "
+                    + "element with no width has no area, and a zero would go into a schedule "
+                    + "somebody adds up."));
+            }
+
+            private static string Word(WriteChange kind) => kind switch
+            {
+                WriteChange.Added => "new",
+                WriteChange.Changed => "replaces a value",
+                WriteChange.Cleared => "empties it",
+                _ => "no change",
+            };
+        }
+
+        /// <summary>
+        /// Renaming and removing a column CamelWorks put there.
+        ///
+        /// The two operations nobody thinks about until the day they need them, and by then the
+        /// column is on forty thousand elements and the only alternative is a script. Both are
+        /// scoped to whatever was read, both count before they act, and both refuse to touch a tab
+        /// CamelWorks does not own — the authoring tool's data is not ours to rename.
+        /// </summary>
+        private sealed class ColumnScreen
+        {
+            private readonly Session _session;
+            private readonly IReadOnlyList<ElementKey> _keys;
+
+            private readonly TextBox _column = Ui.Text(string.Empty, null, 150);
+            private readonly TextBox _renamed = Ui.Text(string.Empty, null, 150);
+            private readonly StackPanel _status = Ui.Stack();
+            private readonly StackPanel _actions = Ui.Stack();
+
+            internal ColumnScreen(Session session, IReadOnlyList<ElementKey> keys)
+            {
+                _session = session;
+                _keys = keys;
+            }
+
+            internal UIElement Build()
+            {
+                var count = Ui.Runner("Count it", _status, job =>
+                {
+                    _actions.Children.Clear();
+
+                    var column = _column.Text.Trim();
+
+                    if (column.Length == 0)
+                    {
+                        _status.Children.Add(Ui.Problem("Name the column first."));
+                        return;
+                    }
+
+                    job.Say("Reading...");
+
+                    var census = PropertyDiff.Census(NavWriteTransaction.TabName, column,
+                        PropertyDiff.Resolve(_session.Model, _keys));
+
+                    if (census.Present == 0)
+                    {
+                        _status.Children.Add(Ui.Empty("Nothing carries it.",
+                            "No element in this scope has a \"" + column + "\" in the "
+                            + NavWriteTransaction.TabName + " tab. Check the spelling, or widen the "
+                            + "scope and read again."));
+                        return;
+                    }
+
+                    _status.Children.Add(Ui.Line(Ui.Count(census.Present, "element")
+                        + " carry it, out of " + Ui.Count(census.Scope, "element") + " in scope.", 1, true));
+
+                    _status.Children.Add(Ui.Line("Values: "
+                        + string.Join(", ", census.Before.Where(v => v.Value != null).Select(v => v.ToString())), 0.7));
+
+                    _actions.Children.Add(Ui.Across(
+                        Ui.Button("Rename it", () => Rename(column, census.Present)),
+                        Ui.Button("Remove it from " + Ui.Count(census.Present, "element"),
+                                  () => Remove(column, census.Present))));
+                });
+
+                return Ui.Card("Rename or remove a column",
+                    "Only columns in CamelWorks' own tab. Renaming what the authoring tool wrote would "
+                    + "make the model disagree with the model it came from.",
+                    Ui.Field("Column", _column),
+                    Ui.Field("New name", _renamed),
+                    count,
+                    _status,
+                    _actions);
+            }
+
+            /// <summary>
+            /// Copy to the new name, then remove the old — in that order, in one transaction.
+            ///
+            /// The order matters if it fails halfway: a crash after the copy leaves both columns,
+            /// which somebody can see and sort out. A crash after the removal would leave neither.
+            /// </summary>
+            private void Rename(string column, int carriers)
+            {
+                var renamed = _renamed.Text.Trim();
+
+                if (renamed.Length == 0)
+                {
+                    _actions.Children.Add(Ui.Problem("Type the new name first."));
+                    return;
+                }
+
+                if (string.Equals(renamed, column, StringComparison.OrdinalIgnoreCase))
+                {
+                    _actions.Children.Add(Ui.Problem("That is the name it already has."));
+                    return;
+                }
+
+                var moved = 0;
+
+                using (var write = new NavWriteTransaction(_session.Model,
+                           "CamelWorks: rename " + column + " to " + renamed))
+                {
+                    foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    {
+                        var item = entry.Value;
+                        if (item == null) continue;
+
+                        var value = item.Property(NavWriteTransaction.TabName, column);
+                        if (string.IsNullOrEmpty(value)) continue;
+
+                        write.SetProperty(entry.Key, NavWriteTransaction.TabName, renamed, value);
+                        write.RemoveProperty(entry.Key, NavWriteTransaction.TabName, column);
+                    }
+
+                    moved = write.Commit();
+                }
+
+                _actions.Children.Add(Ui.Line("Renamed on " + Ui.Count(moved, "element")
+                    + (moved == carriers ? "." : " of " + carriers + "."), 1, true));
+
+                _session.Record(ActivityKind.Write,
+                    "renamed " + column + " to " + renamed + " on " + Ui.Count(moved, "element"));
+            }
+
+            private void Remove(string column, int carriers)
+            {
+                var removed = 0;
+
+                using (var write = new NavWriteTransaction(_session.Model, "CamelWorks: remove " + column))
+                {
+                    foreach (var entry in PropertyDiff.Resolve(_session.Model, _keys))
+                    {
+                        var item = entry.Value;
+                        if (item == null) continue;
+                        if (string.IsNullOrEmpty(item.Property(NavWriteTransaction.TabName, column))) continue;
+
+                        write.RemoveProperty(entry.Key, NavWriteTransaction.TabName, column);
+                    }
+
+                    removed = write.Commit();
+                }
+
+                _actions.Children.Add(Ui.Line("Removed from " + Ui.Count(removed, "element")
+                    + (removed == carriers ? "." : " of " + carriers + "."), 1, true));
+
+                _actions.Children.Add(Ui.Note("What those elements held is in the project journal. "
+                    + "Ctrl+Z does not reach a property write, so that record is the way back."));
+
+                _session.Record(ActivityKind.Write,
+                    "removed " + column + " from " + Ui.Count(removed, "element"));
+            }
         }
 
         // -----------------------------------------------------------------------------------
@@ -190,6 +1230,13 @@ namespace CamelWorks.UI.Views
                 var elevations = new List<double>();
                 var items = new List<(ElementKey Key, double Base, double Top)>();
 
+                // The grid is read before the traverse, because it is one call and it decides
+                // whether the rest of the chain matters.
+                job.Say("Looking for a coordination grid...");
+
+                var grids = new NavGrids(session.Model);
+                var fromGrid = grids.Derive();
+
                 foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
                 {
                     if (!job.Step(items.Count, "elements read")) return;
@@ -207,44 +1254,158 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Working out levels...");
 
+                // Grid, then the models' own property, then the histogram. In that order because
+                // that is the order of authority: a grid level is one authored fact with the name
+                // that is on the drawing, a level property is one authored fact per model, and a
+                // histogram is an honest guess.
                 var fromModel = LevelSet.FromModel(named);
-                var levels = fromModel.Bands.Count > 0 ? fromModel : LevelSet.Derive(elevations);
+
+                var levels = fromGrid.Bands.Count > 0 ? fromGrid
+                           : fromModel.Bands.Count > 0 ? fromModel
+                           : LevelSet.Derive(elevations);
 
                 results.Children.Add(Ui.Line(levels.ToString(), 1, true));
+                results.Children.Add(Ui.Line(levels.Provenance(), 0.75));
 
-                results.Children.Add(Ui.Line(levels.IsFromModel
-                    ? "Read from the models' own Level property."
-                    : "The models carry no usable level property, so these were inferred from a histogram "
-                      + "of element base heights.", 0.75));
+                if (levels.Source == LevelSource.Grid && grids.Name != null)
+                    results.Children.Add(Ui.Line("Grid system: " + grids.Name, 0.6));
+
+                // What each unused source would have said. A coordinator who disagrees with the
+                // answer needs to see the alternative before deciding the tool is wrong, and the
+                // numbers are already computed.
+                Alternatives(results, levels, fromModel, named.Count);
 
                 if (levels.Bands.Count == 0)
                 {
                     results.Children.Add(Ui.Empty("No levels.",
-                        "Nothing loaded carries geometry to infer them from."));
+                        "Nothing loaded carries a grid, a level property, or geometry to infer them from."));
                     return;
                 }
 
+                var units = session.Profile.Units;
+
                 var rows = levels.Bands.Select(b => new TableRow(b,
                     b.Name,
-                    b.Elevation.ToString("0.000", CultureInfo.InvariantCulture) + " m",
+                    units.Bare(b.Elevation),
                     b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
-                    b.IsDerived ? "inferred" : "from the model")).ToList();
+                    b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
+                                                                                 : "from the model")).ToList();
 
                 results.Children.Add(Ui.Table(rows,
-                    ("Level", 140), ("Elevation", 100), ("Elements", 110), ("Source", 110)));
+                    ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
+                    ("Elements", 110), ("Source", 110)));
 
                 after.Children.Clear();
                 after.Children.Add(Stamp(session, levels, items));
+                after.Children.Add(GridStamp(session, grids));
             });
 
             return Ui.Scroll(Ui.Stack(
                 Ui.Heading("Levels & zones"),
-                Ui.Sub("Uses the models' own levels where they have them and a height histogram where they "
-                       + "do not — and says which, because a level called \"Level +3.600\" is honest about "
-                       + "being a guess in a way that \"Level 2\" is not."),
+                Ui.Sub("The coordination grid where the federation has one, the models' own levels where "
+                       + "they have them, and a height histogram where neither — and it says which, "
+                       + "because a level called \"Level +3.600\" is honest about being a guess in a way "
+                       + "that \"Level 2\" is not."),
                 run,
                 results,
                 after));
+        }
+
+        /// <summary>
+        /// What the sources that were not used would have said.
+        ///
+        /// Shown because the first question anybody asks a derived answer is "compared to what".
+        /// Both alternatives are already computed by the time the chain has picked one, so the only
+        /// cost of showing them is four lines, and the cost of not showing them is a coordinator
+        /// re-running the tool three ways to find out.
+        /// </summary>
+        private static void Alternatives(Panel into, LevelSet chosen, LevelSet property,
+                                         int propertyReadings)
+        {
+            if (chosen.Source == LevelSource.Grid && property.Bands.Count > 0)
+                into.Children.Add(Ui.Line("The models' own level property would have given "
+                    + Ui.Count(property.Bands.Count, "level") + " instead, from "
+                    + Ui.Count(propertyReadings, "reading") + ".", 0.6));
+
+            // Many more property levels than a building has storeys is the signature of disciplines
+            // spelling the same storey differently, and it is worth naming rather than leaving
+            // somebody to notice "L02" and "Level 02" sitting next to each other in a report.
+            if (chosen.Source == LevelSource.Property && property.Bands.Count > 25)
+                into.Children.Add(Ui.Note(Ui.Count(property.Bands.Count, "distinct level")
+                    + " is more than most buildings have storeys. That usually means two disciplines "
+                    + "spell the same storey differently - \"L02\" and \"Level 02\" are two levels "
+                    + "here. Worth a look at the table below before anything is reported by level."));
+        }
+
+        /// <summary>
+        /// Write the grid reference onto every element.
+        ///
+        /// The half of the grid nobody gets at: Navisworks knows which grid square an element sits
+        /// in and will tell you, one element at a time, in a tooltip. Stamped onto a property it
+        /// becomes something clash grouping, set rules and reports can all use - and "Grid C-4" is
+        /// how a site engineer finds the thing.
+        /// </summary>
+        private static UIElement GridStamp(Session session, NavGrids grids)
+        {
+            if (grids.System == null)
+                return Ui.Card("Put the grid reference on the elements",
+                    "Nothing loaded carries a coordination grid, so there is no reference to write. "
+                    + "Grids come across from Revit and from IFC files that carry IfcGrid; a model "
+                    + "exported without one has none to find.",
+                    Ui.Line("No grid in this federation.", 0.7));
+
+            var status = Ui.Stack();
+
+            var apply = Ui.Runner("Stamp the grid reference onto every element", status, job =>
+            {
+                using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
+                {
+                    var placed = 0;
+                    var missed = 0;
+
+                    foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                    {
+                        if (!job.Step(placed + missed, "elements read")) return;
+                        if (!item.HasGeometry) continue;
+
+                        var reference = grids.Reference(item);
+
+                        if (reference == null) { missed++; continue; }
+
+                        write.SetProperty(item.Key, NavWriteTransaction.TabName, "Grid", reference);
+                        placed++;
+                    }
+
+                    if (placed == 0)
+                    {
+                        status.Children.Add(Ui.Empty("Nothing to stamp.",
+                            "The grid could not place any element in scope."));
+                        return;
+                    }
+
+                    job.Say("Writing...");
+                    var written = write.Commit();
+
+                    status.Children.Add(Ui.Line("Stamped " + Ui.Count(written, "element") + ".", 1, true));
+
+                    if (missed > 0)
+                        status.Children.Add(Ui.Note(Ui.Count(missed, "element")
+                            + " got no reference, because the grid could not place them. They keep "
+                            + "whatever Grid value they already had rather than being given a blank "
+                            + "one: an element the grid cannot locate is not an element at grid "
+                            + "nowhere."));
+
+                    session.Record(ActivityKind.Write,
+                        "stamped grid references onto " + Ui.Count(written, "element"));
+                }
+            });
+
+            return Ui.Card("Put the grid reference on the elements",
+                "Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
+                + "\" grid system, so clash grouping, set rules and reports can all say \"C-4\" "
+                + "instead of a coordinate.",
+                apply,
+                status);
         }
 
         private static UIElement Stamp(Session session, LevelSet levels,
@@ -296,88 +1457,406 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>Sum the numeric properties the model carries, grouped, reporting what it could not read.</summary>
-        public static UIElement Takeoff()
+        public static UIElement Takeoff() => new TakeoffScreen().Build();
+
+        /// <summary>
+        /// How much of something there is, and where it is.
+        ///
+        /// One axis answers the first question. Two answer the second, which is what a programme, a
+        /// procurement schedule or a phasing plan is actually built from — and producing it by hand
+        /// means running the takeoff once per level and typing the results into a spreadsheet.
+        ///
+        /// Nothing has to be mapped first. The measure comes from whatever the elements already
+        /// carry, and what cannot be read is counted and named rather than quietly left out of the
+        /// total.
+        /// </summary>
+        private sealed class TakeoffScreen
         {
-            var results = Ui.Stack();
+            /// <summary>The column axis that means "do not pivot".</summary>
+            private const string NoColumns = "Nothing - just the one axis";
 
-            var measure = "Volume";
-            var group = "Category";
+            /// <summary>The assumed-unit choice that means "leave bare numbers bare".</summary>
+            private const string NoUnit = "Leave it as it is";
 
-            var measurePicker = Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, measure, p => measure = p);
-            var groupPicker = Ui.Choice(new[] { "Category", "Type", "Model", "Level" }, group, p => group = p);
-
-            var run = Ui.Runner("Sum this model", results, job =>
+            private static readonly string[] Axes =
             {
+                "Category", "Type", "Model", "Level", "Discipline", "System",
+            };
+
+            private readonly StackPanel _results = Ui.Stack();
+            private readonly StackPanel _output = Ui.Stack();
+            private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _clean = Ui.Text(string.Empty, null, 220);
+
+            private string _assume = NoUnit;
+            private ValueCleaner _cleaner = ValueCleaner.None;
+            private Measure _units = new Measure();
+
+            private string _scope = Selection;
+            private string _measure = "Volume";
+            private string _rows = "Category";
+            private string _columns = NoColumns;
+
+            private TakeoffPivotTable? _table;
+            private TakeoffResult? _flat;
+
+            internal UIElement Build()
+            {
+                var columns = new List<string> { NoColumns };
+                columns.AddRange(Axes);
+
+                var scope = Ui.Choice(new[] { Selection, WholeModel }, _scope, p => _scope = p);
+                var measure = Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, _measure, p => _measure = p);
+                var rows = Ui.Choice(Axes, _rows, p => _rows = p);
+                var down = Ui.Choice(columns, _columns, p => _columns = p);
+
+                var assumable = new List<string> { NoUnit };
+                assumable.AddRange(ValueCleaner.AssumableUnits);
+
+                var assume = Ui.Choice(assumable, _assume, p => _assume = p);
+
+                var run = Ui.Runner("Sum it", _results, Run);
+
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Heading("Takeoff"),
+                    Ui.Sub("Sums whatever the elements carry, with no mapping table to build first. Pick a "
+                           + "second axis and it becomes a pivot: concrete by level, ductwork by system."),
+                    Ui.Field("Scope", scope),
+                    Ui.Field("Measure", measure),
+                    Ui.Field("Rows", rows),
+                    Ui.Field("Columns", down),
+                    Ui.Card("If the values need tidying first",
+                        "Both of these are off until you set them. A property that already reads as a "
+                        + "quantity needs neither.",
+                        Ui.Field("Take the number matching", _clean),
+                        Ui.Across(
+                            Ui.Button("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
+                            Ui.Button("Clear it", () => _clean.Text = string.Empty)),
+                        Ui.Field("When it has no unit, read it as", assume),
+                        Ui.Note("Nothing here invents a number. A pattern that matches nothing leaves the "
+                                + "value alone, so the takeoff still counts it unreadable and names it - "
+                                + "turning what it could not clean into a zero would move the failure out "
+                                + "of a line that admits it and into a total that is quietly wrong.")),
+                    run,
+                    _results,
+                    _output));
+            }
+
+            private void Run(Job job)
+            {
+                _table = null;
+                _flat = null;
+                _output.Children.Clear();
+
                 var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+                if (session == null) { _results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                var lines = new List<TakeoffLine>();
+                _units = session.Profile.Units;
 
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                _cleaner = ValueCleaner.Of(_clean.Text,
+                                           _assume == NoUnit ? null : _assume,
+                                           out var badPattern);
+
+                // Said and then carried on with what survived, rather than refusing to run. A bad
+                // pattern with a good assumed unit is still half a setting, and a takeoff that
+                // silently ignored the box would be worse than one that says the box was wrong.
+                if (badPattern != null) _results.Children.Add(Ui.Problem(badPattern));
+
+                var traversal = _scope == Selection
+                    ? TraversalScope.CurrentSelection
+                    : TraversalScope.WholeDocument;
+
+                var flat = new List<TakeoffLine>();
+                var pivot = new List<PivotLine>();
+                var wide = _columns != NoColumns;
+
+                foreach (var item in session.Model.Traverse(traversal))
                 {
-                    if (!job.Step(lines.Count, "elements read")) return;
+                    if (!job.Step(flat.Count + pivot.Count, "elements read")) return;
 
-                    var value = measure == "Count" ? "1" : Measure(item, measure);
+                    var value = _measure == "Count" ? "1" : _cleaner.Clean(MeasureOf(item, _measure));
+                    var row = AxisOf(session, item, _rows);
 
-                    lines.Add(new TakeoffLine(item.DisplayName, GroupOf(item, group), value));
+                    if (wide) pivot.Add(new PivotLine(item.DisplayName, row, AxisOf(session, item, _columns), value));
+                    else flat.Add(new TakeoffLine(item.DisplayName, row, value));
+                }
+
+                if (flat.Count + pivot.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty(
+                        _scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        _scope == Selection
+                            ? "Select elements in the model, or switch the scope to everything loaded."
+                            : "Append a model first."));
+                    return;
                 }
 
                 job.Say("Adding up...");
-                var result = Core.Data.Takeoff.Sum(lines);
 
-                results.Children.Add(Ui.Line(result.ToString(), 1, true));
+                if (wide) Wide(session, pivot);
+                else Narrow(session, flat);
+
+                _output.Children.Add(Ui.Field("Write to", _path));
+                _output.Children.Add(Ui.Across(Ui.Button("Write it to a spreadsheet", () => Export(session))));
+            }
+
+            /// <summary>The single-axis answer.</summary>
+            private void Narrow(Session session, IReadOnlyList<TakeoffLine> lines)
+            {
+                var result = Core.Data.Takeoff.Sum(lines);
+                _flat = result;
+
+                _results.Children.Add(Ui.Line(result.Describe(_units), 1, true));
 
                 if (result.Groups.Count == 0)
                 {
-                    results.Children.Add(Ui.Empty("Nothing to measure.", "Nothing loaded carries that property."));
+                    _results.Children.Add(Ui.Empty("Nothing to measure.",
+                        "Nothing in scope carries that property."));
                     return;
                 }
 
                 var rows = result.Groups.OrderByDescending(g => g.Count).Select(g => new TableRow(g,
                     g.Name,
                     g.Count.ToString("N0", CultureInfo.InvariantCulture),
-                    g.Total?.ToString() ?? (g.MixedKinds ? "(mixed units)" : "-"),
-                    g.Unreadable > 0 ? g.Unreadable.ToString(CultureInfo.InvariantCulture) + " unreadable" : string.Empty)
+                    g.Total?.Show(_units) ?? (g.MixedKinds ? "(mixed units)" : "-"),
+                    g.Unreadable > 0
+                        ? g.Unreadable.ToString(CultureInfo.InvariantCulture) + " unreadable"
+                        : string.Empty)
                 {
                     Tone = g.IsComplete ? Tone.Plain : Tone.Warn,
                 }).ToList();
 
-                results.Children.Add(Ui.Table(rows,
-                    ("Group", 190), ("Count", 80), ("Total", 130), ("", 0)));
+                _results.Children.Add(Ui.Table(rows,
+                    ("Group", 190), ("Count", 80), ("Total (" + UnitWord() + ")", 130), ("", 0)));
 
-                if (!result.IsComplete)
-                    results.Children.Add(Ui.Note("Some values could not be read as quantities. They are counted "
-                        + "and named rather than dropped, because a total that quietly excludes what it could "
-                        + "not parse is worse than no total."));
+                Provenance();
+                Caveat(result.IsComplete);
 
-                session.Record(ActivityKind.Report, "took off " + measure.ToLowerInvariant() + " by "
-                                                    + group.ToLowerInvariant() + ": " + result);
-            });
+                session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
+                                                    + " by " + _rows.ToLowerInvariant() + ": " + result);
+            }
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Takeoff"),
-                Ui.Sub("Sums whatever the elements carry, with no mapping table to build first."),
-                Ui.Field("Measure", measurePicker),
-                Ui.Field("Group by", groupPicker),
-                run,
-                results));
+            /// <summary>The two-axis answer.</summary>
+            private void Wide(Session session, IReadOnlyList<PivotLine> lines)
+            {
+                var table = TakeoffPivot.Of(lines);
+                _table = table;
+
+                _results.Children.Add(Ui.Line(table.Explain(_units), 1, true));
+
+                if (table.IsEmpty)
+                {
+                    _results.Children.Add(Ui.Empty("Nothing to measure.",
+                        "Nothing in scope carries that property."));
+                    return;
+                }
+
+                var headers = new List<(string Header, double Width)> { (_rows, 170) };
+
+                foreach (var column in table.Columns) headers.Add((column, 110));
+                headers.Add(("Total (" + UnitWord() + ")", 110));
+
+                var rows = new List<TableRow>();
+
+                foreach (var row in table.Rows)
+                {
+                    var cells = new List<string?> { row };
+
+                    foreach (var column in table.Columns) cells.Add(Read(table.Cell(row, column)));
+
+                    cells.Add(Read(table.RowTotal(row)));
+
+                    rows.Add(new TableRow(row, cells.ToArray())
+                    {
+                        Tone = table.RowTotal(row)?.IsComplete == false ? Tone.Warn : Tone.Plain,
+                    });
+                }
+
+                // The totals row last and labelled, so a reader scrolling to the bottom of a long
+                // table knows the last line is not another category.
+                var totals = new List<string?> { "All" };
+
+                foreach (var column in table.Columns) totals.Add(Read(table.ColumnTotal(column)));
+
+                totals.Add(Read(table.Grand));
+                rows.Add(new TableRow(null, totals.ToArray()) { Tone = Tone.Good });
+
+                _results.Children.Add(Ui.Table(rows, headers.ToArray()));
+
+                Provenance();
+                Caveat(table.Grand.IsComplete);
+
+                if (table.DroppedRows > 0 || table.DroppedColumns > 0)
+                    _results.Children.Add(Ui.Note("The largest rows and columns are shown. What is not on "
+                        + "screen is still in every total on it, so the numbers add up whether or not "
+                        + "the thing they came from has a row of its own."));
+
+                session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
+                                                    + " by " + _rows.ToLowerInvariant() + " and "
+                                                    + _columns.ToLowerInvariant() + ": " + table);
+            }
+
+            /// <summary>Which unit the column is in, for the heading rather than every cell.</summary>
+            private string UnitWord() => _measure switch
+            {
+                "Volume" => _units.VolumeUnit,
+                "Area" => _units.AreaUnit,
+                "Length" => _units.LengthUnit,
+                _ => "count",
+            };
+
+            /// <summary>
+            /// What this run did to the numbers before it added them.
+            ///
+            /// Shown every time and not only when a cleaner is set. A takeoff whose provenance is
+            /// invisible is one somebody has to re-derive by hand before they will put it in a cost
+            /// plan, and the whole point of the tool is that they should not have to.
+            /// </summary>
+            private void Provenance()
+            {
+                var said = "Totals in " + _units.Describe() + ". ";
+
+                said += _cleaner.DoesNothing
+                    ? "Values read exactly as the model wrote them."
+                    : "Before adding: " + _cleaner.Describe() + ".";
+
+                _results.Children.Add(Ui.Line(said, 0.7));
+            }
+
+            private void Caveat(bool complete)
+            {
+                if (complete) return;
+
+                _results.Children.Add(Ui.Note("Some values could not be read as quantities, or a cell held "
+                    + "more than one kind of unit. They are counted and named rather than dropped, because "
+                    + "a total that quietly excludes what it could not parse is worse than no total."));
+            }
+
+            /// <summary>How one cell reads: the total, or why there is not one.</summary>
+            private string Read(TakeoffGroup? group)
+            {
+                if (group == null || group.Count == 0) return string.Empty;
+                if (group.MixedKinds) return "(mixed units)";
+
+                return group.Total?.Show(_units)
+                       ?? group.Count.ToString("N0", CultureInfo.InvariantCulture) + " elements";
+            }
+
+            /// <summary>Write the same table the screen is showing, so the two cannot disagree.</summary>
+            private void Export(Session session)
+            {
+                _output.Children.Clear();
+                _output.Children.Add(Ui.Field("Write to", _path));
+
+                var file = _path.Text.Trim();
+
+                if (file.Length == 0)
+                {
+                    file = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        session.Profile.ProjectName + " takeoff.xlsx");
+
+                    _path.Text = file;
+                }
+
+                var block = _table != null ? Sheet(_table) : _flat != null ? Sheet(_flat) : null;
+
+                if (block == null)
+                {
+                    _output.Children.Add(Ui.Line("Sum it first.", 0.8));
+                    return;
+                }
+
+                try
+                {
+                    File.WriteAllBytes(file, XlsxWriter.Write("Takeoff", block));
+                }
+                catch (Exception e)
+                {
+                    _output.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _output.Children.Add(Ui.Line("Wrote " + file, 1, true));
+                session.Record(ActivityKind.Report, "wrote a takeoff spreadsheet", file);
+            }
+
+            private TableBlock Sheet(TakeoffPivotTable table)
+            {
+                var headers = new List<string> { _rows };
+                headers.AddRange(table.Columns);
+                headers.Add("Total (" + UnitWord() + ")");
+
+                var block = new TableBlock(headers.ToArray());
+
+                foreach (var row in table.Rows)
+                {
+                    var cells = new List<string> { row };
+
+                    foreach (var column in table.Columns) cells.Add(Read(table.Cell(row, column)));
+
+                    cells.Add(Read(table.RowTotal(row)));
+                    block.Row(cells.ToArray());
+                }
+
+                var totals = new List<string> { "All" };
+
+                foreach (var column in table.Columns) totals.Add(Read(table.ColumnTotal(column)));
+
+                totals.Add(Read(table.Grand));
+                block.Row(totals.ToArray());
+
+                return block;
+            }
+
+            private TableBlock Sheet(TakeoffResult result)
+            {
+                var block = new TableBlock(_rows, "Count", "Total (" + UnitWord() + ")", "Unreadable");
+
+                foreach (var group in result.Groups.OrderByDescending(g => g.Count))
+                    block.Row(group.Name,
+                        group.Count.ToString("N0", CultureInfo.InvariantCulture),
+                        Read(group),
+                        group.Unreadable.ToString(CultureInfo.InvariantCulture));
+
+                return block;
+            }
+
+            /// <summary>
+            /// Which bucket an element falls into on one axis.
+            ///
+            /// Discipline and system come from what the project already worked out and from what the
+            /// element carries, in that order — there is no table to fill in first, which is the
+            /// difference between a takeoff somebody runs and one they mean to set up properly.
+            /// </summary>
+            private static string AxisOf(Session session, IModelItem item, string axis) => axis switch
+            {
+                "Type" => item.TypeName ?? PivotLine.None,
+                "Model" => item.Model.DisplayName,
+                "Discipline" => session.Profile.DisciplineOf(item.Model.Scope) ?? PivotLine.None,
+                "System" => item.Property("Element", "System Name")
+                            ?? item.Property("Element", "System")
+                            ?? item.Property("Item", "System")
+                            ?? PivotLine.None,
+                "Level" => item.Property(NavWriteTransaction.TabName, "Level")
+                           ?? item.Property("Element", "Level")
+                           ?? item.Property("Item", "Level")
+                           ?? PivotLine.None,
+                _ => item.Category ?? PivotLine.None,
+            };
         }
 
-        private static string? Measure(IModelItem item, string measure) =>
+        /// <summary>
+        /// The value of a measured property, whichever tab carries it.
+        ///
+        /// Named MeasureOf and not Measure or Quantity: both of those are Core type names this
+        /// file imports, and a method that shadows one makes the type unusable in the whole class -
+        /// which is a compile error a long way from the line that caused it.
+        /// </summary>
+        private static string? MeasureOf(IModelItem item, string measure) =>
             item.Property("Element", measure)
             ?? item.Property("Item", measure)
             ?? item.Property("Revit Material Takeoff", measure)
             ?? item.Property(NavWriteTransaction.TabName, measure);
-
-        private static string GroupOf(IModelItem item, string group) => group switch
-        {
-            "Type" => item.TypeName ?? "(no type)",
-            "Model" => item.Model.DisplayName,
-            "Level" => item.Property(NavWriteTransaction.TabName, "Level")
-                       ?? item.Property("Element", "Level")
-                       ?? item.Property("Item", "Level")
-                       ?? "(no level)",
-            _ => item.Category ?? "(no category)",
-        };
     }
 }

@@ -52,6 +52,22 @@ namespace CamelWorks.Core.Findings
         public static FindingStatus Merge(FindingStatus a, FindingStatus b) => a > b ? a : b;
 
         /// <summary>
+        /// True when a finding is still somebody's to deal with.
+        ///
+        /// Approved and Resolved are both closed: one was fixed and the other was accepted as not
+        /// needing fixing, and from a party's outstanding list they are the same thing. Everything
+        /// below them is open, including Reviewed — somebody looking at a problem is not the same
+        /// as the problem going away, and a board that counted it as closed would show a week's
+        /// work disappearing the moment it was read.
+        /// </summary>
+        /// <param name="status">The status.</param>
+        public static bool IsOpen(FindingStatus status) => status < FindingStatus.Approved;
+
+        /// <summary>True when a finding is off somebody's list. The complement of <see cref="IsOpen"/>.</summary>
+        /// <param name="status">The status.</param>
+        public static bool IsClosed(FindingStatus status) => !IsOpen(status);
+
+        /// <summary>
         /// True when moving from <paramref name="from"/> to <paramref name="to"/> is a demotion —
         /// which a merge refuses and a direct edit permits. Callers use this to decide whether an
         /// incoming change needs to be surfaced as a conflict rather than applied.
