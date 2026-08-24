@@ -1441,6 +1441,7 @@ namespace CamelWorks.UI.Views
                     after.Children.Add(Ui.Rule());
                     after.Children.Add(Stamp(session, levels, items));
                     after.Children.Add(GridStamp(session, grids));
+                    after.Children.Add(BreakdownStamp(session));
                 }
 
                 Show(chosen);
@@ -1540,6 +1541,110 @@ namespace CamelWorks.UI.Views
                 Ui.Small("Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
                          + "\" grid system, so clash grouping, set rules and reports can all say "
                          + "\"C-4\" instead of a coordinate."));
+        }
+
+        /// <summary>
+        /// The selection tree's own shape, written down as properties.
+        ///
+        /// Levels and grids answer where an element is. This answers what it is part of - the
+        /// system under the zone under the package that whoever authored the model already built
+        /// into the tree. Everything downstream joins on that and the model does not carry it as a
+        /// property, so nothing can filter, group, schedule or export against it.
+        /// </summary>
+        private static UIElement BreakdownStamp(Session session)
+        {
+            var recipe = new BreakdownRecipe();
+
+            var levels = Ui.Text("6", text =>
+            {
+                if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                    recipe.Levels = n;
+            }, 70);
+
+            var separator = Ui.Text(recipe.Separator, text => recipe.Separator = text, 70);
+            var prefix = Ui.Text(recipe.Prefix, text => recipe.Prefix = text, 110);
+
+            var root = Ui.Check("Keep the file name as the first level", false, v => recipe.SkipRoot = !v);
+
+            BreakdownPlan? plan = null;
+
+            var apply = Ui.Commit("Show me what it would write", "Write", "element",
+                plan: (job, into) =>
+                {
+                    var paths = new List<KeyValuePair<ElementKey, IReadOnlyList<string>>>();
+                    var read = 0;
+
+                    foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                    {
+                        if (!job.Step(read++, "elements read")) return 0;
+                        if (!item.HasGeometry) continue;
+
+                        paths.Add(new KeyValuePair<ElementKey, IReadOnlyList<string>>(item.Key, item.TreePath));
+                    }
+
+                    plan = Breakdown.Of(paths, recipe);
+
+                    into.Children.Add(Ui.Line(plan.Explain(), 1, true));
+
+                    if (plan.IsEmpty) return 0;
+
+                    var sample = plan.Entries
+                        .GroupBy(e => e.Composite, StringComparer.Ordinal)
+                        .OrderByDescending(g => g.Count())
+                        .Take(12)
+                        .Select(g => new TableRow(g.Key, g.Key, Ui.Count(g.Count(), "element")))
+                        .ToList();
+
+                    into.Children.Add(Ui.Table(sample, ("Breakdown", 0), ("Holds", 120)));
+
+                    if (plan.Deepest < recipe.Levels)
+                        into.Children.Add(Ui.Note("The tree only reaches "
+                            + plan.Deepest.ToString(CultureInfo.InvariantCulture)
+                            + " levels here, so the deeper ones are left unwritten rather than blank."));
+
+                    return plan.Entries.Count;
+                },
+                apply: job =>
+                {
+                    var writing = plan;
+                    if (writing == null) return;
+
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: write the breakdown"))
+                    {
+                        var done = 0;
+
+                        foreach (var entry in writing.Entries)
+                        {
+                            if (!job.Step(done++, writing.Entries.Count, "elements written")) return;
+
+                            for (var level = 0; level < entry.Levels.Count; level++)
+                                write.SetProperty(entry.Key, NavWriteTransaction.TabName,
+                                                  Breakdown.LevelName(recipe, level + 1), entry.Levels[level]);
+
+                            write.SetProperty(entry.Key, NavWriteTransaction.TabName,
+                                              recipe.CompositeName, entry.Composite);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write,
+                            "wrote the breakdown onto " + Ui.Count(written, "element"));
+                    }
+                });
+
+            return Ui.Stack(
+                Ui.Rule(),
+                Ui.Marked(Glyphs.Table, "Write the breakdown down",
+                    "Whoever authored these models already grouped them - by system, by zone, by "
+                    + "package. That grouping is the breakdown every schedule and cost plan joins "
+                    + "on, and it is in the tree rather than on the elements, so nothing can use it.",
+                    Ui.Form(
+                        Ui.Pair(Ui.Field("Property prefix", prefix, "levels come out as \"" + recipe.Prefix + " 1\", \"" + recipe.Prefix + " 2\""),
+                                Ui.Field("How many levels", levels)),
+                        Ui.Field("Joined by", separator, "what separates the levels in the one key a spreadsheet joins on")),
+                    root,
+                    apply));
         }
 
         private static UIElement Stamp(Session session, LevelSet levels,
