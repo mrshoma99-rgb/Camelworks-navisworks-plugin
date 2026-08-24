@@ -1498,6 +1498,10 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                // Detached before the next one goes in. A step's surface usually holds panels the
+                // window keeps between steps, and handing one to a second parent while the first
+                // still claims it is the "already the logical child" exception.
+                body.Content = null;
                 body.Content = steps[at].Body();
 
                 var last = at == steps.Count - 1;
