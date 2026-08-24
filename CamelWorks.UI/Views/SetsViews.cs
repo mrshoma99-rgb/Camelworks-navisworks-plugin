@@ -122,6 +122,8 @@ namespace CamelWorks.UI.Views
                              + "have matches nothing."),
                     new TreeScreen(session, RedrawSaved).Build(),
                     Ui.Rule(),
+                    Alike(session),
+                    Ui.Rule(),
                     Schedule(),
                     Ui.Rule(),
                     Ui.Eyebrow("Saved sets"),
@@ -302,6 +304,93 @@ namespace CamelWorks.UI.Views
                     child.Margin = new Thickness(0, 0, 5, 0);
 
                 return row;
+            }
+
+            /// <summary>
+            /// Everything like the one that is selected.
+            ///
+            /// The question people ask a model, and the one that sends them into the search dialog
+            /// to rebuild by hand what they already have in front of them. The element carries
+            /// thirty properties; they want the four that matter and everything matching those.
+            /// </summary>
+            private UIElement Alike(Session session)
+            {
+                var facets = Ui.Stack();
+                var found = Ui.Stack();
+                var ticks = new List<(Facet Facet, CheckBox Box)>();
+
+                var read = Ui.Runner("Read what is selected", facets, primary: false, work: job =>
+                {
+                    ticks.Clear();
+
+                    IModelItem? picked = null;
+
+                    foreach (var item in session.Model.Traverse(TraversalScope.CurrentSelection))
+                    {
+                        picked = item;
+                        break;
+                    }
+
+                    if (picked == null)
+                    {
+                        facets.Children.Add(Ui.Empty("Nothing is selected.",
+                            "Pick one element in the model and read it."));
+                        return;
+                    }
+
+                    facets.Children.Add(Ui.Line(picked.DisplayName, 1, true));
+
+                    foreach (var facet in Similarity.Facets(picked.Properties()))
+                    {
+                        var box = Ui.Check(facet.Name + " = " + (facet.Value ?? "(blank)"),
+                                           facet.Suggested, null);
+
+                        ticks.Add((facet, box));
+                        facets.Children.Add(box);
+                    }
+
+                    facets.Children.Add(Ui.Small("Ticked is what has to match. What a thing IS starts "
+                                                 + "ticked; what says WHICH one it is does not, because "
+                                                 + "matching on that finds only the one you picked."));
+                });
+
+                var select = Ui.Runner("Select everything like it", found, work: job =>
+                {
+                    var chosen = ticks.Where(t => t.Box.IsChecked == true).Select(t => t.Facet).ToList();
+
+                    if (chosen.Count == 0)
+                    {
+                        found.Children.Add(Ui.Note("Nothing is ticked, so nothing would be found."));
+                        return;
+                    }
+
+                    found.Children.Add(Ui.Line(Similarity.Explain(chosen), 0.85));
+
+                    job.Say("Searching...");
+                    var outcome = session.Search.Run(DnfCompiler.Compile(Similarity.Like(chosen)));
+
+                    if (outcome.Count == 0)
+                    {
+                        found.Children.Add(Ui.Empty("Nothing matched.",
+                            "Untick the narrowest of them and try again."));
+                        return;
+                    }
+
+                    session.Model.Select(outcome.Keys);
+
+                    found.Children.Add(Ui.Line("Selected " + Ui.Count(outcome.Count, "element") + ".", 1, true));
+                    found.Children.Add(Ui.Small("Save it as a set above if it is worth keeping."));
+
+                    session.Record(ActivityKind.Regroup,
+                        "selected " + Ui.Count(outcome.Count, "element") + " like the one picked");
+                });
+
+                return Ui.Marked(Glyphs.Find, "Everything like this one",
+                    "Select one element, read what it carries, and tick what has to match.",
+                    Ui.Actions(read),
+                    facets,
+                    Ui.Actions(select),
+                    found);
             }
 
             /// <summary>

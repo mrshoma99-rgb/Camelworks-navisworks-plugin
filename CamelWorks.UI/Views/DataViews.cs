@@ -103,6 +103,7 @@ namespace CamelWorks.UI.Views
 
                 editor.Children.Clear();
                 editor.Children.Add(Writes(session, keys));
+                editor.Children.Add(Correct(session, keys));
                 editor.Children.Add(new ColumnScreen(session, keys).Build());
             });
 
@@ -703,6 +704,24 @@ namespace CamelWorks.UI.Views
         /// guessing at what.
         /// </summary>
         /// <summary>What the overwrite picker says for each policy.</summary>
+        private const string Anywhere = "anywhere in the value";
+        private const string WholeValue = "the whole value";
+        private const string AtStart = "at the start";
+        private const string AtEnd = "at the end";
+        private const string LikePattern = "a pattern with * and ?";
+
+        /// <summary>"Category / Name" into its two halves. A bare name means any category.</summary>
+        /// <param name="text">What was typed.</param>
+        private static (string Category, string Name) NameOf(string? text)
+        {
+            var whole = (text ?? string.Empty).Trim();
+            var slash = whole.IndexOf('/');
+
+            return slash < 0
+                ? (string.Empty, whole)
+                : (whole.Substring(0, slash).Trim(), whole.Substring(slash + 1).Trim());
+        }
+
         private const string KeepThem = "leave it alone";
 
         private const string ReplaceThem = "replace it";
@@ -720,6 +739,119 @@ namespace CamelWorks.UI.Views
         /// Renaming a column stays separate. It changes the shape of the data rather than its
         /// values, and it is the one act here that is not a write.
         /// </summary>
+        /// <summary>
+        /// Correct a value everywhere it appears.
+        ///
+        /// Every federation carries a property somebody spelled two ways. Every filter, set rule and
+        /// schedule join then quietly covers half of what it should, and the discovery is a count
+        /// wrong by a number nobody can explain. Fixing it in the authoring tool means six models
+        /// and six people; fixing it here means one press, and the reason nobody does it today is
+        /// that there is nothing to press.
+        /// </summary>
+        private static UIElement Correct(Session session, IReadOnlyList<ElementKey> keys)
+        {
+            var rule = new Replacement { Kind = MatchKind.Part };
+
+            var property = Ui.Text(string.Empty, "Category / Name", text =>
+            {
+                var (category, name) = NameOf(text);
+                rule.Category = category;
+                rule.Name = name;
+            }, 220);
+
+            var find = Ui.Text(string.Empty, text => rule.Find = text, 160);
+            var with = Ui.Text(string.Empty, text => rule.ReplaceWith = text, 160);
+
+            var how = Ui.Choice(new[] { Anywhere, WholeValue, AtStart, AtEnd, LikePattern }, Anywhere,
+                pick => rule.Kind = pick == WholeValue ? MatchKind.Whole
+                                  : pick == AtStart ? MatchKind.Start
+                                  : pick == AtEnd ? MatchKind.End
+                                  : pick == LikePattern ? MatchKind.Pattern
+                                  : MatchKind.Part, 200);
+
+            var cased = Ui.Check("Case has to match", false, v => rule.CaseSensitive = v);
+
+            List<(ElementKey Key, string After)>? staged = null;
+
+            var apply = Ui.Commit("Show me what it would correct", "Correct", "element",
+                plan: (job, into) =>
+                {
+                    staged = null;
+
+                    if (!rule.IsUsable)
+                    {
+                        into.Children.Add(Ui.Problem(rule.Refusal));
+                        return 0;
+                    }
+
+                    var pending = new List<(ElementKey Key, string After)>();
+                    var values = new List<string?>();
+                    var read = 0;
+
+                    foreach (var pair in PropertyDiff.Resolve(session.Model, keys))
+                    {
+                        if (!job.Step(read++, keys.Count, "values read")) return 0;
+                        if (pair.Value == null) continue;
+
+                        var now = pair.Value.Property(rule.Category, rule.Name);
+                        values.Add(now);
+
+                        var after = FindReplace.Apply(now, rule);
+
+                        if (after != null && !string.Equals(after, now, StringComparison.Ordinal))
+                            pending.Add((pair.Key, after));
+                    }
+
+                    var count = FindReplace.Rehearse(values, rule);
+
+                    into.Children.Add(Ui.Line(count.Explain(), 1, true));
+
+                    if (count.Examples.Count > 0)
+                    {
+                        var rows = count.Examples
+                            .Select(e => new TableRow(e, e.From, e.To))
+                            .ToList();
+
+                        into.Children.Add(Ui.Table(rows, ("There now", 240), ("Would be", 240)));
+                    }
+
+                    staged = pending;
+                    return pending.Count;
+                },
+                apply: job =>
+                {
+                    var writing = staged;
+                    if (writing == null) return;
+
+                    using (var write = new NavWriteTransaction(session.Model, "CamelWorks: correct a value"))
+                    {
+                        var done = 0;
+
+                        foreach (var entry in writing)
+                        {
+                            if (!job.Step(done++, writing.Count, "elements corrected")) return;
+                            write.SetProperty(entry.Key, rule.Category, rule.Name, entry.After);
+                        }
+
+                        job.Say("Writing...");
+                        var written = write.Commit();
+
+                        session.Record(ActivityKind.Write,
+                            "corrected " + rule.Name + " on " + Ui.Count(written, "element"));
+                    }
+                });
+
+            return Ui.Marked(Glyphs.Tune, "Correct a value",
+                "One spelling, everywhere it appears. The two-ways-of-writing-it that makes every "
+                + "filter and every schedule join cover half of what it should.",
+                Ui.Form(
+                    Ui.Field("Property", property, "which one to correct, as it reads in the table above"),
+                    Ui.Pair(Ui.Field("Find", find), Ui.Field("Replace with", with)),
+                    Ui.Field("Matching", how)),
+                cased,
+                apply);
+        }
+
         private static UIElement Writes(Session session, IReadOnlyList<ElementKey> keys)
         {
             var typed = new WriteScreen(session, keys);
