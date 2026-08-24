@@ -158,7 +158,7 @@ namespace CamelWorks.UI.Views
                     section.Set("items", JsonValue.Array(items));
 
                     _log.Children.Add(session.Store.Save()
-                        ? Ui.Line("Saved \"" + _graph.Name + "\" to " + session.Store.Where + ".", 0.8)
+                        ? Ui.Done("Saved \"" + _graph.Name + "\" to " + session.Store.Where + ".")
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
                 });
 

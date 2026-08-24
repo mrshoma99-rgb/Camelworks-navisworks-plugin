@@ -62,6 +62,7 @@ namespace CamelWorks.Studio
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
             new Sheet { Id = "shell", Title = "The pane", Height = 900, Builder = _ => Shell(), Widths = new[] { 470, 900 } },
+            new Sheet { Id = "home", Title = "Home", Height = 1000, Builder = _ => HomePane(), Widths = new[] { 470 } },
             new Sheet { Id = "controls", Title = "Every control", Height = 2100, Builder = _ => Controls(), Widths = new[] { 470 } },
             new Sheet { Id = "sets", Title = "Sets", Height = 1500, Builder = _ => SetsPane(), Widths = new[] { 470, 640 } },
             new Sheet { Id = "appearance", Title = "Appearance", Height = 1200, Builder = _ => Appearance(), Widths = new[] { 470 } },
@@ -105,7 +106,7 @@ namespace CamelWorks.Studio
                 Ui.Heading("Every control, in one place"),
                 Ui.Sub("The vocabulary all sixteen screens are built from."),
 
-                Ui.Card("Type", null,
+                Ui.Card(Glyphs.Report, "Type", null,
                     Ui.Eyebrow("Eyebrow"),
                     Ui.Heading("A card heading"),
                     Ui.Sub("The line under it that says what the card is for."),
@@ -114,9 +115,10 @@ namespace CamelWorks.Studio
                     Ui.Small("Small print: the sentence under a control that explains what to put in it."),
                     Ui.Code("D:\\Projects\\Riverside\\Models\\ARC-Riverside-Block-B-r7.nwc")),
 
-                Ui.Card("Numbers and status", null, figures, pills),
+                Ui.Card(Glyphs.Table, "Numbers and status", null, figures, pills),
 
-                Ui.Card("Fields", null,
+                Ui.Card(Glyphs.Tune, "Fields", null,
+                    Ui.Form(
                     Ui.Field("Set name", Ui.Text("Level 04 — mechanical", null, 200), "Shown in the Navisworks selection tree."),
                     Ui.Field("Property tab", Ui.Choice(new[] { "Element", "Item", "Revit Type", "IFC" }, "Element", null)),
                     Ui.Pair(
@@ -124,9 +126,9 @@ namespace CamelWorks.Studio
                         Ui.Field("Start numbering at", Ui.Text("1", null, 60))),
                     Ui.Field("Split on", Ui.Segmented(new[] { "Level", "Discipline", "Zone" }, "Level", null)),
                     Ui.Toggle("Publish into folders as well as saving", true, null),
-                    Ui.Check("Include elements with no value", false, null)),
+                    Ui.Check("Include elements with no value", false, null))),
 
-                Ui.Card("Buttons", null,
+                Ui.Card(Glyphs.Play, "Buttons", null,
                     Ui.Across(
                         Ui.Primary("Run the comparison", () => { }),
                         Ui.Button("Save to project", () => { }),
@@ -143,7 +145,7 @@ namespace CamelWorks.Studio
                     Ui.Toggle("Read the actual triangles", false, null),
                     Ui.Small("Slow on a large federation, and the only way to notice an element that was remodelled in place.")),
 
-                Ui.Card("A table", null,
+                Ui.Card(Glyphs.Table, "A table", null,
                     Ui.Table(Rows(),
                         ("Element", 150), ("Model", 110), ("What changed", 0))));
         }
@@ -181,13 +183,17 @@ namespace CamelWorks.Studio
                 Ui.Heading("Sets"),
                 Ui.Sub("Boolean set building, compiled down to native Navisworks search sets."),
 
-                Ui.Card("Rule", null,
-                    conditions,
-                    Ui.Field("Name", Ui.Text("Level 04 — walls", null, 220)),
+                Ui.Card(Glyphs.Filter, "Rule", "One set, built from conditions.",
+                    Ui.Form(
+                        conditions,
+                        Ui.Rule(),
+                        Ui.Field("Name", Ui.Text("Level 04 — walls", null, 220),
+                                 "How it reads in the Navisworks selection tree.")),
                     Ui.Actions(
                         Ui.Primary("Run", () => { }),
                         Ui.Button("Save to project", () => { }),
-                        Ui.Quiet("Publish as a Navisworks set", () => { }))),
+                        Ui.Button("Publish as a Navisworks set", () => { })),
+                    Ui.Done("Saved \"Level 04 — walls\" to the project file.")),
 
                 Ui.Section("Make a family of sets", "One set per Level, named {value}, skipping under 1", false,
                     Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
@@ -209,7 +215,7 @@ namespace CamelWorks.Studio
                     Ui.Field("Skip branches under", Ui.Text("1", null, 60)),
                     Ui.Actions(Ui.Primary("See the library it would make", () => { }))),
 
-                Ui.Card("Saved sets", "Kept in the project file, so they travel with the job.",
+                Ui.Card(Glyphs.Save, "Saved sets", "Kept in the project file, so they travel with the job.",
                     Ui.Table(Saved(), ("Set", 200), ("Elements", 80), ("Last run", 0))));
         }
 
@@ -251,7 +257,7 @@ namespace CamelWorks.Studio
                 Ui.Heading("Appearance"),
                 Ui.Sub("What is hidden, what is overridden, by which layer."),
 
-                Ui.Card("Layers", "Top of the list wins.",
+                Ui.Card(Glyphs.Layers, "Layers", "Top of the list wins.",
                     Layer("Clashing elements", "Red, opaque", Tone.Bad),
                     Layer("Level 04 only", "Everything else 85% transparent", Tone.Plain),
                     Layer("Temporary works", "Hidden", Tone.Warn),
@@ -351,8 +357,9 @@ namespace CamelWorks.Studio
             return Page(
                 Ui.Heading("Compare"),
                 Ui.Sub("Pick a baseline and see what changed."),
-                Ui.Card("Run", null,
-                    Ui.Field("Baseline", Ui.Choice(new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null)),
+                Ui.Card(Glyphs.Compare, "Run", "Pick a baseline and see what changed.",
+                    Ui.Form(
+                    Ui.Field("Baseline", Ui.Choice(new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null))),
                     Ui.Section("What counts as a change", "1 mm · standard properties · no triangle read", false,
                         Ui.Field("Position tolerance", Ui.Text("0.001", null, 80)),
                         Ui.Toggle("Read the actual triangles", false, null)),
@@ -394,15 +401,104 @@ namespace CamelWorks.Studio
 
         // -----------------------------------------------------------------------------------
 
+        /// <summary>
+        /// The front door, reconstructed.
+        ///
+        /// Worth having as a page of its own because it is the screen a first-time user sees
+        /// before any other, and until now it was the one screen nobody had ever looked at: it
+        /// reads the host on its very first line, so the shell page can only ever show it failing.
+        /// </summary>
+        private static UIElement HomePane()
+        {
+            var chips = Ui.Across(
+                Ui.Pill("9 models"),
+                Ui.Pill("Metres"),
+                Ui.Pill("4 clash tests"));
+
+            return Page(
+                Ui.Card(Glyphs.Model, "Riverside — Block B", null,
+                    chips,
+                    Ui.Line("Project file  D:\\Projects\\Riverside\\Riverside.cwproj", 0.7)),
+
+                Ui.Card(Glyphs.Clock, "The week",
+                    "Reconcile, regroup, report. Each opens where the work actually happens.",
+                    Step(1, "Project", "Reconcile", "Six models came in on Friday; two moved.", "2 days ago", false),
+                    Ui.Rule(),
+                    Step(2, "Coordinate", "Regroup", "1,284 clashes became 96 issues.", "Yesterday", false),
+                    Ui.Rule(),
+                    Step(3, "Coordinate", "Report", "Send this week's out.", null, true)),
+
+                Ui.Card(Glyphs.Report, "Recent", null,
+                    Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96))));
+        }
+
+        private static UIElement Step(int number, string family, string title, string what,
+                                      string? when, bool lead)
+        {
+            var badge = new Border
+            {
+                Width = 26,
+                Height = 26,
+                CornerRadius = new CornerRadius(13),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 0, 0),
+                Child = new TextBlock
+                {
+                    Text = number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 12,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+
+            badge.SetResourceReference(Border.BackgroundProperty, "Fam." + family);
+
+            var line = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            line.Children.Add(badge);
+
+            var text = Ui.Stack(
+                Ui.Line(title, 1, true),
+                Ui.Line(what, 0.75),
+                Ui.Across(when == null ? Ui.Pill("Not done yet", Tone.Warn) : Ui.Pill(when, Tone.Good)));
+
+            text.Margin = new Thickness(11, 0, 10, 0);
+            Grid.SetColumn(text, 1);
+            line.Children.Add(text);
+
+            var go = lead
+                ? Ui.Primary(title == "Report" ? "Reports" : title, () => { })
+                : Ui.Button(title == "Reconcile" ? "Models" : "Board", () => { });
+
+            go.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(go, 2);
+            line.Children.Add(go);
+
+            return line;
+        }
+
+        private static IEnumerable<TableRow> Activity()
+        {
+            yield return new TableRow(null, "Report", "Issued 96 issues to 4 parties", "Yesterday");
+            yield return new TableRow(null, "Regroup", "Grouped 1,284 clashes into 96", "Yesterday");
+            yield return new TableRow(null, "Reconcile", "Brought in 6 models", "2 days ago");
+        }
+
         private static UIElement States()
         {
             return Page(
                 Ui.Heading("What a screen says when it has nothing to say"),
                 Ui.Sub("Every one of these is an answer. A blank panel is a bug report."),
 
-                Ui.Card("States", null,
+                Ui.Card(Glyphs.Info, "States", null,
                     Ui.Empty("No clashes matched these rules",
-                             "Every clash in the four tests was suppressed by a rule. Loosen one, or clear the rules to see the raw count."),
+                             "Every clash in the four tests was suppressed by a rule.",
+                             "Clear the rules", () => { }),
                     Ui.Note("This model has no saved viewpoints yet, so there is nothing to rename. "
                             + "Save one first, or run this after a coordination session."),
                     Ui.Problem("The project file is open in another Navisworks. CamelWorks will not "

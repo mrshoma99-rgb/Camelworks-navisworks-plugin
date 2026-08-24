@@ -108,18 +108,21 @@ namespace CamelWorks.UI.Views
                 RedrawSaved(session);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("Sets"),
-                    Ui.Sub("Groups are ORed together; conditions inside a group are ANDed. Any condition can "
-                           + "be negated, and a negation compiles to a subtraction rather than a not-equals — "
-                           + "those are different sets, because a host condition on a property an element does "
-                           + "not have matches nothing."),
-                    Ui.Card("Rule", null, _editor),
-                    Ui.Field("Name", _name),
-                    Actions(session),
-                    _results,
+                    Ui.Card(Glyphs.Filter, "Rule", "One set, built from conditions.",
+                        Ui.Form(
+                            _editor,
+                            Ui.Rule(),
+                            Ui.Field("Name", _name, "How it reads in the Navisworks selection tree.")),
+                        Actions(session),
+                        _results,
+                        Ui.Small("Groups are ORed together; conditions inside a group are ANDed. A negated "
+                                 + "condition compiles to a subtraction rather than a not-equals — those are "
+                                 + "different sets, because a host condition on a property an element does not "
+                                 + "have matches nothing.")),
                     new FamilyScreen(session, RedrawSaved).Build(),
                     new TreeScreen(session, RedrawSaved).Build(),
-                    Ui.Card("Saved sets", "Kept in the project file, so they travel with the job.", _saved)));
+                    Ui.Card(Glyphs.Save, "Saved sets",
+                            "Kept in the project file, so they travel with the job.", _saved)));
             }
 
             private UIElement Actions(Session session)
@@ -171,13 +174,13 @@ namespace CamelWorks.UI.Views
                     session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
 
                     _results.Children.Add(session.Store.Save()
-                        ? Ui.Line("Saved.", 0.8)
+                        ? Ui.Done("Saved.")
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
                     RedrawSaved(session);
                 });
 
-                var publish = Ui.Runner("Publish as a Navisworks set", _results, job =>
+                var publish = Ui.Runner("Publish as a Navisworks set", _results, primary: false, work: job =>
                 {
                     var title = _name.Text.Trim();
 
@@ -199,7 +202,7 @@ namespace CamelWorks.UI.Views
                                   + "than one search, and Navisworks search sets can only hold one."));
                 });
 
-                return Ui.Across(save, preview, publish);
+                return Ui.Actions(preview, save, publish);
             }
 
             private SetExpression Expression()
@@ -554,7 +557,7 @@ namespace CamelWorks.UI.Views
                 _session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
 
                 _status.Children.Add(_session.Store.Save()
-                    ? Ui.Line("Saved " + Ui.Count(wanted.Count, "set") + " to the project.", 1, true)
+                    ? Ui.Done("Saved " + Ui.Count(wanted.Count, "set") + " to the project.")
                     : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
 
                 _session.Record(ActivityKind.Reconcile,
@@ -600,8 +603,8 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                _status.Children.Add(Ui.Line("Published " + Ui.Count(published, "set")
-                    + " into the host's selection sets.", 1, true));
+                _status.Children.Add(Ui.Done("Published " + Ui.Count(published, "set")
+                    + " into the host's selection sets."));
 
                 if (live < published)
                     _status.Children.Add(Ui.Note(Ui.Count(published - live, "set")
@@ -880,7 +883,7 @@ namespace CamelWorks.UI.Views
                 _session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
 
                 _status.Children.Add(_session.Store.Save()
-                    ? Ui.Line("Saved " + Ui.Count(wanted.Count, "set") + " to the project.", 1, true)
+                    ? Ui.Done("Saved " + Ui.Count(wanted.Count, "set") + " to the project.")
                     : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
 
                 _session.Record(ActivityKind.Reconcile,
@@ -931,8 +934,8 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                _status.Children.Add(Ui.Line("Published " + Ui.Count(published, "set")
-                    + " into the host's selection sets, in folders.", 1, true));
+                _status.Children.Add(Ui.Done("Published " + Ui.Count(published, "set")
+                    + " into the host's selection sets, in folders."));
 
                 if (live < published)
                     _status.Children.Add(Ui.Note(Ui.Count(published - live, "set")
@@ -1028,7 +1031,7 @@ namespace CamelWorks.UI.Views
                     Ui.Sub("Every override and every hidden element, as a stack of named layers. The layer at "
                            + "the top wins, property by property — a layer that only sets a colour leaves "
                            + "visibility to the one underneath."),
-                    Ui.Card("Layers", "Top of the list wins.", _stack),
+                    Ui.Card(Glyphs.Layers, "Layers", "Top of the list wins.", _stack),
                     _adder,
                     Actions(session),
                     _results,
@@ -1068,7 +1071,7 @@ namespace CamelWorks.UI.Views
                         job.Say("Applying...");
                         Execute(session, plan);
 
-                        _results.Children.Add(Ui.Line("Applied.", 1, true));
+                        _results.Children.Add(Ui.Done("Applied."));
                         session.Record(ActivityKind.Appearance, "applied the appearance stack: " + plan.Explain());
                     }
 
@@ -1087,7 +1090,7 @@ namespace CamelWorks.UI.Views
                     session.Store.Section(ProjectStore.LayersSection).Set("stack", LayerStackJson.Write(_layers));
 
                     _results.Children.Add(session.Store.Save()
-                        ? Ui.Line("Saved to " + session.Store.Where + ".", 0.8)
+                        ? Ui.Done("Saved to " + session.Store.Where + ".")
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
                 });
 
@@ -1512,7 +1515,7 @@ namespace CamelWorks.UI.Views
                     var view = session.Viewpoints.SaveCurrent(
                         "View " + (session.Viewpoints.All().Count + 1).ToString(CultureInfo.InvariantCulture));
 
-                    _results.Children.Add(Ui.Line("Saved \"" + view.Name + "\".", 0.8));
+                    _results.Children.Add(Ui.Done("Saved \"" + view.Name + "\"."));
                     Redraw(session);
                 });
 
@@ -1597,8 +1600,8 @@ namespace CamelWorks.UI.Views
                         }
                     }
 
-                    _results.Children.Add(Ui.Line("Saved " + Ui.Count(made, "viewpoint")
-                        + (into.Length == 0 ? "." : " into \"" + into + "\"."), 1, true));
+                    _results.Children.Add(Ui.Done("Saved " + Ui.Count(made, "viewpoint")
+                        + (into.Length == 0 ? "." : " into \"" + into + "\".")));
 
                     if (empty > 0)
                         _results.Children.Add(Ui.Note(Ui.Count(empty, "group")
@@ -1902,8 +1905,8 @@ namespace CamelWorks.UI.Views
                         }
                     }
 
-                    status.Children.Add(Ui.Line("Copied the overrides onto " + Ui.Count(done, "viewpoint")
-                        + ".", 1, true));
+                    status.Children.Add(Ui.Done("Copied the overrides onto " + Ui.Count(done, "viewpoint")
+                        + "."));
 
                     if (refused > 0)
                         status.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")

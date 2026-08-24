@@ -551,18 +551,78 @@ namespace CamelWorks.UI.Views
         /// <param name="title">The block's title.</param>
         /// <param name="subtitle">One line saying what it is for, or null.</param>
         /// <param name="body">The contents.</param>
-        public static Border Card(string title, string? subtitle, params UIElement?[] body)
+        public static Border Card(string title, string? subtitle, params UIElement?[] body) =>
+            Card((string?)null, title, subtitle, body);
+
+        /// <summary>
+        /// A titled block with a mark on it.
+        ///
+        /// The mark is not decoration. A screen of five white rectangles with five bold lines on
+        /// them gives the eye nothing to sort by, so finding the card you were just looking at
+        /// means reading all five titles again. A glyph is what makes a card findable without
+        /// reading, which is the whole of "do not depend on the text".
+        /// </summary>
+        /// <param name="glyph">One of <see cref="Glyphs"/>, or null for no mark.</param>
+        /// <param name="title">The block's title.</param>
+        /// <param name="subtitle">One line saying what it is for, or null.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Card(string? glyph, string title, string? subtitle, params UIElement?[] body)
         {
             var panel = new StackPanel();
 
-            if (!string.IsNullOrEmpty(title)) panel.Children.Add(Heading(title));
+            if (!string.IsNullOrEmpty(title))
+            {
+                if (glyph == null)
+                {
+                    panel.Children.Add(Heading(title));
+                }
+                else
+                {
+                    var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+                    row.Children.Add(Glyph(glyph, 17, "Accent", new Thickness(0, 0, 9, 0)));
+
+                    var caption = Heading(title);
+                    caption.Margin = new Thickness(0);
+                    caption.VerticalAlignment = VerticalAlignment.Center;
+                    row.Children.Add(caption);
+
+                    panel.Children.Add(row);
+                }
+            }
+
             if (subtitle != null) panel.Children.Add(Sub(subtitle));
+            if (!string.IsNullOrEmpty(title)) panel.Children.Add(HeaderRule());
 
             foreach (var child in body) if (child != null) panel.Children.Add(child);
 
             var card = new Border { Child = panel };
             card.Wearing("CardStyle");
             return card;
+        }
+
+        private static UIElement HeaderRule() => new Border
+        {
+            Height = 1,
+            Margin = new Thickness(0, 7, 0, 10),
+        }.Tint(Border.BackgroundProperty, "Bd");
+
+        /// <summary>
+        /// The surface a card's inputs sit on.
+        ///
+        /// Without it a card is a title and then a column of labelled boxes, which is a
+        /// spreadsheet with a heading on it. Putting the inputs on their own tinted panel is what
+        /// separates "the part you fill in" from "the part that tells you things" — and it is what
+        /// lets the action underneath read as the end of the card rather than one more row.
+        /// </summary>
+        /// <param name="fields">The inputs.</param>
+        public static Border Form(params UIElement?[] fields)
+        {
+            var panel = new StackPanel();
+            foreach (var child in fields) if (child != null) panel.Children.Add(child);
+
+            var frame = new Border { Child = panel };
+            frame.Wearing("FormStyle");
+            return frame;
         }
 
         /// <summary>
@@ -636,7 +696,7 @@ namespace CamelWorks.UI.Views
             };
 
             var card = new Border { Child = Stack(header, contents) };
-            card.Wearing("CardStyle");
+            card.Wearing("SectionStyle");
             return card;
         }
 
@@ -984,7 +1044,21 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="what">What was looked for.</param>
         /// <param name="why">Why there is nothing, or what to try.</param>
-        public static UIElement Empty(string what, string why)
+        public static UIElement Empty(string what, string why) => Empty(what, why, null, null);
+
+        /// <summary>
+        /// An empty result, with the thing to do about it.
+        ///
+        /// "No clashes matched these rules" tells somebody what happened. A button that clears the
+        /// rules tells them what to do about it, which is the difference between a dead end and a
+        /// screen. Where there is an obvious next step, it belongs here rather than in a sentence
+        /// telling them where to find it.
+        /// </summary>
+        /// <param name="what">What was looked for.</param>
+        /// <param name="why">Why there is nothing, or what to try.</param>
+        /// <param name="caption">What the way out says, or null for none.</param>
+        /// <param name="onClick">The way out.</param>
+        public static UIElement Empty(string what, string why, string? caption, Action? onClick)
         {
             var text = Stack(
                 new TextBlock
@@ -1019,6 +1093,14 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 4, 0, 4),
                 Child = row,
             };
+
+            if (caption != null && onClick != null)
+                text.Children.Add(new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 10, 0, 0),
+                    Children = { Button(caption, onClick) },
+                });
 
             frame.Tint(Border.BorderBrushProperty, "Bd");
             frame.Tint(Border.BackgroundProperty, "Card2");
@@ -1273,7 +1355,12 @@ namespace CamelWorks.UI.Views
         /// <param name="caption">What the button says.</param>
         /// <param name="output">Where results are written. Cleared on each run.</param>
         /// <param name="work">The work. Check <see cref="Job.IsCancelled"/> in any loop.</param>
-        public static Panel Runner(string caption, Panel output, Action<Job> work)
+        /// <param name="primary">
+        /// Whether this is the action the card is for. False for the second long-running button on
+        /// a card: two primaries is the same as none, because the reader still has to work out
+        /// which of them the screen wanted them to press.
+        /// </param>
+        public static Panel Runner(string caption, Panel output, Action<Job> work, bool primary = true)
         {
             var status = new TextBlock
             {
@@ -1291,7 +1378,7 @@ namespace CamelWorks.UI.Views
             stop.Wearing("Btn");
 
             var go = new System.Windows.Controls.Button { Content = caption };
-            go.Wearing("PrimaryBtn");
+            go.Wearing(primary ? "PrimaryBtn" : "Btn");
 
             Job? running = null;
             stop.Click += (s, e) =>
@@ -1482,5 +1569,47 @@ namespace CamelWorks.UI.Views
 
         /// <summary>A moon: the theme control.</summary>
         public const string Theme = "M20,13.5 A8.5,8.5 0 1 1 10.5,4 A6.6,6.6 0 0 0 20,13.5 Z";
+
+        /// <summary>A stack of sheets: models, or a federation.</summary>
+        public const string Model = "M12,3 L21,7.5 L12,12 L3,7.5 Z M3,12 L12,16.5 L21,12 M3,16.5 L12,21 L21,16.5";
+
+        /// <summary>Overlapping panes: appearance layers.</summary>
+        public const string Layers = "M4,9 L11,9 L11,20 L4,20 Z M13,4 L20,4 L20,15 L13,15 Z";
+
+        /// <summary>Two shapes meeting: a clash.</summary>
+        public const string Clash = "M4,12 L11,12 M13,12 L20,12 M12,4 L12,11 M12,13 L12,20 M9,9 L15,15 M15,9 L9,15";
+
+        /// <summary>Two panels side by side: a comparison.</summary>
+        public const string Compare = "M11,4 L11,20 M4,7 L8,7 L8,17 L4,17 Z M16,7 L20,7 L20,17 L16,17 Z";
+
+        /// <summary>A grid: a table of values.</summary>
+        public const string Table = "M3,5 L21,5 L21,19 L3,19 Z M3,10 L21,10 M3,14.5 L21,14.5 M9,10 L9,19 M15,10 L15,19";
+
+        /// <summary>A folder.</summary>
+        public const string Folder = "M3,6.5 L9.5,6.5 L11.5,9 L21,9 L21,19 L3,19 Z";
+
+        /// <summary>A disk: saved somewhere it will still be tomorrow.</summary>
+        public const string Save = "M4,4 L16,4 L20,8 L20,20 L4,20 Z M8,4 L8,10 L15,10 L15,4 M8,20 L8,14 L16,14 L16,20";
+
+        /// <summary>A triangle: run it.</summary>
+        public const string Play = "M8,5 L19,12 L8,19 Z";
+
+        /// <summary>A camera: a saved viewpoint.</summary>
+        public const string Camera = "M3,8.5 L7,8.5 L9,5.5 L15,5.5 L17,8.5 L21,8.5 L21,19 L3,19 Z M12,14 A3.2,3.2 0 1 0 12.01,14";
+
+        /// <summary>A funnel: a rule or a set.</summary>
+        public const string Filter = "M3,5 L21,5 L14,13 L14,20 L10,18 L10,13 Z";
+
+        /// <summary>A page: a report.</summary>
+        public const string Report = "M6,3 L15,3 L19,7 L19,21 L6,21 Z M15,3 L15,7 L19,7 M9,12 L16,12 M9,16 L16,16";
+
+        /// <summary>A clock: when it last happened.</summary>
+        public const string Clock = "M12,3 A9,9 0 1 0 12.01,3 M12,7 L12,12.5 L16,14.5";
+
+        /// <summary>A dial: settings and thresholds.</summary>
+        public const string Tune = "M4,7 L20,7 M4,17 L20,17 M9,4.5 L9,9.5 M15,14.5 L15,19.5";
+
+        /// <summary>An arrow onward: this takes you somewhere.</summary>
+        public const string Onward = "M5,12 L18,12 M13,7 L18,12 L13,17";
     }
 }

@@ -141,9 +141,9 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                status.Children.Add(Ui.Line("Saved \"" + graph.Name + "\" - "
+                status.Children.Add(Ui.Done("Saved \"" + graph.Name + "\" - "
                     + Ui.Count(graph.Nodes.Count, "step") + ", starting with "
-                    + Ui.Count(sources.Count, "model") + " to append.", 1, true));
+                    + Ui.Count(sources.Count, "model") + " to append."));
 
                 status.Children.Add(Ui.Note("As it stands it appends those models, reloads anything that "
                     + "changed on disk, runs the clash tests that have never run, and writes the board as "

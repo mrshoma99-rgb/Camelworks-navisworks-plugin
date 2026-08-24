@@ -1198,8 +1198,8 @@ namespace CamelWorks.UI.Views
                     removed = write.Commit();
                 }
 
-                _actions.Children.Add(Ui.Line("Removed from " + Ui.Count(removed, "element")
-                    + (removed == carriers ? "." : " of " + carriers + "."), 1, true));
+                _actions.Children.Add(Ui.Done("Removed from " + Ui.Count(removed, "element")
+                    + (removed == carriers ? "." : " of " + carriers + ".")));
 
                 _actions.Children.Add(Ui.Note("What those elements held is in the project journal. "
                     + "Ctrl+Z does not reach a property write, so that record is the way back."));

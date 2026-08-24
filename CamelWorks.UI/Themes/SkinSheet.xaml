@@ -116,9 +116,11 @@
     <Setter Property="TextOptions.TextFormattingMode" Value="Ideal"/>
   </Style>
 
+  <!-- 16, not 15. At 15 a card title and a bold line of body text are the same weight and size,
+       so nothing on a screen of five cards says where one ends and the next begins. -->
   <Style x:Key="Head" TargetType="TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource Text}"/>
-    <Setter Property="FontSize" Value="{DynamicResource Size.Head}"/>
+    <Setter Property="FontSize" Value="16"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
@@ -170,6 +172,31 @@
     <Setter Property="CornerRadius" Value="10"/>
     <Setter Property="Padding" Value="12"/>
     <Setter Property="Margin" Value="0,0,0,10"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+  </Style>
+
+  <!-- A folded group of options. Tinted and borderless rather than white and bordered, because a
+       card is content and this is a control: at a glance the eye should be able to count the
+       cards on a screen without the sections joining in. -->
+  <Style x:Key="SectionStyle" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Nav}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Bd}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="10"/>
+    <Setter Property="Padding" Value="12,10"/>
+    <Setter Property="Margin" Value="0,0,0,10"/>
+    <Setter Property="SnapsToDevicePixels" Value="True"/>
+  </Style>
+
+  <!-- The surface a card's inputs sit on. Without it a card is a title and then a column of
+       labelled boxes, which is a spreadsheet with a heading. -->
+  <Style x:Key="FormStyle" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource Card2}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource Bd}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="12,12,12,4"/>
+    <Setter Property="Margin" Value="0,2,0,6"/>
     <Setter Property="SnapsToDevicePixels" Value="True"/>
   </Style>
 
@@ -323,14 +350,14 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Border x:Name="b" Background="Transparent" BorderBrush="Transparent" BorderThickness="1"
+          <Border x:Name="b" Background="{DynamicResource Nav}" BorderBrush="Transparent" BorderThickness="1"
                   CornerRadius="7" Padding="{TemplateBinding Padding}">
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-              <Setter TargetName="b" Property="Background" Value="{DynamicResource Hover}"/>
-              <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentWash}"/>
+              <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="b" Property="Opacity" Value="0.45"/>
@@ -342,8 +369,35 @@
     </Setter>
   </Style>
 
-  <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+  <Style x:Key="DangerBtn" TargetType="Button">
     <Setter Property="Foreground" Value="{DynamicResource RedTx}"/>
+    <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Padding" Value="11,6"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="b" Background="{DynamicResource RedBg}" BorderBrush="{DynamicResource RedBd}"
+                  BorderThickness="1" CornerRadius="8" Padding="{TemplateBinding Padding}"
+                  SnapsToDevicePixels="True">
+            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource RedTx}"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="b" Property="Opacity" Value="0.8"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter TargetName="b" Property="Opacity" Value="0.45"/>
+              <Setter Property="Cursor" Value="Arrow"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 
   <Style x:Key="LinkBtn" TargetType="Button">

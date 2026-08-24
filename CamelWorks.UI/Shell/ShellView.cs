@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 using CamelWorks.UI.Views;
@@ -33,7 +34,11 @@ namespace CamelWorks.UI.Shell
 
         private readonly string _paneId;
         private readonly StackPanel _switcher = new StackPanel { Orientation = Orientation.Horizontal };
-        private readonly ComboBox _switcherNarrow = new ComboBox { MinWidth = 148, Margin = new Thickness(0, 0, 8, 0) };
+        private readonly ToggleButton _switcherNarrow = new ToggleButton();
+        private readonly Popup _menu = new Popup { Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
+        private readonly ListBox _menuList = new ListBox { MaxHeight = 420, MinWidth = 250 };
+        private readonly TextBlock _purpose = new TextBlock();
+        private readonly Border _purposeBar;
         private readonly StackPanel _tabs = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly Border _tabStrip;
         private readonly Border _rail;
@@ -71,6 +76,7 @@ namespace CamelWorks.UI.Shell
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             root.Children.Add(Brand());
@@ -90,6 +96,19 @@ namespace CamelWorks.UI.Shell
             _tabStrip.BorderThickness = new Thickness(0, 0, 0, 1);
             Grid.SetRow(_tabStrip, 3);
             root.Children.Add(_tabStrip);
+
+            // One line saying what the tab is for, on the screen rather than in a tooltip.
+            //
+            // Workspaces.cs has always carried this sentence for every one of the nineteen tabs,
+            // and it has always been a tooltip - which is to say it was written for somebody who
+            // already knew enough to hover. A row of nouns is exactly what makes a first-time user
+            // feel lost, and twenty pixels is what it costs to stop that.
+            _purposeBar = new Border { Padding = new Thickness(11, 5, 11, 6), Child = PurposeRow() };
+            _purposeBar.Tint(Border.BackgroundProperty, "Nav");
+            _purposeBar.Tint(Border.BorderBrushProperty, "Bd");
+            _purposeBar.BorderThickness = new Thickness(0, 0, 0, 1);
+            Grid.SetRow(_purposeBar, 4);
+            root.Children.Add(_purposeBar);
 
             var body = new Grid();
             body.Children.Add(_content);
@@ -119,12 +138,17 @@ namespace CamelWorks.UI.Shell
             _results.Tint(Border.BorderBrushProperty, "Bd");
             body.Children.Add(_results);
 
-            Grid.SetRow(body, 4);
+            Grid.SetRow(body, 5);
             root.Children.Add(body);
 
             var ground = new Border { Child = root };
             ground.Tint(Border.BackgroundProperty, "Pane");
             Content = ground;
+
+            _switcherNarrow.Checked += (s, e) => _menu.IsOpen = true;
+            _switcherNarrow.Unchecked += (s, e) => _menu.IsOpen = false;
+            _menu.Closed += (s, e) => _switcherNarrow.IsChecked = false;
+            _menuList.SelectionChanged += (s, e) => PickNarrow();
 
             _search.TextChanged += (s, e) => Filter();
             _search.PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape) Clear(); };
@@ -295,21 +319,102 @@ namespace CamelWorks.UI.Shell
             return frame;
         }
 
+        /// <summary>
+        /// The switcher, wide and narrow.
+        ///
+        /// The narrow form used to be a bare dropdown, and 470 device pixels is where most people
+        /// leave this pane — so the common case was the one where every workspace colour, and with
+        /// it any sense of which part of the product you were in, disappeared. It is a marked chip
+        /// now, and what it opens says what each workspace is for rather than only naming it.
+        /// </summary>
         private UIElement SwitcherRow()
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
+
+            _switcherNarrow.Wearing("RailBtn");
+            _switcherNarrow.Visibility = Visibility.Collapsed;
+            _switcherNarrow.Padding = new Thickness(9, 4, 9, 4);
+
+            _menu.PlacementTarget = _switcherNarrow;
+
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Margin = new Thickness(0, 4, 0, 8),
+                Child = _menuList,
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 18,
+                    ShadowDepth = 3,
+                    Opacity = 0.24,
+                },
+            };
+
+            frame.Tint(Border.BackgroundProperty, "Card");
+            frame.Tint(Border.BorderBrushProperty, "Bd");
+            _menu.Child = frame;
+
             row.Children.Add(_switcherNarrow);
             row.Children.Add(_switcher);
-            _switcherNarrow.Visibility = Visibility.Collapsed;
+            return row;
+        }
+
+        private UIElement PurposeRow()
+        {
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            row.Children.Add(Ui.Glyph(Glyphs.Info, 13, "Faint", new Thickness(0, 0, 7, 0)));
+
+            _purpose.TextWrapping = TextWrapping.Wrap;
+            _purpose.VerticalAlignment = VerticalAlignment.Center;
+            _purpose.Wearing("Hint");
+
+            Grid.SetColumn(_purpose, 1);
+            row.Children.Add(_purpose);
+            return row;
+        }
+
+        /// <summary>A workspace's colour dot beside its name.</summary>
+        private static UIElement Marked(Workspace workspace, bool withPurpose)
+        {
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 8,
+                Height = 8,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Fam." + workspace.Id);
+
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = workspace.Title, FontWeight = FontWeights.SemiBold });
+
+            if (withPurpose)
+                text.Children.Add(new TextBlock
+                {
+                    Text = workspace.Tabs.FirstOrDefault()?.Summary ?? string.Empty,
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 260,
+                    Margin = new Thickness(0, 1, 0, 0),
+                }.Wearing("Hint"));
+
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(dot);
+            row.Children.Add(text);
             return row;
         }
 
         private void BuildSwitcher()
         {
             _switcher.Children.Clear();
-            _switcherNarrow.Items.Clear();
+            _menuList.Items.Clear();
 
             _where.Text = _workspace.Title + (_tab == null || !_workspace.HasTabStrip ? string.Empty : "  ·  " + _tab.Title);
+            _switcherNarrow.Content = Marked(_workspace, withPurpose: false);
 
             foreach (var workspace in Workspaces.All.Where(w => w.PaneId == _paneId))
             {
@@ -344,8 +449,12 @@ namespace CamelWorks.UI.Shell
                 button.Checked += (s, e) => Show(current.Id, null);
                 _switcher.Children.Add(button);
 
-                _switcherNarrow.Items.Add(workspace.Title);
-                if (ReferenceEquals(workspace, _workspace)) _switcherNarrow.SelectedIndex = _switcherNarrow.Items.Count - 1;
+                _menuList.Items.Add(new ListBoxItem
+                {
+                    Content = Marked(workspace, withPurpose: true),
+                    Tag = workspace.Id,
+                    IsSelected = ReferenceEquals(workspace, _workspace),
+                });
             }
         }
 
@@ -373,8 +482,15 @@ namespace CamelWorks.UI.Shell
             }
         }
 
-        private void ShowContent() =>
+        private void ShowContent()
+        {
+            var purpose = _tab?.Summary ?? string.Empty;
+
+            _purpose.Text = purpose;
+            _purposeBar.Visibility = purpose.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
             _content.Content = TabViews.For(_workspace, _tab, Go);
+        }
 
         /// <summary>
         /// Navigate to a "workspace/tab" route, for the screens that offer a way onward.
@@ -443,13 +559,11 @@ namespace CamelWorks.UI.Shell
 
         private void PickNarrow()
         {
-            var title = _switcherNarrow.SelectedItem as string;
-            if (title == null) return;
+            if (!(_menuList.SelectedItem is ListBoxItem item) || !(item.Tag is string id)) return;
+            if (string.Equals(id, _workspace.Id, StringComparison.Ordinal)) return;
 
-            var workspace = Workspaces.All.FirstOrDefault(
-                w => w.PaneId == _paneId && string.Equals(w.Title, title, StringComparison.Ordinal));
-
-            if (workspace != null && !ReferenceEquals(workspace, _workspace)) Show(workspace.Id, null);
+            _menu.IsOpen = false;
+            Show(id, null);
         }
 
         private void Filter()

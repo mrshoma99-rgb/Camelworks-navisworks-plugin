@@ -167,7 +167,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 results.Children.Add(Ui.Line(written.Explain(), 1, true));
-                results.Children.Add(Ui.Line("Written to " + file + ".", 0.8));
+                results.Children.Add(Ui.Done("Written to " + file + "."));
 
                 foreach (var note in written.Notes) results.Children.Add(Ui.Note(note));
 

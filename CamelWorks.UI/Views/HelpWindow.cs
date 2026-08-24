@@ -222,7 +222,7 @@ namespace CamelWorks.UI.Views
                 {
                     System.IO.File.WriteAllText(file, BundleText(), new System.Text.UTF8Encoding(true));
 
-                    status.Children.Add(Ui.Line("Written to " + file + ".", 1, true));
+                    status.Children.Add(Ui.Done("Written to " + file + "."));
                     status.Children.Add(Ui.Line("Open it and read it before you send it.", 0.7));
                 }
                 catch (Exception e)
@@ -338,7 +338,7 @@ namespace CamelWorks.UI.Views
                     var note = System.IO.Path.ChangeExtension(file, ".txt");
                     System.IO.File.WriteAllText(note, SampleProject.ReadMe());
 
-                    status.Children.Add(Ui.Line("Written to " + file + ", with a note beside it.", 1, true));
+                    status.Children.Add(Ui.Done("Written to " + file + ", with a note beside it."));
                 }
                 catch (Exception e)
                 {

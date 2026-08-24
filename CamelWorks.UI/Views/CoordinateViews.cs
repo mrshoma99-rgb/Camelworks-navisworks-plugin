@@ -2167,7 +2167,7 @@ namespace CamelWorks.UI.Views
                     session.Store.Section(ProjectStore.ClashSection).Set("rules", _rules.ToJson());
 
                     _status.Children.Add(session.Store.Save()
-                        ? Ui.Line("Saved. The board uses these the next time it loads.", 0.8)
+                        ? Ui.Done("Saved. The board uses these the next time it loads.")
                         : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
                 });
 
@@ -3872,8 +3872,8 @@ namespace CamelWorks.UI.Views
             Save(session, board, "applied a returned worksheet to " + Ui.Count(groups, "group"));
 
             results.Children.Add(session.Store.Save()
-                ? Ui.Line("Applied to " + Ui.Count(groups, "group") + ", " + Ui.Count(moved, "result")
-                          + " moved. Load the board again to see it.", 1, true)
+                ? Ui.Done("Applied to " + Ui.Count(groups, "group") + ", " + Ui.Count(moved, "result")
+                          + " moved. Load the board again to see it.")
                 : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
             results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "
@@ -4052,8 +4052,8 @@ namespace CamelWorks.UI.Views
             Save(session, board, "applied a BCF reply to " + Ui.Count(groups, "group"));
 
             results.Children.Add(session.Store.Save()
-                ? Ui.Line("Applied to " + Ui.Count(groups, "group") + ", "
-                          + Ui.Count(moved, "result") + " moved. Load the board again to see it.", 1, true)
+                ? Ui.Done("Applied to " + Ui.Count(groups, "group") + ", "
+                          + Ui.Count(moved, "result") + " moved. Load the board again to see it.")
                 : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
             results.Children.Add(Ui.Note("The board changed, not the model. Undo is on the group panel "

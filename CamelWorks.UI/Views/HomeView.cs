@@ -64,43 +64,97 @@ namespace CamelWorks.UI.Views
             if (session.Store.ConcurrencyNote.Length > 0)
                 body.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
 
-            return Ui.Card(session.Profile.ProjectName, null, body);
+            return Ui.Card(Glyphs.Model, session.Profile.ProjectName, null, body);
         }
 
+        /// <summary>
+        /// The three steps of the week, as three steps.
+        ///
+        /// This was three stacked paragraphs with a small grey button at the end of each: the same
+        /// information, arranged so that nothing on the front door of the product looked more
+        /// important than anything else. A numbered marker in the step's own colour, the state as a
+        /// chip rather than a sentence, and one weighted action per row is the difference between
+        /// a page somebody reads and a page somebody uses.
+        /// </summary>
         private static UIElement Cycle(Session session, Action<string> goTo)
         {
             var rows = Ui.Stack();
+            var step = 0;
 
             foreach (var kind in ActivityKind.Cycle)
             {
-                var latest = session.Store.Activity.Latest(kind);
+                step++;
 
-                var line = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+                var latest = session.Store.Activity.Latest(kind);
+                var never = latest == null;
+
+                var line = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+                line.Children.Add(Marker(step, kind));
+
                 var left = Ui.Stack(
                     Ui.Line(ActivityKind.Title(kind), 1, true),
-                    Ui.Line(latest == null
-                        ? ActivityKind.Purpose(kind)
-                        : latest.Summary, 0.75),
-                    Ui.Line(latest == null
-                        ? "Never on this project."
-                        : ActivityLog.Ago(latest.WhenTicks, session.NowTicks), 0.55));
+                    Ui.Line(never ? ActivityKind.Purpose(kind) : latest!.Summary, 0.75),
+                    Ui.Across(never
+                        ? Ui.Pill("Not done yet", Tone.Warn)
+                        : Ui.Pill(ActivityLog.Ago(latest!.WhenTicks, session.NowTicks), Tone.Good)));
 
+                left.Margin = new Thickness(11, 0, 10, 0);
+                Grid.SetColumn(left, 1);
                 line.Children.Add(left);
 
-                var button = Ui.Button(GoLabel(kind), () => goTo(RouteFor(kind)));
+                // The step nobody has done yet is the one that should look like the thing to press.
+                // Once it has been done, it steps back and lets the next one lead.
+                var button = never
+                    ? Ui.Primary(GoLabel(kind), () => goTo(RouteFor(kind)))
+                    : Ui.Button(GoLabel(kind), () => goTo(RouteFor(kind)));
+
                 button.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumn(button, 1);
+                Grid.SetColumn(button, 2);
                 line.Children.Add(button);
 
                 rows.Children.Add(line);
+                if (step < ActivityKind.Cycle.Count) rows.Children.Add(Ui.Rule());
             }
 
-            return Ui.Card("The week",
+            return Ui.Card(Glyphs.Clock, "The week",
                 "Reconcile, regroup, report. Each opens where the work actually happens.", rows);
         }
+
+        /// <summary>The step's number, in the colour of the workspace it opens.</summary>
+        private static UIElement Marker(int step, string kind)
+        {
+            var badge = new Border
+            {
+                Width = 26,
+                Height = 26,
+                CornerRadius = new CornerRadius(13),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 0, 0),
+                Child = new TextBlock
+                {
+                    Text = step.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 12,
+                    Foreground = System.Windows.Media.Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+
+            badge.SetResourceReference(Border.BackgroundProperty, "Fam." + Workspace(kind));
+            return badge;
+        }
+
+        private static string Workspace(string kind) => kind switch
+        {
+            ActivityKind.Reconcile => "Project",
+            ActivityKind.Regroup => "Coordinate",
+            _ => "Coordinate",
+        };
 
         private static string RouteFor(string kind) => kind switch
         {
@@ -121,7 +175,7 @@ namespace CamelWorks.UI.Views
             var entries = session.Store.Activity.Entries.Take(12).ToList();
 
             if (entries.Count == 0)
-                return Ui.Card("Recent", null,
+                return Ui.Card(Glyphs.Report, "Recent", null,
                     Ui.Empty("Nothing has happened on this project yet.",
                         "CamelWorks writes a line here every time it changes the model, produces a "
                         + "report or runs the rules — so a project handed over mid-job says what was done to it."));
@@ -131,7 +185,7 @@ namespace CamelWorks.UI.Views
                 e.Summary,
                 ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList();
 
-            return Ui.Card("Recent", null,
+            return Ui.Card(Glyphs.Report, "Recent", null,
                 Ui.Table(rows, ("What", 110), ("", 0), ("When", 110)));
         }
     }

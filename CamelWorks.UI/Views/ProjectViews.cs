@@ -652,8 +652,8 @@ namespace CamelWorks.UI.Views
                 Override(session, ProfileKeys.Priorities, priorities.Text);
 
                 status.Children.Add(session.Store.Save()
-                    ? Ui.Line("Saved. The board's assign picker and the report's per-party split "
-                              + "both read this.", 0.8)
+                    ? Ui.Done("Saved. The board's assign picker and the report's per-party split "
+                              + "both read this.")
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
             });
 
@@ -868,8 +868,8 @@ namespace CamelWorks.UI.Views
                 written = write.Commit();
             }
 
-            status.Children.Add(Ui.Line("Removed " + Ui.Count(names.Count, "property") + " from "
-                + Ui.Count(written, "element") + ".", 1, true));
+            status.Children.Add(Ui.Done("Removed " + Ui.Count(names.Count, "property") + " from "
+                + Ui.Count(written, "element") + "."));
 
             session.Record(ActivityKind.Write,
                 "removed CamelWorks properties from " + Ui.Count(written, "element"));
@@ -911,7 +911,7 @@ namespace CamelWorks.UI.Views
                 foreach (var key in saved.Keys) section.Set(key, saved[key]);
 
                 status.Children.Add(session.Store.Save()
-                    ? Ui.Line("Saved " + Ui.Count(saved.Keys.Count, "override") + " to " + session.Store.Where, 0.8)
+                    ? Ui.Done("Saved " + Ui.Count(saved.Keys.Count, "override") + " to " + session.Store.Where)
                     : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
             });
 

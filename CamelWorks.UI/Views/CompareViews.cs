@@ -488,8 +488,8 @@ namespace CamelWorks.UI.Views
 
                     _session.View.ClearOverrides(keys);
 
-                    _output.Children.Add(Ui.Line("Cleared the comparison's colour and fade on "
-                        + Ui.Count(keys.Count, "element") + ". Nothing else was touched.", 0.8));
+                    _output.Children.Add(Ui.Done("Cleared the comparison's colour and fade on "
+                        + Ui.Count(keys.Count, "element") + ". Nothing else was touched."));
                 });
 
                 return Ui.Card("Paint",
@@ -760,8 +760,8 @@ namespace CamelWorks.UI.Views
 
                     CompareStamp.Clear(transaction, keys);
 
-                    _output.Children.Add(Ui.Line("Cleared on " + Ui.Count(transaction.Commit(), "element")
-                                                 + ".", 0.8));
+                    _output.Children.Add(Ui.Done("Cleared on " + Ui.Count(transaction.Commit(), "element")
+                                                 + "."));
                 });
 
                 var raise = Ui.Button("Raise them on the board", () =>
