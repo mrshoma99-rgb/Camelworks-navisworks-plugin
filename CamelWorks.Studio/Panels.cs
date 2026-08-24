@@ -133,27 +133,9 @@ namespace CamelWorks.Studio
                     Ui.Field("Units", Ui.Choice(new[] { "Metres", "Millimetres", "Feet" }, "Metres", null), "derived"),
                     Ui.Field("Discipline from", Ui.Choice(new[] { "File name", "A property" }, "File name", null), "yours")),
                 Ui.Field("Level property", Ui.Text("Element / Level", null, 200), "derived from the models"),
-                Ui.Actions(Ui.Primary("Save overrides", () => { }), Ui.Quiet("Reset to derived", () => { }))),
+                Ui.Actions(Ui.Primary("Save overrides", () => { }), Ui.Quiet("Reset them all to derived", () => { }))),
 
-            Ui.Split("Project file", "D:\\Projects\\Riverside\\Riverside.cwproj"),
-
-            Ui.Marked(Glyphs.Find, "Find moved files",
-                "Models whose source is no longer where the federation says it is.",
-                Ui.Actions(Ui.Primary("Look for missing sources", () => { })),
-                Ui.Note("Two models point at a folder that no longer exists. Nothing has been changed yet.")),
-
-            Ui.Marked(Glyphs.Save, "Model writes",
-                "What CamelWorks has stamped onto elements on this project.",
-                Ui.Table(Writes(), ("Property", 170), ("Elements", 0), ("Last written", 110)),
-                Ui.Actions(Ui.Primary("Count what CamelWorks has written", () => { }),
-                           Ui.Danger("Remove them from the model", () => { }))));
-
-        private static IEnumerable<TableRow> Writes()
-        {
-            yield return new TableRow(null, "CamelWorks / Level", "41,880", "Yesterday");
-            yield return new TableRow(null, "CamelWorks / Grid", "38,102", "Yesterday");
-            yield return new TableRow(null, "CamelWorks / Change", "1,284", "12 minutes ago");
-        }
+            Ui.Split("Project file", @"D:\Projects\Riverside\Riverside.cwproj"));
 
         private static UIElement Profile() => Sheets.Page(
             Ui.Small(@"Kept beside the document in D:\Projects\Riverside\Riverside.cwproj"),
@@ -313,17 +295,17 @@ namespace CamelWorks.Studio
                 Rule("Under 5 mm", "suppressed", Tone.Plain),
                 Rule("Insulation against structure", "suppressed", Tone.Plain),
                 Rule("Anything on the transfer level", "flagged", Tone.Warn),
-                Ui.Actions(Ui.Quiet("+ Add a rule", () => { }))),
+                Ui.Actions(Ui.Quiet("Add", () => { }))),
 
             Ui.Numbered(2, "Group", "Applied in order.",
                 Rule("Within 5 m of each other", "one issue", Tone.Plain),
                 Rule("Same pair of models", "one issue", Tone.Plain),
-                Ui.Actions(Ui.Quiet("+ Add a step", () => { }))),
+                Ui.Actions(Ui.Quiet("Add", () => { }))),
 
             Ui.Numbered(3, "Assign", "First match wins.",
                 Rule("MEP-M* against anything", "Mechanical", Tone.Plain),
                 Rule("STR* against ARC*", "Structures", Tone.Plain),
-                Ui.Actions(Ui.Quiet("+ Add an assignment", () => { }))),
+                Ui.Actions(Ui.Quiet("Add", () => { }))),
 
             Ui.Actions(Ui.Primary("Save rules", () => { }), Ui.Button("Let the rules decide this again", () => { })));
 
@@ -383,10 +365,11 @@ namespace CamelWorks.Studio
                         Ui.Field("Topics", Ui.Choice(new[] { "Everything", "New only", "One party" }, "Everything", null))),
                     Ui.Field("File", Ui.Text("D:\\Projects\\Riverside\\Riverside-w33.bcf", null, 280))),
                 Ui.Toggle("Put a rendered view on every topic", true, null),
-                Ui.Actions(Ui.Primary("Export the board", () => { }))),
+                Ui.Actions(Ui.Primary("Send the board", () => { }))),
 
             Ui.Marked(Glyphs.Model, "Import", "Read a response back, and see what it would change first.",
-                Ui.Actions(Ui.Primary("Read a BCF file", () => { }), Ui.Button("Read a sheet back", () => { })),
+                Ui.Form(Ui.Field("File", Ui.Text(string.Empty, "a .bcf or the .xlsx you sent out", null, 280))),
+                Ui.Actions(Ui.Primary("Read it", () => { })),
                 Ui.Note("Nothing is applied until the conflicts below have been looked at.")));
 
         // -----------------------------------------------------------------------------------
@@ -477,7 +460,7 @@ namespace CamelWorks.Studio
             Ui.Eyebrow("Recorded"),
             Ui.Small(@"D:\Projects\Riverside\.camelworks\baselines"),
             Ui.Table(BaselineRows(), ("Baseline", 172), ("Elements", 0), ("Taken", 96)),
-            Ui.Actions(Ui.Button("Compare against this one", () => { }),
+            Ui.Actions(Ui.Button("Take a baseline", () => { }),
                        Ui.Danger("Delete the selected one", () => { })));
 
         private static IEnumerable<TableRow> BaselineRows()
@@ -633,7 +616,7 @@ namespace CamelWorks.Studio
 
             Ui.Marked(Glyphs.Add, "Job from this document",
                 "Nine models are open. This makes the job you already do by hand every Monday.",
-                Ui.Actions(Ui.Button("Make one from what is open", () => { }))));
+                Ui.Actions(Ui.Button("Make a job from what is open", () => { }))));
 
         private static IEnumerable<TableRow> Jobs()
         {

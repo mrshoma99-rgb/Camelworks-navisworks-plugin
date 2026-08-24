@@ -1073,14 +1073,40 @@ namespace CamelWorks.UI.Views
         {
             var session = Host.Current;
 
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Setup"), Ui.Sub(Host.NoModel)));
+            if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
 
             var profile = session.Profile;
             var status = Ui.Stack();
             var rows = Ui.Stack();
 
-            foreach (var setting in profile.Settings) rows.Children.Add(Row(setting));
+            void Fill()
+            {
+                rows.Children.Clear();
+                foreach (var setting in profile.Settings) rows.Children.Add(Row(setting));
+            }
+
+            Fill();
+
+            // The way out of a decision somebody regrets. Every row on this tab is an override of
+            // something CamelWorks worked out for itself, and a tab that can only be overridden is
+            // one people are afraid to touch.
+            var reset = Ui.Quiet("Reset them all to derived", () =>
+            {
+                status.Children.Clear();
+
+                foreach (var setting in profile.Settings) setting.Override = null;
+
+                var section = session.Store.Section(ProjectStore.ProfileSection);
+
+                foreach (var key in section.Keys.ToList())
+                    if (profile.Find(key) != null) section.Remove(key);
+
+                Fill();
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Done("Every row is back to what CamelWorks worked out from the models.")
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
+            });
 
             var save = Ui.Button("Save overrides", () =>
             {
@@ -1111,7 +1137,8 @@ namespace CamelWorks.UI.Views
                 file.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
 
             return Ui.Scroll(Ui.Stack(
-                Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null, rows, Ui.Actions(save), status),
+                Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null,
+                          rows, Ui.Actions(save, reset), status),
                 file));
         }
 
