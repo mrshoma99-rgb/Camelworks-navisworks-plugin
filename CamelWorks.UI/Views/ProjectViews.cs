@@ -31,110 +31,510 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// Is this federation fit to work on: CamelWorks' own checks, and the client's.
+        /// Is this federation fit to work on: one button, one answer, and the reasons under it.
         ///
-        /// Both run on demand and neither needs anything set up first. The built-in rules ship
-        /// with the product; the IDS card takes the file your client sent and answers it against
-        /// the model, which is the same question asked by somebody with a contract behind them.
+        /// Every check here runs on demand and none of them needs anything set up first. They used
+        /// to be five cards, each drawing its own conclusion in its own words, which left the
+        /// reader to work out which of five conclusions was the one that mattered. They are one
+        /// sweep now, over one pass of the model, ranked worst first — because the question anybody
+        /// opens this tab with has a single answer and it is not five paragraphs long.
+        ///
+        /// The IDS card below is a genuinely different act: those are the client's rules, in a file
+        /// somebody with a contract wrote, and nothing on it is CamelWorks' opinion about the data.
         /// </summary>
-        public static UIElement Health() =>
-            Ui.Scroll(Ui.Stack(Intake(), BuiltIn(), Federation(), Coded(), Ids()));
+        public static UIElement Health() => Ui.Scroll(Ui.Stack(Sweep(), Ids()));
+
+        /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
+        private const string IntakeKey = "intake";
 
         /// <summary>
-        /// Whether the coded properties hold values anybody agreed to.
+        /// The sweep: every built-in check, one traversal, one verdict.
+        ///
+        /// One traversal because the four checks between them used to walk the whole federation
+        /// four times over, and on a real project each pass is minutes. They want different things
+        /// from each element and there is no reason to ask twice.
+        /// </summary>
+        private static UIElement Sweep()
+        {
+            var results = Ui.Stack();
+            var codes = CodeChoice();
+
+            var run = Ui.Runner("Check this federation", results, job =>
+            {
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var review = new FederationReview();
+                var actions = Ui.Stack();
+
+                var loaded = Loaded(session, review);
+                var reading = Walk(session, job, codes);
+
+                if (reading == null) return;   // stopped
+
+                BuiltIn(reading, review);
+                var intake = Arrivals(session, reading, review, actions);
+                CodeCheck(session, reading, codes, review);
+
+                session.Record(ActivityKind.Reconcile, "swept the federation: " + review);
+
+                results.Children.Add(Answer(review));
+                results.Children.Add(Ui.Small(reading.Explain(session)));
+
+                foreach (var finding in review.Findings) results.Children.Add(Found(finding));
+
+                foreach (var skipped in review.Missing) results.Children.Add(Ui.Small("Not checked: " + skipped));
+
+                if (loaded.AnyMissing) results.Children.Add(Repoint(session));
+                if (actions.Children.Count > 0) results.Children.Add(actions);
+
+                results.Children.Add(Ui.Section("What is loaded",
+                    Ui.Count(session.Model.Models.Count, "model") + " in this federation", false,
+                    loaded.Table,
+                    intake));
+            });
+
+            return Ui.Marked(Glyphs.Tick, "Is this fit to coordinate against?",
+                "Placement, geometry, what has arrived and what it is coded as, in one pass over "
+                + "the models. Nothing to configure first: the rules ship with the product and "
+                + "their thresholds scale to the model rather than assuming metres.",
+                run,
+                codes.Fold,
+                results);
+        }
+
+        /// <summary>The verdict, said once and in one line.</summary>
+        private static UIElement Answer(FederationReview review)
+        {
+            var headline = Ui.Heading(review.Verdict());
+
+            headline.Tint(TextBlock.ForegroundProperty,
+                review.Grade == ReviewGrade.Fault ? "RedTx"
+                : review.Grade == ReviewGrade.Watch ? "AmberTx"
+                : "Ok");
+
+            return Ui.Stack(
+                headline,
+                Ui.Across(
+                    Ui.Figure(Measure.Count(review.Faults), "to settle",
+                              review.Faults > 0 ? Tone.Bad : Tone.Plain),
+                    Ui.Figure(Measure.Count(review.Watches), "worth a look",
+                              review.Watches > 0 ? Tone.Warn : Tone.Plain),
+                    Ui.Figure(Measure.Count(review.Clean), "clean",
+                              review.Clean > 0 ? Tone.Good : Tone.Plain)));
+        }
+
+        /// <summary>One finding, in the vocabulary's own shape.</summary>
+        private static UIElement Found(ReviewFinding finding) =>
+            Ui.Finding(finding.Grade == ReviewGrade.Fault, finding.Check, finding.Headline,
+                       finding.Detail, finding.Fix,
+                       finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples));
+
+        /// <summary>
+        /// The federation itself: what is loaded, from where, and whether the source has moved on.
+        ///
+        /// The last column is the one that matters on a Monday. Navisworks will happily open a
+        /// federation whose sources changed a fortnight ago and show it without comment, and the
+        /// coordination that follows is against a model nobody is building.
+        /// </summary>
+        private static (UIElement Table, bool AnyMissing) Loaded(Session session, FederationReview review)
+        {
+            const string Check = "The federation";
+
+            var savedAt = FileTime(session.SavedPath);
+            var rows = new List<TableRow>();
+            var missing = new List<string>();
+            var stale = new List<string>();
+
+            foreach (var model in session.Model.Models)
+            {
+                var when = FileTime(model.SourcePath);
+                string state;
+                Tone tone;
+
+                if (string.IsNullOrWhiteSpace(model.SourcePath))
+                {
+                    state = "no source path";
+                    tone = Tone.Plain;
+                }
+                else if (when == null)
+                {
+                    state = "not found on disk";
+                    tone = Tone.Bad;
+                    missing.Add(model.DisplayName);
+                }
+                else if (savedAt != null && when > savedAt)
+                {
+                    state = "changed since this file was saved";
+                    tone = Tone.Warn;
+                    stale.Add(model.DisplayName);
+                }
+                else
+                {
+                    state = when.Value.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture);
+                    tone = Tone.Plain;
+                }
+
+                rows.Add(new TableRow(model,
+                    model.DisplayName,
+                    session.Profile.DisciplineOf(model.Scope) ?? "-",
+                    state,
+                    model.SourcePath)
+                {
+                    Tone = tone,
+                });
+            }
+
+            review.Ran(Check);
+
+            if (missing.Count > 0)
+                review.Fault(Check, Ui.Count(missing.Count, "model") + " has no file on disk",
+                    "A model whose source cannot be found still displays: Navisworks is showing its "
+                    + "own cached copy, which is as old as the last time anybody opened this file.",
+                    "Repoint it, or refresh from the folder it moved to, before coordinating.",
+                    missing);
+
+            if (stale.Count > 0)
+                review.Watch(Check, Ui.Count(stale.Count, "model") + " has changed since this file was saved",
+                    "The federation is showing what was published when it was saved, not what is on "
+                    + "disk now.",
+                    "Refresh, then run this again.",
+                    stale);
+
+            if (rows.Count == 0)
+                return (Ui.Empty("Nothing is loaded.", "Append or merge a model to start."), false);
+
+            return (Ui.Table(rows, ("Model", 150), ("Discipline", 100), ("Source", 190), ("Path", 0)),
+                    missing.Count > 0);
+        }
+
+        /// <summary>
+        /// Everything the checks want from the model, gathered in one pass.
+        ///
+        /// Deliberately dumb: it reads, it does not judge. Each check gets the same reading and
+        /// draws its own conclusions, which is what makes one traversal enough for all of them.
+        /// </summary>
+        private sealed class Reading
+        {
+            /// <summary>Every element, as the geometry rules see it.</summary>
+            public List<HealthElement> Elements { get; } = new List<HealthElement>();
+
+            /// <summary>How many elements with geometry each loaded model contributed.</summary>
+            public Dictionary<string, int> Geometry { get; } = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            /// <summary>The coded value on each element, when a code table asked for one.</summary>
+            public List<string?> Codes { get; } = new List<string?>();
+
+            /// <summary>What was read, in one line.</summary>
+            public string Explain(Session session) =>
+                Ui.Count(Elements.Count, "element") + " across "
+                + Ui.Count(session.Model.Models.Count, "model") + ", read once.";
+        }
+
+        /// <summary>One pass over the federation, filling a <see cref="Reading"/>. Null when stopped.</summary>
+        private static Reading? Walk(Session session, Job job, CodeSource codes)
+        {
+            var reading = new Reading();
+            var scale = session.MetresPerUnit;
+            var (category, name) = SplitProperty(codes.Property);
+            var wanted = codes.Table != null && name.Length > 0;
+
+            job.Say("Reading the models...");
+
+            foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+            {
+                if (reading.Elements.Count % 2000 == 0
+                    && !job.Step(reading.Elements.Count, "elements read")) return null;
+
+                var bounds = item.Bounds;
+
+                reading.Elements.Add(new HealthElement(item.Key.ToString(), item.Model.DisplayName)
+                {
+                    Name = item.DisplayName,
+                    Category = item.Category,
+                    X = bounds.CentreX * scale,
+                    Y = bounds.CentreY * scale,
+                    Z = bounds.CentreZ * scale,
+                    SizeX = bounds.SizeX * scale,
+                    SizeY = bounds.SizeY * scale,
+                    SizeZ = bounds.SizeZ * scale,
+
+                    // Only the zero case is ever asked about, and counting every property on
+                    // every element of a federation costs more than the whole rest of the check.
+                    PropertyCount = item.Properties().Any() ? 1 : 0,
+                });
+
+                if (item.HasGeometry)
+                {
+                    var scope = item.Model.Scope;
+                    reading.Geometry[scope] = reading.Geometry.TryGetValue(scope, out var seen) ? seen + 1 : 1;
+                }
+
+                if (wanted)
+                    reading.Codes.Add(category.Length == 0
+                        ? Anywhere(item, name)
+                        : item.Property(category, name));
+            }
+
+            return reading;
+        }
+
+        /// <summary>The six geometry and data rules that ship with the product.</summary>
+        private static void BuiltIn(Reading reading, FederationReview review)
+        {
+            var report = ModelHealth.Check(reading.Elements);
+
+            review.Ran("Geometry");
+
+            foreach (var finding in report.Findings)
+                review.Add(new ReviewFinding(ModelHealth.GradeOf(finding), "Geometry",
+                                             finding.Summary, null, finding.Fix, finding.Examples));
+        }
+
+        /// <summary>
+        /// What arrived since the last sweep, and whether anything moved.
+        ///
+        /// The question that opens every coordination meeting — who published and who did not —
+        /// answered today by opening properties on eight files. And the one nothing else catches: a
+        /// model the federation is now holding somewhere else, because somebody dragged it in the
+        /// units-and-transform dialog and nobody noticed. Every clash from that moment on is in the
+        /// wrong place.
+        /// </summary>
+        private static UIElement Arrivals(Session session, Reading reading,
+                                          FederationReview review, Panel actions)
+        {
+            const string Check = "Arrivals";
+
+            var manifest = ModelManifest.Of(session.Model.Models, session.Profile,
+                                            itemCounts: reading.Geometry, version: Ui.Release,
+                                            takenUtc: DateTimeOffset.UtcNow);
+
+            var section = session.Store.Section(ProjectStore.ModelsSection);
+            var before = ModelManifest.FromJson(section[IntakeKey]);
+            var intake = manifest.Since(before.Models.Count > 0 ? before : null);
+
+            review.Ran(Check);
+
+            Placement(session, intake, review, actions);
+
+            if (intake.Missing.Count > 0)
+                review.Watch(Check, Ui.Count(intake.Missing.Count, "model")
+                    + " the last sweep saw is no longer in the federation",
+                    "Either it was deliberately removed, or an append was lost when somebody saved.",
+                    null,
+                    intake.Missing.Select(m => m.DisplayName).ToList());
+
+            var body = Ui.Stack(Ui.Line(intake.Explain(), 1, true), Ui.Line(manifest.Explain(), 0.8));
+
+            if (intake.NothingNew && intake.Missing.Count == 0)
+                body.Children.Add(Ui.Info("Nothing has been republished since the last sweep. A run "
+                    + "against exactly last week's files produces exactly last week's board - worth "
+                    + "knowing before the meeting rather than during it."));
+
+            var units = session.Profile.Units;
+            var table = manifest.ModelTable(units);
+
+            body.Children.Add(Ui.Table(table.Rows.Select(r => new TableRow(r,
+                r[0] ?? string.Empty, r[2] ?? string.Empty, r[3] ?? string.Empty,
+                r[5] ?? string.Empty, r[6] ?? string.Empty)).ToList(),
+                ("Model", 200), ("Source last written", 150), ("Size", 80),
+                ("Placement", 170), ("Elements", 0)));
+
+            if (intake.HasPrevious)
+            {
+                var register = intake.Table();
+
+                body.Children.Add(Ui.Eyebrow("Since the last sweep"));
+
+                body.Children.Add(Ui.Table(register.Rows.Select(r => new TableRow(r,
+                    r[0] ?? string.Empty, r[1] ?? string.Empty, r[2] ?? string.Empty,
+                    r[3] ?? string.Empty)).ToList(),
+                    ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0)));
+            }
+
+            section.Set(IntakeKey, manifest.ToJson());
+            session.Store.Save();
+
+            return body;
+        }
+
+        /// <summary>
+        /// The models the federation has moved, and the offer to put them back.
+        ///
+        /// Previewed before it writes and reversible after: the previous placement is in the record
+        /// this sweep just replaced, so putting a model back is the same operation as moving it and
+        /// leaves the same trail.
+        /// </summary>
+        private static void Placement(Session session, ModelIntake intake,
+                                      FederationReview review, Panel actions)
+        {
+            const string Check = "Placement";
+
+            var carried = session.Model.Models.Where(m => m.HasTransform).ToList();
+
+            review.Ran(Check);
+
+            if (intake.Moved.Count > 0)
+            {
+                review.Fault(Check, Ui.Count(intake.Moved.Count, "model")
+                    + " has been moved by the federation since the last sweep",
+                    "Nobody is told when this happens, and every clash from that moment on is in "
+                    + "the wrong place.",
+                    "Put it back below, then run the clash tests again.",
+                    intake.Moved.Select(m => m.DisplayName).ToList());
+
+                foreach (var model in intake.Moved)
+                {
+                    var record = model;
+
+                    if (!intake.Before.TryGetValue(record.Scope, out var was) || was.Placement == null)
+                        continue;
+
+                    var source = session.Model.Models.FirstOrDefault(
+                        m => string.Equals(m.Scope, record.Scope, StringComparison.Ordinal));
+
+                    if (source == null) continue;
+
+                    actions.Children.Add(Ui.Button("Put " + record.DisplayName + " back where it was", () =>
+                    {
+                        var problem = session.Model.Restore(source, was.Placement);
+
+                        actions.Children.Add(problem == null
+                            ? Ui.Done(record.DisplayName + " is back where the last sweep found it. "
+                                      + "Run the clash tests again - everything on the board was "
+                                      + "computed against the other placement.")
+                            : Ui.Problem(problem));
+
+                        if (problem == null)
+                            session.Record(ActivityKind.Reconcile,
+                                "put " + record.DisplayName + " back to its previous placement");
+                    }));
+                }
+            }
+
+            if (carried.Count > 0)
+                review.Watch(Check, Ui.Count(carried.Count, "model") + " carries a transform",
+                    "That is legitimate - it is how a survey-grid model is brought onto a project "
+                    + "grid - and it is worth knowing which ones, because a transform is also the "
+                    + "thing nobody remembers applying.",
+                    null,
+                    carried.Select(m => m.DisplayName).ToList());
+        }
+
+        /// <summary>
+        /// Whether a coded property holds values anybody agreed to.
         ///
         /// The other half of a code table. Assigning from one guarantees what CamelWorks wrote;
         /// this is the check over what is already there — values that arrived with the model, were
         /// written by another tool, or were typed before the table existed.
         /// </summary>
-        private static UIElement Coded()
+        private static void CodeCheck(Session session, Reading reading, CodeSource codes,
+                                  FederationReview review)
         {
+            const string Check = "Codes";
+
+            if (codes.Table == null)
+            {
+                review.Skipped(Check, "no code table on this project. Project > Profile takes one "
+                                      + "pasted straight out of the spreadsheet your client sent");
+                return;
+            }
+
+            var table = Tables(session).Find(codes.Table);
+
+            if (table == null)
+            {
+                review.Skipped(Check, "the table " + codes.Table + " is no longer on this project");
+                return;
+            }
+
+            var (_, name) = SplitProperty(codes.Property);
+
+            if (name.Length == 0)
+            {
+                review.Skipped(Check, "say which property carries the code, under the button");
+                return;
+            }
+
+            var coverage = table.Check(reading.Codes);
+
+            review.Ran(Check);
+
+            if (coverage.Coded == 0 && coverage.Invalid == 0)
+            {
+                review.Watch(Check, "Nothing carries " + name,
+                    "Not one element in the federation has that property, so " + table.Name
+                    + " has had nothing to check.",
+                    "Check the property name under the button - it is written \"Category / Name\", "
+                    + "or a bare name to look in any category.");
+
+                return;
+            }
+
+            if (coverage.Invalid > 0)
+                review.Fault(Check, Ui.Count(coverage.Invalid, "element")
+                    + " carries a value " + table.Name + " does not list",
+                    "Either the table is missing a row or the model is carrying a value nobody "
+                    + "agreed to, and the difference matters: one is a five-second edit and the "
+                    + "other is a conversation.",
+                    null,
+                    coverage.InvalidValues.Take(6).ToList());
+        }
+
+        /// <summary>Which table and property the code check should use.</summary>
+        private sealed class CodeSource
+        {
+            /// <summary>The chosen table, or null when the project has none.</summary>
+            public string? Table { get; set; }
+
+            /// <summary>The property carrying the code, as "Category / Name" or a bare name.</summary>
+            public string Property { get; set; } = string.Empty;
+
+            /// <summary>The disclosure holding the two, or null when there is nothing to choose.</summary>
+            public UIElement? Fold { get; set; }
+        }
+
+        /// <summary>
+        /// The one thing on this panel anybody can be asked to choose, folded away below the button.
+        ///
+        /// It defaults to the first table and to a property named after it, which is right often
+        /// enough that most people never open it. A project with no code tables gets no fold at
+        /// all rather than an empty one: the sweep says the check was skipped and why.
+        /// </summary>
+        private static CodeSource CodeChoice()
+        {
+            var source = new CodeSource();
             var session = Host.Current;
 
-            if (session == null) return Ui.Card("Codes", Host.NoModel);
+            if (session == null) return source;
 
-            var tables = CodeTables.FromJson(
-                session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
+            var tables = Tables(session);
 
-            if (tables.IsEmpty)
-                return Ui.Marked(Glyphs.Table, "Codes",
-                    "Needs a code table",
-                    Ui.Empty("No code tables on this project.",
-                        "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
-                        + "client sent. Every other check here runs without one."));
+            if (tables.IsEmpty) return source;
 
-            var results = Ui.Stack();
-            var table = tables.Find(tables.Names[0])!;
-            var property = Ui.Text(tables.Names[0], null, 240);
+            source.Table = tables.Names[0];
+            source.Property = tables.Names[0];
 
-            var picker = Ui.Choice(tables.Names, tables.Names[0], pick =>
+            var property = Ui.Text(source.Property, typed => source.Property = typed, 240);
+
+            var picker = Ui.Choice(tables.Names, source.Table, pick =>
             {
-                table = tables.Find(pick)!;
+                source.Table = pick;
                 property.Text = pick;
             });
 
-            var run = Ui.Runner("Check the codes", results, primary: false, work: job =>
-            {
-                var (category, name) = SplitProperty(property.Text);
+            source.Fold = Ui.Section("Which property carries the code",
+                source.Table + ", read from a property of the same name", false,
+                Ui.Form(
+                    Ui.Field("Table", picker),
+                    Ui.Field("Property", property, "\"Category / Name\", or a bare name for any category")));
 
-                if (name.Length == 0)
-                {
-                    results.Children.Add(Ui.Problem(
-                        "Say which property carries the code, as \"Category / Name\" or just the name."));
-
-                    return;
-                }
-
-                var values = new List<string?>();
-                var read = 0;
-
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
-                {
-                    if (read % 2000 == 0 && !job.Step(read, "elements read")) return;
-                    read++;
-
-                    values.Add(category.Length == 0
-                        ? Anywhere(item, name)
-                        : item.Property(category, name));
-                }
-
-                var coverage = table.Check(values);
-
-                results.Children.Add(Ui.Line(coverage.Explain(), 1, true));
-
-                results.Children.Add(Ui.Across(
-                    Ui.Figure(Measure.Count(coverage.Coded), "in " + table.Name,
-                              coverage.Coded > 0 ? Tone.Good : Tone.Plain),
-                    Ui.Figure(Measure.Count(coverage.Uncoded), "carry nothing"),
-                    Ui.Figure(Measure.Count(coverage.Invalid), "out of the table",
-                              coverage.Invalid > 0 ? Tone.Bad : Tone.Good)));
-
-                if (coverage.IsClean)
-                {
-                    results.Children.Add(Ui.Note("Everything that carries a value carries one "
-                        + table.Name + " lists. Uncoded elements are a different question - a table "
-                        + "says which values are allowed, not which elements need one."));
-
-                    return;
-                }
-
-                results.Children.Add(Ui.Problem(Ui.Count(coverage.Invalid, "element")
-                    + " carry a value " + table.Name + " does not list. Either the table is missing "
-                    + "a row or the model is carrying a value nobody agreed to, and the difference "
-                    + "matters: one is a five-second edit and the other is a conversation."));
-
-                results.Children.Add(Ui.Table(
-                    coverage.InvalidValues.Select(v => new TableRow(v, v) { Tone = Tone.Bad }).ToList(),
-                    ("Not in " + table.Name, 0)));
-            });
-
-            return Ui.Card("Codes",
-                "Whether a coded property holds values anybody agreed to",
-                Ui.Field("Table", picker),
-                Ui.Field("Property", property),
-                run,
-                results);
+            return source;
         }
+
+        /// <summary>The project's code tables, or an empty set. Never null: no table is not an error.</summary>
+        private static CodeTables Tables(Session session) =>
+            CodeTables.FromJson(session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
 
         /// <summary>"Category / Name" into its two halves. A bare name means any category.</summary>
         private static (string Category, string Name) SplitProperty(string? text)
@@ -156,224 +556,6 @@ namespace CamelWorks.UI.Views
                     return property.Value;
 
             return null;
-        }
-
-        /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
-        private const string IntakeKey = "intake";
-
-        /// <summary>
-        /// What arrived this week, and whether anything moved.
-        ///
-        /// The question that opens every coordination meeting — who published and who did not —
-        /// answered today by opening properties on eight files. And the one nothing else catches: a
-        /// model the federation is now holding somewhere else, because somebody dragged it in the
-        /// units-and-transform dialog and nobody noticed. Every clash from that moment on is in the
-        /// wrong place.
-        /// </summary>
-        private static UIElement Intake()
-        {
-            var results = Ui.Stack();
-            var actions = Ui.Stack();
-
-            var run = Ui.Runner("Check what arrived", results, primary: false, work: job =>
-            {
-                actions.Children.Clear();
-
-                var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
-
-                job.Say("Reading the models...");
-
-                var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-                var read = 0;
-
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
-                {
-                    if (read % 2000 == 0 && !job.Step(read, "elements read")) return;
-                    read++;
-
-                    if (!item.HasGeometry) continue;
-
-                    var scope = item.Model.Scope;
-                    counts[scope] = counts.TryGetValue(scope, out var seen) ? seen + 1 : 1;
-                }
-
-                var manifest = ModelManifest.Of(session.Model.Models, session.Profile,
-                                                itemCounts: counts, version: Ui.Release,
-                                                takenUtc: DateTimeOffset.UtcNow);
-
-                var section = session.Store.Section(ProjectStore.ModelsSection);
-                var before = ModelManifest.FromJson(section[IntakeKey]);
-
-                var intake = manifest.Since(before.Models.Count > 0 ? before : null);
-
-                results.Children.Add(Ui.Line(intake.Explain(), 1, true));
-                results.Children.Add(Ui.Line(manifest.Explain(), 0.8));
-
-                if (intake.NothingNew && intake.Missing.Count == 0)
-                    results.Children.Add(Ui.Note(
-                        "A run against exactly last week's files produces exactly last week's board. "
-                        + "Worth knowing before the meeting rather than during it."));
-
-                var units = session.Profile.Units;
-                var table = manifest.ModelTable(units);
-
-                var rows = table.Rows.Select(r => new TableRow(r,
-                    r[0] ?? string.Empty, r[2] ?? string.Empty, r[3] ?? string.Empty,
-                    r[5] ?? string.Empty, r[6] ?? string.Empty)).ToList();
-
-                results.Children.Add(Ui.Table(rows,
-                    ("Model", 200), ("Source last written", 150), ("Size", 80),
-                    ("Placement", 170), ("Elements", 0)));
-
-                if (intake.HasPrevious)
-                {
-                    var register = intake.Table();
-
-                    results.Children.Add(Ui.Line("Since the last check", 1, true));
-
-                    results.Children.Add(Ui.Table(register.Rows.Select(r => new TableRow(r,
-                        r[0] ?? string.Empty, r[1] ?? string.Empty, r[2] ?? string.Empty,
-                        r[3] ?? string.Empty)).ToList(),
-                        ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0)));
-                }
-
-                Placement(session, intake, actions);
-
-                section.Set(IntakeKey, manifest.ToJson());
-                session.Store.Save();
-            });
-
-            return Ui.Marked(Glyphs.Model, "Models",
-                "What arrived, what is byte-identical, and whether the federation has moved anything",
-                run,
-                results,
-                actions);
-        }
-
-        /// <summary>
-        /// The models the federation has moved, and the offer to put them back.
-        ///
-        /// Previewed before it writes and reversible after: the previous placement is in the record
-        /// this check just replaced, so putting a model back is the same operation as moving it and
-        /// leaves the same trail.
-        /// </summary>
-        private static void Placement(Session session, ModelIntake intake, Panel actions)
-        {
-            var carried = session.Model.Models.Where(m => m.HasTransform).ToList();
-
-            if (intake.Moved.Count == 0 && carried.Count == 0) return;
-
-            if (intake.Moved.Count > 0)
-            {
-                actions.Children.Add(Ui.Problem(
-                    Ui.Count(intake.Moved.Count, "model") + " has been moved by the federation since "
-                    + "the last check: " + string.Join(", ", intake.Moved.Select(m => m.DisplayName))
-                    + ". Nobody is told when this happens, and every clash from that moment on is in "
-                    + "the wrong place."));
-
-                foreach (var model in intake.Moved)
-                {
-                    var record = model;
-
-                    if (!intake.Before.TryGetValue(record.Scope, out var was) || was.Placement == null)
-                        continue;
-
-                    var source = session.Model.Models.FirstOrDefault(
-                        m => string.Equals(m.Scope, record.Scope, StringComparison.Ordinal));
-
-                    if (source == null) continue;
-
-                    actions.Children.Add(Ui.Button("Put " + record.DisplayName + " back where it was", () =>
-                    {
-                        var problem = session.Model.Restore(source, was.Placement);
-
-                        actions.Children.Add(problem == null
-                            ? Ui.Line(record.DisplayName + " is back where the last check found it. "
-                                      + "Run the clash tests again - everything on the board was "
-                                      + "computed against the other placement.", 1, true)
-                            : Ui.Problem(problem));
-
-                        if (problem == null)
-                            session.Record(ActivityKind.Reconcile,
-                                "put " + record.DisplayName + " back to its previous placement");
-                    }));
-                }
-            }
-
-            if (carried.Count == 0) return;
-
-            actions.Children.Add(Ui.Note(
-                Ui.Count(carried.Count, "model") + " carries a transform: "
-                + string.Join(", ", carried.Select(m => m.DisplayName))
-                + ". That is legitimate - it is how a survey-grid model is brought onto a project "
-                + "grid - and it is worth knowing which ones, because a transform is also the thing "
-                + "nobody remembers applying."));
-        }
-
-        /// <summary>The rules that ship with the product.</summary>
-        private static UIElement BuiltIn()
-        {
-            var results = Ui.Stack();
-
-            var run = Ui.Runner("Check this model", results, primary: false, work: job =>
-            {
-                var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
-
-                var elements = new List<HealthElement>();
-                var scale = session.MetresPerUnit;
-
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
-                {
-                    if (elements.Count % 2000 == 0 && !job.Step(elements.Count, "elements read")) return;
-
-                    var bounds = item.Bounds;
-
-                    elements.Add(new HealthElement(item.Key.ToString(), item.Model.DisplayName)
-                    {
-                        Name = item.DisplayName,
-                        Category = item.Category,
-                        X = bounds.CentreX * scale,
-                        Y = bounds.CentreY * scale,
-                        Z = bounds.CentreZ * scale,
-                        SizeX = bounds.SizeX * scale,
-                        SizeY = bounds.SizeY * scale,
-                        SizeZ = bounds.SizeZ * scale,
-
-                        // Only the zero case is ever asked about, and counting every property on
-                        // every element of a federation costs more than the whole rest of the check.
-                        PropertyCount = item.Properties().Any() ? 1 : 0,
-                    });
-                }
-
-                job.Say("Checking...");
-                var report = ModelHealth.Check(elements);
-
-                results.Children.Add(Ui.Line(report.ToString(), 1, true));
-
-                if (report.IsClean)
-                {
-                    results.Children.Add(Ui.Empty("Nothing found.",
-                        "That is a real result, not an empty screen — every rule ran and none matched."));
-                    return;
-                }
-
-                foreach (var finding in report.Findings)
-                {
-                    results.Children.Add(Ui.Line(finding.Summary, 1, true));
-                    results.Children.Add(Ui.Line(finding.Fix, 0.75));
-                    results.Children.Add(Ui.Line("e.g. " + string.Join(", ", finding.Examples), 0.55));
-                }
-
-                session.Record(ActivityKind.Reconcile, "checked model health: " + report);
-            });
-
-            return Ui.Marked(Glyphs.Tick, "Built-in checks",
-                "Six checks over geometry, placement and data. Nothing to configure — the rules "
-                + "are built in and the thresholds scale to the model rather than assuming metres.",
-                run,
-                results);
         }
 
         /// <summary>
@@ -948,93 +1130,16 @@ namespace CamelWorks.UI.Views
         }
 
         // -----------------------------------------------------------------------------------
-        // Models
+        // Repointing a model whose file has gone
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// The federation: what is loaded, from where, and whether the source has moved on.
+        /// Where a model whose file has gone might have gone to.
         ///
-        /// The last column is the one that matters on a Monday. Navisworks will happily open a
-        /// federation whose sources changed a fortnight ago and show it without comment, and the
-        /// coordination that follows is against a model nobody is building.
+        /// Offered only when the sweep found a model with no file on disk, and framed as the fix
+        /// for that finding rather than as a tool of its own — nobody goes looking for moved files
+        /// on a federation where nothing has moved.
         /// </summary>
-        private static UIElement Federation()
-        {
-            var session = Host.Current;
-
-            if (session == null)
-                return Ui.Marked(Glyphs.Clash, "The federation", Host.NoModel);
-
-            var savedAt = FileTime(session.SavedPath);
-            var rows = new List<TableRow>();
-            var missing = 0;
-            var stale = 0;
-
-            foreach (var model in session.Model.Models)
-            {
-                var when = FileTime(model.SourcePath);
-                string state;
-                Tone tone;
-
-                if (string.IsNullOrWhiteSpace(model.SourcePath))
-                {
-                    state = "no source path";
-                    tone = Tone.Plain;
-                }
-                else if (when == null)
-                {
-                    state = "not found on disk";
-                    tone = Tone.Bad;
-                    missing++;
-                }
-                else if (savedAt != null && when > savedAt)
-                {
-                    state = "changed since this file was saved";
-                    tone = Tone.Warn;
-                    stale++;
-                }
-                else
-                {
-                    state = when.Value.ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture);
-                    tone = Tone.Plain;
-                }
-
-                rows.Add(new TableRow(model,
-                    model.DisplayName,
-                    session.Profile.DisciplineOf(model.Scope) ?? "-",
-                    state,
-                    model.SourcePath)
-                {
-                    Tone = tone,
-                });
-            }
-
-            var summary = Ui.Across(
-                Ui.Pill(Ui.Count(rows.Count, "model")),
-                missing > 0 ? Ui.Pill(missing.ToString(CultureInfo.InvariantCulture) + " not found", Tone.Bad) : null,
-                stale > 0 ? Ui.Pill(stale.ToString(CultureInfo.InvariantCulture) + " changed since save", Tone.Warn) : null);
-
-            var body = Ui.Stack(summary);
-
-            if (missing > 0)
-                body.Children.Add(Ui.Note("A model whose source cannot be found still displays: Navisworks is "
-                    + "showing you its own cached copy. Repoint it, or refresh from the folder it moved to, "
-                    + "before coordinating against it."));
-
-            if (rows.Count == 0)
-                body.Children.Add(Ui.Empty("Nothing is loaded.", "Append or merge a model to start."));
-            else
-                body.Children.Add(Ui.Table(rows,
-                    ("Model", 150), ("Discipline", 100), ("Source", 190), ("Path", 0)));
-
-            body.Children.Add(Repoint(session));
-
-            return Ui.Marked(Glyphs.Clash, "The federation",
-                "What is loaded, from where, and whether the file on disk has moved on since this "
-                + "federation was saved",
-                body);
-        }
-
         private static UIElement Repoint(Session session)
         {
             var results = Ui.Stack();
@@ -1094,9 +1199,8 @@ namespace CamelWorks.UI.Views
                         + "deliberate action."));
             });
 
-            return Ui.Card("Find moved files",
-                "Searches a folder for anything a loaded model can no longer find.",
-                Ui.Field("Search folder", folder),
+            return Ui.Stack(
+                Ui.Field("Search a folder for them", folder),
                 run,
                 results);
         }

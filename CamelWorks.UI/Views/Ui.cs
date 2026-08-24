@@ -780,6 +780,41 @@ namespace CamelWorks.UI.Views
             return card;
         }
 
+        /// <summary>
+        /// One thing a check found, weighted by how badly it came out.
+        ///
+        /// A left edge rather than a whole tinted box. A screen that answers with eleven amber
+        /// cards is shouting at somebody who has one real problem to fix, and the point of ranking
+        /// findings is lost the moment they all look equally loud.
+        /// </summary>
+        /// <param name="stop">Whether this one has to be settled before the work is worth doing.</param>
+        /// <param name="check">Which check found it.</param>
+        /// <param name="headline">The finding in one line.</param>
+        /// <param name="detail">Why it matters, or null.</param>
+        /// <param name="fix">What to do about it, or null when there is nothing to do but know.</param>
+        /// <param name="examples">A handful of the things concerned, already joined, or null.</param>
+        public static UIElement Finding(bool stop, string check, string headline,
+                                        string? detail = null, string? fix = null, string? examples = null)
+        {
+            var body = Stack(
+                Across(Pill(stop ? "Settle this" : "Worth a look", stop ? Tone.Bad : Tone.Warn), Small(check)),
+                Line(headline, 1, true));
+
+            if (detail != null) body.Children.Add(Line(detail, 0.8));
+            if (fix != null) body.Children.Add(Line(fix, 0.8));
+            if (examples != null) body.Children.Add(Small("e.g. " + examples));
+
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(3, 0, 0, 0),
+                Padding = new Thickness(12, 2, 0, 2),
+                Margin = new Thickness(0, Gap, 0, 0),
+                Child = body,
+            };
+
+            return frame.Tint(Border.BorderBrushProperty, stop ? "RedBd" : "AmberBd");
+        }
+
         /// <summary>A hairline between two groups of things.</summary>
         public static UIElement Rule() => new Border
         {

@@ -135,6 +135,12 @@ jobs:
       - name: Check the skin has no repeated or missing keys
         run: python3 checks/validate-skin.py
 
+      # A health rule with no grade still shows on the verdict, ranked below everything that
+      # matters. Nothing about that is a compile error or a failing test - the finding just sorts
+      # itself to the bottom, which is the one outcome ranking the findings exists to prevent.
+      - name: Check every health rule is graded
+        run: python3 checks/validate-health-grades.py
+
       # The release gate from the harvest protocol: the only company named anywhere in this tree
       # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
       - name: Check nothing but BIMCamel is named

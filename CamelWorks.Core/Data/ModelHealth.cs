@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Project;
 
 namespace CamelWorks.Core.Data
 {
@@ -144,6 +145,35 @@ namespace CamelWorks.Core.Data
 
         /// <summary>How many times the model's own spread an element must be beyond to be an outlier.</summary>
         public const double OutlierFactor = 10;
+
+        /// <summary>
+        /// Every rule this checker can emit, and how badly each one reads.
+        ///
+        /// The grade is a coordination judgement rather than a geometry fact, and it lives here so
+        /// that adding a rule and forgetting to grade it is a failing test rather than a finding
+        /// that quietly sorts itself to the bottom of the screen. The dividing line is whether the
+        /// coordination about to be done comes out wrong: a model in the wrong place or counted
+        /// twice makes every clash on it wrong, while an element with no name makes the report
+        /// harder to read and nothing else.
+        /// </summary>
+        public static readonly IReadOnlyDictionary<string, ReviewGrade> Grades =
+            new Dictionary<string, ReviewGrade>(StringComparer.Ordinal)
+            {
+                ["origin-stack"] = ReviewGrade.Fault,
+                ["stray-geometry"] = ReviewGrade.Fault,
+                ["duplicate-elements"] = ReviewGrade.Fault,
+                ["degenerate-geometry"] = ReviewGrade.Watch,
+                ["unnamed-elements"] = ReviewGrade.Watch,
+                ["no-properties"] = ReviewGrade.Watch,
+            };
+
+        /// <summary>How badly a finding reads. An ungraded rule is worth a look, never a stopper.</summary>
+        public static ReviewGrade GradeOf(HealthFinding finding)
+        {
+            if (finding == null) throw new ArgumentNullException(nameof(finding));
+
+            return Grades.TryGetValue(finding.Rule, out var grade) ? grade : ReviewGrade.Watch;
+        }
 
         /// <summary>Run every check.</summary>
         public static HealthReport Check(IEnumerable<HealthElement> elements)

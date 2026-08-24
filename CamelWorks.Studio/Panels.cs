@@ -49,53 +49,71 @@ namespace CamelWorks.Studio
         // -----------------------------------------------------------------------------------
 
         private static UIElement Health() => Sheets.Page(
-            Ui.Marked(Glyphs.Model, "Models", "What arrived, and whether it is the same as last week.",
-                Ui.Actions(Ui.Button("Check what arrived", () => { })),
-                Ui.Done("Six models read. Two are newer than the last check.")),
+            Ui.Marked(Glyphs.Tick, "Is this fit to coordinate against?",
+                "Placement, geometry, what has arrived and what it is coded as, in one pass over "
+                + "the models. Nothing to configure first: the rules ship with the product and "
+                + "their thresholds scale to the model rather than assuming metres.",
+                Ui.Actions(Ui.Primary("Check this federation", () => { })),
+                Ui.Section("Which property carries the code",
+                    "Uniclass, read from a property of the same name", false,
+                    Ui.Form(
+                        Ui.Field("Table", Ui.Choice(new[] { "Uniclass", "COBie type" }, "Uniclass", null)),
+                        Ui.Field("Property", Ui.Text("Uniclass", null, 240),
+                                 "\"Category / Name\", or a bare name for any category"))),
 
-            Ui.Marked(Glyphs.Tick, "Built-in checks", "Six checks over geometry, placement and data. Nothing to configure first.",
-                Score("Elements with no level", "1,204 of 41,880", Tone.Warn),
-                Score("Duplicate GUIDs", "none", Tone.Good),
-                Score("Elements outside the site box", "3", Tone.Warn),
-                Ui.Actions(Ui.Primary("Run the checks", () => { }))),
+                Verdict("Not fit to coordinate against - 2 problems to settle first.", "RedTx"),
+                Ui.Across(
+                    Ui.Figure("2", "to settle", Tone.Bad),
+                    Ui.Figure("3", "worth a look", Tone.Warn),
+                    Ui.Figure("4", "clean", Tone.Good)),
+                Ui.Small("41,880 elements across 6 models, read once."),
 
-            Ui.Marked(Glyphs.Clash, "The federation", "Whether the models are where each other thinks they are.",
-                Score("Shared origin agrees", "6 of 6 models", Tone.Good),
-                Score("Units agree", "6 of 6 models", Tone.Good),
-                Score("Overlapping extents", "MEP r4 sits 12 m north of the rest", Tone.Bad),
-                Ui.Actions(Ui.Button("Check this model", () => { }))),
+                Ui.Finding(true, "Placement", "1 model has been moved by the federation since the last sweep",
+                    "Nobody is told when this happens, and every clash from that moment on is in the wrong place.",
+                    "Put it back below, then run the clash tests again.",
+                    "MEP r4.nwc"),
+                Ui.Finding(true, "Codes", "412 elements carry a value Uniclass does not list",
+                    "Either the table is missing a row or the model is carrying a value nobody agreed "
+                    + "to, and the difference matters: one is a five-second edit and the other is a "
+                    + "conversation.",
+                    null,
+                    "Pr_20_93_52, Ss_25_10_30_25, EF_25_10"),
+                Ui.Finding(false, "Geometry", "1,204 elements sit exactly on the project origin while the rest of the model does not",
+                    null,
+                    "Check the source file's shared coordinates before running clashes: everything "
+                    + "here will clash with everything else here.",
+                    "ARCH r7 (4 more)"),
+                Ui.Finding(false, "The federation", "2 models have changed since this file was saved",
+                    "The federation is showing what was published when it was saved, not what is on disk now.",
+                    "Refresh, then run this again.",
+                    "STR r3.nwc, MEP r4.nwc"),
+                Ui.Finding(false, "Placement", "1 model carries a transform",
+                    "That is legitimate - it is how a survey-grid model is brought onto a project grid - "
+                    + "and it is worth knowing which ones, because a transform is also the thing nobody "
+                    + "remembers applying.",
+                    null,
+                    "SITE r1.nwc"),
 
-            Ui.Marked(Glyphs.Table, "Codes", "Needs a code table",
-                Ui.Empty("No code tables on this project.",
-                         "Profile takes one pasted straight out of the spreadsheet your client sent. "
-                         + "Every other check here runs without one.",
-                         "Go to Profile", () => { })),
+                Ui.Actions(Ui.Button("Put MEP r4 back where it was", () => { })),
 
-            Ui.Marked(Glyphs.Report, "Client requirements", "An IDS, if the client sent one.",
+                Ui.Section("What is loaded", "6 models in this federation", false,
+                    Ui.Table(new[]
+                    {
+                        new TableRow("a", "ARCH r7.nwc", "Architecture", "14 Aug 2026 09:12", @"P:\Riverside\ARCH r7.nwc"),
+                        new TableRow("b", "STR r3.nwc", "Structure", "changed since this file was saved", @"P:\Riverside\STR r3.nwc") { Tone = Tone.Warn },
+                        new TableRow("c", "MEP r4.nwc", "Services", "changed since this file was saved", @"P:\Riverside\MEP r4.nwc") { Tone = Tone.Warn },
+                    }, ("Model", 150), ("Discipline", 100), ("Source", 190), ("Path", 0)))),
+
+            Ui.Marked(Glyphs.Report, "The client's own rules", "An IDS, if the client sent one.",
                 Ui.Form(Ui.Field("IDS file", Ui.Text(string.Empty, "nothing chosen", null, 220))),
                 Ui.Actions(Ui.Button("Check against an IDS", () => { }))));
 
-        private static UIElement Score(string what, string value, Tone tone)
+        /// <summary>The one line the whole panel exists to say.</summary>
+        private static UIElement Verdict(string text, string key)
         {
-            var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var glyph = tone == Tone.Good ? Glyphs.Tick : tone == Tone.Bad ? Glyphs.Error : Glyphs.Warn;
-            var key = tone == Tone.Good ? "Ok" : tone == Tone.Bad ? "RedTx" : "AmberTx";
-
-            row.Children.Add(Ui.Glyph(glyph, 15, key, new Thickness(0, 0, 9, 0)));
-
-            var label = Ui.Line(what);
-            label.VerticalAlignment = VerticalAlignment.Center;
-            Sheets.Add(row, 1, label);
-
-            var right = Ui.Line(value, 0.75);
-            right.VerticalAlignment = VerticalAlignment.Center;
-            right.Margin = new Thickness(10, 0, 0, 0);
-            Sheets.Add(row, 2, right);
-            return row;
+            var headline = Ui.Heading(text);
+            headline.Tint(TextBlock.ForegroundProperty, key);
+            return headline;
         }
 
         private static UIElement Setup() => Sheets.Page(
