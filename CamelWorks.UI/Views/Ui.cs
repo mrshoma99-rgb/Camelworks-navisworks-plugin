@@ -698,7 +698,19 @@ namespace CamelWorks.UI.Views
         public static Border Form(params UIElement?[] fields)
         {
             var panel = new StackPanel();
-            foreach (var child in fields) if (child != null) panel.Children.Add(child);
+
+            foreach (var child in fields)
+            {
+                if (child == null) continue;
+
+                // A Field carries its own bottom margin; a bare line of prose between two of them
+                // does not, and comes out welded to the label underneath it. Given the same
+                // spacing here rather than at every call site that puts a note in a form.
+                if (child is TextBlock note && note.Margin.Bottom == 0)
+                    note.Margin = new Thickness(0, 0, 0, 10);
+
+                panel.Children.Add(child);
+            }
 
             var frame = new Border { Child = panel };
             frame.Wearing("FormStyle");

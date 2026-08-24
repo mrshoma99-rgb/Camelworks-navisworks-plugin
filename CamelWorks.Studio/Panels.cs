@@ -104,9 +104,19 @@ namespace CamelWorks.Studio
                         new TableRow("c", "MEP r4.nwc", "Services", "changed since this file was saved", @"P:\Riverside\MEP r4.nwc") { Tone = Tone.Warn },
                     }, ("Model", 150), ("Discipline", 100), ("Source", 190), ("Path", 0)))),
 
-            Ui.Marked(Glyphs.Report, "The client's own rules", "An IDS, if the client sent one.",
-                Ui.Form(Ui.Field("IDS file", Ui.Text(string.Empty, "nothing chosen", null, 220))),
-                Ui.Actions(Ui.Button("Check against an IDS", () => { }))));
+            Ui.Marked(Glyphs.Report, "The client's own rules",
+                "Answer an IDS — the openBIM way of writing information requirements down — against "
+                + "this federation. Point it at the file and press the button; there is nothing else "
+                + "to fill in.",
+                Ui.Form(Ui.Field("IDS file", Ui.Text(string.Empty, "nothing chosen", null, 260))),
+                Ui.Actions(Ui.Primary("Check against an IDS", () => { })),
+                Ui.Section("Where the IFC class is read from", "wherever the readers put it", false,
+                    Ui.Form(Ui.Field("IFC class from", Ui.Text(string.Empty, "nothing", null, 200),
+                                     "leave it empty unless a run tells you to fill it in")),
+                    Ui.Small("IDS is written about IFC classes, and a federation only carries those "
+                             + "where a model came from IFC — so CamelWorks looks in the places the "
+                             + "readers put them and believes a value only if it reads like a class "
+                             + "name."))));
 
         /// <summary>The one line the whole panel exists to say.</summary>
         private static UIElement Verdict(string text, string key)
@@ -500,8 +510,9 @@ namespace CamelWorks.Studio
                     }, "a value you type", null, 260)),
                     Ui.Field("If a value is already there",
                              Ui.Choice(new[] { "leave it alone", "replace it" }, "leave it alone", null))),
-                Ui.Form(Ui.Field("Name", Ui.Text("Zone", null, 150))),
-                Ui.Form(Ui.Field("Value", Ui.Text("Level 04 — East", null, 200))),
+                Ui.Form(
+                    Ui.Field("Name", Ui.Text("Zone", null, 150)),
+                    Ui.Field("Value", Ui.Text("Level 04 — East", null, 200))),
                 Ui.Actions(Ui.Primary("Show me what would change", () => { })),
                 Ui.Across(
                     Ui.Figure("11,208", "to add", Tone.Good),

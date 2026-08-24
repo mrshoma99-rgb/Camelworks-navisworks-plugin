@@ -840,22 +840,26 @@ namespace CamelWorks.UI.Views
                 // One input, never both. A screen showing a Value box and a Formula box at once is
                 // asking which of them it is going to use, and answering in a third field.
                 var input = worked
-                    ? Ui.Stack(
-                        Ui.Form(Ui.Field("Formula", _formula, "reads other properties: {Element/Mark}")),
-                        Ui.Section("What a formula can do",
-                            "join with &, arithmetic with + - * /, six functions", false,
-                            Ui.Small("Join text with & and do arithmetic with + - * / — two different "
-                                     + "operators on purpose, because one that did both would turn a "
-                                     + "door reference of \"12\" and a level of \"3\" into 15 instead "
-                                     + "of \"12-3\". An element missing something the formula needs is "
-                                     + "left alone rather than written a zero."),
-                            Ui.Small("regex(value, pattern) pulls out what the brackets caught and "
-                                     + "regex(value, pattern, replacement) rewrites; "
-                                     + "unit(number, \"mm\", \"m\") moves a number between units; "
-                                     + "lookup(value, \"Uniclass\") reads a code table and gives "
-                                     + "nothing for a value it does not list; upper, lower and trim "
-                                     + "tidy.")))
-                    : (UIElement)Ui.Form(Ui.Field("Value", _value));
+                    ? Ui.Field("Formula", _formula, "reads other properties: {Element/Mark}")
+                    : Ui.Field("Value", _value);
+
+                // The syntax goes below the well rather than inside it: it is reference material
+                // about a field, not another thing to fill in.
+                var help = worked
+                    ? Ui.Section("What a formula can do",
+                        "join with &, arithmetic with + - * /, six functions", false,
+                        Ui.Small("Join text with & and do arithmetic with + - * / — two different "
+                                 + "operators on purpose, because one that did both would turn a "
+                                 + "door reference of \"12\" and a level of \"3\" into 15 instead "
+                                 + "of \"12-3\". An element missing something the formula needs is "
+                                 + "left alone rather than written a zero."),
+                        Ui.Small("regex(value, pattern) pulls out what the brackets caught and "
+                                 + "regex(value, pattern, replacement) rewrites; "
+                                 + "unit(number, \"mm\", \"m\") moves a number between units; "
+                                 + "lookup(value, \"Uniclass\") reads a code table and gives "
+                                 + "nothing for a value it does not list; upper, lower and trim "
+                                 + "tidy."))
+                    : null;
 
                 var preview = Ui.Runner("Show me what would change", _status, job =>
                 {
@@ -937,8 +941,9 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Stack(
                     Ui.Form(
-                        Ui.Field("Name", _name)),
-                    input,
+                        Ui.Field("Name", _name),
+                        input),
+                    help,
                     preview,
                     _status,
                     _applyRow);
