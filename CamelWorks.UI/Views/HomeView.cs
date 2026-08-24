@@ -37,6 +37,9 @@ namespace CamelWorks.UI.Views
 
         private static UIElement Header(Session session)
         {
+            var name = Ui.Eyebrow(session.Profile.ProjectName);
+            name.Margin = new Thickness(0, 0, 0, 6);
+
             var chips = Ui.Across(
                 Ui.Pill(Ui.Count(session.Model.Models.Count, "model")),
                 Ui.Pill(session.Document.Units.ToString()),
@@ -44,33 +47,18 @@ namespace CamelWorks.UI.Views
                     ? Ui.Count(session.Clash.Tests().Count, "clash test")
                     : "no clash engine", session.Clash.IsAvailable ? Tone.Plain : Tone.Warn));
 
-            var where = Ui.Stack(
-                new TextBlock { Text = "PROJECT FILE" }.Wearing("Caps"),
-                Ui.Code(session.Store.Where));
+            // The project file belongs where its problems are reported, which is Setup.
+            var body = Ui.Stack(name, chips);
 
-            where.Margin = new Thickness(0, 8, 0, 0);
-
-            var body = Ui.Stack(chips, where);
-
-            // A seat without the clash engine is not a seat without the coordination work, and the
-            // one place somebody looks to find that out is the chip that just told them so.
-            if (!session.Clash.IsAvailable)
-                body.Children.Add(Ui.Note("This Navisworks edition has no Clash Detective, so tests "
-                    + "cannot be run here. The board still opens: CamelWorks rebuilds it from what "
-                    + "the project file recorded the last time a Manage seat ran, and triage, "
-                    + "assignment, reports and BCF all work on it."));
-
-            if (session.Store.UsedBackup)
-                body.Children.Add(Ui.Note("The project file could not be read and its backup was used instead. "
-                                          + "Nothing is lost that was saved before the last write."));
-
+            // The warn-toned chip above already says there is no clash engine; a sixty-word banner
+            // saying it again is the front door explaining itself instead of showing the week.
+            // Backup-used and concurrency are facts about a file rather than about this week, and
+            // they are reported on Setup, where the file is. Read-only is the one that stops every
+            // button in the product, so it is the one that stays.
             if (session.Store.IsReadOnly)
                 body.Children.Add(Ui.Note(session.Store.ReadOnlyReason ?? string.Empty));
 
-            if (session.Store.ConcurrencyNote.Length > 0)
-                body.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
-
-            return Ui.Marked(Glyphs.Model, session.Profile.ProjectName, null, body);
+            return body;
         }
 
         /// <summary>

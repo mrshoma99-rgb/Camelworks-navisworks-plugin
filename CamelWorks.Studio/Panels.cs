@@ -99,15 +99,15 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Setup() => Sheets.Page(
-            Ui.Marked(Glyphs.Tune, "Derived values",
-                "What CamelWorks worked out from the models. Every line can be overridden, and none has to be.",
-                Ui.Form(
-                    Ui.Field("Project name", Ui.Text("Riverside — Block B", null, 220)),
-                    Ui.Pair(
-                        Ui.Field("Units", Ui.Choice(new[] { "Metres", "Millimetres", "Feet" }, "Metres", null)),
-                        Ui.Field("Discipline from", Ui.Choice(new[] { "File name", "A property" }, "File name", null))),
-                    Ui.Field("Level property", Ui.Text("Element / Level", null, 200))),
+            Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null,
+                Ui.Field("Project name", Ui.Text("Riverside — Block B", null, 220), "derived from the models"),
+                Ui.Pair(
+                    Ui.Field("Units", Ui.Choice(new[] { "Metres", "Millimetres", "Feet" }, "Metres", null), "derived"),
+                    Ui.Field("Discipline from", Ui.Choice(new[] { "File name", "A property" }, "File name", null), "yours")),
+                Ui.Field("Level property", Ui.Text("Element / Level", null, 200), "derived from the models"),
                 Ui.Actions(Ui.Primary("Save overrides", () => { }), Ui.Quiet("Reset to derived", () => { }))),
+
+            Ui.Split("Project file", "D:\\Projects\\Riverside\\Riverside.cwproj"),
 
             Ui.Marked(Glyphs.Find, "Find moved files",
                 "Models whose source is no longer where the federation says it is.",
@@ -341,30 +341,35 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Changes() => Sheets.Page(
-            Ui.Marked(Glyphs.Compare, "What changed", null,
-                Ui.Across(
-                    Ui.Figure("612", "added", Tone.Good),
-                    Ui.Figure("208", "removed", Tone.Bad),
-                    Ui.Figure("1,044", "moved", Tone.Warn),
-                    Ui.Figure("96", "changed")),
-                Ui.Form(Ui.Pair(
-                    Ui.Field("Show", Ui.Choice(new[] { "Everything", "Added", "Removed", "Moved", "Changed" }, "Everything", null)),
-                    Ui.Field("Model", Ui.Choice(new[] { "All models", "ARC r7", "STR r2", "MEP r4" }, "All models", null)))),
-                Ui.Table(ChangeRows(), ("Element", 168), ("Model", 74), ("What changed", 0)),
-                Ui.Tally(5, 1960, "change")),
+            Ui.Eyebrow("Week 32 — Friday issue  →  now"),
 
-            Ui.Marked(Glyphs.Layers, "Paint", "Colour it onto the model, and take the colour off again.",
-                Ui.Actions(Ui.Primary("Paint it onto the model", () => { }),
-                           Ui.Button("Take the colours off", () => { }))),
+            Ui.Across(
+                Ui.Figure("612", "added", Tone.Good),
+                Ui.Figure("208", "removed", Tone.Bad),
+                Ui.Figure("1,044", "moved", Tone.Warn),
+                Ui.Figure("96", "changed")),
 
-            Ui.Marked(Glyphs.Camera, "Walk it", "A viewpoint per place something changed.",
-                Ui.Actions(Ui.Button("Make a viewpoint for each place", () => { }),
-                           Ui.Button("Raise them on the board", () => { }))),
+            Ui.Actions(Ui.Primary("Paint it onto the model", () => { }),
+                       Ui.Button("Take the colours off", () => { })),
 
-            Ui.Section("The removed ones", "The old revision is not loaded", false,
-                Ui.Small("A removed element cannot be shown from a model it is not in. CamelWorks appends "
-                         + "the baseline model, hidden, and takes it out again afterwards."),
-                Ui.Actions(Ui.Button("Bring the old revision in", () => { }))));
+            Ui.Actions(Ui.Button("Bring the old revision in", () => { })),
+            Ui.Small("208 removed elements are in the baseline and not in this document. "
+                     + "CamelWorks appends it, hidden, and takes it out again afterwards."),
+
+            Ui.Across(
+                Ui.Field("Show", Ui.Choice(new[] { "Everything", "Added", "Removed", "Moved", "Changed" }, "Everything", null)),
+                Ui.Field("Model", Ui.Choice(new[] { "All models", "ARC r7", "STR r2", "MEP r4" }, "All models", null)),
+                Ui.Field("Find", Ui.Text(string.Empty, "element, type…", null, 130))),
+
+            Ui.Table(ChangeRows(), ("Element", 168), ("Model", 74), ("What changed", 0)),
+            Ui.Tally(5, 1960, "change"),
+
+            Ui.Rule(),
+
+            Ui.Actions(Ui.Button("Stamp it into the properties", () => { }),
+                       Ui.Button("Raise them on the board", () => { }),
+                       Ui.Button("Save the report", () => { }),
+                       Ui.Button("Make a viewpoint for each place", () => { })));
 
         private static IEnumerable<TableRow> ChangeRows()
         {

@@ -408,14 +408,8 @@ namespace CamelWorks.Studio
                 Ui.Pill("Metres"),
                 Ui.Pill("4 clash tests"));
 
-            var where = Ui.Stack(
-                new TextBlock { Text = "PROJECT FILE" }.Wearing("Caps"),
-                Ui.Code("D:\\Projects\\Riverside\\Riverside.cwproj"));
-
-            where.Margin = new Thickness(0, 8, 0, 0);
-
             return Page(
-                Ui.Marked(Glyphs.Model, "Riverside — Block B", null, chips, where),
+                Ui.Stack(Ui.Eyebrow("RIVERSIDE — BLOCK B"), chips),
 
                 Ui.Marked(Glyphs.Clock, "The week",
                     "Reconcile, regroup, report. Each opens where the work actually happens.",

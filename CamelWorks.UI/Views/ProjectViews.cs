@@ -912,27 +912,39 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
             });
 
+            // The project file's own problems are reported here, where the file is, rather than
+            // on the front door where they were three banners between the user and their week.
+            var file = Ui.Stack(Ui.Split("Project file", session.Store.Where));
+
+            if (session.Store.UsedBackup)
+                file.Children.Add(Ui.Note("The project file could not be read and its backup was used "
+                                          + "instead. Nothing is lost that was saved before the last write."));
+
+            if (session.Store.ConcurrencyNote.Length > 0)
+                file.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
+
             return Ui.Scroll(Ui.Stack(
-                Ui.Card("Derived values", null, rows),
-                Ui.Across(save),
-                status));
+                Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null, rows, Ui.Actions(save), status),
+                file));
         }
 
         private static UIElement Row(ProfileSetting setting)
         {
             var value = Ui.Stack();
 
-            UIElement editor = setting.Choices.Count > 0
-                ? (UIElement)Ui.Choice(setting.Choices, setting.Value, pick => setting.Override = pick, 200)
+            FrameworkElement editor = setting.Choices.Count > 0
+                ? (FrameworkElement)Ui.Choice(setting.Choices, setting.Value, pick => setting.Override = pick, 200)
                 : Ui.Text(setting.Value, typed => setting.Override = typed, 200);
 
-            var source = Ui.Line(setting.IsOverridden ? "you" : "derived: " + (setting.Derived ?? "nothing"), 0.55);
-
             value.Children.Add(editor);
-            value.Children.Add(source);
-            value.Children.Add(Ui.Line(setting.Because, 0.55));
 
-            return Ui.Field(setting.Title, value);
+            // "derived" or "yours", not a sentence each. Why it was derived that way is what the
+            // tooltip is for; eight controls with sixteen lines of grey prose under them is the
+            // panel reading as a form.
+            editor.ToolTip = setting.Because;
+
+            return Ui.Field(setting.Title, value,
+                            setting.IsOverridden ? "yours" : "derived from " + (setting.Derived ?? "nothing"));
         }
 
         // -----------------------------------------------------------------------------------

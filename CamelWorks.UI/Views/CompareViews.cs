@@ -378,15 +378,32 @@ namespace CamelWorks.UI.Views
                 Redraw();
 
                 return Ui.Stack(
-                    Ui.Heading("Changes"),
-                    Ui.Sub(_result.Between() + " — " + _result.Explain()),
+                    Ui.Eyebrow(_result.Between()),
+                    Counts(),
+                    Paint(),
                     Filters(),
                     _list,
-                    Paint(),
-                    Walk(),
+                    Ui.Rule(),
                     Keep(),
                     _output);
             }
+
+            /// <summary>
+            /// The answer, as four numbers rather than as a sentence.
+            ///
+            /// It was <c>Ui.Sub(result.Explain())</c> — the counts, in prose, in the subtitle. The
+            /// same four facts as figures are both shorter and the legend for the colours the
+            /// paint puts on the model, which is a second sentence that then does not need
+            /// writing.
+            /// </summary>
+            private UIElement Counts() => Ui.Across(
+                Ui.Figure(Many(ChangeBucket.Added), "added", Tone.Good),
+                Ui.Figure(Many(ChangeBucket.Removed), "removed", Tone.Bad),
+                Ui.Figure(Many(ChangeBucket.Moved), "moved", Tone.Warn),
+                Ui.Figure(Many(ChangeBucket.Changed), "changed"));
+
+            private string Many(ChangeBucket bucket) =>
+                _result.CountIn(bucket).ToString("N0", CultureInfo.InvariantCulture);
 
             private UIElement Filters()
             {
@@ -492,11 +509,11 @@ namespace CamelWorks.UI.Views
                         + Ui.Count(keys.Count, "element") + ". Nothing else was touched."));
                 });
 
-                return Ui.Card("Paint",
-                    "Added green, removed red, moved amber, changed blue, everything else faded. "
-                    + "Through the appearance stack, so it is one row you can switch off rather "
-                    + "than an override somebody has to undo by hand.",
-                    Ui.Across(paint, clear),
+                // No card. The figures above are already the legend - added green, removed red,
+                // moved amber - and bringing the old revision in belongs beside the red figure it
+                // exists to serve rather than folded away at the foot of the panel.
+                return Ui.Stack(
+                    Ui.Actions(paint, clear),
                     Removed(view));
             }
 
@@ -676,14 +693,7 @@ namespace CamelWorks.UI.Views
 
                 var count = CompareClusters.Of(_result, cell).Count;
 
-                return Ui.Card("Walk it",
-                    "The changes grouped by where they are, one viewpoint each, biggest first.",
-                    Ui.Line(count == 0
-                        ? "Nothing to walk."
-                        : Ui.Count(count, "place") + " where something happened, at "
-                          + cell.ToString("0.#", CultureInfo.InvariantCulture)
-                          + " model units apart or closer.", 0.8),
-                    make);
+                return count == 0 ? (UIElement)Ui.Stack() : make;
             }
 
             private UIElement Keep()
@@ -799,13 +809,9 @@ namespace CamelWorks.UI.Views
                     Report();
                 });
 
-                return Ui.Card("Keep it",
-                    "A comparison that lives only on this screen is one nobody else can act on.",
-                    Ui.Across(stamp, unstamp),
-                    Ui.Line("The stamp writes " + CompareStamp.Category + " / " + CompareStamp.ChangeName
-                            + " onto each element, so the host's own search finds them, a selection "
-                            + "set re-resolves, and a clash test can be pointed at only what changed.", 0.7),
-                    Ui.Across(raise, report));
+                // Four zero-argument commands. They took three cards and a paragraph between them;
+                // they are one row. What the stamp writes is said by the stamp, after it runs.
+                return Ui.Stack(Ui.Actions(stamp, unstamp, raise, report), Walk());
             }
 
             private void Report()
