@@ -219,8 +219,13 @@ namespace CamelWorks.Core.Clash
             var key = Key(a, b);
             if (key == null) return;
 
-            if (string.IsNullOrWhiteSpace(symbol)) _cells.Remove(key);
-            else _cells[key] = symbol.Trim();
+            // Narrowed into a local rather than relying on IsNullOrWhiteSpace: netstandard2.0's
+            // reference assembly carries no [NotNullWhen] on it, so the compiler cannot see that
+            // the else branch has a string.
+            var text = symbol == null ? string.Empty : symbol.Trim();
+
+            if (text.Length == 0) _cells.Remove(key);
+            else _cells[key] = text;
         }
 
         /// <summary>What is in a cell, either way round, or null.</summary>

@@ -165,18 +165,18 @@ namespace CamelWorks.Core.Clash
 
                 foreach (var column in columns)
                 {
-                    var symbol = Text(sheet, sheetRow, column.Key);
-                    if (string.IsNullOrWhiteSpace(symbol)) continue;
+                    var symbol = (Text(sheet, sheetRow, column.Key) ?? string.Empty).Trim();
+                    if (symbol.Length == 0) continue;
 
                     // The mirrored cell may already hold something. A sheet filled in on both sides
                     // of the diagonal usually agrees with itself; when it does not, the reader is
                     // told rather than one of the two silently winning.
                     var already = grid.At(row, column.Value);
 
-                    if (already != null && !string.Equals(already, symbol.Trim(), StringComparison.OrdinalIgnoreCase))
+                    if (already != null && !string.Equals(already, symbol, StringComparison.OrdinalIgnoreCase))
                     {
                         warnings.Add(categories[row].Name + " against " + categories[column.Value].Name
-                                     + " says \"" + already + "\" one way and \"" + symbol.Trim()
+                                     + " says \"" + already + "\" one way and \"" + symbol
                                      + "\" the other. The first one read was kept.");
                         continue;
                     }
@@ -198,16 +198,16 @@ namespace CamelWorks.Core.Clash
 
             while (blanks < Math.Max(1, map.BlankRowStop) && row <= sheet.Rows.Count + map.BlankRowStop)
             {
-                var name = Text(sheet, row, map.NameColumn);
+                var name = (Text(sheet, row, map.NameColumn) ?? string.Empty).Trim();
 
-                if (string.IsNullOrWhiteSpace(name)) { blanks++; row++; continue; }
+                if (name.Length == 0) { blanks++; row++; continue; }
 
                 blanks = 0;
 
-                var set = Text(sheet, row, map.SetColumn);
+                var set = (Text(sheet, row, map.SetColumn) ?? string.Empty).Trim();
 
-                if (string.IsNullOrWhiteSpace(set))
-                    warnings.Add("\"" + name.Trim() + "\" names no saved set, so no test on it can run.");
+                if (set.Length == 0)
+                    warnings.Add("\"" + name + "\" names no saved set, so no test on it can run.");
 
                 categories.Add(new MatrixCategory(name, set,
                                                   Text(sheet, row, map.NumberColumn),
@@ -230,17 +230,22 @@ namespace CamelWorks.Core.Clash
 
             for (var column = map.FirstBodyColumn; column <= last; column++)
             {
-                var number = map.HeaderNumberRow > 0 ? Text(sheet, map.HeaderNumberRow, column) : null;
-                var set = map.HeaderSetRow > 0 ? Text(sheet, map.HeaderSetRow, column) : null;
+                var number = map.HeaderNumberRow > 0
+                    ? (Text(sheet, map.HeaderNumberRow, column) ?? string.Empty).Trim()
+                    : string.Empty;
 
-                if (string.IsNullOrWhiteSpace(number) && string.IsNullOrWhiteSpace(set)) continue;
+                var set = map.HeaderSetRow > 0
+                    ? (Text(sheet, map.HeaderSetRow, column) ?? string.Empty).Trim()
+                    : string.Empty;
+
+                if (number.Length == 0 && set.Length == 0) continue;
 
                 var index = Index(categories, number, set);
 
                 if (index < 0)
                 {
                     warnings.Add("Column " + column.ToString(CultureInfo.InvariantCulture) + " is headed \""
-                                 + (number ?? set ?? string.Empty).Trim()
+                                 + (number.Length > 0 ? number : set)
                                  + "\", which matches no category down the side. It was skipped.");
                     continue;
                 }
@@ -267,20 +272,20 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>By number first, then by set name. Never by position.</summary>
-        private static int Index(List<MatrixCategory> categories, string? number, string? set)
+        private static int Index(List<MatrixCategory> categories, string number, string set)
         {
-            if (!string.IsNullOrWhiteSpace(number))
+            if (number.Length > 0)
             {
                 var byNumber = categories.FindIndex(
-                    c => c.Number.Length > 0 && string.Equals(c.Number, number.Trim(), StringComparison.OrdinalIgnoreCase));
+                    c => c.Number.Length > 0 && string.Equals(c.Number, number, StringComparison.OrdinalIgnoreCase));
 
                 if (byNumber >= 0) return byNumber;
             }
 
-            if (!string.IsNullOrWhiteSpace(set))
+            if (set.Length > 0)
             {
                 var bySet = categories.FindIndex(
-                    c => c.SetName.Length > 0 && string.Equals(c.SetName, set.Trim(), StringComparison.OrdinalIgnoreCase));
+                    c => c.SetName.Length > 0 && string.Equals(c.SetName, set, StringComparison.OrdinalIgnoreCase));
 
                 if (bySet >= 0) return bySet;
             }
