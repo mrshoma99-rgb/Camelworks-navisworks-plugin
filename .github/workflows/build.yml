@@ -114,8 +114,9 @@ jobs:
           checks/validate-pdf.sh
 
       # A command lives in three places - the ribbon markup, the [Command] attribute and the
-      # catalogue - and nothing in the compiler connects them.
-      - name: Check the ribbon, the plug-in and the catalogue agree
+      # catalogue - and nothing in the compiler connects them. The markup's shape is checked here
+      # too, because the project file ships it as loose content and nothing compiles it at all.
+      - name: Check the ribbon markup, the plug-in and the catalogue agree
         run: python3 checks/validate-ribbon.py
 
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
