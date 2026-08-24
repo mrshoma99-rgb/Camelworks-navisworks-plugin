@@ -184,19 +184,21 @@ namespace CamelWorks.Core.Field
         {
             if (Refusal != null) return Refusal;
 
-            if (Found.Count == 0)
-                return "Nothing is attached to any of those "
-                     + Elements.ToString("N0", CultureInfo.InvariantCulture)
-                     + " elements. " + (Carrying == 0
-                         ? "None of them carries the property the rule reads, so nothing was even "
-                           + "looked for."
-                         : Carrying.ToString("N0", CultureInfo.InvariantCulture)
-                           + " named somewhere, and nothing was found there.");
+            // Whether anything was found or not, the counts below still have to be said. Returning
+            // early on "nothing found" is what threw away the one distinction this whole thing
+            // exists to draw - a folder that is not there and a folder that is empty need two
+            // different replies, and "nothing is attached" is neither of them.
+            var text = Found.Count == 0
+                ? "Nothing is attached to any of those "
+                  + Elements.ToString("N0", CultureInfo.InvariantCulture) + " elements."
+                : Found.Count.ToString("N0", CultureInfo.InvariantCulture)
+                  + (Found.Count == 1 ? " thing attached to " : " things attached to ")
+                  + Carrying.ToString("N0", CultureInfo.InvariantCulture) + " of "
+                  + Elements.ToString("N0", CultureInfo.InvariantCulture) + " elements.";
 
-            var text = Found.Count.ToString("N0", CultureInfo.InvariantCulture)
-                     + (Found.Count == 1 ? " thing attached to " : " things attached to ")
-                     + Carrying.ToString("N0", CultureInfo.InvariantCulture) + " of "
-                     + Elements.ToString("N0", CultureInfo.InvariantCulture) + " elements.";
+            if (Found.Count == 0 && Carrying == 0)
+                text += " None of them carries the property the rule reads, so nothing was even "
+                     + "looked for.";
 
             if (Missing > 0)
                 text += " " + Missing.ToString("N0", CultureInfo.InvariantCulture)
