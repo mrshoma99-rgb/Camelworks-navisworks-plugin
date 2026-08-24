@@ -114,7 +114,35 @@ namespace CamelWorks.UI.Views
                 Ui.Form(Ui.Field("Scope", picker)),
                 read,
                 results,
-                editor));
+                editor,
+                Ui.Rule(),
+                Report(results)));
+        }
+
+        /// <summary>
+        /// The way out of this screen and into a sheet.
+        ///
+        /// A person who has just read the properties and can see what the model carries is one step
+        /// from wanting all of it in a file - as a door schedule, an asset register, a handover
+        /// matrix. That is a different shape of job to browsing, so it is a window; but it belongs
+        /// here, at the bottom of the screen where the question comes up.
+        /// </summary>
+        /// <param name="results">Where to say so if the window will not open.</param>
+        private static UIElement Report(Panel results)
+        {
+            var open = Ui.Button("Build a report from the model's data...", () =>
+            {
+                var problem = ReportBuilderWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("All of it, as a sheet"),
+                Ui.Small("Pick the properties, pick the shape, get a workbook. It reads the model "
+                         + "and proposes the columns itself, so there is nothing to set up first - "
+                         + "and it carries the element identities, so the sheet that comes out is "
+                         + "the sheet you can fill in and bring back."),
+                Ui.Actions(open));
         }
 
         /// <summary>

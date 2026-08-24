@@ -56,6 +56,9 @@ namespace CamelWorks.Core.Project
         /// <summary>What each tool was last told, so it does not ask again.</summary>
         public const string ToolsSection = "tools";
 
+        /// <summary>Saved model-data reports, and what else the data tools keep for the job.</summary>
+        public const string DataSection = "data";
+
         private readonly IFileSystem _fs;
         private readonly VersionedDocument _document;
 
