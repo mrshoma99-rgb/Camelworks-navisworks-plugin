@@ -141,6 +141,11 @@ jobs:
       - name: Check no nullable string is handed to a parameter that refuses one
         run: python3 checks/validate-nullable-args.py
 
+      # A local added at the top of a long method whose name is already taken by an `out var`
+      # twenty lines down. Neither site reads wrong; C# refuses both, on every job at once.
+      - name: Check no local is shadowed by one in a scope beneath it
+        run: python3 checks/validate-shadowed-locals.py
+
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
       # fails at the first click.

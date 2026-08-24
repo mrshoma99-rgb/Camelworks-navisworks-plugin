@@ -412,6 +412,71 @@ namespace CamelWorks.Core.Sets
     }
 
     /// <summary>
+    /// The sizes a run came to, small enough to keep in the project file.
+    ///
+    /// The delta is only worth having across sessions. A revision arrives on Tuesday and the run
+    /// it is being compared against happened on Friday, in a Navisworks somebody has since closed,
+    /// so the tree itself is gone. The names and the counts are all the comparison needs.
+    /// </summary>
+    public sealed class RestructureSnapshot
+    {
+        private readonly Dictionary<string, int> _sizes;
+
+        internal RestructureSnapshot(Dictionary<string, int> sizes, long whenTicks)
+        {
+            _sizes = sizes; WhenTicks = whenTicks;
+        }
+
+        /// <summary>An empty snapshot, which is what a first run compares against.</summary>
+        public static RestructureSnapshot Empty { get; } =
+            new RestructureSnapshot(new Dictionary<string, int>(StringComparer.Ordinal), 0);
+
+        /// <summary>When the run happened, in ticks, or zero when it was never recorded.</summary>
+        public long WhenTicks { get; }
+
+        /// <summary>How many sets it held.</summary>
+        public int Count => _sizes.Count;
+
+        /// <summary>True when there is nothing here to compare against.</summary>
+        public bool IsEmpty => _sizes.Count == 0;
+
+        /// <summary>Every set's full name and the count it held.</summary>
+        public IReadOnlyDictionary<string, int> Sizes => _sizes;
+
+        /// <summary>Write it for the project file.</summary>
+        public JsonValue ToJson()
+        {
+            var sets = JsonValue.Array();
+
+            foreach (var pair in _sizes.OrderBy(p => p.Key, StringComparer.Ordinal))
+                sets.Add(JsonValue.Object().Set("name", pair.Key).Set("held", pair.Value));
+
+            return JsonValue.Object().Set("when", WhenTicks).Set("sets", sets);
+        }
+
+        /// <summary>Read one back.</summary>
+        public static RestructureSnapshot FromJson(JsonValue? json)
+        {
+            if (json == null) return Empty;
+
+            var sizes = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            foreach (var item in json["sets"].Items)
+            {
+                var name = item["name"].AsString();
+                if (name == null || name.Length == 0) continue;
+
+                sizes[name] = (int)item["held"].AsLong();
+            }
+
+            return new RestructureSnapshot(sizes, json["when"].AsLong());
+        }
+
+        /// <inheritdoc />
+        public override string ToString() => Measure.Count(Count) + " sets";
+    }
+
+    /// <summary>
     /// A selection-set library shaped like the project, from the properties the model already carries.
     ///
     /// The Selection Tree is the shape the authoring tool happened to export in: a file, then a
@@ -472,10 +537,10 @@ namespace CamelWorks.Core.Sets
 
             // What the model really said at each level, so a gathered branch does not end up with
             // the same name as a value somebody actually authored.
-            var seen = new HashSet<string>[levels.Count];
+            var authored = new HashSet<string>[levels.Count];
 
             for (var i = 0; i < levels.Count; i++)
-                seen[i] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                authored[i] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var elements = 0;
             var dropped = 0;
@@ -499,7 +564,7 @@ namespace CamelWorks.Core.Sets
                     if (text.Length > 0)
                     {
                         cells[i] = new Cell(text, true);
-                        seen[i].Add(text);
+                        authored[i].Add(text);
                         continue;
                     }
 
@@ -550,7 +615,7 @@ namespace CamelWorks.Core.Sets
                 // branches with one name - one holding the elements somebody marked, one holding
                 // the elements nobody has looked at - and the library would keep whichever was
                 // published last.
-                if (!seen[i].Contains(wanted)) { buckets[i] = wanted; continue; }
+                if (!authored[i].Contains(wanted)) { buckets[i] = wanted; continue; }
 
                 buckets[i] = wanted + " (no value)";
 
@@ -596,10 +661,23 @@ namespace CamelWorks.Core.Sets
         /// </summary>
         /// <param name="before">The tree as it was, or null on the first run.</param>
         /// <param name="after">The tree as it comes out now.</param>
-        public static RestructureDelta Compare(RestructurePlan? before, RestructurePlan? after)
+        public static RestructureDelta Compare(RestructurePlan? before, RestructurePlan? after) =>
+            Since(Snapshot(before), after);
+
+        /// <summary>
+        /// The same comparison against a run recorded in the project file, which is the one that
+        /// matters: the run being compared against happened days ago, in a Navisworks somebody has
+        /// since closed.
+        ///
+        /// A separate name rather than another overload of Compare, because a caller writing
+        /// <c>Compare(null, plan)</c> for a first run would otherwise have to say which null.
+        /// </summary>
+        /// <param name="before">The recorded run, or null when there was none.</param>
+        /// <param name="after">The tree as it comes out now.</param>
+        public static RestructureDelta Since(RestructureSnapshot? before, RestructurePlan? after)
         {
-            var was = Sized(before);
-            var now = Sized(after);
+            var was = (before ?? RestructureSnapshot.Empty).Sizes;
+            var now = Snapshot(after).Sizes;
 
             if (was.Count == 0 && now.Count == 0)
                 return new RestructureDelta(Array.Empty<RestructureChange>(), 0);
@@ -621,15 +699,20 @@ namespace CamelWorks.Core.Sets
             return new RestructureDelta(changes, same);
         }
 
-        private static Dictionary<string, int> Sized(RestructurePlan? plan)
+        /// <summary>The sizes of a run, to keep in the project file until the next one.</summary>
+        /// <param name="plan">The run, or null for an empty snapshot.</param>
+        /// <param name="whenTicks">When it happened. Core has no clock, so the caller supplies it.</param>
+        public static RestructureSnapshot Snapshot(RestructurePlan? plan, long whenTicks = 0)
         {
             var sizes = new Dictionary<string, int>(StringComparer.Ordinal);
 
-            if (plan == null) return sizes;
+            if (plan == null) return whenTicks == 0
+                ? RestructureSnapshot.Empty
+                : new RestructureSnapshot(sizes, whenTicks);
 
             foreach (var leaf in plan.Sets) sizes[leaf.FullName] = leaf.Elements;
 
-            return sizes;
+            return new RestructureSnapshot(sizes, whenTicks);
         }
 
         /// <summary>One level of the tree, recursively.</summary>

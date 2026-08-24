@@ -120,7 +120,7 @@ namespace CamelWorks.UI.Views
                              + "condition compiles to a subtraction rather than a not-equals — those are "
                              + "different sets, because a host condition on a property an element does not "
                              + "have matches nothing."),
-                    new TreeScreen(session, RedrawSaved).Build(),
+                    Reshape(),
                     Ui.Rule(),
                     Alike(session),
                     Ui.Rule(),
@@ -400,6 +400,32 @@ namespace CamelWorks.UI.Views
             /// you are thinking about now. It is the wrong tool for the six disciplines' worth a
             /// job starts with, which arrive as a spreadsheet and want reading, not retyping.
             /// </summary>
+            /// <summary>
+            /// The whole library at once, from the properties the model already carries.
+            ///
+            /// This screen builds one set from an expression, which is the right tool for the set
+            /// somebody is thinking about now. It is the wrong tool for the tree - four levels,
+            /// each reading its own property tab, with somewhere for the elements that carry
+            /// nothing and a list of what moved since the last revision. That wants a window.
+            /// </summary>
+            private UIElement Reshape()
+            {
+                var open = Ui.Button("Rebuild the tree from properties...", () =>
+                {
+                    var problem = RestructureWindow.Show();
+                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
+                });
+
+                return Ui.Stack(
+                    Ui.Eyebrow("The whole library at once"),
+                    Ui.Small("The Selection Tree is the shape the model was exported in, not the "
+                             + "shape the job is run in. Name the properties that describe the "
+                             + "project - level, discipline, system, package - and it builds the "
+                             + "library to match, keeps the recipe, and tells you what moved when "
+                             + "the next revision lands."),
+                    Ui.Actions(open));
+            }
+
             private UIElement Schedule()
             {
                 var open = Ui.Button("Open a schedule from a spreadsheet...", () =>
@@ -482,351 +508,6 @@ namespace CamelWorks.UI.Views
                 expression is AndExpression all ? all.Parts : new[] { expression };
         }
 
-
-        // ===================================================================================
-        // Generating sets in bulk
-        // ===================================================================================
-
-        /// <summary>
-        /// One set per value of a property — and, given two or three, filed into real folders.
-        ///
-        /// This is an hour of clicking that gets done on every job, from a list somebody reads off
-        /// the properties panel. The list is already in the model, and a single pass produces both
-        /// the values and how many elements carry each one, which is the number that decides
-        /// whether a set is worth having at all.
-        ///
-        /// With two or three properties it makes the library — a folder per level holding a folder
-        /// per discipline holding a set per category, which is what the Selection Tree on a real
-        /// job looks like and what somebody otherwise assembles by hand over an afternoon, once per
-        /// project, differently each time.
-        ///
-        /// Three properties deep and no further, and it refuses rather than truncating past its
-        /// ceiling. Both are deliberate and both are explained on screen rather than enforced
-        /// silently.
-        ///
-        /// Nothing has to be set up first. The three boxes start on the three things every
-        /// federation has an answer for, and the run reports what it actually found.
-        /// </summary>
-        private sealed class TreeScreen
-        {
-            private readonly Session _session;
-            private readonly Action<Session> _refresh;
-
-            private readonly TextBox _category = Ui.Text("Element", null, 150);
-            private readonly TextBox _first = Ui.Text("Level", null, 140);
-            private readonly TextBox _second = Ui.Text(string.Empty, null, 140);
-            private readonly TextBox _third = Ui.Text(string.Empty, null, 140);
-            private readonly TextBox _pattern = Ui.Text("{value}", null, 160);
-            private readonly TextBox _floor = Ui.Text("1", null, 60);
-            private readonly StackPanel _preview = Ui.Stack();
-            private readonly StackPanel _status = Ui.Stack();
-
-            private readonly HashSet<string> _skipped =
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            private SetTreePlan? _plan;
-
-            internal TreeScreen(Session session, Action<Session> refresh)
-            {
-                _session = session;
-                _refresh = refresh;
-            }
-
-            internal UIElement Build()
-            {
-                var scope = WholeModel;
-                var picker = Ui.Choice(new[] { WholeModel, Selection }, scope, pick => scope = pick);
-
-                var look = Ui.Runner("See the library it would make", _preview, job =>
-                {
-                    _plan = null;
-                    _skipped.Clear();
-                    _status.Children.Clear();
-
-                    var category = _category.Text.Trim();
-
-                    var properties = new[] { _first.Text, _second.Text, _third.Text }
-                        .Select(p => p.Trim())
-                        .Where(p => p.Length > 0)
-                        .ToList();
-
-                    if (category.Length == 0 || properties.Count == 0)
-                    {
-                        _preview.Children.Add(Ui.Problem(
-                            "Name the property tab and at least the first property to split on."));
-                        return;
-                    }
-
-                    job.Say("Reading the model...");
-
-                    var rows = new List<IReadOnlyList<string?>>();
-                    var traversal = scope == Selection
-                        ? TraversalScope.CurrentSelection
-                        : TraversalScope.WholeDocument;
-
-                    foreach (var item in _session.Model.Traverse(traversal))
-                    {
-                        if (!job.Step(rows.Count, "elements read")) return;
-
-                        rows.Add(properties.Select(p => item.Property(category, p)).ToList());
-                    }
-
-                    if (rows.Count == 0)
-                    {
-                        _preview.Children.Add(Ui.Empty("Nothing in scope.",
-                            scope == Selection
-                                ? "Select some elements, or switch the scope to the whole model."
-                                : "No models are loaded."));
-                        return;
-                    }
-
-                    var plan = SetTree.Of(category, properties, rows, new SetTreeOptions
-                    {
-                        NamePattern = _pattern.Text,
-                        Floor = Floor(_floor.Text),
-                    });
-
-                    _plan = plan;
-                    Show(plan, rows.Count);
-                });
-
-                return Ui.Section("Make a set for every value of a property", Summary, false,
-                    Ui.Small("One property makes a flat run of sets; a second and a third nest them "
-                             + "into real folders. Every set is a rule rather than a list, so one made "
-                             + "today still covers the walls somebody adds tomorrow — and it carries "
-                             + "its whole path, so it still means the same thing if it is dragged out "
-                             + "of its folder."),
-                    Ui.Form(
-                        Ui.Pair(Ui.Field("Scope", picker), Ui.Field("Property tab", _category)),
-                        Ui.Field("Split on", _first),
-                        Ui.Pair(
-                            Ui.Field("Then on", _second, "optional — a folder per value"),
-                            Ui.Field("Then on", _third, "optional")),
-                        Ui.Pair(
-                            Ui.Field("Set name", _pattern, "{value} becomes the value"),
-                            Ui.Field("Skip branches under", _floor))),
-                    look,
-                    _preview,
-                    _status);
-            }
-
-            /// <summary>What this generator is set to, on one line, for the folded header.</summary>
-            private string Summary()
-            {
-                var split = new List<string>();
-
-                foreach (var box in new[] { _first, _second, _third })
-                    if (!string.IsNullOrWhiteSpace(box.Text)) split.Add(box.Text.Trim());
-
-                if (split.Count == 0) return "Nothing to split on yet";
-
-                var floor = Floor(_floor.Text);
-
-                return "Split on " + string.Join(", then ", split)
-                       + (floor > 1 ? " · " + floor.ToString(CultureInfo.InvariantCulture) + " element minimum"
-                                    : string.Empty);
-            }
-
-            private void Show(SetTreePlan plan, int scanned)
-            {
-                _preview.Children.Add(Ui.Line(plan.Explain(), 1, true));
-
-                // What was read, not what the plan counted: a refusal counts nothing, and "0
-                // elements read" under a refusal reads as though the scope were empty.
-                _preview.Children.Add(Ui.Line(Ui.Count(scanned, "element") + " read", 0.6));
-
-                if (plan.Refusal != null)
-                {
-                    _preview.Children.Add(Ui.Note(
-                        "Nothing has been made and nothing has been changed. Adjust the boxes above and "
-                        + "run it again."));
-                    return;
-                }
-
-                if (plan.Roots.Count == 0)
-                {
-                    _preview.Children.Add(Ui.Empty("Nothing to split on.",
-                        "No element in scope carries all of those properties. Check the spelling against "
-                        + "the properties panel — the tab name matters as much as the property name."));
-                    return;
-                }
-
-                foreach (var root in plan.Roots) Draw(root, 0);
-
-                if (plan.Blanks > 0)
-                    _preview.Children.Add(Ui.Note(Ui.Count(plan.Blanks, "element")
-                        + " carry no value for one of these properties and are in none of these sets. They "
-                        + "are not collected into an \"unassigned\" folder: an element with no level is one "
-                        + "somebody has to go and look at, and filing it tidily is how that stops looking "
-                        + "like a gap. Health will list them."));
-
-                _preview.Children.Add(Ui.Note(
-                    "Untick a folder to leave the whole branch out. Publishing makes real folders in the "
-                    + "host's Sets panel and writes the rule into each set's comment, so a colleague "
-                    + "without CamelWorks can read what it matches."));
-
-                _preview.Children.Add(Ui.Across(
-                    Ui.Button("Save them to the project", Save),
-                    Ui.Button("Save and publish into folders", Publish)));
-            }
-
-            /// <summary>One branch, indented by its depth.</summary>
-            private void Draw(SetBranch branch, int depth)
-            {
-                var path = string.Join("/", branch.Path);
-
-                var row = new WrapPanel { Margin = new Thickness(depth * 18, 2, 0, 2) };
-
-                row.Children.Add(Ui.Check(string.Empty, true, on =>
-                {
-                    if (on) _skipped.Remove(path);
-                    else _skipped.Add(path);
-                }));
-
-                row.Children.Add(Ui.Line(branch.IsLeaf ? branch.Name : branch.Value + "/", 1, !branch.IsLeaf));
-                row.Children.Add(Ui.Line(Ui.Count(branch.Elements, "element"), 0.7));
-
-                if (!branch.IsLeaf)
-                    row.Children.Add(Ui.Pill(Ui.Count(branch.Leaves().Count(), "set"), Tone.Plain));
-
-                foreach (var child in row.Children.OfType<FrameworkElement>())
-                    child.Margin = new Thickness(0, 0, 8, 0);
-
-                _preview.Children.Add(row);
-
-                foreach (var child in branch.Children) Draw(child, depth + 1);
-            }
-
-            /// <summary>Write the ticked sets into the project file, path and all.</summary>
-            private void Save()
-            {
-                _status.Children.Clear();
-
-                var wanted = Wanted();
-                if (wanted == null) return;
-
-                var library = SetLibrary.FromJson(_session.Store.Section(ProjectStore.SetsSection)["items"]);
-
-                foreach (var leaf in wanted)
-                {
-                    // The long name, not the short one. The project's set list is flat, and a
-                    // "Ducts" under Level 01 and a "Ducts" under Level 02 would be one entry.
-                    var name = leaf.FullName;
-
-                    var existing = library.Sets.FirstOrDefault(
-                        s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-
-                    library.Put(new SavedSet(existing?.Id ?? library.NextId("set"), name, leaf.Expression!)
-                    {
-                        Note = "One of a library split on "
-                             + string.Join(" / ", _plan!.Properties) + ".",
-                    });
-                }
-
-                _session.Store.Section(ProjectStore.SetsSection).Set("items", library.ToJson());
-
-                _status.Children.Add(_session.Store.Save()
-                    ? Ui.Done("Saved " + Ui.Count(wanted.Count, "set") + " to the project.")
-                    : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                _session.Record(ActivityKind.Reconcile,
-                    "made " + Ui.Count(wanted.Count, "set") + " split on "
-                    + string.Join(" / ", _plan!.Properties));
-
-                _refresh(_session);
-            }
-
-            /// <summary>
-            /// Write them, then push each one into the host inside its folder.
-            ///
-            /// Saved first and published second, for the same reason the flat generator does it:
-            /// publishing is the half that can fail per set, and a library that saved cleanly and
-            /// published forty of forty-five is recoverable from CamelWorks. The other order leaves
-            /// host sets nobody can find their way back to.
-            /// </summary>
-            private void Publish()
-            {
-                Save();
-
-                var wanted = Wanted();
-                if (wanted == null) return;
-
-                var published = 0;
-                var live = 0;
-                var refused = new List<string>();
-
-                foreach (var leaf in wanted)
-                {
-                    try
-                    {
-                        var folders = leaf.Path.Take(leaf.Path.Count - 1).ToList();
-
-                        var outcome = _session.Search.PublishInFolder(
-                            folders, leaf.Name,
-                            DnfCompiler.Compile(leaf.Expression!),
-                            SetTree.Comment(leaf));
-
-                        published++;
-                        if (outcome.IsLive) live++;
-                    }
-                    catch (Exception e)
-                    {
-                        // Named, not counted, and the loop carries on. A library with three holes
-                        // in it is recoverable; a total that says "42 of 45" is not.
-                        refused.Add(leaf.FullName + " - " + Ui.Describe(e));
-                    }
-                }
-
-                _status.Children.Add(Ui.Done("Published " + Ui.Count(published, "set")
-                    + " into the host's selection sets, in folders."));
-
-                if (live < published)
-                    _status.Children.Add(Ui.Note(Ui.Count(published - live, "set")
-                        + " went in as a fixed list of elements rather than a live search, because the "
-                        + "host could not express the rule as a search. Those will not pick up elements "
-                        + "added later; the CamelWorks set will."));
-
-                foreach (var problem in refused) _status.Children.Add(Ui.Problem(problem));
-
-                if (refused.Count > 0)
-                    _status.Children.Add(Ui.Note("Every set here is saved in the project whatever the host "
-                        + "did with it, so a refusal costs nothing but a second attempt."));
-
-                _session.Record(ActivityKind.Export, "published " + Ui.Count(published, "set") + " in folders");
-            }
-
-            /// <summary>The sets under no unticked branch, or null with a message when there are none.</summary>
-            private IReadOnlyList<SetBranch>? Wanted()
-            {
-                var plan = _plan;
-
-                if (plan == null || plan.Refusal != null)
-                {
-                    _status.Children.Add(Ui.Line("Run it above first.", 0.8));
-                    return null;
-                }
-
-                // A folder unticked takes its whole branch with it, which is the point of ticking a
-                // folder rather than forty sets.
-                var wanted = plan.Sets
-                    .Where(leaf => !Enumerable.Range(1, leaf.Path.Count).Any(
-                        depth => _skipped.Contains(string.Join("/", leaf.Path.Take(depth)))))
-                    .ToList();
-
-                if (wanted.Count == 0)
-                {
-                    _status.Children.Add(Ui.Line("Everything is unticked.", 0.8));
-                    return null;
-                }
-
-                return wanted;
-            }
-
-            private static int Floor(string? text) =>
-                int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0
-                    ? value
-                    : 1;
-        }
 
         // ===================================================================================
         // Appearance

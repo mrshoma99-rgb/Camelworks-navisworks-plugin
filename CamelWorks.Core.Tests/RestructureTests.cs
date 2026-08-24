@@ -477,6 +477,51 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_run_recorded_in_the_project_file_is_what_the_next_one_compares_against()
+        {
+            var friday = Restructure.Snapshot(Restructure.Plan(Two(), Federation()), 637_000_000_000_000_000L);
+
+            Assert.Equal(5, friday.Count);
+            Assert.Equal(637_000_000_000_000_000L, friday.WhenTicks);
+            Assert.False(friday.IsEmpty);
+
+            // Through the project file and back, because that is the only way it ever arrives.
+            var read = RestructureSnapshot.FromJson(JsonReader.Parse(friday.ToJson().ToString()));
+
+            Assert.Equal(friday.Count, read.Count);
+            Assert.Equal(friday.WhenTicks, read.WhenTicks);
+            Assert.Equal(2, read.Sizes["Level 01 / Mechanical"]);
+
+            var newer = Federation().ToList();
+            newer.Add(new string?[] { "Level 03", "Mechanical" });
+
+            var tuesday = Restructure.Plan(Two(), newer);
+
+            var delta = Restructure.Since(read, tuesday);
+
+            Assert.Equal(new[] { "Level 03 / Mechanical" }, delta.Added.Select(c => c.Name));
+            Assert.Equal(5, delta.Same);
+        }
+
+        [Fact]
+        public void With_nothing_recorded_every_set_is_new()
+        {
+            var delta = Restructure.Since(null, Restructure.Plan(Two(), Federation()));
+
+            Assert.Equal(5, delta.Added.Count);
+            Assert.Equal(0, delta.Same);
+        }
+
+        [Fact]
+        public void An_empty_snapshot_holds_nothing_and_says_so()
+        {
+            Assert.True(RestructureSnapshot.Empty.IsEmpty);
+            Assert.Equal(0L, RestructureSnapshot.Empty.WhenTicks);
+            Assert.True(RestructureSnapshot.FromJson(null).IsEmpty);
+            Assert.True(RestructureSnapshot.FromJson(JsonReader.Parse("{}")).IsEmpty);
+        }
+
+        [Fact]
         public void Every_generated_set_carries_its_formula_in_its_comment()
         {
             var plan = Restructure.Plan(Two(), Federation());

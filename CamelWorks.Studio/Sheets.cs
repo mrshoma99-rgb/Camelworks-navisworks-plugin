@@ -204,24 +204,20 @@ namespace CamelWorks.Studio
                          + "different sets, because a host condition on a property an element does "
                          + "not have matches nothing."),
 
-                Ui.Section("Make a set for every value of a property",
-                    "Split on Level · 1 element minimum", false,
-                    Ui.Small("One property makes a flat run of sets; a second and a third nest them "
-                             + "into real folders. Every set is a rule rather than a list, so one "
-                             + "made today still covers the walls somebody adds tomorrow."),
-                    Ui.Form(
-                        Ui.Pair(
-                            Ui.Field("Scope", Ui.Choice(new[] { "Whole model", "Selection" }, "Whole model", null)),
-                            Ui.Field("Property tab", Ui.Text("Element", null, 150))),
-                        Ui.Field("Split on", Ui.Text("Level", null, 140)),
-                        Ui.Pair(
-                            Ui.Field("Then on", Ui.Text(string.Empty, "nothing", null, 140),
-                                     "optional — a folder per value"),
-                            Ui.Field("Then on", Ui.Text(string.Empty, "nothing", null, 140), "optional")),
-                        Ui.Pair(
-                            Ui.Field("Set name", Ui.Text("{value}", null, 160), "{value} becomes the value"),
-                            Ui.Field("Skip branches under", Ui.Text("1", null, 60)))),
-                    Ui.Actions(Ui.Primary("See the library it would make", () => { }))),
+                Ui.Eyebrow("The whole library at once"),
+                Ui.Small("The Selection Tree is the shape the model was exported in, not the shape "
+                         + "the job is run in. Name the properties that describe the project - "
+                         + "level, discipline, system, package - and it builds the library to match, "
+                         + "keeps the recipe, and tells you what moved when the next revision lands."),
+                Ui.Actions(Ui.Button("Rebuild the tree from properties...", () => { })),
+
+                Ui.Rule(),
+
+                Ui.Eyebrow("Many sets at once"),
+                Ui.Small("Already have the sets as a spreadsheet - a row per condition, or a row per "
+                         + "set with a column per property? Read it rather than retyping it, and run "
+                         + "the same schedule again when the next revision lands."),
+                Ui.Actions(Ui.Button("Open a schedule from a spreadsheet...", () => { })),
 
                 Ui.Rule(),
 
