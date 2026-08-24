@@ -48,6 +48,13 @@ namespace CamelWorks.UI.Views
         public const int Shown = 60;
 
         private const string ByWeight = "the mass the model carries";
+        private const string FromMark = "the mark, or the name where there is none";
+        private const string FromKey = "the identity CamelWorks knows it by";
+
+        private static readonly string[] Losses =
+        {
+            "about a seventh", "about a sixth", "about a quarter", "about a third",
+        };
         private const string ByVolume = "the volume of the shapes";
 
         private static Window? _open;
@@ -98,6 +105,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _sizes = Ui.Stack();
             private readonly StackPanel _points = Ui.Stack();
             private readonly StackPanel _paper = Ui.Stack();
+            private readonly StackPanel _tags = Ui.Stack();
             private readonly StackPanel _note = Ui.Stack();
 
             // One entry per element in scope, in the same order, null where there is no body or it
@@ -108,12 +116,15 @@ namespace CamelWorks.UI.Views
 
             private readonly TextBox _folder;
             private readonly TextBox _root;
+            private readonly TextBox _prefix;
 
             private SetOutRecipe _recipe = new SetOutRecipe();
             private DimensionRecipe _shape = new DimensionRecipe();
+            private LabelRecipe _tag = new LabelRecipe();
             private DimensionSchedule? _schedule;
             private MassResult? _mass;
             private AttachmentReport? _found;
+            private LabelRun? _printed;
             private string _basis;
             private PropertyRef _massProperty;
             private int _cut;
@@ -130,6 +141,9 @@ namespace CamelWorks.UI.Views
 
                 _root = Ui.Text(_kept.Text("root"), "a folder relative paths are taken from",
                                 text => _kept.Set("root", text), 260);
+
+                _prefix = Ui.Text(_kept.Text("prefix"), "an address every code goes behind, or nothing",
+                                  text => { _tag.Prefix = text.Trim(); _kept.Set("prefix", text); }, 260);
 
                 Load();
 
@@ -204,6 +218,7 @@ namespace CamelWorks.UI.Views
                 _mass = null;
                 _schedule = null;
                 _found = null;
+                _printed = null;
 
                 var seen = 0;
 
@@ -248,6 +263,7 @@ namespace CamelWorks.UI.Views
                 DrawSizes();
                 DrawPoints();
                 DrawPaper();
+                DrawTags();
             }
 
             // -----------------------------------------------------------------------------------
@@ -726,6 +742,204 @@ namespace CamelWorks.UI.Views
             }
 
             // -----------------------------------------------------------------------------------
+            // Labels for the work
+            // -----------------------------------------------------------------------------------
+
+            private void DrawTags()
+            {
+                _tags.Children.Clear();
+
+                if (_scope.Count == 0)
+                {
+                    _tags.Children.Add(Ui.Small("Read a selection first."));
+                    return;
+                }
+
+                var marks = MarkFields();
+
+                var options = new List<string> { FromMark };
+
+                options.AddRange(marks);
+                options.Add(FromKey);
+
+                var shown = _tag.Source == LabelSource.Key
+                    ? FromKey
+                    : _tag.Source == LabelSource.Property && _tag.PropertyName.Length > 0
+                        ? Show(new PropertyRef(_tag.PropertyCategory, _tag.PropertyName))
+                        : FromMark;
+
+                if (!options.Contains(shown, StringComparer.OrdinalIgnoreCase)) shown = FromMark;
+
+                var what = Ui.Stack(
+                    Ui.Field("What the code says", Ui.Choice(options, shown, Chose, 260),
+                             "the mark is what a drawing calls it, and needs nothing setting up"),
+                    Ui.Field("Behind it", _prefix,
+                             "leave it empty and the code says exactly what is printed under it"),
+                    Ui.Field("How much can be lost",
+                        Ui.Choice(Losses, Loss(_tag.Level), pick =>
+                        {
+                            _tag.Level = Level(pick);
+                            _kept.Set("labelLevel", pick);
+                        }, 200),
+                        "a label on site gets scuffed; the more it can lose the bigger the code"));
+
+                _tags.Children.Add(Ui.Section("What goes on them", _tag.ToString(), true, what));
+
+                _tags.Children.Add(Ui.Runner("Make the labels", _tags, Tag));
+            }
+
+            private void Chose(string pick)
+            {
+                _kept.Set("labelFrom", pick);
+
+                if (string.Equals(pick, FromMark, StringComparison.Ordinal))
+                {
+                    _tag.Source = LabelSource.Mark;
+                    _tag.PropertyName = string.Empty;
+                    _tag.PropertyCategory = string.Empty;
+                    return;
+                }
+
+                if (string.Equals(pick, FromKey, StringComparison.Ordinal))
+                {
+                    _tag.Source = LabelSource.Key;
+                    _tag.PropertyName = string.Empty;
+                    _tag.PropertyCategory = string.Empty;
+                    return;
+                }
+
+                var field = Split(pick);
+
+                _tag.Source = LabelSource.Property;
+                _tag.PropertyName = field.Name;
+                _tag.PropertyCategory = field.Category;
+            }
+
+            private void Tag(Job job)
+            {
+                job.Say("Making the codes...");
+
+                // Kept beside the element it came off rather than looked up by key, because two
+                // models in a federation can hand back the same key for different things and a
+                // label that names the wrong pipe is worse than no label.
+                var against = new Dictionary<FieldElement, ReportElement>();
+                var elements = new List<FieldElement>(_scope.Count);
+
+                foreach (var element in _scope)
+                {
+                    var made = new FieldElement(element.Key, element.Name, element.Bounds,
+                                                element.HasGeometry, Mark(element));
+
+                    against[made] = element;
+                    elements.Add(made);
+                }
+
+                var field = new PropertyRef(_tag.PropertyCategory, _tag.PropertyName);
+
+                var run = LabelSheet.Make(elements, _tag,
+                    made => against.TryGetValue(made, out var from) ? from.Value(field) : null);
+
+                _printed = run;
+
+                if (run.Refusal != null)
+                {
+                    _tags.Children.Add(Ui.Problem(run.Refusal));
+                    return;
+                }
+
+                _tags.Children.Add(Ui.Line(run.Explain(), 1, true));
+
+                foreach (var note in run.Notes) _tags.Children.Add(Ui.Note(note));
+
+                _tags.Children.Add(Ui.Table(
+                    run.Labels.Take(Shown).Select(l => new TableRow(l,
+                        l.Heading,
+                        l.Encoded,
+                        l.Symbol == null
+                            ? "—"
+                            : l.Symbol.Size.ToString(CultureInfo.InvariantCulture) + " modules")).ToList(),
+                    ("On the label", 200), ("In the code", 0), ("Size", 110)));
+
+                _tags.Children.Add(Ui.Tally(Math.Min(Shown, run.Labels.Count), run.Labels.Count, "label"));
+
+                _tags.Children.Add(Ui.Actions(
+                    Ui.Button("Write the sheet", () => WriteTags(run))));
+            }
+
+            private void WriteTags(LabelRun run)
+            {
+                _note.Children.Clear();
+
+                var folder = _folder.Text.Trim();
+
+                if (folder.Length == 0)
+                {
+                    _note.Children.Add(Ui.Problem("Say which folder the files go in first."));
+                    return;
+                }
+
+                var stem = Path.Combine(folder, Safe(run.Recipe.Name));
+
+                try
+                {
+                    File.WriteAllText(stem + ".html",
+                                      LabelSheet.Html(run, _session.Profile.ProjectName),
+                                      new UTF8Encoding(true));
+
+                    File.WriteAllText(stem + ".csv", LabelSheet.Csv(run), new UTF8Encoding(true));
+                }
+                catch (Exception e)
+                {
+                    _note.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _kept.Set("folder", folder);
+                _kept.Keep();
+
+                _session.Record(ActivityKind.Export, "labelled " + run.Recipe.Name,
+                                Ui.Count(run.Labels.Count, "label") + " to " + stem + ".html");
+
+                _note.Children.Add(Ui.Done("Wrote " + stem + ".html and " + stem + ".csv — "
+                    + Ui.Count(run.Labels.Count, "label") + "."));
+
+                _note.Children.Add(Ui.Note("Open the page and print it. The dashed outlines are "
+                    + "there on screen to show where each label ends and do not print. The .csv is "
+                    + "the index of what was printed, so whatever reads the codes has something to "
+                    + "look them up in."));
+            }
+
+            /// <summary>Properties that read like something written on a drawing.</summary>
+            private IReadOnlyList<string> MarkFields() =>
+                DataReport.Fields(_scope)
+                    // Nearly filled in, not the same on everything, and short enough to print on a
+                    // sticker. A property that reads the same on every element identifies nothing,
+                    // and a paragraph of description will not fit on a label whatever it says.
+                    .Where(f => f.Filled >= Math.Max(1, _scope.Count / 2)
+                                && !f.IsConstant
+                                && (f.Example == null || f.Example.Length <= 40))
+                    .Select(f => Show(f.Field))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(40)
+                    .ToList();
+
+            private static string Loss(QrLevel level) => level switch
+            {
+                QrLevel.Low => "about a seventh",
+                QrLevel.Medium => "about a sixth",
+                QrLevel.High => "about a quarter",
+                _ => "about a third",
+            };
+
+            private static QrLevel Level(string pick) => pick switch
+            {
+                "about a seventh" => QrLevel.Low,
+                "about a sixth" => QrLevel.Medium,
+                "about a quarter" => QrLevel.High,
+                _ => QrLevel.Highest,
+            };
+
+            // -----------------------------------------------------------------------------------
             // The paperwork
             // -----------------------------------------------------------------------------------
 
@@ -894,6 +1108,18 @@ namespace CamelWorks.UI.Views
                 var mass = _kept.Text("mass");
 
                 if (mass != null) _massProperty = Split(mass);
+
+                var from = _kept.Text("labelFrom");
+
+                if (from != null) Chose(from);
+
+                var loss = _kept.Text("labelLevel");
+
+                if (loss != null) _tag.Level = Level(loss);
+
+                var behind = _kept.Text("prefix");
+
+                if (behind != null) _tag.Prefix = behind.Trim();
 
                 _shape.Sizes = _kept.Flag("dim.sizes", _shape.Sizes);
                 _shape.Diagonals = _kept.Flag("dim.diagonals", _shape.Diagonals);

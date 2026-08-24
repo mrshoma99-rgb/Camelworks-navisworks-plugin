@@ -1341,6 +1341,8 @@ namespace CamelWorks.UI.Views
         {
             var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
 
+            Free(control);
+
             panel.Children.Add(new TextBlock
             {
                 Text = label,
@@ -1356,6 +1358,29 @@ namespace CamelWorks.UI.Views
             if (!string.IsNullOrEmpty(hint)) panel.Children.Add(Small(hint!));
 
             return panel;
+        }
+
+        /// <summary>
+        /// Take a control off whatever it is under now, so it can go somewhere else.
+        ///
+        /// A panel that redraws keeps some of its controls between draws - a box somebody is
+        /// halfway through typing in has to survive the redraw or the typing is lost. Clearing the
+        /// panel drops the wrapper those controls sat in but leaves each one still claiming that
+        /// wrapper as its parent, and handing it to a second one is the exception that reads
+        /// "already the logical child of another element" - a crash on the second press of a
+        /// button that worked the first time.
+        /// </summary>
+        /// <param name="control">The control to disconnect. Anything not under a parent is left alone.</param>
+        public static void Free(UIElement? control)
+        {
+            if (!(control is FrameworkElement element)) return;
+
+            switch (element.Parent)
+            {
+                case Panel panel: panel.Children.Remove(control); break;
+                case Border border: border.Child = null; break;
+                case ContentControl holder: holder.Content = null; break;
+            }
         }
 
         /// <summary>Two fields side by side, so a narrow pane is not one column of boxes.</summary>
