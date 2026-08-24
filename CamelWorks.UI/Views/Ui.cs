@@ -1425,9 +1425,13 @@ namespace CamelWorks.UI.Views
         /// the box you are still typing a file path into.
         /// </summary>
         /// <param name="steps">The steps, in order.</param>
-        /// <param name="finish">The caption of the main action, on the last step.</param>
+        /// <param name="finish">
+        /// The caption of the main action, on the last step - or null when the last step's own
+        /// surface already carries it. A wizard whose last step holds a two-stage commit does not
+        /// want a third button above it that says the same thing and does nothing.
+        /// </param>
         /// <param name="onFinish">What the main action does.</param>
-        public static UIElement Steps(IReadOnlyList<Step> steps, string finish, Action onFinish)
+        public static UIElement Steps(IReadOnlyList<Step> steps, string? finish, Action? onFinish)
         {
             if (steps == null || steps.Count == 0) return Stack();
 
@@ -1506,8 +1510,10 @@ namespace CamelWorks.UI.Views
 
                 var last = at == steps.Count - 1;
                 var stop = steps[at].Ready?.Invoke();
+                var offers = !last || finish != null;
 
                 back.Visibility = at == 0 ? Visibility.Collapsed : Visibility.Visible;
+                next.Visibility = offers ? Visibility.Visible : Visibility.Collapsed;
                 next.Content = last ? finish : "Next";
                 next.IsEnabled = stop == null;
                 why.Text = stop ?? string.Empty;
@@ -1521,6 +1527,7 @@ namespace CamelWorks.UI.Views
                 if (at < steps.Count - 1) { at++; Draw(); return; }
 
                 onFinish?.Invoke();
+
             };
 
             Draw();
