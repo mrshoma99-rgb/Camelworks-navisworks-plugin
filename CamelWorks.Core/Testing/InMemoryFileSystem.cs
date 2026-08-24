@@ -108,6 +108,20 @@ namespace CamelWorks.Core.Testing
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
+
+        /// <inheritdoc />
+        public bool DirectoryExists(string directory)
+        {
+            var prefix = directory.TrimEnd('/', '\\').Replace('\\', '/');
+
+            // Made explicitly, or implied by something written into it - which is how the real one
+            // behaves, and a fake that insisted on CreateDirectory first would pass tests the disk
+            // would fail.
+            return _directories.Any(d => string.Equals(d.TrimEnd('/', '\\').Replace('\\', '/'),
+                                                       prefix, StringComparison.OrdinalIgnoreCase))
+                || _files.Keys.Any(k => k.Replace('\\', '/')
+                                         .StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     /// <summary>Thrown by <see cref="InMemoryFileSystem"/> when a failure was injected.</summary>
