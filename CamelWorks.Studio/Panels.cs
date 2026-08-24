@@ -615,20 +615,24 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Batch() => Sheets.Page(
-            Ui.Marked(Glyphs.Play, "Jobs", null,
-                Ui.Table(Jobs(), ("Job", 180), ("Steps", 60), ("Last run", 0)),
-                Ui.Tally(2, 2, "job"),
-                Ui.Actions(Ui.Primary("Run \"Friday issue\"", () => { }),
-                           Ui.Quiet("Open on the canvas", () => { }),
-                           Ui.Danger("Delete the selected one", () => { }))),
+            Ui.Table(Jobs(), ("Job", 180), ("Steps", 60), ("Last run", 0)),
+            Ui.Tally(2, 2, "job"),
 
-            Ui.Marked(Glyphs.Clock, "History", null,
-                Ui.Table(Runs(), ("Job", 150), ("Outcome", 0), ("When", 96)),
-                Ui.Tally(3, 18, "run")),
+            Ui.Actions(Ui.Primary("Run the selected job", () => { })),
+            Ui.Danger("Delete the selected job", () => { }),
+            Ui.Small("A job runs on the model that is open now, using whatever is selected now. "
+                     + "Nothing in it is scheduled or unattended: Navisworks has to be running, "
+                     + "and so do you."),
+
+            Ui.Rule(),
 
             Ui.Marked(Glyphs.Add, "Job from this document",
                 "Nine models are open. This makes the job you already do by hand every Monday.",
-                Ui.Actions(Ui.Button("Make a job from what is open", () => { }))));
+                Ui.Actions(Ui.Primary("Make a job from what is open", () => { }))),
+
+            Ui.Marked(Glyphs.Clock, "What has run", null,
+                Ui.Table(Runs(), ("Run", 0), ("When", 110)),
+                Ui.Tally(3, 18, "run")));
 
         private static IEnumerable<TableRow> Jobs()
         {
@@ -638,9 +642,9 @@ namespace CamelWorks.Studio
 
         private static IEnumerable<TableRow> Runs()
         {
-            yield return new TableRow(null, "Nightly health check", "Finished — 3 steps", "This morning") { Tone = Tone.Good };
-            yield return new TableRow(null, "Friday issue", "Finished — 6 steps", "Yesterday") { Tone = Tone.Good };
-            yield return new TableRow(null, "Friday issue", "Stopped at step 4 — no clash engine", "Last Friday") { Tone = Tone.Bad };
+            yield return new TableRow(null, "Nightly health check — finished, 3 steps", "This morning") { Tone = Tone.Good };
+            yield return new TableRow(null, "Friday issue — finished, 6 steps", "Yesterday") { Tone = Tone.Good };
+            yield return new TableRow(null, "Friday issue — stopped at step 4, no clash engine", "Last Friday") { Tone = Tone.Bad };
         }
     }
 }

@@ -130,7 +130,13 @@ namespace CamelWorks.UI.Views
             // raw model, so this is a card almost nobody has to open - but a row somebody disagrees
             // with still needs an answer better than "the tool said so", and folding a thing away
             // only costs nothing while the fold itself says what it will do.
-            return Ui.Section("What counts as a change", () => Settings.Describe(), false,
+            // Short enough to survive the header at 470 pixels. CompareSettings.Describe() is the
+            // long form and stays the long form; a summary that ellipsises says nothing, which is
+            // the one thing a folded header must not do.
+            return Ui.Section("What counts as a change",
+                () => Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture)
+                      + " units · " + Show(Settings.Watch),
+                false,
                 Ui.Field("Move over", Ui.Text(
                     Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture),
                     text =>

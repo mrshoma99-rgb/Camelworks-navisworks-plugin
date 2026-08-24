@@ -777,15 +777,16 @@ namespace CamelWorks.UI.Views
                 {
                     var regressed = _delta.Regressed.Count;
 
+                    // Only the exception is coloured. With all four tinted, colour stopped
+                    // discriminating and the one that is actually urgent — the regression — was
+                    // the smallest glyph in the row, because a figure sizes by its digit count.
                     _summary.Children.Add(Ui.Across(
-                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
-                            _delta.New.Count > 0 ? Tone.Warn : Tone.Plain),
+                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new"),
                         Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
                             regressed > 0 ? Tone.Bad : Tone.Plain),
-                        Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone",
-                            _delta.Resolved.Count > 0 ? Tone.Good : Tone.Plain),
+                        Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone"),
                         Ui.Figure(unassigned, "unassigned",
-                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
+                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Plain)));
 
                     if (regressed > 0)
                         _summary.Children.Add(Ui.Problem(
@@ -2589,9 +2590,9 @@ namespace CamelWorks.UI.Views
                                  + "information."),
                         Ui.Section("Where it goes, and what else is in it",
                             () => (_path.Text.Trim().Length == 0 ? "Beside the document" : "To a folder")
-                                  + (_perParty ? " · one file per party" : string.Empty)
-                                  + (_keyPlan ? " · with a key plan" : string.Empty)
-                                  + (_pictures ? " · with pictures" : string.Empty),
+                                  + (_perParty ? " · per party" : string.Empty)
+                                  + (_keyPlan ? " · key plan" : string.Empty)
+                                  + (_pictures ? " · pictures" : string.Empty),
                             false,
                             Ui.Form(
                                 Ui.PathField("Write to", _path, PathKind.Folder,

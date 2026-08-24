@@ -1304,7 +1304,11 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Section("Rename them", "{n}. {name}, numbered from 1", false,
+                return Ui.Section("Rename them",
+                    () => pattern.Text.Replace("{n}", start.Text.PadLeft(2, '0'))
+                                      .Replace("{name}", "Riser at core")
+                                      .Replace("{folder}", "Coordination"),
+                    false,
                     Ui.Form(Ui.Pair(
                         Ui.Field("Pattern", pattern, "{n} the number, {name} the current name, "
                                                      + "{folder} the folder"),
@@ -1367,7 +1371,7 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Section("File them into a folder", "Coordination", false,
+                return Ui.Section("File them into a folder", () => into.Text.Trim(), false,
                     Ui.Form(Ui.Field("Into folder", into, "made if it is not there; one already in "
                                                           + "it is left where it is")),
                     move);
@@ -1464,7 +1468,7 @@ namespace CamelWorks.UI.Views
                     session.Record(ActivityKind.Export, "rendered " + Ui.Count(written, "viewpoint"));
                 });
 
-                return Ui.Section("Render them to images", "1920 x 1080, numbered in order", false,
+                return Ui.Section("Render them to images", () => _size, false,
                     Ui.Form(Ui.Pair(
                         Ui.PathField("Write into", into, PathKind.Folder,
                                      hint: "blank writes them to your documents"),
@@ -1611,7 +1615,7 @@ namespace CamelWorks.UI.Views
                     }));
                 });
 
-                return Ui.Section("Delete them", "asks once more first", false, ask, status);
+                return Ui.Section("Delete them", "asks once more first", false, ask, status).Grave();
             }
 
             /// <summary>
@@ -1693,8 +1697,9 @@ namespace CamelWorks.UI.Views
                     + "group on the board, framed on the group.",
                     Ui.Form(Ui.Pair(
                         Ui.Field("Folder", folder),
-                        Ui.Field("Name pattern", pattern, "{n} number, {group} group, {who} party, "
-                                                          + "{count} clashes"))),
+                        Ui.Field("Name pattern", pattern,
+                                 "like \"01. Duct through transfer beam\" — {n} number, {group} "
+                                 + "group, {who} party, {count} clashes"))),
                     make,
                     Ui.Small("Each one carries the overrides that were in force when it was made. If "
                              + "you want them clean, apply the Appearance stack you want first and "

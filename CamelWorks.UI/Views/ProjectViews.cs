@@ -142,8 +142,7 @@ namespace CamelWorks.UI.Views
                               review.Faults > 0 ? Tone.Bad : Tone.Plain),
                     Ui.Figure(Measure.Count(review.Watches), "worth a look",
                               review.Watches > 0 ? Tone.Warn : Tone.Plain),
-                    Ui.Figure(Measure.Count(review.Clean), "clean",
-                              review.Clean > 0 ? Tone.Good : Tone.Plain)));
+                    Ui.Figure(Measure.Count(review.Clean), "clean")));
         }
 
         /// <summary>One finding, in the vocabulary's own shape.</summary>

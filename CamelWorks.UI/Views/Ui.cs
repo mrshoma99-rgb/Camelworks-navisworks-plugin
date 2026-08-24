@@ -725,6 +725,7 @@ namespace CamelWorks.UI.Views
         public static Border Form(params UIElement?[] fields)
         {
             var panel = new StackPanel();
+            var real = 0;
 
             foreach (var child in fields)
             {
@@ -735,12 +736,19 @@ namespace CamelWorks.UI.Views
                 // spacing here rather than at every call site that puts a note in a form.
                 if (child is TextBlock note && note.Margin.Bottom == 0)
                     note.Margin = new Thickness(0, 0, 0, 10);
+                else
+                    real++;
 
                 panel.Children.Add(child);
             }
 
             var frame = new Border { Child = panel };
-            frame.Wearing("FormStyle");
+
+            // A grey well around one input is decoration, and at 470 pixels it is decoration that
+            // costs 26 of them — inside a card that has already spent 24 on its own padding. One
+            // field gets the card's surface; two or more get a surface of their own.
+            if (real > 1) frame.Wearing("FormStyle");
+
             return frame;
         }
 
@@ -841,6 +849,22 @@ namespace CamelWorks.UI.Views
             var card = new Border { Child = Stack(header, contents) };
             card.Wearing("SectionStyle");
             return card;
+        }
+
+        /// <summary>
+        /// Mark a disclosure as holding something that destroys data.
+        ///
+        /// Five folds in a column, one of which deletes the user's viewpoints and four of which
+        /// rename or re-file them, is five identical grey bars. The fold still folds — the act
+        /// inside it is not one anybody performs by accident once it is open — but it stops
+        /// looking exactly like the four that cannot hurt anybody.
+        /// </summary>
+        /// <param name="section">A section from <see cref="Section(string, string?, bool, UIElement?[])"/>.</param>
+        public static Border Grave(this Border section)
+        {
+            section.BorderThickness = new Thickness(3, 1, 1, 1);
+            section.Tint(Border.BorderBrushProperty, "RedBd");
+            return section;
         }
 
         /// <summary>
