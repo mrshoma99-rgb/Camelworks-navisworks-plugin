@@ -53,6 +53,9 @@ namespace CamelWorks.Core.Project
         /// <summary>What the last health check saw: the model manifest it compares against.</summary>
         public const string ModelsSection = "models";
 
+        /// <summary>What each tool was last told, so it does not ask again.</summary>
+        public const string ToolsSection = "tools";
+
         private readonly IFileSystem _fs;
         private readonly VersionedDocument _document;
 

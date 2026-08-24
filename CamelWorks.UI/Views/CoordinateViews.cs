@@ -2663,17 +2663,38 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _markers = Ui.Stack();
-            private readonly TextBox _path = Ui.Text(string.Empty, null, 340);
-            private readonly TextBox _template = Ui.Text(Deliverable.DefaultTemplate, null, 340);
 
-            private string _units = FromDocument;
+            /// <summary>What this tab was last told, so it does not ask again.</summary>
+            private readonly ToolMemory _kept =
+                ToolMemory.Of(Host.Current?.Store, "coordinate.report");
 
-            private string _format = "PDF";
+            private readonly TextBox _path;
+            private readonly TextBox _template;
+
+            private string _units;
+
+            internal ReportScreen()
+            {
+                _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 340);
+
+                _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
+                                    text => _kept.Set("name", text), 340);
+
+                _units = _kept.Text("units", FromDocument) ?? FromDocument;
+
+                _format = _kept.Text("format", "PDF") ?? "PDF";
+                _keyPlan = _kept.Flag("keyPlan", true);
+                _pictures = _kept.Flag("pictures");
+                _perParty = _kept.Flag("perParty");
+                _changedOnly = _kept.Flag("changedOnly");
+            }
+
+            private string _format;
             private string _mode = FullReport;
             private string _audience = Everyone;
             private bool _changedOnly;
             private bool _pictures;
-            private bool _keyPlan = true;
+            private bool _keyPlan;
             private bool _perParty;
 
             internal UIElement Build()
@@ -2688,7 +2709,8 @@ namespace CamelWorks.UI.Views
                 // written, and which one is a thing the screen already knows.
                 var what = Ui.Small(Explain(_mode));
 
-                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format, f => _format = f, 120);
+                var format = Ui.Choice(new[] { "PDF", "XLSX", "HTML" }, _format,
+                                       f => { _format = f; _kept.Set("format", f); }, 120);
                 var audience = Ui.Choice(parties, _audience, a => _audience = a, 180);
 
                 var mode = Ui.Choice(new[] { FullReport, FieldPack, Penetration }, _mode, m =>
@@ -2697,10 +2719,17 @@ namespace CamelWorks.UI.Views
                     what.Text = Explain(m);
                 });
 
-                var changed = Ui.Check("Only what the last run had not seen", _changedOnly, v => _changedOnly = v);
-                var pictures = Ui.Check("A picture of each group", _pictures, v => _pictures = v);
-                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan, v => _keyPlan = v);
-                var split = Ui.Check("One file per party, not one file", _perParty, v => _perParty = v);
+                var changed = Ui.Check("Only what the last run had not seen", _changedOnly,
+                                       v => { _changedOnly = v; _kept.Set("changedOnly", v); });
+
+                var pictures = Ui.Check("A picture of each group", _pictures,
+                                        v => { _pictures = v; _kept.Set("pictures", v); });
+
+                var plan = Ui.Check("A plan of the site with every issue marked", _keyPlan,
+                                    v => { _keyPlan = v; _kept.Set("keyPlan", v); });
+
+                var split = Ui.Check("One file per party, not one file", _perParty,
+                                     v => { _perParty = v; _kept.Set("perParty", v); });
 
                 var write = Ui.Runner("Write the report", _results, Write);
 
@@ -2759,19 +2788,36 @@ namespace CamelWorks.UI.Views
             {
                 var recipe = new MarkerRecipe();
 
-                var shape = Ui.Choice(new[] { Ball, Box, Spike }, Ball,
-                    pick => recipe.Shape = pick == Box ? MarkerShape.Cube
-                                         : pick == Spike ? MarkerShape.Diamond
-                                         : MarkerShape.Sphere, 140);
+                var shapes = new[] { Ball, Box, Spike };
+                var was = _kept.Text("markerShape", Ball) ?? Ball;
 
-                var size = Ui.Text("300", text =>
+                recipe.Shape = was == Box ? MarkerShape.Cube
+                             : was == Spike ? MarkerShape.Diamond
+                             : MarkerShape.Sphere;
+
+                var shape = Ui.Choice(shapes, shapes.Contains(was) ? was : Ball, pick =>
                 {
-                    if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                        out var mm) && mm > 0)
-                        recipe.RadiusMetres = mm / 2000;
+                    recipe.Shape = pick == Box ? MarkerShape.Cube
+                                 : pick == Spike ? MarkerShape.Diamond
+                                 : MarkerShape.Sphere;
+
+                    _kept.Set("markerShape", pick);
+                }, 140);
+
+                var across = _kept.Number("markerSize", 300);
+
+                recipe.RadiusMetres = across / 2000.0;
+
+                var size = Ui.Text(across.ToString(CultureInfo.InvariantCulture), text =>
+                {
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                         out var mm) || mm <= 0) return;
+
+                    recipe.RadiusMetres = mm / 2000;
+                    _kept.Set("markerSize", (int)Math.Round(mm));
                 }, 90);
 
-                var units = Ui.Choice(Units, FromDocument, pick => _units = pick, 160);
+                var units = Ui.Choice(Units, _units, pick => { _units = pick; _kept.Set("units", pick); }, 160);
 
                 var write = Ui.Runner("Make them", _markers, primary: false,
                                       work: job => Mark(job, recipe));
@@ -2878,6 +2924,10 @@ namespace CamelWorks.UI.Views
                         _markers.Children.Add(Ui.Problem("Could not append it: " + Ui.Describe(e)));
                     }
                 })));
+
+                // Kept at the press rather than at every keystroke: this is the moment somebody
+                // committed to the settings, and the next run opens on them.
+                _kept.Keep();
 
                 session.Record(ActivityKind.Export, "made clash markers: " + mesh.Explain(), obj);
             }

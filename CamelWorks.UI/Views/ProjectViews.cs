@@ -644,8 +644,13 @@ namespace CamelWorks.UI.Views
         private static UIElement Ids()
         {
             var results = Ui.Stack();
-            var path = Ui.Text(string.Empty, null, 340);
-            var classSource = Ui.Text(string.Empty, null, 200);
+
+            // The file a client sent is the file they will send a revision of, and the property
+            // their exporter puts the IFC class in does not change between Tuesdays.
+            var kept = ToolMemory.Of(Host.Current?.Store, "project.ids");
+
+            var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), 340);
+            var classSource = Ui.Text(kept.Text("classFrom"), text => kept.Set("classFrom", text), 200);
 
             var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
             {
@@ -747,6 +752,10 @@ namespace CamelWorks.UI.Views
                     () => Workbook(results, document, report, session.NowTicks))));
 
                 foreach (var detail in Details(report)) results.Children.Add(detail);
+
+                // At the press, which is the moment somebody committed to the path and the
+                // property name. Next Tuesday's revision opens on both.
+                kept.Keep();
 
                 session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
             });
