@@ -80,10 +80,9 @@ namespace CamelWorks.UI.Views
                     ("Run", 300), ("When", 120), ("", 0));
 
             return Ui.Scroll(Ui.Stack(
-                FromThisDocument(session),
-                Ui.Card("Jobs", null, body),
-                log,
-                Ui.Card("History", null, past)));
+                Ui.Marked(Glyphs.Play, "Jobs", null, body, log),
+                Ui.Marked(Glyphs.Clock, "History", null, past),
+                FromThisDocument(session)));
         }
 
         /// <summary>

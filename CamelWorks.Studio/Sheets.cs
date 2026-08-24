@@ -496,21 +496,28 @@ namespace CamelWorks.Studio
         private static UIElement Takeoff()
         {
             return Page(
-                Ui.Marked(Glyphs.Table, "Takeoff",
-                    "Sums whatever the elements carry. Pick a second axis and it becomes a pivot.",
-                    Ui.Form(
-                        Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
-                        Ui.Pair(
-                            Ui.Field("Measure", Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, "Volume", null)),
-                            Ui.Field("Rows", Ui.Text("Level", null, 100))),
-                        Ui.Field("Columns", Ui.Text(string.Empty, "nothing — a flat list", null, 140))),
-                    Ui.Section("If the values need tidying first", "Off — values read exactly as they are", false,
-                        Ui.Field("Take the number matching", Ui.Text(string.Empty, null, 200)),
-                        Ui.Field("When it has no unit, read it as", Ui.Choice(new[] { "leave it", "m3", "m2", "m" }, "leave it", null))),
-                    Ui.Actions(Ui.Primary("Sum it", () => { }))),
+                Ui.Form(
+                    Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
+                    Ui.Pair(
+                        Ui.Field("Measure", Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, "Volume", null)),
+                        Ui.Field("Rows", Ui.Choice(new[] { "Level", "Category", "Model", "Discipline" }, "Level", null))),
+                    Ui.Field("Columns", Ui.Text(string.Empty, "nothing — a flat list", null, 140),
+                             "Leave it to get a flat list.")),
 
-                Ui.Marked(Glyphs.Table, "Result", null,
-                    Ui.Table(Sums(), ("Level", 130), ("Volume", 0), ("Elements", 80))));
+                Ui.Actions(Ui.Primary("Sum it", () => { })),
+
+                Ui.Section("If the values need tidying first", "Off — values read exactly as they are", false,
+                    Ui.Field("Take the number matching", Ui.Text(string.Empty, null, 200)),
+                    Ui.Field("When it has no unit, read it as", Ui.Choice(new[] { "leave it", "m3", "m2", "m" }, "leave it", null))),
+
+                Ui.Marked(Glyphs.Table, "1,178.5 m³", "Volume by level, across 3,412 elements",
+                    Ui.Across(
+                        Ui.Figure("1,178.5", "m³ total"),
+                        Ui.Figure("3,412", "elements"),
+                        Ui.Figure("17", "unreadable", Tone.Warn)),
+                    Ui.Table(Sums(), ("Level", 130), ("Volume", 0), ("Elements", 80)),
+                    Ui.Tally(4, 7, "level"),
+                    Ui.Actions(Ui.Quiet("Write it to a sheet", () => { }))));
         }
 
         private static IEnumerable<TableRow> Sums()

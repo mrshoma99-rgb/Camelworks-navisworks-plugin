@@ -477,13 +477,20 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Batch() => Sheets.Page(
-            Ui.Marked(Glyphs.Play, "Jobs", "A job is a list of steps that runs without anybody watching.",
+            Ui.Marked(Glyphs.Play, "Jobs", null,
                 Ui.Table(Jobs(), ("Job", 180), ("Steps", 60), ("Last run", 0)),
-                Ui.Actions(Ui.Primary("Run the selected job", () => { }),
-                           Ui.Button("Make a job from what is open", () => { }))),
+                Ui.Tally(2, 2, "job"),
+                Ui.Actions(Ui.Primary("Run \"Friday issue\"", () => { }),
+                           Ui.Quiet("Open on the canvas", () => { }),
+                           Ui.Danger("Delete the selected one", () => { }))),
 
             Ui.Marked(Glyphs.Clock, "History", null,
-                Ui.Table(Runs(), ("Job", 150), ("Outcome", 0), ("When", 96))));
+                Ui.Table(Runs(), ("Job", 150), ("Outcome", 0), ("When", 96)),
+                Ui.Tally(3, 18, "run")),
+
+            Ui.Marked(Glyphs.Add, "Job from this document",
+                "Nine models are open. This makes the job you already do by hand every Monday.",
+                Ui.Actions(Ui.Button("Make one from what is open", () => { }))));
 
         private static IEnumerable<TableRow> Jobs()
         {

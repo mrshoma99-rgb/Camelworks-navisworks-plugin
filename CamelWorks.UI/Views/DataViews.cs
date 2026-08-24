@@ -1513,14 +1513,17 @@ namespace CamelWorks.UI.Views
                 var run = Ui.Runner("Sum it", _results, Run);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Marked(Glyphs.Table, "Takeoff", "Sums whatever the elements carry. Pick a second "
-                              + "axis and it becomes a pivot.",
-                        Ui.Form(
-                            Ui.Field("Scope", scope),
-                            Ui.Pair(
-                                Ui.Field("Measure", measure),
-                                Ui.Field("Rows", rows)),
-                            Ui.Field("Columns", down)),
+                    Ui.Form(
+                        Ui.Field("Scope", scope),
+                        Ui.Pair(
+                            Ui.Field("Measure", measure),
+                            Ui.Field("Rows", rows)),
+                        Ui.Field("Columns", down, "Leave it to get a flat list.")),
+
+                    run,
+
+                    // Below the action, not between the user and it. It is off for almost
+                    // everybody, and its folded line says so.
                     // Off until somebody sets them, and a property that already reads as a quantity
                     // needs neither - so this is the definition of a group that should not be
                     // occupying the screen of everyone who does not need it.
@@ -1536,7 +1539,7 @@ namespace CamelWorks.UI.Views
                                 + "value alone, so the takeoff still counts it unreadable and names it - "
                                 + "turning what it could not clean into a zero would move the failure out "
                                 + "of a line that admits it and into a total that is quietly wrong.")),
-                        run),
+
                     _results,
                     _output));
             }
