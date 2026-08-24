@@ -631,7 +631,8 @@ namespace CamelWorks.Core.Publish
 
             var missing = all.Where(f => !f.Exists).ToList();
             var unreadable = all.Where(f => f.Exists && !f.IsReadable).ToList();
-            var usable = all.Where(f => f.Exists && f.IsReadable).ToList();
+            // Read-only, because Newest hands back a new list rather than filtering this one.
+            IReadOnlyList<SourceFile> usable = all.Where(f => f.Exists && f.IsReadable).ToList();
 
             var superseded = new List<Superseded>();
 

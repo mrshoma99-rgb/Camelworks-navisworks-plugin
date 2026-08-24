@@ -212,6 +212,11 @@ jobs:
       - name: Check no local is shadowed by one in a scope beneath it
         run: python3 checks/validate-shadowed-locals.py
 
+      # A doc comment that ended up over the field somebody inserted above the constructor it was
+      # written for. Nothing about that reads wrong; the compiler had to say so.
+      - name: Check every public member says what it is
+        run: python3 checks/validate-doc-coverage.py
+
       # A struct has a value nobody constructs. `default(PropertyRef).Name` was null on a type
       # whose signature said it never is, and it crashed the very method whose job was to catch a
       # missing reference.

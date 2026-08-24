@@ -16,10 +16,10 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>How the two halves are written when a path is shown or typed.</summary>
         public const string Separator = " / ";
 
-        /// <summary>Create a path.</summary>
         private readonly string? _category;
         private readonly string? _name;
 
+        /// <summary>Create a path.</summary>
         public PropertyAddress(string category, string name)
         {
             _category = category;

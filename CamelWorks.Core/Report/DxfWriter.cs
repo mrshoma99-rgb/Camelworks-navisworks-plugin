@@ -358,7 +358,10 @@ namespace CamelWorks.Core.Report
             return cleaned.Length == 0 ? DefaultLayer : cleaned;
         }
 
-        private const string Forbidden = "<>/\\\":;?*|=`,";
+        // A space is on the list because this writes R12, where a layer name may not hold one.
+        // Later dialects allow it; a file that says AC1009 and then uses one is a file some reader
+        // is entitled to refuse, and "some reader" is the whole reason for choosing R12.
+        private const string Forbidden = "<>/\\\":;?*|=`, ";
 
         private static readonly (int Index, double R, double G, double B)[] Known =
         {
@@ -541,9 +544,7 @@ namespace CamelWorks.Core.Report
             var built = new StringBuilder(text.Length);
 
             foreach (var letter in text)
-                built.Append(Forbidden.IndexOf(letter) >= 0 || letter < ' ' || letter == ' '
-                    ? '_'
-                    : letter);
+                built.Append(Forbidden.IndexOf(letter) >= 0 || letter < ' ' ? '_' : letter);
 
             var cleaned = built.ToString().Trim('_');
 
