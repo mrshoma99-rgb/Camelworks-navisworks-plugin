@@ -466,22 +466,44 @@ namespace CamelWorks.Studio
         // -----------------------------------------------------------------------------------
 
         private static UIElement Properties() => Sheets.Page(
-            Ui.Marked(Glyphs.Table, "Properties",
-                "Every property the elements carry, folded to one row each.",
-                Ui.Form(Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null))),
-                Ui.Actions(Ui.Primary("Read properties", () => { }))),
+            Ui.Form(Ui.Field("Scope", Ui.Segmented(new[] { "Selection", "Everything loaded" }, "Selection", null))),
+            Ui.Actions(Ui.Primary("Read properties", () => { })),
 
-            Ui.Marked(Glyphs.Table, "What the elements carry", null,
-                Ui.Table(Props(), ("Property", 175), ("Value", 0), ("Elements", 74))),
+            Ui.Line("41,880 elements, 62 properties", 1, true),
+            Ui.Table(Props(), ("Property", 175), ("Value", 0), ("Elements", 74)),
 
-            Ui.Section("Write a property", "Nothing staged", false,
+            Ui.Marked(Glyphs.Save, "Write to the elements",
+                "Into a tab of its own called \"CamelWorks\", so it is never mixed with the "
+                + "authoring tool's data. Nothing is written until you have seen the diff, element "
+                + "by element.",
                 Ui.Form(
-                    Ui.Pair(
-                        Ui.Field("Tab", Ui.Text("CamelWorks", null, 110)),
-                        Ui.Field("Property", Ui.Text("Zone", null, 110))),
-                    Ui.Field("Value", Ui.Text(string.Empty, "one value for every element in scope", null, 240))),
+                    Ui.Field("The value comes from", Ui.Choice(new[]
+                    {
+                        "a value you type", "a formula over other properties",
+                        "a code table", "a spreadsheet, out and back",
+                    }, "a value you type", null, 260)),
+                    Ui.Field("If a value is already there",
+                             Ui.Choice(new[] { "leave it alone", "replace it" }, "leave it alone", null))),
+                Ui.Form(Ui.Field("Name", Ui.Text("Zone", null, 150))),
+                Ui.Form(Ui.Field("Value", Ui.Text("Level 04 — East", null, 200))),
+                Ui.Actions(Ui.Primary("Show me what would change", () => { })),
+                Ui.Across(
+                    Ui.Figure("11,208", "to add", Tone.Good),
+                    Ui.Figure("402", "already set", Tone.Warn),
+                    Ui.Figure("0", "would empty"),
+                    Ui.Figure("1,940", "already right")),
+                Ui.Actions(Ui.Primary("Write 11,208 elements", () => { })),
+                Ui.Line("402 elements will be left as they are because they already hold something.", 0.7),
+                Ui.Small("Ctrl+Z will not undo a write. Navisworks does not put property writes on "
+                         + "its undo stack, so CamelWorks records what it changed in the project "
+                         + "file instead of pretending otherwise.")),
+
+            Ui.Marked(Glyphs.Tune, "Rename or remove a column", null,
+                Ui.Form(Ui.Pair(
+                    Ui.Field("Column", Ui.Choice(new[] { "CamelWorks / Zone", "CamelWorks / Code" }, "CamelWorks / Zone", null)),
+                    Ui.Field("Call it", Ui.Text("Zone", null, 150)))),
                 Ui.Actions(Ui.Primary("Show me what would change", () => { }),
-                           Ui.Button("Write it", () => { }))));
+                           Ui.Danger("Remove it", () => { }))));
 
         private static IEnumerable<TableRow> Props()
         {

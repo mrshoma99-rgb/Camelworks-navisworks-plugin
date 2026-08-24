@@ -102,18 +102,16 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0)));
 
                 editor.Children.Clear();
-                editor.Children.Add(Writer(session, keys));
+                editor.Children.Add(Writes(session, keys));
                 editor.Children.Add(new ColumnScreen(session, keys).Build());
-                editor.Children.Add(new ExcelScreen(session, keys).Build());
-                editor.Children.Add(new CodeScreen(session, keys).Build());
             });
 
+            // Reading is the hinge: the scope above it, what it found below it, and the things
+            // you can then do to what it found below that. None of the three is in a card - one
+            // act and its own output boxed separately read as two unrelated tools.
             return Ui.Scroll(Ui.Stack(
-                Ui.Marked(Glyphs.Table, "Properties", "Every property the elements carry, folded to one "
-                          + "row each, with what varies said plainly rather than shown as the first "
-                          + "element's value.",
-                    Ui.Form(Ui.Field("Scope", picker)),
-                    read),
+                Ui.Form(Ui.Field("Scope", picker)),
+                read,
                 results,
                 editor));
         }
@@ -133,10 +131,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class CodeScreen
         {
-            private const string Keep = "leave it alone";
-
-            private const string Replace = "replace it";
-
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -161,11 +155,9 @@ namespace CamelWorks.UI.Views
                     _session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
 
                 if (tables.IsEmpty)
-                    return Ui.Card("Assign a code",
-                        "Needs a code table",
-                        Ui.Empty("No code tables on this project.",
-                            "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
-                            + "client sent. Everything else here works without one."));
+                    return Ui.Empty("No code tables on this project.",
+                        "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
+                        + "client sent. Every other way of writing a value works without one.");
 
                 _table = tables.Find(tables.Names[0]);
 
@@ -177,27 +169,38 @@ namespace CamelWorks.UI.Views
 
                 _target.Text = tables.Names[0];
 
-                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
-                {
-                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
-                    if (_diff != null) ShowApply();
-                });
-
                 var preview = Ui.Runner("Show me what would change", _status, Preview);
 
-                return Ui.Card("Assign a code",
-                    "Reads a property, puts it through the table, and writes only what the table lists",
-                    Ui.Field("Table", picker),
-                    Ui.Field("Read from", _source),
-                    Ui.Field("Write as", _target),
-                    Ui.Field("Existing values", policy),
-                    Ui.Across(preview),
-                    Ui.Note("\"Read from\" is a property on the elements, written as \"Category / Name\". "
-                            + "A value the table does not list is left alone and counted, never "
-                            + "written and never guessed at."),
+                return Ui.Stack(
+                    Ui.Form(
+                        Ui.Field("Table", picker),
+                        Ui.Field("Read from", _source, "a property on the elements, as \"Category / Name\""),
+                        Ui.Field("Write as", _target)),
+                    preview,
+                    Ui.Small("A value the table does not list is left alone and counted, never "
+                             + "written and never guessed at."),
                     _status,
                     _applyRow);
             }
+
+            /// <summary>
+            /// Whether an element that already holds a value gets written over.
+            ///
+            /// Set from the one picker on the panel rather than owned here. Three write tools each
+            /// with their own copy of this choice is three chances to have set the safe one and be
+            /// looking at the other, over the single irreversible thing this product does.
+            /// </summary>
+            internal ExistingValues Existing
+            {
+                get => _existing;
+
+                set
+                {
+                    _existing = value;
+                    if (_diff != null) ShowApply();
+                }
+            }
+
 
             /// <summary>Read the source, check it against the table, and show the coverage and the diff.</summary>
             private void Preview(Job job)
@@ -347,11 +350,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class ExcelScreen
         {
-            /// <summary>What the picker says for each policy.</summary>
-            private const string Keep = "leave it alone";
-
-            private const string Replace = "replace it";
-
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -374,29 +372,44 @@ namespace CamelWorks.UI.Views
 
             internal UIElement Build()
             {
-                var write = Ui.Runner("Write a sheet", _status, Out);
+                var write = Ui.Runner("Write a sheet", _status, Out, primary: false);
                 var read = Ui.Runner("Read a sheet back", _status, In);
 
-                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
-                {
-                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
-                    if (_diff != null) ShowApply();
-                });
+                return Ui.Stack(
+                    Ui.Eyebrow("Send one out"),
+                    Ui.Form(Ui.Field("Write to", _out, "blank writes it to your documents")),
+                    write,
 
-                return Ui.Card("Excel",
-                    "Out with an identity column, back in through the same preview as any other write",
-                    Ui.Field("Write to", _out),
-                    Ui.Across(write),
-                    Ui.Field("Read back", _in),
-                    Ui.Field("Existing values", policy),
-                    Ui.Across(read),
-                    Ui.Note("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
-                            + "returned row is matched to an element, it is never written back, and "
-                            + "deleting it makes the sheet unreadable. Rows that match nothing are "
-                            + "counted and named rather than skipped."),
+                    Ui.Eyebrow("Bring it back"),
+                    Ui.Form(Ui.Field("Read back", _in)),
+                    read,
+
+                    Ui.Small("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
+                             + "returned row is matched to an element, it is never written back, and "
+                             + "deleting it makes the sheet unreadable. Rows that match nothing are "
+                             + "counted and named rather than skipped."),
                     _status,
                     _applyRow);
             }
+
+            /// <summary>
+            /// Whether an element that already holds a value gets written over.
+            ///
+            /// Set from the one picker on the panel rather than owned here. Three write tools each
+            /// with their own copy of this choice is three chances to have set the safe one and be
+            /// looking at the other, over the single irreversible thing this product does.
+            /// </summary>
+            internal ExistingValues Existing
+            {
+                get => _existing;
+
+                set
+                {
+                    _existing = value;
+                    if (_diff != null) ShowApply();
+                }
+            }
+
 
             /// <summary>Every property these elements carry, one column each, plus the identity.</summary>
             private void Out(Job job)
@@ -706,8 +719,76 @@ namespace CamelWorks.UI.Views
         /// writes to is exactly the set that was read, and offering to write before then would mean
         /// guessing at what.
         /// </summary>
-        private static UIElement Writer(Session session, IReadOnlyList<ElementKey> keys) =>
-            new WriteScreen(session, keys).Build();
+        /// <summary>What the overwrite picker says for each policy.</summary>
+        private const string KeepThem = "leave it alone";
+
+        private const string ReplaceThem = "replace it";
+
+        /// <summary>
+        /// One write pipeline, with a picker for where the value comes from.
+        ///
+        /// It used to be four cards side by side — write a property, assign a code, read a
+        /// spreadsheet back, rename a column — which read as four tools of equal weight when three
+        /// of them are the same tool taking its value from somewhere else. Worse, each of the
+        /// three carried its own "if a value is already there" and each defaulted to the safe
+        /// answer independently, so the screen offered three chances to have set the safe one and
+        /// be looking at the other. There is one now, above everything it governs.
+        ///
+        /// Renaming a column stays separate. It changes the shape of the data rather than its
+        /// values, and it is the one act here that is not a write.
+        /// </summary>
+        private static UIElement Writes(Session session, IReadOnlyList<ElementKey> keys)
+        {
+            var typed = new WriteScreen(session, keys);
+            var worked = new WriteScreen(session, keys);
+            var coded = new CodeScreen(session, keys);
+            var sheet = new ExcelScreen(session, keys);
+
+            var slots = new (string Name, UIElement Body, Action<ExistingValues> Told)[]
+            {
+                ("a value you type", typed.Build(false), v => typed.Existing = v),
+                ("a formula over other properties", worked.Build(true), v => worked.Existing = v),
+                ("a code table", coded.Build(), v => coded.Existing = v),
+                ("a spreadsheet, out and back", sheet.Build(), v => sheet.Existing = v),
+            };
+
+            var body = Ui.Stack();
+
+            foreach (var slot in slots)
+            {
+                slot.Body.Visibility = Visibility.Collapsed;
+                body.Children.Add(slot.Body);
+            }
+
+            slots[0].Body.Visibility = Visibility.Visible;
+
+            var source = Ui.Choice(slots.Select(slot => slot.Name).ToList(), slots[0].Name, pick =>
+            {
+                foreach (var slot in slots)
+                    slot.Body.Visibility = slot.Name == pick ? Visibility.Visible : Visibility.Collapsed;
+            }, 260);
+
+            // Not folded, deliberately. Every other option on this screen can be wrong and cost a
+            // second run; this one can be wrong and cost somebody else's afternoon of work, so it
+            // is on the glass with the thing it governs.
+            var policy = Ui.Choice(new[] { KeepThem, ReplaceThem }, KeepThem, pick =>
+            {
+                var told = pick == ReplaceThem ? ExistingValues.Overwrite : ExistingValues.Keep;
+                foreach (var slot in slots) slot.Told(told);
+            });
+
+            return Ui.Marked(Glyphs.Save, "Write to the elements",
+                "Into a tab of its own called \"" + NavWriteTransaction.TabName + "\", so it is never "
+                + "mixed with the authoring tool's data. Nothing is written until you have seen the "
+                + "diff, element by element.",
+                Ui.Form(
+                    Ui.Field("The value comes from", source),
+                    Ui.Field("If a value is already there", policy)),
+                body,
+                Ui.Small("Ctrl+Z will not undo a write. Navisworks does not put property writes on "
+                         + "its undo stack, so CamelWorks records what it changed in the project "
+                         + "file instead of pretending otherwise."));
+        }
 
         /// <summary>
         /// Writing a property, in two steps, and never over somebody else's answer by accident.
@@ -725,11 +806,6 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class WriteScreen
         {
-            /// <summary>What the picker says for each policy.</summary>
-            private const string Keep = "leave it alone";
-
-            private const string Replace = "replace it";
-
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -755,15 +831,31 @@ namespace CamelWorks.UI.Views
                 _keys = keys;
             }
 
-            internal UIElement Build()
+            /// <summary>The writer for one kind of value.</summary>
+            /// <param name="worked">Whether the value is a formula rather than one typed in.</param>
+            internal UIElement Build(bool worked)
             {
-                var policy = Ui.Choice(new[] { Keep, Replace }, Keep, pick =>
-                {
-                    _existing = pick == Replace ? ExistingValues.Overwrite : ExistingValues.Keep;
-                    if (_diff != null) ShowApply();
-                });
+                _how = worked ? Worked : Fixed;
 
-                var how = Ui.Choice(new[] { Fixed, Worked }, _how, pick => _how = pick);
+                // One input, never both. A screen showing a Value box and a Formula box at once is
+                // asking which of them it is going to use, and answering in a third field.
+                var input = worked
+                    ? Ui.Stack(
+                        Ui.Form(Ui.Field("Formula", _formula, "reads other properties: {Element/Mark}")),
+                        Ui.Section("What a formula can do",
+                            "join with &, arithmetic with + - * /, six functions", false,
+                            Ui.Small("Join text with & and do arithmetic with + - * / — two different "
+                                     + "operators on purpose, because one that did both would turn a "
+                                     + "door reference of \"12\" and a level of \"3\" into 15 instead "
+                                     + "of \"12-3\". An element missing something the formula needs is "
+                                     + "left alone rather than written a zero."),
+                            Ui.Small("regex(value, pattern) pulls out what the brackets caught and "
+                                     + "regex(value, pattern, replacement) rewrites; "
+                                     + "unit(number, \"mm\", \"m\") moves a number between units; "
+                                     + "lookup(value, \"Uniclass\") reads a code table and gives "
+                                     + "nothing for a value it does not list; upper, lower and trim "
+                                     + "tidy.")))
+                    : (UIElement)Ui.Form(Ui.Field("Value", _value));
 
                 var preview = Ui.Runner("Show me what would change", _status, job =>
                 {
@@ -843,32 +935,33 @@ namespace CamelWorks.UI.Views
                     ShowApply();
                 });
 
-                return Ui.Card("Write a property",
-                    "Goes into a tab of its own called \"" + NavWriteTransaction.TabName
-                    + "\", so it is never mixed with the authoring tool's data.",
-                    Ui.Field("Name", _name),
-                    Ui.Field("The value is", how),
-                    Ui.Field("Value", _value),
-                    Ui.Field("Formula", _formula),
-                    Ui.Note("A formula reads other properties: {Element/Mark}. Join text with & and do "
-                            + "arithmetic with + - * / — two different operators on purpose, because one "
-                            + "that did both would turn a door reference of \"12\" and a level of \"3\" "
-                            + "into 15 instead of \"12-3\". An element missing something the formula "
-                            + "needs is left alone rather than written a zero."),
-                    Ui.Note("Six functions, and each earns its place by being something a property "
-                            + "genuinely needs doing to it: regex(value, pattern) pulls out what the "
-                            + "brackets caught and regex(value, pattern, replacement) rewrites; "
-                            + "unit(number, \"mm\", \"m\") moves a number between units; "
-                            + "lookup(value, \"Uniclass\") reads a code table and gives nothing for a "
-                            + "value it does not list; upper, lower and trim tidy."),
-                    Ui.Field("If a value is already there", policy),
+                return Ui.Stack(
+                    Ui.Form(
+                        Ui.Field("Name", _name)),
+                    input,
                     preview,
-                    Ui.Note("Ctrl+Z will not undo this. Navisworks does not put property writes on its "
-                            + "undo stack, so CamelWorks records what it changed in the project file "
-                            + "instead of pretending otherwise."),
                     _status,
                     _applyRow);
             }
+
+            /// <summary>
+            /// Whether an element that already holds a value gets written over.
+            ///
+            /// Set from the one picker on the panel rather than owned here. Three write tools each
+            /// with their own copy of this choice is three chances to have set the safe one and be
+            /// looking at the other, over the single irreversible thing this product does.
+            /// </summary>
+            internal ExistingValues Existing
+            {
+                get => _existing;
+
+                set
+                {
+                    _existing = value;
+                    if (_diff != null) ShowApply();
+                }
+            }
+
 
             /// <summary>
             /// The button that actually writes, labelled with what it is about to do.
@@ -890,8 +983,8 @@ namespace CamelWorks.UI.Views
                 {
                     _applyRow.Children.Add(Ui.Note(
                         "Nothing would be written: every element in scope already holds a value, and "
-                        + "existing values are being left alone. Switch to \"" + Replace
-                        + "\" if replacing them is what you meant."));
+                        + "existing values are being left alone. Change what happens to a value that "
+                        + "is already there, above, if replacing them is what you meant."));
                     return;
                 }
 
