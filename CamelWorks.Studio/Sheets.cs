@@ -334,9 +334,13 @@ namespace CamelWorks.Studio
             {
                 job.Total = 128400;
 
+                // Paced, because Job repaints a few times a second rather than on every call, and
+                // a loop that finishes in microseconds paints once and photographs "0 of 128,400".
+                // Real work has time between its steps; so does this.
                 for (var done = 0; done <= 54000; done += 1500)
                 {
                     if (!job.Step(done, "elements")) return;
+                    System.Threading.Thread.Sleep(12);
                 }
 
                 // Captured here, not after: once this returns there is no run to photograph.

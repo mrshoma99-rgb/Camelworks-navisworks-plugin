@@ -756,12 +756,15 @@
 
   <!-- ════════════════════════════════ Tables ════════════════════════════════ -->
 
+  <!-- The header's padding and the row's must be vertical only and equal. Anything horizontal on
+       either shifts one against the other inside the same column grid: cells land a few pixels
+       right of their headings and the last column is clipped by exactly that much. -->
   <Style TargetType="GridViewColumnHeader">
     <Setter Property="Background" Value="Transparent"/>
     <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Caption}"/>
     <Setter Property="FontWeight" Value="Bold"/>
-    <Setter Property="Padding" Value="9,7"/>
+    <Setter Property="Padding" Value="0,7"/>
     <Setter Property="HorizontalContentAlignment" Value="Left"/>
     <Setter Property="Template">
       <Setter.Value>
@@ -778,7 +781,7 @@
   <Style TargetType="ListViewItem">
     <Setter Property="Foreground" Value="{DynamicResource Text}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
-    <Setter Property="Padding" Value="9,6"/>
+    <Setter Property="Padding" Value="0,7"/>
     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
     <Setter Property="Template">
       <Setter.Value>

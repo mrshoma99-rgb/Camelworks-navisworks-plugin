@@ -592,6 +592,11 @@ namespace CamelWorks.UI.Views
             var state = new TextBlock
             {
                 Text = summary ?? string.Empty,
+
+                // NoWrap as well as trimming: the Hint style wraps, and wrapping beats trimming,
+                // so a long summary broke onto a second right-aligned line instead of ending in an
+                // ellipsis. A folded header is one line by definition.
+                TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Right,
