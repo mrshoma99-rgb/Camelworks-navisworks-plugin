@@ -262,9 +262,25 @@ namespace CamelWorks.Core.Appearance
             if (total == 0) return "That snapshot is empty.";
 
             if (Found == 0)
-                return "None of " + Measure.Count(total) + " elements in that snapshot are in this "
-                     + "model. Usually it was taken from a different federation - or from the same "
-                     + "one before it was re-exported, with the path fallback switched off.";
+            {
+                // An element matched ambiguously IS here - it just could not be told from its
+                // neighbour. Saying "none of these are in this model" would send somebody looking
+                // for the wrong problem.
+                if (Ambiguous == total)
+                    return "Every element in that snapshot matched more than one element here by "
+                         + "name, so none of them could be placed. The names in this model are not "
+                         + "unique enough to carry a scheme by.";
+
+                var none = "None of " + Measure.Count(total) + " elements in that snapshot are in "
+                         + "this model. Usually it was taken from a different federation - or from "
+                         + "the same one before it was re-exported, with the path fallback switched "
+                         + "off.";
+
+                return Ambiguous == 0
+                    ? none
+                    : none + " " + Measure.Count(Ambiguous) + " of them matched more than one "
+                      + "element by name and were left alone.";
+            }
 
             var line = Measure.Count(Found) + " of " + Measure.Count(total) + " found";
 

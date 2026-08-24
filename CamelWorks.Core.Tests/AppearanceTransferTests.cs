@@ -189,8 +189,11 @@ namespace CamelWorks.Core.Tests
             // Two reds, one transparency, one hidden - three layers, biggest first.
             Assert.Equal(3, layers.Count);
 
-            Assert.Equal(new[] { Key("Wall A"), Key("Wall B") },
-                         Targeted(layers[0]).OrderBy(k => k.ToString(), StringComparer.Ordinal));
+            // As a set: a key's text form is a hash, so ordering two of them proves nothing about
+            // anything and would pass or fail on which way the hashes fell.
+            Assert.Equal(2, Targeted(layers[0]).Count);
+            Assert.Contains(Key("Wall A"), Targeted(layers[0]));
+            Assert.Contains(Key("Wall B"), Targeted(layers[0]));
 
             Assert.Equal(Red, layers[0].Colour);
             Assert.Null(layers[0].Transparency);
