@@ -12,10 +12,10 @@ namespace CamelWorks.Core.Tests
         private static ElementKey Key(string name) =>
             ElementKey.FromTreePath("model", @"C:\Jobs\Riverside\Struct.nwc", name);
 
-        private static SetOutElement Element(string name, double x, double y, double z,
+        private static FieldElement Element(string name, double x, double y, double z,
                                              double sx, double sy, double sz,
                                              bool hasGeometry = true, string? mark = null) =>
-            new SetOutElement(Key(name), name,
+            new FieldElement(Key(name), name,
                               new BoundingBox(x, y, z, x + sx, y + sy, z + sz), hasGeometry, mark);
 
         private static SetOutRecipe Recipe(params PointKind[] kinds)

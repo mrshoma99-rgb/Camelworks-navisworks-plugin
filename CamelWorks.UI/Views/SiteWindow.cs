@@ -18,17 +18,19 @@ using CamelWorks.Nav;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The three places the model meets something that is not the model: a crane, a total station,
-    /// and a folder of paperwork.
+    /// The four places the model meets something that is not the model: a crane, a tape measure, a
+    /// total station, and a folder of paperwork.
     ///
     /// Everything else in CamelWorks ends at a file somebody opens on a laptop. These end on site.
-    /// Where the weight of a module sits decides where the hook goes; the setting-out file is what
-    /// the engineer walks the floor with; and the O&amp;M folder is the thing a commissioning engineer
-    /// asks for and nobody can find.
+    /// Where the weight of a module sits decides where the hook goes; the dimension schedule
+    /// answers the question somebody would otherwise measure on screen and retype into an email;
+    /// the setting-out file is what the engineer walks the floor with; and the O&amp;M folder is the
+    /// thing a commissioning engineer asks for and nobody can find.
     ///
-    /// One window because they share the read: all three work off the current selection, and
-    /// reading a federation's geometry three times to answer three questions about the same forty
-    /// elements is how a tool earns a reputation for being slow.
+    /// One window because they share the read: all four work off the current selection, and two of
+    /// them want the same triangles. Reading a federation's geometry four times to answer four
+    /// questions about the same forty elements is how a tool earns a reputation for being slow, so
+    /// it is read once and kept.
     /// </summary>
     public static class SiteWindow
     {
@@ -37,6 +39,7 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Where saved attachment rules live in the project file.</summary>
         public const string AttachedKey = Attachments.StoreKey;
+
 
         /// <summary>How many elements will be read for one answer.</summary>
         public const int ReadCeiling = 20000;
@@ -92,14 +95,23 @@ namespace CamelWorks.UI.Views
 
             private readonly StackPanel _read = Ui.Stack();
             private readonly StackPanel _weight = Ui.Stack();
+            private readonly StackPanel _sizes = Ui.Stack();
             private readonly StackPanel _points = Ui.Stack();
             private readonly StackPanel _paper = Ui.Stack();
             private readonly StackPanel _note = Ui.Stack();
+
+            // One entry per element in scope, in the same order, null where there is no body or it
+            // could not be read. Filled once and shared: the weight and the dimensions both work
+            // off the triangles, and reading a federation's geometry twice to answer two questions
+            // about the same forty elements is exactly what this window exists not to do.
+            private readonly List<Core.Report.GltfMesh?> _mesh = new List<Core.Report.GltfMesh?>();
 
             private readonly TextBox _folder;
             private readonly TextBox _root;
 
             private SetOutRecipe _recipe = new SetOutRecipe();
+            private DimensionRecipe _shape = new DimensionRecipe();
+            private DimensionSchedule? _schedule;
             private MassResult? _mass;
             private AttachmentReport? _found;
             private string _basis;
@@ -138,7 +150,7 @@ namespace CamelWorks.UI.Views
 
                 var left = Ui.Scroll(Ui.Stack(
                     Ui.Eyebrow("What is on site"),
-                    Ui.Small("All three answers come off what is selected in the model. Select the "
+                    Ui.Small("All four answers come off what is selected in the model. Select the "
                              + "module, the lift, the floor - and read it once."),
                     Ui.Runner("Read the selection", _read, Gather),
                     _read,
@@ -155,6 +167,12 @@ namespace CamelWorks.UI.Views
                         "Where the hook goes. Weighted by what the model says things weigh, or by "
                         + "the volume of the shapes when it says nothing - and it tells you which.",
                         _weight),
+                    Ui.Marked(Glyphs.Ruler, "Dimensions",
+                        "How long that run is, how far it sits off the slab, whether those hangers "
+                        + "are at centres. Measured off the elements' own geometry where it has "
+                        + "been read, and off the world box where it has not - the schedule says "
+                        + "which, on every line.",
+                        _sizes),
                     Ui.Marked(Glyphs.Camera, "Setting out",
                         "The file the engineer loads into a total station. Site coordinates, "
                         + "northing before easting, with what they are referenced to written into "
@@ -181,8 +199,10 @@ namespace CamelWorks.UI.Views
             private void Gather(Job job)
             {
                 _scope.Clear();
+                _mesh.Clear();
                 _cut = 0;
                 _mass = null;
+                _schedule = null;
                 _found = null;
 
                 var seen = 0;
@@ -225,6 +245,7 @@ namespace CamelWorks.UI.Views
             private void Draw()
             {
                 DrawWeight();
+                DrawSizes();
                 DrawPoints();
                 DrawPaper();
             }
@@ -274,34 +295,62 @@ namespace CamelWorks.UI.Views
                 _weight.Children.Add(Ui.Runner("Work out where it sits", _weight, Weigh));
             }
 
-            private void Weigh(Job job)
+            /// <summary>
+            /// Read every element's triangles once, into <c>_mesh</c>, in scope order.
+            ///
+            /// Both the weight and the dimensions want the same triangles, and a federation is
+            /// slow enough to read that doing it twice is felt. So it is done once and the entry
+            /// stays null where the element has no body or the reader gave nothing back - the two
+            /// callers each say what a null means for their own answer, because a hanger with no
+            /// body is a different problem for a centre of gravity than it is for a length.
+            /// </summary>
+            private bool ReadGeometry(Job job)
             {
+                if (_mesh.Count == _scope.Count) return true;
+
                 var geometry = new NavGeometry(_session.Model);
-                var parts = new List<MassPart>();
                 var read = 0;
-                var silent = 0;
+
+                _mesh.Clear();
 
                 job.Say("Reading geometry...");
 
                 foreach (var element in _scope)
                 {
-                    if (!job.Step(read++, _scope.Count, "elements measured")) return;
+                    if (!job.Step(read++, _scope.Count, "elements read"))
+                    {
+                        // Stopped part way through leaves a cache shorter than the scope, which
+                        // would silently mis-pair every element with the next one's triangles.
+                        _mesh.Clear();
+                        return false;
+                    }
 
                     var item = _session.Model.Resolve(element.Key);
 
-                    if (item == null) continue;
+                    _mesh.Add(item == null || !item.HasGeometry
+                                  ? null
+                                  : geometry.Read(item, element.Name));
+                }
 
-                    if (!item.HasGeometry)
-                    {
-                        parts.Add(new MassPart(element.Key, element.Name, null, null));
-                        continue;
-                    }
+                return true;
+            }
 
-                    var mesh = geometry.Read(item, element.Name);
+            private void Weigh(Job job)
+            {
+                if (!ReadGeometry(job)) return;
+
+                var parts = new List<MassPart>();
+                var silent = 0;
+
+                for (var at = 0; at < _scope.Count; at++)
+                {
+                    var element = _scope[at];
+                    var mesh = _mesh[at];
 
                     if (mesh == null)
                     {
-                        silent++;
+                        if (_session.Model.Resolve(element.Key)?.HasGeometry == true) silent++;
+
                         parts.Add(new MassPart(element.Key, element.Name, null, null));
                         continue;
                     }
@@ -376,6 +425,157 @@ namespace CamelWorks.UI.Views
             }
 
             // -----------------------------------------------------------------------------------
+            // Dimensions
+            // -----------------------------------------------------------------------------------
+
+            private void DrawSizes()
+            {
+                _sizes.Children.Clear();
+
+                if (_scope.Count == 0)
+                {
+                    _sizes.Children.Add(Ui.Small("Read a selection first."));
+                    return;
+                }
+
+                var what = Ui.Stack();
+
+                what.Children.Add(Ui.Check("How big each element is", _shape.Sizes,
+                    on => { _shape.Sizes = on; _kept.Set("dim.sizes", on); }));
+
+                what.Children.Add(Ui.Check("Corner to corner as well", _shape.Diagonals,
+                    on => { _shape.Diagonals = on; _kept.Set("dim.diagonals", on); }));
+
+                what.Children.Add(Ui.Check("How far each sits above its level", _shape.Heights,
+                    on => { _shape.Heights = on; _kept.Set("dim.heights", on); }));
+
+                what.Children.Add(Ui.Check("Each to the nearest other one", _shape.Neighbours,
+                    on => { _shape.Neighbours = on; _kept.Set("dim.neighbours", on); }));
+
+                what.Children.Add(Ui.Check("The step from each to the next along a run",
+                    _shape.Spacing,
+                    on => { _shape.Spacing = on; _kept.Set("dim.spacing", on); }));
+
+                _sizes.Children.Add(Ui.Section("What to measure", _shape.Says, true, what));
+
+                _sizes.Children.Add(Ui.Runner("Measure it", _sizes, Measure));
+            }
+
+            private void Measure(Job job)
+            {
+                if (!ReadGeometry(job)) return;
+
+                job.Say("Measuring...");
+
+                var elements = new List<FieldElement>(_scope.Count);
+
+                for (var at = 0; at < _scope.Count; at++)
+                {
+                    var element = _scope[at];
+
+                    elements.Add(new FieldElement(element.Key, element.Name, element.Bounds,
+                                                  element.HasGeometry, Mark(element),
+                                                  _mesh[at]?.Positions));
+                }
+
+                var schedule = Dimensions.Schedule(elements, _shape, Levels());
+
+                _schedule = schedule;
+
+                if (schedule.Refusal != null)
+                {
+                    _sizes.Children.Add(Ui.Problem(schedule.Refusal));
+                    return;
+                }
+
+                _sizes.Children.Add(Ui.Line(schedule.Explain(), 1, true));
+
+                foreach (var note in schedule.Notes) _sizes.Children.Add(Ui.Note(note));
+
+                var units = _session.Profile.Units;
+
+                _sizes.Children.Add(Ui.Table(
+                    schedule.Rows.Take(Shown).Select(r => new TableRow(r,
+                        r.Reference,
+                        Dimensions.Word(r.Kind),
+                        r.Subject,
+                        r.Against ?? "—",
+                        r.Say(units),
+                        r.Oriented ? "geometry" : "box")).ToList(),
+                    ("Ref", 70), ("Measurement", 110), ("Element", 0), ("Against", 150),
+                    (units.LengthUnit, 100), ("From", 90)));
+
+                _sizes.Children.Add(Ui.Tally(Math.Min(Shown, schedule.Rows.Count),
+                                             schedule.Rows.Count, "dimension"));
+
+                _sizes.Children.Add(Ui.Actions(
+                    Ui.Button("Write the schedule", () => WriteSchedule(schedule))));
+            }
+
+            /// <summary>
+            /// The levels to measure heights from: the grid's where the model has one, and
+            /// otherwise the ones the selection itself implies.
+            ///
+            /// Nobody sets levels up before asking how high something is, so where the model does
+            /// not declare them they are worked out from where things actually sit. That answer is
+            /// worth less than an authored one, which is why the schedule names the level each
+            /// height was taken from rather than only the number.
+            /// </summary>
+            private LevelSet Levels()
+            {
+                var grid = new NavGrids(_session.Model).Derive();
+
+                if (grid.Bands.Count > 0) return grid;
+
+                var floors = _scope.Where(e => e.HasGeometry).Select(e => e.Bounds.MinZ).ToList();
+
+                return floors.Count == 0 ? LevelSet.Empty : LevelSet.Derive(floors);
+            }
+
+            private void WriteSchedule(DimensionSchedule schedule)
+            {
+                _note.Children.Clear();
+
+                var folder = _folder.Text.Trim();
+
+                if (folder.Length == 0)
+                {
+                    _note.Children.Add(Ui.Problem("Say which folder the files go in first."));
+                    return;
+                }
+
+                var stem = Path.Combine(folder, Safe(schedule.Recipe.Name));
+                var document = Dimensions.Report(schedule, _session.Profile.Units);
+
+                try
+                {
+                    File.WriteAllText(stem + ".csv", Dimensions.Csv(schedule),
+                                      new UTF8Encoding(true));
+
+                    File.WriteAllText(stem + ".html", Core.Report.HtmlReportWriter.Write(document),
+                                      new UTF8Encoding(true));
+                }
+                catch (Exception e)
+                {
+                    _note.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _kept.Set("folder", folder);
+                _kept.Keep();
+
+                _session.Record(ActivityKind.Export, "measured " + schedule.Recipe.Name,
+                                Ui.Count(schedule.Rows.Count, "dimension") + " to " + stem + ".csv");
+
+                _note.Children.Add(Ui.Done("Wrote " + stem + ".csv and " + stem + ".html — "
+                    + Ui.Count(schedule.Rows.Count, "dimension") + "."));
+
+                _note.Children.Add(Ui.Note("The file is in metres whatever the screen reads in, "
+                    + "because a number going into a calculation has to carry one unit and say "
+                    + "which. The report reads in " + _session.Profile.Units.LengthUnit + "."));
+            }
+
+            // -----------------------------------------------------------------------------------
             // Setting out
             // -----------------------------------------------------------------------------------
 
@@ -437,7 +637,7 @@ namespace CamelWorks.UI.Views
 
             private void Points(Job job)
             {
-                var elements = _scope.Select(e => new SetOutElement(
+                var elements = _scope.Select(e => new FieldElement(
                     e.Key, e.Name, e.Bounds, e.HasGeometry, Mark(e))).ToList();
 
                 var result = SettingOut.Of(elements, _recipe);
@@ -694,6 +894,16 @@ namespace CamelWorks.UI.Views
                 var mass = _kept.Text("mass");
 
                 if (mass != null) _massProperty = Split(mass);
+
+                _shape.Sizes = _kept.Flag("dim.sizes", _shape.Sizes);
+                _shape.Diagonals = _kept.Flag("dim.diagonals", _shape.Diagonals);
+                _shape.Heights = _kept.Flag("dim.heights", _shape.Heights);
+                _shape.Neighbours = _kept.Flag("dim.neighbours", _shape.Neighbours);
+                _shape.Spacing = _kept.Flag("dim.spacing", _shape.Spacing);
+
+                // Every box unticked is a schedule with no rows and no way for the screen to say
+                // why, so what comes back never leaves the tool asking for nothing.
+                if (_shape.IsEmpty) { _shape.Sizes = true; _shape.Heights = true; }
 
                 var root = _rules.Select(r => r.Root).FirstOrDefault(r => r != null);
 

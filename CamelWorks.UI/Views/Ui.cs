@@ -2149,5 +2149,8 @@ namespace CamelWorks.UI.Views
 
         /// <summary>An arrow onward: this takes you somewhere.</summary>
         public const string Onward = "M5,12 L18,12 M13,7 L18,12 L13,17";
+
+        /// <summary>A ruler: a measured dimension.</summary>
+        public const string Ruler = "M3,9 L21,9 L21,15 L3,15 Z M7,9 L7,12 M11,9 L11,13 M15,9 L15,12 M19,9 L19,13";
     }
 }

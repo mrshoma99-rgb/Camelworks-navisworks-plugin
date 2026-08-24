@@ -28,47 +28,6 @@ namespace CamelWorks.Core.Field
         End,
     }
 
-    /// <summary>One element, as the setting-out reads it.</summary>
-    public sealed class SetOutElement
-    {
-        /// <summary>Name one.</summary>
-        /// <param name="key">Which element.</param>
-        /// <param name="name">What it is called.</param>
-        /// <param name="bounds">Its world box, in metres.</param>
-        /// <param name="hasGeometry">Whether it has a body to set out at all.</param>
-        /// <param name="mark">Its mark, where the model carries one, so the point is named for it.</param>
-        public SetOutElement(ElementKey key, string? name, BoundingBox bounds,
-                             bool hasGeometry = true, string? mark = null)
-        {
-            Key = key;
-            Name = string.IsNullOrWhiteSpace(name) ? "(unnamed)" : name!.Trim();
-            Bounds = bounds;
-            HasGeometry = hasGeometry;
-            Mark = string.IsNullOrWhiteSpace(mark) ? null : mark!.Trim();
-        }
-
-        /// <summary>Which element.</summary>
-        public ElementKey Key { get; }
-
-        /// <summary>What it is called.</summary>
-        public string Name { get; }
-
-        /// <summary>Its world box, in metres.</summary>
-        public BoundingBox Bounds { get; }
-
-        /// <summary>Whether it has a body to set out at all.</summary>
-        public bool HasGeometry { get; }
-
-        /// <summary>Its mark, or null.</summary>
-        public string? Mark { get; }
-
-        /// <summary>What the points off it are named after.</summary>
-        public string Label => Mark ?? Name;
-
-        /// <inheritdoc />
-        public override string ToString() => Label;
-    }
-
     /// <summary>One point, in site coordinates, ready to go to an instrument.</summary>
     public sealed class SetOutPoint
     {
@@ -325,12 +284,12 @@ namespace CamelWorks.Core.Field
         /// <summary>Take the points.</summary>
         /// <param name="elements">The elements in scope.</param>
         /// <param name="recipe">Which points, and where site zero is.</param>
-        public static SetOutResult Of(IEnumerable<SetOutElement>? elements, SetOutRecipe? recipe)
+        public static SetOutResult Of(IEnumerable<FieldElement>? elements, SetOutRecipe? recipe)
         {
             var wanted = recipe ?? new SetOutRecipe();
             var notes = new List<string>();
 
-            var all = (elements ?? Enumerable.Empty<SetOutElement>()).Where(e => e != null).ToList();
+            var all = (elements ?? Enumerable.Empty<FieldElement>()).Where(e => e != null).ToList();
 
             if (all.Count == 0)
                 return Nothing(wanted, notes,
