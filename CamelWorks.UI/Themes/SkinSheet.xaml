@@ -221,7 +221,9 @@
     <Setter Property="CaretBrush" Value="{DynamicResource Text}"/>
     <Setter Property="SelectionBrush" Value="{DynamicResource Accent}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Body}"/>
-    <Setter Property="Padding" Value="8,6"/>
+    <Setter Property="Padding" Value="9,0"/>
+    <Setter Property="MinHeight" Value="31"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
     <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="Background" Value="{DynamicResource Field}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource FieldBd}"/>
@@ -679,7 +681,7 @@
   <Style TargetType="ComboBox">
     <Setter Property="Foreground" Value="{DynamicResource Text}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
-    <Setter Property="Height" Value="31"/>
+    <Setter Property="MinHeight" Value="31"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="VerticalContentAlignment" Value="Center"/>
     <Setter Property="Template">
