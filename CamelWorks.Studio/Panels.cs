@@ -51,8 +51,7 @@ namespace CamelWorks.Studio
         private static UIElement Health() => Sheets.Page(
             Ui.Marked(Glyphs.Tick, "Is this fit to coordinate against?",
                 "Placement, geometry, what has arrived and what it is coded as, in one pass over "
-                + "the models. Nothing to configure first: the rules ship with the product and "
-                + "their thresholds scale to the model rather than assuming metres.",
+                + "the models.",
                 Ui.Actions(Ui.Primary("Check this federation", () => { })),
                 Ui.Section("Which property carries the code",
                     "Uniclass, read from a property of the same name", false,
@@ -341,8 +340,7 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Report() => Sheets.Page(
-            Ui.Marked(Glyphs.Report, "Write a report",
-                "One file, from a built-in template. Nothing to set up first.",
+            Ui.Marked(Glyphs.Report, "Write a report", null,
                 Ui.Form(
                     Ui.Field("Contents", Ui.Choice(
                         new[] { "Full report", "Field pack - one issue per page", "Penetration schedule" },

@@ -118,8 +118,7 @@ namespace CamelWorks.UI.Views
 
             return Ui.Marked(Glyphs.Tick, "Is this fit to coordinate against?",
                 "Placement, geometry, what has arrived and what it is coded as, in one pass over "
-                + "the models. Nothing to configure first: the rules ship with the product and "
-                + "their thresholds scale to the model rather than assuming metres.",
+                + "the models.",
                 run,
                 codes.Fold,
                 results);

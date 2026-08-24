@@ -2577,8 +2577,10 @@ namespace CamelWorks.UI.Views
                 var write = Ui.Runner("Write the report", _results, Write);
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Marked(Glyphs.Report, "Write a report",
-                        "One file, from a built-in template. Nothing to set up first.",
+                    // No subtitle. The tab's purpose line above already says "from a built-in
+                    // template, nothing to configure first"; saying it twice, three pixels apart,
+                    // is the panel repeating the chrome.
+                    Ui.Marked(Glyphs.Report, "Write a report", null,
                         Ui.Form(
                             Ui.Field("Contents", mode),
                             what,
