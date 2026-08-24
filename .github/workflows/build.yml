@@ -135,6 +135,12 @@ jobs:
       - name: Check every repo type used is imported where it is used
         run: python3 checks/validate-usings.py
 
+      # `if (!thing.IsUsable)` reads as a null check but is one indirection away from one, so the
+      # branch below it hands a `string?` to something that takes a `string`. Windows fails the
+      # build on it; Linux cannot see it. This spots the shape without needing a type checker.
+      - name: Check no nullable string is handed to a parameter that refuses one
+        run: python3 checks/validate-nullable-args.py
+
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
       # fails at the first click.

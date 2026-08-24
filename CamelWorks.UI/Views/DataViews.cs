@@ -778,9 +778,10 @@ namespace CamelWorks.UI.Views
                 {
                     staged = null;
 
-                    if (!rule.IsUsable)
+                    var refusal = rule.Refusal;
+                    if (refusal != null)
                     {
-                        into.Children.Add(Ui.Problem(rule.Refusal));
+                        into.Children.Add(Ui.Problem(refusal));
                         return 0;
                     }
 
