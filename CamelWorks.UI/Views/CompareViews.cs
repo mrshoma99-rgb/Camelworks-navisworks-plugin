@@ -130,9 +130,12 @@ namespace CamelWorks.UI.Views
         {
             var watch = new[] { "Standard list", "Every property", "No properties" };
 
-            return Ui.Card("What counts as a change",
-                "Every default here works on a raw model. They are on the screen so a row you "
-                + "disagree with has an answer better than \"the tool said so\".",
+            // Folded, with what it is currently set to on the header line. The defaults work on a
+            // raw model, so this is a card almost nobody has to open - but a row somebody disagrees
+            // with still needs an answer better than "the tool said so", and folding a thing away
+            // only costs nothing while the fold itself says what it will do.
+            return Ui.Section("What counts as a change", Settings.Describe(), false,
+                Ui.Small("Every default here works on a raw model."),
 
                 Ui.Field("Move over", Ui.Text(
                     Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture),
@@ -143,8 +146,8 @@ namespace CamelWorks.UI.Views
                             Settings.Tolerance = value;
                     }, 90)),
 
-                Ui.Line("Model units. Below this an element has not moved — which is what stops a "
-                        + "re-export's floating-point noise reading as a moved federation.", 0.7),
+                Ui.Small("Model units. Below this an element has not moved — which is what stops a "
+                         + "re-export's floating-point noise reading as a moved federation."),
 
                 Ui.Field("Properties", Ui.Choice(watch, Show(Settings.Watch), pick =>
                     Settings.Watch = pick == "Every property" ? PropertyWatch.All
@@ -161,7 +164,7 @@ namespace CamelWorks.UI.Views
                 Ui.Check("Include grouping nodes — levels, categories, families", Settings.IncludeGroupingNodes,
                          value => Settings.IncludeGroupingNodes = value),
 
-                Ui.Check("Read the actual triangles", _readTriangles, value => _readTriangles = value),
+                Ui.Toggle("Read the actual triangles", _readTriangles, value => _readTriangles = value),
 
                 Ui.Field("At most", Ui.Text(
                     _triangleCap.ToString(CultureInfo.InvariantCulture),
@@ -172,12 +175,12 @@ namespace CamelWorks.UI.Views
                             _triangleCap = value;
                     }, 90)),
 
-                Ui.Line("Elements. Zero means no limit.", 0.7),
+                Ui.Small("Elements. Zero means no limit."),
 
-                Ui.Line("The triangles are the only way to see an element remodelled inside its own "
-                        + "bounding box — a duct rerouted through the same opening, a stair rebuilt "
-                        + "between the same two levels. Everything else on this screen is free; "
-                        + "this one is a geometry pass per element.", 0.7),
+                Ui.Small("The triangles are the only way to see an element remodelled inside its own "
+                         + "bounding box — a duct rerouted through the same opening, a stair rebuilt "
+                         + "between the same two levels. Everything else on this screen is free; "
+                         + "this one is a geometry pass per element."),
 
                 Triangles());
         }

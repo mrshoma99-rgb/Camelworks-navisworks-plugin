@@ -1525,13 +1525,16 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Measure", measure),
                     Ui.Field("Rows", rows),
                     Ui.Field("Columns", down),
-                    Ui.Card("If the values need tidying first",
-                        "Both of these are off until you set them. A property that already reads as a "
-                        + "quantity needs neither.",
+                    // Off until somebody sets them, and a property that already reads as a quantity
+                    // needs neither - so this is the definition of a group that should not be
+                    // occupying the screen of everyone who does not need it.
+                    Ui.Section("If the values need tidying first", Tidying(), false,
+                        Ui.Small("Both of these are off until you set them. A property that already "
+                                 + "reads as a quantity needs neither."),
                         Ui.Field("Take the number matching", _clean),
                         Ui.Across(
-                            Ui.Button("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
-                            Ui.Button("Clear it", () => _clean.Text = string.Empty)),
+                            Ui.Quiet("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
+                            Ui.Quiet("Clear it", () => _clean.Text = string.Empty)),
                         Ui.Field("When it has no unit, read it as", assume),
                         Ui.Note("Nothing here invents a number. A pattern that matches nothing leaves the "
                                 + "value alone, so the takeoff still counts it unreadable and names it - "
@@ -1540,6 +1543,26 @@ namespace CamelWorks.UI.Views
                     run,
                     _results,
                     _output));
+            }
+
+            /// <summary>
+            /// What the tidying is set to, on one line, for the folded header.
+            ///
+            /// Folding a group of settings away is only free while the fold says what it will do.
+            /// "Off" is the answer most people need, and it is the answer that lets them stop
+            /// reading.
+            /// </summary>
+            private string Tidying()
+            {
+                var pattern = _clean.Text?.Trim() ?? string.Empty;
+                var unit = _assume == NoUnit ? null : _assume;
+
+                if (pattern.Length == 0 && unit == null) return "Off — values read exactly as they are";
+
+                if (pattern.Length == 0) return "Unitless values read as " + unit;
+
+                return "Taking the number matching " + pattern
+                       + (unit == null ? string.Empty : ", unitless read as " + unit);
             }
 
             private void Run(Job job)
