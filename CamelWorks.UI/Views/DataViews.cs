@@ -1351,7 +1351,7 @@ namespace CamelWorks.UI.Views
 
             var status = Ui.Stack();
 
-            var apply = Ui.Runner("Stamp the grid reference onto every element", status, job =>
+            var apply = Ui.Runner("Stamp the grid reference onto every element", status, primary: false, work: job =>
             {
                 using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign grid references"))
                 {
@@ -1408,7 +1408,7 @@ namespace CamelWorks.UI.Views
         {
             var status = Ui.Stack();
 
-            var apply = Ui.Runner("Stamp the level onto every element", status, job =>
+            var apply = Ui.Runner("Stamp the level onto every element", status, primary: false, work: job =>
             {
                 using (var write = new NavWriteTransaction(session.Model, "CamelWorks: assign levels"))
                 {

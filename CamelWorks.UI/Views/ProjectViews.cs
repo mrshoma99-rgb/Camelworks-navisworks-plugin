@@ -38,7 +38,7 @@ namespace CamelWorks.UI.Views
         /// the model, which is the same question asked by somebody with a contract behind them.
         /// </summary>
         public static UIElement Health() =>
-            Ui.Scroll(Ui.Stack(Intake(), Federation(), BuiltIn(), Coded(), Ids()));
+            Ui.Scroll(Ui.Stack(Intake(), BuiltIn(), Federation(), Coded(), Ids()));
 
         /// <summary>
         /// Whether the coded properties hold values anybody agreed to.
@@ -57,7 +57,7 @@ namespace CamelWorks.UI.Views
                 session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
 
             if (tables.IsEmpty)
-                return Ui.Card("Codes",
+                return Ui.Marked(Glyphs.Table, "Codes",
                     "Needs a code table",
                     Ui.Empty("No code tables on this project.",
                         "Project ▸ Profile takes one pasted straight out of the spreadsheet your "
@@ -73,7 +73,7 @@ namespace CamelWorks.UI.Views
                 property.Text = pick;
             });
 
-            var run = Ui.Runner("Check the codes", results, job =>
+            var run = Ui.Runner("Check the codes", results, primary: false, work: job =>
             {
                 var (category, name) = SplitProperty(property.Text);
 
@@ -175,7 +175,7 @@ namespace CamelWorks.UI.Views
             var results = Ui.Stack();
             var actions = Ui.Stack();
 
-            var run = Ui.Runner("Check what arrived", results, job =>
+            var run = Ui.Runner("Check what arrived", results, primary: false, work: job =>
             {
                 actions.Children.Clear();
 
@@ -244,7 +244,7 @@ namespace CamelWorks.UI.Views
                 session.Store.Save();
             });
 
-            return Ui.Card("Models",
+            return Ui.Marked(Glyphs.Model, "Models",
                 "What arrived, what is byte-identical, and whether the federation has moved anything",
                 run,
                 results,
@@ -316,7 +316,7 @@ namespace CamelWorks.UI.Views
         {
             var results = Ui.Stack();
 
-            var run = Ui.Runner("Check this model", results, job =>
+            var run = Ui.Runner("Check this model", results, primary: false, work: job =>
             {
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
@@ -369,7 +369,7 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Reconcile, "checked model health: " + report);
             });
 
-            return Ui.Card("Health",
+            return Ui.Marked(Glyphs.Tick, "Built-in checks",
                 "Six checks over geometry, placement and data. Nothing to configure — the rules "
                 + "are built in and the thresholds scale to the model rather than assuming metres.",
                 run,
@@ -394,7 +394,7 @@ namespace CamelWorks.UI.Views
             var path = Ui.Text(string.Empty, null, 340);
             var classSource = Ui.Text(string.Empty, null, 200);
 
-            var run = Ui.Runner("Check against an IDS", results, job =>
+            var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
             {
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
@@ -493,7 +493,7 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
             });
 
-            return Ui.Card("Client requirements",
+            return Ui.Marked(Glyphs.Report, "Client requirements",
                 "Answer an IDS — the openBIM way of writing information requirements down — against "
                 + "this federation. Point it at the file and press the button; there is nothing else "
                 + "to fill in.",
@@ -951,7 +951,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
 
             if (session == null)
-                return Ui.Card("The federation", Host.NoModel);
+                return Ui.Marked(Glyphs.Clash, "The federation", Host.NoModel);
 
             var savedAt = FileTime(session.SavedPath);
             var rows = new List<TableRow>();
@@ -1017,7 +1017,7 @@ namespace CamelWorks.UI.Views
 
             body.Children.Add(Repoint(session));
 
-            return Ui.Card("The federation",
+            return Ui.Marked(Glyphs.Clash, "The federation",
                 "What is loaded, from where, and whether the file on disk has moved on since this "
                 + "federation was saved",
                 body);

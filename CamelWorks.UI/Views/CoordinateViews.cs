@@ -706,11 +706,14 @@ namespace CamelWorks.UI.Views
                 });
 
                 return Ui.Scroll(Ui.Stack(
-                    run,
-                    _summary,
-                    Ui.Across(Ui.Field("Show", _preset), Ui.Field("Find", _search)),
-                    _rows,
-                    _detail,
+                    Ui.Marked(Glyphs.Clash, "The board",
+                        "Every clash the tests found, grouped into the issues somebody actually fixes.",
+                        Ui.Actions(run),
+                        _summary),
+                    Ui.Marked(Glyphs.Filter, "Issues", null,
+                        Ui.Form(Ui.Pair(Ui.Field("Show", _preset), Ui.Field("Find", _search))),
+                        _rows,
+                        _detail),
                     new RaiseScreen().Build(),
                     FreezeCard(),
                     HeadroomCard()));
@@ -728,6 +731,8 @@ namespace CamelWorks.UI.Views
                 var board = _board!;
                 var funnel = board.Funnel;
 
+                _summary.Children.Add(Ui.Eyebrow("This run"));
+
                 _summary.Children.Add(Ui.Across(
                     Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
                     Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "groups"),
@@ -738,6 +743,11 @@ namespace CamelWorks.UI.Views
                 if (_delta != null)
                 {
                     var regressed = _delta.Regressed.Count;
+
+                    // Labelled, because the two rows answer different questions and four numbers
+                    // under four more numbers is not a distinction anybody should have to infer.
+                    _summary.Children.Add(Ui.Rule());
+                    _summary.Children.Add(Ui.Eyebrow("Since the last run"));
 
                     _summary.Children.Add(Ui.Across(
                         Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
@@ -1573,14 +1583,15 @@ namespace CamelWorks.UI.Views
 
                 Redraw(session);
 
-                return Ui.Card("Raise an issue",
-                    "For what the clash engine cannot see. It joins the board and behaves like "
-                    + "everything else on it.",
-                    Ui.Field("What is wrong", _title),
-                    Ui.Field("More", _note),
-                    Ui.Field("Who", who),
-                    Ui.Field("Priority", how),
-                    Ui.Across(Ui.Button("Raise it against the selection", () => Raise(session))),
+                return Ui.Section("Raise an issue", "For what the clash engine cannot see", false,
+                    Ui.Small("It joins the board and behaves like everything else on it."),
+                    Ui.Form(
+                        Ui.Field("What is wrong", _title),
+                        Ui.Field("More", _note),
+                        Ui.Pair(
+                            Ui.Field("Who", who),
+                            Ui.Field("Priority", how))),
+                    Ui.Actions(Ui.Button("Raise it against the selection", () => Raise(session))),
                     Ui.Note("The elements come from what is selected in the model right now. Select the "
                             + "door and the corridor, not the whole level — a viewpoint that opens on "
                             + "half a building tells the reader nothing."),
@@ -2165,12 +2176,12 @@ namespace CamelWorks.UI.Views
                 });
 
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Note("With nothing here, the board still works: it groups by model pair, then level, "
+                    Ui.Info("With nothing here, the board still works: it groups by model pair, then level, "
                             + "then proximity, and assigns nothing. These rules are how you narrow that, not "
                             + "how you switch it on."),
-                    Ui.Card("Suppress and flag", "Applied to every result before anything else.", _filters),
-                    Ui.Card("Group", "Outermost rule first. Empty means the built-in stack.", _grouping),
-                    Ui.Card("Assign", "First match wins.", _assigns),
+                    Ui.Numbered(1, "Suppress and flag", "Applied to every result before anything else.", _filters),
+                    Ui.Numbered(2, "Group", "Outermost rule first. Empty means the built-in stack.", _grouping),
+                    Ui.Numbered(3, "Assign", "First match wins.", _assigns),
                     Ui.Across(save),
                     _status));
             }

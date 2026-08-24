@@ -613,6 +613,80 @@ namespace CamelWorks.UI.Views
         }.Tint(Border.BackgroundProperty, "Bd");
 
         /// <summary>
+        /// A card that is one step of an ordered sequence.
+        ///
+        /// Where a screen is a pipeline — suppress, then group, then assign — the order is the
+        /// thing somebody has to understand first, and a sentence at the top saying so is the
+        /// weakest way to say it. A number on each card says it without being read, and then the
+        /// sentence can go.
+        /// </summary>
+        /// <param name="step">Which step this is, from one.</param>
+        /// <param name="title">The step's title.</param>
+        /// <param name="subtitle">One line saying what it does, or null.</param>
+        /// <param name="body">The contents.</param>
+        public static Border Numbered(int step, string title, string? subtitle, params UIElement?[] body)
+        {
+            var badge = new Border
+            {
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(11),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 9, 0),
+                Child = new TextBlock
+                {
+                    Text = step.ToString(CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 11,
+                    Foreground = Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+
+            badge.Tint(Border.BackgroundProperty, "Accent");
+
+            var panel = new StackPanel();
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+
+            row.Children.Add(badge);
+
+            var caption = Heading(title);
+            caption.Margin = new Thickness(0);
+            caption.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(caption);
+
+            panel.Children.Add(row);
+            if (subtitle != null) panel.Children.Add(Sub(subtitle));
+            panel.Children.Add(HeaderRule());
+
+            foreach (var child in body) if (child != null) panel.Children.Add(child);
+
+            var card = new Border { Child = panel };
+            card.Wearing("CardStyle");
+            return card;
+        }
+
+        /// <summary>
+        /// How much of a list is on the screen.
+        ///
+        /// A table that shows five rows of a hundred and says nothing about the other ninety-five
+        /// is a table somebody will read as the whole answer. Cheap to say, and the one number
+        /// that stops a screen quietly lying about its own completeness.
+        /// </summary>
+        /// <param name="shown">How many rows are on the screen.</param>
+        /// <param name="total">How many there are altogether.</param>
+        /// <param name="unit">What they are, singular.</param>
+        public static UIElement Tally(int shown, int total, string unit)
+        {
+            var text = shown >= total
+                ? Count(total, unit)
+                : "Showing " + shown.ToString("N0", CultureInfo.InvariantCulture) + " of " + Count(total, unit);
+
+            return new TextBlock { Text = text, Margin = new Thickness(0, 5, 0, 0) }.Wearing("Hint");
+        }
+
+        /// <summary>
         /// The surface a card's inputs sit on.
         ///
         /// Without it a card is a title and then a column of labelled boxes, which is a

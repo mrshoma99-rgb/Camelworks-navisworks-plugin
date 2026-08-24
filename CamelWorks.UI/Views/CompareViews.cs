@@ -560,7 +560,7 @@ namespace CamelWorks.UI.Views
 
                 if (bring.Count > 0)
                 {
-                    body.Add(Ui.Runner("Bring the old revision in", _output, job =>
+                    body.Add(Ui.Runner("Bring the old revision in", output: _output, primary: false, work: job =>
                     {
                         job.Say("Opening " + Ui.Count(bring.Count, "file") + "...");
 
@@ -586,7 +586,7 @@ namespace CamelWorks.UI.Views
 
                 if (back.Count > 0)
                 {
-                    body.Add(Ui.Runner("Take the old revision back out", _output, job =>
+                    body.Add(Ui.Runner("Take the old revision back out", output: _output, primary: false, work: job =>
                     {
                         job.Say("Removing " + Ui.Count(back.Count, "model") + "...");
 
@@ -628,7 +628,7 @@ namespace CamelWorks.UI.Views
             {
                 var cell = CompareClusters.DefaultCell;
 
-                var make = Ui.Runner("Make a viewpoint for each place", _output, job =>
+                var make = Ui.Runner("Make a viewpoint for each place", output: _output, primary: false, work: job =>
                 {
                     var clusters = CompareClusters.Of(_result, cell);
 
@@ -688,7 +688,7 @@ namespace CamelWorks.UI.Views
 
             private UIElement Keep()
             {
-                var stamp = Ui.Runner("Stamp it into the properties", _output, job =>
+                var stamp = Ui.Runner("Stamp it into the properties", output: _output, primary: false, work: job =>
                 {
                     // The adapter writes every custom property into one tab of its own, whatever
                     // category it was handed. Core names that tab by a literal it cannot check

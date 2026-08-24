@@ -50,20 +50,20 @@ namespace CamelWorks.Studio
 
         private static UIElement Health() => Sheets.Page(
             Ui.Marked(Glyphs.Model, "Models", "What arrived, and whether it is the same as last week.",
-                Ui.Actions(Ui.Primary("Check what arrived", () => { })),
+                Ui.Actions(Ui.Button("Check what arrived", () => { })),
                 Ui.Done("Six models read. Two are newer than the last check.")),
+
+            Ui.Marked(Glyphs.Tick, "Built-in checks", "Six checks over geometry, placement and data. Nothing to configure first.",
+                Score("Elements with no level", "1,204 of 41,880", Tone.Warn),
+                Score("Duplicate GUIDs", "none", Tone.Good),
+                Score("Elements outside the site box", "3", Tone.Warn),
+                Ui.Actions(Ui.Primary("Run the checks", () => { }))),
 
             Ui.Marked(Glyphs.Clash, "The federation", "Whether the models are where each other thinks they are.",
                 Score("Shared origin agrees", "6 of 6 models", Tone.Good),
                 Score("Units agree", "6 of 6 models", Tone.Good),
                 Score("Overlapping extents", "MEP r4 sits 12 m north of the rest", Tone.Bad),
-                Ui.Actions(Ui.Primary("Check this model", () => { }))),
-
-            Ui.Marked(Glyphs.Tick, "Health", "Built-in rules. Nothing to configure first.",
-                Score("Elements with no level", "1,204 of 41,880", Tone.Warn),
-                Score("Duplicate GUIDs", "none", Tone.Good),
-                Score("Elements outside the site box", "3", Tone.Warn),
-                Ui.Actions(Ui.Primary("Run the checks", () => { }))),
+                Ui.Actions(Ui.Button("Check this model", () => { }))),
 
             Ui.Marked(Glyphs.Table, "Codes", "Needs a code table",
                 Ui.Empty("No code tables on this project.",
@@ -73,7 +73,7 @@ namespace CamelWorks.Studio
 
             Ui.Marked(Glyphs.Report, "Client requirements", "An IDS, if the client sent one.",
                 Ui.Form(Ui.Field("IDS file", Ui.Text(string.Empty, "nothing chosen", null, 220))),
-                Ui.Actions(Ui.Primary("Check against an IDS", () => { }))));
+                Ui.Actions(Ui.Button("Check against an IDS", () => { }))));
 
         private static UIElement Score(string what, string value, Tone tone)
         {
@@ -156,15 +156,18 @@ namespace CamelWorks.Studio
         // -----------------------------------------------------------------------------------
 
         private static UIElement Triage() => Sheets.Page(
-            Ui.Actions(Ui.Primary("Load the board", () => { }), Ui.Quiet("Undo the last board edit", () => { })),
-
-            Ui.Marked(Glyphs.Clash, "This run", null,
+            Ui.Marked(Glyphs.Clash, "The board",
+                "Every clash the tests found, grouped into the issues somebody actually fixes.",
+                Ui.Actions(Ui.Primary("Load the board", () => { }),
+                           Ui.Quiet("Undo the last board edit", () => { })),
+                Ui.Eyebrow("This run"),
                 Ui.Across(
                     Ui.Figure("1,284", "from the engine"),
                     Ui.Figure("96", "groups"),
                     Ui.Figure("13", "unassigned", Tone.Warn),
                     Ui.Figure("412", "suppressed")),
                 Ui.Rule(),
+                Ui.Eyebrow("Since the last run"),
                 Ui.Across(
                     Ui.Figure("22", "new", Tone.Warn),
                     Ui.Figure("68", "still there"),
@@ -178,10 +181,11 @@ namespace CamelWorks.Studio
                 Ui.Form(Ui.Pair(
                     Ui.Field("Show", Ui.Choice(new[] { "Everything", "New this week", "Came back", "Unassigned" }, "Everything", null)),
                     Ui.Field("Find", Ui.Text(string.Empty, "level, party, element…", null, 140)))),
-                Ui.Table(Board(), ("Issue", 190), ("Party", 0), ("Clashes", 62))),
+                Ui.Table(Board(), ("Issue", 190), ("Party", 0), ("Clashes", 62)),
+                Ui.Tally(5, 96, "issue")),
 
-            Ui.Marked(Glyphs.Add, "Raise an issue",
-                "For the ones no clash test produced: a missing hanger, a door that will not open.",
+            Ui.Section("Raise an issue", "For what the clash engine cannot see", false,
+                Ui.Small("It joins the board and behaves like everything else on it."),
                 Ui.Form(
                     Ui.Field("What is wrong", Ui.Text(string.Empty, "Riser has no access panel", null, 240)),
                     Ui.Pair(
@@ -242,12 +246,12 @@ namespace CamelWorks.Studio
                 Rule("Anything on the transfer level", "flagged", Tone.Warn),
                 Ui.Actions(Ui.Quiet("+ Add a rule", () => { }))),
 
-            Ui.Marked(Glyphs.Layers, "Group", "Applied in order.",
+            Ui.Numbered(2, "Group", "Applied in order.",
                 Rule("Within 5 m of each other", "one issue", Tone.Plain),
                 Rule("Same pair of models", "one issue", Tone.Plain),
                 Ui.Actions(Ui.Quiet("+ Add a step", () => { }))),
 
-            Ui.Marked(Glyphs.Model, "Assign", "First match wins.",
+            Ui.Numbered(3, "Assign", "First match wins.",
                 Rule("MEP-M* against anything", "Mechanical", Tone.Plain),
                 Rule("STR* against ARC*", "Structures", Tone.Plain),
                 Ui.Actions(Ui.Quiet("+ Add an assignment", () => { }))),
@@ -346,14 +350,15 @@ namespace CamelWorks.Studio
                 Ui.Form(Ui.Pair(
                     Ui.Field("Show", Ui.Choice(new[] { "Everything", "Added", "Removed", "Moved", "Changed" }, "Everything", null)),
                     Ui.Field("Model", Ui.Choice(new[] { "All models", "ARC r7", "STR r2", "MEP r4" }, "All models", null)))),
-                Ui.Table(ChangeRows(), ("Element", 168), ("Model", 74), ("What changed", 0))),
+                Ui.Table(ChangeRows(), ("Element", 168), ("Model", 74), ("What changed", 0)),
+                Ui.Tally(5, 1960, "change")),
 
             Ui.Marked(Glyphs.Layers, "Paint", "Colour it onto the model, and take the colour off again.",
                 Ui.Actions(Ui.Primary("Paint it onto the model", () => { }),
                            Ui.Button("Take the colours off", () => { }))),
 
             Ui.Marked(Glyphs.Camera, "Walk it", "A viewpoint per place something changed.",
-                Ui.Actions(Ui.Primary("Make a viewpoint for each place", () => { }),
+                Ui.Actions(Ui.Button("Make a viewpoint for each place", () => { }),
                            Ui.Button("Raise them on the board", () => { }))),
 
             Ui.Section("The removed ones", "The old revision is not loaded", false,
@@ -428,7 +433,7 @@ namespace CamelWorks.Studio
 
             Ui.Marked(Glyphs.Table, "What it found", null,
                 Ui.Table(Levels(), ("Level", 130), ("Height", 0), ("Elements", 78)),
-                Ui.Actions(Ui.Primary("Stamp the level onto every element", () => { }),
+                Ui.Actions(Ui.Button("Stamp the level onto every element", () => { }),
                            Ui.Button("Show me the grid", () => { }))));
 
         private static IEnumerable<TableRow> Levels()
