@@ -12,8 +12,9 @@ the Navisworks API, where a wrong answer would be noise.
 Two things stop it crying wolf, both learned from a first draft that produced fifty-three false
 positives on a clean tree:
 
-  * Only type POSITIONS count - `new X`, `X.Member`, `<X>`, `(X)`, `is X`, `as X`, `typeof(X)`.
-    A parameter, a property or a string that happens to share a name with a type is not a use of it.
+  * Only type POSITIONS count - `new X`, `X.Member`, `<X>`, `(X)`, `is X`, `as X`, `typeof(X)`,
+    and a declaration `X name,` / `X name)` / `X name =` / `X name;`.
+    A property or a string that happens to share a name with a type is not a use of it.
   * A name the file itself declares as a member wins. Ui.Finding is a method, and it has nothing to
     do with the Finding type over in Core.Findings.
 
@@ -43,6 +44,16 @@ POSITIONS = [
     re.compile(r'\bas\s+([A-Z]\w+)\b'),
     re.compile(r'\btypeof\(\s*([A-Z]\w+)\s*\)'),
     re.compile(r'\b([A-Z]\w+)\.\w+'),
+
+    # A declaration: a type, then a name, then the end of it. Added after a parameter typed
+    # `IFileSystem? fs = null` slipped through every position above and cost a CI round trip -
+    # the type never appeared in any of them, because the file only ever named it there.
+    #
+    # What stops it matching a ternary: `Colour? c` has no space before the question mark, and a
+    # ternary written `Colour ? c : d` does. What stops it matching two ordinary words: a
+    # declaration is followed by one of `, ) ; = {`, and prose is not - a ternary's `: ` is the
+    # give-away, which is why the closing set does not contain a colon.
+    re.compile(r'\b([A-Z]\w+)\??\s+\w+\s*(?=[,)=;])'),
 ]
 
 # Already written out in full, so no using is needed for it.

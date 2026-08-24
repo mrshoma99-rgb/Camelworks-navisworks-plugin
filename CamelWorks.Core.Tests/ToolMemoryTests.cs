@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Store;
 using CamelWorks.Core.Testing;
 using Xunit;
 
