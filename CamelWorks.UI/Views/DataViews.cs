@@ -1352,45 +1352,80 @@ namespace CamelWorks.UI.Views
                 // that is on the drawing, a level property is one authored fact per model, and a
                 // histogram is an honest guess.
                 var fromModel = LevelSet.FromModel(named);
+                var guessed = LevelSet.Derive(elevations);
 
-                var levels = fromGrid.Bands.Count > 0 ? fromGrid
+                var chosen = fromGrid.Bands.Count > 0 ? fromGrid
                            : fromModel.Bands.Count > 0 ? fromModel
-                           : LevelSet.Derive(elevations);
-
-                results.Children.Add(Ui.Line(levels.ToString(), 1, true));
-                results.Children.Add(Ui.Line(levels.Provenance(), 0.75));
-
-                if (levels.Source == LevelSource.Grid && grids.Name != null)
-                    results.Children.Add(Ui.Line("Grid system: " + grids.Name, 0.6));
-
-                // What each unused source would have said. A coordinator who disagrees with the
-                // answer needs to see the alternative before deciding the tool is wrong, and the
-                // numbers are already computed.
-                Alternatives(results, levels, fromModel, named.Count);
-
-                if (levels.Bands.Count == 0)
-                {
-                    results.Children.Add(Ui.Empty("No levels.",
-                        "Nothing loaded carries a grid, a level property, or geometry to infer them from."));
-                    return;
-                }
+                           : guessed;
 
                 var units = session.Profile.Units;
 
-                var rows = levels.Bands.Select(b => new TableRow(b,
-                    b.Name,
-                    units.Bare(b.Elevation),
-                    b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
-                    b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
-                                                                                 : "from the model")).ToList();
+                // Declared as a local function rather than assembled inline, because choosing a
+                // different source has to redraw everything under it - including the two stamps,
+                // which write whichever set is on screen.
+                void Show(LevelSet levels)
+                {
+                    results.Children.Clear();
+                    after.Children.Clear();
 
-                results.Children.Add(Ui.Table(rows,
-                    ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
-                    ("Elements", 110), ("Source", 110)));
+                    results.Children.Add(Ui.Line(levels.ToString(), 1, true));
+                    results.Children.Add(Ui.Line(levels.Provenance(), 0.75));
 
-                after.Children.Clear();
-                after.Children.Add(Stamp(session, levels, items));
-                after.Children.Add(GridStamp(session, grids));
+                    if (levels.Source == LevelSource.Grid && grids.Name != null)
+                        results.Children.Add(Ui.Small("Grid system: " + grids.Name));
+
+                    if (levels.Bands.Count == 0)
+                    {
+                        results.Children.Add(Ui.Empty("No levels.",
+                            "Nothing loaded carries a grid, a level property, or geometry to infer "
+                            + "them from."));
+
+                        return;
+                    }
+
+                    // Many more property levels than a building has storeys is the signature of
+                    // disciplines spelling the same storey differently, and it is worth naming
+                    // rather than leaving somebody to notice "L02" and "Level 02" sitting next to
+                    // each other in a report.
+                    if (levels.Source == LevelSource.Property && levels.Bands.Count > 25)
+                        results.Children.Add(Ui.Note(Ui.Count(levels.Bands.Count, "distinct level")
+                            + " is more than most buildings have storeys. That usually means two "
+                            + "disciplines spell the same storey differently - \"L02\" and "
+                            + "\"Level 02\" are two levels here. Worth a look at the table below "
+                            + "before anything is reported by level."));
+
+                    var rows = levels.Bands.Select(b => new TableRow(b,
+                        b.Name,
+                        units.Bare(b.Elevation),
+                        b.Support > 0 ? Ui.Count(b.Support, "element") : string.Empty,
+                        b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
+                                                                                     : "from the model")).ToList();
+
+                    results.Children.Add(Ui.Table(rows,
+                        ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
+                        ("Elements", 110), ("Source", 110)));
+
+                    // The first question anybody asks a derived answer is "compared to what", and
+                    // both alternatives are already computed. They used to be two grey lines
+                    // saying what would have happened; a coordinator who disagrees with the answer
+                    // wants the other one, not a description of it.
+                    foreach (var other in new[] { fromGrid, fromModel, guessed })
+                    {
+                        if (other.Source == levels.Source || other.Bands.Count == 0) continue;
+
+                        var swap = other;
+
+                        results.Children.Add(Ui.Link(
+                            Named(swap) + " gives " + Ui.Count(swap.Bands.Count, "level")
+                            + " - use those instead", () => Show(swap)));
+                    }
+
+                    after.Children.Add(Ui.Rule());
+                    after.Children.Add(Stamp(session, levels, items));
+                    after.Children.Add(GridStamp(session, grids));
+                }
+
+                Show(chosen);
             });
 
             return Ui.Scroll(Ui.Stack(
@@ -1399,31 +1434,13 @@ namespace CamelWorks.UI.Views
                 after));
         }
 
-        /// <summary>
-        /// What the sources that were not used would have said.
-        ///
-        /// Shown because the first question anybody asks a derived answer is "compared to what".
-        /// Both alternatives are already computed by the time the chain has picked one, so the only
-        /// cost of showing them is four lines, and the cost of not showing them is a coordinator
-        /// re-running the tool three ways to find out.
-        /// </summary>
-        private static void Alternatives(Panel into, LevelSet chosen, LevelSet property,
-                                         int propertyReadings)
+        /// <summary>Where a set of levels came from, as a sentence can use it.</summary>
+        private static string Named(LevelSet levels) => levels.Source switch
         {
-            if (chosen.Source == LevelSource.Grid && property.Bands.Count > 0)
-                into.Children.Add(Ui.Line("The models' own level property would have given "
-                    + Ui.Count(property.Bands.Count, "level") + " instead, from "
-                    + Ui.Count(propertyReadings, "reading") + ".", 0.6));
-
-            // Many more property levels than a building has storeys is the signature of disciplines
-            // spelling the same storey differently, and it is worth naming rather than leaving
-            // somebody to notice "L02" and "Level 02" sitting next to each other in a report.
-            if (chosen.Source == LevelSource.Property && property.Bands.Count > 25)
-                into.Children.Add(Ui.Note(Ui.Count(property.Bands.Count, "distinct level")
-                    + " is more than most buildings have storeys. That usually means two disciplines "
-                    + "spell the same storey differently - \"L02\" and \"Level 02\" are two levels "
-                    + "here. Worth a look at the table below before anything is reported by level."));
-        }
+            LevelSource.Grid => "The coordination grid",
+            LevelSource.Property => "The models' own level property",
+            _ => "A histogram of element heights",
+        };
 
         /// <summary>
         /// Write the grid reference onto every element.
@@ -1435,12 +1452,10 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private static UIElement GridStamp(Session session, NavGrids grids)
         {
-            if (grids.System == null)
-                return Ui.Card("Put the grid reference on the elements",
-                    "Nothing loaded carries a coordination grid, so there is no reference to write. "
-                    + "Grids come across from Revit and from IFC files that carry IfcGrid; a model "
-                    + "exported without one has none to find.",
-                    Ui.Line("No grid in this federation.", 0.7));
+            // Nothing at all rather than a card explaining its own absence. A federation with no
+            // grid has nothing to write, and a box saying so is a permanent reminder of a feature
+            // that does not apply to this job.
+            if (grids.System == null) return Ui.Stack();
 
             var status = Ui.Stack();
 
@@ -1488,11 +1503,11 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Ui.Card("Put the grid reference on the elements",
-                "Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
-                + "\" grid system, so clash grouping, set rules and reports can all say \"C-4\" "
-                + "instead of a coordinate.",
+            return Ui.Stack(
                 apply,
+                Ui.Small("Writes Grid into the CamelWorks tab from the \"" + (grids.Name ?? "unnamed")
+                         + "\" grid system, so clash grouping, set rules and reports can all say "
+                         + "\"C-4\" instead of a coordinate."),
                 status);
         }
 
@@ -1533,10 +1548,11 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Ui.Card("Put the level on the elements",
-                "Writes Level into the CamelWorks tab, so clash grouping, reports and set rules can all "
-                + "use it — including on models that never had a level property to begin with.",
+            return Ui.Stack(
                 apply,
+                Ui.Small("Writes Level into the CamelWorks tab, so clash grouping, reports and set "
+                         + "rules can all use it — including on models that never had a level "
+                         + "property to begin with."),
                 status);
         }
 

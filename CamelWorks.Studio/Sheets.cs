@@ -181,40 +181,48 @@ namespace CamelWorks.Studio
                     Ui.Quiet("+ Add an OR group", () => { })));
 
             return Page(
-                Ui.Marked(Glyphs.Filter, "Rule", "One set, built from conditions.",
-                    Ui.Form(
-                        conditions,
-                        Ui.Rule(),
-                        Ui.Field("Name", Ui.Text("Level 04 — walls", null, 220),
-                                 "How it reads in the Navisworks selection tree.")),
-                    Ui.Actions(
-                        Ui.Primary("Run", () => { }),
-                        Ui.Button("Save to project", () => { }),
-                        Ui.Button("Publish as a Navisworks set", () => { })),
-                    Ui.Done("Saved \"Level 04 — walls\" to the project file.")),
+                Ui.Form(
+                    conditions,
+                    Ui.Rule(),
+                    Ui.Field("Name", Ui.Text("Level 04 — walls", null, 220),
+                             "how it reads in the Navisworks selection tree")),
 
-                Ui.Section("Make a family of sets", "One set per Level, named {value}, skipping under 1", false,
-                    Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
-                    Ui.Pair(
-                        Ui.Field("Property tab", Ui.Text("Element", null, 120)),
-                        Ui.Field("Property", Ui.Text("Level", null, 120))),
-                    Ui.Field("Name pattern", Ui.Text("{value}", "{value} — walls", null, 180),
-                             "{value} becomes the property's value. Everything else is kept as typed."),
-                    Ui.Field("Skip values under", Ui.Text("1", null, 60), "Values with fewer elements than this make no set."),
+                Ui.Actions(
+                    Ui.Primary("Run", () => { }),
+                    Ui.Button("Save to project", () => { }),
+                    Ui.Button("Publish as a Navisworks set", () => { })),
+
+                Ui.Done("Saved \"Level 04 — walls\" to the project file."),
+
+                Ui.Small("Groups are ORed together; conditions inside a group are ANDed. A negated "
+                         + "condition compiles to a subtraction rather than a not-equals — those are "
+                         + "different sets, because a host condition on a property an element does "
+                         + "not have matches nothing."),
+
+                Ui.Section("Make a set for every value of a property",
+                    "Split on Level · 1 element minimum", false,
+                    Ui.Small("One property makes a flat run of sets; a second and a third nest them "
+                             + "into real folders. Every set is a rule rather than a list, so one "
+                             + "made today still covers the walls somebody adds tomorrow."),
+                    Ui.Form(
+                        Ui.Pair(
+                            Ui.Field("Scope", Ui.Choice(new[] { "Whole model", "Selection" }, "Whole model", null)),
+                            Ui.Field("Property tab", Ui.Text("Element", null, 150))),
+                        Ui.Field("Split on", Ui.Text("Level", null, 140)),
+                        Ui.Pair(
+                            Ui.Field("Then on", Ui.Text(string.Empty, "nothing", null, 140),
+                                     "optional — a folder per value"),
+                            Ui.Field("Then on", Ui.Text(string.Empty, "nothing", null, 140), "optional")),
+                        Ui.Pair(
+                            Ui.Field("Set name", Ui.Text("{value}", null, 160), "{value} becomes the value"),
+                            Ui.Field("Skip branches under", Ui.Text("1", null, 60)))),
                     Ui.Actions(Ui.Primary("See what it would make", () => { }))),
 
-                Ui.Section("Make a whole library, in folders", "Level, then Discipline · 1 element minimum", false,
-                    Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
-                    Ui.Field("Property tab", Ui.Text("Element", null, 120)),
-                    Ui.Field("Split on", Ui.Text("Level", null, 140)),
-                    Ui.Field("Then on", Ui.Text("Discipline", null, 140)),
-                    Ui.Field("Then on", Ui.Text(string.Empty, "nothing", null, 140)),
-                    Ui.Field("Set name", Ui.Text("{value}", null, 160)),
-                    Ui.Field("Skip branches under", Ui.Text("1", null, 60)),
-                    Ui.Actions(Ui.Primary("See the library it would make", () => { }))),
+                Ui.Rule(),
 
-                Ui.Marked(Glyphs.Save, "Saved sets", "Kept in the project file, so they travel with the job.",
-                    Ui.Table(Saved(), ("Set", 200), ("Elements", 80), ("Last run", 0))));
+                Ui.Eyebrow("Saved sets"),
+                Ui.Small("Kept in the project file, so they travel with the job."),
+                Ui.Table(Saved(), ("Set", 200), ("Elements", 80), ("Last run", 0)));
         }
 
         private static UIElement Row(string property, string test, string value)
@@ -252,25 +260,39 @@ namespace CamelWorks.Studio
         private static UIElement Appearance()
         {
             return Page(
-                Ui.Marked(Glyphs.Layers, "Layers", "Top of the list wins.",
-                    Layer("Clashing elements", "Red, opaque", Tone.Bad),
-                    Layer("Level 04 only", "Everything else 85% transparent", Tone.Plain),
-                    Layer("Temporary works", "Hidden", Tone.Warn),
-                    Ui.Across(Ui.Quiet("Add layer", () => { }))),
+                Ui.Eyebrow("Top of the list wins"),
+                Layer("Clashing elements", "Red, opaque", Tone.Bad),
+                Layer("Level 04 only", "Everything else 85% transparent", Tone.Plain),
+                Layer("Temporary works", "Hidden", Tone.Warn),
 
                 Ui.Actions(
                     Ui.Primary("Apply the stack", () => { }),
                     Ui.Button("Save the stack", () => { }),
                     Ui.Quiet("Show everything", () => { })),
 
-                Ui.Section("What else is going on", "Not scanned yet", false,
-                    Ui.Line("Navisworks keeps colour, transparency and visibility of its own, set by "
-                            + "Appearance Profiler, by a saved viewpoint, or by hand. Scanning finds it "
-                            + "so the stack is not fighting something invisible."),
-                    Ui.Actions(Ui.Primary("Scan the model", () => { }))),
-
                 Ui.Info("A layer only paints what it covers. Elements no layer covers keep whatever "
-                        + "Navisworks already had for them."));
+                        + "Navisworks already had for them."),
+
+                Ui.Section("Add a layer", "hidden or coloured, over whatever you point it at", false,
+                    Ui.Form(
+                        Ui.Pair(
+                            Ui.Field("Name", Ui.Text(string.Empty, "Level 04 only", null, 160)),
+                            Ui.Field("Covers", Ui.Choice(new[] { "The selection", "A saved set", "A search" }, "The selection", null))),
+                        Ui.Pair(
+                            Ui.Field("Visibility", Ui.Choice(new[] { "Leave it", "Hide it", "Show it" }, "Leave it", null)),
+                            Ui.Field("Colour (#rrggbb)", Ui.Text(string.Empty, "#c8102e", null, 110))),
+                        Ui.Pair(
+                            Ui.Field("Transparency (0-1)", Ui.Text(string.Empty, "0.85", null, 90)),
+                            Ui.Field("Why", Ui.Text(string.Empty, "for the Tuesday walkthrough", null, 180)))),
+                    Ui.Actions(Ui.Button("Add layer", () => { }))),
+
+                Ui.Rule(),
+
+                Ui.Marked(Glyphs.Find, "What else is going on",
+                    "Everything hidden or overridden that no layer above accounts for. Reading it is "
+                    + "a pass over the whole federation, so it happens when you ask rather than when "
+                    + "the tab opens.",
+                    Ui.Actions(Ui.Primary("Scan the model", () => { }))));
         }
 
         private static UIElement Layer(string name, string what, Tone tone)

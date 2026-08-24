@@ -515,16 +515,22 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Zones() => Sheets.Page(
-            Ui.Marked(Glyphs.Layers, "Levels",
-                "Grids where the federation has them, the models' own levels where they do not, and a "
-                + "height histogram where neither — and it says which.",
-                Ui.Actions(Ui.Primary("Derive levels", () => { })),
-                Ui.Done("Seven levels from the models' own level property.")),
+            Ui.Actions(Ui.Primary("Derive levels", () => { })),
 
-            Ui.Marked(Glyphs.Table, "What it found", null,
-                Ui.Table(Levels(), ("Level", 130), ("Height", 0), ("Elements", 78)),
-                Ui.Actions(Ui.Button("Stamp the level onto every element", () => { }),
-                           Ui.Button("Show me the grid", () => { }))));
+            Ui.Line("Seven levels, from the models' own level property.", 1, true),
+            Ui.Line("A grid would have been used had the federation carried one.", 0.75),
+
+            Ui.Table(Levels(), ("Level", 130), ("Height", 0), ("Elements", 78)),
+
+            Ui.Link("The coordination grid gives 9 levels - use those instead", () => { }),
+            Ui.Link("A histogram of element heights gives 6 levels - use those instead", () => { }),
+
+            Ui.Rule(),
+
+            Ui.Actions(Ui.Button("Stamp the level onto every element", () => { })),
+            Ui.Small("Writes Level into the CamelWorks tab, so clash grouping, reports and set "
+                     + "rules can all use it — including on models that never had a level property "
+                     + "to begin with."));
 
         private static IEnumerable<TableRow> Levels()
         {
@@ -535,29 +541,49 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Viewpoints() => Sheets.Page(
-            Ui.Marked(Glyphs.Camera, "Saved viewpoints", null,
-                Ui.Table(Views(), ("Viewpoint", 190), ("Folder", 0), ("Saved", 90)),
-                Ui.Actions(Ui.Primary("Save this view", () => { }), Ui.Quiet("Select them", () => { }))),
+            Ui.Actions(Ui.Primary("Save this view", () => { })),
 
-            Ui.Section("Rename in bulk", "{n} — {name}, starting at 1", false,
+            Ui.Table(Views(), ("Viewpoint", 190), ("Folder", 0), ("Saved", 90)),
+            Ui.Small("Tick the ones to act on. With nothing ticked, everything below acts on all "
+                     + "of them — except deleting, which never does."),
+
+            Ui.Section("Rename them", "{n}. {name}, numbered from 1", false,
                 Ui.Form(Ui.Pair(
-                    Ui.Field("Pattern", Ui.Text("{n} — {name}", null, 150)),
+                    Ui.Field("Pattern", Ui.Text("{n}. {name}", null, 200),
+                             "{n} the number, {name} the current name, {folder} the folder"),
                     Ui.Field("Start at", Ui.Text("1", null, 60)))),
-                Ui.Actions(Ui.Primary("Rename all", () => { }))),
+                Ui.Actions(Ui.Button("Rename them", () => { }))),
 
-            Ui.Section("File them into a folder", "Not set", false,
-                Ui.Form(Ui.Field("Folder", Ui.Text(string.Empty, "Week 33", null, 180))),
-                Ui.Actions(Ui.Primary("Move them", () => { }))),
+            Ui.Section("File them into a folder", "Coordination", false,
+                Ui.Form(Ui.Field("Into folder", Ui.Text("Coordination", null, 180),
+                                 "made if it is not there; one already in it is left where it is")),
+                Ui.Actions(Ui.Button("Move them", () => { }))),
 
-            Ui.Section("A viewpoint per issue", "One per group on the board", false,
+            Ui.Section("Render them to images", "1920 x 1080, numbered in order", false,
                 Ui.Form(Ui.Pair(
-                    Ui.Field("Folder", Ui.Text("Week 33 issues", null, 150)),
-                    Ui.Field("Name pattern", Ui.Text("{n} — {name}", null, 150)))),
-                Ui.Actions(Ui.Primary("Save one per group on the board", () => { }))),
+                    Ui.Field("Write into", Ui.Text(string.Empty, "your documents", null, 250)),
+                    Ui.Field("Size", Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080", null)))),
+                Ui.Actions(Ui.Button("Render them", () => { }))),
 
-            Ui.Section("Render every viewpoint to an image", "Not run", false,
-                Ui.Form(Ui.Field("Write to", Ui.Text("D:\\Projects\\Riverside\\Views", null, 250))),
-                Ui.Actions(Ui.Primary("Render them all", () => { }))));
+            Ui.Section("Copy overrides onto the rest", "from 01. Transfer level looking north", false,
+                Ui.Form(Ui.Field("Take them from", Ui.Choice(
+                    new[] { "01. Transfer level looking north", "02. Riser at core" },
+                    "01. Transfer level looking north", null, 260))),
+                Ui.Actions(Ui.Button("Copy them across", () => { }))),
+
+            Ui.Section("Delete them", "asks once more first", false,
+                Ui.Actions(Ui.Danger("Delete the ticked ones", () => { }))),
+
+            Ui.Rule(),
+
+            Ui.Marked(Glyphs.Camera, "A viewpoint per issue",
+                "The walkthrough a coordination meeting is actually run from: one saved view per "
+                + "group on the board, framed on the group.",
+                Ui.Form(Ui.Pair(
+                    Ui.Field("Folder", Ui.Text("Coordination", null, 180)),
+                    Ui.Field("Name pattern", Ui.Text("{n}. {group}", null, 200),
+                             "{n} number, {group} group, {who} party, {count} clashes"))),
+                Ui.Actions(Ui.Primary("Save one per group on the board", () => { }))));
 
         private static IEnumerable<TableRow> Views()
         {
