@@ -148,7 +148,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var model in broken)
             {
-                if (!job.Step(looked++, "models checked")) return;
+                if (!job.Step(looked++, broken.Count, "models checked")) return;
 
                 var name = System.IO.Path.GetFileName(model.SourcePath);
 

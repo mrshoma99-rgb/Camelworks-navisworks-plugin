@@ -261,6 +261,12 @@ namespace CamelWorks.UI.Views
                                     + " (numbers read as \"" + (1234.5).ToString("0.#") + "\")",
                 "OS               " + Environment.OSVersion,
                 ".NET             " + Environment.Version,
+                "Theme            " + Skin.ModeName + (Skin.IsDark ? " (dark)" : " (light)"),
+
+                // Worth a line even when it is fine. A skin that failed to load leaves a pane that
+                // works perfectly and looks twenty years old, and the person reporting that has no
+                // way to tell it from a design decision.
+                "Skin             " + (Skin.Problem ?? "loaded"),
                 string.Empty,
             };
 

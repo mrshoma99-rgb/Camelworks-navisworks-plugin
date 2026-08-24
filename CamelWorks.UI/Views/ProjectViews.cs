@@ -1055,7 +1055,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var model in session.Model.Models)
                 {
-                    if (!job.Step(looked++, "models checked")) return;
+                    if (!job.Step(looked++, session.Model.Models.Count, "models checked")) return;
 
                     if (string.IsNullOrWhiteSpace(model.SourcePath) || File.Exists(model.SourcePath)) continue;
 

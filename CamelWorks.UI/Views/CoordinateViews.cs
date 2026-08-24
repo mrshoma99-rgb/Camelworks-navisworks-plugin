@@ -2026,7 +2026,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var test in wanted)
                 {
-                    if (!job.Step(made.Count, "tests made")) break;
+                    if (!job.Step(made.Count, wanted.Count, "tests made")) break;
 
                     var created = session.Clash.Create(test.ToSpec(folder.Length == 0 ? null : folder));
 
@@ -2069,7 +2069,7 @@ namespace CamelWorks.UI.Views
                 foreach (var test in tests)
                 {
                     job.Say("Running " + test.Name + "...");
-                    if (!job.Step(ran, "tests run")) break;
+                    if (!job.Step(ran, tests.Count, "tests run")) break;
 
                     if (session.Clash.Run(test.Id)) ran++;
                     else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
@@ -2585,7 +2585,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var party in parties)
                 {
-                    if (!job.Step(written, "files written")) break;
+                    if (!job.Step(written, parties.Count, "files written")) break;
 
                     var groups = Chosen(board, party, regressed);
                     if (groups.Count == 0) continue;
@@ -2777,7 +2777,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var group in groups)
                     {
-                        if (!job.Step(done++, "views rendered")) break;
+                        if (!job.Step(done++, groups.Count, "views rendered")) break;
 
                         job.Say("Rendering " + group.Name + "...");
 
@@ -4156,7 +4156,7 @@ namespace CamelWorks.UI.Views
             {
                 foreach (var group in board.Groups)
                 {
-                    if (!job.Step(topics.Count, "topics built")) break;
+                    if (!job.Step(topics.Count, board.Groups.Count, "topics built")) break;
 
                     // One topic per group, not per clash. A group is the unit somebody fixes; a BCF
                     // file with one topic per penetration is the export everybody complains about.

@@ -982,11 +982,28 @@ namespace CamelWorks.UI.Views
         public static UIElement Empty(string what, string why)
         {
             var text = Stack(
-                new TextBlock { Text = what, FontWeight = FontWeights.SemiBold }.Wearing("Body"),
-                new TextBlock { Text = why, Margin = new Thickness(0, 3, 0, 0) }.Wearing("Lbl"));
+                new TextBlock
+                {
+                    Text = what,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontWeight = FontWeights.SemiBold,
+                }.Wearing("Body"),
+                new TextBlock
+                {
+                    Text = why,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 3, 0, 0),
+                }.Wearing("Lbl"));
 
-            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            // A Grid, not a horizontal StackPanel. A stack offers its children infinite width, so
+            // wrapping never engages and the second sentence of an empty state runs off the right
+            // of the pane - which is how "Loosen one, or clear the rules" became "Loosen one, o".
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
             row.Children.Add(Glyph(Glyphs.Empty, 22, "Faint", new Thickness(0, 1, 12, 0)));
+            Grid.SetColumn(text, 1);
             row.Children.Add(text);
 
             var frame = new Border

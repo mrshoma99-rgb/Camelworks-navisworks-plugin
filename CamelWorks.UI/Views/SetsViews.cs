@@ -1485,7 +1485,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var view in views)
                     {
-                        if (!job.Step(done, "renamed")) break;
+                        if (!job.Step(done, views.Count, "renamed")) break;
 
                         var name = pattern.Text
                             .Replace("{n}", n.ToString("00", CultureInfo.InvariantCulture))
@@ -1575,7 +1575,7 @@ namespace CamelWorks.UI.Views
 
                         foreach (var group in board.Groups)
                         {
-                            if (!job.Step(made, "viewpoints saved")) break;
+                            if (!job.Step(made, board.Groups.Count, "viewpoints saved")) break;
 
                             var points = group.Items.Select(i => (i.X, i.Y, i.Z)).ToList();
 
@@ -1673,7 +1673,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var view in moving)
                     {
-                        if (!job.Step(moved, "moved")) break;
+                        if (!job.Step(moved, moving.Count, "moved")) break;
 
                         // Already there is not a move and not a failure. Counting it as either
                         // would make a re-run of the same sweep read as though it had done work.
@@ -1767,7 +1767,7 @@ namespace CamelWorks.UI.Views
                     {
                         foreach (var view in views)
                         {
-                            if (!job.Step(written, "rendered")) break;
+                            if (!job.Step(written, views.Count, "rendered")) break;
 
                             job.Say("Rendering " + view.Name + "...");
 
@@ -1895,7 +1895,7 @@ namespace CamelWorks.UI.Views
                     {
                         foreach (var target in targets)
                         {
-                            if (!job.Step(done, "copied")) break;
+                            if (!job.Step(done, targets.Count, "copied")) break;
 
                             if (session.Viewpoints.CopyOverrides(chosen.Id, target.Id)) done++;
                             else refused++;

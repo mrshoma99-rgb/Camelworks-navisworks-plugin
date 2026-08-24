@@ -642,7 +642,7 @@ namespace CamelWorks.UI.Views
 
                     for (var i = 0; i < clusters.Count; i++)
                     {
-                        if (!job.Step(made, "viewpoints")) break;
+                        if (!job.Step(made, clusters.Count, "viewpoints")) break;
 
                         var cluster = clusters[i];
 
