@@ -2625,7 +2625,35 @@ namespace CamelWorks.UI.Views
                             Ui.Small("A picture moves your view while it runs and puts it back "
                                      + "afterwards. On a board of two hundred groups that is two "
                                      + "hundred renders, so it is off until you ask for it.")),
-                        _results)));
+                        _results),
+
+                    Ui.Rule(),
+
+                    Exchange()));
+            }
+
+            /// <summary>
+            /// The other half of a coordination cycle: the file the reviewer works in.
+            ///
+            /// A report is read and filed. A clash file is opened, worked through, and sent back -
+            /// and it is the only clash format the rest of the industry has agreed on. Without it
+            /// this tab ends at a PDF, and the answers come back as an email.
+            /// </summary>
+            private UIElement Exchange()
+            {
+                var open = Ui.Button("Send the board as a clash file...", () =>
+                {
+                    var problem = ClashExportWindow.Show();
+                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
+                });
+
+                return Ui.Marked(Glyphs.Onward, "Send it as a file somebody can work in", null,
+                    Ui.Small("Clash XML, which Navisworks and every reviewing tool reads. Choose "
+                             + "which tests go, at which statuses, for which party - and keep that "
+                             + "choice, so next Friday is one press rather than the same twenty "
+                             + "decisions. A file that comes back lands on the elements it left "
+                             + "from."),
+                    Ui.Actions(open));
             }
 
             /// <summary>What the chosen template actually produces, in the reader's terms.</summary>

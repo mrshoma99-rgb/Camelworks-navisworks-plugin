@@ -146,6 +146,11 @@ jobs:
       - name: Check no local is shadowed by one in a scope beneath it
         run: python3 checks/validate-shadowed-locals.py
 
+      # `Ui.Row(...)` and `IfcGuid.FromText(...)` both read perfectly and neither exists. A static
+      # class is a closed set of names, so this needs no type inference to say so.
+      - name: Check every member named through a repo static type is there
+        run: python3 checks/validate-api.py
+
       # A plug-in is named in PackageContents.xml, built by the release workflow and copied into a
       # year folder by it. A DLL declared but not copied gives a bundle that loads its ribbon and
       # fails at the first click.
