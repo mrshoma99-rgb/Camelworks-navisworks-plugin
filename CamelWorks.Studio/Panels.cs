@@ -522,12 +522,18 @@ namespace CamelWorks.Studio
                          + "its undo stack, so CamelWorks records what it changed in the project "
                          + "file instead of pretending otherwise.")),
 
-            Ui.Marked(Glyphs.Tune, "Rename or remove a column", null,
+            Ui.Marked(Glyphs.Tune, "Rename or remove a column",
+                "Only columns in CamelWorks' own tab. Renaming what the authoring tool wrote would "
+                + "make the model disagree with the model it came from.",
                 Ui.Form(Ui.Pair(
-                    Ui.Field("Column", Ui.Choice(new[] { "CamelWorks / Zone", "CamelWorks / Code" }, "CamelWorks / Zone", null)),
-                    Ui.Field("Call it", Ui.Text("Zone", null, 150)))),
-                Ui.Actions(Ui.Primary("Show me what would change", () => { }),
-                           Ui.Danger("Remove it", () => { }))));
+                    Ui.Field("Column", Ui.Text("Zone", null, 150),
+                             "as it is spelled in the CamelWorks tab"),
+                    Ui.Field("New name", Ui.Text("Zone code", null, 150)))),
+                Ui.Actions(Ui.Primary("Count it", () => { })),
+                Ui.Line("11,208 elements carry it, out of 41,880 elements in scope.", 1, true),
+                Ui.Across(
+                    Ui.Button("Rename it", () => { }),
+                    Ui.Danger("Remove it from 11,208 elements", () => { }))));
 
         private static IEnumerable<TableRow> Props()
         {
