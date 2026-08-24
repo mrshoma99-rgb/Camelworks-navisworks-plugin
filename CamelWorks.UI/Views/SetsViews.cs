@@ -264,13 +264,12 @@ namespace CamelWorks.UI.Views
                     foreach (var condition in group.ToList())
                         _editor.Children.Add(Row(group, condition));
 
-                    var add = Ui.Button("and...", () => { group.Add(new Condition()); Redraw(); });
-                    add.MinWidth = 70;
+                    var add = Ui.Quiet("+ and...", () => { group.Add(new Condition()); Redraw(); });
                     _editor.Children.Add(Ui.Across(add));
                 }
 
                 _editor.Children.Add(Ui.Across(
-                    Ui.Button("Add an OR group", () => { _groups.Add(new List<Condition>()); Redraw(); })));
+                    Ui.Quiet("+ Add an OR group", () => { _groups.Add(new List<Condition>()); Redraw(); })));
             }
 
             private UIElement Row(List<Condition> group, Condition condition)
@@ -289,9 +288,8 @@ namespace CamelWorks.UI.Views
 
                 row.Children.Add(Ui.Text(condition.Value, v => condition.Value = v, 130));
 
-                var remove = Ui.Button("x", () => { group.Remove(condition); Redraw(); });
-                remove.MinWidth = 26;
-                row.Children.Add(remove);
+                row.Children.Add(Ui.Icon(Glyphs.Close, "Remove this condition",
+                                         () => { group.Remove(condition); Redraw(); }));
 
                 foreach (var child in row.Children.OfType<FrameworkElement>())
                     child.Margin = new Thickness(0, 0, 5, 0);
@@ -455,18 +453,40 @@ namespace CamelWorks.UI.Views
                     Show(plan, values.Count);
                 });
 
-                return Ui.Card("Make a family of sets",
-                    "One set per value of a property. Each one is a rule, not a list, so a set made "
-                    + "today still covers the walls somebody adds tomorrow.",
+                return Ui.Section("Make a family of sets", Summary(), false,
+                    Ui.Small("One set per value of a property. Each one is a rule, not a list, so a set "
+                             + "made today still covers the walls somebody adds tomorrow."),
                     Ui.Field("Scope", picker),
-                    Ui.Field("Property tab", _category),
-                    Ui.Field("Property", _property),
-                    Ui.Field("Name pattern", _pattern),
-                    Ui.Field("Skip values under", _floor),
+                    Ui.Pair(
+                        Ui.Field("Property tab", _category),
+                        Ui.Field("Property", _property)),
+                    Ui.Field("Name pattern", _pattern,
+                             "{value} becomes the property's value. Everything else is kept as typed."),
+                    Ui.Field("Skip values under", _floor,
+                             "Values with fewer elements than this make no set."),
                     look,
                     _preview,
                     _status);
             }
+
+            /// <summary>
+            /// What this generator is set to, on one line.
+            ///
+            /// A folded section that does not say what it will do is a section nobody dares open
+            /// twice, so the fold has to cost nothing: this is the same four fields, read back.
+            /// </summary>
+            private string Summary()
+            {
+                var floor = Floor(_floor.Text);
+
+                return "One set per " + Word(_property.Text, "property")
+                       + ", named " + Word(_pattern.Text, "{value}")
+                       + (floor > 1 ? ", skipping values under " + floor.ToString(CultureInfo.InvariantCulture)
+                                    : string.Empty);
+            }
+
+            private static string Word(string? text, string fallback) =>
+                string.IsNullOrWhiteSpace(text) ? fallback : text!.Trim();
 
             private void Show(SetFamilyPlan plan, int scanned)
             {
@@ -728,19 +748,37 @@ namespace CamelWorks.UI.Views
                     Show(plan, rows.Count);
                 });
 
-                return Ui.Card("Make a whole library, in folders",
-                    "Up to three properties, nested. Every set is a rule that carries its whole path, so it "
-                    + "still means the same thing if somebody drags it out of its folder.",
+                return Ui.Section("Make a whole library, in folders", Summary(), false,
+                    Ui.Small("Up to three properties, nested. Every set is a rule that carries its whole "
+                             + "path, so it still means the same thing if somebody drags it out of its folder."),
                     Ui.Field("Scope", picker),
                     Ui.Field("Property tab", _category),
-                    Ui.Field("Split on", _first),
-                    Ui.Field("Then on", _second),
-                    Ui.Field("Then on", _third),
+                    Ui.Field("Split on", _first, "The top level of folders."),
+                    Ui.Pair(
+                        Ui.Field("Then on", _second),
+                        Ui.Field("Then on", _third)),
                     Ui.Field("Set name", _pattern),
                     Ui.Field("Skip branches under", _floor),
                     look,
                     _preview,
                     _status);
+            }
+
+            /// <summary>What this generator is set to, on one line, for the folded header.</summary>
+            private string Summary()
+            {
+                var split = new List<string>();
+
+                foreach (var box in new[] { _first, _second, _third })
+                    if (!string.IsNullOrWhiteSpace(box.Text)) split.Add(box.Text.Trim());
+
+                if (split.Count == 0) return "Nothing to split on yet";
+
+                var floor = Floor(_floor.Text);
+
+                return "Split on " + string.Join(", then ", split)
+                       + (floor > 1 ? " · " + floor.ToString(CultureInfo.InvariantCulture) + " element minimum"
+                                    : string.Empty);
             }
 
             private void Show(SetTreePlan plan, int scanned)
@@ -1273,9 +1311,14 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(Ui.Line(layer.Target.Description, 0.7));
                     row.Children.Add(Ui.Line(Effects(layer), 0.85));
 
-                    var up = Ui.Button("up", () => Move(session, index, 1));
-                    var down = Ui.Button("down", () => Move(session, index, -1));
-                    var drop = Ui.Button("remove", () => { _layers.RemoveAt(index); Redraw(session); });
+                    var up = Ui.Icon(Glyphs.Up, "Move this layer up, so it wins over the ones below",
+                                     () => Move(session, index, 1));
+
+                    var down = Ui.Icon(Glyphs.Down, "Move this layer down",
+                                       () => Move(session, index, -1));
+
+                    var drop = Ui.Icon(Glyphs.Bin, "Remove this layer",
+                                       () => { _layers.RemoveAt(index); Redraw(session); });
 
                     foreach (var button in new[] { up, down, drop }) button.MinWidth = 54;
 
@@ -1917,7 +1960,7 @@ namespace CamelWorks.UI.Views
                         + prefix + "\": " + string.Join(", ", doomed.Take(6).Select(v => v.Name))
                         + (doomed.Count > 6 ? ", ..." : string.Empty), 0.8));
 
-                    status.Children.Add(Ui.Button("Delete " + Ui.Count(doomed.Count, "viewpoint"), () =>
+                    status.Children.Add(Ui.Danger("Delete " + Ui.Count(doomed.Count, "viewpoint"), () =>
                     {
                         var gone = 0;
 

@@ -63,6 +63,21 @@ namespace CamelWorks.Studio
         {
             Directory.CreateDirectory(folder);
 
+            // Checked before anything is drawn. Sixteen pictures of Windows' default controls look
+            // enough like a deliberate design to be reviewed as one.
+            _ = Skin.Sheet;
+
+            if (Skin.Problem != null)
+            {
+                Log("SKIN NOT LOADED: " + Skin.Problem);
+                Log("Refusing to render: the pictures would be of Windows' controls, not this one's.");
+                File.WriteAllLines(System.IO.Path.Combine(folder, "_log.txt"), _log);
+                return 2;
+            }
+
+            Log("skin loaded: " + Skin.Sheet.MergedDictionaries[0].Count.ToString(CultureInfo.InvariantCulture)
+                + " styles and resources");
+
             var written = 0;
 
             foreach (var dark in new[] { false, true })
@@ -204,7 +219,7 @@ namespace CamelWorks.Studio
 
         private static readonly List<string> _log = new List<string>();
 
-        private static void Log(string line)
+        internal static void Log(string line)
         {
             _log.Add(line);
             Console.WriteLine(line);

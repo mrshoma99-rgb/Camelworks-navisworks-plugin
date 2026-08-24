@@ -712,7 +712,7 @@ namespace CamelWorks.UI.Views
                             name.Text = mine;
                             body.Text = table.ToText();
                         }),
-                        Ui.Button("Remove", () =>
+                        Ui.Danger("Remove", () =>
                         {
                             tables.Remove(mine);
                             Store(session, tables, status);

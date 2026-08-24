@@ -266,7 +266,12 @@ namespace CamelWorks.UI.Shell
                 Padding = new Thickness(8, 0, 8, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                MaxWidth = 320,
+
+                // Capped, and not by much. A tool search wide enough to hold a sentence is wider
+                // than any tool is named, and at the pane's narrowest it was taking the room the
+                // theme control needed.
+                MaxWidth = 240,
+                Margin = new Thickness(0, 0, 8, 0),
             };
 
             var row = new Grid();

@@ -344,12 +344,26 @@ namespace CamelWorks.UI.Views
         /// <summary>A screen or card title.</summary>
         /// <param name="text">The title.</param>
         public static TextBlock Heading(string text) =>
-            new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 2) }.Wearing("Head");
+            new TextBlock
+            {
+                Text = text,
+
+                // Wrapping is set here as well as in the style on purpose. It is the one property
+                // whose absence is not cosmetic: a skin that fails to load would otherwise give a
+                // pane whose every line runs off the right edge, unreadable rather than plain.
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 2),
+            }.Wearing("Head");
 
         /// <summary>The line under a title that says what the screen is for.</summary>
         /// <param name="text">The line.</param>
         public static TextBlock Sub(string text) =>
-            new TextBlock { Text = text, Margin = new Thickness(0, 0, 0, 4) }.Wearing("Lbl");
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 4),
+            }.Wearing("Lbl");
 
         /// <summary>
         /// An ordinary line of text.
@@ -367,6 +381,7 @@ namespace CamelWorks.UI.Views
             var block = new TextBlock
             {
                 Text = text,
+                TextWrapping = TextWrapping.Wrap,
                 FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
                 Margin = new Thickness(0, bold ? 6 : 1, 0, 0),
             };
@@ -380,7 +395,12 @@ namespace CamelWorks.UI.Views
         /// <summary>Small print: the sentence under a control that explains it.</summary>
         /// <param name="text">The text.</param>
         public static TextBlock Small(string text) =>
-            new TextBlock { Text = text, Margin = new Thickness(0, 3, 0, 0) }.Wearing("Hint");
+            new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 3, 0, 0),
+            }.Wearing("Hint");
 
         /// <summary>An identifier, a path or a hash — anything that must not be read as prose.</summary>
         /// <param name="text">The text.</param>
@@ -913,6 +933,7 @@ namespace CamelWorks.UI.Views
             panel.Children.Add(new TextBlock
             {
                 Text = label,
+                TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 4),
             }.Wearing("Lbl"));
 

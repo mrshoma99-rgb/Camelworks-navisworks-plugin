@@ -47,6 +47,14 @@ namespace CamelWorks.UI.Views
         public static event EventHandler? Changed;
 
         /// <summary>
+        /// Why the skin is not loaded, or null when it is.
+        ///
+        /// Reported by the self-test and by the design harness rather than thrown, because the
+        /// pane is usable without it and unusable if this takes the pane down.
+        /// </summary>
+        public static string? Problem { get; private set; }
+
+        /// <summary>
         /// The skin, as one dictionary to merge into a pane.
         ///
         /// Never null and never throws. If the compiled dictionary cannot be loaded — a mangled
@@ -67,10 +75,16 @@ namespace CamelWorks.UI.Views
                     {
                         sheet.MergedDictionaries.Add(new Themes.SkinSheet());
                     }
-                    catch (Exception)
+                    catch (Exception e)
                     {
-                        // Deliberately swallowed. An unstyled pane is a disappointment; a pane
-                        // that throws on construction is a plug-in the user uninstalls.
+                        // Not thrown on: an unstyled pane is a disappointment, a pane that throws
+                        // on construction is a plug-in the user uninstalls. But not silent either.
+                        // A duplicate x:Key makes the whole dictionary throw while it is being
+                        // built, and every control in the product comes up in Windows' own styling
+                        // with nothing anywhere saying why.
+                        Problem = "The CamelWorks skin could not be loaded, so the pane is drawn in "
+                                  + "Windows' own control styling. Everything still works. "
+                                  + e.GetType().Name + ": " + e.Message;
                     }
 
                     _sheet = sheet;

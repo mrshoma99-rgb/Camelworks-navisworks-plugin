@@ -322,6 +322,7 @@ namespace CamelWorks.Studio
                 }
 
                 // Captured here, not after: once this returns there is no run to photograph.
+                Program.Log("  work reached 54,000 of 128,400; taking the picture from inside it");
                 shoot();
             });
 
@@ -349,7 +350,15 @@ namespace CamelWorks.Studio
         private static void Click(DependencyObject root, string caption)
         {
             var button = Find(root, caption);
-            button?.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+            if (button == null)
+            {
+                Program.Log("  could not find the button named " + caption + "; the page will be "
+                            + "photographed at rest, which is not what it is for");
+                return;
+            }
+
+            button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
         }
 
         private static System.Windows.Controls.Button? Find(DependencyObject root, string caption)

@@ -104,7 +104,7 @@
   <sys:Double x:Key="Size.Head">15</sys:Double>
   <sys:Double x:Key="Size.Title">18</sys:Double>
 
-  <FontFamily x:Key="Mono">Consolas, Cascadia Mono, Courier New</FontFamily>
+  <FontFamily x:Key="MonoFace">Consolas, Cascadia Mono, Courier New</FontFamily>
 
   <!-- ════════════════════════════════ Text ════════════════════════════════ -->
 
@@ -155,7 +155,7 @@
   <!-- Identifiers, paths and hashes. Proportional digits in a column of GUIDs is how a support
        bundle becomes unreadable. -->
   <Style x:Key="Mono" TargetType="TextBlock">
-    <Setter Property="FontFamily" Value="{DynamicResource Mono}"/>
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFace}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>
     <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
     <Setter Property="TextTrimming" Value="CharacterEllipsis"/>

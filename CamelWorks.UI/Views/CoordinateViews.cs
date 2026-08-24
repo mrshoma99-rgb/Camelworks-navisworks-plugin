@@ -1726,7 +1726,7 @@ namespace CamelWorks.UI.Views
                         session.View.ZoomTo(keys, 2.0);
                     }),
                     Ui.Button("Close it", () => Close(session, picked)),
-                    Ui.Button("Delete it", () => Delete(session, picked))));
+                    Ui.Danger("Delete it", () => Delete(session, picked))));
             }
 
             private void Close(Session session, ManualIssue? picked)
@@ -2201,8 +2201,7 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(Ui.Line(filter.Name, 1, true));
                     row.Children.Add(Ui.Line(filter.When.Describe(), 0.75));
 
-                    var drop = Ui.Button("remove", () => { _rules.Filters.Remove(filter); Redraw(session); });
-                    drop.MinWidth = 60;
+                    var drop = Ui.Icon(Glyphs.Bin, "Remove this suppress-or-flag rule", () => { _rules.Filters.Remove(filter); Redraw(session); });
                     row.Children.Add(drop);
 
                     Space(row);
@@ -2216,8 +2215,7 @@ namespace CamelWorks.UI.Views
                     var row = new WrapPanel();
                     row.Children.Add(Ui.Line(group.Describe(), 1));
 
-                    var drop = Ui.Button("remove", () => { _rules.Grouping.Remove(group); Redraw(session); });
-                    drop.MinWidth = 60;
+                    var drop = Ui.Icon(Glyphs.Bin, "Remove this grouping step", () => { _rules.Grouping.Remove(group); Redraw(session); });
                     row.Children.Add(drop);
 
                     Space(row);
@@ -2233,8 +2231,7 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(Ui.Line(assign.Party, 1, true));
                     row.Children.Add(Ui.Line("gets " + assign.When.Describe(), 0.75));
 
-                    var drop = Ui.Button("remove", () => { _rules.Assigns.Remove(assign); Redraw(session); });
-                    drop.MinWidth = 60;
+                    var drop = Ui.Icon(Glyphs.Bin, "Remove this assignment", () => { _rules.Assigns.Remove(assign); Redraw(session); });
                     row.Children.Add(drop);
 
                     Space(row);

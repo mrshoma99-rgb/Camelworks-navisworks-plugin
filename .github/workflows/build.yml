@@ -129,6 +129,12 @@ jobs:
       - name: Check every param tag names a real parameter
         run: python3 checks/validate-docs.py
 
+      # A duplicate x:Key makes the whole skin throw while it is being built, so every control
+      # comes up in Windows' own styling and nothing anywhere says why - which looks exactly like
+      # a design decision. The XAML compiles either way.
+      - name: Check the skin has no repeated or missing keys
+        run: python3 checks/validate-skin.py
+
       # The release gate from the harvest protocol: the only company named anywhere in this tree
       # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
       - name: Check nothing but BIMCamel is named

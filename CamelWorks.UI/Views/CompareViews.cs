@@ -897,7 +897,7 @@ namespace CamelWorks.UI.Views
 
             listed.Children.Add(Ui.Card("Recorded", store.Folder ?? "nowhere — this document is unsaved",
                 table,
-                Ui.Button("Delete the selected one", () =>
+                Ui.Danger("Delete the selected one", () =>
                 {
                     results.Children.Clear();
 
