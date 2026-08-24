@@ -117,7 +117,7 @@ Tool searches symptom phrasing, not just command names.
 | Compare → Changes | The change list, filtered and searched; paint it, walk it as viewpoints, stamp it into the properties, raise it on the board, or write the report |
 | Compare → Baselines | What has been recorded and when, kept beside the document |
 | Data | Every property folded to one row; a write you see before you make it; formulas; rename and remove a column |
-| Levels & zones | Derived levels, and stamping them onto elements |
+| Levels | Derived levels, and stamping them onto elements |
 | Takeoff | One axis or two, over a scope, out to a spreadsheet |
 | Sets | The boolean builder, plus a whole family generated from one property |
 | Appearance | The layers system, and everything hidden or overridden that no layer accounts for |

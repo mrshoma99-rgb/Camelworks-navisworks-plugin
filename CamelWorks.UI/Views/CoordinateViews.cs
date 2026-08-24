@@ -662,6 +662,15 @@ namespace CamelWorks.UI.Views
             private readonly ComboBox _preset;
 
             /// <summary>
+            /// The two filters, hidden until there is something to filter.
+            ///
+            /// A pair of empty boxes over an empty list is the screen telling somebody to fill in a
+            /// form before it will show them anything, which is precisely backwards: they are
+            /// controls over a result, and until the result exists they are furniture.
+            /// </summary>
+            private readonly Border _filters;
+
+            /// <summary>
             /// The results this run found back again, by reference.
             ///
             /// A regression is not a status. Carry-over sets a returning result to Active — it has
@@ -679,6 +688,9 @@ namespace CamelWorks.UI.Views
             {
                 _search = Ui.Text(string.Empty, _ => Redraw(), 220);
                 _preset = Ui.Choice(new[] { All, Unassigned, Changed, Mine }, All, _ => Redraw(), 170);
+
+                _filters = Ui.Form(Ui.Pair(Ui.Field("Show", _preset), Ui.Field("Find", _search)));
+                _filters.Visibility = Visibility.Collapsed;
             }
 
             internal UIElement Build()
@@ -705,58 +717,48 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 });
 
+                // No card around the board. The board is what this tab is - wrapping it in a
+                // titled box to sit beside three other titled boxes was what made four unrelated
+                // things look like four equals.
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Marked(Glyphs.Clash, "The board",
-                        "Every clash the tests found, grouped into the issues somebody actually fixes.",
-                        Ui.Actions(run),
-                        _summary),
-                    Ui.Marked(Glyphs.Filter, "Issues", null,
-                        Ui.Form(Ui.Pair(Ui.Field("Show", _preset), Ui.Field("Find", _search))),
-                        _rows,
-                        _detail),
+                    Ui.Actions(run),
+                    _summary,
+                    _filters,
+                    _rows,
+                    _detail,
+                    Ui.Rule(),
                     new RaiseScreen().Build(),
-                    FreezeCard(),
-                    HeadroomCard()));
+                    FreezeCard()));
             }
 
             /// <summary>
-            /// The funnel, and what changed since the last run.
+            /// What changed since the last run, and — folded away — how the board was arrived at.
             ///
-            /// The delta goes above the board rather than in a column, because it is the first
-            /// question of the week and the last one anybody wants to derive by scrolling: what is
-            /// new, and what did we already fix and has come back.
+            /// The four figures at the top are the four the meeting is about: what is new, what
+            /// came back, what went away, and what nobody owns. The funnel that produced them —
+            /// results in, rules applied, results suppressed — is provenance. It answers "why is
+            /// this number what it is", which is a real question and never the first one, so it
+            /// sits behind a disclosure instead of above the answer.
             /// </summary>
             private void Summarise()
             {
                 var board = _board!;
                 var funnel = board.Funnel;
-
-                _summary.Children.Add(Ui.Eyebrow("This run"));
-
-                _summary.Children.Add(Ui.Across(
-                    Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                    Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "groups"),
-                    Ui.Figure(funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture), "unassigned",
-                        funnel.Unassigned > 0 ? Tone.Warn : Tone.Good),
-                    Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed")));
+                var unassigned = funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture);
 
                 if (_delta != null)
                 {
                     var regressed = _delta.Regressed.Count;
 
-                    // Labelled, because the two rows answer different questions and four numbers
-                    // under four more numbers is not a distinction anybody should have to infer.
-                    _summary.Children.Add(Ui.Rule());
-                    _summary.Children.Add(Ui.Eyebrow("Since the last run"));
-
                     _summary.Children.Add(Ui.Across(
                         Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
                             _delta.New.Count > 0 ? Tone.Warn : Tone.Plain),
-                        Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture), "still there"),
+                        Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
+                            regressed > 0 ? Tone.Bad : Tone.Plain),
                         Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone",
                             _delta.Resolved.Count > 0 ? Tone.Good : Tone.Plain),
-                        Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
-                            regressed > 0 ? Tone.Bad : Tone.Plain)));
+                        Ui.Figure(unassigned, "unassigned",
+                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
 
                     if (regressed > 0)
                         _summary.Children.Add(Ui.Problem(
@@ -770,9 +772,23 @@ namespace CamelWorks.UI.Views
                             + " matched the last run only on a weak key, because the elements involved "
                             + "carry no stable identity. Their history is a best guess."));
                 }
+                else
+                {
+                    // First run on this project. Saying "0 new, 0 came back" would be four zeroes
+                    // that read as good news, when what they mean is that there is nothing to
+                    // compare against yet.
+                    _summary.Children.Add(Ui.Across(
+                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
+                        Ui.Figure(unassigned, "unassigned",
+                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
 
-                // Who owes what, above the board. The count of clashes is a fact about the model;
-                // this is a fact about the week, and it is the one the meeting is actually about.
+                    _summary.Children.Add(Ui.Info("This is the first board on this project, so there is "
+                        + "nothing to compare it against. Run the tests again after the next issue of "
+                        + "models and these figures become what changed."));
+                }
+
+                // Who owes what. The count of clashes is a fact about the model; this is a fact
+                // about the week, and it is the one the meeting is actually about.
                 var session = Host.Current;
 
                 if (session != null)
@@ -782,17 +798,28 @@ namespace CamelWorks.UI.Views
 
                     if (ledger.Lines.Count > 0)
                     {
-                        _summary.Children.Add(Ui.Line(ledger.Explain(), 0.85, true));
+                        _summary.Children.Add(Ui.Eyebrow("Who owes what"));
 
                         _summary.Children.Add(Ui.Line(string.Join("   ",
-                            ledger.Lines.Take(6).Select(l => l.ToString())), 0.7));
+                            ledger.Lines.Take(6).Select(l => l.ToString())), 0.75));
                     }
                 }
 
-                _summary.Children.Add(Ui.Line(funnel.ToString(), 0.8));
+                _summary.Children.Add(Ui.Section("How this board was made",
+                    funnel.Input.ToString("N0", CultureInfo.InvariantCulture) + " results in, "
+                    + funnel.Groups.ToString("N0", CultureInfo.InvariantCulture) + " issues out", false,
+                    Ui.Across(
+                        Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
+                        Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed"),
+                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into"),
+                        _delta == null ? null
+                            : Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
+                                        "still there")),
+                    Ui.Line(funnel.ToString(), 0.8),
+                    funnel.RulesApplied.Count == 0 ? null
+                        : Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7)));
 
-                if (funnel.RulesApplied.Count > 0)
-                    _summary.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.6));
+                _filters.Visibility = Visibility.Visible;
             }
 
             /// <summary>Which groups the preset and the search box leave.</summary>
@@ -922,9 +949,9 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Clear height between a walkable surface and whatever is above it.
         ///
-        /// It lives on the board because that is where it belongs: a duct 1.9 m over a corridor is
-        /// a coordination problem in exactly the way a clash is, and it is the one no clash test at
-        /// any tolerance will ever find — there is air between them.
+        /// A duct 1.9 m over a corridor is a coordination problem in exactly the way a clash is,
+        /// and it is the one no clash test at any tolerance will ever find — there is air between
+        /// them. So it belongs beside the clash tests, which is where it is run from.
         /// </summary>
         private static UIElement HeadroomCard()
         {
@@ -1043,12 +1070,14 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Regroup, "checked clear height: " + found);
             });
 
-            return Ui.Card("Headroom",
+            return Ui.Marked(Glyphs.Layers, "Clear height",
                 "The check a clash test cannot do: a duct 1.9 m above a corridor clashes with nothing.",
-                Ui.Field("Surfaces", floorPicker),
-                Ui.Field("Look above at", targetPicker),
-                Ui.Field("Minimum clear height (m)", minimum),
+                Ui.Form(Ui.Field("Minimum clear height (m)", minimum)),
                 run,
+                Ui.Section("What counts as a floor", "Floors and slabs, under everything else", false,
+                    Ui.Form(
+                        Ui.Field("Surfaces", floorPicker),
+                        Ui.Field("Look above at", targetPicker))),
                 results);
         }
 
@@ -1867,11 +1896,16 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
+                // Headroom sits here rather than on the board. It is a test - it is run to produce
+                // findings, exactly like a clash test - and it was on Triage only because its
+                // findings look like clashes. What a screen is for is the act, not the output.
                 return Ui.Scroll(Ui.Stack(
                     _list,
-                    Matrix(),
                     _results,
-                    _runs));
+                    _runs,
+                    Ui.Rule(),
+                    Matrix(),
+                    HeadroomCard()));
             }
 
             /// <summary>The tests as they stand, and the one action worth having beside them.</summary>
@@ -1957,17 +1991,19 @@ namespace CamelWorks.UI.Views
                     Show(plan);
                 });
 
-                return Ui.Card("Build a matrix",
+                return Ui.Marked(Glyphs.Clash, "Build a matrix",
                     "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
                     + "be set up first: the disciplines come from what CamelWorks already worked out about "
                     + "the models that are loaded.",
-                    Ui.Field("Rows", rows),
-                    Ui.Field("Columns", columns),
-                    Ui.Field("Name pattern", _pattern),
-                    Ui.Field("Tolerance (m)", _tolerance),
-                    Ui.Field("Put them in folder", _folder),
-                    diagonal,
+                    Ui.Form(Ui.Pair(Ui.Field("Rows", rows), Ui.Field("Columns", columns))),
                     build,
+                    Ui.Section("How the tests are made",
+                        "Named " + _pattern.Text + ", at " + _tolerance.Text + " m", false,
+                        Ui.Form(
+                            Ui.Field("Name pattern", _pattern),
+                            Ui.Field("Tolerance (m)", _tolerance),
+                            Ui.Field("Put them in folder", _folder)),
+                        diagonal),
                     _grid);
             }
 

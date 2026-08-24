@@ -36,7 +36,7 @@ namespace CamelWorks.Studio
             Sheet("changes", "Compare · Changes", 1500, Changes),
             Sheet("baselines", "Compare · Baselines", 900, Baselines),
             Sheet("data", "Data · Properties", 1100, Properties),
-            Sheet("zones", "Data · Levels & zones", 1000, Zones),
+            Sheet("zones", "Data · Levels", 1000, Zones),
             Sheet("viewpoints", "Sets · Viewpoints", 1300, Viewpoints),
             Sheet("batch", "Batch · Jobs", 900, Batch),
         };
@@ -174,33 +174,39 @@ namespace CamelWorks.Studio
         // -----------------------------------------------------------------------------------
 
         private static UIElement Triage() => Sheets.Page(
-            Ui.Marked(Glyphs.Clash, "The board",
-                "Every clash the tests found, grouped into the issues somebody actually fixes.",
-                Ui.Actions(Ui.Primary("Load the board", () => { }),
-                           Ui.Quiet("Undo the last board edit", () => { })),
-                Ui.Eyebrow("This run"),
+            Ui.Actions(Ui.Primary("Load the board", () => { }),
+                       Ui.Quiet("Undo the last board edit", () => { })),
+
+            Ui.Across(
+                Ui.Figure("22", "new", Tone.Warn),
+                Ui.Figure("6", "came back", Tone.Bad),
+                Ui.Figure("31", "gone", Tone.Good),
+                Ui.Figure("13", "unassigned", Tone.Warn)),
+
+            Ui.Problem("6 clashes that a previous run recorded as resolved are back. Something that "
+                       + "was fixed has been undone, or a model went backwards — either way it is the "
+                       + "first thing to look at this week."),
+
+            Ui.Eyebrow("Who owes what"),
+            Ui.Line("Mechanical 52   Architect 21   Structures 14   Nobody yet 13", 0.75),
+
+            Ui.Section("How this board was made", "1,284 results in, 96 issues out", false,
                 Ui.Across(
                     Ui.Figure("1,284", "from the engine"),
-                    Ui.Figure("96", "groups"),
-                    Ui.Figure("13", "unassigned", Tone.Warn),
-                    Ui.Figure("412", "suppressed")),
-                Ui.Rule(),
-                Ui.Eyebrow("Since the last run"),
-                Ui.Across(
-                    Ui.Figure("22", "new", Tone.Warn),
-                    Ui.Figure("68", "still there"),
-                    Ui.Figure("31", "gone", Tone.Good),
-                    Ui.Figure("6", "came back", Tone.Bad)),
-                Ui.Problem("6 clashes that a previous run recorded as resolved are back. Something that "
-                           + "was fixed has been undone, or a model went backwards — either way it is the "
-                           + "first thing to look at this week.")),
+                    Ui.Figure("412", "suppressed"),
+                    Ui.Figure("96", "grouped into"),
+                    Ui.Figure("68", "still there")),
+                Ui.Line("1,284 results, 412 suppressed, 96 groups.", 0.8),
+                Ui.Line("Rules: Ignore insulation touches, Same-model pairs, Level from grid", 0.7)),
 
-            Ui.Marked(Glyphs.Filter, "The board", null,
-                Ui.Form(Ui.Pair(
-                    Ui.Field("Show", Ui.Choice(new[] { "Everything", "New this week", "Came back", "Unassigned" }, "Everything", null)),
-                    Ui.Field("Find", Ui.Text(string.Empty, "level, party, element…", null, 140)))),
-                Ui.Table(Board(), ("Issue", 190), ("Party", 0), ("Clashes", 62)),
-                Ui.Tally(5, 96, "issue")),
+            Ui.Form(Ui.Pair(
+                Ui.Field("Show", Ui.Choice(new[] { "Everything", "Unassigned", "New or back again", "Mine" }, "Everything", null)),
+                Ui.Field("Find", Ui.Text(string.Empty, "level, party, element…", null, 140)))),
+
+            Ui.Table(Board(), ("Issue", 190), ("Party", 0), ("Clashes", 62)),
+            Ui.Tally(5, 96, "issue"),
+
+            Ui.Rule(),
 
             Ui.Section("Raise an issue", "For what the clash engine cannot see", false,
                 Ui.Small("It joins the board and behaves like everything else on it."),
@@ -211,16 +217,15 @@ namespace CamelWorks.Studio
                         Ui.Field("Priority", Ui.Segmented(new[] { "Low", "Med", "High" }, "Med", null)))),
                 Ui.Actions(Ui.Primary("Raise it against the selection", () => { }))),
 
-            Ui.Section("Freeze", "Not frozen — the board follows every run", false,
-                Ui.Small("A frozen board stops moving when the models do, so a week's issue numbers stay "
-                         + "the numbers everybody was sent."),
+            Ui.Marked(Glyphs.Save, "Freeze",
+                "Sign-off and fabrication release are the same record, and both come with a change notice",
+                Ui.Form(
+                    Ui.Field("What is being frozen", Ui.Text(string.Empty, "Level 04 services", null, 220)),
+                    Ui.Pair(
+                        Ui.Field("Signed by", Ui.Text(string.Empty, null, 180)),
+                        Ui.Field("Release reference", Ui.Text(string.Empty, null, 140)))),
                 Ui.Actions(Ui.Button("Freeze what is on the board", () => { }),
-                           Ui.Quiet("Change notice", () => { }))),
-
-            Ui.Section("Headroom", "Not checked on this model", false,
-                Ui.Small("Clear height under everything the services hang from, reported as a list of "
-                         + "places rather than as a number."),
-                Ui.Actions(Ui.Button("Check clear height", () => { }))));
+                           Ui.Quiet("Change notice", () => { }))));
 
         private static IEnumerable<TableRow> Board()
         {
@@ -232,19 +237,39 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Tests() => Sheets.Page(
-            Ui.Marked(Glyphs.Table, "Build a matrix",
-                "Every discipline against every other, as clash tests, in one go.",
-                Ui.Form(
-                    Ui.Field("Group by", Ui.Choice(new[] { "Discipline", "Model", "Level" }, "Discipline", null)),
-                    Ui.Pair(
-                        Ui.Field("Tolerance", Ui.Text("0.01", null, 80)),
-                        Ui.Field("Type", Ui.Segmented(new[] { "Hard", "Clearance" }, "Hard", null))),
-                    Ui.Field("Put them in", Ui.Text("Week 33", null, 160))),
-                Ui.Actions(Ui.Primary("Create the ticked ones", () => { }))),
+            Ui.Across(
+                Ui.Pill("4 tests"),
+                Ui.Pill("1,284 results"),
+                Ui.Pill("1 never run", Tone.Warn)),
 
-            Ui.Marked(Glyphs.Clash, "Tests in this document", null,
-                Ui.Table(TestRows(), ("Test", 180), ("Last run", 0), ("Clashes", 66)),
-                Ui.Actions(Ui.Primary("Run them", () => { }), Ui.Quiet("Show me", () => { }))));
+            Ui.Table(TestRows(), ("Test", 180), ("Last run", 0), ("Clashes", 66)),
+            Ui.Actions(Ui.Primary("Run the 1 that never has", () => { })),
+
+            Ui.Rule(),
+
+            Ui.Marked(Glyphs.Clash, "Build a matrix",
+                "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
+                + "be set up first: the disciplines come from what CamelWorks already worked out about "
+                + "the models that are loaded.",
+                Ui.Form(Ui.Pair(
+                    Ui.Field("Rows", Ui.Choice(new[] { "By discipline", "By model" }, "By discipline", null)),
+                    Ui.Field("Columns", Ui.Choice(new[] { "By discipline", "By model" }, "By discipline", null)))),
+                Ui.Actions(Ui.Primary("Show me the grid", () => { })),
+                Ui.Section("How the tests are made", "Named {A} v {B}, at 0.010 m", false,
+                    Ui.Form(
+                        Ui.Field("Name pattern", Ui.Text("{A} v {B}", null, 180)),
+                        Ui.Field("Tolerance (m)", Ui.Text("0.010", null, 80)),
+                        Ui.Field("Put them in folder", Ui.Text("Week 33", null, 160))),
+                    Ui.Check("Include each side against itself", false, null))),
+
+            Ui.Marked(Glyphs.Layers, "Clear height",
+                "The check a clash test cannot do: a duct 1.9 m above a corridor clashes with nothing.",
+                Ui.Form(Ui.Field("Minimum clear height (m)", Ui.Text("2.100", null, 80))),
+                Ui.Actions(Ui.Primary("Check clear height", () => { })),
+                Ui.Section("What counts as a floor", "Floors and slabs, under everything else", false,
+                    Ui.Form(
+                        Ui.Field("Surfaces", Ui.Choice(new[] { "Floors and slabs", "Current selection", "Everything" }, "Floors and slabs", null)),
+                        Ui.Field("Look above at", Ui.Choice(new[] { "Everything else", "Current selection", "Everything" }, "Everything else", null))))));
 
         private static IEnumerable<TableRow> TestRows()
         {
@@ -448,7 +473,7 @@ namespace CamelWorks.Studio
         }
 
         private static UIElement Zones() => Sheets.Page(
-            Ui.Marked(Glyphs.Layers, "Levels & zones",
+            Ui.Marked(Glyphs.Layers, "Levels",
                 "Grids where the federation has them, the models' own levels where they do not, and a "
                 + "height histogram where neither — and it says which.",
                 Ui.Actions(Ui.Primary("Derive levels", () => { })),
