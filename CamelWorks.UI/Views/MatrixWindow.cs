@@ -116,6 +116,34 @@ namespace CamelWorks.UI.Views
             private UIElement Preview() =>
                 Ui.Stack(Ui.Eyebrow("The sheet as it stands"), _sheet.Preview());
 
+            private UIElement Mapping()
+            {
+                var rows = Ui.Stack(
+                    Ui.Eyebrow("Where things are"),
+                    Ui.Pair(Number("Name column", _mapping.NameColumn, v => _mapping.NameColumn = v),
+                            Number("Set column", _mapping.SetColumn, v => _mapping.SetColumn = v)),
+                    Ui.Pair(Number("Number column", _mapping.NumberColumn, v => _mapping.NumberColumn = v),
+                            Number("Code column", _mapping.CodeColumn, v => _mapping.CodeColumn = v)),
+                    Ui.Pair(Number("First category row", _mapping.FirstRow, v => _mapping.FirstRow = v),
+                            Number("First grid column", _mapping.FirstBodyColumn, v => _mapping.FirstBodyColumn = v)),
+                    Ui.Pair(Number("Numbers across the top", _mapping.HeaderNumberRow, v => _mapping.HeaderNumberRow = v),
+                            Number("Sets across the top", _mapping.HeaderSetRow, v => _mapping.HeaderSetRow = v)),
+                    Ui.Small("A zero means the sheet does not have that one. The columns across the "
+                             + "top are matched back to the categories down the side by number, then "
+                             + "by set name - never by position, so a spacer column costs nothing."));
+
+                var read = Ui.Runner("Read the matrix", _warnings, Read);
+
+                return Ui.Stack(rows, Ui.Actions(read));
+            }
+
+            private Panel Number(string label, int value, Action<int> set) =>
+                Ui.Field(label, Ui.Text(value.ToString(CultureInfo.InvariantCulture), text =>
+                {
+                    if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                        && parsed >= 0) set(parsed);
+                }, 70));
+
             // ---------------------------------------------------------------------------------
             // Right: the matrix, its legend, and the tests
             // ---------------------------------------------------------------------------------
