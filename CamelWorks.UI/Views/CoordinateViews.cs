@@ -493,6 +493,14 @@ namespace CamelWorks.UI.Views
             return decisions;
         }
 
+        /// <summary>The people on this job, or an empty roster when nobody has named any.</summary>
+        internal static TeamRoster Roster(Session session) =>
+            TeamRoster.FromJson(session.Store.Section(ProjectStore.ProfileSection)["roster"]);
+
+        /// <summary>Who is on which group.</summary>
+        internal static AssignmentBook Assignments(Session session) =>
+            AssignmentBook.FromJson(session.Store.Section(ProjectStore.ClashSection)["assignments"]);
+
         /// <summary>
         /// Write one decision about a group into the project file, merging with what is there.
         ///
@@ -1405,11 +1413,79 @@ namespace CamelWorks.UI.Views
                     session.View.ZoomTo(keys, 2.0);
                 });
 
-            var parties = session.Profile.Parties.ToList();
+            // The roster's organisations and the profile's typed ones, together: the roster is a
+            // vocabulary somebody built, and the box is still there for the party nobody has yet.
+            var roster = Roster(session);
+            var book = Assignments(session);
+
+            var parties = session.Profile.Parties
+                .Concat(roster.Parties)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             if (parties.Count == 0) parties.Add("Unassigned");
 
-            var party = parties[0];
-            var picker = Ui.Choice(parties, party, p => party = p);
+            var party = group.AssignedTo != null && parties.Contains(group.AssignedTo, StringComparer.OrdinalIgnoreCase)
+                ? group.AssignedTo
+                : parties[0];
+
+            var people = Ui.Stack();
+            var chosen = new HashSet<string>(book.For(group.Id), StringComparer.Ordinal);
+
+            void DrawPeople()
+            {
+                people.Children.Clear();
+
+                var within = roster.Suggest(party, book);
+
+                foreach (var stranger in roster.Strangers(book, group.Id))
+                    people.Children.Add(Ui.Note("\"" + stranger + "\" is on this group and not on "
+                        + "the roster any more. Their work did not leave when they did."));
+
+                if (within.Count == 0)
+                {
+                    people.Children.Add(Ui.Small(roster.IsEmpty
+                        ? "Nobody is on the roster yet, so this goes to the organisation and no "
+                          + "further. Add people in Project - Profile and they appear here."
+                        : "Nobody from " + party + " is on the roster, so this goes to the "
+                          + "organisation and no further."));
+                    return;
+                }
+
+                people.Children.Add(Ui.Small("More than one person can carry a group. The order is "
+                    + "who is carrying least."));
+
+                foreach (var member in within)
+                {
+                    var here = member;
+
+                    var row = new WrapPanel { Margin = new Thickness(0, 1, 0, 1) };
+
+                    row.Children.Add(Ui.Check(here.Name, chosen.Contains(here.Id), on =>
+                    {
+                        if (on) chosen.Add(here.Id); else chosen.Remove(here.Id);
+                    }));
+
+                    var carrying = book.Load(here.Id);
+
+                    if (carrying > 0)
+                        row.Children.Add(Ui.Pill(Ui.Count(carrying, "group"), Tone.Plain));
+
+                    if (here.Email == null)
+                        row.Children.Add(Ui.Pill("no address", Tone.Warn));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    people.Children.Add(row);
+                }
+            }
+
+            var picker = Ui.Choice(parties, party, p => { party = p; DrawPeople(); });
+
+            DrawPeople();
 
             var assign = Ui.Button("Assign this group", () =>
             {
@@ -1417,10 +1493,21 @@ namespace CamelWorks.UI.Views
                 group.AssignByHand(party);
                 Remember(session, group.Name, party);
 
+                book.Assign(group.Id, chosen);
+                session.Store.Section(ProjectStore.ClashSection).Set("assignments", book.ToJson());
+
+                var named = roster.On(book, group.Id);
+
+                var told = named.Count == 0
+                    ? string.Empty
+                    : ", to " + string.Join(" and ", named.Select(m => m.Name));
+
                 status.Children.Add(session.Store.Save()
-                    ? Ui.Line("\"" + group.Name + "\" goes to " + party
+                    ? Ui.Line("\"" + group.Name + "\" goes to " + party + told
                               + ". A hand assignment outranks the rules and survives the next run.", 0.8)
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                DrawPeople();
             });
 
             // --- what to do about it ------------------------------------------------------

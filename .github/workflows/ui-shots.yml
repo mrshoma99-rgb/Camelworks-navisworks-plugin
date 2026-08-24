@@ -6,9 +6,15 @@
 # change who does not have Navisworks.
 #
 # It does not have to be either. The pane is ordinary WPF, so CamelWorks.Studio renders every
-# screen into a PNG with no Autodesk assembly anywhere near it. This job runs that on every push
-# that touches the UI, uploads the images as an artifact, and force-pushes them to a branch called
-# ui-shots so they can be fetched and looked at without downloading a zip.
+# screen into a PNG with no Autodesk assembly anywhere near it. This job runs that, uploads the
+# images as an artifact, and force-pushes them to a branch called ui-shots so they can be fetched
+# and looked at without downloading a zip.
+#
+# On demand, not on every push. It is a Windows runner - billed at twice the rate - and what it
+# produces is something somebody looks at when they want to look at it, which is a fraction of the
+# pushes that touch the UI. Run it from the Actions tab, or with `gh workflow run ui-shots.yml`,
+# when the pictures are the thing being asked for. Every push still compiles the UI; this is the
+# part that only earns its minutes when somebody is going to open the images.
 #
 # The branch is deliberately orphaned and rewritten each time: it is a viewing surface, not
 # history, and binary images accumulating on a source branch is how a repository gets heavy.
@@ -16,12 +22,13 @@
 name: ui-shots
 
 on:
+  workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - "CamelWorks.UI/**"
       - "CamelWorks.Studio/**"
       - ".github/workflows/ui-shots.yml"
-  workflow_dispatch:
 
 # One at a time per branch, and the newer one wins. This job force-pushes an orphan branch, so two
 # runs in flight together are two writers racing over the same ref - and the pictures that survive

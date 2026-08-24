@@ -19,23 +19,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # What a Windows runner is actually needed for, decided on a Linux runner first.
+  #
+  # Windows minutes bill at twice the rate of Linux and every push spent three of them, most often
+  # on a commit that touched nothing a Windows compiler sees differently. This job costs about ten
+  # seconds of the cheap kind and decides how much of the expensive kind follows.
+  #
+  # It only ever narrows a pull request. A push to main or a tag builds everything, because that is
+  # the moment the answer has to be complete rather than quick.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      years: ${{ steps.look.outputs.years }}
+      installer: ${{ steps.look.outputs.installer }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out what a Windows runner is needed for
+        id: look
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo 'years=["2024","2025","2026","2027"]' >> "$GITHUB_OUTPUT"
+            echo "installer=true" >> "$GITHUB_OUTPUT"
+            echo "main or a tag: building everything"
+            exit 0
+          fi
+
+          files="$(git diff --name-only '${{ github.event.pull_request.base.sha }}...HEAD')"
+          echo "$files"
+
+          # Anything the Windows compiler sees: the host-bound assemblies, the ribbon markup, and
+          # the build files that decide how any of it is compiled.
+          if grep -qE '^(CamelWorks\.UI/|CamelWorks\.Nav/|CamelWorks\.Nav\.Clash/|CamelWorks\.Studio/|Directory\.Build|.*\.props$|.*\.targets$|\.github/workflows/build\.yml$)' <<< "$files"; then
+            echo 'years=["2024","2027"]' >> "$GITHUB_OUTPUT"
+            echo "host-bound code changed: both ends of the API surface"
+          elif grep -qE '^CamelWorks\.Core/' <<< "$files"; then
+            # Core is compiled into the Windows assemblies too, so a changed signature can break
+            # the UI without any UI file being touched. One year proves the UI still compiles;
+            # bracketing the API surface is only worth it when host-bound code actually moved.
+            echo 'years=["2027"]' >> "$GITHUB_OUTPUT"
+            echo "Core changed: one year, to prove the UI still compiles against it"
+          else
+            echo 'years=[]' >> "$GITHUB_OUTPUT"
+            echo "nothing a Windows compiler reads: no Windows jobs"
+          fi
+
+          if grep -qE '^(installer/|CamelWorks\.Studio/|.*PackageContents\.xml$|\.github/workflows/build\.yml$)' <<< "$files"; then
+            echo "installer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "installer=false" >> "$GITHUB_OUTPUT"
+          fi
+
   windows:
     name: Windows (plug-in ${{ matrix.year }})
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.years != '[]'
     env:
       CI: "true"
-    # The two ends on a pull request, all four on main and on a tag.
+    # The two ends on a pull request that moved host-bound code, all four on main and on a tag.
     #
-    # Windows minutes bill at twice the rate of Linux, and four of these ran on every push. The
-    # years bracket the API surface: a change that compiles against both the oldest and the newest
-    # supported release has nowhere left to break in the two between them, and anything that does
-    # is caught before a release rather than after one, because main and every tag still build all
-    # four. Two jobs saved per push, against a risk that only exists in the window between merging
-    # and tagging.
+    # The years bracket the API surface: a change that compiles against both the oldest and the
+    # newest supported release has nowhere left to break in the two between them, and anything that
+    # does is caught before a release rather than after one, because main and every tag still build
+    # all four.
     strategy:
       fail-fast: false
       matrix:
-        year: ${{ github.event_name == 'pull_request' && fromJSON('["2024","2027"]') || fromJSON('["2024","2025","2026","2027"]') }}
+        year: ${{ fromJSON(needs.changes.outputs.years) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,6 +119,8 @@ jobs:
   installer:
     name: Windows (installer)
     runs-on: windows-latest
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

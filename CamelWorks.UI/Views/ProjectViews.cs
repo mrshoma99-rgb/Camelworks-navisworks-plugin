@@ -1274,7 +1274,124 @@ namespace CamelWorks.UI.Views
                 broken,
                 Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null,
                           Ui.Form(rows), Ui.Actions(save, reset), status),
+                People(session),
                 file));
+        }
+
+        /// <summary>
+        /// Who is on the job.
+        ///
+        /// A party typed into a box on the board is a party typed differently next week, and a
+        /// board filtered by it quietly splits in two. And an assignment is really to a person: a
+        /// person has an address, which is the difference between a BCF file somebody receives and
+        /// one that sits in a folder waiting to be noticed.
+        ///
+        /// Optional, like everything else here. With nobody on it the board behaves exactly as it
+        /// did - a party is whatever somebody types.
+        /// </summary>
+        private static UIElement People(Session session)
+        {
+            var roster = TeamRoster.FromJson(
+                session.Store.Section(ProjectStore.ProfileSection)["roster"]);
+
+            var list = Ui.Stack();
+            var status = Ui.Stack();
+
+            var name = Ui.Text(string.Empty, "who", null, 160);
+            var party = Ui.Text(string.Empty, "which organisation", null, 160);
+            var email = Ui.Text(string.Empty, "where a BCF file reaches them", null, 200);
+
+            void Keep()
+            {
+                session.Store.Section(ProjectStore.ProfileSection).Set("roster", roster.ToJson());
+
+                status.Children.Clear();
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Done(roster.Explain())
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
+            }
+
+            void Fill()
+            {
+                list.Children.Clear();
+
+                foreach (var member in roster.Members)
+                {
+                    var here = member;
+                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+
+                    row.Children.Add(Ui.Check(string.Empty, here.IsActive, on =>
+                    {
+                        here.IsActive = on;
+                        Keep();
+                    }));
+
+                    row.Children.Add(Ui.Line(here.Name, here.IsActive ? 1 : 0.5, true));
+
+                    if (here.Party != null) row.Children.Add(Ui.Pill(here.Party, Tone.Plain));
+
+                    row.Children.Add(here.Email == null
+                        ? Ui.Pill("no address", Tone.Warn)
+                        : Ui.Line(here.Email, 0.65));
+
+                    row.Children.Add(Ui.Icon(Glyphs.Bin, "Take them off the roster", () =>
+                    {
+                        roster.Remove(here.Id);
+                        Fill();
+                        Keep();
+                    }));
+
+                    foreach (var child in row.Children.OfType<FrameworkElement>())
+                        child.Margin = new Thickness(0, 0, 8, 0);
+
+                    list.Children.Add(row);
+                }
+
+                if (roster.Members.Count == 0)
+                    list.Children.Add(Ui.Small("Nobody yet. A party is whatever somebody types on "
+                        + "the board until there is."));
+            }
+
+            Fill();
+
+            var add = Ui.Button("Add", () =>
+            {
+                status.Children.Clear();
+
+                var who = name.Text.Trim();
+
+                if (who.Length == 0)
+                {
+                    status.Children.Add(Ui.Problem("Type a name."));
+                    return;
+                }
+
+                // Through Add, so typing a name that is already there edits that row rather than
+                // making a second one - two rows with one name would make every assignment to that
+                // name ambiguous, since the name is the identity.
+                roster.Add(who, party.Text, email.Text);
+
+                name.Text = string.Empty;
+                email.Text = string.Empty;
+
+                Fill();
+                Keep();
+            });
+
+            return Ui.Marked(Glyphs.Tune, "Who is on the job",
+                "The organisations and the people in them. The board offers these when a group is "
+                + "assigned, and more than one person can carry a group.",
+                list,
+                Ui.Form(
+                    Ui.Pair(Ui.Field("Name", name), Ui.Field("Organisation", party)),
+                    Ui.Field("Address", email,
+                             "Optional, and the difference between a BCF file somebody receives "
+                             + "and one that waits in a folder to be noticed.")),
+                Ui.Actions(add),
+                Ui.Small("Unticking somebody keeps them on the roster and out of every list. Their "
+                         + "work does not leave when they do, and the board says so."),
+                status);
         }
 
         private static UIElement Row(ProfileSetting setting)
