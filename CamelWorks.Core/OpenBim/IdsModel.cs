@@ -39,13 +39,15 @@ namespace CamelWorks.Core.OpenBim
 
         private readonly Regex? _pattern;
 
-        private IdsValue(string? literal, Regex? pattern, IReadOnlyList<string>? enumeration,
+        private IdsValue(string? literal, Regex? pattern, string? patternText,
+                         IReadOnlyList<string>? enumeration,
                          double? minInclusive, double? maxInclusive,
                          double? minExclusive, double? maxExclusive,
                          int? length, int? minLength, int? maxLength, string description)
         {
             Literal = literal;
             _pattern = pattern;
+            Pattern = patternText;
             Enumeration = enumeration;
             MinInclusive = minInclusive; MaxInclusive = maxInclusive;
             MinExclusive = minExclusive; MaxExclusive = maxExclusive;
@@ -55,6 +57,15 @@ namespace CamelWorks.Core.OpenBim
 
         /// <summary>The literal, when the value is a simple one.</summary>
         public string? Literal { get; }
+
+        /// <summary>
+        /// The pattern as the file spelled it, when the restriction has one.
+        ///
+        /// Kept alongside the compiled form because the compiled one is anchored, and writing an
+        /// IDS back out with <c>\A(?:...)\z</c> in it would hand somebody else a file that says
+        /// something subtly different from the one they sent.
+        /// </summary>
+        public string? Pattern { get; }
 
         /// <summary>The permitted values, when the restriction enumerates them.</summary>
         public IReadOnlyList<string>? Enumeration { get; }
@@ -86,7 +97,15 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>A literal value.</summary>
         public static IdsValue Simple(string literal) =>
             new IdsValue(literal ?? throw new ArgumentNullException(nameof(literal)),
-                         null, null, null, null, null, null, null, null, null, "'" + literal + "'");
+                         null, null, null, null, null, null, null, null, null, null,
+                         "'" + literal + "'");
+
+        /// <summary>True when the restriction restricts nothing, so there is no value to write.</summary>
+        public bool IsEmpty =>
+            Literal == null && Pattern == null && (Enumeration == null || Enumeration.Count == 0)
+            && MinInclusive == null && MaxInclusive == null
+            && MinExclusive == null && MaxExclusive == null
+            && Length == null && MinLength == null && MaxLength == null;
 
         /// <summary>A restriction.</summary>
         /// <param name="pattern">An XML Schema regular expression, or null.</param>
@@ -125,7 +144,7 @@ namespace CamelWorks.Core.OpenBim
             if (minLength != null) parts.Add("at least " + minLength.Value.ToString(CultureInfo.InvariantCulture) + " characters");
             if (maxLength != null) parts.Add("at most " + maxLength.Value.ToString(CultureInfo.InvariantCulture) + " characters");
 
-            return new IdsValue(null, compiled, enumeration, minInclusive, maxInclusive,
+            return new IdsValue(null, compiled, pattern, enumeration, minInclusive, maxInclusive,
                                 minExclusive, maxExclusive, length, minLength, maxLength,
                                 parts.Count == 0 ? "any value" : string.Join(" and ", parts));
         }

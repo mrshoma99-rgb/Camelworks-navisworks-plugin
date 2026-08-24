@@ -108,6 +108,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends libxml2-utils
           schemas/bcf/validate.sh
 
+      # No assertion can prove an IDS loads in somebody else's tool. The writer's real output goes
+      # past the published schema instead, with a local stand-in for the two declarations IDS
+      # borrows from XMLSchema so it needs no network. See schemas/ids/README.md.
+      - name: Validate written IDS against the published schema
+        run: schemas/ids/validate.sh
+
       - name: Check written PDFs are structurally sound
         run: |
           sudo apt-get install -y --no-install-recommends qpdf
