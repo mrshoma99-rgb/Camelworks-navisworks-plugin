@@ -3,22 +3,28 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 using CamelWorks.UI.Views;
 
 namespace CamelWorks.UI.Shell
 {
     /// <summary>
-    /// The pane's chrome: a workspace switcher, a tab strip, a search field and the content.
+    /// The pane's chrome: a brand bar with search, a workspace switcher, a tab strip and the
+    /// content.
     ///
     /// Built in code rather than XAML because the layout is driven by <see cref="Workspaces"/> —
     /// markup would either duplicate that list or bind to it through a pile of templates, and the
-    /// list is the thing three separate parts of the product have to agree on.
+    /// list is the thing three separate parts of the product have to agree on. What it is painted
+    /// with is not in here at all: every colour and control shape comes from <see cref="Skin"/>,
+    /// which is the same token set the BIMCamel IFC exporter uses, so the two panes docked beside
+    /// each other look like one product rather than two.
     ///
     /// <b>It collapses by label, never to glyphs.</b> Below about 900 device-independent pixels the
-    /// switcher becomes Home plus a labelled dropdown. A row of unlabelled icons saves the same
-    /// space and costs the user the ability to find anything, which is the opposite of what a
-    /// product with this much surface needs.
+    /// switcher becomes a labelled dropdown. A row of unlabelled icons saves the same space and
+    /// costs the user the ability to find anything, which is the opposite of what a product with
+    /// this much surface needs.
     /// </summary>
     public sealed class ShellView : UserControl
     {
@@ -27,12 +33,16 @@ namespace CamelWorks.UI.Shell
 
         private readonly string _paneId;
         private readonly StackPanel _switcher = new StackPanel { Orientation = Orientation.Horizontal };
-        private readonly ComboBox _switcherNarrow = new ComboBox { Width = 150, Margin = new Thickness(0, 0, 8, 0) };
+        private readonly ComboBox _switcherNarrow = new ComboBox { MinWidth = 148, Margin = new Thickness(0, 0, 8, 0) };
         private readonly StackPanel _tabs = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly Border _tabStrip;
-        private readonly TextBox _search = new TextBox { Width = 190, Padding = new Thickness(4, 2, 4, 2) };
-        private readonly ListBox _searchResults = new ListBox { MaxHeight = 220, Visibility = Visibility.Collapsed };
+        private readonly Border _rail;
+        private readonly TextBox _search = new TextBox { MinWidth = 130, Tag = "Find a tool" };
+        private readonly ListBox _searchResults = new ListBox { MaxHeight = 260, Visibility = Visibility.Collapsed };
         private readonly ContentControl _content = new ContentControl();
+        private readonly TextBlock _where = new TextBlock();
+        private readonly ProgressBar _busy = new ProgressBar { Height = 3, Visibility = Visibility.Collapsed };
+        private readonly System.Windows.Controls.Button _theme = new System.Windows.Controls.Button();
 
         private Workspace _workspace;
         private WorkspaceTab? _tab;
@@ -45,45 +55,87 @@ namespace CamelWorks.UI.Shell
             _paneId = paneId ?? Workspaces.MainPane;
             _workspace = Workspaces.All.First(w => w.PaneId == _paneId);
 
+            Skin.Apply(this);
+
+            // Display-mode formatting and layout rounding are what stop 11px labels from going
+            // fuzzy on a 100% display, which is what most of these panes are read on.
+            TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+            UseLayoutRounding = true;
+            SnapsToDevicePixels = true;
+            FontFamily = new FontFamily("Segoe UI");
+            FontSize = 13;
+
             var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            root.Children.Add(Header());
+            root.Children.Add(Brand());
 
-            _tabStrip = new Border
-            {
-                Padding = new Thickness(8, 0, 8, 0),
-                Child = _tabs,
-            };
+            Grid.SetRow(_busy, 1);
+            root.Children.Add(_busy);
 
-            Grid.SetRow(_tabStrip, 1);
+            _rail = new Border { Padding = new Thickness(8, 6, 8, 6), Child = SwitcherRow() };
+            _rail.Tint(Border.BackgroundProperty, "Nav");
+            _rail.Tint(Border.BorderBrushProperty, "Bd");
+            _rail.BorderThickness = new Thickness(0, 0, 0, 1);
+            Grid.SetRow(_rail, 2);
+            root.Children.Add(_rail);
+
+            _tabStrip = new Border { Padding = new Thickness(8, 0, 8, 0), Child = _tabs };
+            _tabStrip.Tint(Border.BorderBrushProperty, "Bd");
+            _tabStrip.BorderThickness = new Thickness(0, 0, 0, 1);
+            Grid.SetRow(_tabStrip, 3);
             root.Children.Add(_tabStrip);
 
             var body = new Grid();
             body.Children.Add(_content);
-            body.Children.Add(new Border
+
+            var results = new Border
             {
                 Child = _searchResults,
-                Background = SystemColors.WindowBrush,
-                BorderBrush = SystemColors.ActiveBorderBrush,
                 BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top,
                 Width = 340,
-                Margin = new Thickness(0, 0, 8, 0),
-            });
+                Margin = new Thickness(0, 4, 8, 0),
+                Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 16,
+                    ShadowDepth = 3,
+                    Opacity = 0.22,
+                },
+            };
 
-            Grid.SetRow(body, 2);
+            results.Tint(Border.BackgroundProperty, "Card");
+            results.Tint(Border.BorderBrushProperty, "Bd");
+            body.Children.Add(results);
+
+            Grid.SetRow(body, 4);
             root.Children.Add(body);
 
-            Content = root;
+            var ground = new Border { Child = root };
+            ground.Tint(Border.BackgroundProperty, "Pane");
+            Content = ground;
 
             _search.TextChanged += (s, e) => Filter();
+            _search.PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape) Clear(); };
             _searchResults.SelectionChanged += (s, e) => Jump();
             _switcherNarrow.SelectionChanged += (s, e) => PickNarrow();
             SizeChanged += (s, e) => Reflow(e.NewSize.Width);
+
+            // A job started on one tab must still look like it is running after you switch to
+            // another. Otherwise the answer to "did I actually press it?" is to press it again,
+            // which is how two exports end up fighting over one file.
+            //
+            // Hooked on Loaded and unhooked on Unloaded, both, rather than hooked once in here:
+            // these are static events, and a pane that unhooks when it is hidden and never hooks
+            // again comes back with a progress strip that has quietly stopped working.
+            Loaded += (s, e) => Hook(true);
+            Unloaded += (s, e) => Hook(false);
 
             BuildSwitcher();
             Show(_workspace.Id, null);
@@ -110,34 +162,136 @@ namespace CamelWorks.UI.Shell
             ShowContent();
         }
 
-        private UIElement Header()
+        /// <summary>
+        /// The brand bar.
+        ///
+        /// It carries the product name, where you are, the tool search and the theme control — the
+        /// four things that are true of every screen. Everything below it belongs to one workspace;
+        /// this row belongs to the product, and looking like the exporter's title bar is the point,
+        /// not a coincidence.
+        /// </summary>
+        private UIElement Brand()
         {
-            var header = new Grid { Margin = new Thickness(8, 8, 8, 6) };
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var bar = new Border { Height = 44, Padding = new Thickness(10, 0, 10, 0) };
+            bar.Tint(Border.BackgroundProperty, "BrandBar");
 
-            var left = new StackPanel { Orientation = Orientation.Horizontal };
-            left.Children.Add(_switcherNarrow);
-            left.Children.Add(_switcher);
-            header.Children.Add(left);
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // The search field is permanently visible rather than behind a button. Find a Tool is
-            // the answer to a surface this size, and a search you have to find first is not one.
-            var right = new StackPanel { Orientation = Orientation.Horizontal };
-            right.Children.Add(new TextBlock
+            var mark = new Border
             {
-                Text = "Find a tool",
-                Margin = new Thickness(0, 0, 6, 0),
+                Width = 28,
+                Height = 28,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)),
                 VerticalAlignment = VerticalAlignment.Center,
-                Opacity = 0.7,
+                Child = new TextBlock
+                {
+                    Text = "CW",
+                    Foreground = Brushes.White,
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+
+            grid.Children.Add(mark);
+
+            var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(9, 0, 12, 0) };
+
+            titles.Children.Add(new TextBlock
+            {
+                Text = "CamelWorks",
+                Foreground = Brushes.White,
+                FontSize = 14,
+                FontWeight = FontWeights.SemiBold,
             });
-            right.Children.Add(_search);
 
-            Grid.SetColumn(right, 1);
-            header.Children.Add(right);
+            _where.Foreground = new SolidColorBrush(Color.FromArgb(0xDD, 0xFF, 0xFF, 0xFF));
+            _where.FontSize = 10.5;
+            titles.Children.Add(_where);
 
+            Grid.SetColumn(titles, 1);
+            grid.Children.Add(titles);
+
+            var search = SearchBox();
+            Grid.SetColumn(search, 2);
+            grid.Children.Add(search);
+
+            _theme.Content = Ui.Glyph(Glyphs.Theme, 15, "Text");
+            _theme.Wearing("IconBtn");
+            _theme.ToolTip = Skin.ModeName;
+            _theme.Click += (s, e) =>
+            {
+                Skin.Next();
+                _theme.ToolTip = Skin.ModeName;
+            };
+
+            // The glyph is white on the gradient, which is one of the two places in the pane where
+            // a colour is not a palette key: the bar is the brand colour in both themes.
+            if (_theme.Content is Viewbox box && box.Child is System.Windows.Shapes.Path path)
+                path.Stroke = Brushes.White;
+
+            Grid.SetColumn(_theme, 3);
+            grid.Children.Add(_theme);
+
+            bar.Child = grid;
+            return bar;
+        }
+
+        private Border? _searchFrame;
+
+        private Border SearchBox()
+        {
+            if (_searchFrame != null) return _searchFrame;
+
+            _search.Background = Brushes.Transparent;
+            _search.Foreground = Brushes.White;
+            _search.CaretBrush = Brushes.White;
+            _search.BorderThickness = new Thickness(0);
+            _search.VerticalAlignment = VerticalAlignment.Center;
+
+            // The brand bar is the one ground in the pane that is not a palette key, so the search
+            // field on it is spelled out rather than tinted: white at low alpha reads on both ends
+            // of the gradient and in both themes.
+            var frame = new Border
+            {
+                Height = 28,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(0x29, 0xFF, 0xFF, 0xFF)),
+                Padding = new Thickness(8, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MaxWidth = 320,
+            };
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var glass = Ui.Glyph(Glyphs.Find, 14, "Text", new Thickness(0, 0, 7, 0));
+            if (glass.Child is System.Windows.Shapes.Path path) path.Stroke = Brushes.White;
+            row.Children.Add(glass);
+
+            Grid.SetColumn(_search, 1);
+            row.Children.Add(_search);
+
+            frame.Child = row;
+            _searchFrame = frame;
+            return frame;
+        }
+
+        private UIElement SwitcherRow()
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(_switcherNarrow);
+            row.Children.Add(_switcher);
             _switcherNarrow.Visibility = Visibility.Collapsed;
-            return header;
+            return row;
         }
 
         private void BuildSwitcher()
@@ -145,18 +299,38 @@ namespace CamelWorks.UI.Shell
             _switcher.Children.Clear();
             _switcherNarrow.Items.Clear();
 
+            _where.Text = _workspace.Title + (_tab == null || !_workspace.HasTabStrip ? string.Empty : "  ·  " + _tab.Title);
+
             foreach (var workspace in Workspaces.All.Where(w => w.PaneId == _paneId))
             {
                 var current = workspace;
 
-                var button = new ToggleButton
+                // A dot in the workspace's own colour, matching the ribbon icon for the same
+                // section. Eight identical grey labels is what "all the tools look the same"
+                // looks like in a switcher.
+                var dot = new System.Windows.Shapes.Ellipse
                 {
-                    Content = workspace.Title,
-                    IsChecked = ReferenceEquals(workspace, _workspace),
-                    Margin = new Thickness(0, 0, 4, 0),
-                    Padding = new Thickness(10, 3, 10, 3),
+                    Width = 7,
+                    Height = 7,
+                    Margin = new Thickness(0, 0, 7, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
                 };
 
+                dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "Fam." + workspace.Id);
+
+                var label = new StackPanel { Orientation = Orientation.Horizontal };
+                label.Children.Add(dot);
+                label.Children.Add(new TextBlock { Text = workspace.Title, VerticalAlignment = VerticalAlignment.Center });
+
+                var button = new ToggleButton
+                {
+                    Content = label,
+                    IsChecked = ReferenceEquals(workspace, _workspace),
+                    Margin = new Thickness(0, 0, 3, 0),
+                    ToolTip = workspace.Tabs.FirstOrDefault()?.Summary,
+                };
+
+                button.Wearing("RailBtn");
                 button.Checked += (s, e) => Show(current.Id, null);
                 _switcher.Children.Add(button);
 
@@ -180,10 +354,10 @@ namespace CamelWorks.UI.Shell
                 {
                     Content = tab.Title,
                     IsChecked = ReferenceEquals(tab, _tab),
-                    Margin = new Thickness(0, 0, 2, 0),
-                    Padding = new Thickness(8, 2, 8, 2),
+                    ToolTip = tab.Summary,
                 };
 
+                button.Wearing("TabBtn");
                 button.Checked += (s, e) => Show(_workspace.Id, current.Id);
                 _tabs.Children.Add(button);
             }
@@ -202,6 +376,49 @@ namespace CamelWorks.UI.Shell
         {
             var (workspace, tab) = Workspaces.Route(route);
             if (workspace != null) Show(workspace.Id, tab?.Id);
+        }
+
+        private bool _hooked;
+
+        private void Hook(bool on)
+        {
+            if (on == _hooked) return;
+            _hooked = on;
+
+            if (on)
+            {
+                Ui.Running += OnRunning;
+                Skin.Changed += OnSkinChanged;
+            }
+            else
+            {
+                Ui.Running -= OnRunning;
+                Skin.Changed -= OnSkinChanged;
+            }
+        }
+
+        private void OnRunning(object? sender, int count)
+        {
+            var running = count > 0;
+
+            // Left indeterminate only while it is shown: an animating bar behind a collapsed
+            // element is work nobody can see.
+            _busy.IsIndeterminate = running;
+            _busy.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Rebuild after a theme change.
+        ///
+        /// Almost everything repaints itself, because it is bound to a palette key rather than to a
+        /// brush. The exceptions are the parts of a screen built with a brush resolved at the time
+        /// — a tone-tinted table row, a graph node — and rebuilding the current screen is cheaper
+        /// than hunting for them.
+        /// </summary>
+        private void OnSkinChanged(object? sender, EventArgs e)
+        {
+            _theme.ToolTip = Skin.ModeName;
+            ShowContent();
         }
 
         private void Reflow(double width)
@@ -238,9 +455,37 @@ namespace CamelWorks.UI.Shell
             _searchResults.Items.Clear();
 
             foreach (var command in CommandCatalogue.Search(query).Take(12))
-                _searchResults.Items.Add(new ListBoxItem { Content = command.Title, Tag = command });
+                _searchResults.Items.Add(new ListBoxItem { Content = Result(command), Tag = command });
 
             _searchResults.Visibility = _searchResults.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// One search hit: what the tool is called, and which part of the product it is in.
+        ///
+        /// The section matters as much as the name. "Report" is four different things in a
+        /// coordination tool, and a list of bare titles makes the user open three of them.
+        /// </summary>
+        private static UIElement Result(RibbonCommand command)
+        {
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock { Text = command.Title, FontWeight = FontWeights.SemiBold });
+
+            var route = command.Route;
+
+            if (!string.IsNullOrEmpty(route))
+            {
+                var where = route!.Replace("/", "  ·  ");
+                stack.Children.Add(new TextBlock { Text = where }.Wearing("Hint"));
+            }
+
+            return stack;
+        }
+
+        private void Clear()
+        {
+            _search.Text = string.Empty;
+            _searchResults.Visibility = Visibility.Collapsed;
         }
 
         private void Jump()
@@ -252,9 +497,7 @@ namespace CamelWorks.UI.Shell
             var (workspace, tab) = Workspaces.Route(command.Route);
             if (workspace == null) return;
 
-            _search.Text = string.Empty;
-            _searchResults.Visibility = Visibility.Collapsed;
-
+            Clear();
             Show(workspace.Id, tab?.Id);
         }
     }

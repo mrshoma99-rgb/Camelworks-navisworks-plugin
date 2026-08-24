@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PROJECTS = ["CamelWorks.Core", "CamelWorks.Nav", "CamelWorks.Nav.Clash", "CamelWorks.UI"]
+PROJECTS = ["CamelWorks.Core", "CamelWorks.Nav", "CamelWorks.Nav.Clash", "CamelWorks.UI", "CamelWorks.Studio"]
 
 DOC = re.compile(r"^\s*///")
 PARAM_TAG = re.compile(r'<param\s+name\s*=\s*"([^"]*)"')

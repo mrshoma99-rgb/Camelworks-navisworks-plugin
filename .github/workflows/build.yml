@@ -51,6 +51,12 @@ jobs:
       - name: Build installer (Release)
         run: dotnet build installer/CamelWorks.Installer/CamelWorks.Installer.csproj -c Release
 
+      # The design harness is not part of the product and no bundle names it, but it references
+      # the whole widget vocabulary, so building it here is what stops it rotting the first time
+      # a control gains an argument.
+      - name: Build the design harness (Release)
+        run: dotnet build CamelWorks.Studio/CamelWorks.Studio.csproj -c Release
+
   # CamelWorks.Core is netstandard2.0 with no Autodesk reference, so it builds AND its tests run
   # here. That is the whole point of the seam: the clash pipeline, the set compiler, the appearance
   # fold, the graph runner, BCF and the report writers are all proved without a Navisworks anywhere.

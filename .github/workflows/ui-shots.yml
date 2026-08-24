@@ -1,0 +1,75 @@
+# Pictures of the panes, taken by the machine that compiled them.
+#
+# CamelWorks.UI is a Navisworks dock pane, so the normal way to look at a layout change is to
+# install a plug-in into a licensed CAD application and click through to it. That loop is slow
+# enough that layouts stop being iterated, and it is unavailable entirely to anyone reviewing a
+# change who does not have Navisworks.
+#
+# It does not have to be either. The pane is ordinary WPF, so CamelWorks.Studio renders every
+# screen into a PNG with no Autodesk assembly anywhere near it. This job runs that on every push
+# that touches the UI, uploads the images as an artifact, and force-pushes them to a branch called
+# ui-shots so they can be fetched and looked at without downloading a zip.
+#
+# The branch is deliberately orphaned and rewritten each time: it is a viewing surface, not
+# history, and binary images accumulating on a source branch is how a repository gets heavy.
+
+name: ui-shots
+
+on:
+  push:
+    paths:
+      - "CamelWorks.UI/**"
+      - "CamelWorks.Studio/**"
+      - ".github/workflows/ui-shots.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    name: Windows (render the panes)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build the harness
+        run: dotnet build CamelWorks.Studio/CamelWorks.Studio.csproj -c Release
+
+      # A WinExe writes nothing to the console it was started from, so the harness keeps its own
+      # log beside the images and this prints it. Without that, a sheet that failed to render is
+      # simply a file that is not there.
+      - name: Render every pane, light and dark, at every pane width
+        run: |
+          dotnet run --project CamelWorks.Studio/CamelWorks.Studio.csproj -c Release --no-build -- --shoot "${{ github.workspace }}\shots"
+          Get-Content "${{ github.workspace }}\shots\_log.txt"
+
+      - name: Upload the images
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-shots
+          path: shots/*
+          if-no-files-found: error
+
+      - name: Publish them to the ui-shots branch
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # An orphan branch, emptied and refilled. git rm clears everything that is tracked;
+          # shots/ was written by the run and is untracked, so it survives that and is all that
+          # gets committed.
+          git checkout --orphan ui-shots
+          git rm -rf --quiet . > /dev/null
+          git add --force shots
+          git commit --quiet -m "Panes as rendered from ${GITHUB_SHA:0:7} on ${GITHUB_REF_NAME}"
+          git push --force origin ui-shots

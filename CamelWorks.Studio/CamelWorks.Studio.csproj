@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <!--
+    The design harness.
+
+    CamelWorks.UI is a Navisworks dock pane, which normally means the only way to look at it is to
+    install a plug-in into a licensed CAD application and click through to the screen you changed.
+    That is a bad enough loop to iterate a layout in that layouts stop being iterated.
+
+    It does not have to be. The pane is ordinary WPF built out of one widget vocabulary, so this
+    runs the same controls in a plain window:
+
+        dotnet run --project CamelWorks.Studio                       look at them
+        dotnet run --project CamelWorks.Studio -- --shoot out\shots  write them to PNG
+
+    There is no Autodesk assembly beside this executable and that is deliberate. Anything that
+    reaches the host throws where it is touched, TabViews catches it and shows the failure in the
+    pane, and the chrome around it renders exactly as it does in Navisworks. The screens that show
+    real host data cannot be exercised here; the vocabulary they are all built from can, and that
+    is where the design lives.
+
+    It is not part of the product: no bundle names it, no installer copies it, and the release
+    workflow does not build it.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <LangVersion>10.0</LangVersion>
+    <AssemblyName>CamelWorks.Studio</AssemblyName>
+    <RootNamespace>CamelWorks.Studio</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <Product>CamelWorks</Product>
+    <Company>BIMCamel</Company>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <StartupObject>CamelWorks.Studio.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CamelWorks.UI\CamelWorks.UI.csproj" />
+  </ItemGroup>
+
+</Project>
