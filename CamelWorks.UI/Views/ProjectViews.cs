@@ -741,6 +741,11 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(table);
                 results.Children.Add(Ui.Line("Pick a row to select that specification's failing elements.", 0.6));
 
+                // The panel answers "are we ready to issue". The workbook answers "what do I fix",
+                // and it is asked by somebody who is not sitting in Navisworks.
+                results.Children.Add(Ui.Actions(Ui.Button("Save it as a workbook...",
+                    () => Workbook(results, document, report, session.NowTicks))));
+
                 foreach (var detail in Details(report)) results.Children.Add(detail);
 
                 session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
@@ -760,7 +765,61 @@ namespace CamelWorks.UI.Views
                              + "readers put them and believes a value only if it reads like a class "
                              + "name. A Revit export saying \"Basic Wall\" is a family, not an "
                              + "IfcWall, and treating it as one would make every row meaningless.")),
+                Ui.Rule(),
+                Author(results),
                 results);
+        }
+
+        /// <summary>
+        /// The other direction: the requirements this project sets, rather than the ones it is set.
+        ///
+        /// A client's IDS answers "have we given them what they asked for". It says nothing about
+        /// what the job has decided among itself, which is argued about all week and then enforced
+        /// by eye. Written as an IDS, the same file checks the model here, travels to the architect
+        /// and comes back with the next revision.
+        /// </summary>
+        private static UIElement Author(Panel results)
+        {
+            var open = Ui.Button("Write an IDS of our own...", () =>
+            {
+                var problem = IdsWindow.Show();
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Eyebrow("Our own rules"),
+                Ui.Small("The properties this job has decided have to be filled in, and on what. "
+                         + "It opens on the specification everybody writes first, keeps the draft "
+                         + "in the project as IDS itself, and saves a .ids anybody's tool reads."),
+                Ui.Actions(open));
+        }
+
+        /// <summary>Write the check out as the two sheets somebody works through.</summary>
+        private static void Workbook(Panel results, IdsDocument document, IdsReport report, long ticks)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Save the IDS results",
+                Filter = "Excel workbook|*.xlsx",
+                FileName = document.Title + " - IDS.xlsx",
+                AddExtension = true,
+                DefaultExt = ".xlsx",
+            };
+
+            if (dialog.ShowDialog() != true) return;
+
+            try
+            {
+                File.WriteAllBytes(dialog.FileName, IdsSheet.Write(document, report, ticks));
+            }
+            catch (Exception e)
+            {
+                results.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                return;
+            }
+
+            results.Children.Add(Ui.Done("Wrote " + dialog.FileName
+                + " - one sheet per job: the verdicts, and the failures element by element."));
         }
 
         /// <summary>How much of the federation the check could actually see.</summary>
