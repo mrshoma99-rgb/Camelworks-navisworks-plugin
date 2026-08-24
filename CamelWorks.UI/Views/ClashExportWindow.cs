@@ -181,9 +181,9 @@ namespace CamelWorks.UI.Views
                              + "keeping rather than rebuilding."),
                     Ui.Field("Called", _name),
                     Ui.Across(
-                        Ui.Button("Keep", Keep),
-                        Ui.Button("Forget", Forget),
-                        Ui.Button("Save to a file...", ToFile),
+                        Ui.Quiet("Keep", Keep),
+                        Ui.Danger("Forget", Forget),
+                        Ui.Primary("Save to a file...", ToFile),
                         Ui.Button("Load from a file...", FromFile)),
                     _note);
             }
@@ -338,8 +338,8 @@ namespace CamelWorks.UI.Views
                         "Build a matrix or make a test in Clash Detective, then come back."));
                 else
                     _tests.Children.Add(Ui.Across(
-                        Ui.Button("Tick every test", () => Tick(true)),
-                        Ui.Button("Untick every test", () => Tick(false))));
+                        Ui.Quiet("Tick every test", () => Tick(true)),
+                        Ui.Quiet("Untick every test", () => Tick(false))));
 
                 ShowKept();
             }

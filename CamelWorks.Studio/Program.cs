@@ -35,7 +35,7 @@ namespace CamelWorks.Studio
         /// screen nobody can use, so reviewing the parts bin is not reviewing the product.
         /// </summary>
         internal static IReadOnlyList<Sheet> Everything { get; } =
-            Sheets.All.Concat(Panels.All).ToList();
+            Sheets.All.Concat(Panels.All).Concat(Dialogs.All).ToList();
 
         /// <summary>Run the harness.</summary>
         /// <param name="args">Pass <c>--shoot &lt;folder&gt;</c> to write PNGs instead of opening a window.</param>

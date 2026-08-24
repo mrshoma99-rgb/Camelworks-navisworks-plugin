@@ -235,7 +235,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Saved", _picker),
                         Ui.Field("Name", _name)),
                     Ui.Actions(
-                        Ui.Button("Save this one", Keep),
+                        Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
             }
 

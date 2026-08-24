@@ -532,8 +532,8 @@ namespace CamelWorks.UI.Views
                     Ui.Rule(),
                     Ui.Eyebrow("Write it"),
                     Ui.Actions(
-                        Ui.Button("Save as an .ids file...", Save),
-                        Ui.Button("Keep the draft here", Keep)),
+                        Ui.Primary("Save as an .ids file...", Save),
+                        Ui.Quiet("Keep the draft here", Keep)),
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
                     _output));
@@ -584,7 +584,7 @@ namespace CamelWorks.UI.Views
                     _list.Children.Add(row);
                 }
 
-                _list.Children.Add(Ui.Actions(Ui.Button("Add a specification", () =>
+                _list.Children.Add(Ui.Actions(Ui.Quiet("Add a specification", () =>
                 {
                     var fresh = new Spec();
                     fresh.Applies.Add(new Row { Kind = Entity, Test = Present });
@@ -685,7 +685,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var row in rows) host.Children.Add(Card(row, rows, requirement, Redraw));
 
-                    host.Children.Add(Ui.Actions(Ui.Button("Add a row", () =>
+                    host.Children.Add(Ui.Actions(Ui.Quiet("Add a row", () =>
                     {
                         rows.Add(new Row { Kind = requirement ? Property : Entity });
                         Redraw();
@@ -769,7 +769,10 @@ namespace CamelWorks.UI.Views
                     body.Add(Ui.Field("Instruction", Ui.Text(row.Instructions, "optional",
                                                              text => { row.Instructions = text; Look(); }, 240)));
 
-                body.Add(Ui.Actions(Ui.Button("Remove this row", () =>
+                // A bin, not three words. This sits at the foot of every facet row on a
+                // specification that can carry a dozen of them, and "Remove this row" twelve times
+                // over is more prose about the chrome than there is about the rule being written.
+                body.Add(Ui.Actions(Ui.Icon(Glyphs.Bin, "Remove this row", () =>
                 {
                     owner.Remove(row);
                     redraw();

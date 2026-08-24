@@ -180,7 +180,7 @@ namespace CamelWorks.UI.Views
                     results.Children.Add(Ui.Line("and " + (candidates.Length - 1)
                         + " more with the same name; the first is offered.", 0.55));
 
-                results.Children.Add(Ui.Button("Bring in " + name, () =>
+                results.Children.Add(Ui.Primary("Bring in " + name, () =>
                 {
                     try
                     {

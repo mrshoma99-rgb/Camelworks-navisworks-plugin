@@ -407,7 +407,7 @@ namespace CamelWorks.UI.Views
                 foreach (var note in result.Notes) _weight.Children.Add(Ui.Note(note));
 
                 _weight.Children.Add(Ui.Actions(
-                    Ui.Button("Copy the position", () => Copy(
+                    Ui.Quiet("Copy the position", () => Copy(
                         result.X.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Y.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Z.ToString("0.###", CultureInfo.InvariantCulture))),
@@ -525,7 +525,7 @@ namespace CamelWorks.UI.Views
                                              schedule.Rows.Count, "dimension"));
 
                 _sizes.Children.Add(Ui.Actions(
-                    Ui.Button("Write the schedule", () => WriteSchedule(schedule))));
+                    Ui.Primary("Write the schedule", () => WriteSchedule(schedule))));
             }
 
             /// <summary>
@@ -681,7 +681,7 @@ namespace CamelWorks.UI.Views
                                               result.Points.Count, "point"));
 
                 _points.Children.Add(Ui.Actions(
-                    Ui.Button("Write the file", () => WritePoints(result)),
+                    Ui.Primary("Write the file", () => WritePoints(result)),
                     Ui.Quiet("Save this setting out", () => KeepPoints())));
             }
 
@@ -863,7 +863,7 @@ namespace CamelWorks.UI.Views
                 _tags.Children.Add(Ui.Tally(Math.Min(Shown, run.Labels.Count), run.Labels.Count, "label"));
 
                 _tags.Children.Add(Ui.Actions(
-                    Ui.Button("Write the sheet", () => WriteTags(run))));
+                    Ui.Primary("Write the sheet", () => WriteTags(run))));
             }
 
             private void WriteTags(LabelRun run)

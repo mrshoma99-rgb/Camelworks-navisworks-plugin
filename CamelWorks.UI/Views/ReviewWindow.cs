@@ -106,6 +106,12 @@ namespace CamelWorks.UI.Views
             private readonly TextBlock _instruction = Ui.Line(string.Empty, 0.85);
             private readonly TextBlock _said = Ui.Line(string.Empty, 0.75);
             private readonly StackPanel _annotate = Ui.Stack();
+            private readonly StackPanel _status = Ui.Stack();
+
+            // True while the switch is being rebuilt to show a finding's own status. Marking
+            // advances to the next finding, so a rebuild that fired its own handler would walk
+            // the whole list on one click.
+            private bool _settling;
 
             private int _at;
             private int _moved;
@@ -123,15 +129,19 @@ namespace CamelWorks.UI.Views
                     _where,
                     _what,
                     _instruction,
+                    // Moving through the list is two chevrons, not two words. On a screen somebody
+                    // works down a hundred findings on, "Previous" and "Next" are two captions
+                    // read once and then skipped past forever, taking the width of a real action
+                    // with them.
                     Ui.Across(
-                        Ui.Button("Previous", () => Go(_at - 1)),
-                        Ui.Button("Next", () => Go(_at + 1)),
-                        Ui.Button("Box it", ToggleBox)),
-                    Ui.Across(
-                        Ui.Button("Reviewed", () => Mark(FindingStatus.Reviewed)),
-                        Ui.Button("Approved", () => Mark(FindingStatus.Approved)),
-                        Ui.Button("Resolved", () => Mark(FindingStatus.Resolved)),
-                        Ui.Button("Active", () => Mark(FindingStatus.Active))),
+                        Ui.Icon(Glyphs.Backward, "Previous finding (P)", () => Go(_at - 1)),
+                        Ui.Icon(Glyphs.Onward, "Next finding (N)", () => Go(_at + 1)),
+                        Ui.Icon(Glyphs.Boxed, "Section box round this one (B)", ToggleBox)),
+
+                    // The four statuses were four identical buttons, which could set a status and
+                    // could not show one: nothing on the screen said what this finding already is.
+                    // One switch says both, and says them in the same place.
+                    Ui.Field("Where this one stands", _status),
                     Ui.Field("What to do", _annotate),
                     _said,
                     Ui.Note("Keys: N and P move, 1 reviewed, 2 approved, 3 resolved, 0 active, "
@@ -179,7 +189,6 @@ namespace CamelWorks.UI.Views
 
                 _what.Text = Ui.Count(group.Items.Count, "clash")
                            + " - " + (group.AssignedTo ?? PartyLedger.Nobody)
-                           + " - " + FindingStatusLattice.ToName(Held(group))
                            + (first == null ? string.Empty
                               : " - " + units.Bare(first.X) + ", " + units.Bare(first.Y)
                                 + ", " + units.Bare(first.Z) + " " + units.LengthUnit);
@@ -188,6 +197,8 @@ namespace CamelWorks.UI.Views
 
                 _annotate.Children.Clear();
                 _annotate.Children.Add(Editor(group, units));
+
+                DrawStatus(group);
 
                 Frame(group);
             }
@@ -260,8 +271,7 @@ namespace CamelWorks.UI.Views
                       + FindingStatusLattice.ToName(status) + ".";
 
                 _what.Text = Ui.Count(group.Items.Count, "clash")
-                           + " - " + (group.AssignedTo ?? PartyLedger.Nobody)
-                           + " - " + FindingStatusLattice.ToName(Held(group));
+                           + " - " + (group.AssignedTo ?? PartyLedger.Nobody);
 
                 // Moving on is what somebody wants next nine times in ten, and the tenth can press P.
                 Go(_at + 1);
@@ -279,7 +289,7 @@ namespace CamelWorks.UI.Views
                 var verbPicker = Ui.Choice(Resolution.Actions, verb, v => verb = v);
                 var wayPicker = Ui.Choice(Resolution.Directions, way, v => way = v);
 
-                var record = Ui.Button("Record", () =>
+                var record = Ui.Primary("Record", () =>
                 {
                     double? amount = null;
 
@@ -309,6 +319,52 @@ namespace CamelWorks.UI.Views
             /// <summary>Put the keyboard focus in the instruction editor.</summary>
             private void Annotate() => _annotate.MoveFocus(
                 new TraversalRequest(FocusNavigationDirection.First));
+
+            /// <summary>The four statuses, in the order the lattice ranks them.</summary>
+            private static readonly string[] Standings =
+            {
+                FindingStatusLattice.ToName(FindingStatus.Active),
+                FindingStatusLattice.ToName(FindingStatus.Reviewed),
+                FindingStatusLattice.ToName(FindingStatus.Approved),
+                FindingStatusLattice.ToName(FindingStatus.Resolved),
+            };
+
+            /// <summary>
+            /// Draw the status switch for this group, showing where it already stands.
+            ///
+            /// The four buttons this replaces could set a status and could not show one - the only
+            /// place a finding's own standing appeared was inside a run-on line of hyphens with
+            /// four other facts. A switch is the same click and answers the question as well as
+            /// taking the instruction.
+            /// </summary>
+            private void DrawStatus(ClashGroup group)
+            {
+                _settling = true;
+
+                try
+                {
+                    _status.Children.Clear();
+                    _status.Children.Add(Ui.Segmented(Standings,
+                        FindingStatusLattice.ToName(Held(group)), Chose));
+                }
+                finally
+                {
+                    _settling = false;
+                }
+            }
+
+            private void Chose(string standing)
+            {
+                if (_settling) return;
+
+                foreach (var status in new[] { FindingStatus.Active, FindingStatus.Reviewed,
+                                               FindingStatus.Approved, FindingStatus.Resolved })
+                    if (string.Equals(FindingStatusLattice.ToName(status), standing, StringComparison.Ordinal))
+                    {
+                        Mark(status);
+                        return;
+                    }
+            }
 
             /// <summary>The group's status: the least-progressed member.</summary>
             private static FindingStatus Held(ClashGroup group) =>

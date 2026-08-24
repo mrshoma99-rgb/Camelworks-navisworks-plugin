@@ -200,7 +200,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Saved", _picker),
                         Ui.Field("Name", _name, "what the files are named after")),
                     Ui.Actions(
-                        Ui.Button("Save this one", Keep),
+                        Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
             }
 
@@ -384,7 +384,7 @@ namespace CamelWorks.UI.Views
                         Ui.Count(_shown?.Count ?? 0, "element") + " visible in it", 0.75));
                 }
 
-                _how.Children.Add(Ui.Actions(Ui.Button("Go to it and see what it shows", Looking)));
+                _how.Children.Add(Ui.Actions(Ui.Quiet("Go to it and see what it shows", Looking)));
 
                 _how.Children.Add(Ui.Small("Applying a viewpoint moves the camera and restores "
                     + "whatever it was hiding, which is the only way to find out what it shows - a "
@@ -586,7 +586,7 @@ namespace CamelWorks.UI.Views
                 if (!plan.IsUsable) return;
 
                 _verdict.Children.Add(Ui.Actions(
-                    Ui.Button("Select it in the model", () =>
+                    Ui.Quiet("Select it in the model", () =>
                     {
                         _session.Model.Select(plan.Keys);
                         _session.View.ZoomTo(plan.Keys, 2.0);
