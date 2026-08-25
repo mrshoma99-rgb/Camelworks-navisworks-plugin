@@ -1435,7 +1435,18 @@ namespace CamelWorks.UI.Views
         {
             if (steps == null || steps.Count == 0) return Stack();
 
+            // Opened on the first thing still to be decided, not always on step one. A step that
+            // carries a check and passes it has already been answered - by what the project
+            // remembers, or by what is selected in the model - and making somebody press Next past
+            // an answer they did not have to give is the same discourtesy as asking for it twice.
+            //
+            // Only a step that carries a check counts. One with no check is "always finished" by
+            // definition, which is not evidence of anything, so the walk stops there rather than
+            // running to the end of a wizard whose steps happen not to gate.
             var at = 0;
+
+            while (at < steps.Count - 1 && steps[at].Ready != null && steps[at].Ready!() == null) at++;
+
             var rail = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
             var body = new ContentControl();
             var why = Small(string.Empty);

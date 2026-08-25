@@ -31,6 +31,7 @@ namespace CamelWorks.Studio
             Sheet("dlg-clashxml", "Window · Clash XML", 940, 760, ClashXml),
             Sheet("dlg-ids", "Window · IDS authoring", 1000, 1120, Ids),
             Sheet("dlg-datalink", "Wizard · External Data", 640, 900, DataLink),
+            Sheet("dlg-laststep", "Wizard · The last step", 620, 900, LastStep),
         };
 
         private static Sheet Sheet(string id, string title, int height, int width, Func<UIElement> build) =>
@@ -136,7 +137,7 @@ namespace CamelWorks.Studio
                     Ui.PathField("Spreadsheet", Ui.Text(@"D:\Projects\Riverside\Asset register.xlsx",
                                                         null, 340), PathKind.Open),
                     Ui.Form(Ui.Field("Worksheet", Ui.Choice(new[] { "Assets", "Rooms" }, "Assets", null))),
-                    Ui.Line("412 rows, 9 columns.", 0.85))),
+                    Ui.Line("412 rows, 9 columns.", 0.85)), () => null),
 
                 new Ui.Step("The model", () => Ui.Stack(
                     Ui.Form(Ui.Field("Scope",
@@ -151,27 +152,57 @@ namespace CamelWorks.Studio
             }, null, null));
 
         // -----------------------------------------------------------------------------------
+        // The last step — the one branch of Ui.Steps nothing has ever drawn
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// The end of a wizard whose last step carries its own two-stage commit.
+        ///
+        /// Worth a picture of its own because it is the branch that is easiest to get wrong: on the
+        /// last step Next has nothing to advance to, and where the step already holds the action -
+        /// as five of the six do - there is no finish button either, so the row underneath is Back
+        /// and nothing else. A wizard that ends on a dead button that says "Finish" and does
+        /// nothing is worse than one that ends on no button at all.
+        /// </summary>
+        private static UIElement LastStep() =>
+            ToolWindow.Frame(Tools.Find("matrix"), Sheets.Page(
+                Ui.Steps(new[]
+                {
+                    // Answered, so the wizard opens past them - which is what puts this
+                    // picture on the step it is about.
+                    new Ui.Step("The sheet", () => Ui.Stack(), () => null),
+                    new Ui.Step("The matrix", () => Ui.Stack(), () => null),
+                    new Ui.Step("The tests", () => Ui.Stack(
+                        Ui.Commit("Show me the tests it would make", "Create", "test",
+                                  (job, into) => 0, job => { }),
+                        Ui.Line("38 tests, 6 already there and left alone.", 0.85))),
+                }, null, null)));
+
+        // -----------------------------------------------------------------------------------
         // IDS authoring — the densest window in the product
         // -----------------------------------------------------------------------------------
 
         private static UIElement Ids() => Sheets.Page(
-            Ui.Eyebrow("This document"),
-            Ui.Form(
-                Ui.Field("Called", Ui.Text("Riverside employer's information requirements", null, 340)),
-                Ui.Pair(Ui.Field("Version", Ui.Text("1.2", null, 90)),
-                        Ui.Field("Author", Ui.Text("coordination@bimcamel.com", null, 220))),
-                Ui.Field("About", Ui.Text("What every model must carry before it is accepted.", null, 340))),
-
             Ui.Eyebrow("Specifications"),
             Ui.Stack(
                 Ui.Button("Every wall carries a fire rating", () => { }),   // harness: data
                 Ui.Button("Every duct carries a system name", () => { }),  // harness: data
                 Ui.Actions(Ui.Quiet("Add a specification", () => { }))),
 
-            Ui.Eyebrow("Write it"),
+            Ui.Rule(),
+
             Ui.Actions(
                 Ui.Primary("Save as an .ids file...", () => { }),
                 Ui.Quiet("Keep the draft here", () => { })),
+
+            // Folded, and under the action, because what the file is called is set once and read
+            // never. It used to be the first thing on the screen.
+            Ui.Section("This document", "what the file says it is", false,
+                Ui.Form(
+                    Ui.Field("Called", Ui.Text("Riverside employer's information requirements", null, 340)),
+                    Ui.Pair(Ui.Field("Version", Ui.Text("1.2", null, 90)),
+                            Ui.Field("Author", Ui.Text("coordination@bimcamel.com", null, 220))),
+                    Ui.Field("About", Ui.Text("What every model must carry before it is accepted.", null, 340)))),
 
             Ui.Rule(),
 
