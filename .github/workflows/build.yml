@@ -201,6 +201,13 @@ jobs:
       - name: Check every repo type used is imported where it is used
         run: python3 checks/validate-usings.py
 
+      # The widget vocabulary is a closed set, so a call into it can be held to the signature the
+      # file declares without a type checker. Two overloads that differ by one parameter in the
+      # middle is all it takes: `Ui.Text("", "no limit", 90)` put the placeholder where the handler
+      # goes, and a Windows runner said so several minutes after the push.
+      - name: Check every Ui. call fits a signature Ui.cs declares
+        run: python3 checks/validate-ui-calls.py
+
       # `if (!thing.IsUsable)` reads as a null check but is one indirection away from one, so the
       # branch below it hands a `string?` to something that takes a `string`. Windows fails the
       # build on it; Linux cannot see it. This spots the shape without needing a type checker.
