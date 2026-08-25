@@ -171,11 +171,14 @@ namespace CamelWorks.UI.Views
             {
                 Draw();
 
+                // The sentence sits under the button rather than over it: the caption already says
+                // what it reads, and what this adds - that the other four field tools are looking
+                // at the same read - is worth knowing after the press, not before it.
                 return Ui.Scroll(Ui.Stack(
-                    Ui.Small("Everything here comes off what is selected in the model. Select the "
-                             + "module, the lift, the floor - and read it. The other field tools "
-                             + "read the same selection, so it is read once between them."),
                     Ui.Runner("Read the selection", _read, Gather),
+                    Ui.Small("Off what is selected in the model - the module, the lift, the floor. "
+                             + "The other field tools read the same selection, so it is read once "
+                             + "between them."),
                     _read,
                     Ui.PathField("Folder", _folder, PathKind.Folder),
                     _note,

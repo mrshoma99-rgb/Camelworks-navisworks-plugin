@@ -128,8 +128,8 @@ namespace CamelWorks.UI.Views
             private UIElement Build()
             {
                 var model = Ui.Stack(
-                    Ui.Small("Read once, then try as many rules as you like against it."),
                     Ui.Runner("Read it", _read, Gather),
+                    Ui.Small("Read once, then try as many rules as you like against it."),
                     _read);
 
                 var piece = Ui.Stack(

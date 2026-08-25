@@ -3,6 +3,11 @@
 Three independent design reviews of the nineteen panels reached the same diagnosis, so it is
 written down here rather than left in a pull request nobody will find again.
 
+The panels are six now and the rest are windows, and every rule below applies to a window exactly
+as it applies to a panel. A window has more room, which makes rule 4 easier to break, not harder:
+space is what let six tools grow two scrolling columns with the irreversible button in the corner
+of one of them.
+
 ## What went wrong
 
 Every panel was `Scroll(Stack(Card, Card, Card, Section, Section))`. A tool and an option got
@@ -48,6 +53,6 @@ preview and a commit button state it.
 
 ## The test
 
-Point at any element on any panel and answer in one word: **tool**, **option**, or **result**.
+Point at any element on any screen and answer in one word: **tool**, **option**, or **result**.
 If the answer is "option" and it has a card or a section of its own, it is wrong. If the answer is
 "result" and it is above the button that produces it, it is wrong. If nobody can answer, delete it.
