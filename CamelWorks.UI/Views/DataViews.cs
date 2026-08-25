@@ -454,6 +454,9 @@ namespace CamelWorks.UI.Views
         /// </summary>
         private sealed class ExcelScreen
         {
+            private const string SendOut = "Send one out";
+            private const string BringBack = "Bring one back";
+
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
@@ -474,27 +477,53 @@ namespace CamelWorks.UI.Views
                 _keys = keys;
             }
 
+            /// <summary>
+            /// Two legs of one trip, one on screen at a time.
+            ///
+            /// <b>Not a wizard, deliberately.</b> Sending a sheet out and reading it back are not
+            /// two steps of one task - they are the same task on two different days, done by two
+            /// different people, and a Next button between them would make the person who came
+            /// back on Thursday click past the half they are not doing.
+            ///
+            /// <b>And not both at once, which is what it was.</b> Two file paths, two buttons and
+            /// a paragraph, of which exactly half applies to whatever you opened this for. The
+            /// switch says which leg you are on and shows only that one; the report underneath is
+            /// shared, because it is the answer to whichever was pressed.
+            /// </summary>
             internal UIElement Build()
             {
-                // Writing comes first and is what the tool is for; reading back is the second
-                // half of the same trip and happens days later, on a different press.
-                var write = Ui.Runner("Write a sheet", _status, Out);
-                var read = Ui.Runner("Read a sheet back", _status, In, primary: false);
-
-                return Ui.Stack(
-                    Ui.Eyebrow("Send one out"),
+                var write = Ui.Stack(
                     Ui.Form(Ui.PathField("Write to", _out, PathKind.Save, "Excel|*.xlsx|All files|*.*",
                                          "blank writes it to your documents")),
-                    write,
+                    Ui.Runner("Write a sheet", _status, Out),
+                    Ui.Small("Every property these elements carry, one column each, plus a \""
+                             + SheetImport.KeyHeading + "\" column that says which element a row "
+                             + "is. Whoever fills it in does not need Navisworks."));
 
-                    Ui.Eyebrow("Bring it back"),
+                var read = Ui.Stack(
                     Ui.Form(Ui.PathField("Read back", _in, PathKind.Open, "Excel|*.xlsx|All files|*.*")),
-                    read,
+                    Ui.Runner("Read a sheet back", _status, In),
+                    Ui.Small("The \"" + SheetImport.KeyHeading + "\" column is how a returned row is "
+                             + "matched to an element, it is never written back, and deleting it "
+                             + "makes the sheet unreadable. Rows that match nothing are counted and "
+                             + "named rather than skipped."));
 
-                    Ui.Small("The sheet carries a \"" + SheetImport.KeyHeading + "\" column. It is how a "
-                             + "returned row is matched to an element, it is never written back, and "
-                             + "deleting it makes the sheet unreadable. Rows that match nothing are "
-                             + "counted and named rather than skipped."),
+                var half = new ContentControl { Content = write };
+
+                void Leg(string leg)
+                {
+                    _status.Children.Clear();
+                    _applyRow.Children.Clear();
+
+                    // Detached before the other goes in, or the half being left is still claimed
+                    // by this holder when it is handed back to it.
+                    half.Content = null;
+                    half.Content = leg == BringBack ? read : write;
+                }
+
+                return Ui.Stack(
+                    Ui.Segmented(new[] { SendOut, BringBack }, SendOut, Leg),
+                    half,
                     _status,
                     _applyRow);
             }

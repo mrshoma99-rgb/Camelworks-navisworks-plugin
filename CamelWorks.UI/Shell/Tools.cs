@@ -204,7 +204,7 @@ namespace CamelWorks.UI.Shell
                "Browse every property the elements carry, and write the ones that are missing.",
                "Read properties"),
 
-            Of("excel", "Excel Round-trip", ToolShape.Wizard, Glyph.Table,
+            Of("excel", "Excel Round-trip", ToolShape.Window, Glyph.Table,
                "Take the properties out to a workbook, let somebody who does not have Navisworks "
                + "edit them, and read the edits back in.",
                "Write a sheet"),

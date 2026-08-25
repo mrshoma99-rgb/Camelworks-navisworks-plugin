@@ -115,14 +115,23 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns, which meant the button that closes whatever is open
+            /// and overwrites a file on the network sat beside an empty file list. The dependency
+            /// is real: there is nothing to name until there are files, and nothing worth warning
+            /// about until there is somewhere for the result to land.
+            ///
+            /// The warning about what compiling costs lives on the last step, next to the button
+            /// it is about, and the button does not appear until the box beside it is ticked.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// add one more file does not clear the folder already chosen.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(430) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("What goes in"),
+                var input = Ui.Stack(
                     Ui.Actions(
                         Ui.Button("Add files...", AddFiles),
                         Ui.Quiet("Add a folder...", AddFolder),
@@ -134,29 +143,30 @@ namespace CamelWorks.UI.Views
                     _list,
                     Ui.Rule(),
                     Ui.Eyebrow("This compilation"),
-                    Saved()));
+                    Saved());
 
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("What comes out"),
+                var output = Ui.Stack(
                     _shape,
                     Ui.Rule(),
                     Ui.Eyebrow("What would happen"),
-                    _verdict,
-                    Ui.Rule(),
-                    Ui.Eyebrow("Run it"),
-                    Warning(),
-                    _run,
-                    _note));
+                    _verdict);
 
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var run = Ui.Stack(Warning(), _run, _note);
 
                 Draw();
 
-                return columns;
+                var steps = new[]
+                {
+                    new Ui.Step("What goes in", () => input,
+                                () => _paths.Count == 0
+                                      ? "Put at least one model on the list." : null),
+                    new Ui.Step("What comes out", () => output,
+                                () => _folder.Text.Trim().Length == 0
+                                      ? "Say which folder the compiled file goes in." : null),
+                    new Ui.Step("Run it", () => run),
+                };
+
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             /// <summary>
@@ -512,7 +522,7 @@ namespace CamelWorks.UI.Views
 
                 if (_folder.Text.Trim().Length == 0)
                 {
-                    _run.Children.Add(Ui.Small("Say which folder the files go in, above."));
+                    _run.Children.Add(Ui.Small("Say which folder the files go in, on the step before."));
                     return;
                 }
 

@@ -133,33 +133,39 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns, so the buttons that write files sat beside a rule
+            /// nothing had run yet, pointed at a model nothing had read. The dependency is real:
+            /// the rule needs elements to choose from, and the writers need a rule that chose
+            /// something.
+            ///
+            /// The rule and what it takes share a step rather than getting one each. They are one
+            /// decision looked at from two sides - you change the property and read the count, and
+            /// putting a Next between them would mean pressing it forty times.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// change the rule does not re-read the model.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(420) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("Read the model"),
+                var model = Ui.Stack(
                     Ui.Small("Read once, then try as many rules as you like against it."),
                     Ui.Runner("Read it", _read, Gather),
-                    _read,
-                    Ui.Rule(),
-                    Ui.Eyebrow("What goes in the piece"),
+                    _read);
+
+                var piece = Ui.Stack(
                     Ui.Form(Ui.Field("Take", Ui.Choice(Axes, Word(_recipe.Axis), Chose, 250))),
                     _how,
                     Ui.Rule(),
-                    Ui.Eyebrow("This extract"),
-                    Saved()));
-
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
                     Ui.Eyebrow("What that is"),
                     _verdict,
                     Ui.Rule(),
-                    Ui.Eyebrow("Take it out"),
+                    Ui.Eyebrow("This extract"),
+                    Saved());
+
+                var take = Ui.Stack(
                     Ui.PathField("Folder", _folder, PathKind.Folder),
                     _out,
                     _note,
@@ -174,14 +180,21 @@ namespace CamelWorks.UI.Views
                                  + "working out precisely what belongs in the piece, saying so, and "
                                  + "writing it to the formats CamelWorks does write. Press \"Select "
                                  + "it in the model\" and Navisworks' own File ▸ Export takes it "
-                                 + "from there, on exactly the elements this rule chose."))));
-
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                                 + "from there, on exactly the elements this rule chose.")));
 
                 Draw();
 
-                return columns;
+                var steps = new[]
+                {
+                    new Ui.Step("The model", () => model,
+                                () => _scope.Count == 0 ? "Read the model first." : null),
+                    new Ui.Step("The piece", () => piece,
+                                () => _out.Children.Count == 0
+                                      ? "The rule has not taken anything out yet." : null),
+                    new Ui.Step("Take it out", () => take),
+                };
+
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             private UIElement Saved()

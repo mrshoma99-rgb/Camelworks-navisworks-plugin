@@ -114,13 +114,25 @@ namespace CamelWorks.UI.Views
                 return recipe;
             }
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns, so "Publish" sat beside the levels you were still
+            /// naming, pointed at a tree nothing had read yet. The dependency is real: the recipe
+            /// says what the tree is built from, the read says what that recipe actually produces
+            /// out of this model, and only then is there anything to publish.
+            ///
+            /// The recipe stays one step rather than three. Scope, levels and naming are one
+            /// decision taken in one place - a wizard that asked for them on separate screens
+            /// would be a form with extra clicks, which is the thing this is meant to be instead
+            /// of.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// change a level does not discard the tree already read.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(400) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
+                var recipe = Ui.Stack(
                     Ui.Eyebrow("What it reads"),
                     Ui.Field("Scope", Ui.Choice(new[] { WholeModel, Selection }, _scope,
                                                 pick => _scope = pick, 200)),
@@ -133,22 +145,16 @@ namespace CamelWorks.UI.Views
                     Ui.Rule(),
                     Ui.Eyebrow("This recipe"),
                     Keep(),
-                    _saved));
+                    _saved);
 
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
+                var tree = Ui.Stack(
                     Ui.Eyebrow("The tree it would make"),
                     _preview,
                     Ui.Rule(),
                     Ui.Eyebrow("What moved since the last run"),
-                    _moved,
-                    Ui.Rule(),
-                    Make()));
+                    _moved);
 
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var publish = Make();
 
                 DrawLevels();
                 ShowLast();
@@ -156,7 +162,17 @@ namespace CamelWorks.UI.Views
                 _preview.Children.Add(Ui.Empty("Nothing read yet.",
                     "Say which properties the tree is built from, then read the model."));
 
-                return columns;
+                var steps = new[]
+                {
+                    new Ui.Step("The recipe", () => recipe,
+                                () => _plan == null ? "Read the model first." : null),
+                    new Ui.Step("The tree", () => tree),
+                    new Ui.Step("Publish", () => publish),
+                };
+
+                // No finish button of its own: the last step carries Ui.Commit, which is the
+                // two-stage "show me, then do it" a write into the set library has always used.
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             // -----------------------------------------------------------------------------------
@@ -491,7 +507,7 @@ namespace CamelWorks.UI.Views
                     plan: Rehearse,
                     apply: Publish);
 
-                return Ui.Stack(Ui.Eyebrow("Make it"), commit, _output);
+                return Ui.Stack(commit, _output);
             }
 
             /// <summary>
