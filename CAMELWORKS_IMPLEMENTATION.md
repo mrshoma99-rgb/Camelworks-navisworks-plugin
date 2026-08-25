@@ -207,6 +207,15 @@ Resolved on every re-run, so reading those back as truth would silently overwrit
 
 ---
 
+> **What shipped differs here.** Sections 3 and 4 below describe a ribbon that routes to a pane of
+> tabs, and a pane navigated by a workspace switcher with a tab strip beneath it. Neither survived
+> review. The shipped shape is one registry of tools — a name, a sentence saying what the tool is
+> for, and one main action each — where a ribbon button opens *its own* tool in its own window, and
+> only the six tools that are read continuously live in the dock pane. `CamelWorks.UI/Shell/Tools.cs`
+> is the registry and the design document; `CAMELWORKS_BUILD_STATE.md` lists what is built. The rest
+> of this plan — the services, the cut list, the sequencing, the argument for each feature — still
+> holds.
+
 ## 3. The ribbon — 5 panels, 25 buttons
 
 **Routing rule.** A button either acts immediately `[A]` or opens the pane on a named workspace/tab
