@@ -29,6 +29,7 @@ namespace CamelWorks.Studio
             Sheet("dlg-review", "Window · Review a finding", 720, 620, Review),
             Sheet("dlg-clashxml", "Window · Clash XML", 900, 760, ClashXml),
             Sheet("dlg-ids", "Window · IDS authoring", 1000, 1120, Ids),
+            Sheet("dlg-datalink", "Wizard · External Data", 640, 900, DataLink),
         };
 
         private static Sheet Sheet(string id, string title, int height, int width, Func<UIElement> build) =>
@@ -98,6 +99,38 @@ namespace CamelWorks.Studio
             yield return new TableRow(null, "Mechanical vs Electrical", "203", "yes");
             yield return new TableRow(null, "Architecture vs Mechanical", "61", "no");
         }
+
+        // -----------------------------------------------------------------------------------
+        // External Data — the first tool to become a wizard
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Step two of five, so the rail shows a step behind, the step itself, and three ahead.
+        ///
+        /// The point of the picture is the rail and what is missing from the screen: there is no
+        /// column mapping here and no write button, because neither means anything until the file
+        /// and the model have been read. The window this replaced had all five on screen at once.
+        /// </summary>
+        private static UIElement DataLink() => Sheets.Page(
+            Ui.Steps(new[]
+            {
+                new Ui.Step("The file", () => Ui.Stack(
+                    Ui.PathField("Spreadsheet", Ui.Text(@"D:\Projects\Riverside\Asset register.xlsx",
+                                                        null, 340), PathKind.Open),
+                    Ui.Form(Ui.Field("Worksheet", Ui.Choice(new[] { "Assets", "Rooms" }, "Assets", null))),
+                    Ui.Line("412 rows, 9 columns.", 0.85))),
+
+                new Ui.Step("The model", () => Ui.Stack(
+                    Ui.Form(Ui.Field("Scope",
+                        Ui.Choice(new[] { "What is selected", "Everything loaded" },
+                                  "Everything loaded", null))),
+                    Ui.Actions(Ui.Primary("Read the model", () => { })),
+                    Ui.Line("41,880 elements read.", 0.85))),
+
+                new Ui.Step("Matching", () => Ui.Stack()),
+                new Ui.Step("Columns", () => Ui.Stack()),
+                new Ui.Step("Write", () => Ui.Stack()),
+            }, null, null));
 
         // -----------------------------------------------------------------------------------
         // IDS authoring — the densest window in the product
