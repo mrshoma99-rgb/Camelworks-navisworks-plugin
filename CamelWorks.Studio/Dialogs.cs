@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using CamelWorks.UI.Shell;
 using CamelWorks.UI.Views;
 
 namespace CamelWorks.Studio
@@ -27,7 +28,7 @@ namespace CamelWorks.Studio
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
             Sheet("dlg-review", "Window · Review a finding", 720, 620, Review),
-            Sheet("dlg-clashxml", "Window · Clash XML", 900, 760, ClashXml),
+            Sheet("dlg-clashxml", "Window · Clash XML", 940, 760, ClashXml),
             Sheet("dlg-ids", "Window · IDS authoring", 1000, 1120, Ids),
             Sheet("dlg-datalink", "Wizard · External Data", 640, 900, DataLink),
         };
@@ -68,29 +69,46 @@ namespace CamelWorks.Studio
         // Clash XML — read a board in, write one out, against a named profile
         // -----------------------------------------------------------------------------------
 
-        private static UIElement ClashXml() => Sheets.Page(
-            Ui.Marked(Glyphs.Clash, "Clash XML",
-                "Read a board out of the format every other coordination tool speaks, or write "
-                + "one back into it.",
-                Ui.Field("The file", Ui.Text(@"D:\Projects\Riverside\Clash\week-31.xml", null, 380)),
-                Ui.Actions(
-                    Ui.Primary("Save to a file...", () => { }),
-                    Ui.Button("Load from a file...", () => { }))),
+        /// <summary>
+        /// The write leg, which is the one the switch opens on.
+        ///
+        /// The point of the picture is what is folded. Which results go in and how the file is
+        /// written are options, and the profile that remembers them is a convenience, so all three
+        /// are shut. What is open is the board, the file and the one button the tool exists for -
+        /// where the loudest thing used to be a button that saves a settings file.
+        /// </summary>
+        private static UIElement ClashXml() =>
+            // In the real frame, because the frame is most of what somebody sees when a tool opens
+            // and every picture before this one left it out.
+            ToolWindow.Frame(Tools.Find("clashxml"), Sheets.Page(
+            Ui.Segmented(new[] { "Write one", "Read one back" }, "Write one", null),
 
-            Ui.Marked(Glyphs.Filter, "What goes in it",
-                "Six tests on this board. Untick the ones the receiving tool has no use for.",
-                Ui.Table(Tests(), ("Test", 0), ("Clashes", 90), ("In", 60)),
+            Ui.Eyebrow("The tests"),
+            Ui.Line("Six tests on this board, 764 results between them.", 1, true),
+            Ui.Table(Tests(), ("Test", 0), ("Clashes", 90), ("In", 60)),
+
+            Ui.Section("What goes in", "which results, and whose", false,
+                Ui.Small("Untick the ones the receiving tool has no use for."),
                 Ui.Actions(
                     Ui.Quiet("Tick every test", () => { }),
                     Ui.Quiet("Untick every test", () => { }))),
 
-            Ui.Marked(Glyphs.Save, "Profiles",
-                "A profile is which tests, which columns and which units - kept so the next issue "
-                + "goes out the same way.",
+            Ui.Section("How it is written", "folders, elements, units", false,
+                Ui.Check("Keep the folders as folders", true, null),
+                Ui.Check("Write each result's two elements", true, null)),
+
+            Ui.Section("This profile", "keep these settings for next time", false,
                 Ui.Field("Called", Ui.Text("Weekly issue to the contractor", null, 300)),
                 Ui.Actions(
                     Ui.Quiet("Keep", () => { }),
-                    Ui.Danger("Forget", () => { }))));
+                    Ui.Danger("Forget", () => { }),
+                    Ui.Quiet("Save the profile to a file...", () => { }),
+                    Ui.Quiet("Load a profile from a file...", () => { }))),
+
+            Ui.Rule(),
+
+            Ui.Field("File", Ui.Text(@"D:\Projects\Riverside\Clash\week-31.xml", null, 380)),
+            Ui.Actions(Ui.Runner("Show me what would go in", Ui.Stack(), _ => { }))));
 
         private static IEnumerable<TableRow> Tests()
         {
@@ -146,8 +164,8 @@ namespace CamelWorks.Studio
 
             Ui.Eyebrow("Specifications"),
             Ui.Stack(
-                Ui.Button("Every wall carries a fire rating", () => { }),
-                Ui.Button("Every duct carries a system name", () => { }),
+                Ui.Button("Every wall carries a fire rating", () => { }),   // harness: data
+                Ui.Button("Every duct carries a system name", () => { }),  // harness: data
                 Ui.Actions(Ui.Quiet("Add a specification", () => { }))),
 
             Ui.Eyebrow("Write it"),

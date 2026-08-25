@@ -99,9 +99,18 @@ namespace CamelWorks.UI.Views
         /// The purpose line is not decoration. Every tool has always carried a sentence saying
         /// what it is for and it has always been a tooltip - which is to say it was written for
         /// somebody who already knew enough to hover over the right thing.
+        ///
+        /// Public so the design harness can put a reconstruction inside the real frame rather than
+        /// beside a drawing of one. The frame is most of what a person sees when a tool opens, and
+        /// a picture that leaves it out is a picture of something else.
         /// </summary>
-        private static UIElement Frame(Tool tool, UIElement surface)
+        /// <param name="tool">Whose window it is.</param>
+        /// <param name="surface">What goes under the header.</param>
+        /// <returns>The window's content.</returns>
+        public static UIElement Frame(Tool? tool, UIElement surface)
         {
+            if (tool == null) return surface;
+
             var grid = new Grid();
 
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

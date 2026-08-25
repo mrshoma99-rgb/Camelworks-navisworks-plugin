@@ -496,24 +496,26 @@ namespace CamelWorks.UI.Views
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+                // The specifications lead and the main action is under them. What the document is
+                // called and who wrote it is set once and read never, and it used to be the first
+                // thing on the screen.
                 var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("This document"),
-                    Ui.Form(
-                        Ui.Field("Called", _title),
-                        Ui.Pair(Ui.Field("Version", _version), Ui.Field("Author", _author,
-                                                                        "an email address, or left out")),
-                        Ui.Field("About", _about)),
-                    Ui.Rule(),
                     Ui.Eyebrow("Specifications"),
                     _list,
                     Ui.Rule(),
-                    Ui.Eyebrow("Write it"),
                     Ui.Actions(
                         Ui.Primary("Save as an .ids file...", Save),
                         Ui.Quiet("Keep the draft here", Keep)),
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
-                    _output));
+                    _output,
+                    Ui.Rule(),
+                    Ui.Section("This document", "what the file says it is", false,
+                        Ui.Form(
+                            Ui.Field("Called", _title),
+                            Ui.Pair(Ui.Field("Version", _version),
+                                    Ui.Field("Author", _author, "an email address, or left out")),
+                            Ui.Field("About", _about)))));
 
                 Grid.SetColumn(left, 0);
                 columns.Children.Add(left);

@@ -17,13 +17,19 @@ was not enough - the product has an "Apply " + count caption, so every invented 
 A builder marked "// harness: vocabulary" is skipped. Those pages are a specimen sheet of every
 control rather than a reconstruction of a panel, and their captions are invented on purpose to put
 the weights side by side.
+
+A single line marked "// harness: data" is skipped too, for the narrower case: a row in a list the
+product draws one per item, where the caption is the item's own name. There is no literal in the
+product to match against, so a specimen row can only be invented, and the alternative is silencing
+the whole builder over one line.
 """
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-HARNESS = [ROOT / "CamelWorks.Studio" / "Panels.cs", ROOT / "CamelWorks.Studio" / "Sheets.cs"]
+HARNESS = [ROOT / "CamelWorks.Studio" / "Panels.cs", ROOT / "CamelWorks.Studio" / "Sheets.cs",
+           ROOT / "CamelWorks.Studio" / "Dialogs.cs"]
 PANELS = ROOT / "CamelWorks.UI"
 
 CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner|Commit)\(')
@@ -31,6 +37,7 @@ LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 BUILDER = re.compile(r'^\s*private static \S+ \w+\(')
 
 MARKER = "// harness: vocabulary"
+SPECIMEN = "// harness: data"
 
 
 def captions(text):
@@ -134,6 +141,9 @@ def main():
             if MARKER in line:
                 pending = True
                 continue
+
+            if SPECIMEN in line:
+                quiet.add(number)
 
             if BUILDER.match(line):
                 vocabulary = pending
