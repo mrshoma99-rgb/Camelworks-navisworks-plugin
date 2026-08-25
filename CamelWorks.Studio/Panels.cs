@@ -34,7 +34,7 @@ namespace CamelWorks.Studio
             Sheet("bcf", "Coordinate · BCF", 1100, Bcf),
             Sheet("compare", "Compare · Run", 1100, CompareRun),
             Sheet("changes", "Compare · Changes", 1500, Changes),
-            Sheet("baselines", "Compare · Baselines", 900, Baselines),
+            Sheet("baselines", "Compare · Baselines kept", 900, Baselines),
             Sheet("data", "Data · Properties", 1100, Properties),
             Sheet("zones", "Data · Levels", 1000, Zones),
             Sheet("viewpoints", "Sets · Viewpoints", 1300, Viewpoints),

@@ -112,8 +112,13 @@ namespace CamelWorks.UI.Views
         /// <param name="open">Open a tool by id.</param>
         public static UIElement Launcher(Action<string> open)
         {
+            // The week first, then everything. Somebody who opens the pane on a Monday is doing
+            // the same three things they did last Monday, and a list of forty-two rows makes them
+            // find the three every time.
             var stack = Ui.Stack(
-                Ui.Heading("What would you like to do?"),
+                HomeView.Build(open),
+                Ui.Rule(),
+                Ui.Heading("Everything else"),
                 Ui.Sub("Every one of these is on the ribbon too. This is the same list, with what "
                        + "each one is for and what it will do."));
 

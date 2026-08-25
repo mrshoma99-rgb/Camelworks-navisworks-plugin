@@ -71,6 +71,9 @@ namespace CamelWorks.UI.Views
             var store = StoreFor(session);
             var baselines = store.Baselines();
             var results = new StackPanel();
+            var listed = new StackPanel();
+
+            Redraw(store, listed, results);
 
             var holding = BaselineModels.Of(LastBaseline, session.Model.Models, PhysicalFileSystem.Instance);
 
@@ -100,7 +103,11 @@ namespace CamelWorks.UI.Views
                 Ui.Runner("Run the comparison", results, job => Go(session, store, results, job)),
                 Terms(),
                 Ui.Section("Record a new baseline", "the model as it stands right now", false,
-                    Take(session, store, results, primary: false)),
+                    Ui.Small("Give it a name you will recognise in three months - an issue number, "
+                             + "a milestone, a date."),
+                    Take(session, store, results, () => Redraw(store, listed, results),
+                         primary: false)),
+                Ui.Section("Baselines kept", Ui.Count(baselines.Count, "baseline"), false, listed),
                 results));
         }
 
@@ -880,31 +887,10 @@ namespace CamelWorks.UI.Views
         // Baselines
         // -------------------------------------------------------------------------------------
 
-        /// <summary>The Baselines screen.</summary>
-        public static UIElement Baselines()
-        {
-            var session = Host.Current;
-
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Baselines"), Ui.Problem(Host.NoModel)));
-
-            var store = StoreFor(session);
-            var results = new StackPanel();
-            var listed = new StackPanel();
-
-            Redraw(store, listed, results);
-
-            // Neither half is in a card. Recording is what the tab is for and the list is what
-            // recording produced; boxing both made one act and its own history read as two tools
-            // of equal weight.
-            return Ui.Scroll(Ui.Stack(
-                Ui.Small("Give it a name you will recognise in three months — an issue number, a "
-                         + "milestone, a date."),
-                Take(session, store, results, () => Redraw(store, listed, results)),
-                results,
-                Ui.Rule(),
-                listed));
-        }
+        // The list of what has been recorded, and the way to delete one, used to be a screen of
+        // its own - a tab called Baselines. It is a fold on Compare now: the act it exists around,
+        // "Take a baseline", was already on Compare, so the two of them were one tool the whole
+        // time and the tab was where its history went to be looked at separately.
 
         private static void Redraw(SnapshotStore store, StackPanel listed, StackPanel results)
         {

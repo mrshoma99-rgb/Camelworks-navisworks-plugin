@@ -16,23 +16,25 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class HomeView
     {
-        /// <summary>Build the screen.</summary>
+        /// <summary>
+        /// Build the screen.
+        ///
+        /// Unscrolled, because it is the top of the launcher rather than a screen of its own. It
+        /// was a screen of its own once - a tab called Home - and when the tabs went it went with
+        /// them and nothing called it for a fortnight, while Help went on describing the weekly
+        /// cycle as the front door.
+        /// </summary>
         /// <param name="goTo">Open a tool by its id.</param>
         public static UIElement Build(Action<string> goTo)
         {
             var session = Host.Current;
 
-            if (session == null)
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Heading("CamelWorks"),
-                    Ui.Sub(Host.NoModel)));
+            if (session == null) return Ui.Stack(Ui.Sub(Host.NoModel));
 
-            var body = Ui.Stack(
+            return Ui.Stack(
                 Header(session),
                 Cycle(session, goTo),
                 Recent(session));
-
-            return Ui.Scroll(body);
         }
 
         private static UIElement Header(Session session)
@@ -157,11 +159,12 @@ namespace CamelWorks.UI.Views
             _ => "Coordinate",
         };
 
+        /// <summary>Which tool the step opens.</summary>
         private static string RouteFor(string kind) => kind switch
         {
-            ActivityKind.Reconcile => "Project/Health",
-            ActivityKind.Regroup => "Coordinate/Triage",
-            _ => "Coordinate/Report",
+            ActivityKind.Reconcile => "health",
+            ActivityKind.Regroup => "triage",
+            _ => "clashreport",
         };
 
         /// <summary>
@@ -169,7 +172,7 @@ namespace CamelWorks.UI.Views
         ///
         /// The row is labelled with a verb — Reconcile, Regroup, Report — and the button used to
         /// be labelled with a place: Models, Board, Reports. Two vocabularies for one step, and
-        /// the first of the three places is a tab called Health.
+        /// the first of the three places was a tab called Health.
         /// </summary>
         private static string GoLabel(string kind) => kind switch
         {
