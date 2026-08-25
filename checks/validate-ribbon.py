@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
 EXPECTED_COMMANDS = 27
-EXPECTED_TOOLS = 41
+EXPECTED_TOOLS = 42
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
 MAX_PER_COLUMN = 3
@@ -159,6 +159,22 @@ def main():
         if action == "null" and tool_id != "help":
             problems |= fail(f'tool "{tool_id}" is a {shape} with no main action')
 
+    # And every tool that is not a panel must have somewhere to open.
+    #
+    # A tool the registry declares and the dispatch has never heard of opens on "has no screen of
+    # its own yet", which is a sentence no shipped product should be able to say. Sets from a
+    # Schedule was reachable only from a button buried in the Sets panel and had no entry in the
+    # registry at all; adding one made it a tool with no route, and nothing said so.
+    views = read("Views/ToolViews.cs")
+    routed = set(re.findall(r'case "([a-z]+)"', views))
+
+    for tool_id, shape in re.findall(
+            r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),', tools_source):
+        if shape in ("Act", "Menu", "Panel"):
+            continue
+        if tool_id not in routed:
+            problems |= fail(f'tool "{tool_id}" is a {shape} that ToolViews has no route for')
+
     # And the main action must be a button that exists.
     #
     # Without this the registry is a wish. Every tool promises one filled button with a named
@@ -168,8 +184,12 @@ def main():
     #
     # Matched on a prefix either way, because some captions are built at run time: the compile
     # button reads "Compile 9 files" and the repoint button reads "Bring in 4".
+    #
+    # Ui.Commit counts, and has to: a two-stage write builds its own filled Runner out of the
+    # first argument, so on a screen whose whole purpose is that write there is no other Primary
+    # for the tool's main action to point at.
     buttons = [c.strip().rstrip(".").strip().lower()
-               for c in re.findall(r'Ui\.(?:Primary|Runner)\(\s*"([^"]+)"', every_cs())]
+               for c in re.findall(r'Ui\.(?:Primary|Runner|Commit)\(\s*"([^"]+)"', every_cs())]
 
     for tool_id, shape, action in re.findall(
             r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),(?:.|\n)*?\n\s+(null|"[^"]*")\),',

@@ -14,6 +14,7 @@ using CamelWorks.Core.Publish;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -53,7 +54,6 @@ namespace CamelWorks.UI.Views
         private const string Wholly = "wholly inside it";
         private const string Centred = "centred in it";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -62,30 +62,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - take a piece of the model out",
-                Width = 1140,
-                Height = 780,
-                MinWidth = 880,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Cutter(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("extract"), () => new Cutter(session).View, 1140, 780);
         }
 
         private sealed class Cutter

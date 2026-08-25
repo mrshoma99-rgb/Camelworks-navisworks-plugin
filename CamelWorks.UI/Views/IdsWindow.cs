@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -28,7 +29,6 @@ namespace CamelWorks.UI.Views
         /// <summary>Where the draft lives in the project file, as IDS itself.</summary>
         public const string Key = "idsDraft";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -37,30 +37,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - write an IDS",
-                Width = 1120,
-                Height = 760,
-                MinWidth = 860,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Editor(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("ids"), () => new Editor(session).View, 1120, 760);
         }
 
         // ---------------------------------------------------------------------------------------

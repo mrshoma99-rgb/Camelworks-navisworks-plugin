@@ -37,8 +37,15 @@ namespace CamelWorks.UI.Views
         /// <param name="body">Its surface.</param>
         /// <param name="width">How wide, or zero for the default.</param>
         /// <param name="height">How tall, or zero for the default.</param>
+        /// <param name="arrange">
+        /// A last word on the window, once it is on screen. Nearly nothing needs this - the point
+        /// of one frame is that tools do not each invent their own. Review mode does: it is a
+        /// floating palette that stays above the host, sizes itself to what it is showing and
+        /// answers the keyboard, and it has to be told so after the window exists.
+        /// </param>
         /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show(Tool? tool, Func<UIElement> body, int width = 0, int height = 0)
+        public static string? Show(Tool? tool, Func<UIElement> body, int width = 0, int height = 0,
+                                   Action<Window>? arrange = null)
         {
             if (tool == null) return "There is no such tool.";
             if (body == null) return "That tool has no screen.";
@@ -80,6 +87,8 @@ namespace CamelWorks.UI.Views
 
             Open[tool.Id] = window;
             window.Show();
+
+            arrange?.Invoke(window);
 
             return null;
         }

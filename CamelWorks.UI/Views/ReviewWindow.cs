@@ -10,6 +10,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -31,7 +32,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class ReviewWindow
     {
-        private static Window? _open;
 
         /// <summary>
         /// Open review on the board as it stands.
@@ -54,44 +54,22 @@ namespace CamelWorks.UI.Views
                 return "Everything on the board is approved or resolved. There is nothing left to "
                      + "review, which is the point of the exercise.";
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
             var state = new Walk(session, board, groups);
-
-            var window = new Window
-            {
-                Title = "CamelWorks review",
-                Width = 420,
-                SizeToContent = SizeToContent.Height,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                ResizeMode = ResizeMode.CanResize,
-                ShowInTaskbar = false,
-                Topmost = true,
-                Content = state.Build(),
-            };
-
-            window.KeyDown += (_, e) => state.Key(e);
-
-            window.Closed += (_, __) =>
-            {
-                _open = null;
-                state.Finish();
-            };
-
-            _open = window;
 
             // No owner: the host's main window is not a WPF window, and asking WPF to own a Win32
             // handle it does not know about is how a review window ends up behind Navisworks with
-            // no way to get it back.
-            window.Show();
+            // no way to get it back. Topmost is what keeps it in front instead.
+            return ToolWindow.Show(Tools.Find("review"), state.Build, 420, 0, window =>
+            {
+                window.SizeToContent = SizeToContent.Height;
+                window.ResizeMode = ResizeMode.CanResize;
+                window.Topmost = true;
 
-            state.Go(0);
+                window.KeyDown += (s, e) => state.Key(e);
+                window.Closed += (s, e) => state.Finish();
 
-            return null;
+                state.Go(0);
+            });
         }
 
         /// <summary>One pass through the board, holding where it has got to.</summary>

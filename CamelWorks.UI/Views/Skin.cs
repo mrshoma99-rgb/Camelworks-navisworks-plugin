@@ -184,17 +184,20 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The accent for one workspace.
+        /// The accent for one family of tools.
         ///
-        /// Eight workspaces rendered in one grey read as one workspace. This is what the ribbon
-        /// tints its icons with and what the shell marks the current section with — deliberately
-        /// not the brand accent, which everywhere else means "this is the thing to press".
+        /// Every tool rendered in one grey reads as one tool. This is what the ribbon tints its
+        /// icons with — deliberately not the brand accent, which everywhere else means "this is
+        /// the thing to press".
+        ///
+        /// The families were workspaces once, and the ids are still theirs: the ribbon groups its
+        /// buttons into panels, and each panel's title picks the family its icons are drawn in.
         /// </summary>
-        /// <param name="workspaceId">A workspace id, as held by <see cref="Shell.Workspaces"/>.</param>
-        public static Brush Family(string? workspaceId)
+        /// <param name="family">A family id, such as <c>coordinate</c> or <c>publish</c>.</param>
+        public static Brush Family(string? family)
         {
-            if (string.IsNullOrEmpty(workspaceId)) return Of("Muted");
-            return Sheet["Fam." + workspaceId] is Brush brush ? brush : Of("Muted");
+            if (string.IsNullOrEmpty(family)) return Of("Muted");
+            return Sheet["Fam." + family] is Brush brush ? brush : Of("Muted");
         }
 
         /// <summary>The text colour for a tone.</summary>

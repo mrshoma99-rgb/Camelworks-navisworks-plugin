@@ -10,6 +10,7 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -48,7 +49,6 @@ namespace CamelWorks.UI.Views
         private const string Book = "Excel workbook (.xlsx)";
         private const string Plain = "Comma-separated (.csv)";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -57,30 +57,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - report on the model's own data",
-                Width = 1180,
-                Height = 780,
-                MinWidth = 900,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Builder(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("report"), () => new Builder(session).View, 1180, 780);
         }
 
         private sealed class Builder

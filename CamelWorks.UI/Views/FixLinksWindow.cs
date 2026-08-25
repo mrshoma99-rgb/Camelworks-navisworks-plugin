@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -24,7 +25,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class FixLinksWindow
     {
-        private static Window? _open;
 
         /// <summary>
         /// Show the window.
@@ -35,28 +35,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - fix broken links",
-                Width = 640,
-                Height = 520,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = Body(session),
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("links"), () => Body(session), 640, 520);
         }
 
         private static UIElement Body(Session session)

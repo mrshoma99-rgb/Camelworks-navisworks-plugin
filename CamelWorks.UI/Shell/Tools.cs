@@ -179,7 +179,7 @@ namespace CamelWorks.UI.Shell
             Of("clashxml", "Clash XML", ToolShape.Window, Glyph.Clash,
                "Read a board out of the format other coordination tools speak, or write one back "
                + "into it, against a saved profile.",
-               "Save to a file"),
+               "Show me what would go in"),
 
             // ---- Compare ----------------------------------------------------------------------
 
@@ -238,6 +238,11 @@ namespace CamelWorks.UI.Shell
             Of("sets", "Sets", ToolShape.Panel, Glyph.Filter,
                "Build the selections every other tool works on, out of properties and other sets.",
                "Publish as a Navisworks set"),
+
+            Of("schedule", "Sets from a Schedule", ToolShape.Window, Glyph.Table,
+               "Turn a spreadsheet of rooms, assets or conditions into that many sets at once, "
+               + "rather than building them one at a time.",
+               "Read the schedule"),
 
             Of("appearance", "Appearance", ToolShape.Panel, Glyph.Layers,
                "Control what is visible and what colour it is, as layers that stack and can be "

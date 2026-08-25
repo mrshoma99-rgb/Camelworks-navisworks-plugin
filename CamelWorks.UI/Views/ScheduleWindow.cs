@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Sets;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -25,7 +26,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class ScheduleWindow
     {
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -34,30 +34,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - sets from a schedule",
-                Width = 1020,
-                Height = 700,
-                MinWidth = 760,
-                MinHeight = 520,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Editor(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("schedule"), () => new Editor(session).View, 1020, 700);
         }
 
         private sealed class Editor

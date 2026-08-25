@@ -137,7 +137,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Take it to site...", () =>
             {
-                var problem = SiteWindow.Show();
+                var problem = SiteWindow.Show("weight");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 

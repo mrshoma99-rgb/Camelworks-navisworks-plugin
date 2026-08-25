@@ -41,7 +41,8 @@ namespace CamelWorks.UI.Views
 
             switch (tool.Id)
             {
-                // Tools that already had a window of their own, before there was a host for them.
+                // Tools whose window is more than a surface: they check something before they open,
+                // or they build their editor themselves. Everything else falls through to the frame.
                 case "review": return ReviewWindow.Show();
                 case "links": return FixLinksWindow.Show();
                 case "matrix": return MatrixWindow.Show();
@@ -52,18 +53,17 @@ namespace CamelWorks.UI.Views
                 case "compile": return CompileWindow.Show();
                 case "restructure": return RestructureWindow.Show();
                 case "ids": return IdsWindow.Show();
-                // The one window that returns nothing: Help is the screen that has to work when
-                // the rest of the product will not, so it never refuses.
-                case "help": HelpWindow.Show(); return null;
+                case "schedule": return ScheduleWindow.Show();
+                case "help": return HelpWindow.Show();
                 case "export": return ExportWindow.Show();
 
-                // The five that were five collapsible sections of one window. They share a
-                // geometry read, so they still share a window until each is lifted out of it.
+                // Five field tools, five windows. They share one read of the selection and its
+                // geometry, which is the expensive part - see SiteWindow.
                 case "weight":
                 case "dimensions":
                 case "setout":
                 case "paperwork":
-                case "labels": return SiteWindow.Show();
+                case "labels": return SiteWindow.Show(tool.Id);
 
                 default: return Window(tool, Surface(tool), Wide(tool));
             }

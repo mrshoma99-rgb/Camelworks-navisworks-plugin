@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -24,7 +25,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class MatrixWindow
     {
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -33,30 +33,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - clash matrix",
-                Width = 1080,
-                Height = 720,
-                MinWidth = 780,
-                MinHeight = 540,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Editor(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("matrix"), () => new Editor(session).View, 1080, 720);
         }
 
         /// <summary>One editing session over one matrix.</summary>
