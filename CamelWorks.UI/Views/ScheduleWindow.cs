@@ -61,14 +61,19 @@ namespace CamelWorks.UI.Views
 
             internal UIElement View { get; }
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns, so "Publish" was on screen beside a workbook path
+            /// nobody had typed yet. The dependency is real: nothing to plan until the schedule
+            /// has been read, nothing to publish until the plan says what it would make.
+            ///
+            /// The sheet preview stays on the first step with the row and column numbers, because
+            /// those numbers are read straight off it.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(330) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("The spreadsheet"),
+                var sheet = Ui.Stack(
                     _sheet.Picker(),
                     Ui.Rule(),
                     Ui.Eyebrow("Where things are"),
@@ -76,23 +81,27 @@ namespace CamelWorks.UI.Views
                     _shape,
                     Ui.Rule(),
                     Ui.Eyebrow("The sheet as it stands"),
-                    _sheet.Preview()));
+                    _sheet.Preview());
 
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("What it would make"),
-                    _plan,
-                    _warnings,
-                    Ui.Rule(),
-                    Make()));
-
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var plan = Ui.Stack(_plan, _warnings);
+                var make = Make();
 
                 ShowShape();
-                return columns;
+
+                var steps = new[]
+                {
+                    new Ui.Step("The sheet", () => sheet,
+                                () => _planned == null
+                                      ? "Read the schedule out of the sheet first." : null),
+                    new Ui.Step("What it would make", () => plan,
+                                () => _planned == null || _planned.IsEmpty
+                                      ? "Nothing in the schedule to make sets from." : null),
+                    new Ui.Step("Make them", () => make),
+                };
+
+                // No finish button of its own: the last step carries Ui.Commit, which is the
+                // two-stage "show me, then do it" a write into the set library has always used.
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             private UIElement Layout()
@@ -196,7 +205,7 @@ namespace CamelWorks.UI.Views
                     plan: (job, into) => Rehearse(job, into),
                     apply: job => Publish(job));
 
-                return Ui.Stack(Ui.Eyebrow("Make them"), commit, _output);
+                return Ui.Stack(commit, _output);
             }
 
             /// <summary>

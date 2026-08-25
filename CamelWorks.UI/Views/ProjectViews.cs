@@ -1117,8 +1117,8 @@ namespace CamelWorks.UI.Views
                 if (carrying.Count == 0)
                 {
                     status.Children.Add(Ui.Note("Nothing to remove. CamelWorks keeps its work in the "
-                        + "project file beside the model; properties are only written when you ask "
-                        + "for them on the Data tab."));
+                        + "project file beside the model; properties are only written when a tool "
+                        + "is asked to write them."));
 
                     return;
                 }

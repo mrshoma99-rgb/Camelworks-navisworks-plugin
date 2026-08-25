@@ -17,7 +17,7 @@ namespace CamelWorks.UI.Views
     public static class HomeView
     {
         /// <summary>Build the screen.</summary>
-        /// <param name="goTo">Navigate the pane to a "workspace/tab" route.</param>
+        /// <param name="goTo">Open a tool by its id.</param>
         public static UIElement Build(Action<string> goTo)
         {
             var session = Host.Current;

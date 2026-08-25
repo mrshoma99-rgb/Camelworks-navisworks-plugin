@@ -80,8 +80,8 @@ namespace CamelWorks.UI.Views
             var warning = BaselineModels.IsHoldingBoth(holding)
                 ? Ui.Note("An older revision is open in this document — it was brought in to show "
                           + "what was removed. Comparing again now would compare the baseline "
-                          + "against itself and report no changes. Take it back out on the "
-                          + "Changes tab first.")
+                          + "against itself and report no changes. Take it back out in "
+                          + "Changes first.")
                 : null;
 
             if (baselines.Count == 0)
@@ -329,7 +329,7 @@ namespace CamelWorks.UI.Views
 
             foreach (var note in result.Notes) results.Children.Add(Ui.Note(note));
 
-            results.Children.Add(Ui.Line("The change list is on the Changes tab.", 0.75));
+            results.Children.Add(Ui.Line("The change list is in Changes, on the ribbon.", 0.75));
         }
 
         // -------------------------------------------------------------------------------------
@@ -350,7 +350,7 @@ namespace CamelWorks.UI.Views
                 return Ui.Scroll(Ui.Stack(
                     Ui.Heading("Changes"),
                     Ui.Empty("Nothing has been compared yet.",
-                             "Run a comparison on the Run tab and the list appears here.")));
+                             "Run one in Compare and the list appears here.")));
 
             var screen = new ChangeScreen(session, result);
             return Ui.Scroll(screen.Build());

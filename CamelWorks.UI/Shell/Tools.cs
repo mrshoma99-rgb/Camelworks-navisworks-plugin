@@ -239,7 +239,7 @@ namespace CamelWorks.UI.Shell
                "Build the selections every other tool works on, out of properties and other sets.",
                "Publish as a Navisworks set"),
 
-            Of("schedule", "Sets from a Schedule", ToolShape.Window, Glyph.Table,
+            Of("schedule", "Sets from a Schedule", ToolShape.Wizard, Glyph.Table,
                "Turn a spreadsheet of rooms, assets or conditions into that many sets at once, "
                + "rather than building them one at a time.",
                "Read the schedule"),

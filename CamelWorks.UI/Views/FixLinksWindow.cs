@@ -58,8 +58,8 @@ namespace CamelWorks.UI.Views
             foreach (var model in broken)
                 list.Children.Add(Ui.Line(model.DisplayName + " - expected at " + model.SourcePath, 0.8));
 
+            // No heading of its own: the frame carries the tool's name and its purpose.
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Fix broken links"),
                 head,
                 list,
                 Ui.PathField("Look in", folder, PathKind.Folder),

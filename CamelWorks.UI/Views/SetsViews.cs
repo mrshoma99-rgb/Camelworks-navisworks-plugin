@@ -952,8 +952,8 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Marked(Glyphs.Find, "What else is going on",
                     "Everything hidden or overridden that no layer above accounts for. Reading it is a "
-                    + "pass over the whole federation, so it happens when you ask rather than when the "
-                    + "tab opens.",
+                    + "pass over the whole federation, so it happens when you ask rather than every "
+                    + "time this opens.",
                     scan,
                     _foreign);
             }

@@ -55,9 +55,9 @@ namespace CamelWorks.UI.Views
             var picker = Ui.Choice(new[] { "Current selection", "Everything loaded" }, scope,
                                    pick => scope = pick);
 
+            // No heading of its own: the frame carries the tool's name and the sentence saying
+            // what it is for, and a second copy underneath reads as two screens.
             return Ui.Stack(
-                Ui.Heading("Export"),
-                Ui.Sub("Geometry a browser can open, or the properties as a spreadsheet."),
                 Ui.Field("Scope", picker),
                 Geometry(session, () => scope),
                 Properties(session, () => scope));
