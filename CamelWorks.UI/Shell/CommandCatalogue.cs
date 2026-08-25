@@ -4,35 +4,13 @@ using System.Linq;
 
 namespace CamelWorks.UI.Shell
 {
-    /// <summary>What a ribbon button does when it is pressed.</summary>
-    public enum CommandKind
-    {
-        /// <summary>Opens the pane on a named workspace and tab.</summary>
-        Pane = 0,
-
-        /// <summary>Acts immediately, with no pane and no dialog.</summary>
-        Act = 1,
-
-        /// <summary>Opens a menu of choices under the button.</summary>
-        Menu = 2,
-
-        /// <summary>
-        /// Opens a true modal.
-        ///
-        /// Reserved for terminal file operations that need a save path and nothing else. Anything
-        /// that changes what the user sees is modeless with a live preview instead — a modal over
-        /// a 3D view hides the very thing the user is deciding about.
-        /// </summary>
-        Dialog = 3,
-    }
-
     /// <summary>One ribbon command.</summary>
     public sealed class RibbonCommand
     {
-        internal RibbonCommand(string id, string title, CommandKind kind, string? route,
+        internal RibbonCommand(string id, string title, string? toolId,
                                string tooltip, string[] synonyms, string[] symptoms)
         {
-            Id = id; Title = title; Kind = kind; Route = route;
+            Id = id; Title = title; ToolId = toolId;
             Tooltip = tooltip; Synonyms = synonyms; Symptoms = symptoms;
         }
 
@@ -42,11 +20,17 @@ namespace CamelWorks.UI.Shell
         /// <summary>How it reads on the button.</summary>
         public string Title { get; }
 
-        /// <summary>What pressing it does.</summary>
-        public CommandKind Kind { get; }
+        /// <summary>
+        /// Which tool it opens.
+        ///
+        /// One button, one tool. It used to be a "workspace/tab" route, and twenty-one of the
+        /// twenty-seven buttons routed into the same pane - three of them onto a tab another
+        /// button already opened, so two different buttons did the identical thing.
+        /// </summary>
+        public string? ToolId { get; }
 
-        /// <summary>The "workspace/tab" it opens, for a pane command.</summary>
-        public string? Route { get; }
+        /// <summary>The tool this opens, or null when there is no such tool.</summary>
+        public Tool? Tool => Tools.Find(ToolId);
 
         /// <summary>The tooltip.</summary>
         public string Tooltip { get; }
@@ -81,13 +65,13 @@ namespace CamelWorks.UI.Shell
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
             // Panel 1 — Project
-            Pane("ID_CW_HealthCheck", "Health Check", "Project/Health",
+            Pane("ID_CW_HealthCheck", "Health Check", "health",
                 "One scorecard over models, sets and data. Works on a raw model with nothing set up.",
                 new[] { "audit", "model check", "quality", "scorecard", "validate" },
                 new[] { "is this model any good", "something is wrong with the federation",
                         "elements in the wrong place", "model loaded twice", "duplicate elements" }),
 
-            Pane("ID_CW_ProjectSetup", "Project Setup", "Project/Setup",
+            Pane("ID_CW_ProjectSetup", "Project Setup", "setup",
                 "What CamelWorks already derived, with an override on each line. Skippable.",
                 new[] { "configure", "settings", "options", "preferences" },
                 new[] { "where do I set this up", "do I have to configure it first" }),
@@ -98,13 +82,13 @@ namespace CamelWorks.UI.Shell
                 new[] { "missing model", "relink", "repath", "broken reference" },
                 new[] { "model did not load", "file not found", "the NWF points at the wrong folder" }),
 
-            Pane("ID_CW_ProjectProfile", "Project Profile", "Project/Profile",
+            Pane("ID_CW_ProjectProfile", "Project Profile", "project",
                 "What this project's settings are, where each came from, and an override on each line.",
                 new[] { "template", "profile", "preset" },
                 new[] { "set this up the same way on the next job" }),
 
             // Panel 2 — Coordinate
-            Pane("ID_CW_Triage", "Clash Triage", "Coordinate/Triage",
+            Pane("ID_CW_Triage", "Clash Triage", "triage",
                 "The board. Opens populated and grouped, with the funnel showing how the engine's "
                 + "count became this one.",
                 new[] { "clashes", "board", "issues", "results", "grouping" },
@@ -116,39 +100,39 @@ namespace CamelWorks.UI.Shell
                 new[] { "walk the clashes", "go through results", "sign off" },
                 new[] { "I need to go through these one at a time" }),
 
-            Pane("ID_CW_ClashTests", "Clash Tests", "Coordinate/Tests",
+            Pane("ID_CW_ClashTests", "Clash Tests", "tests",
                 "The matrix builder and Run. One click is every model against every other.",
                 new[] { "matrix", "run clashes", "test setup", "batch clash" },
                 new[] { "setting up clash tests takes all morning", "which tests have I already run" }),
 
-            Pane("ID_CW_ClashRules", "Clash Rules", "Coordinate/Rules",
+            Pane("ID_CW_ClashRules", "Clash Rules", "rules",
                 "Suppress and flag, then group, then assign — one pipeline, previewed before it runs.",
                 new[] { "filters", "ignore", "suppress", "auto-assign", "grouping rules" },
                 new[] { "the same false positives every week", "insulation touching a wall",
                         "I keep ignoring the same things" }),
 
-            Pane("ID_CW_Headroom", "Headroom", "Coordinate/Triage",
+            Pane("ID_CW_Headroom", "Headroom", "headroom",
                 "Floor set against target set, emitting findings onto the board.",
                 new[] { "clearance", "ceiling height", "soffit", "head height" },
                 new[] { "not enough headroom", "the ceiling is too low under that duct" }),
 
-            Pane("ID_CW_ClashReport", "Clash Report", "Coordinate/Report",
+            Pane("ID_CW_ClashReport", "Clash Report", "clashreport",
                 "PDF, XLSX or HTML from a built-in template. Nothing to configure first.",
                 new[] { "export report", "issue list", "pdf", "spreadsheet" },
                 new[] { "the client wants a report", "I need this in a spreadsheet" }),
 
-            Pane("ID_CW_Bcf", "BCF", "Coordinate/BCF",
+            Pane("ID_CW_Bcf", "BCF", "bcf",
                 "Export and import, BCF 2.1 and 3.0.",
                 new[] { "bcf", "openbim", "issue exchange", "solibri", "bimcollab" },
                 new[] { "send these to the architect", "they use a different tool" }),
 
-            Pane("ID_CW_Merge", "Merge", "Coordinate/BCF",
+            Pane("ID_CW_Merge", "Merge", "merge",
                 "One conflict preview for inbound BCF and inbound reviewer files.",
                 new[] { "combine", "reconcile", "incoming", "conflicts" },
                 new[] { "two people reviewed the same clashes", "whose version wins" }),
 
             // Panel 3 — Compare
-            Pane("ID_CW_Compare", "Compare", "Compare/Run",
+            Pane("ID_CW_Compare", "Compare", "compare",
                 "What changed since a baseline: added, removed, moved and changed, painted onto "
                 + "the model. Works on a raw model — take a baseline and you are set up.",
                 new[] { "diff", "difference", "revision", "version", "what changed", "model compare" },
@@ -164,41 +148,41 @@ namespace CamelWorks.UI.Shell
                 new[] { "save what it looks like now", "I want to compare against this later" }),
 
             // Panel 4 — Data
-            Pane("ID_CW_DataManager", "Data Manager", "Data/Data",
+            Pane("ID_CW_DataManager", "Data Manager", "data",
                 "Browse and edit properties in one place, with calculated columns.",
                 new[] { "properties", "parameters", "attributes", "edit data" },
                 new[] { "I need to see every property at once", "bulk edit properties" }),
 
-            Pane("ID_CW_Excel", "Excel", "Data/Data",
+            Pane("ID_CW_Excel", "Excel", "excel",
                 "Read the properties, write them back, or take them out as a spreadsheet.",
                 new[] { "spreadsheet", "xlsx", "csv", "round trip" },
                 new[] { "get this into Excel", "the QS sent a spreadsheet back" }),
 
-            Pane("ID_CW_Zones", "Assign Levels & Zones", "Data/Zones",
+            Pane("ID_CW_Zones", "Assign Levels & Zones", "levels",
                 "Derives levels from whatever the model has, and says which source it used.",
                 new[] { "storeys", "floors", "levels", "zoning", "grids" },
                 new[] { "the model has no levels", "clashes are not grouped by floor",
                         "which floor is this on" }),
 
-            Pane("ID_CW_Takeoff", "Takeoff", "Data/Takeoff",
+            Pane("ID_CW_Takeoff", "Takeoff", "takeoff",
                 "Sums the numeric properties it finds, grouped, and reports what it could not read.",
                 new[] { "quantities", "measure", "counts", "schedule", "qto" },
                 new[] { "how much of this is there", "I need quantities out of the model" }),
 
             // Panel 5 — Sets & Views
-            Pane("ID_CW_Sets", "Sets", "Sets/Sets",
+            Pane("ID_CW_Sets", "Sets", "sets",
                 "Boolean set building, compiled down to native search sets.",
                 new[] { "search sets", "selection sets", "filters", "find items" },
                 new[] { "the search only does AND", "I need everything except this",
                         "building the same set over and over" }),
 
-            Pane("ID_CW_Appearance", "Appearance", "Sets/Appearance",
+            Pane("ID_CW_Appearance", "Appearance", "appearance",
                 "The layers system: what is hidden, what is overridden, and by which layer.",
                 new[] { "colours", "override", "hide", "isolate", "transparency", "layers" },
                 new[] { "why is this thing hidden", "why is this pink", "unhide all lost my work",
                         "I cannot tell what is overridden" }),
 
-            Pane("ID_CW_Viewpoints", "Viewpoints", "Sets/Viewpoints",
+            Pane("ID_CW_Viewpoints", "Viewpoints", "viewpoints",
                 "Bulk rename, renumber and re-folder; batch render; copy overrides.",
                 new[] { "views", "saved viewpoints", "renumber", "rename" },
                 new[] { "two hundred viewpoints named Viewpoint", "renaming these one at a time" }),
@@ -210,17 +194,17 @@ namespace CamelWorks.UI.Shell
                 new[] { "I cannot see inside", "turning sectioning off loses my box" }),
 
             // Panel 6 — Deliver & Automate
-            Pane("ID_CW_Batch", "Batch", "Batch/Jobs",
+            Pane("ID_CW_Batch", "Batch", "batch",
                 "Jobs and their run history. A job from this document in one click.",
                 new[] { "automation", "scheduled", "overnight", "unattended" },
                 new[] { "doing the same export every week", "this takes an hour every Friday" }),
 
-            Pane("ID_CW_Graph", "Graph Editor", "Automate/Canvas",
+            Pane("ID_CW_Graph", "Graph Editor", "graph",
                 "The graph canvas, in its own pane because it needs the full width.",
                 new[] { "nodes", "visual scripting", "dyncamelo", "workflow" },
                 new[] { "I want to chain these together" }),
 
-            Pane("ID_CW_ExportIfc", "Export IFC", "Project/Export",
+            Pane("ID_CW_ExportIfc", "Export IFC", "ifc",
                 "The IFC exporter, full pane.",
                 new[] { "ifc", "openbim export", "ifc4", "ifc2x3" },
                 new[] { "they want IFC", "export to IFC" }),
@@ -281,20 +265,41 @@ namespace CamelWorks.UI.Shell
         private static bool Has(string haystack, string needle) =>
             haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
 
-        private static RibbonCommand Pane(string id, string title, string route, string tooltip,
+        private static RibbonCommand Pane(string id, string title, string toolId, string tooltip,
                                           string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, CommandKind.Pane, route, tooltip, synonyms, symptoms);
+            new RibbonCommand(id, title, toolId, tooltip, synonyms, symptoms);
+
+        /// <summary>
+        /// The tool behind a button that has no route of its own.
+        ///
+        /// These were the commands that acted rather than opening a screen, so they never needed
+        /// one. They still name a tool, because a tool is the thing that carries what a button is
+        /// for and what it will do - and Find a Tool has to be able to say that about all of them.
+        /// </summary>
+        private static string? ToolFor(string id)
+        {
+            switch (id)
+            {
+                case "ID_CW_FixLinks": return "links";
+                case "ID_CW_Review": return "review";
+                case "ID_CW_Baseline": return "baseline";
+                case "ID_CW_SectionBox": return "sectionbox";
+                case "ID_CW_Export": return "export";
+                case "ID_CW_Help": return "help";
+                default: return null;
+            }
+        }
 
         private static RibbonCommand Act(string id, string title, string tooltip,
                                          string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, CommandKind.Act, null, tooltip, synonyms, symptoms);
+            new RibbonCommand(id, title, ToolFor(id), tooltip, synonyms, symptoms);
 
         private static RibbonCommand Menu(string id, string title, string tooltip,
                                           string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, CommandKind.Menu, null, tooltip, synonyms, symptoms);
+            new RibbonCommand(id, title, ToolFor(id), tooltip, synonyms, symptoms);
 
         private static RibbonCommand Dialog(string id, string title, string tooltip,
                                             string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, CommandKind.Dialog, null, tooltip, synonyms, symptoms);
+            new RibbonCommand(id, title, ToolFor(id), tooltip, synonyms, symptoms);
     }
 }

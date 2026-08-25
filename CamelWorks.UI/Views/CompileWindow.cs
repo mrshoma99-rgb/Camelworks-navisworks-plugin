@@ -11,6 +11,7 @@ using CamelWorks.Core.Project;
 using CamelWorks.Core.Publish;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -34,7 +35,6 @@ namespace CamelWorks.UI.Views
         private const string Combined = "one file holding all of them";
         private const string Separate = "one file each";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -43,30 +43,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - compile the models into a deliverable",
-                Width = 1140,
-                Height = 780,
-                MinWidth = 880,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Compiler(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("compile"), () => new Compiler(session).View, 1140, 780);
         }
 
         private sealed class Compiler
@@ -115,48 +92,58 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns, which meant the button that closes whatever is open
+            /// and overwrites a file on the network sat beside an empty file list. The dependency
+            /// is real: there is nothing to name until there are files, and nothing worth warning
+            /// about until there is somewhere for the result to land.
+            ///
+            /// The warning about what compiling costs lives on the last step, next to the button
+            /// it is about, and the button does not appear until the box beside it is ticked.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// add one more file does not clear the folder already chosen.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(430) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("What goes in"),
+                var input = Ui.Stack(
                     Ui.Actions(
                         Ui.Button("Add files...", AddFiles),
                         Ui.Quiet("Add a folder...", AddFolder),
                         Ui.Quiet("Clear the list", Clear)),
-                    Ui.Small("Or bring the list in from the register the project already keeps."),
                     Ui.PathField("Spreadsheet", _sheet, PathKind.Open,
-                                 "Spreadsheet|*.xlsx;*.xlsm|All files|*.*"),
+                                 "Spreadsheet|*.xlsx;*.xlsm|All files|*.*",
+                                 "a register the project already keeps, if there is one"),
                     Ui.Actions(Ui.Quiet("Read the paths out of it", FromSheet)),
                     _list,
                     Ui.Rule(),
                     Ui.Eyebrow("This compilation"),
-                    Saved()));
+                    Saved());
 
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("What comes out"),
+                var output = Ui.Stack(
                     _shape,
                     Ui.Rule(),
                     Ui.Eyebrow("What would happen"),
-                    _verdict,
-                    Ui.Rule(),
-                    Ui.Eyebrow("Run it"),
-                    Warning(),
-                    _run,
-                    _note));
+                    _verdict);
 
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var run = Ui.Stack(Warning(), _run, _note);
 
                 Draw();
 
-                return columns;
+                var steps = new[]
+                {
+                    new Ui.Step("What goes in", () => input,
+                                () => _paths.Count == 0
+                                      ? "Put at least one model on the list." : null),
+                    new Ui.Step("What comes out", () => output,
+                                () => _folder.Text.Trim().Length == 0
+                                      ? "Say which folder the compiled file goes in." : null),
+                    new Ui.Step("Run it", () => run),
+                };
+
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             /// <summary>
@@ -197,7 +184,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Saved", _picker),
                         Ui.Field("Name", _name, "what a combined file is named after")),
                     Ui.Actions(
-                        Ui.Button("Save this one", Keep),
+                        Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
             }
 
@@ -512,7 +499,7 @@ namespace CamelWorks.UI.Views
 
                 if (_folder.Text.Trim().Length == 0)
                 {
-                    _run.Children.Add(Ui.Small("Say which folder the files go in, above."));
+                    _run.Children.Add(Ui.Small("Say which folder the files go in, on the step before."));
                     return;
                 }
 

@@ -10,15 +10,19 @@ alongside the terms.
 
 ## What it does
 
-| Workspace | |
+| On the ribbon | |
 |---|---|
-| **Home** | The weekly cycle as the front door — reconcile, regroup, report — with when each last happened and the way to each |
-| **Project** | Health checks · what CamelWorks derived and why · the federation and whether each source has moved on since the file was saved · the IFC exporter |
-| **Coordinate** | The clash board · headroom · the engine's tests · the rule editor · reports · BCF in and out |
+| **Project** | Health — one sweep for placement, geometry, arrivals and codes, ranked into one verdict · Setup, which says what was derived and why · the project profile · fix broken links |
+| **Coordinate** | The clash board · review mode · the engine's tests and a matrix that builds them · headroom · the rule editor · reports · BCF in and out · clash XML |
 | **Compare** | What changed between two revisions — added, removed, moved, changed — painted onto the model, stamped into the properties, or sent out as a report |
-| **Data** | Every property folded to one row, and a write · levels derived and stamped · takeoff |
-| **Sets & Views** | Boolean set builder · the Appearance layers system · bulk viewpoint operations |
-| **Batch / Automate** | Saved jobs · a node canvas over the same services the buttons drive |
+| **Data** | Every property folded to one row and one write pipeline · the Excel round-trip · joining a register onto the model · levels and zones · takeoff · a report on the model's own data · IDS |
+| **Sets & Views** | The boolean set builder · a spreadsheet of conditions turned into that many sets · the Appearance layers system · bulk viewpoint operations · restructuring the set library |
+| **Deliver & Automate** | Extract a piece of the federation · compile models into a deliverable · export IFC · the five field tools — centre of gravity, dimensions, setting out, documents and photos, site labels · saved jobs and the node graph |
+
+Every one of these is a tool with a name, a sentence saying what it is for, and **one main action**.
+A ribbon button opens its own tool, in its own window; the six that are read continuously — the
+board, the change list, data, sets, appearance and the graph — open in the dock pane instead. There
+is no tab strip and no workspace switcher.
 
 Three of those are worth singling out.
 

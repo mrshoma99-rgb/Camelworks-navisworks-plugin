@@ -10,6 +10,7 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -48,7 +49,6 @@ namespace CamelWorks.UI.Views
         private const string Book = "Excel workbook (.xlsx)";
         private const string Plain = "Comma-separated (.csv)";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -57,30 +57,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - report on the model's own data",
-                Width = 1180,
-                Height = 780,
-                MinWidth = 900,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Builder(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("report"), () => new Builder(session).View, 1180, 780);
         }
 
         private sealed class Builder
@@ -134,14 +111,25 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Four decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns holding eight headed sections, which put "Write" a
+            /// few inches from a scope nothing had read, and - worse - put the catalogue of what
+            /// the model carries in one column and the columns you build out of it in the other,
+            /// so choosing a column meant looking away from the list you were choosing it from.
+            /// They are one step now.
+            ///
+            /// The dependency is real at every hop: nothing to choose columns from until the model
+            /// has been read, nothing to shape until there are columns, nothing to write until
+            /// there is a shape.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// add a column does not re-read the model.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(390) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("Where the data comes from"),
+                var model = Ui.Stack(
                     Ui.Form(Ui.Field("Scope",
                         Ui.Choice(new[] { Selection, Everything }, _scopeChoice, pick =>
                         {
@@ -149,30 +137,27 @@ namespace CamelWorks.UI.Views
                             _kept.Set("scope", pick);
                         }))),
                     Ui.Runner("Read the model", _read, Gather),
-                    _read,
-                    Ui.Rule(),
+                    _read);
+
+                var columns = Ui.Stack(
                     Ui.Eyebrow("What the model carries"),
                     Ui.Small("Every property found, and how far it reaches. Pick the ones the "
                              + "report should have and add them as columns."),
                     _catalogue,
                     Ui.Rule(),
-                    Ui.Eyebrow("This report"),
-                    Saved()));
-
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
                     Ui.Eyebrow("The columns"),
                     _columns,
                     Ui.Rule(),
-                    Ui.Eyebrow("The shape"),
+                    Ui.Eyebrow("This report"),
+                    Saved());
+
+                var shape = Ui.Stack(
                     _shape,
                     Ui.Rule(),
                     Ui.Eyebrow("What that produces"),
-                    _preview,
-                    Ui.Rule(),
-                    Ui.Eyebrow("Write it"),
+                    _preview);
+
+                var write = Ui.Stack(
                     Ui.Form(Ui.Field("Format",
                         Ui.Choice(new[] { Book, Plain }, _format, pick =>
                         {
@@ -186,14 +171,24 @@ namespace CamelWorks.UI.Views
                                  + "and brought back through Data ▸ Bring a sheet back in."),
                     Ui.Commit("See what would be written", "Write", "row", Rehearse, Publish),
                     _output,
-                    _note));
-
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                    _note);
 
                 Draw();
 
-                return columns;
+                var steps = new[]
+                {
+                    new Ui.Step("The model", () => model,
+                                () => _scope.Count == 0 ? "Read the model first." : null),
+                    new Ui.Step("The columns", () => columns,
+                                () => _template.Columns.Count == 0
+                                      ? "Add at least one column." : null),
+                    new Ui.Step("The shape", () => shape),
+                    new Ui.Step("Write it", () => write),
+                };
+
+                // No finish button of its own: the last step carries Ui.Commit, which is the
+                // two-stage "show me, then do it" a write has always used here.
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             private UIElement Saved()
@@ -211,7 +206,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Saved", _picker),
                         Ui.Field("Name", _name)),
                     Ui.Actions(
-                        Ui.Button("Save this one", Keep),
+                        Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Start again", Fresh),
                         Ui.Quiet("Forget it", Forget)));
             }

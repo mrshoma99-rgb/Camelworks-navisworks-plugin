@@ -993,6 +993,19 @@ namespace CamelWorks.UI.Views
         /// <summary>The project's own length unit, or metres before a document is open.</summary>
         private static string Unit() => Host.Current?.Profile.Units.LengthUnit ?? "m";
 
+        /// <summary>
+        /// Clear height, as its own tool.
+        ///
+        /// It had a ribbon button of its own and that button opened Clash Triage, because Headroom
+        /// was a card on the Clash Tests screen and the route pointed at the nearest tab. It is
+        /// the same card; it just answers its own button now.
+        /// </summary>
+        /// <remarks>
+        /// Named ClearHeight rather than Headroom because the Core type that does the work is
+        /// called Headroom, and a member of the same name in a file that imports it shadows it.
+        /// </remarks>
+        public static UIElement ClearHeight() => Ui.Scroll(Ui.Stack(HeadroomCard()));
+
         private static UIElement HeadroomCard()
         {
             var results = Ui.Stack();
@@ -1731,7 +1744,7 @@ namespace CamelWorks.UI.Views
                         Ui.Pair(
                             Ui.Field("Who", who),
                             Ui.Field("Priority", how))),
-                    Ui.Actions(Ui.Button("Raise it against the selection", () => Raise(session))),
+                    Ui.Actions(Ui.Primary("Raise it against the selection", () => Raise(session))),
                     Ui.Note("The elements come from what is selected in the model right now. Select the "
                             + "door and the corridor, not the whole level — a viewpoint that opens on "
                             + "half a building tells the reader nothing."),
@@ -2910,7 +2923,7 @@ namespace CamelWorks.UI.Views
 
                 _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
 
-                _markers.Children.Add(Ui.Actions(Ui.Button("Bring them into this model", () =>
+                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them into this model", () =>
                 {
                     try
                     {
@@ -4423,6 +4436,15 @@ namespace CamelWorks.UI.Views
         /// answering by opening six files and retyping. It lands on the same board through the same
         /// path, so a merged return behaves exactly like a single one from here on.
         /// </summary>
+        /// <summary>
+        /// Folding several reviewers' packs back into one board, as its own tool.
+        ///
+        /// Its ribbon button opened BCF, because this was a card on the BCF screen. Merging is not
+        /// exporting: it is the one job where two people disagreeing has to be shown rather than
+        /// resolved by whoever was read last.
+        /// </summary>
+        public static UIElement Merge() => Ui.Scroll(Ui.Stack(Together()));
+
         private static UIElement Together()
         {
             const string Ask = "leave it and tell me";

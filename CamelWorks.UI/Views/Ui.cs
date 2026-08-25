@@ -538,13 +538,15 @@ namespace CamelWorks.UI.Views
             {
                 lead.Margin = new Thickness(0, 0, 8, Gap);
 
-                // The ranking this method exists for, which it used to describe and not perform:
-                // it set a wider margin on the first child and nothing else, so a row of three
-                // came out as three identical grey rectangles — the exact failure the comment
-                // above claims to fix. A Runner is left alone; it was told at its own call site
-                // whether it leads, and a row can hold one that deliberately does not.
-                if (lead is System.Windows.Controls.Button button) button.Wearing("PrimaryBtn");
-
+                // It used to restyle the first child as the primary, whatever the caller had
+                // asked for. That was meant to stop a row coming out as three identical grey
+                // rectangles, and it did - by taking the decision away from the one place that
+                // knows the answer. A row reading "Keep" then "Forget" made Keep the loudest
+                // thing on the card because it was written first, and "Add a row" outshouted the
+                // rule being written above it.
+                //
+                // The ranking is the caller's now: Primary for the thing the card is for, Quiet
+                // for the rest, Danger for what cannot be undone. Position means nothing.
                 panel.Children.Add(lead);
             }
             else if (first != null)
@@ -1383,6 +1385,232 @@ namespace CamelWorks.UI.Views
             }
         }
 
+        /// <summary>One step of a wizard: what it is called, and the surface it shows.</summary>
+        public sealed class Step
+        {
+            /// <summary>Name one.</summary>
+            /// <param name="title">What the step is called, in two or three words.</param>
+            /// <param name="body">Its surface.</param>
+            /// <param name="ready">
+            /// Null when the step is finished, or the reason it is not, which is shown beside a
+            /// disabled Next. A step with no check is always finished.
+            /// </param>
+            public Step(string title, Func<UIElement> body, Func<string?>? ready = null)
+            {
+                Title = title;
+                Body = body;
+                Ready = ready;
+            }
+
+            /// <summary>What the step is called.</summary>
+            public string Title { get; }
+
+            /// <summary>Its surface.</summary>
+            public Func<UIElement> Body { get; }
+
+            /// <summary>Why it is not finished, or null when it is.</summary>
+            public Func<string?>? Ready { get; }
+        }
+
+        /// <summary>
+        /// Several decisions taken in order, because each one depends on the last.
+        ///
+        /// <b>Only where the dependency is real.</b> You cannot map a spreadsheet's columns before
+        /// you have read the spreadsheet, and you cannot preview a write before you have mapped
+        /// them. Where the decisions are independent a wizard is a form with extra clicks, and a
+        /// form is the better answer.
+        ///
+        /// <b>The irreversible thing lives on the last step and nowhere else.</b> That is most of
+        /// the value: a screen showing every control at once puts "Write it into the model" beside
+        /// the box you are still typing a file path into.
+        /// </summary>
+        /// <param name="steps">The steps, in order.</param>
+        /// <param name="finish">
+        /// The caption of the main action, on the last step - or null when the last step's own
+        /// surface already carries it. A wizard whose last step holds a two-stage commit does not
+        /// want a third button above it that says the same thing and does nothing.
+        /// </param>
+        /// <param name="onFinish">What the main action does.</param>
+        public static UIElement Steps(IReadOnlyList<Step> steps, string? finish, Action? onFinish)
+        {
+            if (steps == null || steps.Count == 0) return Stack();
+
+            // Opened on the first thing still to be decided, not always on step one. A step that
+            // carries a check and passes it has already been answered - by what the project
+            // remembers, or by what is selected in the model - and making somebody press Next past
+            // an answer they did not have to give is the same discourtesy as asking for it twice.
+            //
+            // Only a step that carries a check counts. One with no check is "always finished" by
+            // definition, which is not evidence of anything, so the walk stops there rather than
+            // running to the end of a wizard whose steps happen not to gate.
+            var at = 0;
+
+            while (at < steps.Count - 1 && steps[at].Ready != null && steps[at].Ready!() == null) at++;
+
+            var rail = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
+            var body = new ContentControl();
+            var why = Small(string.Empty);
+            var back = Quiet("Back", () => { });
+            var next = Primary("Next", () => { });
+            var actions = Actions(back, next, why);
+
+            void Draw()
+            {
+                rail.Children.Clear();
+
+                for (var i = 0; i < steps.Count; i++)
+                {
+                    var here = i;
+                    var done = i < at;
+                    var now = i == at;
+
+                    var pip = new Border
+                    {
+                        Width = 22,
+                        Height = 22,
+                        CornerRadius = new CornerRadius(11),
+                        Margin = new Thickness(i == 0 ? 0 : 8, 0, 7, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            FontSize = 11,
+                            Foreground = now || done
+                                ? (System.Windows.Media.Brush)System.Windows.Media.Brushes.White
+                                : null,
+                        },
+                    };
+
+                    pip.Tint(Border.BackgroundProperty, now || done ? "Accent" : "Track");
+
+                    var label = new TextBlock
+                    {
+                        Text = steps[here].Title,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        FontWeight = now ? FontWeights.SemiBold : FontWeights.Normal,
+                    };
+
+                    if (!now) label.Wearing("Hint");
+
+                    // A step already finished can be gone back to; one not reached yet cannot be
+                    // jumped to, because the step after it is built out of the answer to this one.
+                    if (done)
+                    {
+                        var jump = new System.Windows.Controls.Button { Content = label };
+
+                        jump.Wearing("LinkBtn");
+                        jump.Click += (s, e) => { at = here; Draw(); };
+
+                        rail.Children.Add(pip);
+                        rail.Children.Add(jump);
+                    }
+                    else
+                    {
+                        rail.Children.Add(pip);
+                        rail.Children.Add(label);
+                    }
+                }
+
+                // Detached before the next one goes in. A step's surface usually holds panels the
+                // window keeps between steps, and handing one to a second parent while the first
+                // still claims it is the "already the logical child" exception.
+                body.Content = null;
+                body.Content = steps[at].Body();
+
+                var last = at == steps.Count - 1;
+                var stop = steps[at].Ready?.Invoke();
+                var offers = !last || finish != null;
+
+                back.Visibility = at == 0 ? Visibility.Collapsed : Visibility.Visible;
+                next.Visibility = offers ? Visibility.Visible : Visibility.Collapsed;
+                next.Content = last ? finish : "Next";
+                next.IsEnabled = stop == null;
+                why.Text = stop ?? string.Empty;
+                why.Visibility = stop == null ? Visibility.Collapsed : Visibility.Visible;
+            }
+
+            back.Click += (s, e) => { if (at > 0) { at--; Draw(); } };
+
+            next.Click += (s, e) =>
+            {
+                if (at < steps.Count - 1) { at++; Draw(); return; }
+
+                onFinish?.Invoke();
+
+            };
+
+            Draw();
+
+            return Stack(rail, body, Rule(), actions);
+        }
+
+        /// <summary>
+        /// Say something to the user that has nowhere else to go.
+        ///
+        /// A ribbon button that cannot open its tool has no screen to write the reason on yet, so
+        /// it says it here rather than doing nothing - a button that appears to do nothing is the
+        /// one failure a user cannot report.
+        /// </summary>
+        /// <param name="message">What went wrong, in words.</param>
+        public static void Told(string? message)
+        {
+            if (string.IsNullOrWhiteSpace(message)) return;
+
+            MessageBox.Show(message, "CamelWorks", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// One tool in a list of them: what it is called, what it is for, and what it will do.
+        ///
+        /// The whole card is the button, because a row with a small button on the end makes
+        /// somebody aim at the small button. The main action is shown rather than offered - it is
+        /// there to answer "what happens if I open this", which is the question a list of tools
+        /// exists to answer and the one a row of tab names never could.
+        /// </summary>
+        /// <param name="title">The tool's name.</param>
+        /// <param name="purpose">What it is trying to do, in one sentence.</param>
+        /// <param name="mainAction">The caption of its one main action, or null when it has none.</param>
+        /// <param name="onOpen">Open it.</param>
+        public static UIElement Row(string title, string purpose, string? mainAction, Action onOpen)
+        {
+            var text = new StackPanel();
+
+            text.Children.Add(new TextBlock
+            {
+                Text = title,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+            });
+
+            text.Children.Add(new TextBlock
+            {
+                Text = purpose,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            }.Wearing("Hint"));
+
+            if (!string.IsNullOrEmpty(mainAction))
+                text.Children.Add(new TextBlock
+                {
+                    Text = mainAction + " \u2192",
+                    Margin = new Thickness(0, 6, 0, 0),
+                }.Wearing("Lbl"));
+
+            var card = new System.Windows.Controls.Button
+            {
+                Content = text,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+
+            card.Wearing("RowCard");
+            card.Click += (s, e) => onOpen?.Invoke();
+
+            return card;
+        }
+
         /// <summary>Two fields side by side, so a narrow pane is not one column of boxes.</summary>
         /// <param name="left">The first field.</param>
         /// <param name="right">The second field.</param>
@@ -2174,6 +2402,12 @@ namespace CamelWorks.UI.Views
 
         /// <summary>An arrow onward: this takes you somewhere.</summary>
         public const string Onward = "M5,12 L18,12 M13,7 L18,12 L13,17";
+
+        /// <summary>An arrow back: the previous one.</summary>
+        public const string Backward = "M19,12 L6,12 M11,7 L6,12 L11,17";
+
+        /// <summary>A box drawn round something: isolate it.</summary>
+        public const string Boxed = "M4,4 L20,4 L20,20 L4,20 Z M9,9 L15,9 L15,15 L9,15 Z";
 
         /// <summary>A ruler: a measured dimension.</summary>
         public const string Ruler = "M3,9 L21,9 L21,15 L3,15 Z M7,9 L7,12 M11,9 L11,13 M15,9 L15,12 M19,9 L19,13";

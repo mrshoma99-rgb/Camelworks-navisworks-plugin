@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -28,7 +29,6 @@ namespace CamelWorks.UI.Views
         /// <summary>Where the draft lives in the project file, as IDS itself.</summary>
         public const string Key = "idsDraft";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -37,30 +37,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - write an IDS",
-                Width = 1120,
-                Height = 760,
-                MinWidth = 860,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Editor(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("ids"), () => new Editor(session).View, 1120, 760);
         }
 
         // ---------------------------------------------------------------------------------------
@@ -519,24 +496,26 @@ namespace CamelWorks.UI.Views
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+                // The specifications lead and the main action is under them. What the document is
+                // called and who wrote it is set once and read never, and it used to be the first
+                // thing on the screen.
                 var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("This document"),
-                    Ui.Form(
-                        Ui.Field("Called", _title),
-                        Ui.Pair(Ui.Field("Version", _version), Ui.Field("Author", _author,
-                                                                        "an email address, or left out")),
-                        Ui.Field("About", _about)),
-                    Ui.Rule(),
                     Ui.Eyebrow("Specifications"),
                     _list,
                     Ui.Rule(),
-                    Ui.Eyebrow("Write it"),
                     Ui.Actions(
-                        Ui.Button("Save as an .ids file...", Save),
-                        Ui.Button("Keep the draft here", Keep)),
+                        Ui.Primary("Save as an .ids file...", Save),
+                        Ui.Quiet("Keep the draft here", Keep)),
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
-                    _output));
+                    _output,
+                    Ui.Rule(),
+                    Ui.Section("This document", "what the file says it is", false,
+                        Ui.Form(
+                            Ui.Field("Called", _title),
+                            Ui.Pair(Ui.Field("Version", _version),
+                                    Ui.Field("Author", _author, "an email address, or left out")),
+                            Ui.Field("About", _about)))));
 
                 Grid.SetColumn(left, 0);
                 columns.Children.Add(left);
@@ -584,7 +563,7 @@ namespace CamelWorks.UI.Views
                     _list.Children.Add(row);
                 }
 
-                _list.Children.Add(Ui.Actions(Ui.Button("Add a specification", () =>
+                _list.Children.Add(Ui.Actions(Ui.Quiet("Add a specification", () =>
                 {
                     var fresh = new Spec();
                     fresh.Applies.Add(new Row { Kind = Entity, Test = Present });
@@ -685,7 +664,7 @@ namespace CamelWorks.UI.Views
 
                     foreach (var row in rows) host.Children.Add(Card(row, rows, requirement, Redraw));
 
-                    host.Children.Add(Ui.Actions(Ui.Button("Add a row", () =>
+                    host.Children.Add(Ui.Actions(Ui.Quiet("Add a row", () =>
                     {
                         rows.Add(new Row { Kind = requirement ? Property : Entity });
                         Redraw();
@@ -769,7 +748,10 @@ namespace CamelWorks.UI.Views
                     body.Add(Ui.Field("Instruction", Ui.Text(row.Instructions, "optional",
                                                              text => { row.Instructions = text; Look(); }, 240)));
 
-                body.Add(Ui.Actions(Ui.Button("Remove this row", () =>
+                // A bin, not three words. This sits at the foot of every facet row on a
+                // specification that can carry a dozen of them, and "Remove this row" twelve times
+                // over is more prose about the chrome than there is about the rule being written.
+                body.Add(Ui.Actions(Ui.Icon(Glyphs.Bin, "Remove this row", () =>
                 {
                     owner.Remove(row);
                     redraw();

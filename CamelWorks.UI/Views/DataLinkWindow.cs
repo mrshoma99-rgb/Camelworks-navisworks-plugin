@@ -12,6 +12,7 @@ using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -50,7 +51,6 @@ namespace CamelWorks.UI.Views
         private const string DoRead = "take the model's value";
         private const string DoNothing = "leave it";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -59,30 +59,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - link a spreadsheet to the model",
-                Width = 1180,
-                Height = 780,
-                MinWidth = 900,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Linker(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("datalink"), () => new Linker(session).View, 1180, 780);
         }
 
         private sealed class Linker
@@ -142,24 +119,34 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Five decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns holding seven headed sections, all on screen at
+            /// once - so "Write" sat a few inches from the box you were still typing a file path
+            /// into, and the column mapping was visible before there was a file to map. The
+            /// dependency here is real: there is nothing to join on until the spreadsheet has
+            /// been read, and nothing to preview until the columns are mapped.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// step two does not throw away what step two already read.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(400) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
                 _sheets = Ui.Choice(Array.Empty<string>(), null, Pick, 200);
                 _sheets.IsEnabled = false;
 
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("The file"),
+                var file = Ui.Stack(
                     Ui.PathField("Spreadsheet", _file, PathKind.Open,
                                  "Spreadsheet|*.xlsx;*.xlsm|All files|*.*"),
                     Ui.Form(Ui.Field("Worksheet", _sheets)),
                     Ui.Runner("Read the file", _read, Open),
                     _read,
                     Ui.Rule(),
-                    Ui.Eyebrow("The model"),
+                    Ui.Eyebrow("This link"),
+                    Saved());
+
+                var model = Ui.Stack(
                     Ui.Form(Ui.Field("Scope",
                         Ui.Choice(new[] { Selection, Everything }, _scopeChoice, pick =>
                         {
@@ -167,25 +154,22 @@ namespace CamelWorks.UI.Views
                             _kept.Set("scope", pick);
                         }))),
                     Ui.Runner("Read the model", _model, Gather),
-                    _model,
-                    Ui.Rule(),
-                    Ui.Eyebrow("This link"),
-                    Saved()));
+                    _model);
 
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
+                var join = Ui.Stack(
+                    Ui.Small("A key column is the one whose values turn up in the model - an asset "
+                             + "number, a mark, a tag. CamelWorks proposes the one that matches "
+                             + "best; anything it proposes can be overruled."),
+                    _join);
 
-                var right = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("How a row finds its element"),
-                    _join,
-                    Ui.Rule(),
-                    Ui.Eyebrow("What each column does"),
+                var columns = Ui.Stack(
                     Ui.Small("Everything written lands on the \"" + NavWriteTransaction.TabName
                              + "\" tab - Navisworks does not let a plug-in write into the authoring "
                              + "tool's own tabs. The tab named on a column is where CamelWorks "
                              + "looks to see whether the model already says something."),
-                    _columns,
-                    Ui.Rule(),
+                    _columns);
+
+                var write = Ui.Stack(
                     Ui.Eyebrow("What it would do"),
                     _verdict,
                     Ui.Rule(),
@@ -210,15 +194,27 @@ namespace CamelWorks.UI.Views
                     Ui.PathField("Write it to", _out, PathKind.Save, "Excel workbook|*.xlsx"),
                     Ui.Commit("See what would be sent back", "Send back", "cell", Returning, Send),
                     _sent,
-                    _note));
+                    _note);
 
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var steps = new[]
+                {
+                    new Ui.Step("The file", () => file,
+                                () => _sheet == null ? "Read a spreadsheet first." : null),
+                    new Ui.Step("The model", () => model,
+                                () => _scope.Count == 0 ? "Read the model first." : null),
+                    new Ui.Step("Matching", () => join,
+                                () => string.IsNullOrWhiteSpace(_link.KeyHeading)
+                                      ? "Say which column finds the element." : null),
+                    new Ui.Step("Columns", () => columns),
+                    new Ui.Step("Write", () => write),
+                };
 
-                Draw();
-
-                return columns;
+                // No finish button of its own: the last step carries Ui.Commit, which is the
+                // two-stage "show me, then do it" this write has always used. A third button
+                // above it saying the same thing and doing nothing would be worse than none.
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
+
 
             private UIElement Saved()
             {
@@ -235,7 +231,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Saved", _picker),
                         Ui.Field("Name", _name)),
                     Ui.Actions(
-                        Ui.Button("Save this one", Keep),
+                        Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
             }
 

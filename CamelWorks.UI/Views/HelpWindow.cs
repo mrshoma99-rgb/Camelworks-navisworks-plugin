@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Project;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -26,7 +27,7 @@ namespace CamelWorks.UI.Views
     public static class HelpWindow
     {
         /// <summary>Show the window.</summary>
-        public static void Show()
+        public static string? Show()
         {
             var body = Ui.Stack(
                 Ui.Card("CamelWorks",
@@ -97,21 +98,7 @@ namespace CamelWorks.UI.Views
                 Sample(),
                 Updates());
 
-            var window = new Window
-            {
-                Title = "CamelWorks",
-                Width = 720,
-                Height = 640,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                Content = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    Padding = new Thickness(14),
-                    Content = body,
-                },
-            };
-
-            window.ShowDialog();
+            return ToolWindow.Show(Tools.Find("help"), () => Ui.Scroll(body), 720, 640);
         }
 
         private static UIElement Bullet(string text) => Ui.Line("- " + text, 0.85);

@@ -117,23 +117,31 @@ namespace CamelWorks.UI
 
             try
             {
-                switch (command.Kind)
-                {
-                    case CommandKind.Pane:
-                        OpenPane(command.Route);
-                        break;
+                var tool = command.Tool;
 
-                    case CommandKind.Act:
+                if (tool == null)
+                {
+                    NotYetWired(command);
+                    return 0;
+                }
+
+                // The tool says what shape it is; the button does not have to know. That is the
+                // whole of the change: a button names a tool, and a tool that is a panel takes
+                // over the pane while a tool that is a window opens one.
+                switch (tool.Shape)
+                {
+                    case ToolShape.Act:
                         var said = Actions.Run(command.Id);
                         if (said != null) Warn(said);
                         break;
 
-                    case CommandKind.Dialog:
-                        HelpWindow.Show();
+                    case ToolShape.Panel:
+                        OpenPane(tool);
                         break;
 
-                    case CommandKind.Menu:
-                        NotYetWired(command);
+                    default:
+                        var problem = ToolViews.Open(tool.Id, panel => OpenPane(panel));
+                        if (problem != null) Warn(problem);
                         break;
                 }
             }
@@ -164,12 +172,15 @@ namespace CamelWorks.UI
             return new CommandState(ready);
         }
 
-        private void OpenPane(string? route)
+        private void OpenPane(Tool? tool)
         {
-            var (workspace, tab) = Workspaces.Route(route);
-            if (workspace == null) return;
+            if (tool == null) return;
 
-            var key = workspace.PaneId == Workspaces.AutomatePane ? AutomatePaneKey : MainPaneKey;
+            // The graph canvas is the one tool that needs the full width, so it has a pane of its
+            // own; everything else shares the main one.
+            var key = string.Equals(tool.Id, "graph", StringComparison.Ordinal)
+                ? AutomatePaneKey
+                : MainPaneKey;
 
             var record = Autodesk.Navisworks.Api.Application.Plugins.FindPlugin(key);
 
@@ -199,7 +210,7 @@ namespace CamelWorks.UI
             if (dockRecord.LoadedPlugin is CamelWorksPaneBase pane)
             {
                 pane.Visible = true;
-                pane.Show(workspace.Id, tab?.Id);
+                pane.Show(tool.Id);
             }
         }
 

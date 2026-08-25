@@ -24,7 +24,11 @@ name: ui-shots
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # The publish step below has always been gated on refs/heads/claude/, but the trigger only
+    # ever fired on main - so on a feature branch it could not run at all, which is how fourteen
+    # windows were built and shipped without anybody seeing one of them. The path filter is what
+    # keeps this honest about minutes: a Windows runner, only when the UI or the harness moved.
+    branches: [main, "claude/**"]
     paths:
       - "CamelWorks.UI/**"
       - "CamelWorks.Studio/**"

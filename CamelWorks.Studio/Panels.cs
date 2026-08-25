@@ -34,7 +34,7 @@ namespace CamelWorks.Studio
             Sheet("bcf", "Coordinate · BCF", 1100, Bcf),
             Sheet("compare", "Compare · Run", 1100, CompareRun),
             Sheet("changes", "Compare · Changes", 1500, Changes),
-            Sheet("baselines", "Compare · Baselines", 900, Baselines),
+            Sheet("baselines", "Compare · Baselines kept", 900, Baselines),
             Sheet("data", "Data · Properties", 1100, Properties),
             Sheet("zones", "Data · Levels", 1000, Zones),
             Sheet("viewpoints", "Sets · Viewpoints", 1300, Viewpoints),
@@ -393,7 +393,7 @@ namespace CamelWorks.Studio
                 new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null, 320),
                 "the most recent is picked for you")),
 
-            Ui.Actions(Ui.Primary("Compare", () => { })),
+            Ui.Actions(Ui.Primary("Run the comparison", () => { })),
 
             Ui.Section("What counts as a change",
                 "moves over 0.001 model units · standard properties compared · GUID, tree path or shape",

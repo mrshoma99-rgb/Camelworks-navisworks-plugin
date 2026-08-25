@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -24,7 +25,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class MatrixWindow
     {
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -33,30 +33,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - clash matrix",
-                Width = 1080,
-                Height = 720,
-                MinWidth = 780,
-                MinHeight = 540,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Editor(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("matrix"), () => new Editor(session).View, 1080, 720);
         }
 
         /// <summary>One editing session over one matrix.</summary>
@@ -84,21 +61,44 @@ namespace CamelWorks.UI.Views
             /// <summary>The window's content.</summary>
             internal UIElement View { get; }
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns side by side, which put "Create the tests" on screen
+            /// beside the box you were still typing a workbook path into. The dependency is real
+            /// at every hop: there is no grid until the sheet has been read, no symbols to explain
+            /// until there is a grid, and no tests to make until the symbols mean something.
+            ///
+            /// The sheet preview stays on the first step rather than getting one of its own,
+            /// because the row and column numbers beside it are read straight off it - separating
+            /// the two would mean flipping back and forth to fill in eight boxes.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so stepping back
+            /// to change a column number does not throw away the grid that was read.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(320) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var sheet = Ui.Stack(Source(), Ui.Rule(), Mapping(), Ui.Rule(), Preview());
+                var matrix = Ui.Stack(Board(), Ui.Rule(), Legend());
+                var tests = Make();
 
-                var left = Ui.Scroll(Ui.Stack(Source(), Ui.Rule(), Mapping(), Ui.Rule(), Preview()));
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
+                ShowGrid();
+                ShowLegend();
 
-                var right = Ui.Scroll(Ui.Stack(Board(), Ui.Rule(), Legend(), Ui.Rule(), Make()));
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var steps = new[]
+                {
+                    new Ui.Step("The sheet", () => sheet,
+                                () => _matrix.Categories.Count == 0
+                                      ? "Read the matrix out of the sheet first." : null),
+                    new Ui.Step("The matrix", () => matrix,
+                                () => _legend.Symbols.Count == 0
+                                      ? "Nothing in the grid to make tests from." : null),
+                    new Ui.Step("The tests", () => tests),
+                };
 
-                return columns;
+                // No finish button of its own: the last step carries Ui.Commit, which is the
+                // two-stage "show me, then do it" this has always used.
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             // ---------------------------------------------------------------------------------
@@ -167,7 +167,7 @@ namespace CamelWorks.UI.Views
                 _output.Children.Clear();
             }
 
-            private UIElement Board() => Ui.Stack(Ui.Eyebrow("The matrix"), _grid, _warnings);
+            private UIElement Board() => Ui.Stack(_grid, _warnings);
 
             private void ShowGrid()
             {
@@ -354,7 +354,7 @@ namespace CamelWorks.UI.Views
                     },
                     apply: job => Create(job));
 
-                return Ui.Stack(Ui.Eyebrow("Make the tests"), commit, _output);
+                return Ui.Stack(commit, _output);
             }
 
             private IReadOnlyCollection<string> Existing() =>

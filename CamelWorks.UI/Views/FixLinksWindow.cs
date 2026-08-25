@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Project;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -24,7 +25,6 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class FixLinksWindow
     {
-        private static Window? _open;
 
         /// <summary>
         /// Show the window.
@@ -35,28 +35,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - fix broken links",
-                Width = 640,
-                Height = 520,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = Body(session),
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("links"), () => Body(session), 640, 520);
         }
 
         private static UIElement Body(Session session)
@@ -79,8 +58,8 @@ namespace CamelWorks.UI.Views
             foreach (var model in broken)
                 list.Children.Add(Ui.Line(model.DisplayName + " - expected at " + model.SourcePath, 0.8));
 
+            // No heading of its own: the frame carries the tool's name and its purpose.
             return Ui.Scroll(Ui.Stack(
-                Ui.Heading("Fix broken links"),
                 head,
                 list,
                 Ui.PathField("Look in", folder, PathKind.Folder),
@@ -180,7 +159,7 @@ namespace CamelWorks.UI.Views
                     results.Children.Add(Ui.Line("and " + (candidates.Length - 1)
                         + " more with the same name; the first is offered.", 0.55));
 
-                results.Children.Add(Ui.Button("Bring in " + name, () =>
+                results.Children.Add(Ui.Primary("Bring in " + name, () =>
                 {
                     try
                     {

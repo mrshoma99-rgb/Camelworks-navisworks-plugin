@@ -9,6 +9,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -30,7 +31,6 @@ namespace CamelWorks.UI.Views
         /// <summary>What a profile file is called on disk.</summary>
         public const string Extension = ".cwexport";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -39,30 +39,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - clash file out and back",
-                Width = 1080,
-                Height = 740,
-                MinWidth = 820,
-                MinHeight = 560,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Editor(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("clashxml"), () => new Editor(session).View, 1080, 740);
         }
 
         private sealed class Editor
@@ -70,6 +47,9 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
 
             private readonly List<ExportProfile> _profiles = new List<ExportProfile>();
+
+            private const string WriteOne = "Write one";
+            private const string ReadOne = "Read one back";
 
             private readonly StackPanel _tests = Ui.Stack();
             private readonly StackPanel _filters = Ui.Stack();
@@ -120,51 +100,59 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Two legs, one on screen at a time, and the options folded behind the action.
+            ///
+            /// <b>Not a wizard.</b> Writing a file out and reading a reviewer's file back are the
+            /// same trip a fortnight apart, not two steps of one task. The switch says which one
+            /// you are on.
+            ///
+            /// <b>And the main action is the loudest thing on it, which it was not.</b> This was
+            /// two scrolling columns holding six headed sections, and the only filled button in
+            /// sight belonged to the profile row - so the loudest thing on a screen for writing a
+            /// clash file was a button that saves a settings file. What goes in and how it is
+            /// written are options, and they are folded like options; the profile is a convenience
+            /// and sits under the fold with them.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(400) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("This profile"),
-                    Profiles(),
-                    Ui.Rule(),
-                    Ui.Eyebrow("What goes in"),
-                    _filters,
-                    Ui.Rule(),
-                    Ui.Eyebrow("How it is written"),
-                    Shape()));
-
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
+                var write = Ui.Stack(
                     Ui.Eyebrow("The tests"),
                     _match,
                     _tests,
+                    Ui.Section("What goes in", "which results, and whose", false, _filters),
+                    Ui.Section("How it is written", "folders, elements, units", false, Shape()),
+                    Ui.Section("This profile", "keep these settings for next time", false, Profiles()),
                     Ui.Rule(),
-                    Ui.Eyebrow("Write it"),
                     Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
                                  "The format Navisworks and every reviewing tool reads."),
-                    Ui.Commit("See what would go in", "Write", "result", Rehearse, Publish),
+                    Ui.Commit("Show me what would go in", "Write", "result", Rehearse, Publish),
                     _kept,
-                    _output,
-                    Ui.Rule(),
-                    Ui.Eyebrow("Read one back"),
+                    _output);
+
+                var back = Ui.Stack(
                     Ui.Small("A reviewer's file, returned. Results that carry a CamelWorks key land "
                              + "on the elements they left from; the rest are read as a record."),
                     Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml"),
-                    Ui.Actions(Ui.Runner("Read it", _back, Receive, primary: false)),
-                    _back));
+                    Ui.Actions(Ui.Runner("Read it", _back, Receive)),
+                    _back);
 
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                var half = new ContentControl { Content = write };
+
+                void Leg(string leg)
+                {
+                    // Detached before the other goes in, or the half being left is still claimed
+                    // by this holder when it is handed back to it.
+                    half.Content = null;
+                    half.Content = leg == ReadOne ? back : write;
+                }
 
                 DrawFilters();
                 DrawTests();
 
-                return columns;
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Segmented(new[] { WriteOne, ReadOne }, WriteOne, Leg),
+                    half));
             }
 
             private UIElement Profiles()
@@ -181,10 +169,10 @@ namespace CamelWorks.UI.Views
                              + "keeping rather than rebuilding."),
                     Ui.Field("Called", _name),
                     Ui.Across(
-                        Ui.Button("Keep", Keep),
-                        Ui.Button("Forget", Forget),
-                        Ui.Button("Save to a file...", ToFile),
-                        Ui.Button("Load from a file...", FromFile)),
+                        Ui.Quiet("Keep", Keep),
+                        Ui.Danger("Forget", Forget),
+                        Ui.Quiet("Save the profile to a file...", ToFile),
+                        Ui.Quiet("Load a profile from a file...", FromFile)),
                     _note);
             }
 
@@ -338,8 +326,8 @@ namespace CamelWorks.UI.Views
                         "Build a matrix or make a test in Clash Detective, then come back."));
                 else
                     _tests.Children.Add(Ui.Across(
-                        Ui.Button("Tick every test", () => Tick(true)),
-                        Ui.Button("Untick every test", () => Tick(false))));
+                        Ui.Quiet("Tick every test", () => Tick(true)),
+                        Ui.Quiet("Untick every test", () => Tick(false))));
 
                 ShowKept();
             }

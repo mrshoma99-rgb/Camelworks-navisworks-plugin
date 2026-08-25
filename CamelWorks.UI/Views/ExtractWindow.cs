@@ -14,6 +14,7 @@ using CamelWorks.Core.Publish;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -53,7 +54,6 @@ namespace CamelWorks.UI.Views
         private const string Wholly = "wholly inside it";
         private const string Centred = "centred in it";
 
-        private static Window? _open;
 
         /// <summary>Show the window.</summary>
         /// <returns>Something to tell the user, or null when it opened.</returns>
@@ -62,30 +62,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - take a piece of the model out",
-                Width = 1140,
-                Height = 780,
-                MinWidth = 880,
-                MinHeight = 580,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Cutter(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("extract"), () => new Cutter(session).View, 1140, 780);
         }
 
         private sealed class Cutter
@@ -133,33 +110,39 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Three decisions, in the order each one needs the last.
+            ///
+            /// This was two scrolling columns, so the buttons that write files sat beside a rule
+            /// nothing had run yet, pointed at a model nothing had read. The dependency is real:
+            /// the rule needs elements to choose from, and the writers need a rule that chose
+            /// something.
+            ///
+            /// The rule and what it takes share a step rather than getting one each. They are one
+            /// decision looked at from two sides - you change the property and read the count, and
+            /// putting a Next between them would mean pressing it forty times.
+            ///
+            /// Each step's surface is built once and handed back on every visit, so going back to
+            /// change the rule does not re-read the model.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(420) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("Read the model"),
-                    Ui.Small("Read once, then try as many rules as you like against it."),
+                var model = Ui.Stack(
                     Ui.Runner("Read it", _read, Gather),
-                    _read,
-                    Ui.Rule(),
-                    Ui.Eyebrow("What goes in the piece"),
+                    Ui.Small("Read once, then try as many rules as you like against it."),
+                    _read);
+
+                var piece = Ui.Stack(
                     Ui.Form(Ui.Field("Take", Ui.Choice(Axes, Word(_recipe.Axis), Chose, 250))),
                     _how,
                     Ui.Rule(),
-                    Ui.Eyebrow("This extract"),
-                    Saved()));
-
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
                     Ui.Eyebrow("What that is"),
                     _verdict,
                     Ui.Rule(),
-                    Ui.Eyebrow("Take it out"),
+                    Ui.Eyebrow("This extract"),
+                    Saved());
+
+                var take = Ui.Stack(
                     Ui.PathField("Folder", _folder, PathKind.Folder),
                     _out,
                     _note,
@@ -174,14 +157,21 @@ namespace CamelWorks.UI.Views
                                  + "working out precisely what belongs in the piece, saying so, and "
                                  + "writing it to the formats CamelWorks does write. Press \"Select "
                                  + "it in the model\" and Navisworks' own File ▸ Export takes it "
-                                 + "from there, on exactly the elements this rule chose."))));
-
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
+                                 + "from there, on exactly the elements this rule chose.")));
 
                 Draw();
 
-                return columns;
+                var steps = new[]
+                {
+                    new Ui.Step("The model", () => model,
+                                () => _scope.Count == 0 ? "Read the model first." : null),
+                    new Ui.Step("The piece", () => piece,
+                                () => _out.Children.Count == 0
+                                      ? "The rule has not taken anything out yet." : null),
+                    new Ui.Step("Take it out", () => take),
+                };
+
+                return Ui.Scroll(Ui.Steps(steps, null, null));
             }
 
             private UIElement Saved()
@@ -200,7 +190,7 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Saved", _picker),
                         Ui.Field("Name", _name, "what the files are named after")),
                     Ui.Actions(
-                        Ui.Button("Save this one", Keep),
+                        Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
             }
 
@@ -384,7 +374,7 @@ namespace CamelWorks.UI.Views
                         Ui.Count(_shown?.Count ?? 0, "element") + " visible in it", 0.75));
                 }
 
-                _how.Children.Add(Ui.Actions(Ui.Button("Go to it and see what it shows", Looking)));
+                _how.Children.Add(Ui.Actions(Ui.Quiet("Go to it and see what it shows", Looking)));
 
                 _how.Children.Add(Ui.Small("Applying a viewpoint moves the camera and restores "
                     + "whatever it was hiding, which is the only way to find out what it shows - a "
@@ -586,7 +576,7 @@ namespace CamelWorks.UI.Views
                 if (!plan.IsUsable) return;
 
                 _verdict.Children.Add(Ui.Actions(
-                    Ui.Button("Select it in the model", () =>
+                    Ui.Quiet("Select it in the model", () =>
                     {
                         _session.Model.Select(plan.Keys);
                         _session.View.ZoomTo(plan.Keys, 2.0);

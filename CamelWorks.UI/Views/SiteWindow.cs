@@ -14,6 +14,7 @@ using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -57,39 +58,15 @@ namespace CamelWorks.UI.Views
         };
         private const string ByVolume = "the volume of the shapes";
 
-        private static Window? _open;
-
-        /// <summary>Show the window.</summary>
+        /// <summary>Show one of the five field tools in its own window.</summary>
+        /// <param name="toolId">Which one: weight, dimensions, setout, paperwork or labels.</param>
         /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
+        public static string? Show(string toolId)
         {
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - the model on site",
-                Width = 1160,
-                Height = 800,
-                MinWidth = 900,
-                MinHeight = 600,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = new Site(session).View,
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find(toolId), () => new Site(session, toolId).View, 1000, 760);
         }
 
         private sealed class Site
@@ -97,7 +74,19 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly ToolMemory _kept;
 
-            private readonly List<ReportElement> _scope = new List<ReportElement>();
+            // Shared by the five windows, because the read is the expensive part and all five
+            // answer questions about the same selection. Whoever reads first pays; the next window
+            // opens on what is already there and can read again if the selection has moved.
+            private static readonly List<ReportElement> Chosen = new List<ReportElement>();
+
+            // One entry per element in Chosen, in the same order, null where there is no body or it
+            // could not be read. Shared for the same reason: the weight and the dimensions both
+            // work off the triangles.
+            private static readonly List<Core.Report.GltfMesh?> Shapes =
+                new List<Core.Report.GltfMesh?>();
+
+            private static Session? _readFor;
+
             private readonly List<AttachmentRule> _rules = new List<AttachmentRule>();
 
             private readonly StackPanel _read = Ui.Stack();
@@ -108,15 +97,11 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _tags = Ui.Stack();
             private readonly StackPanel _note = Ui.Stack();
 
-            // One entry per element in scope, in the same order, null where there is no body or it
-            // could not be read. Filled once and shared: the weight and the dimensions both work
-            // off the triangles, and reading a federation's geometry twice to answer two questions
-            // about the same forty elements is exactly what this window exists not to do.
-            private readonly List<Core.Report.GltfMesh?> _mesh = new List<Core.Report.GltfMesh?>();
-
             private readonly TextBox _folder;
             private readonly TextBox _root;
             private readonly TextBox _prefix;
+
+            private readonly string _tool;
 
             private SetOutRecipe _recipe = new SetOutRecipe();
             private DimensionRecipe _shape = new DimensionRecipe();
@@ -129,9 +114,20 @@ namespace CamelWorks.UI.Views
             private PropertyRef _massProperty;
             private int _cut;
 
-            internal Site(Session session)
+            internal Site(Session session, string tool)
             {
                 _session = session;
+                _tool = tool;
+
+                // The read is shared across the five windows; a different model is a different
+                // read, so it is dropped rather than shown against the wrong selection.
+                if (!ReferenceEquals(_readFor, session))
+                {
+                    Chosen.Clear();
+                    Shapes.Clear();
+                    _readFor = null;
+                }
+
                 _kept = ToolMemory.Of(session.Store, "field.site");
 
                 _basis = _kept.Text("basis", ByWeight) ?? ByWeight;
@@ -148,6 +144,12 @@ namespace CamelWorks.UI.Views
                 Load();
 
                 View = Build();
+
+                // A window opened after another has already read says so, or it looks unread while
+                // showing an answer.
+                if (Chosen.Count > 0)
+                    _read.Children.Add(Ui.Line(Ui.Count(Chosen.Count, "element")
+                        + " already read, from the selection at the time.", 0.75));
             }
 
             internal UIElement View { get; }
@@ -156,54 +158,45 @@ namespace CamelWorks.UI.Views
             // Layout
             // -----------------------------------------------------------------------------------
 
+            /// <summary>
+            /// One tool's screen: what is on site, where its files go, and that tool's answer.
+            ///
+            /// <b>Five tools, five windows, one read.</b> This was one window with four sections
+            /// side by side and a fifth that was built and never placed on it - so the ribbon's
+            /// Labels button opened a window with no labels on it. Each of the five has its own
+            /// window now, and the expensive part is what they share: the selection and its
+            /// geometry are read once and every window opened afterwards is looking at it.
+            /// </summary>
             private UIElement Build()
             {
-                var columns = new Grid();
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(400) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var left = Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("What is on site"),
-                    Ui.Small("All four answers come off what is selected in the model. Select the "
-                             + "module, the lift, the floor - and read it once."),
-                    Ui.Runner("Read the selection", _read, Gather),
-                    _read,
-                    Ui.Rule(),
-                    Ui.Eyebrow("Where the files go"),
-                    Ui.PathField("Folder", _folder, PathKind.Folder),
-                    _note));
-
-                Grid.SetColumn(left, 0);
-                columns.Children.Add(left);
-
-                var right = Ui.Scroll(Ui.Stack(
-                    Ui.Marked(Glyphs.Layers, "Weight and balance",
-                        "Where the hook goes. Weighted by what the model says things weigh, or by "
-                        + "the volume of the shapes when it says nothing - and it tells you which.",
-                        _weight),
-                    Ui.Marked(Glyphs.Ruler, "Dimensions",
-                        "How long that run is, how far it sits off the slab, whether those hangers "
-                        + "are at centres. Measured off the elements' own geometry where it has "
-                        + "been read, and off the world box where it has not - the schedule says "
-                        + "which, on every line.",
-                        _sizes),
-                    Ui.Marked(Glyphs.Camera, "Setting out",
-                        "The file the engineer loads into a total station. Site coordinates, "
-                        + "northing before easting, with what they are referenced to written into "
-                        + "the file itself.",
-                        _points),
-                    Ui.Marked(Glyphs.Save, "The paperwork",
-                        "The folder of data sheets, the folder of site photos, the address into a "
-                        + "document system - found from whatever property the model already uses "
-                        + "to say where they are.",
-                        _paper)));
-
-                Grid.SetColumn(right, 1);
-                columns.Children.Add(right);
-
                 Draw();
 
-                return columns;
+                // The sentence sits under the button rather than over it: the caption already says
+                // what it reads, and what this adds - that the other four field tools are looking
+                // at the same read - is worth knowing after the press, not before it.
+                return Ui.Scroll(Ui.Stack(
+                    Ui.Runner("Read the selection", _read, Gather),
+                    Ui.Small("Off what is selected in the model - the module, the lift, the floor. "
+                             + "The other field tools read the same selection, so it is read once "
+                             + "between them."),
+                    _read,
+                    Ui.PathField("Folder", _folder, PathKind.Folder),
+                    _note,
+                    Ui.Rule(),
+                    Answer()));
+            }
+
+            /// <summary>The one section this window is for.</summary>
+            private UIElement Answer()
+            {
+                switch (_tool)
+                {
+                    case "dimensions": return _sizes;
+                    case "setout": return _points;
+                    case "paperwork": return _paper;
+                    case "labels": return _tags;
+                    default: return _weight;
+                }
             }
 
             // -----------------------------------------------------------------------------------
@@ -212,8 +205,8 @@ namespace CamelWorks.UI.Views
 
             private void Gather(Job job)
             {
-                _scope.Clear();
-                _mesh.Clear();
+                Chosen.Clear();
+                Shapes.Clear();
                 _cut = 0;
                 _mass = null;
                 _schedule = null;
@@ -226,16 +219,16 @@ namespace CamelWorks.UI.Views
                 {
                     seen++;
 
-                    if (!job.Step(_scope.Count, "elements read")) return;
+                    if (!job.Step(Chosen.Count, "elements read")) return;
 
-                    if (_scope.Count >= ReadCeiling) { _cut++; continue; }
+                    if (Chosen.Count >= ReadCeiling) { _cut++; continue; }
 
                     var element = ReportElement.Of(item);
 
-                    if (element != null) _scope.Add(element);
+                    if (element != null) Chosen.Add(element);
                 }
 
-                if (_scope.Count == 0)
+                if (Chosen.Count == 0)
                 {
                     _read.Children.Add(Ui.Empty("Nothing is selected.",
                         "Select what is going on site - a module, a lift, a run of pipework - and "
@@ -246,24 +239,29 @@ namespace CamelWorks.UI.Views
                 }
 
                 _read.Children.Add(Ui.Line(
-                    Ui.Count(_scope.Count, "element") + ", "
-                    + Ui.Count(_scope.Count(e => e.HasGeometry), "with a body"), 1, true));
+                    Ui.Count(Chosen.Count, "element") + ", "
+                    + Ui.Count(Chosen.Count(e => e.HasGeometry), "with a body"), 1, true));
 
                 if (_cut > 0)
                     _read.Children.Add(Ui.Note("That selection holds " + Ui.Count(seen, "element")
                         + ". The first " + ReadCeiling.ToString("N0", CultureInfo.InvariantCulture)
                         + " were read."));
 
+                _readFor = _session;
+
                 Draw();
             }
 
             private void Draw()
             {
-                DrawWeight();
-                DrawSizes();
-                DrawPoints();
-                DrawPaper();
-                DrawTags();
+                switch (_tool)
+                {
+                    case "dimensions": DrawSizes(); break;
+                    case "setout": DrawPoints(); break;
+                    case "paperwork": DrawPaper(); break;
+                    case "labels": DrawTags(); break;
+                    default: DrawWeight(); break;
+                }
             }
 
             // -----------------------------------------------------------------------------------
@@ -274,7 +272,7 @@ namespace CamelWorks.UI.Views
             {
                 _weight.Children.Clear();
 
-                if (_scope.Count == 0)
+                if (Chosen.Count == 0)
                 {
                     _weight.Children.Add(Ui.Small("Read a selection first."));
                     return;
@@ -312,7 +310,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Read every element's triangles once, into <c>_mesh</c>, in scope order.
+            /// Read every element's triangles once, into <c>Shapes</c>, in the order they were chosen.
             ///
             /// Both the weight and the dimensions want the same triangles, and a federation is
             /// slow enough to read that doing it twice is felt. So it is done once and the entry
@@ -322,28 +320,28 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private bool ReadGeometry(Job job)
             {
-                if (_mesh.Count == _scope.Count) return true;
+                if (Shapes.Count == Chosen.Count) return true;
 
                 var geometry = new NavGeometry(_session.Model);
                 var read = 0;
 
-                _mesh.Clear();
+                Shapes.Clear();
 
                 job.Say("Reading geometry...");
 
-                foreach (var element in _scope)
+                foreach (var element in Chosen)
                 {
-                    if (!job.Step(read++, _scope.Count, "elements read"))
+                    if (!job.Step(read++, Chosen.Count, "elements read"))
                     {
                         // Stopped part way through leaves a cache shorter than the scope, which
                         // would silently mis-pair every element with the next one's triangles.
-                        _mesh.Clear();
+                        Shapes.Clear();
                         return false;
                     }
 
                     var item = _session.Model.Resolve(element.Key);
 
-                    _mesh.Add(item == null || !item.HasGeometry
+                    Shapes.Add(item == null || !item.HasGeometry
                                   ? null
                                   : geometry.Read(item, element.Name));
                 }
@@ -358,10 +356,10 @@ namespace CamelWorks.UI.Views
                 var parts = new List<MassPart>();
                 var silent = 0;
 
-                for (var at = 0; at < _scope.Count; at++)
+                for (var at = 0; at < Chosen.Count; at++)
                 {
-                    var element = _scope[at];
-                    var mesh = _mesh[at];
+                    var element = Chosen[at];
+                    var mesh = Shapes[at];
 
                     if (mesh == null)
                     {
@@ -407,7 +405,7 @@ namespace CamelWorks.UI.Views
                 foreach (var note in result.Notes) _weight.Children.Add(Ui.Note(note));
 
                 _weight.Children.Add(Ui.Actions(
-                    Ui.Button("Copy the position", () => Copy(
+                    Ui.Quiet("Copy the position", () => Copy(
                         result.X.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Y.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Z.ToString("0.###", CultureInfo.InvariantCulture))),
@@ -448,7 +446,7 @@ namespace CamelWorks.UI.Views
             {
                 _sizes.Children.Clear();
 
-                if (_scope.Count == 0)
+                if (Chosen.Count == 0)
                 {
                     _sizes.Children.Add(Ui.Small("Read a selection first."));
                     return;
@@ -483,15 +481,15 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Measuring...");
 
-                var elements = new List<FieldElement>(_scope.Count);
+                var elements = new List<FieldElement>(Chosen.Count);
 
-                for (var at = 0; at < _scope.Count; at++)
+                for (var at = 0; at < Chosen.Count; at++)
                 {
-                    var element = _scope[at];
+                    var element = Chosen[at];
 
                     elements.Add(new FieldElement(element.Key, element.Name, element.Bounds,
                                                   element.HasGeometry, Mark(element),
-                                                  _mesh[at]?.Positions));
+                                                  Shapes[at]?.Positions));
                 }
 
                 var schedule = Dimensions.Schedule(elements, _shape, Levels());
@@ -525,7 +523,7 @@ namespace CamelWorks.UI.Views
                                              schedule.Rows.Count, "dimension"));
 
                 _sizes.Children.Add(Ui.Actions(
-                    Ui.Button("Write the schedule", () => WriteSchedule(schedule))));
+                    Ui.Primary("Write the schedule", () => WriteSchedule(schedule))));
             }
 
             /// <summary>
@@ -543,7 +541,7 @@ namespace CamelWorks.UI.Views
 
                 if (grid.Bands.Count > 0) return grid;
 
-                var floors = _scope.Where(e => e.HasGeometry).Select(e => e.Bounds.MinZ).ToList();
+                var floors = Chosen.Where(e => e.HasGeometry).Select(e => e.Bounds.MinZ).ToList();
 
                 return floors.Count == 0 ? LevelSet.Empty : LevelSet.Derive(floors);
             }
@@ -599,7 +597,7 @@ namespace CamelWorks.UI.Views
             {
                 _points.Children.Clear();
 
-                if (_scope.Count == 0)
+                if (Chosen.Count == 0)
                 {
                     _points.Children.Add(Ui.Small("Read a selection first."));
                     return;
@@ -653,7 +651,7 @@ namespace CamelWorks.UI.Views
 
             private void Points(Job job)
             {
-                var elements = _scope.Select(e => new FieldElement(
+                var elements = Chosen.Select(e => new FieldElement(
                     e.Key, e.Name, e.Bounds, e.HasGeometry, Mark(e))).ToList();
 
                 var result = SettingOut.Of(elements, _recipe);
@@ -681,7 +679,7 @@ namespace CamelWorks.UI.Views
                                               result.Points.Count, "point"));
 
                 _points.Children.Add(Ui.Actions(
-                    Ui.Button("Write the file", () => WritePoints(result)),
+                    Ui.Primary("Write the file", () => WritePoints(result)),
                     Ui.Quiet("Save this setting out", () => KeepPoints())));
             }
 
@@ -749,7 +747,7 @@ namespace CamelWorks.UI.Views
             {
                 _tags.Children.Clear();
 
-                if (_scope.Count == 0)
+                if (Chosen.Count == 0)
                 {
                     _tags.Children.Add(Ui.Small("Read a selection first."));
                     return;
@@ -823,9 +821,9 @@ namespace CamelWorks.UI.Views
                 // models in a federation can hand back the same key for different things and a
                 // label that names the wrong pipe is worse than no label.
                 var against = new Dictionary<FieldElement, ReportElement>();
-                var elements = new List<FieldElement>(_scope.Count);
+                var elements = new List<FieldElement>(Chosen.Count);
 
-                foreach (var element in _scope)
+                foreach (var element in Chosen)
                 {
                     var made = new FieldElement(element.Key, element.Name, element.Bounds,
                                                 element.HasGeometry, Mark(element));
@@ -863,7 +861,7 @@ namespace CamelWorks.UI.Views
                 _tags.Children.Add(Ui.Tally(Math.Min(Shown, run.Labels.Count), run.Labels.Count, "label"));
 
                 _tags.Children.Add(Ui.Actions(
-                    Ui.Button("Write the sheet", () => WriteTags(run))));
+                    Ui.Primary("Write the sheet", () => WriteTags(run))));
             }
 
             private void WriteTags(LabelRun run)
@@ -911,11 +909,11 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Properties that read like something written on a drawing.</summary>
             private IReadOnlyList<string> MarkFields() =>
-                DataReport.Fields(_scope)
+                DataReport.Fields(Chosen)
                     // Nearly filled in, not the same on everything, and short enough to print on a
                     // sticker. A property that reads the same on every element identifies nothing,
                     // and a paragraph of description will not fit on a label whatever it says.
-                    .Where(f => f.Filled >= Math.Max(1, _scope.Count / 2)
+                    .Where(f => f.Filled >= Math.Max(1, Chosen.Count / 2)
                                 && !f.IsConstant
                                 && (f.Example == null || f.Example.Length <= 40))
                     .Select(f => Show(f.Field))
@@ -947,7 +945,7 @@ namespace CamelWorks.UI.Views
             {
                 _paper.Children.Clear();
 
-                if (_scope.Count == 0)
+                if (Chosen.Count == 0)
                 {
                     _paper.Children.Add(Ui.Small("Read a selection first."));
                     return;
@@ -956,7 +954,7 @@ namespace CamelWorks.UI.Views
                 foreach (var kind in new[] { AttachmentKind.Document, AttachmentKind.Photo })
                 {
                     var here = kind;
-                    var options = Attachments.Likely(_scope, here).Select(Show).ToList();
+                    var options = Attachments.Likely(Chosen, here).Select(Show).ToList();
 
                     if (options.Count == 0)
                     {
@@ -994,7 +992,7 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Looking...");
 
-                var report = Attachments.Find(_scope, _rules, PhysicalFileSystem.Instance);
+                var report = Attachments.Find(Chosen, _rules, PhysicalFileSystem.Instance);
 
                 _found = report;
 
@@ -1053,7 +1051,7 @@ namespace CamelWorks.UI.Views
 
                 sheet.Row("Element", "Kind", "File", "Where");
 
-                var names = _scope.ToDictionary(e => e.Key, e => e.Name);
+                var names = Chosen.ToDictionary(e => e.Key, e => e.Name);
 
                 foreach (var attachment in report.Found)
                     sheet.Row(names.TryGetValue(attachment.Key, out var name) ? name : "(gone)",
@@ -1150,7 +1148,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The properties in scope that look like they hold a mass.</summary>
             private IReadOnlyList<string> MassFields() =>
-                DataReport.Fields(_scope)
+                DataReport.Fields(Chosen)
                     // Called what a mass is usually called, or holding something that reads as one.
                     // The second is what finds it on a model whose exporter named it "Unit Wt".
                     .Where(f => f.Filled > 0

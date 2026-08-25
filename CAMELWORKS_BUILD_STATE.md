@@ -97,33 +97,57 @@ carry the clash `Tests` property the other three do.
 
 ## UI — built and wired
 
-Six ribbon panels, twenty-seven buttons, two dock panes, seven switcher entries, nineteen tabs. Find a
-Tool searches symptom phrasing, not just command names.
+**Forty-two tools, six ribbon panels, twenty-seven buttons.** There is no tab strip and no workspace
+switcher: a ribbon button opens *its own* tool, in its own window, and the six tools that are read
+continuously open in the dock pane instead. Find a Tool searches symptom phrasing, not just names.
 
-**Every tab does real work:**
+Every tool carries three things in one registry (`Shell/Tools.cs`): its name, a sentence saying what
+it is trying to do, and **one main action** — the caption on the one filled button that tool exists
+to offer. A tool that cannot name its action in three or four words is telling you it is two tools,
+and five of them were.
 
-| Screen | What it does |
-|---|---|
-| Home | The weekly cycle with the state filled in, and the way to each step |
-| Health | One sweep over one pass of the models — placement, geometry, arrivals, codes and the federation itself — ranked worst first into one verdict; and the client's own IDS |
-| Setup | What was derived, why, an override per line, and the way back to derived |
-| Export IFC | Opens the exporter's own panel |
-| Triage | The board, filtered and searched; what changed since the last run; edit statuses and hand grouping; raise an issue no clash produced; freeze it; undo |
-| Tests | The engine's tests, a matrix builder that creates and runs them, and the clear-height check no clash test can do |
-| Rules | The pipeline, edited through one editor that draws every rule |
-| Report | PDF, XLSX or HTML, one file per party, filtered to what changed, with a picture per group |
-| BCF | Export with cameras and components; read a reply back and reconcile it against the board |
-| Compare → Run | Pick a baseline, set what counts as a change, and go; the scoreboard, the per-model tally with the reason each pairing was made, and what this baseline cannot answer |
-| Compare → Changes | The change list, filtered and searched; paint it, walk it as viewpoints, stamp it into the properties, raise it on the board, or write the report |
-| Compare → Baselines | What has been recorded and when, kept beside the document |
-| Data | Every property folded to one row, and one write pipeline — a typed value, a formula, a code table or a spreadsheet — previewed element by element before anything is written |
-| Levels | Derived levels, and stamping them onto elements |
-| Takeoff | One axis or two, over a scope, out to a spreadsheet |
-| Sets | The boolean builder, plus a generator that makes a set per value of a property and nests them into folders given two or three |
-| Appearance | The layers system, and everything hidden or overridden that no layer accounts for |
-| Viewpoints | Tick a run of them and rename, refile, render, copy overrides or delete; plus a walkthrough saved from the board |
-| Jobs | Saved graphs, run without opening the canvas |
-| Canvas | The node graph editor, over twenty-two nodes including the coordination ones |
+| Tool | Its one action | What it does |
+|---|---|---|
+| **Health Check** | Check this federation | One sweep over one pass of the models — placement, geometry, arrivals, codes and the federation itself — ranked worst first into one verdict, plus the client's own IDS |
+| **Project Setup** | Save overrides | What was derived, why, an override per line, and the way back to derived |
+| **Project Profile** | Save | Responsible parties, priorities, code tables, what may be written to the model |
+| **Fix Broken Links** | Bring in | The source files a loaded model can no longer see, and where they went |
+| **Clash Triage** *(pane)* | Load the board | The board, filtered and searched; what changed since the last run; statuses and hand grouping; an issue no clash produced; freeze; undo |
+| **Review** | Record | The board one finding at a time, with the keyboard, from the model's own view |
+| **Clash Tests** | Run them | What gets tested against what, and how close is too close |
+| **Clash Matrix** *(wizard)* | Read the matrix | A whole test set from a grid of one discipline against another, instead of forty tests by hand |
+| **Headroom** | Check clear height | Where the clear height under the services is not there — which no clash test finds, because nothing is touching |
+| **Clash Rules** | Try these on the board | The pipeline, edited through one editor that draws every rule |
+| **Clash Report** | Write the report | PDF, XLSX or HTML, one file per party, filtered to what changed, with a picture per group |
+| **BCF** | Send the board | Out with cameras and components; a reply read back and reconciled against the board |
+| **Merge Markups** | Bring them together | Several people's markups on one model, in one place |
+| **Clash XML** | Show me what would go in | Write a board into the format other tools speak, or read one back — two legs, one switch |
+| **Compare** | Run the comparison | Pick a baseline, set what counts as a change, go; the scoreboard, the per-model tally with the reason each pairing was made, what this baseline cannot answer, and every baseline kept |
+| **Changes** *(pane)* | Paint it onto the model | The change list, filtered and searched; paint it, walk it, stamp it, raise it, report it |
+| **Baseline** *(acts)* | — | The model as it stands, recorded, in one press |
+| **Data Manager** *(pane)* | Read properties | Every property folded to one row, and one write pipeline — a typed value, a formula, a code table or a spreadsheet — previewed element by element |
+| **Excel Round-trip** | Write a sheet | Out to a workbook, edited by somebody without Navisworks, and back in |
+| **External Data** *(wizard)* | Read the file | A register, a schedule or an asset list joined onto the model by a key column, either way |
+| **Levels and Zones** | Derive levels | What level and what zone every element is on, from whatever the model already carries |
+| **Takeoff** | Sum it | The quantities the model carries, grouped how a bill wants them, saying what could not be read |
+| **Report Builder** *(wizard)* | Read the model | A report of model data on a template proposed from the model itself |
+| **IDS** | Save as an .ids file | What every model must carry, in the open standard for saying so, checked against the federation |
+| **Sets** *(pane)* | Publish as a Navisworks set | The boolean builder, and a generator that makes a set per value and nests them |
+| **Sets from a Schedule** *(wizard)* | Read the schedule | A spreadsheet of rooms, assets or conditions turned into that many sets at once |
+| **Appearance** *(pane)* | Apply the stack | The layers system, and everything hidden or overridden that no layer accounts for |
+| **Viewpoints** | Read what is selected | Rename, renumber, re-folder and render in bulk, instead of one at a time |
+| **Restructure** *(wizard)* | Read the model | The set library reshaped into the folders the properties imply |
+| **Section Box** *(acts)* | — | Box what is selected, or switch sectioning off when nothing is |
+| **Extract** *(wizard)* | Read it | A level, a zone, a room or a view cut out as a set, a drawing or a model somebody else can open |
+| **Compile** *(wizard)* | Compile | A list of models appended into one deliverable, newest revision of each, with a log of what went in |
+| **Export IFC** | Open the IFC exporter | The exporter's own panel, with the mapping and classification it should carry |
+| **Centre of Gravity** | Work out where it sits | Where the hook goes, by declared weight or by volume — and it says which |
+| **Dimensions** | Measure it | How long that run is, how far off the slab, whether those hangers are at centres |
+| **Setting Out** | Write the file | The file the engineer loads into a total station, with what it is referenced to written in |
+| **Documents and Photos** | Find what is attached | The data sheets, the site photos, the address into a document system |
+| **Site Labels** | Make the labels | A label per element, with a QR code that survives a wet Tuesday |
+| **Batch** | Run the selected job | Saved graphs, run without opening the canvas |
+| **Graph Editor** *(pane)* | Run the graph | The node graph, over twenty-two nodes including the coordination ones |
 
 The three commands that are not screens each earn it: Section Box acts on the model you are looking
 at, Baseline is a one-click weekly habit that should not need a screen, and Help is a window because
@@ -139,7 +163,7 @@ ribbon; a theme-aware second set is a design job.
 ## What the second pass added
 
 The first pass built the structure: every service, every screen, every button. The second closed the
-gap between a tab existing and a tab doing the job somebody opens it for.
+gap between a screen existing and a screen doing the job somebody opens it for.
 
 | Added | Why it was missing mattered |
 |---|---|

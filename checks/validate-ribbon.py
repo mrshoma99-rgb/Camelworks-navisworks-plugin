@@ -26,13 +26,17 @@ ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
 EXPECTED_COMMANDS = 27
-EXPECTED_TABS = 19
-EXPECTED_SWITCHER = 7
+EXPECTED_TOOLS = 42
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
 MAX_PER_COLUMN = 3
 
 UID = "{http://schemas.microsoft.com/winfx/2006/xaml}Uid"
+
+
+def every_cs():
+    """Every C# file in the UI, for the checks that look for a caption anywhere in it."""
+    return "".join(p.read_text(encoding="utf-8") for p in sorted(UI.rglob("*.cs")))
 
 
 def read(path):
@@ -134,50 +138,109 @@ def main():
         if missing:
             problems |= fail(f"{name} is missing: {', '.join(sorted(missing))}")
 
-    # Every route must name a workspace and a tab that exist.
-    workspaces_source = read("Shell/Workspaces.cs")
+    # Every button must name a tool that exists, and no two buttons may name the same one.
+    #
+    # This replaced a check that routes named a real "workspace/tab". Under that model three
+    # buttons routed to a tab another button already opened - Headroom onto Clash Triage, Merge
+    # onto BCF, Excel onto Data Manager - and the check passed every time, because each route
+    # named a real place. It just happened to be somebody else's.
+    tools_source = read("Shell/Tools.cs")
+    tools = set(re.findall(r'Of\("([a-z]+)", "', tools_source))
 
-    workspaces = re.findall(r'new Workspace\("(\w+)", "([^"]+)", (\w+), hasTabStrip: (true|false),(.*?)\)\),\n',
-                            workspaces_source, re.S)
+    if len(tools) != EXPECTED_TOOLS:
+        problems |= fail(f"{len(tools)} tools in the registry, expected {EXPECTED_TOOLS}")
 
-    tabs = {}
-    switcher = 0
-    tab_total = 0
+    # Every tool that shows a surface has to name its one main action.
+    for tool_id, shape, action in re.findall(
+            r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),(?:.|\n)*?\n\s+(null|"[^"]*")\),',
+            tools_source):
+        if shape in ("Act", "Menu"):
+            continue
+        if action == "null" and tool_id != "help":
+            problems |= fail(f'tool "{tool_id}" is a {shape} with no main action')
 
-    for wid, _title, pane, has_strip, body in workspaces:
-        ids = re.findall(r'new WorkspaceTab\("([^"]+)"', body)
-        tabs[wid] = ids
-        if pane == "MainPane":
-            switcher += 1
-        if has_strip == "true":
-            tab_total += len(ids)
+    # And every tool that is not a panel must have somewhere to open.
+    #
+    # A tool the registry declares and the dispatch has never heard of opens on "has no screen of
+    # its own yet", which is a sentence no shipped product should be able to say. Sets from a
+    # Schedule was reachable only from a button buried in the Sets panel and had no entry in the
+    # registry at all; adding one made it a tool with no route, and nothing said so.
+    views = read("Views/ToolViews.cs")
+    routed = set(re.findall(r'case "([a-z]+)"', views))
 
-    if switcher != EXPECTED_SWITCHER:
-        problems |= fail(f"{switcher} switcher entries in the main pane, expected {EXPECTED_SWITCHER}")
+    for tool_id, shape in re.findall(
+            r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),', tools_source):
+        if shape in ("Act", "Menu", "Panel"):
+            continue
+        if tool_id not in routed:
+            problems |= fail(f'tool "{tool_id}" is a {shape} that ToolViews has no route for')
 
-    if tab_total != EXPECTED_TABS:
-        problems |= fail(f"{tab_total} tabs across the tabbed workspaces, expected {EXPECTED_TABS}")
+    # And no two tools may fall through to the same window.
+    #
+    # The check above asks whether a tool has a route. This asks whether its route is its own. Five
+    # tools - weight, dimensions, setting out, paperwork, labels - shared one `return
+    # SiteWindow.Show()`, so five ribbon buttons opened the same window, which is the exact thing
+    # the tabs were removed to stop. Every check passed, because five distinct ids each named a
+    # real tool and each had a route; the routes just happened to be the same one.
+    #
+    # Sharing a window is allowed where the window is told which tool it is for - `Show(tool.Id)`
+    # opens the field tool that was pressed. Sharing one that is not told is the bug.
+    for group in re.finditer(r'((?:\s*case "[a-z]+":\n)+\s*case "[a-z]+": return [^\n]+)', views):
+        block = group.group(1)
+        ids = re.findall(r'case "([a-z]+)":', block)
+        answer = block[block.index("return"):]
 
-    for route in re.findall(r'CommandKind\.Pane, "([^"]+)"', catalogue_source):
-        workspace, _, tab = route.partition("/")
-        if workspace not in tabs:
-            problems |= fail(f'route "{route}" names no workspace')
-        elif tab and tab not in tabs[workspace]:
-            problems |= fail(f'route "{route}" names no tab in {workspace}')
+        # Only where the answer opens something. The same file groups tools by how wide they want
+        # to be, and four tools agreeing on 1100 pixels is not four tools sharing a window.
+        if len(ids) > 1 and ".Show(" in answer and "tool.Id" not in answer:
+            problems |= fail(f"{len(ids)} tools ({', '.join(ids)}) all open "
+                             f"{answer.strip().rstrip(';')} - a button per tool, one window "
+                             f"between them")
 
-    # The catalogue's Pane entries carry their route as the third argument of the Pane helper, so
-    # pull them from there too — a Pane command with no route would silently open nothing.
-    pane_ids = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
-    for cid, route in pane_ids:
-        workspace, _, tab = route.partition("/")
-        if workspace not in tabs:
-            problems |= fail(f"{cid} routes to a workspace that does not exist: {route}")
+    # And the main action must be a button that exists.
+    #
+    # Without this the registry is a wish. Every tool promises one filled button with a named
+    # caption, and twenty-four of them once promised a caption no screen had - because the
+    # registry was written as the design and the screens kept their own words. A promise nothing
+    # checks is how "every tool has a main action" becomes a sentence in a doc comment.
+    #
+    # Matched on a prefix either way, because some captions are built at run time: the compile
+    # button reads "Compile 9 files" and the repoint button reads "Bring in 4".
+    #
+    # Ui.Commit counts, and has to: a two-stage write builds its own filled Runner out of the
+    # first argument, so on a screen whose whole purpose is that write there is no other Primary
+    # for the tool's main action to point at.
+    buttons = [c.strip().rstrip(".").strip().lower()
+               for c in re.findall(r'Ui\.(?:Primary|Runner|Commit)\(\s*"([^"]+)"', every_cs())]
+
+    for tool_id, shape, action in re.findall(
+            r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),(?:.|\n)*?\n\s+(null|"[^"]*")\),',
+            tools_source):
+        if shape in ("Act", "Menu") or action == "null":
+            continue
+
+        want = action.strip('"').strip().rstrip(".").strip().lower()
+
+        if not any(b == want or b.startswith(want) or want.startswith(b) for b in buttons):
+            problems |= fail(f'tool "{tool_id}" promises the action {action} '
+                             f"and no Primary or Runner has that caption")
+
+    named = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
+    seen = {}
+
+    for cid, tool_id in named:
+        if tool_id not in tools:
+            problems |= fail(f"{cid} names a tool that does not exist: {tool_id}")
+        if tool_id in seen:
+            problems |= fail(f"{cid} and {seen[tool_id]} both open \"{tool_id}\" - "
+                             f"two buttons doing the identical thing")
+        seen[tool_id] = cid
 
     if problems:
         return 1
 
     print(f"ribbon consistent: {len(xaml)} commands, {stacks} stacks, "
-          f"{switcher} switcher entries, {tab_total} tabs")
+          f"{len(tools)} tools, no two buttons on the same one")
     return 0
 
 

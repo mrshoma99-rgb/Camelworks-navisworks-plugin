@@ -11,6 +11,7 @@ using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Nav;
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
@@ -35,7 +36,6 @@ namespace CamelWorks.UI.Views
         /// <summary>How many elements one export will read before it stops and says so.</summary>
         public const int Ceiling = 250_000;
 
-        private static Window? _open;
 
         /// <summary>
         /// Show the window.
@@ -46,28 +46,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            if (_open != null)
-            {
-                _open.Activate();
-                return null;
-            }
-
-            var window = new Window
-            {
-                Title = "CamelWorks - export",
-                Width = 720,
-                Height = 640,
-                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                ShowInTaskbar = false,
-                Content = Ui.Scroll(Body(session)),
-            };
-
-            window.Closed += (_, __) => _open = null;
-
-            _open = window;
-            window.Show();
-
-            return null;
+            return ToolWindow.Show(Tools.Find("export"), () => Ui.Scroll(Body(session)), 720, 640);
         }
 
         private static UIElement Body(Session session)
@@ -76,9 +55,9 @@ namespace CamelWorks.UI.Views
             var picker = Ui.Choice(new[] { "Current selection", "Everything loaded" }, scope,
                                    pick => scope = pick);
 
+            // No heading of its own: the frame carries the tool's name and the sentence saying
+            // what it is for, and a second copy underneath reads as two screens.
             return Ui.Stack(
-                Ui.Heading("Export"),
-                Ui.Sub("Geometry a browser can open, or the properties as a spreadsheet."),
                 Ui.Field("Scope", picker),
                 Geometry(session, () => scope),
                 Properties(session, () => scope));

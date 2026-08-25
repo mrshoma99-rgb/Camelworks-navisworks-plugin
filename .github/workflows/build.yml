@@ -201,6 +201,26 @@ jobs:
       - name: Check every repo type used is imported where it is used
         run: python3 checks/validate-usings.py
 
+      # The widget vocabulary is a closed set, so a call into it can be held to the signature the
+      # file declares without a type checker. Two overloads that differ by one parameter in the
+      # middle is all it takes: `Ui.Text("", "no limit", 90)` put the placeholder where the handler
+      # goes, and a Windows runner said so several minutes after the push.
+      - name: Check every Ui. call fits a signature Ui.cs declares
+        run: python3 checks/validate-ui-calls.py
+
+      # Home was a tab. The tabs went, the tab strip went, and the screen that had been the front
+      # door stayed exactly where it was - compiling, documented, drawn by the harness, opened by
+      # nothing - while Help went on describing it as the front door. Baselines went the same way
+      # in the same week.
+      - name: Check every screen has something that opens it
+        run: python3 checks/validate-reachable-screens.py
+
+      # A panel built, filled on every read, and never added to anything. The Labels tool shipped
+      # that way: its window drew a heading, a recipe, a button and a table into a panel nobody
+      # could see, and every check passed because from the code's side nothing was wrong.
+      - name: Check every panel that gets filled reaches a screen
+        run: python3 checks/validate-orphan-panels.py
+
       # `if (!thing.IsUsable)` reads as a null check but is one indirection away from one, so the
       # branch below it hands a `string?` to something that takes a `string`. Windows fails the
       # build on it; Linux cannot see it. This spots the shape without needing a type checker.
