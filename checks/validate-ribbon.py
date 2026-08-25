@@ -175,6 +175,28 @@ def main():
         if tool_id not in routed:
             problems |= fail(f'tool "{tool_id}" is a {shape} that ToolViews has no route for')
 
+    # And no two tools may fall through to the same window.
+    #
+    # The check above asks whether a tool has a route. This asks whether its route is its own. Five
+    # tools - weight, dimensions, setting out, paperwork, labels - shared one `return
+    # SiteWindow.Show()`, so five ribbon buttons opened the same window, which is the exact thing
+    # the tabs were removed to stop. Every check passed, because five distinct ids each named a
+    # real tool and each had a route; the routes just happened to be the same one.
+    #
+    # Sharing a window is allowed where the window is told which tool it is for - `Show(tool.Id)`
+    # opens the field tool that was pressed. Sharing one that is not told is the bug.
+    for group in re.finditer(r'((?:\s*case "[a-z]+":\n)+\s*case "[a-z]+": return [^\n]+)', views):
+        block = group.group(1)
+        ids = re.findall(r'case "([a-z]+)":', block)
+        answer = block[block.index("return"):]
+
+        # Only where the answer opens something. The same file groups tools by how wide they want
+        # to be, and four tools agreeing on 1100 pixels is not four tools sharing a window.
+        if len(ids) > 1 and ".Show(" in answer and "tool.Id" not in answer:
+            problems |= fail(f"{len(ids)} tools ({', '.join(ids)}) all open "
+                             f"{answer.strip().rstrip(';')} - a button per tool, one window "
+                             f"between them")
+
     # And the main action must be a button that exists.
     #
     # Without this the registry is a wish. Every tool promises one filled button with a named
