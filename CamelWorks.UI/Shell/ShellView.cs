@@ -391,7 +391,13 @@ namespace CamelWorks.UI.Shell
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal };
 
-            _back.Wearing("RailBtn");
+            // QuietBtn, not RailBtn. RailBtn targets ToggleButton - it dressed the workspace
+            // switcher, which was a set of toggles and no longer exists - and WPF refuses a style
+            // whose TargetType is derived from the element's own type. Applying it to a Button
+            // threw at layout, which took the whole dock pane with it: Triage, Changes, Data,
+            // Sets, Appearance and the graph all failed to open on "'ToggleButton' TargetType does
+            // not match type of element 'Button'".
+            _back.Wearing("QuietBtn");
             _back.Padding = new Thickness(9, 4, 9, 4);
             _back.Margin = new Thickness(0, 0, 8, 0);
             _back.ToolTip = "Every tool, and what each one is for";

@@ -233,6 +233,13 @@ jobs:
       - name: Check every Ui. call fits a signature Ui.cs declares
         run: python3 checks/validate-ui-calls.py
 
+      # A Button wearing RailBtn, a style targeting ToggleButton. WPF throws on that at layout,
+      # which took the entire dock pane down: six tools opened on "'ToggleButton' TargetType does
+      # not match type of element 'Button'" in a shipped build. The skin check asks whether a key
+      # exists, which that one does; nothing asked whether it fits what is wearing it.
+      - name: Check every styled control matches its style's TargetType
+        run: python3 checks/validate-style-targets.py
+
       # Home was a tab. The tabs went, the tab strip went, and the screen that had been the front
       # door stayed exactly where it was - compiling, documented, drawn by the harness, opened by
       # nothing - while Help went on describing it as the front door. Baselines went the same way

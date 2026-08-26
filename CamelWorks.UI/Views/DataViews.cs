@@ -1786,7 +1786,7 @@ namespace CamelWorks.UI.Views
             // Held between the two presses. The plan pass reads the grid; the write pass reads this.
             var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+            var apply = Ui.Commit("Show me the grid squares it would stamp", "Stamp", "element",
                 plan: (job, into) =>
                 {
                     placements.Clear();
@@ -1959,7 +1959,7 @@ namespace CamelWorks.UI.Views
         {
             var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+            var apply = Ui.Commit("Show me the levels it would stamp", "Stamp", "element",
                 plan: (job, into) =>
                 {
                     placements.Clear();

@@ -1904,8 +1904,10 @@ namespace CamelWorks.UI.Views
                     v.HasOverrides ? "carries overrides" : string.Empty,
                     v.HasRedlines ? "has redlines" : string.Empty)).ToList();
 
+                // The last two carried no header, so "carries overrides" sat in a nameless column
+                // next to the folder and read as one.
                 var table = Ui.Table(rows,
-                    ("Viewpoint", 200), ("Folder", 120), ("", 130), ("", 0)).Multi();
+                    ("Viewpoint", 200), ("Folder", 120), ("Appearance", 130), ("Markup", 0)).Multi();
 
                 // The camera follows a single tick and stays put for several. Flying the view to
                 // the first of eight viewpoints somebody is selecting in order to delete them is
