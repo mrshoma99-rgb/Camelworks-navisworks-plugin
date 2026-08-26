@@ -311,22 +311,37 @@ namespace CamelWorks.UI.Views
         /// back — in the table's own spelling, so a column ends up with one form of each code
         /// rather than four. What it refused is counted and named.
         /// </summary>
+        /// <summary>
+        /// What a screen says where its write button was, once the preview stopped describing what
+        /// would happen. Said the same way on every screen that previews before it writes.
+        /// </summary>
+        private const string Outdated =
+            "That changed what would be written, so the preview above is no longer what would "
+            + "happen. Show it again before writing.";
+
         private sealed class CodeScreen
         {
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _source = Ui.Text("Element / Classification", null, 240);
-            private readonly TextBox _target = Ui.Text("Code", null, 160);
+            private readonly TextBox _source;
+            private readonly TextBox _target;
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
 
             private ExistingValues _existing = ExistingValues.Keep;
             private CodeTable? _table;
             private WriteDiff? _diff;
+            private bool _stale;
 
             internal CodeScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
+                // Editing either of these makes the preview a preview of something else, so both
+                // of them drop it. Apply reads the target name live, which is how a preview of
+                // "Code" could write into "Uniclass" without anybody being shown that.
+                _source = Ui.Text("Element / Classification", _ => Stale(), 240);
+                _target = Ui.Text("Code", _ => Stale(), 160);
+
                 _session = session;
                 _keys = keys;
             }
@@ -442,6 +457,7 @@ namespace CamelWorks.UI.Views
                             ?? item.Property(NavWriteTransaction.TabName, target));
 
                 _diff = diff;
+                _stale = false;
 
                 _status.Children.Add(Ui.Diff(diff));
 
@@ -464,7 +480,12 @@ namespace CamelWorks.UI.Views
                 _applyRow.Children.Clear();
 
                 var diff = _diff;
-                if (diff == null) return;
+
+                if (diff == null)
+                {
+                    if (_stale) _applyRow.Children.Add(Ui.Note(Outdated));
+                    return;
+                }
 
                 var count = diff.Every.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
 
@@ -475,6 +496,24 @@ namespace CamelWorks.UI.Views
                 }
 
                 _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(count, "element"), () => Apply(diff)));
+            }
+
+            /// <summary>
+            /// Throw the preview away, because what it was a preview of has changed.
+            ///
+            /// Apply reads the target property name live, so a preview left standing over an
+            /// edited input is a button that writes somewhere nobody was shown. Taking the button
+            /// away is the fix: the only way to a write is a preview of that write.
+            /// </summary>
+            private void Stale()
+            {
+                if (_diff == null) return;
+
+                _diff = null;
+                _stale = true;
+
+                _applyRow.Children.Clear();
+                _applyRow.Children.Add(Ui.Note(Outdated));
             }
 
             private void Apply(WriteDiff diff)
@@ -1180,9 +1219,9 @@ namespace CamelWorks.UI.Views
 
             private const string Worked = "worked out from other properties";
 
-            private readonly TextBox _name = Ui.Text("Zone", null, 150);
-            private readonly TextBox _value = Ui.Text(string.Empty, null, 200);
-            private readonly TextBox _formula = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _name;
+            private readonly TextBox _value;
+            private readonly TextBox _formula;
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
 
@@ -1190,11 +1229,36 @@ namespace CamelWorks.UI.Views
             private string _how = Fixed;
             private WriteDiff? _diff;
             private Formula? _parsed;
+            private bool _stale;
 
             internal WriteScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
+                // All three drop the preview when they change. This screen is the worst case of
+                // the three that preview before writing: Apply reads the value box live, so
+                // previewing "Zone A" over forty elements and then typing "Zone B" left a button
+                // reading "Write 40 elements" that wrote Zone B - a value nobody was ever shown,
+                // under a count worked out for a different one. The formula path was stale the
+                // other way round, applying the parsed formula from the last preview rather than
+                // the text on screen. Two different wrong answers in one screen.
+                _name = Ui.Text("Zone", _ => Stale(), 150);
+                _value = Ui.Text(string.Empty, _ => Stale(), 200);
+                _formula = Ui.Text(string.Empty, _ => Stale(), 340);
+
                 _session = session;
                 _keys = keys;
+            }
+
+            /// <summary>Throw the preview away, because what it was a preview of has changed.</summary>
+            private void Stale()
+            {
+                if (_diff == null) return;
+
+                _diff = null;
+                _parsed = null;
+                _stale = true;
+
+                _applyRow.Children.Clear();
+                _applyRow.Children.Add(Ui.Note(Outdated));
             }
 
             /// <summary>The writer for one kind of value.</summary>
@@ -1252,6 +1316,7 @@ namespace CamelWorks.UI.Views
                             PropertyDiff.Resolve(_session.Model, _keys), ValueOf(_parsed));
 
                     _diff = diff;
+                    _stale = false;
 
                     if (_parsed != null) Unworkable(diff);
 
@@ -1350,7 +1415,12 @@ namespace CamelWorks.UI.Views
                 _applyRow.Children.Clear();
 
                 var diff = _diff;
-                if (diff == null) return;
+
+                if (diff == null)
+                {
+                    if (_stale) _applyRow.Children.Add(Ui.Note(Outdated));
+                    return;
+                }
 
                 var writes = diff.Writes(_existing);
 
