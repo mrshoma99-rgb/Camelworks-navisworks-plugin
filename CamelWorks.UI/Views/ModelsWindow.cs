@@ -56,6 +56,30 @@ namespace CamelWorks.UI.Views
                 results);
         }
 
+        /// <summary>Put picked register rows on the clipboard, tab separated.</summary>
+        private static void Rows(IReadOnlyList<object> picked, Panel results)
+        {
+            var lines = picked.OfType<IReadOnlyList<string?>>()
+                .Select(r => string.Join("\t", r.Select(cell => cell ?? string.Empty)))
+                .ToList();
+
+            if (lines.Count == 0)
+            {
+                results.Children.Add(Ui.Note("Nothing to copy."));
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(string.Join("\r\n", lines));
+                results.Children.Add(Ui.Done("Copied " + Ui.Count(lines.Count, "row") + "."));
+            }
+            catch (Exception e)
+            {
+                results.Children.Add(Ui.Problem("Could not copy it: " + Ui.Describe(e)));
+            }
+        }
+
         /// <summary>
         /// Read the federation, record what it is, and say what moved.
         ///
@@ -104,11 +128,17 @@ namespace CamelWorks.UI.Views
             var units = session.Profile.Units;
             var table = manifest.ModelTable(units);
 
-            results.Children.Add(Ui.Table(table.Rows.Select(r => new TableRow(r,
+            var models = Ui.Table(table.Rows.Select(r => new TableRow(r,
                 r[0] ?? string.Empty, r[2] ?? string.Empty, r[3] ?? string.Empty,
                 r[5] ?? string.Empty, r[6] ?? string.Empty)).ToList(),
                 ("Model", 200), ("Source last written", 150), ("Size", 80),
-                ("Placement", 170), ("Elements", 0)));
+                ("Placement", 170), ("Elements", 0));
+
+            // The register's most common destination is somebody else's inbox - "which revisions
+            // is this week's board against?" - so picking rows and copying them is the action,
+            // rather than making somebody retype five columns out of a window.
+            results.Children.Add(Ui.Picking(models,
+                new Ui.OnPicked("Copy {n}", picked => Rows(picked, results), primary: true)));
 
             if (intake.HasPrevious)
             {
