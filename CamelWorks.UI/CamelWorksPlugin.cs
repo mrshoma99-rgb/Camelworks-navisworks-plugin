@@ -31,59 +31,79 @@ namespace CamelWorks.UI
     [RibbonLayout("CamelWorks.xaml")]
     [RibbonTab("ID_Tab_CamelWorks")]
     [Command("ID_CW_HealthCheck", Icon = "Resources\\HealthCheck_16.png", LargeIcon = "Resources\\HealthCheck_32.png",
-        DisplayName = "Health Check", ToolTip = "One scorecard over models, sets and data")]
-    [Command("ID_CW_ProjectSetup", Icon = "Resources\\ProjectSetup_16.png", LargeIcon = "Resources\\ProjectSetup_32.png",
-        DisplayName = "Project Setup", ToolTip = "What CamelWorks already derived, with an override on each line")]
+        DisplayName = "Health Check", ToolTip = "Is this federation fit to coordinate against?")]
+    [Command("ID_CW_ProjectSettings", Icon = "Resources\\ProjectSettings_16.png", LargeIcon = "Resources\\ProjectSettings_32.png",
+        DisplayName = "Project Settings", ToolTip = "What CamelWorks worked out, and an override on every line")]
     [Command("ID_CW_FixLinks", Icon = "Resources\\FixLinks_16.png", LargeIcon = "Resources\\FixLinks_32.png",
         DisplayName = "Fix Broken Links", ToolTip = "Repoint broken paths and find missing sources")]
-    [Command("ID_CW_ProjectProfile", Icon = "Resources\\ProjectProfile_16.png", LargeIcon = "Resources\\ProjectProfile_32.png",
-        DisplayName = "Project Profile", ToolTip = "Save, load, or start from a template pack")]
-    [Command("ID_CW_Triage", Icon = "Resources\\Triage_16.png", LargeIcon = "Resources\\Triage_32.png",
-        DisplayName = "Clash Triage", ToolTip = "The board — opens populated and grouped")]
-    [Command("ID_CW_Review", Icon = "Resources\\Review_16.png", LargeIcon = "Resources\\Review_32.png",
-        DisplayName = "Review", ToolTip = "Review mode over the board's current filter")]
-    [Command("ID_CW_ClashTests", Icon = "Resources\\ClashTests_16.png", LargeIcon = "Resources\\ClashTests_32.png",
-        DisplayName = "Clash Tests", ToolTip = "The matrix builder and Run")]
-    [Command("ID_CW_ClashRules", Icon = "Resources\\ClashRules_16.png", LargeIcon = "Resources\\ClashRules_32.png",
-        DisplayName = "Clash Rules", ToolTip = "Suppress and flag, then group, then assign")]
-    [Command("ID_CW_Headroom", Icon = "Resources\\Headroom_16.png", LargeIcon = "Resources\\Headroom_32.png",
-        DisplayName = "Headroom", ToolTip = "Floor set against target set, onto the board")]
-    [Command("ID_CW_ClashReport", Icon = "Resources\\ClashReport_16.png", LargeIcon = "Resources\\ClashReport_32.png",
-        DisplayName = "Clash Report", ToolTip = "PDF, XLSX or HTML from a built-in template")]
-    [Command("ID_CW_Bcf", Icon = "Resources\\Bcf_16.png", LargeIcon = "Resources\\Bcf_32.png",
-        DisplayName = "BCF", ToolTip = "Export and import, BCF 2.1 and 3.0")]
-    [Command("ID_CW_Merge", Icon = "Resources\\Merge_16.png", LargeIcon = "Resources\\Merge_32.png",
-        DisplayName = "Merge", ToolTip = "One conflict preview for everything inbound")]
-    [Command("ID_CW_DataManager", Icon = "Resources\\DataManager_16.png", LargeIcon = "Resources\\DataManager_32.png",
-        DisplayName = "Data Manager", ToolTip = "Browse and edit properties in one place")]
-    [Command("ID_CW_Excel", Icon = "Resources\\Excel_16.png", LargeIcon = "Resources\\Excel_32.png",
-        DisplayName = "Excel", ToolTip = "Properties out, properties back in, or import a sheet")]
-    [Command("ID_CW_Zones", Icon = "Resources\\Zones_16.png", LargeIcon = "Resources\\Zones_32.png",
-        DisplayName = "Levels & Zones", ToolTip = "Derive levels from whatever the model has")]
-    [Command("ID_CW_Takeoff", Icon = "Resources\\Takeoff_16.png", LargeIcon = "Resources\\Takeoff_32.png",
-        DisplayName = "Takeoff", ToolTip = "Sum the numeric properties it finds, grouped")]
-    [Command("ID_CW_Sets", Icon = "Resources\\Sets_16.png", LargeIcon = "Resources\\Sets_32.png",
-        DisplayName = "Sets", ToolTip = "Boolean set building, compiled to native search sets")]
-    [Command("ID_CW_Appearance", Icon = "Resources\\Appearance_16.png", LargeIcon = "Resources\\Appearance_32.png",
-        DisplayName = "Appearance", ToolTip = "The layers system — what is hidden and overridden, and why")]
-    [Command("ID_CW_Viewpoints", Icon = "Resources\\Viewpoints_16.png", LargeIcon = "Resources\\Viewpoints_32.png",
-        DisplayName = "Viewpoints", ToolTip = "Bulk rename, renumber, re-folder and render")]
-    [Command("ID_CW_SectionBox", Icon = "Resources\\SectionBox_16.png", LargeIcon = "Resources\\SectionBox_32.png",
-        DisplayName = "Section Box", ToolTip = "Box the selection, a clash or a group — and toggle without losing it")]
-    [Command("ID_CW_Batch", Icon = "Resources\\Batch_16.png", LargeIcon = "Resources\\Batch_32.png",
-        DisplayName = "Batch", ToolTip = "Jobs and their run history")]
-    [Command("ID_CW_Graph", Icon = "Resources\\Graph_16.png", LargeIcon = "Resources\\Graph_32.png",
-        DisplayName = "Graph Editor", ToolTip = "The graph canvas")]
-    [Command("ID_CW_ExportIfc", Icon = "Resources\\ExportIfc_16.png", LargeIcon = "Resources\\ExportIfc_32.png",
-        DisplayName = "Export IFC", ToolTip = "The IFC exporter, full pane")]
-    [Command("ID_CW_Export", Icon = "Resources\\Export_16.png", LargeIcon = "Resources\\Export_32.png",
-        DisplayName = "Export", ToolTip = "glTF, GLB, CSV or XLSX")]
-    [Command("ID_CW_Compare", Icon = "Resources\\Compare_16.png", LargeIcon = "Resources\\Compare_32.png",
-        DisplayName = "Compare", ToolTip = "What changed since a baseline — added, removed, moved, changed")]
-    [Command("ID_CW_Baseline", Icon = "Resources\\Baseline_16.png", LargeIcon = "Resources\\Baseline_32.png",
-        DisplayName = "Baseline", ToolTip = "Record what the model is right now, to compare against later")]
     [Command("ID_CW_Help", Icon = "Resources\\Help_16.png", LargeIcon = "Resources\\Help_32.png",
         DisplayName = "Help", ToolTip = "Guide, limitations, shortcuts, diagnostics and about")]
+    [Command("ID_CW_Board", Icon = "Resources\\Board_16.png", LargeIcon = "Resources\\Board_32.png",
+        DisplayName = "Clash Board", ToolTip = "Results worked down to owned issues that survive the next run")]
+    [Command("ID_CW_Review", Icon = "Resources\\Review_16.png", LargeIcon = "Resources\\Review_32.png",
+        DisplayName = "Review", ToolTip = "One issue at a time over the model, on the keyboard")]
+    [Command("ID_CW_ClashTests", Icon = "Resources\\ClashTests_16.png", LargeIcon = "Resources\\ClashTests_32.png",
+        DisplayName = "Clash Tests", ToolTip = "What clashes against what — including from their matrix sheet")]
+    [Command("ID_CW_ClashRules", Icon = "Resources\\ClashRules_16.png", LargeIcon = "Resources\\ClashRules_32.png",
+        DisplayName = "Clash Rules", ToolTip = "Suppress, group and assign, previewed before it applies")]
+    [Command("ID_CW_Clearance", Icon = "Resources\\Clearance_16.png", LargeIcon = "Resources\\Clearance_32.png",
+        DisplayName = "Clearance", ToolTip = "Clear height where nothing is touching")]
+    [Command("ID_CW_ClashReport", Icon = "Resources\\ClashReport_16.png", LargeIcon = "Resources\\ClashReport_32.png",
+        DisplayName = "Clash Report", ToolTip = "The board as a document — or the penetration schedule")]
+    [Command("ID_CW_Bcf", Icon = "Resources\\Bcf_16.png", LargeIcon = "Resources\\Bcf_32.png",
+        DisplayName = "BCF", ToolTip = "Issues out and answers back, BCF 2.1 or 3.0")]
+    [Command("ID_CW_Merge", Icon = "Resources\\Merge_16.png", LargeIcon = "Resources\\Merge_32.png",
+        DisplayName = "Merge Markups", ToolTip = "Several reviewers, one board, disagreements shown")]
+    [Command("ID_CW_ClashXml", Icon = "Resources\\ClashXml_16.png", LargeIcon = "Resources\\ClashXml_32.png",
+        DisplayName = "Clash XML", ToolTip = "The interchange format other tools speak, in or out")]
+    [Command("ID_CW_Compare", Icon = "Resources\\Compare_16.png", LargeIcon = "Resources\\Compare_32.png",
+        DisplayName = "Compare Revisions", ToolTip = "What changed against a baseline, and how it knows")]
+    [Command("ID_CW_Changes", Icon = "Resources\\Changes_16.png", LargeIcon = "Resources\\Changes_32.png",
+        DisplayName = "Changes", ToolTip = "The change list walked on the model")]
+    [Command("ID_CW_Baseline", Icon = "Resources\\Baseline_16.png", LargeIcon = "Resources\\Baseline_32.png",
+        DisplayName = "Baseline", ToolTip = "Record what the model is now — or freeze an agreed scope")]
+    [Command("ID_CW_ChangeNotice", Icon = "Resources\\ChangeNotice_16.png", LargeIcon = "Resources\\ChangeNotice_32.png",
+        DisplayName = "Change Notice", ToolTip = "What changed since the scope was frozen")]
+    [Command("ID_CW_DataManager", Icon = "Resources\\DataManager_16.png", LargeIcon = "Resources\\DataManager_32.png",
+        DisplayName = "Data Manager", ToolTip = "Every property in one grid, and the pen to fix it")]
+    [Command("ID_CW_Zones", Icon = "Resources\\Zones_16.png", LargeIcon = "Resources\\Zones_32.png",
+        DisplayName = "Levels and Zones", ToolTip = "Level and zone per element, from what the model carries")]
+    [Command("ID_CW_Takeoff", Icon = "Resources\\Takeoff_16.png", LargeIcon = "Resources\\Takeoff_32.png",
+        DisplayName = "Takeoff", ToolTip = "Quantities summed how a bill wants them")]
+    [Command("ID_CW_Wbs", Icon = "Resources\\Wbs_16.png", LargeIcon = "Resources\\Wbs_32.png",
+        DisplayName = "Work Breakdown", ToolTip = "The tree's own shape, written on as properties")]
+    [Command("ID_CW_Ids", Icon = "Resources\\Ids_16.png", LargeIcon = "Resources\\Ids_32.png",
+        DisplayName = "IDS", ToolTip = "What models must carry, written and checked")]
+    [Command("ID_CW_Sets", Icon = "Resources\\Sets_16.png", LargeIcon = "Resources\\Sets_32.png",
+        DisplayName = "Set Builder", ToolTip = "The selections everything else works on")]
+    [Command("ID_CW_Appearance", Icon = "Resources\\Appearance_16.png", LargeIcon = "Resources\\Appearance_32.png",
+        DisplayName = "Appearance", ToolTip = "What is coloured, what is hidden, and which layer did it")]
+    [Command("ID_CW_Viewpoints", Icon = "Resources\\Viewpoints_16.png", LargeIcon = "Resources\\Viewpoints_32.png",
+        DisplayName = "Viewpoints", ToolTip = "Rename, renumber, re-folder and re-camera, in bulk")]
+    [Command("ID_CW_SectionBox", Icon = "Resources\\SectionBox_16.png", LargeIcon = "Resources\\SectionBox_32.png",
+        DisplayName = "Section Box", ToolTip = "Box the selection, or switch sectioning off")]
+    [Command("ID_CW_Export", Icon = "Resources\\Export_16.png", LargeIcon = "Resources\\Export_32.png",
+        DisplayName = "Export", ToolTip = "Geometry as GLB, properties as a sheet, plan as DXF")]
+    [Command("ID_CW_ExportIfc", Icon = "Resources\\ExportIfc_16.png", LargeIcon = "Resources\\ExportIfc_32.png",
+        DisplayName = "Export IFC", ToolTip = "IFC4 or 2x3, with mapping and classification")]
+    [Command("ID_CW_Extract", Icon = "Resources\\Extract_16.png", LargeIcon = "Resources\\Extract_32.png",
+        DisplayName = "Extract", ToolTip = "A level, zone or room, out as something others can open")]
+    [Command("ID_CW_Compile", Icon = "Resources\\Compile_16.png", LargeIcon = "Resources\\Compile_32.png",
+        DisplayName = "Compile", ToolTip = "Supplier drops appended newest-first, with the log")]
+    [Command("ID_CW_SetOut", Icon = "Resources\\SetOut_16.png", LargeIcon = "Resources\\SetOut_32.png",
+        DisplayName = "Setting Out", ToolTip = "Points a total station can walk, in site coordinates")]
+    [Command("ID_CW_Dimensions", Icon = "Resources\\Dimensions_16.png", LargeIcon = "Resources\\Dimensions_32.png",
+        DisplayName = "Dimensions", ToolTip = "Lengths, offsets and centres, for everything at once")]
+    [Command("ID_CW_Weight", Icon = "Resources\\Weight_16.png", LargeIcon = "Resources\\Weight_32.png",
+        DisplayName = "Centre of Gravity", ToolTip = "Where the module's weight sits, so the hook is right")]
+    [Command("ID_CW_Labels", Icon = "Resources\\Labels_16.png", LargeIcon = "Resources\\Labels_32.png",
+        DisplayName = "Site Labels", ToolTip = "Stickers with a code and the identifier underneath")]
+    [Command("ID_CW_Paperwork", Icon = "Resources\\Paperwork_16.png", LargeIcon = "Resources\\Paperwork_32.png",
+        DisplayName = "Documents and Photos", ToolTip = "What the model already points at, found and checked")]
+    [Command("ID_CW_Batch", Icon = "Resources\\Batch_16.png", LargeIcon = "Resources\\Batch_32.png",
+        DisplayName = "Batch", ToolTip = "A list of jobs, run in order, unattended")]
+    [Command("ID_CW_Graph", Icon = "Resources\\Graph_16.png", LargeIcon = "Resources\\Graph_32.png",
+        DisplayName = "Graph Editor", ToolTip = "The same jobs as a graph, when a list is not enough")]
     public class CamelWorksPlugin : CommandHandlerPlugin
     {
         /// <summary>

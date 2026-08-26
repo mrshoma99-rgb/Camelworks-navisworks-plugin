@@ -764,7 +764,7 @@ namespace CamelWorks.UI.Views
                     _detail,
                     Ui.Rule(),
                     new RaiseScreen().Build(),
-                    FreezeCard()));
+                    FreezeScreen()));
             }
 
             /// <summary>
@@ -1146,25 +1146,15 @@ namespace CamelWorks.UI.Views
         /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
         /// not to enter.
         /// </summary>
-        private static UIElement FreezeCard()
+        /// <summary>
+        /// What is frozen right now, and the way back off it.
+        ///
+        /// Both windows lead with this: freezing on top of a freeze, or writing a notice against
+        /// one that has been edited under you, are the two ways this record misleads somebody.
+        /// </summary>
+        private static Panel FrozenState()
         {
-            // Two panels, not one. Ui.Runner clears its output on every press, and the record of
-            // what is currently frozen — with the Unfreeze button under it — used to live in the
-            // same panel the two runners write to. Pressing "Change notice" deleted the way out.
-            // The comment on this method says the unfreeze is always visible; now it is.
             var state = Ui.Stack();
-            var results = Ui.Stack();
-
-            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
-            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
-            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
-
-            var freeze = Ui.Runner("Freeze what is on the board", results,
-                job => DoFreeze(results, scope, signatory, release, job));
-
-            var notice = Ui.Runner("Change notice", results, primary: false,
-                work: job => DoNotice(results, job));
-
             var session = Host.Current;
 
             if (session != null)
@@ -1198,18 +1188,51 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            return Ui.Marked(Glyphs.Save, "Freeze",
-                "Sign-off and fabrication release are the same record, and both come with a change "
-                + "notice.",
-                state,
+            return state;
+        }
+
+        /// <summary>
+        /// Freeze: record where every element on the board is, right now.
+        ///
+        /// Its own window, and the change notice is another. They shared one card and one output
+        /// panel, so pressing either wiped what the other had just said - and the card asked a
+        /// first-time user to work out which of two buttons was the one they wanted before it had
+        /// told them what a freeze was. One window, one job, one filled button.
+        /// </summary>
+        internal static UIElement FreezeScreen()
+        {
+            var results = Ui.Stack();
+
+            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
+            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
+            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
+
+            return Ui.Stack(
+                FrozenState(),
                 Ui.Form(
                     Ui.Field("What is being frozen", scope),
                     Ui.Pair(Ui.Field("Signed by", signatory), Ui.Field("Release reference", release))),
-                Ui.Across(freeze, notice),
+                Ui.Runner("Freeze what is on the board", results,
+                          job => DoFreeze(results, scope, signatory, release, job)),
                 Ui.Small("A freeze records where every element on the board is, right now. Nothing "
-                         + "edits it afterwards: the change notice is the difference between that "
-                         + "record and the model as it stands, and it is the thing that stops a "
-                         + "hanger being made to a drawing three weeks old."),
+                         + "edits it afterwards - which is what makes it worth signing."),
+                results);
+        }
+
+        /// <summary>
+        /// The change notice: the difference between what was agreed and what the model says now.
+        ///
+        /// The thing that stops a hanger being made to a drawing three weeks old.
+        /// </summary>
+        internal static UIElement NoticeScreen()
+        {
+            var results = Ui.Stack();
+
+            return Ui.Stack(
+                FrozenState(),
+                Ui.Runner("Write the change notice", results, job => DoNotice(results, job)),
+                Ui.Small("Measured against the freeze, not against last week: a notice says what "
+                         + "moved since somebody put their name to it."),
                 results);
         }
 

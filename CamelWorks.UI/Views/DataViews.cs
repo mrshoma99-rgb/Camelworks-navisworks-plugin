@@ -1858,7 +1858,7 @@ namespace CamelWorks.UI.Views
         /// into the tree. Everything downstream joins on that and the model does not carry it as a
         /// property, so nothing can filter, group, schedule or export against it.
         /// </summary>
-        private static UIElement BreakdownStamp(Session session)
+        internal static UIElement BreakdownStamp(Session session)
         {
             var recipe = new BreakdownRecipe();
 

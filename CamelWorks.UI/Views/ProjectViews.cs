@@ -941,6 +941,31 @@ namespace CamelWorks.UI.Views
         /// the model: who the parties are, what the priorities are called, which values a coded
         /// property is allowed to hold, and the three operations that write into the model itself.
         /// </summary>
+        /// <summary>
+        /// Project settings: what CamelWorks worked out, and every override, in one window.
+        ///
+        /// These were two ribbon buttons - Project Setup and Project Profile - and nobody could
+        /// say which held what. They are the same subject: values this job runs on, where each
+        /// came from, and the chance to disagree. Two tabs, because the second is about people
+        /// and deliverables rather than about the model, and that division somebody can predict.
+        /// </summary>
+        public static UIElement Settings()
+        {
+            var body = Ui.Stack();
+
+            void ShowTab(string which)
+            {
+                body.Children.Clear();
+                body.Children.Add(which == "This project" ? Setup() : Profile());
+            }
+
+            var tabs = Ui.Segmented(new[] { "This project", "Team & outputs" }, "This project", ShowTab);
+
+            ShowTab("This project");
+
+            return Ui.Stack(tabs, body);
+        }
+
         public static UIElement Profile()
         {
             var session = Host.Current;

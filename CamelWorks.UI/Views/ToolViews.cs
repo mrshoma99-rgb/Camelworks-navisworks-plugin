@@ -54,6 +54,10 @@ namespace CamelWorks.UI.Views
                 case "restructure": return RestructureWindow.Show();
                 case "ids": return IdsWindow.Show();
                 case "schedule": return ScheduleWindow.Show();
+                case "freeze": return FreezeWindow.Show();
+                case "notice": return ChangeNoticeWindow.Show();
+                case "history": return HistoryWindow.Show();
+                case "wbs": return BreakdownWindow.Show();
                 case "help": return HelpWindow.Show();
                 case "export": return ExportWindow.Show();
 
@@ -141,11 +145,10 @@ namespace CamelWorks.UI.Views
             switch (tool.Id)
             {
                 case "health": return ProjectViews.Health;
-                case "setup": return ProjectViews.Setup;
                 case "headroom": return CoordinateViews.ClearHeight;
                 case "merge": return CoordinateViews.Merge;
                 case "excel": return DataViews.Excel;
-                case "project": return ProjectViews.Profile;
+                case "project": return ProjectViews.Settings;
                 case "tests": return CoordinateViews.Tests;
                 case "rules": return CoordinateViews.Rules;
                 case "clashreport": return CoordinateViews.Report;
