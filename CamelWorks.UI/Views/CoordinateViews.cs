@@ -543,6 +543,16 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// How many times the board has been written down this session.
+        ///
+        /// Not a version and not interesting in itself. It exists so a screen holding figures from
+        /// a load can tell that somebody has changed the board since — assigned a group, marked
+        /// results, applied a returned worksheet — and say so, rather than showing last load's
+        /// numbers over this load's rows.
+        /// </summary>
+        internal static int BoardEdits { get; private set; }
+
+        /// <summary>
         /// Write the board down, keeping the version it replaces.
         ///
         /// One step of history, not a stack. Every board edit is small and immediately visible, so
@@ -555,6 +565,8 @@ namespace CamelWorks.UI.Views
         /// <param name="summary">What to write in the activity log.</param>
         private static void Save(Session session, ClashPipelineResult board, string? summary = null)
         {
+            BoardEdits++;
+
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section["snapshot"];
 
@@ -705,6 +717,12 @@ namespace CamelWorks.UI.Views
             /// <summary>The delta as carry-over produced it, before the rules took anything out.</summary>
             private ClashDelta? _raw;
 
+            /// <summary>Where the "Showing ..." line and the out-of-date warning are drawn.</summary>
+            private readonly StackPanel _state = Ui.Stack();
+
+            /// <summary>What <see cref="BoardEdits"/> stood at when these figures were counted.</summary>
+            private int _counted = -1;
+
             private Session? _session;
 
             internal TriageScreen()
@@ -772,6 +790,7 @@ namespace CamelWorks.UI.Views
                     Ui.Actions(run, undo),
                     _summary,
                     _filters,
+                    _state,
                     _rows,
                     _detail,
                     Ui.Rule(),
@@ -805,10 +824,19 @@ namespace CamelWorks.UI.Views
                     // to be "unassigned", which counts issues - so the row read as four comparable
                     // numbers and three of them were results while one was groups. Nobody could
                     // add them up because they were never addable.
+                    // Pressing a figure narrows the board to it. The dropdown and these numbers
+                    // used to say the same four things in two places, leaving the reader to work
+                    // out that "12 new" and the "New or back again" entry were connected - and
+                    // nothing on screen said which of the two was currently in force.
+                    //
+                    // "Gone" is not pressable and cannot be: those results are not on the board to
+                    // show. A control that filters to nothing is worse than no control.
                     _summary.Children.Add(Ui.Across(
-                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new"),
+                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
+                            Tone.Plain, () => Narrow(Changed), Showing() == Changed),
                         Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
-                            regressed > 0 ? Tone.Bad : Tone.Plain),
+                            regressed > 0 ? Tone.Bad : Tone.Plain, () => Narrow(Changed),
+                            Showing() == Changed),
                         Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone"),
                         Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
                             "still there")));
@@ -819,6 +847,10 @@ namespace CamelWorks.UI.Views
                         Ui.Count(_delta.Accounted, "result") + " on this board, grouped into "
                         + Ui.Count(funnel.Groups, "issue") + ", " + unassigned + " of which nobody owns.",
                         1, true));
+
+                    if (funnel.Unassigned > 0)
+                        _summary.Children.Add(Ui.Actions(
+                            Ui.Link("Show me the ones nobody owns", () => Narrow(Unassigned))));
 
                     // What the rules took out, said where the difference would otherwise be
                     // unaccounted for.
@@ -850,7 +882,8 @@ namespace CamelWorks.UI.Views
                     _summary.Children.Add(Ui.Across(
                         Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
                         Ui.Figure(unassigned, "unassigned",
-                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
+                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good,
+                            () => Narrow(Unassigned), Showing() == Unassigned)));
 
                     _summary.Children.Add(Ui.Info("This is the first board on this project, so there is "
                         + "nothing to compare it against. Run the tests again after the next issue of "
@@ -886,7 +919,77 @@ namespace CamelWorks.UI.Views
                     funnel.RulesApplied.Count == 0 ? null
                         : Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7)));
 
+                _counted = BoardEdits;
                 _filters.Visibility = Visibility.Visible;
+            }
+
+            /// <summary>Which preset is in force.</summary>
+            private string Showing() => _preset.SelectedItem as string ?? All;
+
+            /// <summary>
+            /// One line saying what the board is showing, and one saying when it was counted.
+            ///
+            /// Two filters that combine silently is a state model nobody can read. "Showing 11 of
+            /// 240" was already there and said how many, never which of the two controls did it,
+            /// so a board narrowed by a search typed ten minutes ago looked like a board with
+            /// eleven issues on it.
+            ///
+            /// The second line is the harder honesty. Every figure above is counted when the board
+            /// loads, and assigning a group or applying a returned worksheet changes the board
+            /// underneath them. Rather than recompute - which would mean re-running the rules over
+            /// the federation on every edit - it says the numbers are from before, and offers the
+            /// reload that makes them true.
+            /// </summary>
+            /// <param name="shown">How many groups the filter leaves.</param>
+            /// <param name="total">How many the board holds.</param>
+            private void State(int shown, int total)
+            {
+                _state.Children.Clear();
+
+                var preset = Showing();
+                var query = _search.Text.Trim();
+
+                if (preset != All || query.Length > 0)
+                {
+                    var said = new List<string>();
+
+                    if (preset != All) said.Add(preset.ToLowerInvariant());
+                    if (query.Length > 0) said.Add("matching \"" + query + "\"");
+
+                    var row = Ui.Across(
+                        Ui.Line("Showing " + shown + " of " + total + " issues - "
+                                + string.Join(", ", said) + ".", 0.75),
+                        Ui.Link("Show everything", () =>
+                        {
+                            _search.Text = string.Empty;
+                            _preset.SelectedItem = All;
+                        }));
+
+                    _state.Children.Add(row);
+                }
+                else if (shown < total)
+                {
+                    _state.Children.Add(Ui.Line("Showing " + shown + " of " + total + " issues.", 0.6));
+                }
+
+                if (_counted >= 0 && BoardEdits != _counted)
+                    _state.Children.Add(Ui.Note("The figures above were counted when this board was "
+                        + "loaded, and the board has been edited since. They describe the run, not "
+                        + "what is on screen now - load the board again to bring them up to date."));
+            }
+
+            /// <summary>
+            /// Narrow the board to one preset, from wherever it was pressed.
+            ///
+            /// It writes into the dropdown rather than into a second variable, so there is one
+            /// place that holds what the board is showing and everything that sets it goes through
+            /// there. Pressing the figure that is already in force clears it, because a control
+            /// that only turns on is a control somebody has to find the off switch for.
+            /// </summary>
+            /// <param name="preset">One of the four, or <see cref="All"/> to clear.</param>
+            private void Narrow(string preset)
+            {
+                _preset.SelectedItem = Showing() == preset ? All : preset;
             }
 
             /// <summary>Which groups the preset and the search box leave.</summary>
@@ -951,17 +1054,21 @@ namespace CamelWorks.UI.Views
 
                 var groups = Filtered();
 
+                // A local, because the lambda below outlives this method and the compiler resets
+                // what it knows about a nullable field at that boundary.
+                var total = _board.Groups.Count;
+
+                // Before the empty case, not after it. "Nothing matches" is exactly the moment
+                // somebody needs to be told what the filter is and offered the way out of it.
+                State(groups.Count, total);
+
                 if (groups.Count == 0)
                 {
                     _rows.Children.Add(Ui.Empty("Nothing matches.",
-                        "The board has " + Ui.Count(_board.Groups.Count, "group")
+                        "The board has " + Ui.Count(total, "group")
                         + "; none of them match this filter."));
                     return;
                 }
-
-                if (groups.Count < _board.Groups.Count)
-                    _rows.Children.Add(Ui.Line("Showing " + groups.Count + " of "
-                                               + _board.Groups.Count + " groups.", 0.6));
 
                 var rows = groups.Select(g => new TableRow(g,
                     g.Name,
@@ -980,8 +1087,13 @@ namespace CamelWorks.UI.Views
                     .OnPick(item =>
                     {
                         _detail.Children.Clear();
+
                         if (item is ClashGroup group && _session != null)
                             _detail.Children.Add(Detail(_session, group));
+
+                        // The detail pane is where the board gets edited, so coming back to the
+                        // list is the moment to re-ask whether the figures still hold.
+                        State(groups.Count, total);
                     }));
             }
 

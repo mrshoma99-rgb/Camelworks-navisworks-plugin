@@ -452,6 +452,53 @@ namespace CamelWorks.UI.Views
             return panel;
         }
 
+        /// <summary>
+        /// A figure that is also the control for it.
+        ///
+        /// A board that prints "12 new" over a list, and separately offers a dropdown with "New"
+        /// in it, has said the same thing twice and made the reader work out that the two are
+        /// connected. The number somebody is looking at when they decide to narrow the list is the
+        /// number they should be able to press.
+        /// </summary>
+        /// <param name="value">The number.</param>
+        /// <param name="label">What it counts.</param>
+        /// <param name="tone">How it reads.</param>
+        /// <param name="onClick">What pressing it does.</param>
+        /// <param name="active">Whether the board is already narrowed to this one.</param>
+        public static UIElement Figure(string value, string label, Tone tone, Action onClick,
+                                       bool active = false)
+        {
+            if (onClick == null) throw new ArgumentNullException(nameof(onClick));
+
+            var frame = new Border
+            {
+                Child = Figure(value, label, tone),
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(8, 4, 2, 0),
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(active ? 1 : 0),
+            };
+
+            if (active)
+            {
+                frame.Tint(Border.BackgroundProperty, "Card2");
+                frame.Tint(Border.BorderBrushProperty, "BdStrong");
+            }
+
+            frame.MouseLeftButtonUp += (s, e) => onClick();
+
+            // Hover only when it is not already the one showing: a lit control that lights further
+            // on hover reads as two states of the same thing rather than one state and a hint.
+            if (!active)
+            {
+                frame.MouseEnter += (s, e) => frame.Tint(Border.BackgroundProperty, "Card2");
+                frame.MouseLeave += (s, e) => frame.Background = Brushes.Transparent;
+            }
+
+            return frame;
+        }
+
         /// <summary>A small labelled pill, for status and counts.</summary>
         /// <param name="text">What it says.</param>
         /// <param name="tone">How it reads.</param>
