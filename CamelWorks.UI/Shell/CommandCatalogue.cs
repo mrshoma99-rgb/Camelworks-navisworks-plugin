@@ -61,7 +61,7 @@ namespace CamelWorks.UI.Shell
     /// </summary>
     public static class CommandCatalogue
     {
-        /// <summary>All thirty-seven, in ribbon order.</summary>
+        /// <summary>All thirty-nine, in ribbon order.</summary>
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
             // Panel - Project
@@ -250,13 +250,24 @@ namespace CamelWorks.UI.Shell
                 new[] { "I cannot see inside", "turning sectioning off loses my box" }),
 
             // Panel - Deliver
-            Cmd("ID_CW_Export", "Export", "export",
-                "Geometry as a file a browser opens, the properties as a spreadsheet, or "
-                + "the plan as a drawing.",
-                new[] { "gltf", "glb", "csv", "xlsx", "dxf", "web viewer", "3d",
-                        "share the model", "drawing" },
+            Cmd("ID_CW_ExportGlb", "Export GLB", "exportglb",
+                "The geometry as one file a browser opens, with nothing installed and no "
+                + "licence at the other end.",
+                new[] { "gltf", "glb", "web viewer", "3d", "share the model", "geometry" },
                 new[] { "put this on the web", "send them the geometry",
-                        "they cannot open an nwd", "they want a DWG" }),
+                        "they cannot open an nwd" }),
+
+            Cmd("ID_CW_ExportData", "Export Data", "exportsheet",
+                "The properties you name, as a spreadsheet or a CSV, one row per element.",
+                new[] { "csv", "xlsx", "spreadsheet", "excel", "properties", "schedule" },
+                new[] { "they want it in Excel", "send them the properties",
+                        "I need this as a schedule" }),
+
+            Cmd("ID_CW_ExportDrawing", "Export Drawing", "exportdxf",
+                "The geometry as a DXF every CAD package opens, one layer per discipline.",
+                new[] { "dxf", "dwg", "autocad", "drawing", "cad", "2d" },
+                new[] { "they want a DWG", "send it to the CAD team",
+                        "they do not have Navisworks" }),
 
             Cmd("ID_CW_ExportIfc", "Export IFC", "ifc",
                 "The model as IFC, with the mapping and the classification it should carry.",

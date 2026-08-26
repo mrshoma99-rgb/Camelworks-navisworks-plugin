@@ -359,9 +359,22 @@ namespace CamelWorks.UI.Shell
 
             // ---- Everywhere -----------------------------------------------------------------------
 
-            Of("export", "Export", ToolShape.Menu, Glyph.Onward,
-               "Geometry as a file a browser opens, or the properties as a spreadsheet.",
-               null),
+            // Two buttons, not one menu called Export. Geometry for a browser and properties for a
+            // spreadsheet share a scope picker and nothing else: different inputs, different
+            // output, different person at the other end. Behind one word they were a window whose
+            // first-run experience was not knowing which half to fill in.
+            Of("exportglb", "Export GLB", ToolShape.Window, Glyph.Onward,
+               "The geometry as one file a browser opens, on a phone or a tablet, with nothing "
+               + "installed and no licence at the other end.",
+               "Write the GLB"),
+
+            Of("exportsheet", "Export Data", ToolShape.Window, Glyph.Table,
+               "The properties you name, as a spreadsheet or a CSV, one row per element.",
+               "Write it"),
+
+            Of("exportdxf", "Export Drawing", ToolShape.Window, Glyph.Ruler,
+               "The geometry as a DXF every CAD package opens, one layer per discipline.",
+               "Write the drawing"),
 
             Of("help", "Help", ToolShape.Window, Glyph.Empty,
                "The guide, what this cannot do, the shortcuts, a sample project and the "

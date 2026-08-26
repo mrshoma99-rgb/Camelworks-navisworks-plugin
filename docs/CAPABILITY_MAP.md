@@ -24,7 +24,7 @@ These sixteen had no home in the first cut of the redesign. Two were caught by t
 | 4 | `Clash/Penetrations` + `PenetrationSchedule` | Dropped. Services through structure, as a schedule for the structural engineer. | **Penetrations** — window, Issues panel. |
 | 5 | `Project/ModelManifest` + `ModelIntake` + `TestRecord` | Dropped. What is loaded, at which revision, and restoring placement. | **Models** — window, Project panel. |
 | 6 | `Appearance/AppearanceTransfer` | Dropped. A colour scheme lifted off one model onto another. | Appearance panel toolbar: "Copy appearance from another model…". |
-| 7 | `Report/DxfWriter` | Dropped. The Export split only had GLB/CSV/XLSX. | Export split gains **Drawing (DXF)**. |
+| 7 | `Report/DxfWriter` | Dropped, and the second engine in this map with tests and no caller anywhere in the UI. The Export window only had GLB and CSV/XLSX. | **Export Drawing** — its own window and its own Deliver button. R12 ASCII, one layer per discipline, model or category. Built rather than moved. |
 | 8 | `Project/ActivityLog` | Dropped. What has happened on this project, newest first. | **History** — window, Project panel. |
 | 9 | `Clash/ClashMarkers` + `MarkerMesh` | Dropped. Clash points as geometry you can actually see. | Clash Board toolbar toggle: "Show the clash points". |
 | 10 | `Compare/CompareStamp` | Dropped. Writes what changed onto the elements as properties. | Compare Revisions post-action: "Write the changes onto the elements". |
@@ -122,9 +122,9 @@ surfaces work, not things a coordinator opens.
 ### Deliver & Site
 | Engine | Surface |
 |---|---|
-| `GltfWriter` | Export → Geometry (GLB) |
-| `XlsxWriter`, `DataReport` | Export → Properties (CSV / XLSX) |
-| `DxfWriter` | Export → **Drawing (DXF)** (new) |
+| `GltfWriter` | Export GLB |
+| `XlsxWriter`, `DataReport` | Export Data (CSV / XLSX) |
+| `DxfWriter` | Export Drawing (DXF) |
 | `Extract`, `ExtractShare` | Extract |
 | `Compilation`, `CompileJob`, `SourceFile` | Compile |
 | `Dimensions`, `DimensionRow`, `Separation`, `SpacingRun`, `FieldElement` | Dimensions |

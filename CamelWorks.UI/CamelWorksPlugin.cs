@@ -82,8 +82,12 @@ namespace CamelWorks.UI
         DisplayName = "Viewpoints", ToolTip = "Rename, renumber, re-folder and re-camera, in bulk")]
     [Command("ID_CW_SectionBox", Icon = "Resources\\SectionBox_16.png", LargeIcon = "Resources\\SectionBox_32.png",
         DisplayName = "Section Box", ToolTip = "Box the selection, or switch sectioning off")]
-    [Command("ID_CW_Export", Icon = "Resources\\Export_16.png", LargeIcon = "Resources\\Export_32.png",
-        DisplayName = "Export", ToolTip = "Geometry as GLB, properties as a sheet, plan as DXF")]
+    [Command("ID_CW_ExportGlb", Icon = "Resources\\ExportGlb_16.png", LargeIcon = "Resources\\ExportGlb_32.png",
+        DisplayName = "Export GLB", ToolTip = "The geometry as one file a browser opens")]
+    [Command("ID_CW_ExportData", Icon = "Resources\\ExportData_16.png", LargeIcon = "Resources\\ExportData_32.png",
+        DisplayName = "Export Data", ToolTip = "The properties you name, as a spreadsheet or a CSV")]
+    [Command("ID_CW_ExportDrawing", Icon = "Resources\\ExportDrawing_16.png", LargeIcon = "Resources\\ExportDrawing_32.png",
+        DisplayName = "Export Drawing", ToolTip = "A DXF every CAD package opens, one layer per discipline")]
     [Command("ID_CW_ExportIfc", Icon = "Resources\\ExportIfc_16.png", LargeIcon = "Resources\\ExportIfc_32.png",
         DisplayName = "Export IFC", ToolTip = "IFC4 or 2x3, with mapping and classification")]
     [Command("ID_CW_Extract", Icon = "Resources\\Extract_16.png", LargeIcon = "Resources\\Extract_32.png",

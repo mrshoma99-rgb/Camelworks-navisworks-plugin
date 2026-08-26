@@ -69,7 +69,6 @@ LOOSE = {
     "Review":     "Coordinate",
     "Baseline":   "Compare",
     "SectionBox": "Sets &amp; Views",
-    "Export":     "Project",
     "ExportIfc":  "Project",
     "Help":       "Home",
 }
@@ -105,7 +104,9 @@ ICONS = {
     "Appearance":      "palette",
     "Viewpoints":      "photo_camera",
     "SectionBox":      "crop_free",
-    "Export":          "download",
+    "ExportGlb":       "view_in_ar",
+    "ExportData":      "table_view",
+    "ExportDrawing":   "architecture",
     "ExportIfc":       "upload_file",
     "Extract":         "content_cut",
     "Compile":         "library_add",

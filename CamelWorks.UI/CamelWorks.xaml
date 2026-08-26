@@ -170,15 +170,22 @@
     <!-- Panel 7 - Deliver. The model going somewhere else. -->
     <RibbonPanel x:Uid="RibbonPanel_CW_Deliver">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Deliver" Title="Deliver">
-        <local:NWRibbonButton x:Uid="CW_Export" Id="ID_CW_Export"
+        <local:NWRibbonButton x:Uid="CW_ExportGlb" Id="ID_CW_ExportGlb"
                               Size="Large" ShowText="True" Orientation="Vertical" />
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Deliver">
-          <local:NWRibbonButton x:Uid="CW_ExportIfc" Id="ID_CW_ExportIfc"
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Deliver_1">
+          <local:NWRibbonButton x:Uid="CW_ExportData" Id="ID_CW_ExportData"
                                 Size="Standard" ShowText="True" Orientation="Horizontal" />
           <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_1" />
-          <local:NWRibbonButton x:Uid="CW_Extract" Id="ID_CW_Extract"
+          <local:NWRibbonButton x:Uid="CW_ExportDrawing" Id="ID_CW_ExportDrawing"
                                 Size="Standard" ShowText="True" Orientation="Horizontal" />
           <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_2" />
+          <local:NWRibbonButton x:Uid="CW_ExportIfc" Id="ID_CW_ExportIfc"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Deliver_2">
+          <local:NWRibbonButton x:Uid="CW_Extract" Id="ID_CW_Extract"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_3" />
           <local:NWRibbonButton x:Uid="CW_Compile" Id="ID_CW_Compile"
                                 Size="Standard" ShowText="True" Orientation="Horizontal" />
         </RibbonRowPanel>

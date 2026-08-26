@@ -63,7 +63,9 @@ namespace CamelWorks.UI.Views
                 case "history": return HistoryWindow.Show();
                 case "wbs": return BreakdownWindow.Show();
                 case "help": return HelpWindow.Show();
-                case "export": return ExportWindow.Show();
+                case "exportglb": return ExportWindow.Show("glb");
+                case "exportsheet": return ExportWindow.Show("sheet");
+                case "exportdxf": return ExportWindow.Show("dxf");
 
                 // Five field tools, five windows. They share one read of the selection and its
                 // geometry, which is the expensive part - see SiteWindow.
