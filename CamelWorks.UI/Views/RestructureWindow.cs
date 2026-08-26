@@ -455,8 +455,12 @@ namespace CamelWorks.UI.Views
                                               c.After.ToString("N0", CultureInfo.InvariantCulture)))
                     .ToList();
 
-                _moved.Children.Add(Ui.Table(rows,
-                    ("Set", 300), ("Change", 90), ("Was", 80), ("Now", 80)));
+                var moved = Ui.Table(rows,
+                    ("Set", 300), ("Change", 90), ("Was", 80), ("Now", 80));
+
+                _moved.Children.Add(Ui.Picking(moved,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(moved, picked), say, "set"))));
 
                 if (delta.Changes.Count > rows.Count)
                     _moved.Children.Add(Ui.Line(
@@ -531,8 +535,12 @@ namespace CamelWorks.UI.Views
                                           outcome.IsLive ? "live search" : "fixed list"));
                 }
 
-                into.Children.Add(Ui.Table(rows,
-                    ("Set", 300), ("Read", 80), ("Search finds", 100), ("As", 110)));
+                var costed = Ui.Table(rows,
+                    ("Set", 300), ("Read", 80), ("Search finds", 100), ("As", 110));
+
+                into.Children.Add(Ui.Picking(costed,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(costed, picked), say, "set"))));
 
                 if (empty > 0)
                     into.Children.Add(Ui.Note(Ui.Count(empty, "set")

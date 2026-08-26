@@ -1,12 +1,9 @@
 # Tables with no picking bar, per file. A ratchet: these numbers may fall, never rise.
 # Wrap a table in Ui.Picking, then run checks/validate-table-picking.py --record.
 
-CamelWorks.UI/Views/BatchViews.cs 2
-CamelWorks.UI/Views/ClashExportWindow.cs 2
-CamelWorks.UI/Views/CompareViews.cs 2
+CamelWorks.UI/Views/BatchViews.cs 1
+CamelWorks.UI/Views/CompareViews.cs 1
 CamelWorks.UI/Views/CoordinateViews.cs 4
-CamelWorks.UI/Views/ReportBuilderWindow.cs 2
-CamelWorks.UI/Views/RestructureWindow.cs 2
-CamelWorks.UI/Views/ScheduleWindow.cs 2
-CamelWorks.UI/Views/SetsViews.cs 3
-CamelWorks.UI/Views/SiteWindow.cs 2
+CamelWorks.UI/Views/ReportBuilderWindow.cs 1
+CamelWorks.UI/Views/SetsViews.cs 2
+CamelWorks.UI/Views/SiteWindow.cs 1

@@ -1340,7 +1340,11 @@ namespace CamelWorks.UI.Views
                                 .Select(v => new TableRow(v, v.Name))
                                 .ToList();
 
-                            into.Children.Add(Ui.Table(rows, ("It would be called", 0)));
+                            var named = Ui.Table(rows, ("It would be called", 0));
+
+                            into.Children.Add(Ui.Picking(named,
+                                new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(named, picked), say, "viewpoint"))));
                         }
 
                         return run.Views.Count;

@@ -1046,11 +1046,17 @@ namespace CamelWorks.UI.Views
                     Ui.Quiet("Write the list", () => WritePaper(report))));
 
                 if (report.EmptyFolders.Count > 0)
+                {
+                    var empty = Ui.Table(report.EmptyFolders.Take(Shown)
+                                             .Select(f => new TableRow(f, f)).ToList(),
+                                         ("Folder", 0));
+
                     _paper.Children.Add(Ui.Section("Folders that are there and empty",
                         Ui.Count(report.EmptyFolders.Count, "folder"), false,
-                        Ui.Table(report.EmptyFolders.Take(Shown)
-                                     .Select(f => new TableRow(f, f)).ToList(),
-                                 ("Folder", 0))));
+                        Ui.Picking(empty,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(empty, picked), say, "folder")))));
+                }
             }
 
             private void WritePaper(AttachmentReport report)

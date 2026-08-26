@@ -406,8 +406,12 @@ namespace CamelWorks.UI.Views
                                               t.Groups.ToString("N0", CultureInfo.InvariantCulture)))
                     .ToList();
 
-                into.Children.Add(Ui.Table(rows,
-                    ("Test", 280), ("As", 100), ("Results", 90), ("Folders", 80)));
+                var going = Ui.Table(rows,
+                    ("Test", 280), ("As", 100), ("Results", 90), ("Folders", 80));
+
+                into.Children.Add(Ui.Picking(going,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(going, picked), say, "test"))));
 
                 return picked.Items.Count;
             }
@@ -513,8 +517,12 @@ namespace CamelWorks.UI.Views
                                               Counted(t, FindingStatus.Resolved)))
                     .ToList();
 
-                _back.Children.Add(Ui.Table(rows,
-                    ("Test", 280), ("As", 100), ("Results", 90), ("Resolved", 90)));
+                var came = Ui.Table(rows,
+                    ("Test", 280), ("As", 100), ("Results", 90), ("Resolved", 90));
+
+                _back.Children.Add(Ui.Picking(came,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(came, picked), say, "test"))));
 
                 // Read, not applied. Carrying a reviewer's statuses onto the board is the board's
                 // decision to make, on the board, where the before and after are both visible.

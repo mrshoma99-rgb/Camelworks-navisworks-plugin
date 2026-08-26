@@ -322,17 +322,23 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Line("Nothing differs. Every element that could be paired "
                                              + "was paired, and matched exactly.", 0.85));
 
+            var paired = Ui.Table(result.Models.Select(m => new TableRow(m,
+                    m.Title,
+                    ComparePolicy.Count(m.Added),
+                    ComparePolicy.Count(m.Removed),
+                    ComparePolicy.Count(m.Moved),
+                    ComparePolicy.Count(m.Changed),
+                    ModelPairing.Show(m.Strength) + " — " + m.Reason)),
+                ("Model", 150), ("Added", 60), ("Removed", 70), ("Moved", 60),
+                ("Changed", 70), ("Paired on", 0));
+
+            // Added, removed, moved and changed per model is the summary somebody is asked for by
+            // name after every revision, and it went out as a screenshot.
             results.Children.Add(Ui.Card("Which model was held to be which",
                 result.Pairing.Explain(),
-                Ui.Table(result.Models.Select(m => new TableRow(m,
-                        m.Title,
-                        ComparePolicy.Count(m.Added),
-                        ComparePolicy.Count(m.Removed),
-                        ComparePolicy.Count(m.Moved),
-                        ComparePolicy.Count(m.Changed),
-                        ModelPairing.Show(m.Strength) + " — " + m.Reason)),
-                    ("Model", 150), ("Added", 60), ("Removed", 70), ("Moved", 60),
-                    ("Changed", 70), ("Paired on", 0))));
+                Ui.Picking(paired,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(paired, picked), say, "model")))));
 
             foreach (var note in result.Notes) results.Children.Add(Ui.Note(note));
 

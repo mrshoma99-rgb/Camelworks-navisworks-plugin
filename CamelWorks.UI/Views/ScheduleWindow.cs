@@ -200,7 +200,11 @@ namespace CamelWorks.UI.Views
                                               Ui.Count(s.Conditions, "condition")))
                     .ToList();
 
-                _plan.Children.Add(Ui.Table(rows, ("Set", 260), ("Folder", 160), ("From", 120)));
+                var listed = Ui.Table(rows, ("Set", 260), ("Folder", 160), ("From", 120));
+
+                _plan.Children.Add(Ui.Picking(listed,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(listed, picked), say, "set"))));
             }
 
             private UIElement Make()
@@ -247,7 +251,11 @@ namespace CamelWorks.UI.Views
                                           outcome.IsLive ? "live search" : "fixed list"));
                 }
 
-                into.Children.Add(Ui.Table(rows, ("Set", 260), ("Would hold", 110), ("As", 120)));
+                var costed = Ui.Table(rows, ("Set", 260), ("Would hold", 110), ("As", 120));
+
+                into.Children.Add(Ui.Picking(costed,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(costed, picked), say, "set"))));
 
                 if (empty > 0)
                     into.Children.Add(Ui.Note(Ui.Count(empty, "set")
