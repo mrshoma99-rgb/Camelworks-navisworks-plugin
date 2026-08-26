@@ -1534,16 +1534,21 @@ namespace CamelWorks.UI.Views
 
             while (at < steps.Count - 1 && steps[at].Ready != null && steps[at].Ready!() == null) at++;
 
-            var rail = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
+            // The spine: every step down the left, where a surface's setup column would be, with
+            // its state visible — the shape of the whole job before the first decision is taken.
+            // The current step's surface takes the stage, and the way forward sits at the spine's
+            // foot, in the same place a tool's one action always is.
+            var spine = new StackPanel();
             var body = new ContentControl();
             var why = Small(string.Empty);
+            why.TextWrapping = TextWrapping.Wrap;
             var back = Quiet("Back", () => { });
             var next = Primary("Next", () => { });
-            var actions = Actions(back, next, why);
+            next.HorizontalAlignment = HorizontalAlignment.Stretch;
 
             void Draw()
             {
-                rail.Children.Clear();
+                spine.Children.Clear();
 
                 for (var i = 0; i < steps.Count; i++)
                 {
@@ -1556,7 +1561,7 @@ namespace CamelWorks.UI.Views
                         Width = 22,
                         Height = 22,
                         CornerRadius = new CornerRadius(11),
-                        Margin = new Thickness(i == 0 ? 0 : 8, 0, 7, 0),
+                        Margin = new Thickness(0, 0, 8, 0),
                         VerticalAlignment = VerticalAlignment.Center,
                         Child = new TextBlock
                         {
@@ -1576,10 +1581,19 @@ namespace CamelWorks.UI.Views
                     {
                         Text = steps[here].Title,
                         VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
                         FontWeight = now ? FontWeights.SemiBold : FontWeights.Normal,
                     };
 
                     if (!now) label.Wearing("Hint");
+
+                    var row = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Margin = new Thickness(0, 4, 0, 4),
+                    };
+
+                    row.Children.Add(pip);
 
                     // A step already finished can be gone back to; one not reached yet cannot be
                     // jumped to, because the step after it is built out of the answer to this one.
@@ -1589,15 +1603,14 @@ namespace CamelWorks.UI.Views
 
                         jump.Wearing("LinkBtn");
                         jump.Click += (s, e) => { at = here; Draw(); };
-
-                        rail.Children.Add(pip);
-                        rail.Children.Add(jump);
+                        row.Children.Add(jump);
                     }
                     else
                     {
-                        rail.Children.Add(pip);
-                        rail.Children.Add(label);
+                        row.Children.Add(label);
                     }
+
+                    spine.Children.Add(row);
                 }
 
                 // Detached before the next one goes in. A step's surface usually holds panels the
@@ -1630,7 +1643,7 @@ namespace CamelWorks.UI.Views
 
             Draw();
 
-            return Stack(rail, body, Rule(), actions);
+            return Bench.Surface(spine, Stack(next, back, why), body, setupWidth: 224);
         }
 
         /// <summary>

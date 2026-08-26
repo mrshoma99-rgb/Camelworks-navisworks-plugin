@@ -33,13 +33,17 @@ namespace CamelWorks.UI.Views
         /// <param name="foot">The one action — usually a <see cref="Ui.Runner"/> panel. May be null while a tool stages its own commit.</param>
         /// <param name="stage">The answer's home. Scrolls on its own.</param>
         /// <param name="setupWidth">Setup column width, or zero for the default.</param>
+        /// <param name="scrollStage">
+        /// False for the one stage that manages its own scrolling — the graph canvas, which needs
+        /// a horizontal bar this wrapper deliberately refuses everything else.
+        /// </param>
         public static UIElement Surface(UIElement? setup, UIElement? foot, UIElement stage,
-                                        double setupWidth = 0)
+                                        double setupWidth = 0, bool scrollStage = true)
         {
             if (stage == null) throw new ArgumentNullException(nameof(stage));
 
             return new SurfaceHost(setup, foot, stage,
-                                   setupWidth > 0 ? setupWidth : SetupWidth);
+                                   setupWidth > 0 ? setupWidth : SetupWidth, scrollStage);
         }
 
         /// <summary>
@@ -154,14 +158,17 @@ namespace CamelWorks.UI.Views
             private readonly UIElement? _foot;
             private readonly UIElement _stage;
             private readonly double _setupWidth;
+            private readonly bool _scrollStage;
             private bool? _narrow;
 
-            internal SurfaceHost(UIElement? setup, UIElement? foot, UIElement stage, double setupWidth)
+            internal SurfaceHost(UIElement? setup, UIElement? foot, UIElement stage, double setupWidth,
+                                 bool scrollStage)
             {
                 _setup = setup;
                 _foot = foot;
                 _stage = stage;
                 _setupWidth = setupWidth;
+                _scrollStage = scrollStage;
 
                 SizeChanged += (s, e) => Arrange(e.NewSize.Width);
                 Loaded += (s, e) => Arrange(ActualWidth);
@@ -288,15 +295,17 @@ namespace CamelWorks.UI.Views
 
             private UIElement StageArea()
             {
-                var scroll = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = _stage,
-                    Padding = new Thickness(16, 12, 16, 16),
-                };
+                var content = _scrollStage
+                    ? (UIElement)new ScrollViewer
+                    {
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                        Content = _stage,
+                        Padding = new Thickness(16, 12, 16, 16),
+                    }
+                    : _stage;
 
-                var ground = new Border { Child = scroll };
+                var ground = new Border { Child = content };
                 ground.Tint(Border.BackgroundProperty, "Bg");
                 return ground;
             }

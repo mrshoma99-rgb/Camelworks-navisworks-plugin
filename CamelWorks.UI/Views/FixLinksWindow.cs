@@ -34,7 +34,7 @@ namespace CamelWorks.UI.Views
         private static UIElement Body(Session session)
         {
             var results = Ui.Stack();
-            var folder = Ui.Text(string.Empty, null, 380);
+            var folder = Ui.Text(string.Empty, null, 220);
 
             var broken = Missing(session);
 
@@ -51,12 +51,13 @@ namespace CamelWorks.UI.Views
             foreach (var model in broken)
                 list.Children.Add(Ui.Line(model.DisplayName + " - expected at " + model.SourcePath, 0.8));
 
-            // No heading of its own: the frame carries the tool's name and its purpose.
-            return Ui.Scroll(Ui.Stack(
+            var setup = Ui.Stack(
+                Bench.Group(string.Empty,
+                    Ui.PathField("Look in", folder, PathKind.Folder)));
+
+            var stage = Ui.Stack(
                 head,
                 list,
-                Ui.PathField("Look in", folder, PathKind.Folder),
-                Ui.Across(look),
                 results,
                 Ui.Note("Navisworks offers no way for a plug-in to re-point an existing model at a new "
                         + "path: the document can append, merge and open, and nothing replaces one "
@@ -64,7 +65,9 @@ namespace CamelWorks.UI.Views
                         + "file in adds it alongside the stale one. Remove the stale one in the "
                         + "Selection Tree and save the federation, and the link is fixed properly."),
                 Ui.Note("Everything else in CamelWorks reads what is loaded. Until the stale model is "
-                        + "out of the federation, the board and every report include it.")));
+                        + "out of the federation, the board and every report include it."));
+
+            return Bench.Surface(setup, look, stage);
         }
 
         /// <summary>The loaded models whose source file is not where the federation says it is.</summary>

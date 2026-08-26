@@ -37,18 +37,20 @@ namespace CamelWorks.UI.Views
 
             var loaded = session.Model.Models;
 
-            var summary = loaded.Count == 0
-                ? (UIElement)Ui.Empty("Nothing is loaded.",
-                       "Append a model and the register can say what it is and where it came from.")
-                : Ui.Line(Ui.Count(loaded.Count, "model") + " loaded. Take a manifest to record "
-                          + "what they are right now, and to see what has changed since the last one.", 0.8);
-
-            return Ui.Stack(
-                summary,
-                Ui.Runner("Take a manifest", results, job => Take(session, results, job)),
-                Ui.Small("The manifest is kept with the project, so next week's answer to \"which "
-                         + "revision was that against?\" is a record rather than a memory."),
+            var stage = Ui.Stack(
+                loaded.Count == 0
+                    ? (UIElement)Ui.Empty("Nothing is loaded.",
+                          "Append a model and the register can say what it is and where it came from.")
+                    : Bench.Ready(Ui.Count(loaded.Count, "model") + " loaded. Take a manifest to "
+                          + "record what they are right now, and to see what has changed since "
+                          + "the last one.",
+                          "The manifest is kept with the project, so next week's answer to \"which "
+                          + "revision was that against?\" is a record rather than a memory."),
                 results);
+
+            return Bench.Surface(null,
+                Ui.Runner("Take a manifest", results, job => Take(session, results, job)),
+                stage);
         }
 
         /// <summary>The picked register rows, as columns somebody can paste.</summary>

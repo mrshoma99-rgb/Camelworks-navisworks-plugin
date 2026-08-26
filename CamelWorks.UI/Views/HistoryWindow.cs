@@ -29,11 +29,11 @@ namespace CamelWorks.UI.Views
             var entries = session.Store.Activity.Entries.ToList();
 
             if (entries.Count == 0)
-                return Ui.Stack(
+                return Bench.Surface(null, null, Ui.Stack(
                     Ui.Empty("Nothing has happened on this project yet.",
                              "CamelWorks writes a line here every time it changes the model, "
                              + "produces a report or runs the rules - so a project handed over "
-                             + "mid-job can say what was done to it."));
+                             + "mid-job can say what was done to it.")));
 
             var rows = entries
                 .Select(e => new TableRow(e,
@@ -52,12 +52,12 @@ namespace CamelWorks.UI.Views
             var picking = Ui.Picking(table,
                 new Ui.OnPicked("Copy {n}", (picked, say) => Copy(session, picked, say), primary: true));
 
-            return Ui.Stack(
+            return Bench.Surface(null, null, Ui.Stack(
                 Ui.Sub(Ui.Count(entries.Count, "entry") + ", newest first."),
                 picking,
                 Ui.Quiet("Copy the whole log",
                          () => Copy(session, entries.Cast<object>().ToList(), said)),
-                said);
+                said));
         }
 
         /// <summary>The picked entries, as lines somebody can paste into the argument.</summary>

@@ -18,7 +18,7 @@ namespace CamelWorks.UI.Views
             var session = Host.Current;
 
             if (session == null)
-                return Ui.Scroll(Ui.Stack(Ui.Heading("Jobs"), Ui.Sub(Host.NoModel)));
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
             var log = Ui.Stack();
             var graphs = Saved(session);
@@ -30,7 +30,8 @@ namespace CamelWorks.UI.Views
             {
                 body.Children.Add(Ui.Empty("No jobs saved on this project.",
                     "A job is a graph and the settings it runs with. Build one on the Automate canvas and "
-                    + "press Save job; it goes in the project file, so whoever opens the model next has it too."));
+                    + "press Save job — or make one from what is open, on the left. It goes in the project "
+                    + "file, so whoever opens the model next has it too."));
             }
             else
             {
@@ -41,27 +42,6 @@ namespace CamelWorks.UI.Views
 
                 body.Children.Add(Ui.Table(rows, ("Job", 170), ("Size", 90), ("What it does", 0))
                     .OnPick(item => picked = item as Graph));
-
-                body.Children.Add(Ui.Runner("Run the selected job", log, job =>
-                {
-                    if (picked == null)
-                    {
-                        log.Children.Add(Ui.Line("Pick a job first.", 0.8));
-                        return;
-                    }
-
-                    var result = GraphRunner.Run(picked, new NavGraphHost(session), job.Say);
-
-                    log.Children.Add(Ui.Line(picked.Name + " — " + result, 1, true));
-
-                    foreach (var problem in result.Problems) log.Children.Add(Ui.Problem(problem));
-
-                    foreach (var step in result.Steps)
-                        log.Children.Add(Ui.Line((step.Ran ? "ran  " : "skip ") + step.Title + " — " + step.Outcome,
-                            step.Ran ? 0.85 : 0.6));
-
-                    session.Record(ActivityKind.Job, "ran \"" + picked.Name + "\": " + result);
-                }));
 
                 // A list of jobs that can only be run is a list nobody can maintain: a graph saved
                 // by mistake, or superseded three weeks ago, had no way off this panel.
@@ -108,16 +88,35 @@ namespace CamelWorks.UI.Views
                         string.IsNullOrEmpty(e.Detail) ? e.Summary : e.Summary + " — " + e.Detail,
                         ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList());
 
-            // The jobs are what the tab is, so they are not in a box named after the tab. History
-            // keeps its card: it is the result, and the result is what earns one.
-            return Ui.Scroll(Ui.Stack(
+            var run = Ui.Runner("Run the selected job", log, job =>
+            {
+                if (picked == null)
+                {
+                    log.Children.Add(Ui.Line("Pick a job first.", 0.8));
+                    return;
+                }
+
+                var result = GraphRunner.Run(picked, new NavGraphHost(session), job.Say);
+
+                log.Children.Add(Ui.Line(picked.Name + " — " + result, 1, true));
+
+                foreach (var problem in result.Problems) log.Children.Add(Ui.Problem(problem));
+
+                foreach (var step in result.Steps)
+                    log.Children.Add(Ui.Line((step.Ran ? "ran  " : "skip ") + step.Title + " — " + step.Outcome,
+                        step.Ran ? 0.85 : 0.6));
+
+                session.Record(ActivityKind.Job, "ran \"" + picked.Name + "\": " + result);
+            });
+
+            var stage = Ui.Stack(
                 body,
                 log,
                 Ui.Rule(),
-                FromThisDocument(session),
-                Ui.Rule(),
-                Compile(log),
-                Ui.Marked(Glyphs.Clock, "What has run", null, past)));
+                Ui.Eyebrow("What has run"),
+                past);
+
+            return Bench.Surface(FromThisDocument(session), run, stage);
         }
 
         /// <summary>
@@ -135,31 +134,6 @@ namespace CamelWorks.UI.Views
             return Ui.Picking(table,
                 new Ui.OnPicked("Copy {n}",
                     (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "run")));
-        }
-
-        /// <summary>
-        /// The other kind of batch: not our operations in sequence, but the file the project ships.
-        ///
-        /// Here because it is the same Monday morning. The job above reloads the federation and
-        /// runs the tests; this turns the delivery folder into the NWD everybody else opens, and
-        /// works out which of the three revisions of half the models is the one that goes in.
-        /// </summary>
-        /// <param name="log">Where to say so if the window will not open.</param>
-        private static UIElement Compile(Panel log)
-        {
-            var open = Ui.Button("Compile the models into a deliverable...", () =>
-            {
-                var problem = ToolViews.Open("compile");
-                if (problem != null) log.Children.Add(Ui.Problem(problem));
-            });
-
-            return Ui.Stack(
-                Ui.Eyebrow("The file the project ships"),
-                Ui.Small("Point at the delivery folder and it reads the revision off each name, "
-                         + "drops the superseded ones, and writes one NWD - or one per model. Every "
-                         + "run leaves a log beside what it produced saying what went in, what was "
-                         + "left out and why, and what failed."),
-                Ui.Actions(open));
         }
 
         /// <summary>
@@ -242,12 +216,12 @@ namespace CamelWorks.UI.Views
             if (sources.Count > 6)
                 body.Children.Add(Ui.Line("and " + Ui.Count(sources.Count - 6, "more") + ".", 0.6));
 
-            return Ui.Card("Job from this document",
-                "The Monday morning job, written out from what is already open.",
-                body,
-                Ui.Field("Call it", name),
-                Ui.Across(make),
-                status);
+            return Ui.Stack(
+                Bench.Group("Job from this document",
+                    body,
+                    Ui.Field("Call it", name, "The Monday morning job, from what is open."),
+                    Ui.Across(make),
+                    status));
         }
 
         /// <summary>The four steps, laid out left to right so the canvas reads in run order.</summary>

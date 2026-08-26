@@ -61,7 +61,7 @@ namespace CamelWorks.UI.Views
                 var session = Host.Current;
 
                 if (session == null)
-                    return Ui.Scroll(Ui.Stack(Ui.Heading("Canvas"), Ui.Sub(Host.NoModel)));
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 _canvas.Children.Add(_wires);
 
@@ -71,12 +71,9 @@ namespace CamelWorks.UI.Views
                 Seed();
                 Redraw();
 
-                var root = new Grid();
-                root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                root.Children.Add(Toolbar(session));
+                var stage = new Grid();
+                stage.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                stage.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 var scroller = new ScrollViewer
                 {
@@ -85,8 +82,7 @@ namespace CamelWorks.UI.Views
                     Content = _canvas,
                 };
 
-                Grid.SetRow(scroller, 1);
-                root.Children.Add(scroller);
+                stage.Children.Add(scroller);
 
                 var footer = new ScrollViewer
                 {
@@ -96,35 +92,8 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(10, 4, 10, 8),
                 };
 
-                Grid.SetRow(footer, 2);
-                root.Children.Add(footer);
-
-                return root;
-            }
-
-            // -------------------------------------------------------------------------------
-
-            private UIElement Toolbar(Session session)
-            {
-                var kinds = NodeCatalogue.All.Select(k => k.Group + ": " + k.Title).ToList();
-                var picked = kinds[0];
-
-                var picker = Ui.Choice(kinds, picked, v => picked = v, 230);
-
-                var add = Ui.Button("Add node", () =>
-                {
-                    var kind = NodeCatalogue.All.FirstOrDefault(k => k.Group + ": " + k.Title == picked);
-                    if (kind == null) return;
-
-                    var node = new GraphNode(_graph.NextId(kind.Id), kind.Id)
-                    {
-                        X = 40 + (_graph.Nodes.Count % 5) * (NodeWidth + 40),
-                        Y = 40 + (_graph.Nodes.Count / 5) * 190,
-                    };
-
-                    _graph.Nodes.Add(node);
-                    Redraw();
-                });
+                Grid.SetRow(footer, 1);
+                stage.Children.Add(footer);
 
                 var run = Ui.Runner("Run the graph", _log, job =>
                 {
@@ -139,6 +108,35 @@ namespace CamelWorks.UI.Views
                             step.Ran ? 0.85 : 0.6));
 
                     session.Record(ActivityKind.Job, "ran \"" + _name.Text.Trim() + "\": " + result);
+                });
+
+                return Bench.Surface(Setup(session), run, stage,
+                                     setupWidth: 248, scrollStage: false);
+            }
+
+            // -------------------------------------------------------------------------------
+
+            /// <summary>The setup column: the job's name and store, and the way nodes arrive.</summary>
+            private UIElement Setup(Session session)
+            {
+                var kinds = NodeCatalogue.All.Select(k => k.Group + ": " + k.Title).ToList();
+                var picked = kinds[0];
+
+                var picker = Ui.Choice(kinds, picked, v => picked = v, 210);
+
+                var add = Ui.Button("Add node", () =>
+                {
+                    var kind = NodeCatalogue.All.FirstOrDefault(k => k.Group + ": " + k.Title == picked);
+                    if (kind == null) return;
+
+                    var node = new GraphNode(_graph.NextId(kind.Id), kind.Id)
+                    {
+                        X = 40 + (_graph.Nodes.Count % 5) * (NodeWidth + 40),
+                        Y = 40 + (_graph.Nodes.Count / 5) * 190,
+                    };
+
+                    _graph.Nodes.Add(node);
+                    Redraw();
                 });
 
                 var save = Ui.Button("Save job", () =>
@@ -198,12 +196,14 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 });
 
-                var bar = Ui.Stack(
-                    Ui.Across(_name, picker, add, run, save, load, clear),
+                return Ui.Stack(
+                    Bench.Group("Job",
+                        Ui.Field("Name", _name),
+                        Ui.Across(save, load)),
+                    Bench.Group("Nodes",
+                        picker,
+                        Ui.Across(add, clear)),
                     _hint);
-
-                bar.Margin = new Thickness(10, 8, 10, 4);
-                return bar;
             }
 
             private void Seed()
