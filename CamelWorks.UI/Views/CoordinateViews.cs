@@ -1857,7 +1857,74 @@ namespace CamelWorks.UI.Views
                 Ui.Picking(table,
                     new Ui.OnPicked("Select {n} in the model",
                                     (picked, say) => Reveal(session, picked, say),
-                                    primary: true)));
+                                    primary: true),
+                    new Ui.OnPicked("Attach {n} to an issue...",
+                                    (picked, say) => AttachTo(session, group, picked, say))));
+        }
+
+        /// <summary>
+        /// Put the picked results on an issue somebody raised.
+        ///
+        /// The engine never decides that eleven conflicts are one conversation - so an issue is
+        /// raised by hand, and this is how the conflicts it is about get onto it. A riser in the
+        /// wrong place produces nine results; the thing to send is "this riser is wrong, here are
+        /// the nine", not nine items with the same sentence retyped on each.
+        ///
+        /// It attaches to the most recently raised open issue rather than asking which. There is
+        /// no picker because the sequence people actually follow is raise it, then go and collect
+        /// what it covers - and a dropdown of every issue ever raised, at the moment somebody has
+        /// just written one, is a question with an obvious answer.
+        /// </summary>
+        private static void AttachTo(Session session, ClashGroup group,
+                                     IReadOnlyList<object> picked, Panel say)
+        {
+            say.Children.Clear();
+
+            var items = picked.OfType<ClashItem>().ToList();
+
+            if (items.Count == 0) items = group.Items.ToList();
+
+            var issues = Issues(session);
+
+            var open = issues.Issues
+                .Where(i => i.Status != FindingStatus.Resolved)
+                .OrderByDescending(i => i.RaisedTicks)
+                .ToList();
+
+            if (open.Count == 0)
+            {
+                say.Children.Add(Ui.Note("There is no open issue to attach these to. Raise one below "
+                    + "- an issue is a sentence somebody wrote, so it has to be written before "
+                    + "anything can belong to it."));
+
+                return;
+            }
+
+            var issue = open[0];
+            var attached = issues.Attach(issue, items.Select(i => i.Key));
+
+            SaveIssues(session, issues);
+
+            if (!session.Store.Save())
+            {
+                say.Children.Add(Ui.Problem(session.Store.LastSaveProblem
+                                            ?? "Could not write the project file."));
+                return;
+            }
+
+            session.Record(ActivityKind.Regroup,
+                "attached " + Ui.Count(attached, "result") + " to \"" + issue.Title + "\"");
+
+            say.Children.Add(Ui.Done(attached == 0
+                ? "\"" + issue.Title + "\" already held " + (items.Count == 1 ? "that one" : "all of those")
+                  + ". It holds " + Ui.Count(issue.Attached.Count, "result") + " altogether."
+                : Ui.Count(attached, "result") + " now belong to \"" + issue.Title + "\", which holds "
+                  + Ui.Count(issue.Attached.Count, "result") + " altogether."));
+
+            if (open.Count > 1)
+                say.Children.Add(Ui.Note("That is the most recently raised open issue, of "
+                    + Ui.Count(open.Count, "open issue") + ". A result belongs to one issue at a "
+                    + "time, so attaching it here took it off whichever had it."));
         }
 
         /// <summary>
@@ -2037,6 +2104,45 @@ namespace CamelWorks.UI.Views
                 Redraw(session);
             }
 
+            /// <summary>
+            /// Take every clash off an issue, without touching the issue.
+            ///
+            /// The way back from an attachment made in a hurry. Deleting the issue would work and
+            /// would also throw away the sentence somebody wrote, which is the half that cost
+            /// them something.
+            /// </summary>
+            /// <param name="session">The session.</param>
+            /// <param name="issue">The issue to empty, or null when nothing is picked.</param>
+            private void Release(Session session, ManualIssue? issue)
+            {
+                _status.Children.Clear();
+
+                if (issue == null)
+                {
+                    _status.Children.Add(Ui.Note("Pick an issue in the list first."));
+                    return;
+                }
+
+                if (issue.Attached.Count == 0)
+                {
+                    _status.Children.Add(Ui.Note("\"" + issue.Title + "\" holds no clashes."));
+                    return;
+                }
+
+                var issues = Issues(session);
+                var held = issues.Find(issue.Id);
+                var gone = issues.Detach(held?.Attached.ToList());
+
+                SaveIssues(session, issues);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Done(Ui.Count(gone, "clash") + " no longer belong to \"" + issue.Title
+                              + "\". The issue is untouched.")
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                Redraw(session);
+            }
+
             /// <summary>What is already raised, and a way to close or delete one.</summary>
             private void Redraw(Session session)
             {
@@ -2061,6 +2167,12 @@ namespace CamelWorks.UI.Views
                     i.Title,
                     i.AssignedTo ?? "unassigned",
                     i.Priority ?? string.Empty,
+                    // What it covers, which is the difference between a note and an issue. Blank
+                    // rather than "0" when it holds nothing: an issue about something the engine
+                    // cannot see is complete on its own, and a zero would read as a gap in it.
+                    i.Attached.Count > 0
+                        ? i.Attached.Count.ToString("N0", CultureInfo.InvariantCulture) + " clashes"
+                        : string.Empty,
                     i.Status.ToString(),
                     i.RaisedTicks > 0
                         ? new DateTime(i.RaisedTicks).ToLocalTime().ToString("d MMM", CultureInfo.InvariantCulture)
@@ -2070,7 +2182,8 @@ namespace CamelWorks.UI.Views
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Status", 90), ("Raised", 70));
+                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Holds", 90),
+                    ("Status", 90), ("Raised", 70));
 
                 ManualIssue? picked = null;
                 table.OnPick(item => picked = item as ManualIssue);
@@ -2090,6 +2203,7 @@ namespace CamelWorks.UI.Views
                         session.View.ZoomTo(keys, 2.0);
                     }),
                     Ui.Button("Close it", () => Close(session, picked)),
+                    Ui.Button("Let go of its clashes", () => Release(session, picked)),
                     Ui.Danger("Delete it", () => Delete(session, picked))));
             }
 
