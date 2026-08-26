@@ -845,7 +845,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Write an IDS of our own...", () =>
             {
-                var problem = IdsWindow.Show();
+                var problem = ToolViews.Open("ids");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 

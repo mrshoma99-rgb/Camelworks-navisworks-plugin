@@ -25,7 +25,7 @@ from xml.etree import ElementTree
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
-EXPECTED_COMMANDS = 39
+EXPECTED_COMMANDS = 22
 EXPECTED_TOOLS = 51
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
@@ -159,42 +159,48 @@ def main():
         if action == "null" and tool_id != "help":
             problems |= fail(f'tool "{tool_id}" is a {shape} with no main action')
 
-    # And every tool that is not a panel must have somewhere to open.
+    # Every tool must sit on exactly one desk, and every benched tool must have a surface.
     #
-    # A tool the registry declares and the dispatch has never heard of opens on "has no screen of
-    # its own yet", which is a sentence no shipped product should be able to say. Sets from a
-    # Schedule was reachable only from a button buried in the Sets panel and had no entry in the
-    # registry at all; adding one made it a tool with no route, and nothing said so.
-    views = read("Views/ToolViews.cs")
-    routed = set(re.findall(r'case "([a-z]+)"', views))
+    # This replaced a check that ToolViews carried a route per tool. Routing goes through the
+    # desks now: a tool the desk registry has never heard of is unreachable from everywhere but
+    # search, and a desk rail row whose tool has no case in Surfaces.cs benches "no surface
+    # here". Help is the one tool on no desk - it is the window that must work when the rest of
+    # the product will not - and Review sits on the Coordination desk but opens its palette.
+    desks_source = read("Shell/Desks.cs")
+    on_desks = re.findall(r'new DeskStage\("[^"]+"(?:, "([a-z]+)")(?:, "([a-z]+)")?(?:, "([a-z]+)")?(?:, "([a-z]+)")?(?:, "([a-z]+)")?\)', desks_source)
+    desk_tools = [t for row in on_desks for t in row if t]
+
+    seen_desk = {}
+    for tool_id in desk_tools:
+        if tool_id in seen_desk:
+            problems |= fail(f'tool "{tool_id}" appears on the desks twice')
+        seen_desk[tool_id] = True
+
+    surfaces = read("Views/Surfaces.cs")
+    benched = set(re.findall(r'case "([a-z]+)"', surfaces))
 
     for tool_id, shape in re.findall(
             r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),', tools_source):
-        if shape in ("Act", "Menu", "Panel"):
+        if tool_id == "help":
             continue
-        if tool_id not in routed:
-            problems |= fail(f'tool "{tool_id}" is a {shape} that ToolViews has no route for')
+        if tool_id not in seen_desk:
+            problems |= fail(f'tool "{tool_id}" is on no desk, so no rail reaches it')
+        if shape in ("Act", "Menu", "Panel") or tool_id == "review":
+            continue
+        if tool_id not in benched:
+            problems |= fail(f'tool "{tool_id}" is a {shape} with no surface in Surfaces.cs')
 
-    # And no two tools may fall through to the same window.
-    #
-    # The check above asks whether a tool has a route. This asks whether its route is its own. Five
-    # tools - weight, dimensions, setting out, paperwork, labels - shared one `return
-    # SiteWindow.Show()`, so five ribbon buttons opened the same window, which is the exact thing
-    # the tabs were removed to stop. Every check passed, because five distinct ids each named a
-    # real tool and each had a route; the routes just happened to be the same one.
-    #
-    # Sharing a window is allowed where the window is told which tool it is for - `Show(tool.Id)`
-    # opens the field tool that was pressed. Sharing one that is not told is the bug.
-    for group in re.finditer(r'((?:\s*case "[a-z]+":\n)+\s*case "[a-z]+": return [^\n]+)', views):
+    # And no two tools may fall through to the same surface, unless the surface is told which
+    # tool it is for. Five field tools share SiteWindow and the three exports share
+    # ExportWindow; both are told, so five rail rows bench five different tools.
+    for group in re.finditer(r'((?:\s*case "[a-z]+":\n)+\s*case "[a-z]+": return [^\n]+)', surfaces):
         block = group.group(1)
         ids = re.findall(r'case "([a-z]+)":', block)
         answer = block[block.index("return"):]
 
-        # Only where the answer opens something. The same file groups tools by how wide they want
-        # to be, and four tools agreeing on 1100 pixels is not four tools sharing a window.
-        if len(ids) > 1 and ".Show(" in answer and "tool.Id" not in answer:
-            problems |= fail(f"{len(ids)} tools ({', '.join(ids)}) all open "
-                             f"{answer.strip().rstrip(';')} - a button per tool, one window "
+        if len(ids) > 1 and "toolid" not in answer.lower() and "what" not in answer.lower():
+            problems |= fail(f"{len(ids)} tools ({', '.join(ids)}) all bench "
+                             f"{answer.strip().rstrip(';')} - a rail row per tool, one surface "
                              f"between them")
 
     # And the main action must be a button that exists.
@@ -236,7 +242,7 @@ def main():
             problems |= fail(f'tool "{tool_id}" promises the action {action} '
                              f"and no Primary, Runner or picked action has that caption")
 
-    named = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
+    named = re.findall(r'Cmd\("(ID_CW_\w+)", "[^"]+", "([a-z]+)"', catalogue_source)
     seen = {}
 
     for cid, tool_id in named:

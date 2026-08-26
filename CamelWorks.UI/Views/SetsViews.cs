@@ -413,7 +413,7 @@ namespace CamelWorks.UI.Views
             {
                 var open = Ui.Button("Rebuild the tree from properties...", () =>
                 {
-                    var problem = RestructureWindow.Show();
+                    var problem = ToolViews.Open("restructure");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
                 });
 
@@ -431,7 +431,7 @@ namespace CamelWorks.UI.Views
             {
                 var open = Ui.Button("Open a schedule from a spreadsheet...", () =>
                 {
-                    var problem = ScheduleWindow.Show();
+                    var problem = ToolViews.Open("schedule");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
                 });
 

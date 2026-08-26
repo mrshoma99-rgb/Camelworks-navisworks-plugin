@@ -32,15 +32,10 @@ namespace CamelWorks.UI.Views
         public const string Extension = ".cwexport";
 
 
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("clashxml"), () => new Editor(session).View, 1080, 740);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            new Editor(session).View;
 
         private sealed class Editor
         {

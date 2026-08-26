@@ -149,7 +149,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Compile the models into a deliverable...", () =>
             {
-                var problem = CompileWindow.Show();
+                var problem = ToolViews.Open("compile");
                 if (problem != null) log.Children.Add(Ui.Problem(problem));
             });
 

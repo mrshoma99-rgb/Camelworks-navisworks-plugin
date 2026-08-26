@@ -26,15 +26,10 @@ namespace CamelWorks.UI.Views
     {
         private const string IntakeKey = "intake";
 
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("models"), () => Body(session), 820, 620);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            Body(session);
 
         private static UIElement Body(Session session)
         {

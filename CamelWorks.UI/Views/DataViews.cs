@@ -206,7 +206,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Take it to site...", () =>
             {
-                var problem = SiteWindow.Show("weight");
+                var problem = ToolViews.Open("weight");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 
@@ -232,7 +232,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Take a piece of the model out...", () =>
             {
-                var problem = ExtractWindow.Show();
+                var problem = ToolViews.Open("extract");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 
@@ -258,7 +258,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Link a spreadsheet to the model...", () =>
             {
-                var problem = DataLinkWindow.Show();
+                var problem = ToolViews.Open("datalink");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 
@@ -285,7 +285,7 @@ namespace CamelWorks.UI.Views
         {
             var open = Ui.Button("Build a report from the model's data...", () =>
             {
-                var problem = ReportBuilderWindow.Show();
+                var problem = ToolViews.Open("report");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 

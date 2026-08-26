@@ -55,15 +55,10 @@ namespace CamelWorks.UI.Views
         private const string Centred = "centred in it";
 
 
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("extract"), () => new Cutter(session).View, 1140, 780);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            new Cutter(session).View;
 
         private sealed class Cutter
         {

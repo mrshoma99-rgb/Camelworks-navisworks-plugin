@@ -58,16 +58,11 @@ namespace CamelWorks.UI.Views
         };
         private const string ByVolume = "the volume of the shapes";
 
-        /// <summary>Show one of the five field tools in its own window.</summary>
-        /// <param name="toolId">Which one: weight, dimensions, setout, paperwork or labels.</param>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show(string toolId)
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find(toolId), () => new Site(session, toolId).View, 1000, 760);
-        }
+        /// <summary>The surface for one of the five field tools, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="toolId">Which of the five.</param>
+        public static System.Windows.UIElement Surface(Session session, string toolId) =>
+            new Site(session, toolId).View;
 
         private sealed class Site
         {

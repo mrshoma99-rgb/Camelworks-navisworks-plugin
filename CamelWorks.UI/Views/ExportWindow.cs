@@ -39,31 +39,11 @@ namespace CamelWorks.UI.Views
         public const int Ceiling = 250_000;
 
 
-        /// <summary>
-        /// Show one export.
-        ///
-        /// One window, one format. It used to be one window with both: a GLB card and a
-        /// spreadsheet card stacked under a shared scope, each with its own inputs and its own
-        /// button. Opening it for the first time, there was no way to tell which half was the one
-        /// you wanted, and the reported experience was exactly that - "you have no idea what to
-        /// fill and what to click".
-        ///
-        /// They are not two views of one job. Geometry for a browser and properties for a
-        /// spreadsheet go to different people for different reasons on different days.
-        /// </summary>
-        /// <param name="what">Which export: <c>glb</c>, <c>dxf</c>, or anything else for properties.</param>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show(string what)
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            var kind = Kind(what);
-
-            return ToolWindow.Show(Tools.Find("export" + kind),
-                                   () => Ui.Scroll(Body(session, kind)),
-                                   640, kind == "sheet" ? 620 : 560);
-        }
+        /// <summary>The surface for one export, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="what">Which export: "glb", "sheet" or "dxf".</param>
+        public static System.Windows.UIElement Surface(Session session, string what) =>
+            Ui.Scroll(Body(session, Kind(what)));
 
         /// <summary>Which of the three, defaulting to the properties rather than throwing.</summary>
         private static string Kind(string what) =>

@@ -2458,7 +2458,7 @@ namespace CamelWorks.UI.Views
                 // wide, and squeezing it in there is what turned it into two dropdowns.
                 var sheet = Ui.Button("Open the matrix from a spreadsheet...", () =>
                 {
-                    var problem = MatrixWindow.Show();
+                    var problem = ToolViews.Open("matrix");
                     if (problem != null) _grid.Children.Add(Ui.Problem(problem));
                 });
 
@@ -3297,7 +3297,7 @@ namespace CamelWorks.UI.Views
             {
                 var open = Ui.Button("Send the board as a clash file...", () =>
                 {
-                    var problem = ClashExportWindow.Show();
+                    var problem = ToolViews.Open("clashxml");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
                 });
 
