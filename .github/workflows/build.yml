@@ -350,3 +350,8 @@ jobs:
 
       - name: Check no new screen folds twice
         run: python3 checks/validate-one-fold.py
+
+      # Added after this exact mistake reached the Windows job: a one-statement if grew a second
+      # statement and a local, and the braces it never needed were still not there.
+      - name: Check no braceless body is a declaration
+        run: python3 checks/validate-braceless-bodies.py
