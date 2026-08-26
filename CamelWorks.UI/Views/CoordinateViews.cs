@@ -2650,6 +2650,10 @@ namespace CamelWorks.UI.Views
         /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
         public static UIElement Report() => new ReportScreen().Build();
 
+        /// <summary>The penetration schedule, as its own tool rather than a template choice.</summary>
+        internal static UIElement PenetrationsReport() =>
+            new ReportScreen("Penetration schedule").Build();
+
         /// <summary>
         /// The report, and who it is for.
         ///
@@ -2709,8 +2713,20 @@ namespace CamelWorks.UI.Views
 
             private string _units;
 
-            internal ReportScreen()
+            /// <summary>
+            /// Which template this screen is fixed to, or null when the user picks.
+            ///
+            /// The penetration schedule is its own ribbon button: a structural engineer asking for
+            /// the list before a pour is not writing a clash report, and a window that answers
+            /// "which of three reports?" first is asking a question they do not have.
+            /// </summary>
+            private readonly string? _locked;
+
+            internal ReportScreen(string? locked = null)
             {
+                _locked = locked;
+                if (locked != null) _mode = locked;
+
                 _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 340);
 
                 _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
@@ -2755,6 +2771,9 @@ namespace CamelWorks.UI.Views
                     what.Text = Explain(m);
                 });
 
+                // Locked: the template is the tool, so the picker is not a choice this window has.
+                var contents = _locked == null ? Ui.Field("Contents", mode) : null;
+
                 var changed = Ui.Check("Only what the last run had not seen", _changedOnly,
                                        v => { _changedOnly = v; _kept.Set("changedOnly", v); });
 
@@ -2775,7 +2794,7 @@ namespace CamelWorks.UI.Views
                     // is the panel repeating the chrome.
                     Ui.Marked(Glyphs.Report, "Write a report", null,
                         Ui.Form(
-                            Ui.Field("Contents", mode),
+                            contents,
                             what,
                             Ui.Pair(Ui.Field("For", audience), Ui.Field("Format", format))),
                         write,

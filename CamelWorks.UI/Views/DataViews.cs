@@ -29,6 +29,68 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
+        /// Write one property across everything in scope.
+        ///
+        /// The same four writers the Data Manager offers - a value you type, a formula, a code
+        /// table, a spreadsheet - plus find and replace, without the property browser above them.
+        /// They were only reachable by opening the Data Manager, choosing a scope, pressing Read
+        /// properties and scrolling past a table of everything the model already carries; somebody
+        /// who knows exactly which property they are setting had to be shown all the others first.
+        ///
+        /// Scope still leads and reading still gates the writers, because a write needs the
+        /// elements it is writing to and the values it would be overwriting. What goes is the
+        /// browse table, which is the Data Manager's job and not this one's.
+        /// </summary>
+        internal static UIElement WriteProperties()
+        {
+            var scope = Selection;
+            var results = Ui.Stack();
+            var editor = Ui.Stack();
+
+            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick => scope = pick);
+
+            var read = Ui.Runner("Read what is there now", results, job =>
+            {
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var keys = new List<ElementKey>();
+
+                var traversal = scope == Selection
+                    ? TraversalScope.CurrentSelection
+                    : TraversalScope.WholeDocument;
+
+                foreach (var item in session.Model.Traverse(traversal))
+                {
+                    if (!job.Step(keys.Count, "elements read")) return;
+                    keys.Add(item.Key);
+                }
+
+                if (keys.Count == 0)
+                {
+                    results.Children.Add(Ui.Empty(
+                        scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        scope == Selection
+                            ? "Select elements in the model, or switch the scope to everything loaded."
+                            : "Append a model first."));
+                    return;
+                }
+
+                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " in scope.", 1, true));
+
+                editor.Children.Clear();
+                editor.Children.Add(Writes(session, keys));
+                editor.Children.Add(Correct(session, keys));
+            });
+
+            return Ui.Scroll(Ui.Stack(
+                Ui.Form(Ui.Field("Write to", picker)),
+                read,
+                results,
+                editor));
+        }
+
+        /// <summary>
         /// Browse and edit properties in one place.
         ///
         /// The scope defaults to the current selection rather than the whole federation, because

@@ -123,6 +123,11 @@ namespace CamelWorks.UI.Shell
                "Save overrides"),
 
 
+            Of("models", "Models", ToolShape.Window, Glyph.Folder,
+               "Every model in the federation: which revision is loaded, where it was brought in "
+               + "from, and whether its placement still matches what it came in as.",
+               "Take a manifest"),
+
             Of("history", "History", ToolShape.Window, Glyph.Clock,
                "What has happened on this project and who did it, newest first, so a question "
                + "about a decision has an answer that is not somebody's memory.",
@@ -185,6 +190,11 @@ namespace CamelWorks.UI.Shell
             // ---- Compare ----------------------------------------------------------------------
 
 
+            Of("penetrations", "Penetrations", ToolShape.Window, Glyph.Report,
+               "The services passing through structure, as the schedule the structural engineer "
+               + "asks for before a pour rather than as a pile of clashes.",
+               "Write the report"),
+
             Of("compare", "Compare", ToolShape.Window, Glyph.Compare,
                "Say what changed between the model in front of you and a baseline - moved, "
                + "resized, added, removed, retyped.",
@@ -240,6 +250,11 @@ namespace CamelWorks.UI.Shell
                "Build a report of model data on a template it proposes from the model itself.",
                "Read the model"),
 
+
+            Of("write", "Write Properties", ToolShape.Window, Glyph.Table,
+               "Put one property onto every element in scope - a value you type, a formula, a code "
+               + "table or a spreadsheet - previewed as a diff before any of it is written.",
+               "Read what is there now"),
 
             Of("wbs", "Work Breakdown", ToolShape.Window, Glyph.Model,
                "Write the selection tree's own shape onto the elements as properties, so a "
