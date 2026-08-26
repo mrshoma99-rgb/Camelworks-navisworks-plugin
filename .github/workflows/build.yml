@@ -335,3 +335,18 @@ jobs:
       # is BIMCamel. The leak is rarely in the code — it comes back through a planning document.
       - name: Check nothing but BIMCamel is named
         run: python3 checks/validate-branding.py
+
+      # The four below were written after a redesign lost sixteen features and only two were
+      # noticed by eye. They had been running locally and nowhere else, which is the same as not
+      # running: a ratchet nobody turns is a number in a text file.
+      - name: Check every engine has a surface in the map
+        run: python3 checks/validate-capability-map.py
+
+      - name: Check every engine has a caller that is not a test
+        run: python3 checks/validate-engines-reached.py
+
+      - name: Check no new table is a table you cannot pick rows in
+        run: python3 checks/validate-table-picking.py
+
+      - name: Check no new screen folds twice
+        run: python3 checks/validate-one-fold.py

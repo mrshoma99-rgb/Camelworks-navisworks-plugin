@@ -7,3 +7,4 @@ staging/
 installer-out/
 payload.zip
 shots/
+__pycache__/

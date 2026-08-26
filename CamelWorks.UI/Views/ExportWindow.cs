@@ -267,9 +267,13 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The model as a DXF every CAD package opens.
         ///
-        /// The third thing people mean by "send them the model", and the one that used to have an
-        /// engine, a test file and nothing in front of it. A structural engineer who wants the
-        /// services in AutoCAD does not want a GLB and cannot use a spreadsheet.
+        /// The third thing people mean by "send them the model". A structural engineer who wants
+        /// the services in AutoCAD does not want a GLB and cannot use a spreadsheet.
+        ///
+        /// Extract can also write a DXF, and that is not this. Extract cuts a named piece of the
+        /// federation out to a recipe - a level, a zone, a room - and needs one before it will do
+        /// anything. This draws what is selected, or everything loaded, with nothing set up
+        /// first. Somebody who has picked forty pipes and wants them in AutoCAD had no way there.
         /// </summary>
         private static UIElement Drawing(Session session, Func<string> scope)
         {

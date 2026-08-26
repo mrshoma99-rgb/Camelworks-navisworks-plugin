@@ -460,7 +460,7 @@ namespace CamelWorks.UI.Shell
             _purpose.Text = purpose;
             _purposeBar.Visibility = purpose.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-            _content.Content = ToolViews.Panel(_tool, Go);
+            _content.Content = LeaseStrip.Over(ToolViews.Panel(_tool, Go));
         }
 
         /// <summary>

@@ -1731,7 +1731,15 @@ namespace CamelWorks.UI.Views
         public static UIElement Info(string message) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx");
 
-        private static UIElement Banner(string message, string glyph, string wash, string edge, string ink)
+        /// <summary>Background worth having, with the one thing you can do about it.</summary>
+        /// <param name="message">The note.</param>
+        /// <param name="caption">What the button says.</param>
+        /// <param name="onClick">What it does.</param>
+        public static UIElement Info(string message, string caption, Action onClick) =>
+            Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx", caption, onClick);
+
+        private static UIElement Banner(string message, string glyph, string wash, string edge,
+                                        string ink, string? caption = null, Action? onClick = null)
         {
             var text = new TextBlock
             {
@@ -1746,8 +1754,32 @@ namespace CamelWorks.UI.Views
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             row.Children.Add(Glyph(glyph, 16, ink, new Thickness(0, 1, 9, 0)));
-            Grid.SetColumn(text, 1);
-            row.Children.Add(text);
+
+            UIElement said = text;
+
+            if (caption != null && onClick != null)
+            {
+                // The button sits beside the sentence rather than under it. A strip is one line
+                // tall and has to stay that way: it is above the screen's own content, and a
+                // banner that grows pushes the work down the page every time it appears.
+                var pair = new Grid { VerticalAlignment = VerticalAlignment.Center };
+
+                pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                pair.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var press = Button(caption, onClick);
+                press.Margin = new Thickness(12, 0, 0, 0);
+                press.VerticalAlignment = VerticalAlignment.Center;
+
+                Grid.SetColumn(press, 1);
+                pair.Children.Add(text);
+                pair.Children.Add(press);
+
+                said = pair;
+            }
+
+            Grid.SetColumn(said, 1);
+            row.Children.Add(said);
 
             var frame = new Border
             {

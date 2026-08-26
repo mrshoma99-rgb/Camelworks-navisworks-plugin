@@ -69,6 +69,8 @@ namespace CamelWorks.UI.Views
                 return "This tool could not be opened: " + Ui.Describe(e);
             }
 
+            surface = LeaseStrip.Over(surface);
+
             var window = new Window
             {
                 Title = "CamelWorks - " + tool.Title,

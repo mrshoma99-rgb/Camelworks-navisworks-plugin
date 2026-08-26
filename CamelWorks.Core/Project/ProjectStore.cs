@@ -32,6 +32,15 @@ namespace CamelWorks.Core.Project
         /// <summary>The file name used when the document has never been saved.</summary>
         public const string UnsavedName = "unsaved" + Extension;
 
+        /// <summary>
+        /// The advisory lease's extension: the same name as the project file, next to it.
+        ///
+        /// Beside rather than inside, because a lease has to be readable and writable by somebody
+        /// who is not allowed to write the project file, and because deleting a stuck one must not
+        /// mean deleting the settings.
+        /// </summary>
+        public const string LeaseExtension = ".cwlock";
+
         /// <summary>Section holding profile overrides.</summary>
         public const string ProfileSection = "profile";
 
@@ -103,6 +112,38 @@ namespace CamelWorks.Core.Project
 
         /// <summary>Why the last <see cref="Save"/> did not write, or null when it did.</summary>
         public string? LastSaveProblem { get; private set; }
+
+        /// <summary>Where the lease file is, or null when nothing is written to disk.</summary>
+        public string? LeasePath
+        {
+            get
+            {
+                var path = Path;
+
+                return path == null || !path.EndsWith(Extension, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : path.Substring(0, path.Length - Extension.Length) + LeaseExtension;
+            }
+        }
+
+        /// <summary>
+        /// How the last attempt on the lease went, or null when nothing has asked yet.
+        ///
+        /// Null is the ordinary state for most of a session. Nothing takes the lease on open: a
+        /// person who loads a model to look at it should not be writing lock files into somebody
+        /// else's project folder.
+        /// </summary>
+        public LeaseResult? Lease { get; private set; }
+
+        /// <summary>
+        /// Whether settings may be saved.
+        ///
+        /// Only <see cref="LeaseOutcome.HeldByAnother"/> stops a save. A substrate that cannot
+        /// carry a lease at all is not somebody else holding one, and refusing there would mean
+        /// CamelWorks saved nothing on OneDrive - which is where a great many project folders
+        /// live. There the answer is the warning on <see cref="ConcurrencyNote"/>, not a refusal.
+        /// </summary>
+        public bool MaySaveSettings => Lease == null || Lease.Outcome != LeaseOutcome.HeldByAnother;
 
         /// <summary>A named section, created on first use.</summary>
         /// <param name="name">One of the section constants on this class.</param>
@@ -195,6 +236,12 @@ namespace CamelWorks.Core.Project
                 return false;
             }
 
+            if (!MaySaveSettings)
+            {
+                LastSaveProblem = Refusal();
+                return false;
+            }
+
             _document.Root.Set(ActivitySection, Activity.ToJson());
 
             try
@@ -226,6 +273,150 @@ namespace CamelWorks.Core.Project
         {
             Activity.Record(new Activity(kind, whenTicks, summary, detail));
             return Save();
+        }
+
+        /// <summary>
+        /// Take, renew, or find out who holds the lease.
+        ///
+        /// Called before an edit that will be saved, not on open. Returns a result rather than a
+        /// bool because the three answers a user can act on are different: you have it, somebody
+        /// else has it until roughly a time, or this folder cannot carry a lease at all.
+        ///
+        /// Nothing here throws. A lease is advisory: a folder that will not give up its lease file
+        /// is a reason to carry on unlocked, not a reason to stop somebody working.
+        /// </summary>
+        /// <param name="owner">Our stable writer id, usually the signed-in user.</param>
+        /// <param name="nowTicks">Current UTC ticks, supplied so this is testable.</param>
+        /// <param name="force">Take it even from a live holder — what the "Take it over" button does.</param>
+        public LeaseResult TakeLease(string owner, long nowTicks, bool force = false) =>
+            Evaluate(owner, nowTicks, claim: true, force: force);
+
+        /// <summary>
+        /// Find out who holds the lease without taking it.
+        ///
+        /// What a screen does when it opens. Claiming on open would mean that reading the clash
+        /// board for two minutes locked a colleague out of project settings for ten, which is the
+        /// failure mode that makes people delete lock files by hand and stop trusting them.
+        /// </summary>
+        /// <param name="owner">Our stable writer id.</param>
+        /// <param name="nowTicks">Current UTC ticks.</param>
+        public LeaseResult LookAtLease(string owner, long nowTicks) =>
+            Evaluate(owner, nowTicks, claim: false, force: false);
+
+        private LeaseResult Evaluate(string owner, long nowTicks, bool claim, bool force)
+        {
+            if (string.IsNullOrWhiteSpace(owner)) owner = "someone";
+
+            var file = LeasePath;
+
+            if (file == null)
+            {
+                // Nothing is written to disk, so nobody else can be holding it.
+                Lease = new LeaseResult(LeaseOutcome.Acquired, owner, 0, null);
+                return Lease;
+            }
+
+            string? held = null;
+
+            if (!force)
+            {
+                try
+                {
+                    held = _fs.ReadAllText(file);
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+
+            var result = ProjectLease.TryAcquire(held, owner, nowTicks, Substrate);
+
+            if (claim && result.MayWrite) Put(file, ProjectLease.Write(owner, result.ExpiresTicks));
+
+            Lease = result;
+            return result;
+        }
+
+        /// <summary>
+        /// Give the lease up, so the next person does not wait out its deadline.
+        ///
+        /// Safe to call when we never had it: <see cref="ProjectLease.Release"/> leaves somebody
+        /// else's lease alone, so a stale close cannot evict whoever took over.
+        /// </summary>
+        /// <param name="owner">The same id the lease was taken under.</param>
+        public void ReleaseLease(string owner)
+        {
+            var file = LeasePath;
+
+            if (file != null && Lease != null && Lease.MayWrite)
+            {
+                try
+                {
+                    if (ProjectLease.Release(_fs.ReadAllText(file), owner) == null) _fs.Delete(file);
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+
+            Lease = null;
+        }
+
+        /// <summary>
+        /// Why a save was refused, said in terms of what is actually different.
+        ///
+        /// "Somebody else is editing settings" is not something a person can act on. "They changed
+        /// the clash matrix and the party list; your rule edits are untouched" is — it says
+        /// whether to wait, redo the work, or carry on.
+        /// </summary>
+        private string Refusal()
+        {
+            var reason = Lease?.Reason ?? "somebody else is editing project settings.";
+
+            try
+            {
+                var theirs = _fs.ReadAllText(Path!);
+
+                if (theirs != null && JsonReader.TryParse(theirs, out var json))
+                {
+                    var changed = SectionDiff.ChangedSections(_document.Root, json);
+
+                    if (changed.Count > 0)
+                        return reason + " " + SectionDiff.Describe(changed, Lease?.Holder);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+
+            return reason;
+        }
+
+        /// <summary>Write the lease file, and say nothing when the folder will not have it.</summary>
+        private void Put(string file, string text)
+        {
+            try
+            {
+                var folder = SafeDirectoryName(file);
+                if (folder != null) _fs.CreateDirectory(folder);
+
+                _fs.WriteAllText(file, text);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         /// <summary>

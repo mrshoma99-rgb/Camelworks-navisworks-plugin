@@ -24,7 +24,7 @@ These sixteen had no home in the first cut of the redesign. Two were caught by t
 | 4 | `Clash/Penetrations` + `PenetrationSchedule` | Dropped. Services through structure, as a schedule for the structural engineer. | **Penetrations** — window, Issues panel. |
 | 5 | `Project/ModelManifest` + `ModelIntake` + `TestRecord` | Dropped. What is loaded, at which revision, and restoring placement. | **Models** — window, Project panel. |
 | 6 | `Appearance/AppearanceTransfer` | Dropped. A colour scheme lifted off one model onto another. | Appearance panel toolbar: "Copy appearance from another model…". |
-| 7 | `Report/DxfWriter` | Dropped, and the second engine in this map with tests and no caller anywhere in the UI. The Export window only had GLB and CSV/XLSX. | **Export Drawing** — its own window and its own Deliver button. R12 ASCII, one layer per discipline, model or category. Built rather than moved. |
+| 7 | `Report/DxfWriter` | **Half-dropped, and the first read of this row was wrong.** The engine was never callerless: Extract has written DXF all along. What was missing is a DXF you can ask for without a recipe — the Export window only had GLB and CSV/XLSX, so somebody who had selected forty pipes and wanted them in AutoCAD had no way there. | **Export Drawing** — its own window and its own Deliver button, scoped to the selection or everything loaded. R12 ASCII, one layer per discipline, model or category. Extract keeps its own recipe-driven DXF. |
 | 8 | `Project/ActivityLog` | Dropped. What has happened on this project, newest first. | **History** — window, Project panel. |
 | 9 | `Clash/ClashMarkers` + `MarkerMesh` | Dropped. Clash points as geometry you can actually see. | Clash Board toolbar toggle: "Show the clash points". |
 | 10 | `Compare/CompareStamp` | Dropped. Writes what changed onto the elements as properties. | Compare Revisions post-action: "Write the changes onto the elements". |
@@ -32,7 +32,7 @@ These sixteen had no home in the first cut of the redesign. Two were caught by t
 | 12 | `Sets/Similarity` | Dropped. Finds elements like the one selected. | Set Builder: "+ Elements like this one". |
 | 13 | `Sets/SetTree` + `SetFamily` | Dropped — and the only two engines in the whole map with *no caller anywhere in the UI*: tests, and nothing in front of them. | **Generate a Set Library** — steps, under the Set Builder split. Built rather than moved. |
 | 14 | `Sets/SheetSets` + `SetSheetMapping` | Half-dropped. Distinct from `SetSchedule`: reads set definitions out of the spreadsheet a project already keeps. | Folded into **Sets from a spreadsheet**, whose mapping step handles both layouts. |
-| 15 | `Store/ProjectLease` + `StorageSubstrate` | Dropped — and it is not a tool, it is a state nobody drew. | Every panel: a blue strip when someone else holds the project — "Ahmed has this project open. You can look, not change. Take it over". |
+| 15 | `Store/ProjectLease` + `SectionDiff` | Dropped — and it is not a tool, it is a state nobody drew. The only engines left in the map whose only callers were their own tests. | Built. Every window and both panes carry a blue strip when someone else holds the project, with "Take it over" on it; a refused save names the sections they changed. Claimed on the way to a write, not on the way to a screen. `StorageSubstrate` stays infrastructure: on a synced folder the lease is refused and saving carries on. |
 | 16 | `Data/ValueCleaner` | Dropped. Makes what a property says readable as a quantity. | Takeoff tuning band ("Tidy values before summing"), and a Write Properties → Find & replace preset. |
 
 ---
@@ -124,7 +124,7 @@ surfaces work, not things a coordinator opens.
 |---|---|
 | `GltfWriter` | Export GLB |
 | `XlsxWriter`, `DataReport` | Export Data (CSV / XLSX) |
-| `DxfWriter` | Export Drawing (DXF) |
+| `DxfWriter` | Export Drawing (DXF), and Extract's drawing leg |
 | `Extract`, `ExtractShare` | Extract |
 | `Compilation`, `CompileJob`, `SourceFile` | Compile |
 | `Dimensions`, `DimensionRow`, `Separation`, `SpacingRun`, `FieldElement` | Dimensions |
