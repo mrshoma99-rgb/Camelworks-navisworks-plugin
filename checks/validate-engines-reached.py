@@ -15,6 +15,11 @@ So this looks for the call site. A public documented `static class` in Core is a
 cannot be reached through a `var`, so if its name is not written anywhere it is not called. When
 the only file naming it is CamelWorks.Core.Tests, what exists is a tested feature nobody can use.
 
+Comments do not count, and that is the whole difficulty. The first version of this check passed
+SetFamily, because SetLibraryWindow names it in a doc comment saying it had no caller - a sentence
+about the absence, mistaken for the presence. So every source is read with its comments stripped:
+what remains is code, and code is the only thing that calls anything.
+
 Infrastructure is exempt by name in ALLOWED, and each entry says why. A growing exempt list is
 this check being talked out of its job.
 
@@ -41,8 +46,24 @@ ALLOWED = {
 }
 
 
+BLOCK = re.compile(r"/\*.*?\*/", re.DOTALL)
+LINE = re.compile(r"^\s*//.*$", re.MULTILINE)
+
+
+def code(text):
+    """The source with its comments taken out.
+
+    Whole-line comments only, plus block comments. A trailing `// note` after real code is left
+    alone: cutting at the first `//` on a line would also cut the middle out of every URL and
+    every path in a string literal, and a type name mentioned in a trailing note is rare enough
+    to be worth the false pass.
+    """
+    return LINE.sub("", BLOCK.sub("", text))
+
+
 def sources(*folders):
-    return {p: p.read_text(encoding="utf-8")
+    """Every source in these folders, twice: as written, and with the comments taken out."""
+    return {p: (p.read_text(encoding="utf-8"), code(p.read_text(encoding="utf-8")))
             for folder in folders if (ROOT / folder).is_dir()
             for p in sorted((ROOT / folder).rglob("*.cs"))}
 
@@ -51,11 +72,12 @@ def main():
     product = sources(*PRODUCT)
     tests = sources(TESTS)
 
+    # Found in the source as written, because an engine is declared under its doc comment.
     engines = {}
-    for path, text in product.items():
+    for path, (written, _) in product.items():
         if not str(path).startswith(str(ROOT / "CamelWorks.Core")):
             continue
-        for match in ENGINE.finditer(text):
+        for match in ENGINE.finditer(written):
             engines.setdefault(match.group(1), path)
 
     problems = 0
@@ -68,12 +90,13 @@ def main():
 
         # Its own file counts only when it uses itself more than the once it takes to declare it:
         # a helper the class beside it calls is reached, a class nobody names is not.
-        if any(word.search(text) for path, text in product.items() if path != home):
+        # Looked for in the code, because only code calls anything.
+        if any(word.search(text) for path, (_, text) in product.items() if path != home):
             continue
-        if len(word.findall(product[home])) > 1:
+        if len(word.findall(product[home][1])) > 1:
             continue
 
-        where = "tested, and called by nothing" if any(word.search(t) for t in tests.values()) \
+        where = "tested, and called by nothing" if any(word.search(t) for _, t in tests.values()) \
                 else "called by nothing at all"
 
         print(f"FAIL: {engine} ({home.relative_to(ROOT)}) is {where}. "

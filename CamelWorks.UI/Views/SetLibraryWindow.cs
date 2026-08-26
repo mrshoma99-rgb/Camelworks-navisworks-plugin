@@ -21,12 +21,20 @@ namespace CamelWorks.UI.Views
     /// coordinator who wanted a set per level, per system, per zone built them one at a time in
     /// the Set Builder, which is exactly the afternoon this was written to remove.
     ///
+    /// <b>Two generators, and the tick count picks between them.</b> One property is a flat family
+    /// - one set per level, nothing nested - and there <see cref="SetFamily"/> is the better
+    /// engine, because it can be argued with: every proposed set has a count beside it and a tick,
+    /// so the "Level 99, 2 elements" ones can be dropped before anything is made, and a name the
+    /// library already has starts unticked rather than quietly overwriting. Two or more properties
+    /// nest into folders, which is <see cref="SetTree"/>. Nobody is asked which they want; ticking
+    /// one property or three is already the answer.
+    ///
     /// <b>Not the same as Organise Sets.</b> That reshapes a library that already exists into the
     /// folders the properties imply. This makes the library. They share the publishing path and
     /// nothing else.
     ///
-    /// Steps, because the order is real: the properties on offer come out of the model, and the
-    /// tree cannot be costed before the properties are chosen.
+    /// Steps, because the order is real: the properties on offer come out of the model, and
+    /// nothing can be costed before the properties are chosen.
     /// </summary>
     public static class SetLibraryWindow
     {
@@ -62,6 +70,7 @@ namespace CamelWorks.UI.Views
 
             private string _category = "Element";
             private SetTreePlan? _plan;
+            private SetFamilyPlan? _family;
 
             internal Screen(Session session)
             {
@@ -103,8 +112,8 @@ namespace CamelWorks.UI.Views
                     new Ui.Step("Read the model", () => read,
                                 () => _read.Count == 0 ? "Read the model first." : null),
                     new Ui.Step("Choose the levels", () => shape,
-                                () => _plan == null || !_plan.IsUsable
-                                          ? "Choose properties and cost it first."
+                                () => Planned().Count == 0
+                                          ? "Choose properties, cost it, and tick at least one set."
                                           : null),
                     new Ui.Step("Publish", () => publish),
                 };
@@ -125,6 +134,7 @@ namespace CamelWorks.UI.Views
                 _values.Clear();
                 _chosen.Clear();
                 _plan = null;
+                _family = null;
 
                 var seen = 0;
 
@@ -194,10 +204,12 @@ namespace CamelWorks.UI.Views
                 _found.Children.Add(Ui.Small("Ticked in order: the first is the outermost folder."));
             }
 
-            /// <summary>Cost the tree before anything is made.</summary>
+            /// <summary>Cost it before anything is made — a family from one property, a tree from more.</summary>
             private void Cost()
             {
                 _preview.Children.Clear();
+                _plan = null;
+                _family = null;
 
                 if (_chosen.Count == 0)
                 {
@@ -205,11 +217,73 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var floor = int.TryParse(_floor.Text, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                                         out var given) && given > 0
+                    ? given
+                    : 0;
+
+                if (_chosen.Count == 1) Family(_chosen[0], floor);
+                else Tree(floor);
+            }
+
+            /// <summary>One property: one set per value, each with a count and a tick.</summary>
+            private void Family(string property, int floor)
+            {
+                var options = new FamilyOptions
+                {
+                    NamePattern = _pattern.Text,
+
+                    // The names already in the library, so a second run over the same property
+                    // proposes the same sets unticked rather than silently replacing them.
+                    Existing = Library().Sets.Select(set => set.Name).ToList(),
+                };
+
+                if (floor > 0) options.Floor = floor;
+
+                _family = SetFamily.Of(_category, property,
+                    _read.Select(r => r.Value.TryGetValue(property, out var v) ? v : null), options);
+
+                _preview.Children.Add(Ui.Line(_family.Explain(), 1, true));
+
+                if (_family.Sets.Count == 0)
+                {
+                    _preview.Children.Add(Ui.Empty("Nothing to make.",
+                        "Every element carries the same value for " + property + ", or none at all."));
+                    return;
+                }
+
+                _preview.Children.Add(Ui.Small("Untick the ones that are not worth a set. A name the "
+                    + "library already has starts unticked."));
+
+                foreach (var set in _family.Sets)
+                {
+                    var proposed = set;
+
+                    _preview.Children.Add(Ui.Check(
+                        proposed.Name + "  -  " + Ui.Count(proposed.Elements, "element")
+                        + (proposed.Note == null ? string.Empty : "  -  " + proposed.Note),
+                        proposed.IsSelected,
+                        on => proposed.IsSelected = on));
+                }
+
+                if (_family.Blanks > 0)
+                    _preview.Children.Add(Ui.Note(Ui.Count(_family.Blanks, "element")
+                        + " carry no value for " + property + " and are in none of these. They are "
+                        + "not collected into an \"unassigned\" set: that would make the gap look "
+                        + "handled when it is a gap in the data."));
+
+                if (_family.Dropped > 0)
+                    _preview.Children.Add(Ui.Note(Ui.Count(_family.Dropped, "value")
+                        + " beyond the cap of " + FamilyOptions.DefaultCap + " were not proposed. A "
+                        + "property with that many values sorts nothing; pick a different one."));
+            }
+
+            /// <summary>Two properties or more: folders, nested in the order they were ticked.</summary>
+            private void Tree(int floor)
+            {
                 var options = new SetTreeOptions { NamePattern = _pattern.Text };
 
-                if (int.TryParse(_floor.Text, NumberStyles.Integer, CultureInfo.InvariantCulture,
-                                 out var floor) && floor > 0)
-                    options.Floor = floor;
+                if (floor > 0) options.Floor = floor;
 
                 var rows = _read.Select(r => (IReadOnlyList<string?>)_chosen
                     .Select(p => r.Value.TryGetValue(p, out var v) ? v : null).ToList());
@@ -237,48 +311,101 @@ namespace CamelWorks.UI.Views
                         + "That is a gap in the data, not in the library."));
             }
 
+            /// <summary>The set library as the project has it.</summary>
+            private SetLibrary Library() =>
+                SetLibrary.FromJson(_session.Store.Section(ProjectStore.SetsSection)["items"]);
+
+            /// <summary>
+            /// What either generator would publish, in one shape.
+            ///
+            /// The publish step should not have to know which one ran. A tree leaf carries the
+            /// folders above it and a family set carries none, and that is the only difference
+            /// that survives to here.
+            /// </summary>
+            private IReadOnlyList<Outgoing> Planned()
+            {
+                if (_family != null)
+                    return _family.Sets
+                        .Where(set => set.IsSelected)
+                        .Select(set => new Outgoing(set.Name, null, set.Name, set.Expression,
+                                                    "CamelWorks: " + set.Expression.Describe()))
+                        .ToList();
+
+                if (_plan == null || !_plan.IsUsable) return Array.Empty<Outgoing>();
+
+                return _plan.Sets
+                    .Select(leaf => new Outgoing(leaf.FullName,
+                                                 leaf.Path.Take(leaf.Path.Count - 1).ToList(),
+                                                 leaf.Name, leaf.Expression!, SetTree.Comment(leaf)))
+                    .ToList();
+            }
+
+            /// <summary>One set on its way out, from whichever generator made it.</summary>
+            private sealed class Outgoing
+            {
+                internal Outgoing(string fullName, IReadOnlyList<string>? folders, string name,
+                                  SetExpression expression, string comment)
+                {
+                    FullName = fullName;
+                    Folders = folders;
+                    Name = name;
+                    Expression = expression;
+                    Comment = comment;
+                }
+
+                /// <summary>The name including its folders, as the project records it.</summary>
+                internal string FullName { get; }
+
+                /// <summary>The folders above it, or null for a flat family.</summary>
+                internal IReadOnlyList<string>? Folders { get; }
+
+                /// <summary>What it is called inside its folder.</summary>
+                internal string Name { get; }
+
+                /// <summary>The rule.</summary>
+                internal SetExpression Expression { get; }
+
+                /// <summary>What the host shows beside it.</summary>
+                internal string Comment { get; }
+            }
+
             /// <summary>Write the library into the project, then into the host.</summary>
             private void Publish(Job job)
             {
-                var plan = _plan;
-                if (plan == null || !plan.IsUsable) return;
+                var sets = Planned();
+                if (sets.Count == 0) return;
 
-                var sets = plan.Sets;
-
-                var library = SetLibrary.FromJson(
-                    _session.Store.Section(ProjectStore.SetsSection)["items"]);
+                var library = Library();
 
                 var published = 0;
                 var live = 0;
                 var refused = new List<string>();
 
-                foreach (var leaf in sets)
+                foreach (var outgoing in sets)
                 {
                     if (!job.Step(published, sets.Count, "sets published")) break;
 
                     var existing = library.Sets.FirstOrDefault(
-                        s => string.Equals(s.Name, leaf.FullName, StringComparison.OrdinalIgnoreCase));
+                        s => string.Equals(s.Name, outgoing.FullName, StringComparison.OrdinalIgnoreCase));
 
                     library.Put(new SavedSet(existing?.Id ?? library.NextId("set"),
-                                             leaf.FullName, leaf.Expression!)
+                                             outgoing.FullName, outgoing.Expression)
                     {
                         Note = "Generated from " + string.Join(" / ", _chosen) + ".",
                     });
 
                     try
                     {
-                        var folders = leaf.Path.Take(leaf.Path.Count - 1).ToList();
-
                         var outcome = _session.Search.PublishInFolder(
-                            folders, leaf.Name, DnfCompiler.Compile(leaf.Expression!),
-                            SetTree.Comment(leaf));
+                            outgoing.Folders, outgoing.Name,
+                            DnfCompiler.Compile(outgoing.Expression), outgoing.Comment);
 
                         published++;
                         if (outcome.IsLive) live++;
                     }
                     catch (Exception e)
                     {
-                        refused.Add(leaf.FullName + " - " + Ui.Describe(e));
+                        refused.Add(outgoing.FullName + " - " + Ui.Describe(e));
                     }
                 }
 
