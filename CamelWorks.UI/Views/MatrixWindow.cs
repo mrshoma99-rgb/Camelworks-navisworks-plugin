@@ -383,8 +383,12 @@ namespace CamelWorks.UI.Views
                                     t.Tolerance.ToString("0.###", CultureInfo.InvariantCulture) + " m"))
                                 .ToList();
 
-                            into.Children.Add(Ui.Table(rows,
-                                ("Test", 300), ("Kind", 140), ("Tolerance", 100)));
+                            var proposed = Ui.Table(rows,
+                                ("Test", 300), ("Kind", 140), ("Tolerance", 100));
+
+                            into.Children.Add(Ui.Picking(proposed,
+                                new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(proposed, picked), say, "test"))));
                         }
 
                         return _plan.Tests.Count;

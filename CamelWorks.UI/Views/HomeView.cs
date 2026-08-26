@@ -196,8 +196,14 @@ namespace CamelWorks.UI.Views
                 e.Summary,
                 ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList();
 
+            var recent = Ui.Table(rows, ("What", 110), ("Happened", 0), ("When", 110));
+
+            // "What has been done to this project" is the question a handover asks, and the answer
+            // used to be readable and not takeable.
             return Ui.Marked(Glyphs.Report, "Recent", null,
-                Ui.Table(rows, ("What", 110), ("Happened", 0), ("When", 110)));
+                Ui.Picking(recent,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(recent, picked), say, "entry"))));
         }
     }
 }

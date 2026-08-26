@@ -128,10 +128,14 @@ namespace CamelWorks.UI.Views
 
                 results.Children.Add(Ui.Eyebrow("Since the last manifest"));
 
-                results.Children.Add(Ui.Table(register.Rows.Select(r => new TableRow(r,
+                var since = Ui.Table(register.Rows.Select(r => new TableRow(r,
                     r[0] ?? string.Empty, r[1] ?? string.Empty, r[2] ?? string.Empty,
                     r[3] ?? string.Empty)).ToList(),
-                    ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0)));
+                    ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0));
+
+                results.Children.Add(Ui.Picking(since,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(since, picked), say, "model"))));
             }
 
             section.Set(IntakeKey, manifest.ToJson());

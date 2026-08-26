@@ -296,11 +296,15 @@ namespace CamelWorks.UI.Views
 
                 var sets = _plan.Sets;
 
-                _preview.Children.Add(Ui.Table(
+                var leaves = Ui.Table(
                     sets.Take(40).Select(leaf => new TableRow(leaf,
                         leaf.FullName,
                         leaf.Elements.ToString(CultureInfo.InvariantCulture))).ToList(),
-                    ("Set", 0), ("Elements", 100)));
+                    ("Set", 0), ("Elements", 100));
+
+                _preview.Children.Add(Ui.Picking(leaves,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(leaves, picked), say, "set"))));
 
                 if (sets.Count > 40)
                     _preview.Children.Add(Ui.Small("The first 40 of " + sets.Count + " shown."));
