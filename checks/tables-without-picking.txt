@@ -18,4 +18,4 @@ CamelWorks.UI/Views/RestructureWindow.cs 2
 CamelWorks.UI/Views/ScheduleWindow.cs 2
 CamelWorks.UI/Views/SetLibraryWindow.cs 1
 CamelWorks.UI/Views/SetsViews.cs 3
-CamelWorks.UI/Views/SiteWindow.cs 5
+CamelWorks.UI/Views/SiteWindow.cs 2

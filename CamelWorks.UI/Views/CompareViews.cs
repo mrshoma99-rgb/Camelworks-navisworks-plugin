@@ -484,9 +484,9 @@ namespace CamelWorks.UI.Views
             /// silently skipped, because "I ticked twelve and it selected nine" is otherwise a
             /// bug somebody reports.
             /// </summary>
-            private void Show(IReadOnlyList<object> picked)
+            private void Show(IReadOnlyList<object> picked, Panel say)
             {
-                _output.Children.Clear();
+                say.Children.Clear();
 
                 var keys = new List<ElementKey>();
                 var gone = 0;
@@ -499,7 +499,7 @@ namespace CamelWorks.UI.Views
 
                 if (keys.Count == 0)
                 {
-                    _output.Children.Add(Ui.Note(gone > 0
+                    say.Children.Add(Ui.Note(gone > 0
                         ? Ui.Count(gone, "removed element") + " cannot be selected: they are not in "
                           + "this model any more. That is what removed means."
                         : "Nothing there to select."));
@@ -509,7 +509,7 @@ namespace CamelWorks.UI.Views
                 _session.Model.Select(keys);
                 _session.View.ZoomTo(keys, 1.5);
 
-                _output.Children.Add(Ui.Done("Selected " + Ui.Count(keys.Count, "element") + "."
+                say.Children.Add(Ui.Done("Selected " + Ui.Count(keys.Count, "element") + "."
                     + (gone > 0
                         ? " " + Ui.Count(gone, "removed one") + " left out - they are not in this "
                           + "model any more."

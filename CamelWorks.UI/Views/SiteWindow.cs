@@ -508,7 +508,7 @@ namespace CamelWorks.UI.Views
 
                 var units = _session.Profile.Units;
 
-                _sizes.Children.Add(Ui.Table(
+                var sizes = Ui.Table(
                     schedule.Rows.Take(Shown).Select(r => new TableRow(r,
                         r.Reference,
                         Dimensions.Word(r.Kind),
@@ -517,7 +517,14 @@ namespace CamelWorks.UI.Views
                         r.Say(units),
                         r.Oriented ? "geometry" : "box")).ToList(),
                     ("Ref", 70), ("Measurement", 110), ("Element", 0), ("Against", 150),
-                    (units.LengthUnit, 100), ("From", 90)));
+                    (units.LengthUnit, 100), ("From", 90));
+
+                // The rows worth sending are the ones that failed, and they are scattered down the
+                // schedule rather than gathered at the top.
+                _sizes.Children.Add(Ui.Picking(sizes,
+                    new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(sizes, picked), say),
+                                    primary: true)));
 
                 _sizes.Children.Add(Ui.Tally(Math.Min(Shown, schedule.Rows.Count),
                                              schedule.Rows.Count, "dimension"));
@@ -666,14 +673,20 @@ namespace CamelWorks.UI.Views
 
                 foreach (var note in result.Notes) _points.Children.Add(Ui.Note(note));
 
-                _points.Children.Add(Ui.Table(
+                // A surveyor going out to set six points does not want the file of two hundred.
+                var points = Ui.Table(
                     result.Points.Take(Shown).Select(p => new TableRow(p,
                         p.Number,
                         p.Northing.ToString("0.###", CultureInfo.InvariantCulture),
                         p.Easting.ToString("0.###", CultureInfo.InvariantCulture),
                         p.Level.ToString("0.###", CultureInfo.InvariantCulture),
                         p.Description)).ToList(),
-                    ("Point", 80), ("Northing", 100), ("Easting", 100), ("Level", 90), ("What", 0)));
+                    ("Point", 80), ("Northing", 100), ("Easting", 100), ("Level", 90), ("What", 0));
+
+                _points.Children.Add(Ui.Picking(points,
+                    new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(points, picked), say, "point"),
+                                    primary: true)));
 
                 _points.Children.Add(Ui.Tally(Math.Min(Shown, result.Points.Count),
                                               result.Points.Count, "point"));
@@ -849,14 +862,19 @@ namespace CamelWorks.UI.Views
 
                 foreach (var note in run.Notes) _tags.Children.Add(Ui.Note(note));
 
-                _tags.Children.Add(Ui.Table(
+                var tags = Ui.Table(
                     run.Labels.Take(Shown).Select(l => new TableRow(l,
                         l.Heading,
                         l.Encoded,
                         l.Symbol == null
                             ? "—"
                             : l.Symbol.Size.ToString(CultureInfo.InvariantCulture) + " modules")).ToList(),
-                    ("On the label", 200), ("In the code", 0), ("Size", 110)));
+                    ("On the label", 200), ("In the code", 0), ("Size", 110));
+
+                _tags.Children.Add(Ui.Picking(tags,
+                    new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(tags, picked), say, "label"),
+                                    primary: true)));
 
                 _tags.Children.Add(Ui.Tally(Math.Min(Shown, run.Labels.Count), run.Labels.Count, "label"));
 

@@ -55,7 +55,7 @@ namespace CamelWorks.UI.Views
             // August" is a handful of lines out of two hundred, and pasting the lot leaves whoever
             // asked to do the filtering.
             var picking = Ui.Picking(table,
-                new Ui.OnPicked("Copy {n}", picked => Copy(session, picked, said), primary: true));
+                new Ui.OnPicked("Copy {n}", (picked, say) => Copy(session, picked, say), primary: true));
 
             return Ui.Stack(
                 Ui.Sub(Ui.Count(entries.Count, "entry") + ", newest first."),

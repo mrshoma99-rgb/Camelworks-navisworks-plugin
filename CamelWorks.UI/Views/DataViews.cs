@@ -167,7 +167,7 @@ namespace CamelWorks.UI.Views
                 // "these eleven are missing on half the elements". Picking the eleven is the point.
                 results.Children.Add(Ui.Picking(found,
                     new Ui.OnPicked("Copy {n}",
-                                    picked => Ui.Copy(Ui.Lines(found, picked), results),
+                                    (picked, say) => Ui.Copy(Ui.Lines(found, picked), say),
                                     primary: true)));
 
                 editor.Children.Clear();
@@ -2316,7 +2316,7 @@ namespace CamelWorks.UI.Views
 
                 _results.Children.Add(Ui.Picking(totals,
                     new Ui.OnPicked("Copy {n}",
-                                    picked => Ui.Copy(Ui.Lines(totals, picked), _results),
+                                    (picked, say) => Ui.Copy(Ui.Lines(totals, picked), say),
                                     primary: true)));
 
                 Provenance();

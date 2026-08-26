@@ -120,7 +120,7 @@ namespace CamelWorks.UI.Views
             // is this week's board against?" - so picking rows and copying them is the action,
             // rather than making somebody retype five columns out of a window.
             results.Children.Add(Ui.Picking(models,
-                new Ui.OnPicked("Copy {n}", picked => Rows(picked, results), primary: true)));
+                new Ui.OnPicked("Copy {n}", Rows, primary: true)));
 
             if (intake.HasPrevious)
             {

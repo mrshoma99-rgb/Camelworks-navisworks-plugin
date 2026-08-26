@@ -2074,10 +2074,16 @@ namespace CamelWorks.UI.Views
             /// what somebody reads immediately before pressing it, and "Assign 40..." stops a
             /// press that "Assign..." does not.
             /// </param>
-            /// <param name="act">What to do with the picked rows.</param>
+            /// <param name="act">
+            /// What to do with the picked rows, and where to say what happened. The panel is the
+            /// bar's own, handed over rather than chosen by the caller: three screens passed their
+            /// results panel, and <see cref="Copy"/> clears what it writes to, so copying wiped the
+            /// table it had just copied out of. A parameter nobody can get wrong beats a comment
+            /// saying not to.
+            /// </param>
             /// <param name="primary">Whether this is the one filled button.</param>
             /// <param name="danger">Whether this destroys something.</param>
-            public OnPicked(string caption, Action<IReadOnlyList<object>> act,
+            public OnPicked(string caption, Action<IReadOnlyList<object>, Panel> act,
                             bool primary = false, bool danger = false)
             {
                 Caption = caption;
@@ -2089,8 +2095,8 @@ namespace CamelWorks.UI.Views
             /// <summary>The caption, with <c>{n}</c> for the count.</summary>
             public string Caption { get; }
 
-            /// <summary>What to do with the picked rows.</summary>
-            public Action<IReadOnlyList<object>> Act { get; }
+            /// <summary>What to do with the picked rows, and where to report it.</summary>
+            public Action<IReadOnlyList<object>, Panel> Act { get; }
 
             /// <summary>Whether this is the one filled button.</summary>
             public bool Primary { get; }
@@ -2126,6 +2132,10 @@ namespace CamelWorks.UI.Views
 
             var bar = new StackPanel { Orientation = Orientation.Horizontal };
 
+            // Where an action says what it did. Below the bar, so a sentence about eleven rows sits
+            // under the button that said eleven.
+            var said = Stack();
+
             // Not "Count". A local function hides an outer method of the same name outright, so a
             // local Count() would make the Count(int, string) this uses uncallable.
             var tally = Line(string.Empty, 0.75);
@@ -2141,8 +2151,8 @@ namespace CamelWorks.UI.Views
                 var here = action;
 
                 var button = here.Primary
-                    ? Primary(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany()))
-                    : Quiet(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany()));
+                    ? Primary(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said))
+                    : Quiet(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said));
 
                 if (here.Danger) button.Wearing("DangerBtn");
 
@@ -2189,7 +2199,7 @@ namespace CamelWorks.UI.Views
             row.Children.Add(left);
             row.Children.Add(bar);
 
-            return Stack(table, row);
+            return Stack(table, row, said);
         }
 
         // -----------------------------------------------------------------------------------

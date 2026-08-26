@@ -1714,7 +1714,7 @@ namespace CamelWorks.UI.Views
                 // rows it is about. How many are picked, and tick-all or clear, belong here.
                 Ui.Picking(table,
                     new Ui.OnPicked("Select {n} in the model",
-                                    picked => Reveal(session, picked, status),
+                                    (picked, say) => Reveal(session, picked, say),
                                     primary: true)));
         }
 
