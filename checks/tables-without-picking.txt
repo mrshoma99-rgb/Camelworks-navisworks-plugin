@@ -11,7 +11,6 @@ CamelWorks.UI/Views/ExtractWindow.cs 1
 CamelWorks.UI/Views/HomeView.cs 1
 CamelWorks.UI/Views/MatrixWindow.cs 1
 CamelWorks.UI/Views/ModelsWindow.cs 1
-CamelWorks.UI/Views/ProjectViews.cs 4
 CamelWorks.UI/Views/ReportBuilderWindow.cs 2
 CamelWorks.UI/Views/RestructureWindow.cs 2
 CamelWorks.UI/Views/ScheduleWindow.cs 2
