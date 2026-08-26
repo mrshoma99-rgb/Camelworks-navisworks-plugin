@@ -134,7 +134,11 @@ namespace CamelWorks.UI.Views
 
                 var read = Ui.Runner("Read the matrix", _warnings, Read);
 
-                return Ui.Stack(rows, Ui.Actions(read));
+                // _warnings is this Runner's output panel, so it has to be on this step. It sat
+                // on the next one, which the gate will not open until the read has produced a
+                // grid - so when the read produced nothing, the sentence saying why was written
+                // to a page the user could not reach.
+                return Ui.Stack(rows, Ui.Actions(read), _warnings);
             }
 
             private Panel Number(string label, int value, Action<int> set) =>
@@ -167,7 +171,7 @@ namespace CamelWorks.UI.Views
                 _output.Children.Clear();
             }
 
-            private UIElement Board() => Ui.Stack(_grid, _warnings);
+            private UIElement Board() => Ui.Stack(_grid);
 
             private void ShowGrid()
             {

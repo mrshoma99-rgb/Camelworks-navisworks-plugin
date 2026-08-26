@@ -83,7 +83,7 @@ namespace CamelWorks.UI.Views
                     Ui.Eyebrow("The sheet as it stands"),
                     _sheet.Preview());
 
-                var plan = Ui.Stack(_plan, _warnings);
+                var plan = Ui.Stack(_plan);
                 var make = Make();
 
                 ShowShape();
@@ -156,6 +156,10 @@ namespace CamelWorks.UI.Views
                 }
 
                 _shape.Children.Add(Ui.Actions(Ui.Runner("Read the schedule", _warnings, Read)));
+
+                // The Runner's output panel, on the Runner's own step. It was on the next one,
+                // behind a gate that does not open until the read has worked.
+                _shape.Children.Add(_warnings);
             }
 
             private Panel Number(string label, int value, Action<int> set) =>
