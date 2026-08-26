@@ -1999,6 +1999,71 @@ namespace CamelWorks.UI.Views
             return picked;
         }
 
+        /// <summary>
+        /// The picked rows of a table, as tab separated lines.
+        ///
+        /// Picking hands back the object behind a row, not the row, so getting the text back means
+        /// asking the table which rows are selected. Rebuilding the strings from the source a
+        /// second way is how a copied line stops matching the line on screen.
+        /// </summary>
+        /// <param name="table">The table the rows are in.</param>
+        /// <param name="picked">What <see cref="Picking"/> handed back.</param>
+        public static IEnumerable<string> Lines(ListView table, IReadOnlyList<object> picked)
+        {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
+            var wanted = new HashSet<object>(picked ?? Array.Empty<object>());
+
+            foreach (var item in table.Items)
+            {
+                if (!(item is TableRow row) || row.Source == null) continue;
+                if (!wanted.Contains(row.Source)) continue;
+
+                var cells = new string[row.Count];
+                for (var i = 0; i < row.Count; i++) cells[i] = row[i];
+
+                yield return string.Join("\t", cells);
+            }
+        }
+
+        /// <summary>
+        /// Put lines on the clipboard, and say so.
+        ///
+        /// Tab separated, because the destination is a mail or a sheet and tabs paste as columns
+        /// where commas paste as a sentence.
+        ///
+        /// Here rather than in each screen because the third copy of the same try/catch is the one
+        /// that gets the message wrong - and Clipboard.SetText really does throw, on a machine
+        /// where another process is holding the clipboard open, which is not rare.
+        /// </summary>
+        /// <param name="lines">What to copy, one per line.</param>
+        /// <param name="say">Where to write what happened.</param>
+        /// <param name="unit">What one line is, for the sentence.</param>
+        public static void Copy(IEnumerable<string> lines, Panel say, string unit = "row")
+        {
+            if (say == null) throw new ArgumentNullException(nameof(say));
+
+            say.Children.Clear();
+
+            var text = (lines ?? Array.Empty<string>()).ToList();
+
+            if (text.Count == 0)
+            {
+                say.Children.Add(Note("Nothing to copy."));
+                return;
+            }
+
+            try
+            {
+                System.Windows.Clipboard.SetText(string.Join("\r\n", text));
+                say.Children.Add(Done("Copied " + Count(text.Count, unit) + "."));
+            }
+            catch (Exception error)
+            {
+                say.Children.Add(Problem("Could not copy it: " + Describe(error)));
+            }
+        }
+
         /// <summary>One thing that can be done to the rows somebody has picked.</summary>
         public sealed class OnPicked
         {

@@ -56,29 +56,11 @@ namespace CamelWorks.UI.Views
                 results);
         }
 
-        /// <summary>Put picked register rows on the clipboard, tab separated.</summary>
-        private static void Rows(IReadOnlyList<object> picked, Panel results)
-        {
-            var lines = picked.OfType<IReadOnlyList<string?>>()
-                .Select(r => string.Join("\t", r.Select(cell => cell ?? string.Empty)))
-                .ToList();
-
-            if (lines.Count == 0)
-            {
-                results.Children.Add(Ui.Note("Nothing to copy."));
-                return;
-            }
-
-            try
-            {
-                Clipboard.SetText(string.Join("\r\n", lines));
-                results.Children.Add(Ui.Done("Copied " + Ui.Count(lines.Count, "row") + "."));
-            }
-            catch (Exception e)
-            {
-                results.Children.Add(Ui.Problem("Could not copy it: " + Ui.Describe(e)));
-            }
-        }
+        /// <summary>The picked register rows, as columns somebody can paste.</summary>
+        private static void Rows(IReadOnlyList<object> picked, Panel results) =>
+            Ui.Copy(picked.OfType<IReadOnlyList<string?>>()
+                        .Select(r => string.Join("\t", r.Select(cell => cell ?? string.Empty))),
+                    results);
 
         /// <summary>
         /// Read the federation, record what it is, and say what moved.

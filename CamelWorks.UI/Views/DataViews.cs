@@ -161,7 +161,14 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + ", "
                     + Ui.Count(rows.Count, "property"), 1, true));
 
-                results.Children.Add(Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0)));
+                var found = Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0));
+
+                // What a coordinator does with this list is send it to whoever owns the model:
+                // "these eleven are missing on half the elements". Picking the eleven is the point.
+                results.Children.Add(Ui.Picking(found,
+                    new Ui.OnPicked("Copy {n}",
+                                    picked => Ui.Copy(Ui.Lines(found, picked), results),
+                                    primary: true)));
 
                 editor.Children.Clear();
                 editor.Children.Add(Writes(session, keys));
@@ -2302,8 +2309,15 @@ namespace CamelWorks.UI.Views
                     Tone = g.IsComplete ? Tone.Plain : Tone.Warn,
                 }).ToList();
 
-                _results.Children.Add(Ui.Table(rows,
-                    ("Group", 190), ("Count", 80), ("Total (" + UnitWord() + ")", 130), ("", 0)));
+                // A takeoff is read once and pasted somewhere else. Picking the lines that belong
+                // in this bill and taking those beats copying the screen and deleting half of it.
+                var totals = Ui.Table(rows,
+                    ("Group", 190), ("Count", 80), ("Total (" + UnitWord() + ")", 130), ("", 0));
+
+                _results.Children.Add(Ui.Picking(totals,
+                    new Ui.OnPicked("Copy {n}",
+                                    picked => Ui.Copy(Ui.Lines(totals, picked), _results),
+                                    primary: true)));
 
                 Provenance();
                 Caveat(result.IsComplete);

@@ -65,38 +65,12 @@ namespace CamelWorks.UI.Views
                 said);
         }
 
-        /// <summary>
-        /// Put lines on the clipboard.
-        ///
-        /// Copy rather than export: this is evidence somebody pastes into an email defending a
-        /// decision, and a file to attach is a worse fit for that than text already there.
-        /// </summary>
-        private static void Copy(Session session, IReadOnlyList<object> picked, Panel said)
-        {
-            said.Children.Clear();
-
-            var lines = picked.OfType<Activity>()
-                .Select(e => ActivityLog.Ago(e.WhenTicks, session.NowTicks)
-                             + "\t" + ActivityKind.Title(e.Kind)
-                             + "\t" + e.Summary)
-                .ToList();
-
-            if (lines.Count == 0)
-            {
-                said.Children.Add(Ui.Note("Nothing to copy."));
-                return;
-            }
-
-            try
-            {
-                Clipboard.SetText(string.Join("\r\n", lines));
-                said.Children.Add(Ui.Done("Copied " + Ui.Count(lines.Count, "line")
-                                          + ". Paste it wherever the question was asked."));
-            }
-            catch (Exception e)
-            {
-                said.Children.Add(Ui.Problem("Could not copy it: " + Ui.Describe(e)));
-            }
-        }
+        /// <summary>The picked entries, as lines somebody can paste into the argument.</summary>
+        private static void Copy(Session session, IReadOnlyList<object> picked, Panel said) =>
+            Ui.Copy(picked.OfType<Activity>()
+                        .Select(e => ActivityLog.Ago(e.WhenTicks, session.NowTicks)
+                                     + "\t" + ActivityKind.Title(e.Kind)
+                                     + "\t" + e.Summary),
+                    said, "line");
     }
 }
