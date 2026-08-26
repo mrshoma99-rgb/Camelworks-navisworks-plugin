@@ -14,6 +14,46 @@ using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
 {
+    /// <summary>
+    /// A fraction of whatever it is bound to.
+    ///
+    /// One use: giving a table a height budget taken from the pane it is in rather than from a
+    /// number. WPF is resolution independent, so a pixel figure already survives a change of DPI -
+    /// what it does not survive is a change of pane. The same 420 that overflowed a dock pane at
+    /// its 340 minimum left two thirds of a tall monitor empty.
+    /// </summary>
+    internal sealed class Portion : IValueConverter
+    {
+        /// <summary>Make one.</summary>
+        /// <param name="of">How much of the bound value to take, 0 to 1.</param>
+        /// <param name="least">Never return less than this, so a collapsed pane still shows rows.</param>
+        internal Portion(double of, double least)
+        {
+            Of = of;
+            Least = least;
+        }
+
+        /// <summary>How much of the bound value to take.</summary>
+        internal double Of { get; }
+
+        /// <summary>The floor.</summary>
+        internal double Least { get; }
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            // A ScrollViewer that has not been measured reports zero, and a zero-height table is a
+            // table nobody can see. The floor is what it falls back to until layout has run.
+            var whole = value is double number && number > 0 ? number : 0;
+
+            return whole <= 0 ? Least : Math.Max(Least, whole * Of);
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
     /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
     public enum PathKind
     {
@@ -1897,6 +1937,10 @@ namespace CamelWorks.UI.Views
         {
             var grid = new GridView { AllowsColumnReorder = false };
             var flexible = new List<GridViewColumn>();
+
+            // Every fixed column with the width it asked for, kept so the asking figure survives
+            // being compressed - otherwise one narrow pane would ratchet the columns down for good.
+            var asked = new List<KeyValuePair<GridViewColumn, double>>();
             var fixedWidth = 0.0;
 
             for (var i = 0; i < columns.Length; i++)
@@ -1914,6 +1958,7 @@ namespace CamelWorks.UI.Views
                 if (columns[i].Width > 0)
                 {
                     column.Width = columns[i].Width;
+                    asked.Add(new KeyValuePair<GridViewColumn, double>(column, columns[i].Width));
                     fixedWidth += columns[i].Width;
                 }
                 else
@@ -1928,10 +1973,28 @@ namespace CamelWorks.UI.Views
             {
                 View = grid,
                 ItemsSource = rows.ToList(),
-                MaxHeight = 420,
                 Margin = new Thickness(0, Gap, 0, 2),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+
+            // How tall a table may be is a question about the pane, not a number. It was 420,
+            // which overflowed the dock pane at its 340 minimum and left most of a tall monitor
+            // empty - the same figure doing the wrong thing at both ends.
+            //
+            // Bound to the scroll view the screen sits in, which is the height the pane actually
+            // gave it. No cycle: a ScrollViewer's own height is what its parent allocated and does
+            // not depend on how tall its content turns out to be. Two thirds, so a table never
+            // fills the screen it is one part of, and a floor so a collapsed pane still shows rows
+            // rather than a header and a scrollbar.
+            table.SetBinding(FrameworkElement.MaxHeightProperty, new Binding("ActualHeight")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                {
+                    AncestorType = typeof(ScrollViewer),
+                },
+                Converter = new Portion(0.66, 180),
+                FallbackValue = 420.0,
+            });
 
             // A column given a width of zero takes what is left, shared with any other, rather
             // than being left to size itself to its content.
@@ -1941,23 +2004,51 @@ namespace CamelWorks.UI.Views
             // arriving as "12 mi" with eighty pixels of empty pane to its right. Measuring against
             // the pane instead is both correct and what a table in a dock pane should do anyway,
             // since the pane is resized far more often than the data changes.
-            if (flexible.Count > 0)
+            //
+            // And a declared width is what a column wants, not what it must have. Twenty-nine of
+            // the product's fifty-three tables declare more fixed width than the dock pane's own
+            // minimum - the widest asks 750 in a pane that can be dragged to 470 - so holding
+            // those figures meant a horizontal scrollbar in the one place there is no room for
+            // one. When the pane is narrower than the table wants, every column gives up width in
+            // proportion, down to a floor that keeps a header readable; when it is wider they get
+            // what they asked for and the flexible ones take the rest.
+            void Fit()
             {
-                void Fit()
-                {
-                    // The room a vertical scrollbar and the two borders take. Guessed slightly
-                    // high: a column two pixels short of the edge looks intentional, and one two
-                    // pixels over brings a horizontal scrollbar the pane has no room for.
-                    var spare = table.ActualWidth - fixedWidth - 28;
-                    if (spare <= 0) return;
+                // The room a vertical scrollbar and the two borders take. Guessed slightly high:
+                // a column two pixels short of the edge looks intentional, and one two pixels
+                // over brings the horizontal scrollbar back.
+                var room = table.ActualWidth - 28;
+                if (room <= 0) return;
 
-                    var each = Math.Max(70, spare / flexible.Count);
-                    foreach (var column in flexible) column.Width = each;
+                // What the flexible columns need before anything is called spare.
+                var least = flexible.Count * 48;
+
+                if (room < fixedWidth + least && fixedWidth > 0)
+                {
+                    // One ratio for all of them, so the columns keep their relative sizes and the
+                    // table still reads as the same table. Floored, because past a point the
+                    // honest answer is a narrow column and a tooltip rather than four characters.
+                    var ratio = Math.Max(0.4, (room - least) / fixedWidth);
+
+                    foreach (var entry in asked)
+                        entry.Key.Width = Math.Max(40, entry.Value * ratio);
+
+                    foreach (var column in flexible) column.Width = 48;
+                    return;
                 }
 
-                table.SizeChanged += (s, e) => Fit();
-                table.Loaded += (s, e) => Fit();
+                foreach (var entry in asked) entry.Key.Width = entry.Value;
+
+                if (flexible.Count == 0) return;
+
+                var spare = room - fixedWidth;
+                if (spare <= 0) return;
+
+                foreach (var column in flexible) column.Width = Math.Max(70, spare / flexible.Count);
             }
+
+            table.SizeChanged += (s, e) => Fit();
+            table.Loaded += (s, e) => Fit();
 
             // A 3px bar down the left of the row, not the row's text.
             //
