@@ -92,6 +92,13 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _tags = Ui.Stack();
             private readonly StackPanel _note = Ui.Stack();
 
+            // The options a read can change - which properties look like a mass, a mark, a file
+            // path - so they are rebuilt after each read rather than built once and left stale.
+            private readonly StackPanel _options = Ui.Stack();
+
+            // The stage before the first run: what pressing the action will do, off the live read.
+            private readonly StackPanel _idle = Ui.Stack();
+
             private readonly TextBox _folder;
             private readonly TextBox _root;
             private readonly TextBox _prefix;
@@ -154,35 +161,105 @@ namespace CamelWorks.UI.Views
             // -----------------------------------------------------------------------------------
 
             /// <summary>
-            /// One tool's screen: what is on site, where its files go, and that tool's answer.
+            /// One tool's surface: the shared read and this tool's options in the setup column,
+            /// its one action at the foot, and its answer on the stage.
             ///
-            /// <b>Five tools, five windows, one read.</b> This was one window with four sections
+            /// <b>Five tools, five surfaces, one read.</b> This was one window with four sections
             /// side by side and a fifth that was built and never placed on it - so the ribbon's
             /// Labels button opened a window with no labels on it. Each of the five has its own
-            /// window now, and the expensive part is what they share: the selection and its
-            /// geometry are read once and every window opened afterwards is looking at it.
+            /// surface now, and the expensive part is what they share: the selection and its
+            /// geometry are read once and every surface opened afterwards is looking at it.
             /// </summary>
             private UIElement Build()
             {
                 Draw();
 
-                // The sentence sits under the button rather than over it: the caption already says
-                // what it reads, and what this adds - that the other four field tools are looking
-                // at the same read - is worth knowing after the press, not before it.
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Runner("Read the selection", _read, Gather),
-                    Ui.Small("Off what is selected in the model - the module, the lift, the floor. "
-                             + "The other field tools read the same selection, so it is read once "
-                             + "between them."),
-                    _read,
-                    Ui.PathField("Folder", _folder, PathKind.Folder),
-                    _note,
-                    Ui.Rule(),
-                    Answer()));
+                return Bench.Surface(Setup(), Foot(), Ui.Stack(_idle, Results(), _note));
             }
 
-            /// <summary>The one section this window is for.</summary>
-            private UIElement Answer()
+            /// <summary>The setup column: the shared read first, then this tool's own options.</summary>
+            private UIElement Setup()
+            {
+                var read = Bench.Group("Selection",
+                    Ui.Runner("Read the selection", _read, Gather, primary: false),
+                    _read);
+
+                var files = Bench.Group("Files",
+                    Ui.PathField("Folder", _folder, PathKind.Folder));
+
+                switch (_tool)
+                {
+                    case "dimensions":
+                        return Ui.Stack(read,
+                            Bench.Group("What to measure",
+                                Ui.Check("How big each element is", _shape.Sizes,
+                                    on => { _shape.Sizes = on; _kept.Set("dim.sizes", on); }),
+                                Ui.Check("Corner to corner as well", _shape.Diagonals,
+                                    on => { _shape.Diagonals = on; _kept.Set("dim.diagonals", on); }),
+                                Ui.Check("How far each sits above its level", _shape.Heights,
+                                    on => { _shape.Heights = on; _kept.Set("dim.heights", on); }),
+                                Ui.Check("Each to the nearest other one", _shape.Neighbours,
+                                    on => { _shape.Neighbours = on; _kept.Set("dim.neighbours", on); }),
+                                Ui.Check("The step from each to the next along a run", _shape.Spacing,
+                                    on => { _shape.Spacing = on; _kept.Set("dim.spacing", on); })),
+                            files);
+
+                    case "setout":
+                        return Ui.Stack(read,
+                            Bench.Group("Points",
+                                Ui.Field("Point numbers start with",
+                                    Ui.Text(_recipe.Prefix, text => _recipe.Prefix =
+                                        string.IsNullOrWhiteSpace(text) ? "SO" : text.Trim(), 100)),
+                                Ui.Field("Take", PointKinds())),
+                            Bench.Group("Where the site grid is",
+                                Ui.Field("Model origin is at northing",
+                                    Number(_recipe.NorthAtOrigin, v => _recipe.NorthAtOrigin = v),
+                                    "wrong, and every point is out by the same amount"),
+                                Ui.Field("...and easting",
+                                    Number(_recipe.EastAtOrigin, v => _recipe.EastAtOrigin = v)),
+                                Ui.Field("...and level",
+                                    Number(_recipe.LevelAtOrigin, v => _recipe.LevelAtOrigin = v)),
+                                Ui.Field("Project angle, clockwise",
+                                    Number(_recipe.RotationDegrees, v => _recipe.RotationDegrees = v),
+                                    "degrees from grid north, the way it is written on the drawings")),
+                            files);
+
+                    case "paperwork":
+                        return Ui.Stack(read,
+                            Bench.Group("Where the paperwork is named",
+                                _options,
+                                Ui.Field("Relative paths come from", _root,
+                                    "so a job that moves between machines does not lose every link")),
+                            files);
+
+                    case "labels":
+                        return Ui.Stack(read,
+                            Bench.Group("What goes on them", _options),
+                            files);
+
+                    default:
+                        // No files group: the centre of gravity is copied or boxed, never written
+                        // to a folder, and a path field that feeds nothing is clutter.
+                        return Ui.Stack(read,
+                            Bench.Group("How it is weighed", _options));
+                }
+            }
+
+            /// <summary>This tool's one action, whose answer lands on the stage.</summary>
+            private UIElement Foot()
+            {
+                switch (_tool)
+                {
+                    case "dimensions": return Ui.Runner("Measure it", _sizes, Measure);
+                    case "setout": return Ui.Runner("Take the points", _points, Points);
+                    case "paperwork": return Ui.Runner("Find what is attached", _paper, Paper);
+                    case "labels": return Ui.Runner("Make the labels", _tags, Tag);
+                    default: return Ui.Runner("Work out where it sits", _weight, Weigh);
+                }
+            }
+
+            /// <summary>The stage panel this tool's answer lands in.</summary>
+            private StackPanel Results()
             {
                 switch (_tool)
                 {
@@ -192,6 +269,30 @@ namespace CamelWorks.UI.Views
                     case "labels": return _tags;
                     default: return _weight;
                 }
+            }
+
+            /// <summary>The point kinds to take, each its own tick.</summary>
+            private UIElement PointKinds()
+            {
+                var kinds = Ui.Stack();
+
+                foreach (var kind in new[]
+                         {
+                             PointKind.Base, PointKind.Top, PointKind.Centre,
+                             PointKind.Start, PointKind.End,
+                         })
+                {
+                    var here = kind;
+
+                    kinds.Children.Add(Ui.Check(SettingOut.Word(here), _recipe.Kinds.Contains(here),
+                        on =>
+                        {
+                            if (on && !_recipe.Kinds.Contains(here)) _recipe.Kinds.Add(here);
+                            if (!on) _recipe.Kinds.Remove(here);
+                        }));
+                }
+
+                return kinds;
             }
 
             // -----------------------------------------------------------------------------------
@@ -247,31 +348,105 @@ namespace CamelWorks.UI.Views
                 Draw();
             }
 
+            /// <summary>
+            /// Bring the surface up to date with the read: clear an answer taken off the old
+            /// selection, restate what the action will do, and rebuild the options a read changes.
+            /// </summary>
             private void Draw()
             {
+                Results().Children.Clear();
+                Idle();
+
                 switch (_tool)
                 {
-                    case "dimensions": DrawSizes(); break;
-                    case "setout": DrawPoints(); break;
-                    case "paperwork": DrawPaper(); break;
-                    case "labels": DrawTags(); break;
-                    default: DrawWeight(); break;
+                    case "paperwork": PaperOptions(); break;
+                    case "labels": TagOptions(); break;
+                    case "weight": WeightOptions(); break;
                 }
+            }
+
+            /// <summary>What pressing the action will do, off what is actually read.</summary>
+            private void Idle()
+            {
+                _idle.Children.Clear();
+
+                var none = Chosen.Count == 0;
+                var count = Ui.Count(Chosen.Count, "element");
+
+                switch (_tool)
+                {
+                    case "dimensions":
+                        _idle.Children.Add(none
+                            ? Bench.Ready("Nothing is read yet.",
+                                "Read the selection, and the schedule is measured off it here.")
+                            : Bench.Ready("Measures " + count + " onto one schedule.",
+                                "Sizes, heights and spacings land here, ready to write as a file."));
+                        break;
+
+                    case "setout":
+                        _idle.Children.Add(none
+                            ? Bench.Ready("Nothing is read yet.",
+                                "Read the selection, and its setting-out points are taken here.")
+                            : Bench.Ready("Takes setting-out points off " + count + ".",
+                                "Numbered points in site coordinates land here, ready to write as "
+                                + "the file a total station loads."));
+                        break;
+
+                    case "paperwork":
+                        _idle.Children.Add(none
+                            ? Bench.Ready("Nothing is read yet.",
+                                "Read the selection, and what it points at is gathered here.")
+                            : Bench.Ready("Looks along " + count + " for the documents and photos "
+                                + "they point at.",
+                                "What is found lands here; a row opens the file it names."));
+                        break;
+
+                    case "labels":
+                        _idle.Children.Add(none
+                            ? Bench.Ready("Nothing is read yet.",
+                                "Read the selection, and a label is made for each element here.")
+                            : Bench.Ready("Makes a label for each of " + count + ".",
+                                "The sheet previews here, ready to write and print."));
+                        break;
+
+                    default:
+                        _idle.Children.Add(none
+                            ? Bench.Ready("Nothing is read yet.",
+                                "Read the selection, and where its weight sits is worked out here.")
+                            : Bench.Ready("Works out where the weight of " + count + " sits.",
+                                "The centre of gravity, the mass and the enclosed volume land here."));
+                        break;
+                }
+            }
+
+            /// <summary>
+            /// True when the foot action was pressed before anything was read, said in the panel
+            /// the answer would have landed in. Clears the idle statement either way, because from
+            /// this press on the panel holds the outcome.
+            /// </summary>
+            private bool Unread(Panel into)
+            {
+                _idle.Children.Clear();
+
+                if (Chosen.Count > 0) return false;
+
+                into.Children.Add(Ui.Empty("Nothing is read yet.",
+                    "Read the selection in the setup column first."));
+
+                return true;
             }
 
             // -----------------------------------------------------------------------------------
             // Weight and balance
             // -----------------------------------------------------------------------------------
 
-            private void DrawWeight()
+            /// <summary>
+            /// The two choices the answer turns on. Rebuilt after each read, because which
+            /// properties look like a mass is a fact about the selection, not the tool.
+            /// </summary>
+            private void WeightOptions()
             {
-                _weight.Children.Clear();
-
-                if (Chosen.Count == 0)
-                {
-                    _weight.Children.Add(Ui.Small("Read a selection first."));
-                    return;
-                }
+                _options.Children.Clear();
 
                 var fields = MassFields();
 
@@ -289,19 +464,19 @@ namespace CamelWorks.UI.Views
 
                 picker.IsEnabled = fields.Count > 0;
 
-                _weight.Children.Add(Ui.Form(
-                    Ui.Field("Weight it by",
-                        Ui.Choice(new[] { ByWeight, ByVolume }, _basis, pick =>
-                        {
-                            _basis = pick;
-                            _kept.Set("basis", pick);
-                        }, 240)),
-                    Ui.Field("The mass is in", picker,
-                             fields.Count == 0
-                                 ? "nothing in this selection looks like a mass"
-                                 : "a property holding kg, t or lb - or a bare number, taken as kg")));
+                _options.Children.Add(Ui.Field("Weight it by",
+                    Ui.Choice(new[] { ByWeight, ByVolume }, _basis, pick =>
+                    {
+                        _basis = pick;
+                        _kept.Set("basis", pick);
+                    }, 240)));
 
-                _weight.Children.Add(Ui.Runner("Work out where it sits", _weight, Weigh));
+                _options.Children.Add(Ui.Field("The mass is in", picker,
+                    Chosen.Count == 0
+                        ? "read the selection and the candidates appear"
+                        : fields.Count == 0
+                            ? "nothing in this selection looks like a mass"
+                            : "a property holding kg, t or lb - or a bare number, taken as kg"));
             }
 
             /// <summary>
@@ -346,6 +521,8 @@ namespace CamelWorks.UI.Views
 
             private void Weigh(Job job)
             {
+                if (Unread(_weight)) return;
+
                 if (!ReadGeometry(job)) return;
 
                 var parts = new List<MassPart>();
@@ -437,41 +614,10 @@ namespace CamelWorks.UI.Views
             // Dimensions
             // -----------------------------------------------------------------------------------
 
-            private void DrawSizes()
-            {
-                _sizes.Children.Clear();
-
-                if (Chosen.Count == 0)
-                {
-                    _sizes.Children.Add(Ui.Small("Read a selection first."));
-                    return;
-                }
-
-                var what = Ui.Stack();
-
-                what.Children.Add(Ui.Check("How big each element is", _shape.Sizes,
-                    on => { _shape.Sizes = on; _kept.Set("dim.sizes", on); }));
-
-                what.Children.Add(Ui.Check("Corner to corner as well", _shape.Diagonals,
-                    on => { _shape.Diagonals = on; _kept.Set("dim.diagonals", on); }));
-
-                what.Children.Add(Ui.Check("How far each sits above its level", _shape.Heights,
-                    on => { _shape.Heights = on; _kept.Set("dim.heights", on); }));
-
-                what.Children.Add(Ui.Check("Each to the nearest other one", _shape.Neighbours,
-                    on => { _shape.Neighbours = on; _kept.Set("dim.neighbours", on); }));
-
-                what.Children.Add(Ui.Check("The step from each to the next along a run",
-                    _shape.Spacing,
-                    on => { _shape.Spacing = on; _kept.Set("dim.spacing", on); }));
-
-                _sizes.Children.Add(Ui.Section("What to measure", _shape.Says, true, what));
-
-                _sizes.Children.Add(Ui.Runner("Measure it", _sizes, Measure));
-            }
-
             private void Measure(Job job)
             {
+                if (Unread(_sizes)) return;
+
                 if (!ReadGeometry(job)) return;
 
                 job.Say("Measuring...");
@@ -595,64 +741,10 @@ namespace CamelWorks.UI.Views
             // Setting out
             // -----------------------------------------------------------------------------------
 
-            private void DrawPoints()
-            {
-                _points.Children.Clear();
-
-                if (Chosen.Count == 0)
-                {
-                    _points.Children.Add(Ui.Small("Read a selection first."));
-                    return;
-                }
-
-                var kinds = Ui.Stack();
-
-                foreach (var kind in new[]
-                         {
-                             PointKind.Base, PointKind.Top, PointKind.Centre,
-                             PointKind.Start, PointKind.End,
-                         })
-                {
-                    var here = kind;
-
-                    kinds.Children.Add(Ui.Check(SettingOut.Word(here), _recipe.Kinds.Contains(here),
-                        on =>
-                        {
-                            if (on && !_recipe.Kinds.Contains(here)) _recipe.Kinds.Add(here);
-                            if (!on) _recipe.Kinds.Remove(here);
-                        }));
-                }
-
-                _points.Children.Add(Ui.Form(
-                    Ui.Field("Point numbers start with",
-                        Ui.Text(_recipe.Prefix, text => _recipe.Prefix =
-                            string.IsNullOrWhiteSpace(text) ? "SO" : text.Trim(), 100)),
-                    Ui.Field("Take", kinds)));
-
-                _points.Children.Add(Ui.Section("Where the site grid is",
-                    _recipe.IsUnshifted ? "not set — these will be model coordinates"
-                                        : "offset and angle set",
-                    _recipe.IsUnshifted,
-                    Ui.Small("The survey offset every job has and nobody writes down. Wrong, and "
-                             + "every point is wrong by the same amount - the one kind of error a "
-                             + "setting-out file can carry that nobody notices until the steel "
-                             + "does not fit."),
-                    Ui.Form(
-                        Ui.Field("Model origin is at northing",
-                            Number(_recipe.NorthAtOrigin, v => _recipe.NorthAtOrigin = v)),
-                        Ui.Field("...and easting",
-                            Number(_recipe.EastAtOrigin, v => _recipe.EastAtOrigin = v)),
-                        Ui.Field("...and level",
-                            Number(_recipe.LevelAtOrigin, v => _recipe.LevelAtOrigin = v)),
-                        Ui.Field("Project angle, clockwise",
-                            Number(_recipe.RotationDegrees, v => _recipe.RotationDegrees = v),
-                            "degrees from grid north, the way it is written on the drawings"))));
-
-                _points.Children.Add(Ui.Runner("Take the points", _points, Points));
-            }
-
             private void Points(Job job)
             {
+                if (Unread(_points)) return;
+
                 var elements = Chosen.Select(e => new FieldElement(
                     e.Key, e.Name, e.Bounds, e.HasGeometry, Mark(e))).ToList();
 
@@ -751,15 +843,14 @@ namespace CamelWorks.UI.Views
             // Labels for the work
             // -----------------------------------------------------------------------------------
 
-            private void DrawTags()
+            /// <summary>
+            /// What the labels say. Rebuilt after each read, because the properties worth printing
+            /// - nearly filled in, not constant, short enough for a sticker - come off the
+            /// selection itself.
+            /// </summary>
+            private void TagOptions()
             {
-                _tags.Children.Clear();
-
-                if (Chosen.Count == 0)
-                {
-                    _tags.Children.Add(Ui.Small("Read a selection first."));
-                    return;
-                }
+                _options.Children.Clear();
 
                 var marks = MarkFields();
 
@@ -776,11 +867,15 @@ namespace CamelWorks.UI.Views
 
                 if (!options.Contains(shown, StringComparer.OrdinalIgnoreCase)) shown = FromMark;
 
-                var what = Ui.Stack(
+                _options.Children.Add(
                     Ui.Field("What the code says", Ui.Choice(options, shown, Chose, 260),
-                             "the mark is what a drawing calls it, and needs nothing setting up"),
+                             "the mark is what a drawing calls it, and needs nothing setting up"));
+
+                _options.Children.Add(
                     Ui.Field("Behind it", _prefix,
-                             "leave it empty and the code says exactly what is printed under it"),
+                             "leave it empty and the code says exactly what is printed under it"));
+
+                _options.Children.Add(
                     Ui.Field("How much can be lost",
                         Ui.Choice(Losses, Loss(_tag.Level), pick =>
                         {
@@ -788,10 +883,6 @@ namespace CamelWorks.UI.Views
                             _kept.Set("labelLevel", pick);
                         }, 200),
                         "a label on site gets scuffed; the more it can lose the bigger the code"));
-
-                _tags.Children.Add(Ui.Section("What goes on them", _tag.ToString(), true, what));
-
-                _tags.Children.Add(Ui.Runner("Make the labels", _tags, Tag));
             }
 
             private void Chose(string pick)
@@ -823,6 +914,8 @@ namespace CamelWorks.UI.Views
 
             private void Tag(Job job)
             {
+                if (Unread(_tags)) return;
+
                 job.Say("Making the codes...");
 
                 // Kept beside the element it came off rather than looked up by key, because two
@@ -954,13 +1047,18 @@ namespace CamelWorks.UI.Views
             // The paperwork
             // -----------------------------------------------------------------------------------
 
-            private void DrawPaper()
+            /// <summary>
+            /// Which properties name the files. Rebuilt after each read, because what looks like a
+            /// document path is a fact about the selection, not the tool.
+            /// </summary>
+            private void PaperOptions()
             {
-                _paper.Children.Clear();
+                _options.Children.Clear();
 
                 if (Chosen.Count == 0)
                 {
-                    _paper.Children.Add(Ui.Small("Read a selection first."));
+                    _options.Children.Add(Ui.Small("Read the selection and the naming "
+                        + "properties appear."));
                     return;
                 }
 
@@ -971,7 +1069,7 @@ namespace CamelWorks.UI.Views
 
                     if (options.Count == 0)
                     {
-                        _paper.Children.Add(Ui.Small("Nothing in this selection looks like it says "
+                        _options.Children.Add(Ui.Small("Nothing in this selection looks like it says "
                             + "where the " + (here == AttachmentKind.Photo ? "photos" : "documents")
                             + " are."));
 
@@ -986,19 +1084,16 @@ namespace CamelWorks.UI.Views
 
                     Remember(here, Split(shown));
 
-                    _paper.Children.Add(Ui.Form(Ui.Field(
+                    _options.Children.Add(Ui.Field(
                         here == AttachmentKind.Photo ? "Photos are named by" : "Documents are named by",
-                        Ui.Choice(options, shown, pick => Remember(here, Split(pick)), 260))));
+                        Ui.Choice(options, shown, pick => Remember(here, Split(pick)), 260)));
                 }
-
-                _paper.Children.Add(Ui.Form(Ui.Field("Relative paths come from", _root,
-                    "so a job that moves between machines does not lose every link")));
-
-                _paper.Children.Add(Ui.Runner("Find what is attached", _paper, Paper));
             }
 
             private void Paper(Job job)
             {
+                if (Unread(_paper)) return;
+
                 var root = _root.Text.Trim();
 
                 foreach (var rule in _rules) rule.Root = root.Length == 0 ? null : root;
@@ -1046,11 +1141,15 @@ namespace CamelWorks.UI.Views
                                              .Select(f => new TableRow(f, f)).ToList(),
                                          ("Folder", 0));
 
-                    _paper.Children.Add(Ui.Section("Folders that are there and empty",
-                        Ui.Count(report.EmptyFolders.Count, "folder"), false,
-                        Ui.Picking(empty,
-                            new Ui.OnPicked("Copy {n}",
-                                (picked, say) => Ui.Copy(Ui.Lines(empty, picked), say, "folder")))));
+                    var heading = Ui.Eyebrow("Folders that are there and empty");
+                    heading.Margin = new Thickness(0, 14, 0, 6);
+
+                    _paper.Children.Add(heading);
+                    _paper.Children.Add(Ui.Picking(empty,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(empty, picked), say, "folder"))));
+                    _paper.Children.Add(Ui.Tally(Math.Min(Shown, report.EmptyFolders.Count),
+                                                 report.EmptyFolders.Count, "folder"));
                 }
             }
 

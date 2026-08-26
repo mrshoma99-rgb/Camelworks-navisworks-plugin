@@ -123,36 +123,25 @@ namespace CamelWorks.UI.Views
             private UIElement Build()
             {
                 var model = Ui.Stack(
+                    Bench.Ready("Read the federation once; every rule is tried against it."),
                     Ui.Runner("Read it", _read, Gather),
-                    Ui.Small("Read once, then try as many rules as you like against it."),
                     _read);
 
                 var piece = Ui.Stack(
-                    Ui.Form(Ui.Field("Take", Ui.Choice(Axes, Word(_recipe.Axis), Chose, 250))),
-                    _how,
-                    Ui.Rule(),
-                    Ui.Eyebrow("What that is"),
-                    _verdict,
-                    Ui.Rule(),
-                    Ui.Eyebrow("This extract"),
-                    Saved());
+                    Bench.Group(string.Empty,
+                        Ui.Field("Take", Ui.Choice(Axes, Word(_recipe.Axis), Chose, 250)),
+                        _how),
+                    Bench.Group("What that is", _verdict),
+                    Bench.Group("This extract", Saved()));
 
                 var take = Ui.Stack(
-                    Ui.PathField("Folder", _folder, PathKind.Folder),
+                    Bench.Group(string.Empty, Ui.PathField("Folder", _folder, PathKind.Folder)),
                     _out,
                     _note,
-                    Ui.Rule(),
-                    Ui.Section("Why there is no NWD button", "what Navisworks lets a plug-in do", false,
-                        Ui.Small("The Navisworks .NET API has no call that writes part of a document "
-                                 + "to NWD. A plug-in can save the document it has, whole, and "
-                                 + "nothing narrower - so a button here saying \"NWD\" would either "
-                                 + "write the entire federation under a name that promised a slice "
-                                 + "of it, or quietly do nothing."),
-                        Ui.Small("What is here instead is the hard part and the reusable part: "
-                                 + "working out precisely what belongs in the piece, saying so, and "
-                                 + "writing it to the formats CamelWorks does write. Press \"Select "
-                                 + "it in the model\" and Navisworks' own File ▸ Export takes it "
-                                 + "from there, on exactly the elements this rule chose.")));
+                    Bench.Group("Why there is no NWD button",
+                        Ui.Small("The Navisworks .NET API cannot write part of a document to NWD. "
+                                 + "\"Make it a set\", then Navisworks' own File ▸ Export, works on "
+                                 + "exactly the elements this rule chose.")));
 
                 Draw();
 
@@ -178,12 +167,8 @@ namespace CamelWorks.UI.Views
                 _picker = Ui.Choice(names, _recipe.Name, Switch, 220);
 
                 return Ui.Stack(
-                    Ui.Small("A saved extract re-runs against whatever is loaded next revision and "
-                             + "takes whatever matches then. Nothing has to be saved for it to work "
-                             + "now."),
-                    Ui.Form(
-                        Ui.Field("Saved", _picker),
-                        Ui.Field("Name", _name, "what the files are named after")),
+                    Ui.Field("Saved", _picker, "Re-runs against whatever is loaded next revision."),
+                    Ui.Field("Name", _name, "what the files are named after"),
                     Ui.Actions(
                         Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
@@ -300,10 +285,8 @@ namespace CamelWorks.UI.Views
                 switch (_recipe.Axis)
                 {
                     case ExtractAxis.Selection:
-                        _how.Children.Add(Ui.Small("Whatever is selected in the model when you press "
-                            + "a button below. Saving this rule saves \"the selection\", not the "
-                            + "elements, so it means something different next month - which is "
-                            + "usually not what a saved extract is for."));
+                        _how.Children.Add(Ui.Small("Whatever is selected when a writer runs. Saved, "
+                            + "this rule means \"the selection\", not these elements."));
                         break;
 
                     case ExtractAxis.Viewpoint:
@@ -349,8 +332,8 @@ namespace CamelWorks.UI.Views
 
                 _recipe.Named = chosen;
 
-                _how.Children.Add(Ui.Form(Ui.Field(label,
-                    Ui.Choice(options, chosen, pick => { _recipe.Named = pick; DrawVerdict(); }, 260))));
+                _how.Children.Add(Ui.Field(label,
+                    Ui.Choice(options, chosen, pick => { _recipe.Named = pick; DrawVerdict(); }, 260)));
             }
 
             /// <summary>
@@ -371,9 +354,7 @@ namespace CamelWorks.UI.Views
 
                 _how.Children.Add(Ui.Actions(Ui.Quiet("Go to it and see what it shows", Looking)));
 
-                _how.Children.Add(Ui.Small("Applying a viewpoint moves the camera and restores "
-                    + "whatever it was hiding, which is the only way to find out what it shows - a "
-                    + "saved view holds a camera and a set of overrides, not a list of elements."));
+                _how.Children.Add(Ui.Small("Applying it moves the camera."));
             }
 
             private void Looking()
@@ -438,14 +419,14 @@ namespace CamelWorks.UI.Views
 
                 var values = Ui.Stack();
 
-                _how.Children.Add(Ui.Form(Ui.Field("Property",
+                _how.Children.Add(Ui.Field("Property",
                     Ui.Choice(fields, shown, pick =>
                     {
                         _recipe.Property = Split(pick);
                         _recipe.Value = null;
                         DrawHow();
                         DrawVerdict();
-                    }, 260))));
+                    }, 260)));
 
                 _how.Children.Add(values);
 

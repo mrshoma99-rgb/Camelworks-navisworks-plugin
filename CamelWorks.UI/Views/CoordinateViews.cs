@@ -784,7 +784,7 @@ namespace CamelWorks.UI.Views
                 // so they are the setup column, and the one action is the Monday load.
                 return Bench.Surface(
                     Ui.Stack(
-                        Bench.Group("Show",
+                        Bench.Group("Narrow the board",
                             Ui.Field("Show", _preset),
                             Ui.Field("Find", _search)),
                         raise.Setup()),

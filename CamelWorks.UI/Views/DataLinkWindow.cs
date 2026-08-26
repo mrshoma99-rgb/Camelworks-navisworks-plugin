@@ -132,61 +132,45 @@ namespace CamelWorks.UI.Views
                 _sheets.IsEnabled = false;
 
                 var file = Ui.Stack(
-                    Ui.PathField("Spreadsheet", _file, PathKind.Open,
-                                 "Spreadsheet|*.xlsx;*.xlsm|All files|*.*"),
-                    Ui.Form(Ui.Field("Worksheet", _sheets)),
-                    Ui.Runner("Read the file", _read, Open),
+                    Bench.Group(string.Empty,
+                        Ui.PathField("Spreadsheet", _file, PathKind.Open,
+                                     "Spreadsheet|*.xlsx;*.xlsm|All files|*.*"),
+                        Ui.Field("Worksheet", _sheets),
+                        Ui.Runner("Read the file", _read, Open)),
                     _read,
-                    Ui.Rule(),
-                    Ui.Eyebrow("This link"),
-                    Saved());
+                    Bench.Group("This link", Saved()));
 
                 var model = Ui.Stack(
-                    Ui.Form(Ui.Field("Scope",
-                        Ui.Choice(new[] { Selection, Everything }, _scopeChoice, pick =>
-                        {
-                            _scopeChoice = pick;
-                            _kept.Set("scope", pick);
-                        }))),
-                    Ui.Runner("Read the model", _model, Gather),
+                    Bench.Group(string.Empty,
+                        Ui.Field("Scope",
+                            Ui.Choice(new[] { Selection, Everything }, _scopeChoice, pick =>
+                            {
+                                _scopeChoice = pick;
+                                _kept.Set("scope", pick);
+                            })),
+                        Ui.Runner("Read the model", _model, Gather)),
                     _model);
 
-                var join = Ui.Stack(
-                    Ui.Small("A key column is the one whose values turn up in the model - an asset "
-                             + "number, a mark, a tag. CamelWorks proposes the one that matches "
-                             + "best; anything it proposes can be overruled."),
-                    _join);
+                var join = Ui.Stack(_join);
 
-                var columns = Ui.Stack(
-                    Ui.Small("Everything written lands on the \"" + NavWriteTransaction.TabName
-                             + "\" tab - Navisworks does not let a plug-in write into the authoring "
-                             + "tool's own tabs. The tab named on a column is where CamelWorks "
-                             + "looks to see whether the model already says something."),
-                    _columns);
+                var columns = Ui.Stack(_columns);
 
                 var write = Ui.Stack(
                     Ui.Eyebrow("What it would do"),
                     _verdict,
-                    Ui.Rule(),
-                    Ui.Eyebrow("On to the model"),
-                    Ui.Form(Ui.Field("If a value is already there",
-                        Ui.Choice(new[] { "leave it", "replace it" }, "leave it", pick =>
-                        {
-                            _existing = pick == "replace it"
-                                ? ExistingValues.Overwrite
-                                : ExistingValues.Keep;
-                        }))),
+                    Bench.Group("On to the model",
+                        Ui.Field("If a value is already there",
+                            Ui.Choice(new[] { "leave it", "replace it" }, "leave it", pick =>
+                            {
+                                _existing = pick == "replace it"
+                                    ? ExistingValues.Overwrite
+                                    : ExistingValues.Keep;
+                            }))),
                     Ui.Commit("See what would change", "Write", "element", Rehearse, Publish),
                     _written,
-                    Ui.Small("Ctrl+Z will not undo a write. Navisworks does not put property writes "
-                             + "on its undo stack, so CamelWorks records what it changed in the "
-                             + "project file instead of pretending otherwise."),
-                    Ui.Rule(),
-                    Ui.Eyebrow("Back to the sheet"),
-                    Ui.Small("The columns set to \"" + DoRead + "\" are filled in from the model and "
-                             + "the whole sheet is written out again - every row, matched or not, so "
-                             + "what comes out is still the file that went in."),
-                    Ui.PathField("Write it to", _out, PathKind.Save, "Excel workbook|*.xlsx"),
+                    Bench.Group("Back to the sheet",
+                        Ui.PathField("Write it to", _out, PathKind.Save, "Excel workbook|*.xlsx",
+                                     "The whole sheet goes out again, every row.")),
                     Ui.Commit("See what would be sent back", "Send back", "cell", Returning, Send),
                     _sent,
                     _note);
@@ -220,11 +204,9 @@ namespace CamelWorks.UI.Views
                 _picker = Ui.Choice(names, _link.Name, Switch, 200);
 
                 return Ui.Stack(
-                    Ui.Small("A saved link runs again next revision against a newer drop of the "
-                             + "same file. Nothing has to be saved for the link to work now."),
-                    Ui.Form(
-                        Ui.Field("Saved", _picker),
-                        Ui.Field("Name", _name)),
+                    Ui.Field("Saved", _picker,
+                             "Runs again next revision against a newer drop."),
+                    Ui.Field("Name", _name),
                     Ui.Actions(
                         Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
@@ -440,12 +422,13 @@ namespace CamelWorks.UI.Views
 
                 property.IsEnabled = _link.Match == LinkMatch.Property && fields.Count > 0;
 
-                _join.Children.Add(Ui.Form(
+                _join.Children.Add(Ui.Stack(
                     Ui.Field("The column that identifies it",
                         Ui.Choice(headings, headings.Contains(_link.KeyHeading, StringComparer.OrdinalIgnoreCase)
                                                 ? _link.KeyHeading
                                                 : headings.FirstOrDefault(),
-                                  pick => { _link.KeyHeading = pick; DrawColumns(); DrawVerdict(); }, 240)),
+                                  pick => { _link.KeyHeading = pick; DrawColumns(); DrawVerdict(); }, 240),
+                        "The column whose values turn up in the model."),
                     Ui.Field("Matched against",
                         Ui.Choice(new[] { ById, ByProperty, ByName }, how, pick =>
                         {
@@ -522,6 +505,10 @@ namespace CamelWorks.UI.Views
                 _columns.Children.Add(Ui.Line(
                     Ui.Count(mapped, "column") + " of " + Ui.Count(headings.Count - 1, "other column")
                     + " mapped", 0.7));
+
+                _columns.Children.Add(Ui.Small("Writes land on the \"" + NavWriteTransaction.TabName
+                                               + "\" tab; the tab named here is where existing "
+                                               + "values are read."));
             }
 
             private void DrawVerdict()
@@ -566,11 +553,10 @@ namespace CamelWorks.UI.Views
 
                     // Row numbers and keys, which is what somebody needs in front of them to go and
                     // fix the sheet - and the sheet is usually not open on this machine.
-                    _verdict.Children.Add(Ui.Section("The rows that matched nothing",
-                        Ui.Count(plan.Orphans.Count, "row"), false,
-                        Ui.Picking(orphans,
-                            new Ui.OnPicked("Copy {n}",
-                                (picked, say) => Ui.Copy(Ui.Lines(orphans, picked), say, "row")))));
+                    _verdict.Children.Add(Ui.Eyebrow("The rows that matched nothing"));
+                    _verdict.Children.Add(Ui.Picking(orphans,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(orphans, picked), say, "row"))));
                 }
             }
 
