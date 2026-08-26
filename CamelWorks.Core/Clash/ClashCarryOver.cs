@@ -188,6 +188,43 @@ namespace CamelWorks.Core.Clash
         /// </summary>
         public int WeakMatches { get; }
 
+        /// <summary>
+        /// The same delta, restricted to the results that actually reached the board.
+        ///
+        /// Carry-over runs before the rules do, and it has to: a suppressed result still has a
+        /// history, and losing it would mean a rule that hides something also forgets that
+        /// somebody approved it. So the raw delta describes every surviving result, suppressed or
+        /// not - which is right for the record and wrong for the screen.
+        ///
+        /// The screen shows a board. "Twelve new" over a board holding four is not a rounding
+        /// difference, it is two different populations printed as one row, and the eight are not
+        /// anywhere the reader can find them. Restricting to what is on the board makes the
+        /// figures describe the thing underneath them; the difference between the two is what the
+        /// rules took out, which is the funnel's job to say.
+        ///
+        /// Resolved is carried across untouched. A result the rules suppressed this week is not
+        /// gone from the model - it never entered this count, because it matched a record and was
+        /// claimed.
+        /// </summary>
+        /// <param name="shown">The results on the board. Compared by identity, not by key.</param>
+        public ClashDelta OnBoard(IEnumerable<ClashItem>? shown)
+        {
+            if (shown == null) return this;
+
+            var kept = new HashSet<ClashItem>(shown.Where(i => i != null));
+
+            return new ClashDelta(
+                New.Where(kept.Contains).ToList(),
+                Persisting.Where(kept.Contains).ToList(),
+                Regressed.Where(kept.Contains).ToList(),
+                Resolved,
+                MatchedOnNeighbourCell,
+                WeakMatches);
+        }
+
+        /// <summary>Every result this delta accounts for: new, still there, and back again.</summary>
+        public int Accounted => New.Count + Persisting.Count + Regressed.Count;
+
         /// <summary>The one-line readout.</summary>
         public override string ToString()
         {

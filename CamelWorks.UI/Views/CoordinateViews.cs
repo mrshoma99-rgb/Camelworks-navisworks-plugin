@@ -698,7 +698,13 @@ namespace CamelWorks.UI.Views
             private HashSet<ClashItem> _regressed = new HashSet<ClashItem>();
 
             private ClashPipelineResult? _board;
+
+            /// <summary>The delta as the board shows it: only results that are on the board.</summary>
             private ClashDelta? _delta;
+
+            /// <summary>The delta as carry-over produced it, before the rules took anything out.</summary>
+            private ClashDelta? _raw;
+
             private Session? _session;
 
             internal TriageScreen()
@@ -722,7 +728,13 @@ namespace CamelWorks.UI.Views
 
                     var notes = new List<string>();
                     _board = CoordinateViews.Build(_session, job, notes);
-                    _delta = LastDelta;
+
+                    // Restricted to what reached the board. The raw delta covers every result that
+                    // survived duplicate collapse, including the ones a rule then suppressed, so
+                    // over a board of four it would say twelve and put the other eight nowhere the
+                    // reader could look.
+                    _raw = LastDelta;
+                    _delta = _raw?.OnBoard(_board?.Groups.SelectMany(g => g.Items));
 
                     _regressed = Regressed();
 
@@ -789,13 +801,34 @@ namespace CamelWorks.UI.Views
                     // Only the exception is coloured. With all four tinted, colour stopped
                     // discriminating and the one that is actually urgent — the regression — was
                     // the smallest glyph in the row, because a figure sizes by its digit count.
+                    // Three figures, one population: clash results on this board. The fourth used
+                    // to be "unassigned", which counts issues - so the row read as four comparable
+                    // numbers and three of them were results while one was groups. Nobody could
+                    // add them up because they were never addable.
                     _summary.Children.Add(Ui.Across(
                         Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new"),
                         Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
                             regressed > 0 ? Tone.Bad : Tone.Plain),
                         Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone"),
-                        Ui.Figure(unassigned, "unassigned",
-                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Plain)));
+                        Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
+                            "still there")));
+
+                    // And the issues, said as a sentence so the change of unit is impossible to
+                    // miss. These add up: new plus came back plus still there is the board.
+                    _summary.Children.Add(Ui.Line(
+                        Ui.Count(_delta.Accounted, "result") + " on this board, grouped into "
+                        + Ui.Count(funnel.Groups, "issue") + ", " + unassigned + " of which nobody owns.",
+                        1, true));
+
+                    // What the rules took out, said where the difference would otherwise be
+                    // unaccounted for.
+                    var hidden = (_raw?.Accounted ?? 0) - _delta.Accounted;
+
+                    if (hidden > 0)
+                        _summary.Children.Add(Ui.Note(Ui.Count(hidden, "result")
+                            + " matched or arrived this run and were suppressed by a rule, so they "
+                            + "are not on the board and not in these figures. \"How this board was "
+                            + "made\" below says which rules."));
 
                     if (regressed > 0)
                         _summary.Children.Add(Ui.Problem(
@@ -848,10 +881,7 @@ namespace CamelWorks.UI.Views
                     Ui.Across(
                         Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
                         Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed"),
-                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into"),
-                        _delta == null ? null
-                            : Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
-                                        "still there")),
+                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into")),
                     Ui.Line(funnel.ToString(), 0.8),
                     funnel.RulesApplied.Count == 0 ? null
                         : Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7)));

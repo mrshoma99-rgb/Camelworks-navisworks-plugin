@@ -23,6 +23,89 @@ namespace CamelWorks.Core.Tests
             new ClashSnapshot(new[] { new ClashRecord(ClashKey.Create(Pipe, Beam, x, 0, 0), status, group, pinned) });
 
         // ---------------------------------------------------------------------------------
+        // What the board is allowed to print
+        // ---------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_delta_accounts_for_every_result_it_was_given()
+        {
+            // The property the board's figures rest on: new plus still-there plus came-back is the
+            // run. Without it the four numbers on the screen are four unrelated numbers.
+            var items = new[] { At(0), At(1), At(2) };
+
+            var delta = ClashCarryOver.Apply(items, SnapshotOf(FindingStatus.Resolved, 1));
+
+            Assert.Equal(items.Length, delta.Accounted);
+            Assert.Equal(1, delta.Regressed.Count);
+            Assert.Equal(2, delta.New.Count);
+        }
+
+        [Fact]
+        public void Restricting_to_the_board_drops_what_the_rules_took_out()
+        {
+            // Carry-over runs before the rules, so a suppressed result keeps its history - and the
+            // screen must not print it. "Twelve new" over a board of four is two populations in
+            // one row, and the eight are nowhere the reader can look.
+            var shown = At(0);
+            var suppressed = At(1);
+
+            var delta = ClashCarryOver.Apply(new[] { shown, suppressed }, null);
+
+            Assert.Equal(2, delta.Accounted);
+
+            var board = delta.OnBoard(new[] { shown });
+
+            Assert.Equal(1, board.Accounted);
+            Assert.Same(shown, Assert.Single(board.New));
+        }
+
+        [Fact]
+        public void A_result_the_rules_hid_is_not_reported_as_gone()
+        {
+            // The failure that would make the week look like progress: a rule hides something, and
+            // the board says it was resolved.
+            var hidden = At(0);
+
+            var delta = ClashCarryOver.Apply(new[] { hidden }, SnapshotOf(FindingStatus.Active));
+
+            Assert.Empty(delta.Resolved);
+            Assert.Empty(delta.OnBoard(Array.Empty<ClashItem>()).Resolved);
+        }
+
+        [Fact]
+        public void Restricting_to_the_board_keeps_what_is_really_gone()
+        {
+            // Resolved is about the model, not the board: those results are not there to suppress.
+            var delta = ClashCarryOver.Apply(Array.Empty<ClashItem>(), SnapshotOf(FindingStatus.Active));
+
+            Assert.Single(delta.Resolved);
+            Assert.Single(delta.OnBoard(Array.Empty<ClashItem>()).Resolved);
+        }
+
+        [Fact]
+        public void Restricting_compares_by_identity_not_by_key()
+        {
+            // Two results can share a key exactly - the same pair in the same cell, found by two
+            // tests. The board holds one of them and the delta must follow the object, not the key.
+            var first = At(0, "Hard");
+            var second = At(0, "Clearance");
+
+            var delta = ClashCarryOver.Apply(new[] { first, second }, null);
+            var board = delta.OnBoard(new[] { second });
+
+            Assert.Equal(1, board.Accounted);
+            Assert.Same(second, Assert.Single(board.New));
+        }
+
+        [Fact]
+        public void Restricting_to_nothing_given_leaves_the_delta_alone()
+        {
+            var delta = ClashCarryOver.Apply(new[] { At(0) }, null);
+
+            Assert.Equal(delta.Accounted, delta.OnBoard(null).Accounted);
+        }
+
+        // ---------------------------------------------------------------------------------
         // The four states
         // ---------------------------------------------------------------------------------
 
