@@ -193,6 +193,14 @@ namespace CamelWorks.Core.Clash
                 if (ElementKey.TryParse(element.AsString(), out var parsed)) issue.Elements.Add(parsed);
             }
 
+            // A key that will not parse is dropped rather than failing the issue. The sentence
+            // somebody wrote is the valuable half; losing it over one unreadable attachment would
+            // be the record punishing the reader for a bug in the writer.
+            foreach (var attached in json["attached"].Items)
+            {
+                if (ClashKey.TryParse(attached.AsString(), out var clash)) issue.Attached.Add(clash);
+            }
+
             return issue;
         }
 
