@@ -1707,7 +1707,46 @@ namespace CamelWorks.UI.Views
                         + "each clash result and CamelWorks does not write into it: two tools disagreeing "
                         + "about whether something is resolved is worse than one of them not knowing."),
                 status,
-                table);
+
+                // The bar goes with the table, not with the buttons. Moving and marking are above,
+                // because each needs its own box to type into, and both told somebody to shift-
+                // click when nothing was picked - an instruction sitting a screen away from the
+                // rows it is about. How many are picked, and tick-all or clear, belong here.
+                Ui.Picking(table,
+                    new Ui.OnPicked("Select {n} in the model",
+                                    picked => Reveal(session, picked, status),
+                                    primary: true)));
+        }
+
+        /// <summary>
+        /// Select both sides of every picked clash.
+        ///
+        /// Both sides, because a clash is a pair and looking at one half of it tells you nothing
+        /// about why it is a clash.
+        /// </summary>
+        private static void Reveal(Session session, IReadOnlyList<object> picked, Panel status)
+        {
+            status.Children.Clear();
+
+            var keys = new List<ElementKey>();
+
+            foreach (var clash in picked.OfType<ClashItem>())
+            {
+                keys.Add(clash.Key.A);
+                keys.Add(clash.Key.B);
+            }
+
+            if (keys.Count == 0)
+            {
+                status.Children.Add(Ui.Line("Nothing picked.", 0.8));
+                return;
+            }
+
+            session.Model.Select(keys);
+            session.View.ZoomTo(keys, 2.0);
+
+            status.Children.Add(Ui.Done("Selected both sides of "
+                                        + Ui.Count(picked.Count, "clash") + "."));
         }
 
         /// <summary>Repaint the status column in place, so a mark shows without reloading the board.</summary>
