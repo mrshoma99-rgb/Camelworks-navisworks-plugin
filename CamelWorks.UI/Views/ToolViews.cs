@@ -54,6 +54,7 @@ namespace CamelWorks.UI.Views
                 case "restructure": return RestructureWindow.Show();
                 case "ids": return IdsWindow.Show();
                 case "schedule": return ScheduleWindow.Show();
+                case "setlib": return SetLibraryWindow.Show();
                 case "models": return ModelsWindow.Show();
                 case "penetrations": return PenetrationsWindow.Show();
                 case "write": return WritePropertiesWindow.Show();

@@ -278,6 +278,11 @@ namespace CamelWorks.UI.Shell
                "Read the schedule"),
 
 
+            Of("setlib", "Generate a Set Library", ToolShape.Wizard, Glyph.Filter,
+               "Turn an ordered list of properties into a whole tree of sets at once - discipline, "
+               + "then level, then system - rather than building them one at a time.",
+               "Read the model"),
+
             Of("appearance", "Appearance", ToolShape.Panel, Glyph.Layers,
                "Control what is visible and what colour it is, as layers that stack and can be "
                + "taken back off.",

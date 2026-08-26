@@ -30,7 +30,7 @@ These sixteen had no home in the first cut of the redesign. Two were caught by t
 | 10 | `Compare/CompareStamp` | Dropped. Writes what changed onto the elements as properties. | Compare Revisions post-action: "Write the changes onto the elements". |
 | 11 | `Compare/CompareClusters` | Dropped. Groups changes that sit near each other. | Changes panel — "Group by: Cluster (nearby changes)". |
 | 12 | `Sets/Similarity` | Dropped. Finds elements like the one selected. | Set Builder: "+ Elements like this one". |
-| 13 | `Sets/SetTree` + `SetFamily` | Dropped. A whole set library generated from an ordered property list. | **Generate a set library** — steps, under the Set Builder split. |
+| 13 | `Sets/SetTree` + `SetFamily` | Dropped — and the only two engines in the whole map with *no caller anywhere in the UI*: tests, and nothing in front of them. | **Generate a Set Library** — steps, under the Set Builder split. Built rather than moved. |
 | 14 | `Sets/SheetSets` + `SetSheetMapping` | Half-dropped. Distinct from `SetSchedule`: reads set definitions out of the spreadsheet a project already keeps. | Folded into **Sets from a spreadsheet**, whose mapping step handles both layouts. |
 | 15 | `Store/ProjectLease` + `StorageSubstrate` | Dropped — and it is not a tool, it is a state nobody drew. | Every panel: a blue strip when someone else holds the project — "Ahmed has this project open. You can look, not change. Take it over". |
 | 16 | `Data/ValueCleaner` | Dropped. Makes what a property says readable as a quantity. | Takeoff tuning band ("Tidy values before summing"), and a Write Properties → Find & replace preset. |
