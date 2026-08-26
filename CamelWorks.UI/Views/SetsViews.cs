@@ -1919,7 +1919,13 @@ namespace CamelWorks.UI.Views
                 });
 
                 _table = table;
-                _list.Children.Add(table);
+
+                // The bar, with no buttons on it. Every action here - rename, re-folder, render,
+                // delete - is its own section further down, because each needs its own inputs, and
+                // each already works on what is ticked or on everything when nothing is. What was
+                // missing is the part that says how many are ticked and lets somebody tick or
+                // clear the lot without dragging down two hundred rows.
+                _list.Children.Add(Ui.Picking(table));
             }
         }
     }

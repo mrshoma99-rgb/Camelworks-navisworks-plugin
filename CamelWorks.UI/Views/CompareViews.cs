@@ -460,15 +460,60 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _list.Children.Add(Ui.Table(rows,
+                var table = Ui.Table(rows,
                         ("Change", 80), ("Element", 170), ("Type", 130), ("Model", 110),
                         ("What changed", 260), ("Matched on", 0))
-                    .OnPick(item => Look(item as ElementChange)));
+                    .OnPick(item => Look(item as ElementChange));
+
+                // Walking a revision one row at a time is the slow way. Ticking the eight that
+                // matter and selecting them together is what somebody does before they screenshot
+                // it for the architect.
+                _list.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Select {n} in the model", Show, primary: true)));
 
                 if (_result.TotalDropped > 0)
                     _list.Children.Add(Ui.Note(Ui.Count(_result.TotalDropped, "row")
                         + " are not listed — the list is capped so it stays usable. The counts above "
                         + "are complete, and the report has every row."));
+            }
+
+            /// <summary>
+            /// Select every picked change that is still in this document.
+            ///
+            /// Removed elements are not, by definition. They are counted out loud rather than
+            /// silently skipped, because "I ticked twelve and it selected nine" is otherwise a
+            /// bug somebody reports.
+            /// </summary>
+            private void Show(IReadOnlyList<object> picked)
+            {
+                _output.Children.Clear();
+
+                var keys = new List<ElementKey>();
+                var gone = 0;
+
+                foreach (var change in picked.OfType<ElementChange>())
+                {
+                    if (change.Bucket == ChangeBucket.Removed) { gone++; continue; }
+                    if (change.Print.TryKey(out var key)) keys.Add(key);
+                }
+
+                if (keys.Count == 0)
+                {
+                    _output.Children.Add(Ui.Note(gone > 0
+                        ? Ui.Count(gone, "removed element") + " cannot be selected: they are not in "
+                          + "this model any more. That is what removed means."
+                        : "Nothing there to select."));
+                    return;
+                }
+
+                _session.Model.Select(keys);
+                _session.View.ZoomTo(keys, 1.5);
+
+                _output.Children.Add(Ui.Done("Selected " + Ui.Count(keys.Count, "element") + "."
+                    + (gone > 0
+                        ? " " + Ui.Count(gone, "removed one") + " left out - they are not in this "
+                          + "model any more."
+                        : string.Empty)));
             }
 
             private void Look(ElementChange? change)
