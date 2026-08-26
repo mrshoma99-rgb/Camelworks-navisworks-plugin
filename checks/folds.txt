@@ -1,0 +1,15 @@
+# Collapsible sections per file. A ratchet: these may fall, never rise.
+# One fold per surface is the law; fold three into one, then --record.
+
+CamelWorks.UI/Views/ClashExportWindow.cs 1
+CamelWorks.UI/Views/CompareViews.cs 3
+CamelWorks.UI/Views/CompileWindow.cs 2
+CamelWorks.UI/Views/CoordinateViews.cs 6
+CamelWorks.UI/Views/DataLinkWindow.cs 1
+CamelWorks.UI/Views/DataViews.cs 2
+CamelWorks.UI/Views/ExtractWindow.cs 1
+CamelWorks.UI/Views/IdsWindow.cs 2
+CamelWorks.UI/Views/ProjectViews.cs 4
+CamelWorks.UI/Views/RestructureWindow.cs 1
+CamelWorks.UI/Views/SetsViews.cs 6
+CamelWorks.UI/Views/SiteWindow.cs 4

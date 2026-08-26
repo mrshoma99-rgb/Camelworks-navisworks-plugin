@@ -120,9 +120,20 @@ namespace CamelWorks.UI.Views
                     Ui.Eyebrow("The tests"),
                     _match,
                     _tests,
-                    Ui.Section("What goes in", "which results, and whose", false, _filters),
-                    Ui.Section("How it is written", "folders, elements, units", false, Shape()),
-                    Ui.Section("This profile", "keep these settings for next time", false, Profiles()),
+                    // One fold, not three. Three folds stacked on one window is three questions
+                    // asked before the job is done, and the answer to all three is "leave it" -
+                    // which is what a fold is for saying. Headings inside it keep the three
+                    // subjects apart without making each one a decision to open.
+                    Ui.Section("Options", "which results, how it is written, and keeping these "
+                               + "settings for next time", false,
+                               Ui.Eyebrow("What goes in"),
+                               _filters,
+                               Ui.Rule(),
+                               Ui.Eyebrow("How it is written"),
+                               Shape(),
+                               Ui.Rule(),
+                               Ui.Eyebrow("This profile"),
+                               Profiles()),
                     Ui.Rule(),
                     Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
                                  "The format Navisworks and every reviewing tool reads."),
