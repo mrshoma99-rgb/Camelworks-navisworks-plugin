@@ -2134,8 +2134,12 @@ namespace CamelWorks.UI.Views
                     Ui.Pill(Ui.Count(tests.Sum(t => t.ResultCount), "result")),
                     stale.Count > 0 ? Ui.Pill(stale.Count + " never run", Tone.Warn) : null));
 
-                _list.Children.Add(Ui.Table(rows,
-                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
+                var tested = Ui.Table(rows,
+                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150));
+
+                _list.Children.Add(Ui.Picking(tested,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(tested, picked), say, "test"))));
 
                 if (session.Clash.CanEdit)
                 {
@@ -4162,9 +4166,13 @@ namespace CamelWorks.UI.Views
                         Tone = known.Contains(t.Guid) ? Tone.Plain : Tone.Good,
                     }).ToList();
 
-                    results.Children.Add(Ui.Table(rows,
+                    var topics = Ui.Table(rows,
                         ("", 50), ("Topic", 220), ("Status", 80), ("Assigned to", 110),
-                        ("Author", 120), ("", 0)));
+                        ("Author", 120), ("", 0));
+
+                    results.Children.Add(Ui.Picking(topics,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(topics, picked), say, "topic"))));
 
                     Remember(session, read.Topics.Select(t => t.Guid));
 
@@ -4391,9 +4399,15 @@ namespace CamelWorks.UI.Views
                      : Tone.Plain,
             }).ToList();
 
-            results.Children.Add(Ui.Table(rows,
+            var answers = Ui.Table(rows,
                 ("Issue", 200), ("They say", 110), ("The board says", 110),
-                ("Would become", 110), ("What they wrote", 0)));
+                ("Would become", 110), ("What they wrote", 0));
+
+            // The reply to the person who sent the sheet back is written off this table: "these
+            // eleven we have taken, these two we have not, here is why". Picking the eleven is it.
+            results.Children.Add(Ui.Picking(answers,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(answers, picked), say, "issue"))));
 
             if (report.Refused > 0)
                 results.Children.Add(Ui.Note(Ui.Count(report.Refused, "row")
@@ -4627,8 +4641,12 @@ namespace CamelWorks.UI.Views
                         Tone = Tone.Warn,
                     }).ToList();
 
-                    results.Children.Add(Ui.Table(clashRows,
-                        ("Issue", 200), ("On", 90), ("Still says", 90), ("They said", 0)));
+                    var disputed = Ui.Table(clashRows,
+                        ("Issue", 200), ("On", 90), ("Still says", 90), ("They said", 0));
+
+                    results.Children.Add(Ui.Picking(disputed,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(disputed, picked), say, "issue"))));
 
                     results.Children.Add(Ui.Note("These kept what they had. Two people who answered "
                         + "the same issue differently were sent the same pack at the same time and "
@@ -4737,9 +4755,13 @@ namespace CamelWorks.UI.Views
                      : Tone.Plain,
             }).ToList();
 
-            results.Children.Add(Ui.Table(rows,
+            var incoming = Ui.Table(rows,
                 ("Group", 200), ("The file says", 120), ("The board says", 110),
-                ("Would become", 110), ("", 0)));
+                ("Would become", 110), ("", 0));
+
+            results.Children.Add(Ui.Picking(incoming,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(incoming, picked), say, "group"))));
 
             if (report.Refused > 0)
                 results.Children.Add(Ui.Note(Ui.Count(report.Refused, "topic")
