@@ -130,9 +130,11 @@ typo there and a broken tab.
 
 Preserve these. They are not negotiable and several were repeated more than once.
 
-- **No mention of KVI or Kanadevia anywhere**, in code or UI. The only company named is
-  **bimcamel.com**. `checks/validate-branding.py` enforces it. There is a `docs/HARVEST_PROTOCOL.md`
-  about harvesting from the bimcamel repo without leaking anything, including security issues.
+- **The only company named anywhere in this tree, in code or UI, is bimcamel.com.** Two
+  predecessor company names are banned outright; `checks/validate-branding.py` holds the list and
+  will fail your build if either appears — including in a document explaining the rule, which is
+  how this very file failed its first push. `docs/HARVEST_PROTOCOL.md` covers harvesting from the
+  bimcamel repo without leaking anything, security issues included.
 - **Do not mirror another product's UI or reuse its tool names.**
 - **Zero setup.** Verbatim: *"i don't want it that a person needs to spend 5 hours settings up
   templates and settings before even beginning to use the plug in, every feature should be useable
