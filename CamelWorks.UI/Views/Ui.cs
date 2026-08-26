@@ -1999,6 +1999,134 @@ namespace CamelWorks.UI.Views
             return picked;
         }
 
+        /// <summary>One thing that can be done to the rows somebody has picked.</summary>
+        public sealed class OnPicked
+        {
+            /// <summary>Name one.</summary>
+            /// <param name="caption">
+            /// The button's caption, with <c>{n}</c> where the count goes - "Assign {n}...". The
+            /// count belongs in the caption and not only in a line above it, because the button is
+            /// what somebody reads immediately before pressing it, and "Assign 40..." stops a
+            /// press that "Assign..." does not.
+            /// </param>
+            /// <param name="act">What to do with the picked rows.</param>
+            /// <param name="primary">Whether this is the one filled button.</param>
+            /// <param name="danger">Whether this destroys something.</param>
+            public OnPicked(string caption, Action<IReadOnlyList<object>> act,
+                            bool primary = false, bool danger = false)
+            {
+                Caption = caption;
+                Act = act;
+                Primary = primary;
+                Danger = danger;
+            }
+
+            /// <summary>The caption, with <c>{n}</c> for the count.</summary>
+            public string Caption { get; }
+
+            /// <summary>What to do with the picked rows.</summary>
+            public Action<IReadOnlyList<object>> Act { get; }
+
+            /// <summary>Whether this is the one filled button.</summary>
+            public bool Primary { get; }
+
+            /// <summary>Whether this destroys something.</summary>
+            public bool Danger { get; }
+        }
+
+        /// <summary>
+        /// A table, and the bar saying what can be done to the rows picked in it.
+        ///
+        /// Every table in the product should have one. A table somebody can only act on a row at a
+        /// time is a table they act on with the mouse forty times - which was the complaint that
+        /// started this: no multi-select, no select-all, no way to clear.
+        ///
+        /// The bar carries four things, each for a reason:
+        ///
+        ///   * the <b>count</b>, because a selection made by shift-clicking down a long list is one
+        ///     somebody wants confirmed before acting on it;
+        ///   * <b>Select all</b> and <b>Clear</b>, because doing either by hand is the tax;
+        ///   * the <b>actions</b>, disabled until something is picked, so the bar reads as
+        ///     unavailable rather than broken;
+        ///   * the <b>count inside each caption</b>, so the last thing read before pressing says
+        ///     how much it is about to happen to.
+        /// </summary>
+        /// <param name="table">The table. It is switched to multi-select here.</param>
+        /// <param name="actions">What can be done to the picked rows.</param>
+        public static UIElement Picking(ListView table, params OnPicked[] actions)
+        {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
+            table.Multi();
+
+            var bar = new StackPanel { Orientation = Orientation.Horizontal };
+
+            // Not "Count". A local function hides an outer method of the same name outright, so a
+            // local Count() would make the Count(int, string) this uses uncallable.
+            var tally = Line(string.Empty, 0.75);
+            tally.VerticalAlignment = VerticalAlignment.Center;
+
+            var all = Link("Select all", () => table.SelectAll());
+            var none = Link("Clear", () => table.UnselectAll());
+
+            var buttons = new List<System.Windows.Controls.Button>();
+
+            foreach (var action in actions ?? Array.Empty<OnPicked>())
+            {
+                var here = action;
+
+                var button = here.Primary
+                    ? Primary(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany()))
+                    : Quiet(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany()));
+
+                if (here.Danger) button.Wearing("DangerBtn");
+
+                button.Margin = new Thickness(Gap, 0, 0, 0);
+                button.Tag = here.Caption;
+
+                buttons.Add(button);
+                bar.Children.Add(button);
+            }
+
+            void Say()
+            {
+                var picked = table.SelectedItems.Count;
+                var total = table.Items.Count;
+
+                tally.Text = picked == 0
+                    ? Count(total, "row")
+                    : picked.ToString(CultureInfo.InvariantCulture)
+                      + " of " + Count(total, "row") + " picked";
+
+                foreach (var button in buttons)
+                {
+                    button.IsEnabled = picked > 0;
+
+                    if (button.Tag is string caption)
+                        button.Content = caption.Replace(
+                            "{n}", picked.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            table.SelectionChanged += (s, e) => Say();
+            Say();
+
+            var left = new StackPanel { Orientation = Orientation.Horizontal };
+            left.Children.Add(tally);
+            left.Children.Add(new Border { Width = Gap });
+            left.Children.Add(all);
+            left.Children.Add(new Border { Width = Gap });
+            left.Children.Add(none);
+
+            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, Gap, 0, 0) };
+            DockPanel.SetDock(left, Dock.Left);
+            DockPanel.SetDock(bar, Dock.Right);
+            row.Children.Add(left);
+            row.Children.Add(bar);
+
+            return Stack(table, row);
+        }
+
         // -----------------------------------------------------------------------------------
         // Running work
         // -----------------------------------------------------------------------------------

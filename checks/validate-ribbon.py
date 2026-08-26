@@ -210,8 +210,19 @@ def main():
     # Ui.Commit counts, and has to: a two-stage write builds its own filled Runner out of the
     # first argument, so on a screen whose whole purpose is that write there is no other Primary
     # for the tool's main action to point at.
+    #
+    # So does Ui.OnPicked marked primary. A screen whose main action is "do this to the rows you
+    # picked" builds its filled button inside Ui.Picking, from the caption on the OnPicked - there
+    # is no literal Ui.Primary anywhere for the tool to point at, and captioning it in two places
+    # so a check can find it is the tail wagging the dog.
     buttons = [c.strip().rstrip(".").strip().lower()
-               for c in re.findall(r'Ui\.(?:Primary|Runner|Commit)\(\s*"([^"]+)"', every_cs())]
+               for c in re.findall(
+                   r'Ui\.(?:Primary|Runner|Commit)\(\s*"([^"]+)"'
+                   # The action is a lambda, so this has to cross parentheses to reach
+                   # "primary:" - bounded, and stopped at the statement's semicolon, so it
+                   # cannot run on into the next call and borrow its caption.
+                   r'|Ui\.OnPicked\(\s*"([^"]+)"[^;]{0,300}?primary:\s*true',
+                   every_cs()) for c in c if c]
 
     for tool_id, shape, action in re.findall(
             r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),(?:.|\n)*?\n\s+(null|"[^"]*")\),',
@@ -223,7 +234,7 @@ def main():
 
         if not any(b == want or b.startswith(want) or want.startswith(b) for b in buttons):
             problems |= fail(f'tool "{tool_id}" promises the action {action} '
-                             f"and no Primary or Runner has that caption")
+                             f"and no Primary, Runner or picked action has that caption")
 
     named = re.findall(r'Pane\("(ID_CW_\w+)", "[^"]+", "([^"]+)"', catalogue_source)
     seen = {}

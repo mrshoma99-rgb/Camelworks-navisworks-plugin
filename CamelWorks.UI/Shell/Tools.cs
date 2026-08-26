@@ -131,7 +131,7 @@ namespace CamelWorks.UI.Shell
             Of("history", "History", ToolShape.Window, Glyph.Clock,
                "What has happened on this project and who did it, newest first, so a question "
                + "about a decision has an answer that is not somebody's memory.",
-               "Copy the log"),
+               "Copy {n}"),
 
             Of("links", "Fix Broken Links", ToolShape.Window, Glyph.Folder,
                "Find the source files a loaded model can no longer see, and point it at where they "

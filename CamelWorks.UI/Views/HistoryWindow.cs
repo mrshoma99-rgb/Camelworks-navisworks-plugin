@@ -48,37 +48,54 @@ namespace CamelWorks.UI.Views
 
             var table = Ui.Table(rows, ("What", 120), ("Happened", 0), ("When", 110));
 
-            // Copy rather than export: this is evidence somebody pastes into an email defending a
-            // decision, and a file to attach is a worse fit for that than text already on the
-            // clipboard.
             var said = Ui.Stack();
 
-            var copy = Ui.Primary("Copy the log", () =>
-            {
-                said.Children.Clear();
-
-                var text = string.Join("\r\n", entries.Select(
-                    e => ActivityLog.Ago(e.WhenTicks, session.NowTicks)
-                         + "\t" + ActivityKind.Title(e.Kind)
-                         + "\t" + e.Summary));
-
-                try
-                {
-                    Clipboard.SetText(text);
-                    said.Children.Add(Ui.Done("Copied " + Ui.Count(entries.Count, "line")
-                                              + ". Paste it wherever the question was asked."));
-                }
-                catch (Exception e)
-                {
-                    said.Children.Add(Ui.Problem("Could not copy it: " + Ui.Describe(e)));
-                }
-            });
+            // Picking rather than one Copy button: the answer to "what happened on this project in
+            // August" is a handful of lines out of two hundred, and pasting the lot leaves whoever
+            // asked to do the filtering.
+            var picking = Ui.Picking(table,
+                new Ui.OnPicked("Copy {n}", picked => Copy(session, picked, said), primary: true));
 
             return Ui.Stack(
                 Ui.Sub(Ui.Count(entries.Count, "entry") + ", newest first."),
-                table,
-                copy,
+                picking,
+                Ui.Quiet("Copy the whole log",
+                         () => Copy(session, entries.Cast<object>().ToList(), said)),
                 said);
+        }
+
+        /// <summary>
+        /// Put lines on the clipboard.
+        ///
+        /// Copy rather than export: this is evidence somebody pastes into an email defending a
+        /// decision, and a file to attach is a worse fit for that than text already there.
+        /// </summary>
+        private static void Copy(Session session, IReadOnlyList<object> picked, Panel said)
+        {
+            said.Children.Clear();
+
+            var lines = picked.OfType<Activity>()
+                .Select(e => ActivityLog.Ago(e.WhenTicks, session.NowTicks)
+                             + "\t" + ActivityKind.Title(e.Kind)
+                             + "\t" + e.Summary)
+                .ToList();
+
+            if (lines.Count == 0)
+            {
+                said.Children.Add(Ui.Note("Nothing to copy."));
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(string.Join("\r\n", lines));
+                said.Children.Add(Ui.Done("Copied " + Ui.Count(lines.Count, "line")
+                                          + ". Paste it wherever the question was asked."));
+            }
+            catch (Exception e)
+            {
+                said.Children.Add(Ui.Problem("Could not copy it: " + Ui.Describe(e)));
+            }
         }
     }
 }
