@@ -444,9 +444,9 @@ namespace CamelWorks.UI.Views
 
                 _recipe.Value = picked;
 
-                values.Children.Add(Ui.Form(Ui.Field("Value",
+                values.Children.Add(Ui.Field("Value",
                     Ui.Choice(choices, picked, pick => { _recipe.Value = pick; DrawVerdict(); }, 260),
-                    Ui.Count(choices.Count, "value") + " in the model")));
+                    Ui.Count(choices.Count, "value") + " in the model"));
             }
 
             private void DrawBox()
@@ -456,12 +456,12 @@ namespace CamelWorks.UI.Views
                 _how.Children.Add(Ui.Line(
                     box == null ? "No box yet." : "A box of " + box + ".", 1, box != null));
 
-                _how.Children.Add(Ui.Form(Ui.Field("An element counts as in when it is",
+                _how.Children.Add(Ui.Field("An element counts as in when it is",
                     Ui.Choice(new[] { Touching, Wholly, Centred }, Reach(_recipe.Reach), pick =>
                     {
                         _recipe.Reach = Reaching(pick);
                         DrawVerdict();
-                    }, 200))));
+                    }, 200)));
 
                 _how.Children.Add(Ui.Actions(
                     Ui.Button("Take it from what is selected", () => Box(false)),

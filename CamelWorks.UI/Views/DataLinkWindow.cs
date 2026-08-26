@@ -637,6 +637,12 @@ namespace CamelWorks.UI.Views
 
                 _written.Children.Add(Ui.Done("Wrote " + Ui.Count(written, "element") + "."));
 
+                // The warning that used to sit above the button, printed after the run instead:
+                // Navisworks keeps property writes off its undo stack, and the record of what
+                // changed lives in the project file.
+                _written.Children.Add(Ui.Small("Ctrl+Z will not undo this write; what changed is "
+                                               + "recorded in the project file."));
+
                 if (plan.Orphans.Count > 0)
                     _written.Children.Add(Ui.Note(Ui.Count(plan.Orphans.Count, "row")
                         + " matched nothing and were left in the sheet."));
