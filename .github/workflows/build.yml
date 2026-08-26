@@ -12,6 +12,24 @@ on:
     tags: ["v*"]
   pull_request:
 
+  # On demand, because for a whole day there was no way to ask for a build. Actions refused to
+  # start any job, this repository's integration cannot POST a workflow dispatch, and the only
+  # remaining lever was to push a commit - which is how you end up pushing something for no reason
+  # but to see whether the runner is alive.
+  #
+  # The defaults are the cheap answer, not the thorough one: two years rather than four, no
+  # installer. A Windows runner bills at twice the rate, and somebody pressing this by hand wants
+  # to know whether it compiles, which both ends of the API surface already answer.
+  workflow_dispatch:
+    inputs:
+      years:
+        description: Navisworks years to compile against, as a JSON array
+        default: '["2024","2027"]'
+      installer:
+        description: Build the installer too
+        type: boolean
+        default: false
+
 # A push that supersedes another cancels it. Pushing three times in five minutes used to leave
 # three full matrices racing, and only the last one's answer was ever read.
 concurrency:
@@ -44,6 +62,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo 'years=${{ inputs.years }}' >> "$GITHUB_OUTPUT"
+            echo "installer=${{ inputs.installer }}" >> "$GITHUB_OUTPUT"
+            echo "asked for by hand: ${{ inputs.years }}"
+            exit 0
+          fi
 
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo 'years=["2024","2025","2026","2027"]' >> "$GITHUB_OUTPUT"
