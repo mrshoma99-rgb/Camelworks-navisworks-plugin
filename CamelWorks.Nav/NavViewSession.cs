@@ -253,11 +253,18 @@ namespace CamelWorks.Nav
                 new Point3D(box.MinX - margin, box.MinY - margin, box.MinZ - margin),
                 new Point3D(box.MaxX + margin, box.MaxY + margin, box.MaxZ + margin));
 
-            var planes = Planes(edit: true);
-            if (planes == null) return;
+            var viewer = Viewer();
+            if (viewer == null) return;
 
+            var planes = viewer.EditClipPlane();
+
+#if NAV2024
             planes.SetBox(extents);
             planes.SetEnabled(true);
+#else
+            planes.Box = extents;
+            planes.Enabled = true;
+#endif
         }
 
         /// <inheritdoc />
@@ -266,10 +273,16 @@ namespace CamelWorks.Nav
             // Nothing is remembered here. The set keeps its own box when it is switched off, so
             // asking the host to switch it back on restores what was there - which is the whole
             // contract, and the JSON version had to hoard a string to fake it.
-            var planes = Planes(edit: true);
-            if (planes == null) return;
+            var viewer = Viewer();
+            if (viewer == null) return;
 
+            var planes = viewer.EditClipPlane();
+
+#if NAV2024
             planes.SetEnabled(enabled);
+#else
+            planes.Enabled = enabled;
+#endif
         }
 
         /// <inheritdoc />
@@ -280,14 +293,21 @@ namespace CamelWorks.Nav
                 // Read from the host rather than remembered here: the user can switch sectioning
                 // off with the host's own button, and a toggle that trusted its own memory would
                 // then do the opposite of what the button says.
-                var planes = Planes(edit: false);
+                var viewer = Viewer();
+                if (viewer == null) return false;
 
+                var planes = viewer.GetClipPlaneSet();
+
+#if NAV2024
                 return planes != null && planes.IsEnabled();
+#else
+                return planes != null && planes.Enabled;
+#endif
             }
         }
 
         /// <summary>
-        /// The document's clip-plane set, or null when this configuration has no viewer.
+        /// The viewer that owns the document's clip planes, or null where there is not one.
         ///
         /// <b>Why not the JSON.</b> <c>View.SetClippingPlanes</c> takes a string it calls
         /// <c>jsonClipPlaneSet</c>, and a payload it dislikes throws
@@ -297,20 +317,25 @@ namespace CamelWorks.Nav
         /// (<c>GetClippingPlanesAsJsonClipPlaneSet</c>), is undocumented, and there is no reason to
         /// believe it is stable across the four supported years.
         ///
-        /// <c>LcOaClipPlaneSet</c> is the same state as a typed object, on the same assembly, with
-        /// <c>SetBox</c>, <c>SetEnabled</c> and <c>GetBox</c> on it. A wrong call there does not
-        /// compile, which is the only kind of check worth having for something no test on a build
-        /// machine can exercise.
+        /// The clip-plane set is the same state as a typed object, on the same assembly. A wrong
+        /// call there does not compile, which is the only kind of check worth having for something
+        /// no test on a build machine can exercise.
+        ///
+        /// <b>Why the one conditional.</b> This path is identical in all four years - and it is
+        /// the only one that is. The set itself was <c>Interop.LcOaClipPlaneSet</c> with
+        /// <c>SetBox</c> and <c>SetEnabled</c> in 2024, and became <c>Api.ClipPlaneSet</c> with
+        /// <c>Box</c> and <c>Enabled</c> properties in 2025. The type is never named here, only
+        /// inferred, so the difference is three lines of member style rather than a second copy of
+        /// the method. <c>Viewpoint</c> offers the same set - as <c>InternalClipPlanes</c> in 2024
+        /// and <c>ClipPlanes</c> after - which would have been two differences instead of one.
         /// </summary>
-        private static Autodesk.Navisworks.Api.Interop.LcOaClipPlaneSet? Planes(bool edit)
+        private static Autodesk.Navisworks.Api.Interop.LcOaViewer? Viewer()
         {
             var state = Autodesk.Navisworks.Api.Interop.LcOpState.GetActiveInstance();
 
-            var viewer = state?.GetViewer();
-            if (viewer == null) return null;
-
-            return edit ? viewer.EditClipPlane() : viewer.GetClipPlaneSet();
+            return state == null ? null : state.GetViewer();
         }
+
 
 
         private static AppearanceState Read(ElementKey key, ModelItem item)

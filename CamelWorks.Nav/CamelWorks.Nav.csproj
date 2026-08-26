@@ -28,6 +28,15 @@
     <NavisPkgVersion Condition="'$(NavisPkgVersion)' == '' and '$(NavisworksYear)' == '2025'">2025.0.0</NavisPkgVersion>
     <NavisPkgVersion Condition="'$(NavisPkgVersion)' == '' and '$(NavisworksYear)' == '2026'">2026.0.1</NavisPkgVersion>
     <NavisPkgVersion Condition="'$(NavisPkgVersion)' == '' and '$(NavisworksYear)' == '2027'">2027.0.0</NavisPkgVersion>
+
+    <!-- The year, as something the source can ask about.
+
+         Used in exactly one place, and only because the host genuinely changed shape: the
+         clip-plane set is methods on an Interop type in 2024 and properties on a managed one from
+         2025. Every other host difference across the four years is absorbed by this project being
+         compiled against each year's own reference assemblies, which is the whole reason it is a
+         per-year build. Reach for this last, not first. -->
+    <DefineConstants>$(DefineConstants);NAV$(NavisworksYear)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
