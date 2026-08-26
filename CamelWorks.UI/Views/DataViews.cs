@@ -1726,7 +1726,16 @@ namespace CamelWorks.UI.Views
                 var fromModel = LevelSet.FromModel(named);
                 var guessed = LevelSet.Derive(elevations);
 
-                var chosen = fromGrid.Bands.Count > 0 ? fromGrid
+                // Separates, not Bands.Count. A coordination grid reached a user reporting three
+                // levels with every elevation at 0.000 - three bands, one height, and nothing can
+                // be grouped by that. A source that cannot separate the model is worse than the
+                // histogram, which at least knows it is guessing, so it does not win the chain
+                // just for existing. The rejected source is still offered below, because the
+                // coordinator may know something about it that this does not.
+                var chosen = fromGrid.Separates ? fromGrid
+                           : fromModel.Separates ? fromModel
+                           : guessed.Separates ? guessed
+                           : fromGrid.Bands.Count > 0 ? fromGrid
                            : fromModel.Bands.Count > 0 ? fromModel
                            : guessed;
 
@@ -1759,6 +1768,14 @@ namespace CamelWorks.UI.Views
                     // disciplines spelling the same storey differently, and it is worth naming
                     // rather than leaving somebody to notice "L02" and "Level 02" sitting next to
                     // each other in a report.
+                    if (!levels.Separates)
+                        results.Children.Add(Ui.Problem(Ui.Count(levels.Bands.Count, "level")
+                            + ", all at the same height (" + units.Length(levels.Bands[0].Elevation)
+                            + "). Nothing can be grouped by these - every element falls in the "
+                            + "first one. A grid usually reads this way when its levels were "
+                            + "authored for their names and nobody set their heights. Pick another "
+                            + "source below, or set the elevations in the authoring tool."));
+
                     if (levels.Source == LevelSource.Property && levels.Bands.Count > 25)
                         results.Children.Add(Ui.Note(Ui.Count(levels.Bands.Count, "distinct level")
                             + " is more than most buildings have storeys. That usually means two "
