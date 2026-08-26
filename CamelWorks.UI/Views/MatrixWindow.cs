@@ -45,6 +45,14 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _grid = Ui.Stack();
             private readonly StackPanel _legendRows = Ui.Stack();
             private readonly StackPanel _warnings = Ui.Stack();
+
+            /// <summary>
+            /// Whether a read has been attempted, as opposed to whether one worked.
+            ///
+            /// Without it every "not ready yet" sentence is the same sentence, and the one beside
+            /// a disabled Next told a user who had just read a sheet to read the sheet first.
+            /// </summary>
+            private bool _read;
             private readonly StackPanel _output = Ui.Stack();
             private readonly SheetSource _sheet = new SheetSource();
 
@@ -88,8 +96,13 @@ namespace CamelWorks.UI.Views
                 var steps = new[]
                 {
                     new Ui.Step("The sheet", () => sheet,
-                                () => _matrix.Categories.Count == 0
-                                      ? "Read the matrix out of the sheet first." : null),
+                                () => _matrix.Categories.Count > 0 ? null
+                                      : _read
+                                          ? "That read found no categories. Check the row and "
+                                            + "column numbers against the preview below - they are "
+                                            + "the numbers Excel shows down the side and along "
+                                            + "the top."
+                                          : "Read the matrix out of the sheet first."),
                     new Ui.Step("The matrix", () => matrix,
                                 () => _legend.Symbols.Count == 0
                                       ? "Nothing in the grid to make tests from." : null),
@@ -158,6 +171,7 @@ namespace CamelWorks.UI.Views
 
                 var read = SheetMatrix.Read(_sheet.Chosen, _mapping);
 
+                _read = true;
                 _matrix = read.Grid;
                 _legend = _legend.Covering(read.Grid);
                 _plan = null;
@@ -165,6 +179,19 @@ namespace CamelWorks.UI.Views
                 foreach (var warning in read.Warnings) _warnings.Children.Add(Ui.Note(warning));
 
                 _warnings.Children.Insert(0, Ui.Line(read.Explain(), 1, true));
+
+                // A read that finds nothing is the common first attempt, because nobody's matrix
+                // is laid out like anybody else's and the column numbers are a guess until the
+                // first try. Saying so here, next to the numbers that need changing, beats leaving
+                // it to a disabled button on the far side of the window.
+                if (_matrix.Categories.Count == 0)
+                    _warnings.Children.Add(Ui.Problem(
+                        "No categories came out of that. The name column is set to "
+                        + _mapping.NameColumn.ToString(CultureInfo.InvariantCulture)
+                        + " and the list is set to start at row "
+                        + _mapping.FirstRow.ToString(CultureInfo.InvariantCulture)
+                        + " - check both against the preview below, using the numbers Excel shows "
+                        + "down the side and along the top."));
 
                 ShowGrid();
                 ShowLegend();
@@ -179,8 +206,14 @@ namespace CamelWorks.UI.Views
 
                 if (_matrix.Categories.Count == 0)
                 {
-                    _grid.Children.Add(Ui.Empty("Nothing read yet.",
-                        "Open a workbook, say where the matrix sits in it, and read it."));
+                    // Two different states, and telling somebody who has just read a sheet that
+                    // nothing has been read yet is how a tool loses the benefit of the doubt.
+                    _grid.Children.Add(_read
+                        ? Ui.Empty("That read found no categories.",
+                                   "Go back a step and check the row and column numbers against "
+                                   + "the sheet preview.")
+                        : Ui.Empty("Nothing read yet.",
+                                   "Open a workbook, say where the matrix sits in it, and read it."));
                     return;
                 }
 
