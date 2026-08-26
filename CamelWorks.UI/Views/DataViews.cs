@@ -29,6 +29,68 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
+        /// Write one property across everything in scope.
+        ///
+        /// The same four writers the Data Manager offers - a value you type, a formula, a code
+        /// table, a spreadsheet - plus find and replace, without the property browser above them.
+        /// They were only reachable by opening the Data Manager, choosing a scope, pressing Read
+        /// properties and scrolling past a table of everything the model already carries; somebody
+        /// who knows exactly which property they are setting had to be shown all the others first.
+        ///
+        /// Scope still leads and reading still gates the writers, because a write needs the
+        /// elements it is writing to and the values it would be overwriting. What goes is the
+        /// browse table, which is the Data Manager's job and not this one's.
+        /// </summary>
+        internal static UIElement WriteProperties()
+        {
+            var scope = Selection;
+            var results = Ui.Stack();
+            var editor = Ui.Stack();
+
+            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick => scope = pick);
+
+            var read = Ui.Runner("Read what is there now", results, job =>
+            {
+                var session = Host.Current;
+                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var keys = new List<ElementKey>();
+
+                var traversal = scope == Selection
+                    ? TraversalScope.CurrentSelection
+                    : TraversalScope.WholeDocument;
+
+                foreach (var item in session.Model.Traverse(traversal))
+                {
+                    if (!job.Step(keys.Count, "elements read")) return;
+                    keys.Add(item.Key);
+                }
+
+                if (keys.Count == 0)
+                {
+                    results.Children.Add(Ui.Empty(
+                        scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        scope == Selection
+                            ? "Select elements in the model, or switch the scope to everything loaded."
+                            : "Append a model first."));
+                    return;
+                }
+
+                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " in scope.", 1, true));
+
+                editor.Children.Clear();
+                editor.Children.Add(Writes(session, keys));
+                editor.Children.Add(Correct(session, keys));
+            });
+
+            return Ui.Scroll(Ui.Stack(
+                Ui.Form(Ui.Field("Write to", picker)),
+                read,
+                results,
+                editor));
+        }
+
+        /// <summary>
         /// Browse and edit properties in one place.
         ///
         /// The scope defaults to the current selection rather than the whole federation, because
@@ -99,7 +161,14 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + ", "
                     + Ui.Count(rows.Count, "property"), 1, true));
 
-                results.Children.Add(Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0)));
+                var found = Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0));
+
+                // What a coordinator does with this list is send it to whoever owns the model:
+                // "these eleven are missing on half the elements". Picking the eleven is the point.
+                results.Children.Add(Ui.Picking(found,
+                    new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(found, picked), say),
+                                    primary: true)));
 
                 editor.Children.Clear();
                 editor.Children.Add(Writes(session, keys));
@@ -242,22 +311,37 @@ namespace CamelWorks.UI.Views
         /// back — in the table's own spelling, so a column ends up with one form of each code
         /// rather than four. What it refused is counted and named.
         /// </summary>
+        /// <summary>
+        /// What a screen says where its write button was, once the preview stopped describing what
+        /// would happen. Said the same way on every screen that previews before it writes.
+        /// </summary>
+        private const string Outdated =
+            "That changed what would be written, so the preview above is no longer what would "
+            + "happen. Show it again before writing.";
+
         private sealed class CodeScreen
         {
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _source = Ui.Text("Element / Classification", null, 240);
-            private readonly TextBox _target = Ui.Text("Code", null, 160);
+            private readonly TextBox _source;
+            private readonly TextBox _target;
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
 
             private ExistingValues _existing = ExistingValues.Keep;
             private CodeTable? _table;
             private WriteDiff? _diff;
+            private bool _stale;
 
             internal CodeScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
+                // Editing either of these makes the preview a preview of something else, so both
+                // of them drop it. Apply reads the target name live, which is how a preview of
+                // "Code" could write into "Uniclass" without anybody being shown that.
+                _source = Ui.Text("Element / Classification", _ => Stale(), 240);
+                _target = Ui.Text("Code", _ => Stale(), 160);
+
                 _session = session;
                 _keys = keys;
             }
@@ -373,6 +457,7 @@ namespace CamelWorks.UI.Views
                             ?? item.Property(NavWriteTransaction.TabName, target));
 
                 _diff = diff;
+                _stale = false;
 
                 _status.Children.Add(Ui.Diff(diff));
 
@@ -395,7 +480,12 @@ namespace CamelWorks.UI.Views
                 _applyRow.Children.Clear();
 
                 var diff = _diff;
-                if (diff == null) return;
+
+                if (diff == null)
+                {
+                    if (_stale) _applyRow.Children.Add(Ui.Note(Outdated));
+                    return;
+                }
 
                 var count = diff.Every.Count(c => PropertyDiff.ShouldWrite(c.Kind, _existing));
 
@@ -406,6 +496,24 @@ namespace CamelWorks.UI.Views
                 }
 
                 _applyRow.Children.Add(Ui.Button("Write " + Ui.Count(count, "element"), () => Apply(diff)));
+            }
+
+            /// <summary>
+            /// Throw the preview away, because what it was a preview of has changed.
+            ///
+            /// Apply reads the target property name live, so a preview left standing over an
+            /// edited input is a button that writes somewhere nobody was shown. Taking the button
+            /// away is the fix: the only way to a write is a preview of that write.
+            /// </summary>
+            private void Stale()
+            {
+                if (_diff == null) return;
+
+                _diff = null;
+                _stale = true;
+
+                _applyRow.Children.Clear();
+                _applyRow.Children.Add(Ui.Note(Outdated));
             }
 
             private void Apply(WriteDiff diff)
@@ -964,7 +1072,14 @@ namespace CamelWorks.UI.Views
                             .Select(e => new TableRow(e, e.From, e.To))
                             .ToList();
 
-                        into.Children.Add(Ui.Table(rows, ("There now", 240), ("Would be", 240)));
+                        var examples = Ui.Table(rows, ("There now", 240), ("Would be", 240));
+
+                        // Picking here changes nothing about what gets written - the apply works
+                        // off the staged set. It is for taking the before-and-after pairs into the
+                        // message that asks somebody whether this rename is right.
+                        into.Children.Add(Ui.Picking(examples,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(examples, picked), say, "example"))));
                     }
 
                     staged = pending;
@@ -1104,9 +1219,9 @@ namespace CamelWorks.UI.Views
 
             private const string Worked = "worked out from other properties";
 
-            private readonly TextBox _name = Ui.Text("Zone", null, 150);
-            private readonly TextBox _value = Ui.Text(string.Empty, null, 200);
-            private readonly TextBox _formula = Ui.Text(string.Empty, null, 340);
+            private readonly TextBox _name;
+            private readonly TextBox _value;
+            private readonly TextBox _formula;
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
 
@@ -1114,11 +1229,36 @@ namespace CamelWorks.UI.Views
             private string _how = Fixed;
             private WriteDiff? _diff;
             private Formula? _parsed;
+            private bool _stale;
 
             internal WriteScreen(Session session, IReadOnlyList<ElementKey> keys)
             {
+                // All three drop the preview when they change. This screen is the worst case of
+                // the three that preview before writing: Apply reads the value box live, so
+                // previewing "Zone A" over forty elements and then typing "Zone B" left a button
+                // reading "Write 40 elements" that wrote Zone B - a value nobody was ever shown,
+                // under a count worked out for a different one. The formula path was stale the
+                // other way round, applying the parsed formula from the last preview rather than
+                // the text on screen. Two different wrong answers in one screen.
+                _name = Ui.Text("Zone", _ => Stale(), 150);
+                _value = Ui.Text(string.Empty, _ => Stale(), 200);
+                _formula = Ui.Text(string.Empty, _ => Stale(), 340);
+
                 _session = session;
                 _keys = keys;
+            }
+
+            /// <summary>Throw the preview away, because what it was a preview of has changed.</summary>
+            private void Stale()
+            {
+                if (_diff == null) return;
+
+                _diff = null;
+                _parsed = null;
+                _stale = true;
+
+                _applyRow.Children.Clear();
+                _applyRow.Children.Add(Ui.Note(Outdated));
             }
 
             /// <summary>The writer for one kind of value.</summary>
@@ -1176,6 +1316,7 @@ namespace CamelWorks.UI.Views
                             PropertyDiff.Resolve(_session.Model, _keys), ValueOf(_parsed));
 
                     _diff = diff;
+                    _stale = false;
 
                     if (_parsed != null) Unworkable(diff);
 
@@ -1205,8 +1346,12 @@ namespace CamelWorks.UI.Views
                             Tone = c.Kind == WriteChange.Added ? Tone.Good : Tone.Warn,
                         }).ToList();
 
-                        _status.Children.Add(Ui.Table(rows,
-                            ("Element", 200), ("Now", 130), ("Would become", 130), ("", 0)));
+                        var changing = Ui.Table(rows,
+                            ("Element", 200), ("Now", 130), ("Would become", 130), ("", 0));
+
+                        _status.Children.Add(Ui.Picking(changing,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(changing, picked), say, "change"))));
 
                         if (diff.Added + diff.Changed + diff.Cleared > diff.Changes.Count)
                             _status.Children.Add(Ui.Line("First " + diff.Changes.Count
@@ -1270,7 +1415,12 @@ namespace CamelWorks.UI.Views
                 _applyRow.Children.Clear();
 
                 var diff = _diff;
-                if (diff == null) return;
+
+                if (diff == null)
+                {
+                    if (_stale) _applyRow.Children.Add(Ui.Note(Outdated));
+                    return;
+                }
 
                 var writes = diff.Writes(_existing);
 
@@ -1664,7 +1814,16 @@ namespace CamelWorks.UI.Views
                 var fromModel = LevelSet.FromModel(named);
                 var guessed = LevelSet.Derive(elevations);
 
-                var chosen = fromGrid.Bands.Count > 0 ? fromGrid
+                // Separates, not Bands.Count. A coordination grid reached a user reporting three
+                // levels with every elevation at 0.000 - three bands, one height, and nothing can
+                // be grouped by that. A source that cannot separate the model is worse than the
+                // histogram, which at least knows it is guessing, so it does not win the chain
+                // just for existing. The rejected source is still offered below, because the
+                // coordinator may know something about it that this does not.
+                var chosen = fromGrid.Separates ? fromGrid
+                           : fromModel.Separates ? fromModel
+                           : guessed.Separates ? guessed
+                           : fromGrid.Bands.Count > 0 ? fromGrid
                            : fromModel.Bands.Count > 0 ? fromModel
                            : guessed;
 
@@ -1697,6 +1856,14 @@ namespace CamelWorks.UI.Views
                     // disciplines spelling the same storey differently, and it is worth naming
                     // rather than leaving somebody to notice "L02" and "Level 02" sitting next to
                     // each other in a report.
+                    if (!levels.Separates)
+                        results.Children.Add(Ui.Problem(Ui.Count(levels.Bands.Count, "level")
+                            + ", all at the same height (" + units.Length(levels.Bands[0].Elevation)
+                            + "). Nothing can be grouped by these - every element falls in the "
+                            + "first one. A grid usually reads this way when its levels were "
+                            + "authored for their names and nobody set their heights. Pick another "
+                            + "source below, or set the elevations in the authoring tool."));
+
                     if (levels.Source == LevelSource.Property && levels.Bands.Count > 25)
                         results.Children.Add(Ui.Note(Ui.Count(levels.Bands.Count, "distinct level")
                             + " is more than most buildings have storeys. That usually means two "
@@ -1739,9 +1906,15 @@ namespace CamelWorks.UI.Views
                         b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
                                                                                      : "from the model")).ToList();
 
-                    results.Children.Add(Ui.Table(rows,
+                    var bands = Ui.Table(rows,
                         ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
-                        ("Elements", 110), ("Source", 110)));
+                        ("Elements", 110), ("Source", 110));
+
+                    // A level schedule with the elevations beside it is the thing a coordinator is
+                    // asked for by everybody, and it was previously read off the screen.
+                    results.Children.Add(Ui.Picking(bands,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(bands, picked), say, "level"))));
 
                     results.Children.Add(Ui.Tally(rows.Count, levels.Bands.Count, "level"));
 
@@ -1786,7 +1959,7 @@ namespace CamelWorks.UI.Views
             // Held between the two presses. The plan pass reads the grid; the write pass reads this.
             var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+            var apply = Ui.Commit("Show me the grid squares it would stamp", "Stamp", "element",
                 plan: (job, into) =>
                 {
                     placements.Clear();
@@ -1858,7 +2031,7 @@ namespace CamelWorks.UI.Views
         /// into the tree. Everything downstream joins on that and the model does not carry it as a
         /// property, so nothing can filter, group, schedule or export against it.
         /// </summary>
-        private static UIElement BreakdownStamp(Session session)
+        internal static UIElement BreakdownStamp(Session session)
         {
             var recipe = new BreakdownRecipe();
 
@@ -1902,7 +2075,11 @@ namespace CamelWorks.UI.Views
                         .Select(g => new TableRow(g.Key, g.Key, Ui.Count(g.Count(), "element")))
                         .ToList();
 
-                    into.Children.Add(Ui.Table(sample, ("Breakdown", 0), ("Holds", 120)));
+                    var breakdown = Ui.Table(sample, ("Breakdown", 0), ("Holds", 120));
+
+                    into.Children.Add(Ui.Picking(breakdown,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(breakdown, picked), say, "branch"))));
 
                     if (plan.Deepest < recipe.Levels)
                         into.Children.Add(Ui.Note("The tree only reaches "
@@ -1959,7 +2136,7 @@ namespace CamelWorks.UI.Views
         {
             var placements = new Dictionary<ElementKey, string>();
 
-            var apply = Ui.Commit("Show me what it would stamp", "Stamp", "element",
+            var apply = Ui.Commit("Show me the levels it would stamp", "Stamp", "element",
                 plan: (job, into) =>
                 {
                     placements.Clear();
@@ -2223,8 +2400,15 @@ namespace CamelWorks.UI.Views
                     Tone = g.IsComplete ? Tone.Plain : Tone.Warn,
                 }).ToList();
 
-                _results.Children.Add(Ui.Table(rows,
-                    ("Group", 190), ("Count", 80), ("Total (" + UnitWord() + ")", 130), ("", 0)));
+                // A takeoff is read once and pasted somewhere else. Picking the lines that belong
+                // in this bill and taking those beats copying the screen and deleting half of it.
+                var totals = Ui.Table(rows,
+                    ("Group", 190), ("Count", 80), ("Total (" + UnitWord() + ")", 130), ("", 0));
+
+                _results.Children.Add(Ui.Picking(totals,
+                    new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(totals, picked), say),
+                                    primary: true)));
 
                 Provenance();
                 Caveat(result.IsComplete);
@@ -2278,7 +2462,13 @@ namespace CamelWorks.UI.Views
                 totals.Add(Read(table.Grand));
                 rows.Add(new TableRow(null, totals.ToArray()) { Tone = Tone.Good });
 
-                _results.Children.Add(Ui.Table(rows, headers.ToArray()));
+                var grid = Ui.Table(rows, headers.ToArray());
+
+                // The same argument as the single-axis totals above it: a cross-tab is read once
+                // and pasted somewhere else, and the totals row goes with whatever is picked.
+                _results.Children.Add(Ui.Picking(grid,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(grid, picked), say, "line"))));
 
                 Provenance();
                 Caveat(table.Grand.IsComplete);

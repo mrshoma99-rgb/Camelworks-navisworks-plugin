@@ -1,10 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The CamelWorks ribbon tab: six panels, twenty-seven buttons.
+  The CamelWorks ribbon tab: nine panels, thirty-seven buttons.
 
   Hand-authored Navisworks markup, not WPF - the project file removes it from Page compilation and
   deploys it to an en-US subfolder beside the DLL, which is where the host looks for it. Nothing
   compiles this file, so nothing but checks/validate-ribbon.py will ever tell you it is wrong.
+
+  PANELS ARE NAMED FOR THE NOUN THE TOOL CHANGES, not for a stage of work. Grouping by stage reads
+  well on a slide and fails on contact: "is Compare setup, review or reporting?" has no honest
+  answer, so the coordinator guesses every time. Compare changes revisions, so it is under
+  Revisions, and that answer never moves.
+
+  THIRTY-SEVEN BUTTONS FOR FORTY-NINE TOOLS. Twelve tools ride in a split menu under the sibling
+  they belong with - the matrix under Clash Tests, writing and spreadsheets under Data Manager,
+  library generation under Set Builder, freeze under Baseline, the penetration schedule under Clash
+  Report, models and history under Project Settings. That is one extra press for the tool somebody
+  reaches for monthly, and it keeps the tab inside a laptop.
 
   LAYOUT. A RibbonPanelSource lays its children out left to right, one column each, every column the
   full height of the panel. That is the right thing for a Large button and the wrong thing for a
@@ -13,10 +24,15 @@
   with a RibbonRowBreak between the rows, three to a column at most.
 
   So every column below is one of two things - a single Large button, or a RowPanel of up to three
-  Standard ones. Panels lead with the one Large button that is the act; everything else stacks
-  behind it. Get this wrong and the failure is not a missing stack, it is a panel wide enough to
-  push the tab off the end of the ribbon, at which point AdWindows starts dropping the labels off
-  Standard buttons to claw the width back and the tab renders as a row of unlabelled icons.
+  Standard ones. Panels lead with the Large button that is the act; everything else stacks behind
+  it. Get this wrong and the failure is not cosmetic: the panel grows wide enough to push the tab
+  off the end of the ribbon, at which point AdWindows claws the width back by dropping the labels
+  off Standard buttons, and the tab renders as a row of unlabelled icons.
+
+  WIDTH. Nine panels come to roughly 1,800px unfolded. On anything from 1920 across that sits in the
+  tab whole. Below it the host folds panels right to left into single drop-downs - Automate first,
+  then Site - which is why those two are last and Clash is third from the left. Nothing is lost when
+  a panel folds; it becomes one button whose menu holds the same commands.
 
   Every button is a real AdWindows item, so right-click -> Add to Quick Access Toolbar works on all
   of them. That is the whole personalisation story on purpose: a second pinning system inside a
@@ -34,127 +50,183 @@
 
   <RibbonTab Id="ID_Tab_CamelWorks" Title="CamelWorks" KeyTip="CW">
 
-    <!-- Panel 1 - Project. Health Check is the act; the other three are setting the project up. -->
+    <!-- Panel 1 - Project. Health Check is the act. The other three are the job's paperwork, and every one of them is
+         skippable - the product works on a raw model with none of it touched. -->
     <RibbonPanel x:Uid="RibbonPanel_CW_Project">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Project" Title="Project">
         <local:NWRibbonButton x:Uid="CW_HealthCheck" Id="ID_CW_HealthCheck"
                               Size="Large" ShowText="True" Orientation="Vertical" />
         <RibbonRowPanel x:Uid="RibbonRow_CW_Project">
-          <local:NWRibbonButton x:Uid="CW_ProjectSetup" Id="ID_CW_ProjectSetup"
+          <local:NWRibbonButton x:Uid="CW_ProjectSettings" Id="ID_CW_ProjectSettings"
                                 Size="Standard" ShowText="True" Orientation="Horizontal" />
           <RibbonRowBreak x:Uid="RibbonBreak_CW_Project_1" />
           <local:NWRibbonButton x:Uid="CW_FixLinks" Id="ID_CW_FixLinks"
                                 Size="Standard" ShowText="True" Orientation="Horizontal" />
           <RibbonRowBreak x:Uid="RibbonBreak_CW_Project_2" />
-          <local:NWRibbonButton x:Uid="CW_ProjectProfile" Id="ID_CW_ProjectProfile"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-        </RibbonRowPanel>
-      </RibbonPanelSource>
-    </RibbonPanel>
-
-    <!-- Panel 2 - Coordinate. Two Large: the board, and reviewing what is on it. Full on Manage;
-         on Simulate the board is read-only from the store. -->
-    <RibbonPanel x:Uid="RibbonPanel_CW_Coordinate">
-      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Coordinate" Title="Coordinate">
-        <local:NWRibbonButton x:Uid="CW_Triage" Id="ID_CW_Triage"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <local:NWRibbonButton x:Uid="CW_Review" Id="ID_CW_Review"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Coordinate_Find">
-          <local:NWRibbonButton x:Uid="CW_ClashTests" Id="ID_CW_ClashTests"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Coordinate_1" />
-          <local:NWRibbonButton x:Uid="CW_ClashRules" Id="ID_CW_ClashRules"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Coordinate_2" />
-          <local:NWRibbonButton x:Uid="CW_Headroom" Id="ID_CW_Headroom"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-        </RibbonRowPanel>
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Coordinate_Issue">
-          <local:NWRibbonButton x:Uid="CW_ClashReport" Id="ID_CW_ClashReport"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Coordinate_3" />
-          <local:NWRibbonButton x:Uid="CW_Bcf" Id="ID_CW_Bcf"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Coordinate_4" />
-          <local:NWRibbonButton x:Uid="CW_Merge" Id="ID_CW_Merge"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-        </RibbonRowPanel>
-      </RibbonPanelSource>
-    </RibbonPanel>
-
-    <!-- Panel 3 - Compare. Its own panel rather than a button inside Coordinate: comparing two
-         revisions is what people reach for on the morning a model lands, before any clash runs.
-         Baseline stays Standard - it is what you set once, not what you press. -->
-    <RibbonPanel x:Uid="RibbonPanel_CW_Compare">
-      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Compare" Title="Compare">
-        <local:NWRibbonButton x:Uid="CW_Compare" Id="ID_CW_Compare"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Compare">
-          <local:NWRibbonButton x:Uid="CW_Baseline" Id="ID_CW_Baseline"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-        </RibbonRowPanel>
-      </RibbonPanelSource>
-    </RibbonPanel>
-
-    <!-- Panel 4 - Data -->
-    <RibbonPanel x:Uid="RibbonPanel_CW_Data">
-      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Data" Title="Data">
-        <local:NWRibbonButton x:Uid="CW_DataManager" Id="ID_CW_DataManager"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Data">
-          <local:NWRibbonButton x:Uid="CW_Excel" Id="ID_CW_Excel"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Data_1" />
-          <local:NWRibbonButton x:Uid="CW_Zones" Id="ID_CW_Zones"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Data_2" />
-          <local:NWRibbonButton x:Uid="CW_Takeoff" Id="ID_CW_Takeoff"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-        </RibbonRowPanel>
-      </RibbonPanelSource>
-    </RibbonPanel>
-
-    <!-- Panel 5 - Sets & Views. Sets is the act; Appearance drops to Standard so the panel leads
-         with one thing rather than asking which of two identical buttons is the point. -->
-    <RibbonPanel x:Uid="RibbonPanel_CW_Sets">
-      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Sets" Title="Sets &amp; Views">
-        <local:NWRibbonButton x:Uid="CW_Sets" Id="ID_CW_Sets"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Sets">
-          <local:NWRibbonButton x:Uid="CW_Appearance" Id="ID_CW_Appearance"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Sets_1" />
-          <local:NWRibbonButton x:Uid="CW_Viewpoints" Id="ID_CW_Viewpoints"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Sets_2" />
-          <local:NWRibbonButton x:Uid="CW_SectionBox" Id="ID_CW_SectionBox"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-        </RibbonRowPanel>
-      </RibbonPanelSource>
-    </RibbonPanel>
-
-    <!-- Panel 6 - Deliver & Automate. Batch and the graph are both places you go and stay; the
-         three exports are things you fire off, so they stack. -->
-    <RibbonPanel x:Uid="RibbonPanel_CW_Deliver">
-      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Deliver" Title="Deliver &amp; Automate">
-        <local:NWRibbonButton x:Uid="CW_Batch" Id="ID_CW_Batch"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <local:NWRibbonButton x:Uid="CW_Graph" Id="ID_CW_Graph"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <RibbonRowPanel x:Uid="RibbonRow_CW_Deliver">
-          <local:NWRibbonButton x:Uid="CW_ExportIfc" Id="ID_CW_ExportIfc"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_1" />
-          <local:NWRibbonButton x:Uid="CW_Export" Id="ID_CW_Export"
-                                Size="Standard" ShowText="True" Orientation="Horizontal" />
-          <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_2" />
           <local:NWRibbonButton x:Uid="CW_Help" Id="ID_CW_Help"
                                 Size="Standard" ShowText="True" Orientation="Horizontal" />
         </RibbonRowPanel>
       </RibbonPanelSource>
     </RibbonPanel>
 
-  </RibbonTab>
+    <!-- Panel 2 - Clash. Two Large, because this is where the week goes: the board, and walking it. Full on Manage; on
+         Simulate the board is read-only from the store. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Clash">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Clash" Title="Clash">
+        <local:NWRibbonButton x:Uid="CW_Board" Id="ID_CW_Board"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <local:NWRibbonButton x:Uid="CW_Review" Id="ID_CW_Review"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Clash">
+          <local:NWRibbonButton x:Uid="CW_ClashTests" Id="ID_CW_ClashTests"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Clash_1" />
+          <local:NWRibbonButton x:Uid="CW_ClashRules" Id="ID_CW_ClashRules"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Clash_2" />
+          <local:NWRibbonButton x:Uid="CW_Clearance" Id="ID_CW_Clearance"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
 
+    <!-- Panel 3 - Issues. The board leaving the building. Separate from Clash because sending issues out is a different
+         day's work from finding them. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Issues">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Issues" Title="Issues">
+        <local:NWRibbonButton x:Uid="CW_ClashReport" Id="ID_CW_ClashReport"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Issues">
+          <local:NWRibbonButton x:Uid="CW_Bcf" Id="ID_CW_Bcf"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Issues_1" />
+          <local:NWRibbonButton x:Uid="CW_Merge" Id="ID_CW_Merge"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Issues_2" />
+          <local:NWRibbonButton x:Uid="CW_ClashXml" Id="ID_CW_ClashXml"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 4 - Revisions. What changed since last week, and the fixed points you measure that against. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Revisions">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Revisions" Title="Revisions">
+        <local:NWRibbonButton x:Uid="CW_Compare" Id="ID_CW_Compare"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Revisions">
+          <local:NWRibbonButton x:Uid="CW_Changes" Id="ID_CW_Changes"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Revisions_1" />
+          <local:NWRibbonButton x:Uid="CW_Baseline" Id="ID_CW_Baseline"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Revisions_2" />
+          <local:NWRibbonButton x:Uid="CW_ChangeNotice" Id="ID_CW_ChangeNotice"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 5 - Data. The properties the elements carry. Data Manager's menu holds the ways of writing them -
+         by hand, formula, code table, spreadsheet - because they are modes of one job. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Data">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Data" Title="Data">
+        <local:NWRibbonButton x:Uid="CW_DataManager" Id="ID_CW_DataManager"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Data_1">
+          <local:NWRibbonButton x:Uid="CW_Zones" Id="ID_CW_Zones"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Data_1_1" />
+          <local:NWRibbonButton x:Uid="CW_Takeoff" Id="ID_CW_Takeoff"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Data_1_2" />
+          <local:NWRibbonButton x:Uid="CW_Wbs" Id="ID_CW_Wbs"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Data_2">
+          <local:NWRibbonButton x:Uid="CW_Ids" Id="ID_CW_Ids"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 6 - Sets & Views. The selections everything else works on, and what the model looks like while you work. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_SetsViews">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_SetsViews" Title="Sets &amp; Views">
+        <local:NWRibbonButton x:Uid="CW_Sets" Id="ID_CW_Sets"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <local:NWRibbonButton x:Uid="CW_Appearance" Id="ID_CW_Appearance"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_SetsViews">
+          <local:NWRibbonButton x:Uid="CW_Viewpoints" Id="ID_CW_Viewpoints"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_SetsViews_1" />
+          <local:NWRibbonButton x:Uid="CW_SectionBox" Id="ID_CW_SectionBox"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 7 - Deliver. The model going somewhere else. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Deliver">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Deliver" Title="Deliver">
+        <local:NWRibbonButton x:Uid="CW_ExportGlb" Id="ID_CW_ExportGlb"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Deliver_1">
+          <local:NWRibbonButton x:Uid="CW_ExportData" Id="ID_CW_ExportData"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_1" />
+          <local:NWRibbonButton x:Uid="CW_ExportDrawing" Id="ID_CW_ExportDrawing"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_2" />
+          <local:NWRibbonButton x:Uid="CW_ExportIfc" Id="ID_CW_ExportIfc"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Deliver_2">
+          <local:NWRibbonButton x:Uid="CW_Extract" Id="ID_CW_Extract"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Deliver_3" />
+          <local:NWRibbonButton x:Uid="CW_Compile" Id="ID_CW_Compile"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 8 - Site. The model reaching the people building it. Placed here, near the end, because Navisworks
+         collapses panels right to left when the tab runs out of room and this is the pair a
+         coordinator misses least on a small screen. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Site">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Site" Title="Site">
+        <local:NWRibbonButton x:Uid="CW_SetOut" Id="ID_CW_SetOut"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Site_1">
+          <local:NWRibbonButton x:Uid="CW_Dimensions" Id="ID_CW_Dimensions"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Site_1_1" />
+          <local:NWRibbonButton x:Uid="CW_Weight" Id="ID_CW_Weight"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+          <RibbonRowBreak x:Uid="RibbonBreak_CW_Site_1_2" />
+          <local:NWRibbonButton x:Uid="CW_Labels" Id="ID_CW_Labels"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Site_2">
+          <local:NWRibbonButton x:Uid="CW_Paperwork" Id="ID_CW_Paperwork"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+    <!-- Panel 9 - Automate. Doing all of it again next Friday without you. -->
+    <RibbonPanel x:Uid="RibbonPanel_CW_Automate">
+      <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Automate" Title="Automate">
+        <local:NWRibbonButton x:Uid="CW_Batch" Id="ID_CW_Batch"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
+        <RibbonRowPanel x:Uid="RibbonRow_CW_Automate">
+          <local:NWRibbonButton x:Uid="CW_Graph" Id="ID_CW_Graph"
+                                Size="Standard" ShowText="True" Orientation="Horizontal" />
+        </RibbonRowPanel>
+      </RibbonPanelSource>
+    </RibbonPanel>
+
+  </RibbonTab>
 </RibbonControl>

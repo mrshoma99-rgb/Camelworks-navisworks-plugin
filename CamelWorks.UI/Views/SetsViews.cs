@@ -1340,7 +1340,11 @@ namespace CamelWorks.UI.Views
                                 .Select(v => new TableRow(v, v.Name))
                                 .ToList();
 
-                            into.Children.Add(Ui.Table(rows, ("It would be called", 0)));
+                            var named = Ui.Table(rows, ("It would be called", 0));
+
+                            into.Children.Add(Ui.Picking(named,
+                                new Ui.OnPicked("Copy {n}",
+                                    (picked, say) => Ui.Copy(Ui.Lines(named, picked), say, "viewpoint"))));
                         }
 
                         return run.Views.Count;
@@ -1904,8 +1908,10 @@ namespace CamelWorks.UI.Views
                     v.HasOverrides ? "carries overrides" : string.Empty,
                     v.HasRedlines ? "has redlines" : string.Empty)).ToList();
 
+                // The last two carried no header, so "carries overrides" sat in a nameless column
+                // next to the folder and read as one.
                 var table = Ui.Table(rows,
-                    ("Viewpoint", 200), ("Folder", 120), ("", 130), ("", 0)).Multi();
+                    ("Viewpoint", 200), ("Folder", 120), ("Appearance", 130), ("Markup", 0)).Multi();
 
                 // The camera follows a single tick and stays put for several. Flying the view to
                 // the first of eight viewpoints somebody is selecting in order to delete them is
@@ -1917,7 +1923,13 @@ namespace CamelWorks.UI.Views
                 });
 
                 _table = table;
-                _list.Children.Add(table);
+
+                // The bar, with no buttons on it. Every action here - rename, re-folder, render,
+                // delete - is its own section further down, because each needs its own inputs, and
+                // each already works on what is ticked or on everything when nothing is. What was
+                // missing is the part that says how many are ticked and lets somebody tick or
+                // clear the lot without dragging down two hundred rows.
+                _list.Children.Add(Ui.Picking(table));
             }
         }
     }

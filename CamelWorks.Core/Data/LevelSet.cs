@@ -113,6 +113,29 @@ namespace CamelWorks.Core.Data
         public LevelSource Source { get; }
 
         /// <summary>
+        /// How many distinct floor elevations these bands actually sit at.
+        ///
+        /// Not the same as the band count, and the difference is a real failure that reached a
+        /// user: a coordination grid reported three levels with every elevation at 0.000. Three
+        /// bands, one height. Nothing can be grouped by that - every element falls in the first
+        /// band - but it counts as three levels to anything that only asks how many there are.
+        ///
+        /// Grids come out this way when the levels were authored for their names and nobody set
+        /// their heights, which is common in a grid exported from a drawing.
+        /// </summary>
+        public int DistinctElevations =>
+            Bands.Select(b => Math.Round(b.Elevation, 3)).Distinct().Count();
+
+        /// <summary>
+        /// True when these levels can actually separate a model into storeys.
+        ///
+        /// One band is a usable answer for a single-storey building. Several bands at one height
+        /// is not an answer at all, and is worth rejecting in favour of a source that is honest
+        /// about guessing.
+        /// </summary>
+        public bool Separates => Bands.Count > 0 && (Bands.Count == 1 || DistinctElevations > 1);
+
+        /// <summary>
         /// What the source is, and what it therefore misses.
         ///
         /// Every one of the three is wrong in its own way, and a coordinator reading a report broken

@@ -484,8 +484,12 @@ namespace CamelWorks.UI.Views
                     .Select((h, i) => (Header: h, Width: i == table.Headings.Count - 1 ? 0.0 : 150.0))
                     .ToArray();
 
-                _preview.Children.Add(Ui.Table(
-                    shown.Select(r => new TableRow(r, r.Cells.ToArray())).ToList(), widths));
+                var sample = Ui.Table(
+                    shown.Select(r => new TableRow(r, r.Cells.ToArray())).ToList(), widths);
+
+                _preview.Children.Add(Ui.Picking(sample,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(sample, picked), say, "row"))));
 
                 _preview.Children.Add(Ui.Tally(shown.Count, table.Rows.Count, "row"));
             }

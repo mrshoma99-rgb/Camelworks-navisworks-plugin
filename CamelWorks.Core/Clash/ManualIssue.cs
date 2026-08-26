@@ -95,6 +95,21 @@ namespace CamelWorks.Core.Clash
         public IList<ElementKey> Elements { get; } = new List<ElementKey>();
 
         /// <summary>
+        /// The clash results this issue covers.
+        ///
+        /// An issue is raised by hand, always - the engine never decides that eleven conflicts are
+        /// one conversation. But eleven conflicts often are one conversation, and the thing a
+        /// coordinator wants to send is "this riser is wrong, here are the nine results it causes",
+        /// not nine separate items each with a sentence retyped on it.
+        ///
+        /// Held as keys rather than as items, because the items are rebuilt every run and the
+        /// issue outlives them. A key that no longer matches anything this run is not an error: it
+        /// means that result went away, which is exactly what somebody wants to know about an
+        /// issue they raised three weeks ago.
+        /// </summary>
+        public IList<ClashKey> Attached { get; } = new List<ClashKey>();
+
+        /// <summary>
         /// Turn it into a board item.
         ///
         /// Its own group, always: an issue somebody wrote a sentence about is not one of eleven
@@ -137,6 +152,9 @@ namespace CamelWorks.Core.Clash
             if (Elements.Count > 0)
                 json.Set("elements", JsonValue.Array(Elements.Select(e => JsonValue.String(e.ToString()))));
 
+            if (Attached.Count > 0)
+                json.Set("attached", JsonValue.Array(Attached.Select(k => JsonValue.String(k.ToString()))));
+
             return json;
         }
 
@@ -173,6 +191,14 @@ namespace CamelWorks.Core.Clash
             foreach (var element in json["elements"].Items)
             {
                 if (ElementKey.TryParse(element.AsString(), out var parsed)) issue.Elements.Add(parsed);
+            }
+
+            // A key that will not parse is dropped rather than failing the issue. The sentence
+            // somebody wrote is the valuable half; losing it over one unreadable attachment would
+            // be the record punishing the reader for a bug in the writer.
+            foreach (var attached in json["attached"].Items)
+            {
+                if (ClashKey.TryParse(attached.AsString(), out var clash)) issue.Attached.Add(clash);
             }
 
             return issue;
@@ -222,6 +248,59 @@ namespace CamelWorks.Core.Clash
                 var candidate = "issue-" + n.ToString(CultureInfo.InvariantCulture);
                 if (Find(candidate) == null) return candidate;
             }
+        }
+
+        /// <summary>
+        /// Which issue holds this clash, or null when nothing does.
+        /// </summary>
+        /// <param name="key">The clash result.</param>
+        public ManualIssue? Holding(ClashKey key) =>
+            key.IsEmpty ? null : _issues.FirstOrDefault(i => i.Attached.Contains(key));
+
+        /// <summary>
+        /// Put these clashes on an issue, taking them off whichever issue had them.
+        ///
+        /// One clash, at most one issue. Two issues both claiming the same conflict is two people
+        /// each believing the other is dealing with it, and the count on each is then a number
+        /// that cannot be added to the other.
+        /// </summary>
+        /// <param name="issue">The issue to attach to.</param>
+        /// <param name="keys">The clash results.</param>
+        /// <returns>How many were newly attached; the ones it already held do not count.</returns>
+        public int Attach(ManualIssue? issue, IEnumerable<ClashKey>? keys)
+        {
+            if (issue == null || keys == null) return 0;
+
+            var added = 0;
+
+            foreach (var key in keys)
+            {
+                if (key.IsEmpty || issue.Attached.Contains(key)) continue;
+
+                foreach (var other in _issues)
+                    if (!ReferenceEquals(other, issue)) other.Attached.Remove(key);
+
+                issue.Attached.Add(key);
+                added++;
+            }
+
+            return added;
+        }
+
+        /// <summary>Take these clashes off whichever issue holds them.</summary>
+        /// <param name="keys">The clash results.</param>
+        /// <returns>How many were on an issue and are not any more.</returns>
+        public int Detach(IEnumerable<ClashKey>? keys)
+        {
+            if (keys == null) return 0;
+
+            var gone = 0;
+
+            foreach (var key in keys)
+                foreach (var issue in _issues)
+                    if (issue.Attached.Remove(key)) gone++;
+
+            return gone;
         }
 
         /// <summary>

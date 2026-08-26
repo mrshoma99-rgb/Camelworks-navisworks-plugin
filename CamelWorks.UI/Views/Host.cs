@@ -82,12 +82,32 @@ namespace CamelWorks.UI.Views
         /// <summary>Now, as UTC ticks.</summary>
         public long NowTicks => DateTime.UtcNow.Ticks;
 
+        /// <summary>
+        /// Who we are to the project file.
+        ///
+        /// The signed-in user, because the lease is advisory and its whole job is to put a name on
+        /// a screen: "Ahmed has this open" is actionable in a way that a machine id is not.
+        /// </summary>
+        public string Owner => Environment.UserName;
+
+        /// <summary>Who holds the right to save project settings, without taking it.</summary>
+        public LeaseResult LookAtLease() => Store.LookAtLease(Owner, NowTicks);
+
+        /// <summary>Take or renew that right.</summary>
+        /// <param name="force">Take it from a live holder — what the "Take it over" button does.</param>
+        public LeaseResult Claim(bool force = false) => Store.TakeLease(Owner, NowTicks, force);
+
         /// <summary>Record something in the activity log and save the project file.</summary>
         /// <param name="kind">One of <see cref="ActivityKind"/>.</param>
         /// <param name="summary">One line, in the past tense.</param>
         /// <param name="detail">Anything worth keeping that does not fit on the line.</param>
-        public void Record(string kind, string summary, string? detail = null) =>
+        public void Record(string kind, string summary, string? detail = null)
+        {
+            // Claim on the way to a write, not on the way to a screen. This is the moment the
+            // project file is about to change, which is the only moment a lease is about.
+            Claim();
             Store.Record(kind, NowTicks, summary, detail);
+        }
 
 
         /// <inheritdoc />

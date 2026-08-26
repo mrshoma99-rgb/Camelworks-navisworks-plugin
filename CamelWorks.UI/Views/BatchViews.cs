@@ -104,10 +104,9 @@ namespace CamelWorks.UI.Views
                 // Two columns, not three. Job plus When plus Outcome at 300 and 120 leaves the
                 // outcome about thirty pixels, and the only rows anybody reads in a run history
                 // are the ones that say why something stopped.
-                : Ui.Table(history.Select(e => new TableRow(e,
+                : Ran(history.Select(e => new TableRow(e,
                         string.IsNullOrEmpty(e.Detail) ? e.Summary : e.Summary + " — " + e.Detail,
-                        ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList(),
-                    ("Run", 0), ("When", 110));
+                        ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList());
 
             // The jobs are what the tab is, so they are not in a box named after the tab. History
             // keeps its card: it is the result, and the result is what earns one.
@@ -119,6 +118,23 @@ namespace CamelWorks.UI.Views
                 Ui.Rule(),
                 Compile(log),
                 Ui.Marked(Glyphs.Clock, "What has run", null, past)));
+        }
+
+        /// <summary>
+        /// The run history, with a bar on it.
+        ///
+        /// The rows anybody reads in a run history are the ones saying why something stopped, and
+        /// those are the rows that go into the message asking somebody what happened - so they
+        /// have to be takeable, not just readable.
+        /// </summary>
+        /// <param name="rows">One row per run, newest first.</param>
+        private static UIElement Ran(IReadOnlyList<TableRow> rows)
+        {
+            var table = Ui.Table(rows, ("Run", 0), ("When", 110));
+
+            return Ui.Picking(table,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "run")));
         }
 
         /// <summary>

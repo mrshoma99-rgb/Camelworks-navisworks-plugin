@@ -53,6 +53,7 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
 
             private readonly StackPanel _levels = Ui.Stack();
+            private readonly StackPanel _said = Ui.Stack();
             private readonly StackPanel _preview = Ui.Stack();
             private readonly StackPanel _moved = Ui.Stack();
             private readonly StackPanel _output = Ui.Stack();
@@ -241,7 +242,12 @@ namespace CamelWorks.UI.Views
                     Ui.Pair(
                         Ui.Field("Smallest set", Number(_recipe.Floor, v => _recipe.Floor = v)),
                         Ui.Field("Refuse past", Number(_recipe.Ceiling, v => _recipe.Ceiling = v))),
-                    Ui.Actions(Ui.Runner("Read the model", _preview, Read)));
+                    // _said is this Runner's output and sits on this step. It used to write into
+                    // _preview, which is on the next one - so "Fill in at least one level" and
+                    // "Nothing in scope" were written behind a gate that only opens once the read
+                    // has worked, which is exactly when neither sentence is needed.
+                    Ui.Actions(Ui.Runner("Read the model", _said, Read)),
+                    _said);
             }
 
             private TextBox Number(int value, Action<int> set) =>
@@ -303,7 +309,7 @@ namespace CamelWorks.UI.Views
 
                 if (levels.Count == 0)
                 {
-                    _preview.Children.Add(Ui.Problem(
+                    _said.Children.Add(Ui.Problem(
                         "Fill in at least one level - a property tab and a property."));
                     ShowLast();
                     return;
@@ -331,7 +337,7 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0)
                 {
-                    _preview.Children.Add(Ui.Empty("Nothing in scope.",
+                    _said.Children.Add(Ui.Empty("Nothing in scope.",
                         _scope == Selection
                             ? "Select some elements, or read the whole model instead."
                             : "No models are loaded."));
@@ -449,8 +455,12 @@ namespace CamelWorks.UI.Views
                                               c.After.ToString("N0", CultureInfo.InvariantCulture)))
                     .ToList();
 
-                _moved.Children.Add(Ui.Table(rows,
-                    ("Set", 300), ("Change", 90), ("Was", 80), ("Now", 80)));
+                var moved = Ui.Table(rows,
+                    ("Set", 300), ("Change", 90), ("Was", 80), ("Now", 80));
+
+                _moved.Children.Add(Ui.Picking(moved,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(moved, picked), say, "set"))));
 
                 if (delta.Changes.Count > rows.Count)
                     _moved.Children.Add(Ui.Line(
@@ -525,8 +535,12 @@ namespace CamelWorks.UI.Views
                                           outcome.IsLive ? "live search" : "fixed list"));
                 }
 
-                into.Children.Add(Ui.Table(rows,
-                    ("Set", 300), ("Read", 80), ("Search finds", 100), ("As", 110)));
+                var costed = Ui.Table(rows,
+                    ("Set", 300), ("Read", 80), ("Search finds", 100), ("As", 110));
+
+                into.Children.Add(Ui.Picking(costed,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(costed, picked), say, "set"))));
 
                 if (empty > 0)
                     into.Children.Add(Ui.Note(Ui.Count(empty, "set")

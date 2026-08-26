@@ -61,164 +61,274 @@ namespace CamelWorks.UI.Shell
     /// </summary>
     public static class CommandCatalogue
     {
-        /// <summary>All twenty-seven, in ribbon order.</summary>
+        /// <summary>All thirty-nine, in ribbon order.</summary>
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
-            // Panel 1 — Project
-            Pane("ID_CW_HealthCheck", "Health Check", "health",
-                "One scorecard over models, sets and data. Works on a raw model with nothing set up.",
+            // Panel - Project
+            Cmd("ID_CW_HealthCheck", "Health Check", "health",
+                "Whether this federation is fit to coordinate against, before anybody "
+                + "spends a week finding out it was not.",
                 new[] { "audit", "model check", "quality", "scorecard", "validate" },
                 new[] { "is this model any good", "something is wrong with the federation",
                         "elements in the wrong place", "model loaded twice", "duplicate elements" }),
 
-            Pane("ID_CW_ProjectSetup", "Project Setup", "setup",
-                "What CamelWorks already derived, with an override on each line. Skippable.",
-                new[] { "configure", "settings", "options", "preferences" },
-                new[] { "where do I set this up", "do I have to configure it first" }),
+            Cmd("ID_CW_ProjectSettings", "Project Settings", "project",
+                "What CamelWorks worked out about this job, where each answer came from, "
+                + "and an override on every line. Nothing here is required.",
+                new[] { "setup", "profile", "configure", "options", "preferences", "template" },
+                new[] { "where do I set this up", "do I have to configure it first",
+                        "set this up the same way on the next job", "what did it assume" }),
 
-            Act("ID_CW_FixLinks", "Fix Broken Links",
-                "Find the sources a loaded model can no longer see, and what changed since the "
-                + "federation was saved.",
+            Cmd("ID_CW_FixLinks", "Fix Broken Links", "links",
+                "The source files a loaded model can no longer see, and where they went.",
                 new[] { "missing model", "relink", "repath", "broken reference" },
-                new[] { "model did not load", "file not found", "the NWF points at the wrong folder" }),
+                new[] { "model did not load", "file not found",
+                        "the NWF points at the wrong folder" }),
 
-            Pane("ID_CW_ProjectProfile", "Project Profile", "project",
-                "What this project's settings are, where each came from, and an override on each line.",
-                new[] { "template", "profile", "preset" },
-                new[] { "set this up the same way on the next job" }),
+            Cmd("ID_CW_Help", "Help", "help",
+                "The guide, what this cannot do, the shortcuts, a sample project and the "
+                + "diagnostics.",
+                new[] { "documentation", "support", "diagnostics", "about", "version",
+                        "find a tool" },
+                new[] { "how do I do this", "something is broken", "what version am I on",
+                        "where is that tool" }),
 
-            // Panel 2 — Coordinate
-            Pane("ID_CW_Triage", "Clash Triage", "triage",
-                "The board. Opens populated and grouped, with the funnel showing how the engine's "
-                + "count became this one.",
-                new[] { "clashes", "board", "issues", "results", "grouping" },
+            // Panel - Clash
+            Cmd("ID_CW_Board", "Clash Board", "triage",
+                "Every result the tests found, worked down to the issues somebody fixes - "
+                + "and your decisions survive the next run.",
+                new[] { "clashes", "board", "issues", "results", "grouping", "triage" },
                 new[] { "too many clashes", "thousands of results", "the same clash forty times",
-                        "one pipe through forty joists", "where do I even start" }),
+                        "one pipe through forty joists", "where do I even start",
+                        "did I lose last week's work" }),
 
-            Act("ID_CW_Review", "Review",
-                "One group at a time, over the model, with both hands on the keyboard.",
+            Cmd("ID_CW_Review", "Review", "review",
+                "One issue at a time in front of the geometry, both hands on the keyboard.",
                 new[] { "walk the clashes", "go through results", "sign off" },
                 new[] { "I need to go through these one at a time" }),
 
-            Pane("ID_CW_ClashTests", "Clash Tests", "tests",
-                "The matrix builder and Run. One click is every model against every other.",
-                new[] { "matrix", "run clashes", "test setup", "batch clash" },
-                new[] { "setting up clash tests takes all morning", "which tests have I already run" }),
+            Cmd("ID_CW_ClashTests", "Clash Tests", "tests",
+                "What gets tested against what, and how close is too close. The matrix "
+                + "builds a whole set at once, including from a spreadsheet somebody sent "
+                + "you.",
+                new[] { "matrix", "run clashes", "test setup", "batch clash", "clash matrix" },
+                new[] { "setting up clash tests takes all morning",
+                        "which tests have I already run", "they sent me their clash matrix" }),
 
-            Pane("ID_CW_ClashRules", "Clash Rules", "rules",
-                "Suppress and flag, then group, then assign — one pipeline, previewed before it runs.",
+            Cmd("ID_CW_ClashRules", "Clash Rules", "rules",
+                "Suppress what never matters, group what is one problem, assign what is "
+                + "left - previewed before it touches the board.",
                 new[] { "filters", "ignore", "suppress", "auto-assign", "grouping rules" },
                 new[] { "the same false positives every week", "insulation touching a wall",
                         "I keep ignoring the same things" }),
 
-            Pane("ID_CW_Headroom", "Headroom", "headroom",
-                "Floor set against target set, emitting findings onto the board.",
-                new[] { "clearance", "ceiling height", "soffit", "head height" },
-                new[] { "not enough headroom", "the ceiling is too low under that duct" }),
+            Cmd("ID_CW_Clearance", "Clearance", "headroom",
+                "The check no clash test can do: whether the clear height is still there "
+                + "where nothing is touching.",
+                new[] { "headroom", "ceiling height", "soffit", "head height", "clear height" },
+                new[] { "not enough headroom", "the ceiling is too low under that duct",
+                        "will a person fit under that" }),
 
-            Pane("ID_CW_ClashReport", "Clash Report", "clashreport",
-                "PDF, XLSX or HTML from a built-in template. Nothing to configure first.",
-                new[] { "export report", "issue list", "pdf", "spreadsheet" },
-                new[] { "the client wants a report", "I need this in a spreadsheet" }),
+            // Panel - Issues
+            Cmd("ID_CW_ClashReport", "Clash Report", "clashreport",
+                "The board as a document somebody without Navisworks can read - and the "
+                + "penetration schedule the structural engineer wants instead.",
+                new[] { "export report", "issue list", "pdf", "spreadsheet", "penetrations",
+                        "sleeves" },
+                new[] { "the client wants a report", "I need this in a spreadsheet",
+                        "structures want a list of holes" }),
 
-            Pane("ID_CW_Bcf", "BCF", "bcf",
-                "Export and import, BCF 2.1 and 3.0.",
-                new[] { "bcf", "openbim", "issue exchange", "solibri", "bimcollab" },
-                new[] { "send these to the architect", "they use a different tool" }),
+            Cmd("ID_CW_Bcf", "BCF", "bcf",
+                "Issues out to any tool that speaks BCF, and their answers back in - 2.1 or "
+                + "3.0.",
+                new[] { "bcf", "openbim", "issue exchange", "solibri", "bimcollab", "revizto" },
+                new[] { "send these to the architect", "they use a different tool",
+                        "they sent a bcfzip back" }),
 
-            Pane("ID_CW_Merge", "Merge", "merge",
-                "One conflict preview for inbound BCF and inbound reviewer files.",
+            Cmd("ID_CW_Merge", "Merge Markups", "merge",
+                "Several reviewers answered the same board. Where they disagree is shown, "
+                + "not silently won by whoever came last.",
                 new[] { "combine", "reconcile", "incoming", "conflicts" },
                 new[] { "two people reviewed the same clashes", "whose version wins" }),
 
-            // Panel 3 — Compare
-            Pane("ID_CW_Compare", "Compare", "compare",
-                "What changed since a baseline: added, removed, moved and changed, painted onto "
-                + "the model. Works on a raw model — take a baseline and you are set up.",
-                new[] { "diff", "difference", "revision", "version", "what changed", "model compare" },
+            Cmd("ID_CW_ClashXml", "Clash XML", "clashxml",
+                "The interchange format other coordination tools speak, in or out, against "
+                + "a saved profile.",
+                new[] { "xml", "interchange", "import results", "iconstruct" },
+                new[] { "they sent an xml of their tests", "get these results into their tool" }),
+
+            // Panel - Revisions
+            Cmd("ID_CW_Compare", "Compare Revisions", "compare",
+                "What changed against a baseline: added, removed, moved, retyped - and how "
+                + "it knows.",
+                new[] { "diff", "difference", "revision", "version", "what changed",
+                        "model compare" },
                 new[] { "what changed since last week", "which model did they update",
-                        "the architect moved something and did not say",
-                        "is this the same model as last month", "did anything move",
-                        "I cannot tell what is different" }),
+                        "the architect moved something and did not say", "did anything move" }),
 
-            Act("ID_CW_Baseline", "Baseline",
-                "Record what the model is right now, so a comparison next week has something to "
-                + "compare against.",
-                new[] { "snapshot", "record", "mark", "freeze", "capture" },
-                new[] { "save what it looks like now", "I want to compare against this later" }),
+            Cmd("ID_CW_Changes", "Changes", "changes",
+                "The change list painted onto the model, so a revision is walked rather "
+                + "than read.",
+                new[] { "change list", "walk changes", "review revision" },
+                new[] { "show me what moved", "I cannot tell what is different" }),
 
-            // Panel 4 — Data
-            Pane("ID_CW_DataManager", "Data Manager", "data",
-                "Browse and edit properties in one place, with calculated columns.",
-                new[] { "properties", "parameters", "attributes", "edit data" },
-                new[] { "I need to see every property at once", "bulk edit properties" }),
+            Cmd("ID_CW_Baseline", "Baseline", "baseline",
+                "Record what the model is right now, so next week has something to compare "
+                + "against - or freeze a scope that has been agreed.",
+                new[] { "snapshot", "record", "mark", "freeze", "capture", "agreed scope" },
+                new[] { "save what it looks like now", "I want to compare against this later",
+                        "we agreed this scope today" }),
 
-            Pane("ID_CW_Excel", "Excel", "excel",
-                "Read the properties, write them back, or take them out as a spreadsheet.",
-                new[] { "spreadsheet", "xlsx", "csv", "round trip" },
-                new[] { "get this into Excel", "the QS sent a spreadsheet back" }),
+            Cmd("ID_CW_ChangeNotice", "Change Notice", "notice",
+                "What has changed since a scope was frozen, written the way a variation has "
+                + "to be written.",
+                new[] { "variation", "change order", "claim", "scope change" },
+                new[] { "they changed it after we agreed", "I need to raise a variation" }),
 
-            Pane("ID_CW_Zones", "Assign Levels & Zones", "levels",
-                "Derives levels from whatever the model has, and says which source it used.",
+            // Panel - Data
+            Cmd("ID_CW_DataManager", "Data Manager", "data",
+                "Every property the elements carry, in one grid - and the pen to fix what "
+                + "is missing, by hand, formula, code table or spreadsheet.",
+                new[] { "properties", "parameters", "attributes", "edit data", "excel",
+                        "round trip" },
+                new[] { "I need to see every property at once", "bulk edit properties",
+                        "get this into Excel", "the QS sent a spreadsheet back" }),
+
+            Cmd("ID_CW_Zones", "Levels and Zones", "levels",
+                "What level and what zone every element is on, worked out from whatever the "
+                + "model already carries - and it says which source it used.",
                 new[] { "storeys", "floors", "levels", "zoning", "grids" },
                 new[] { "the model has no levels", "clashes are not grouped by floor",
                         "which floor is this on" }),
 
-            Pane("ID_CW_Takeoff", "Takeoff", "takeoff",
-                "Sums the numeric properties it finds, grouped, and reports what it could not read.",
-                new[] { "quantities", "measure", "counts", "schedule", "qto" },
+            Cmd("ID_CW_Takeoff", "Takeoff", "takeoff",
+                "The quantities the model carries, summed how a bill wants them, with "
+                + "whatever could not be read reported rather than dropped.",
+                new[] { "quantities", "measure", "counts", "schedule", "qto", "bill" },
                 new[] { "how much of this is there", "I need quantities out of the model" }),
 
-            // Panel 5 — Sets & Views
-            Pane("ID_CW_Sets", "Sets", "sets",
-                "Boolean set building, compiled down to native search sets.",
-                new[] { "search sets", "selection sets", "filters", "find items" },
-                new[] { "the search only does AND", "I need everything except this",
-                        "building the same set over and over" }),
+            Cmd("ID_CW_Wbs", "Work Breakdown", "wbs",
+                "The selection tree's own shape written onto the elements as properties, so "
+                + "a schedule can group by a breakdown the model already implies.",
+                new[] { "wbs", "work breakdown", "structure", "hierarchy", "packages" },
+                new[] { "I need a WBS on these", "group the schedule by package",
+                        "the tree knows this but the properties do not" }),
 
-            Pane("ID_CW_Appearance", "Appearance", "appearance",
-                "The layers system: what is hidden, what is overridden, and by which layer.",
+            Cmd("ID_CW_Ids", "IDS", "ids",
+                "What every model must carry, written as the open standard - and the "
+                + "federation checked against it.",
+                new[] { "ids", "information delivery", "requirements", "eir",
+                        "employer information" },
+                new[] { "do their models meet our requirements",
+                        "check the models against the EIR" }),
+
+            // Panel - Sets & Views
+            Cmd("ID_CW_Sets", "Set Builder", "sets",
+                "The selections everything else works on, said in plain rows - and "
+                + "generated in bulk from a property list or a spreadsheet.",
+                new[] { "search sets", "selection sets", "filters", "find items", "library" },
+                new[] { "the search only does AND", "I need everything except this",
+                        "building the same set over and over", "I need a set per room" }),
+
+            Cmd("ID_CW_Appearance", "Appearance", "appearance",
+                "What is coloured, what is hidden, and which layer did it - stacked, and "
+                + "every layer takes back off.",
                 new[] { "colours", "override", "hide", "isolate", "transparency", "layers" },
                 new[] { "why is this thing hidden", "why is this pink", "unhide all lost my work",
                         "I cannot tell what is overridden" }),
 
-            Pane("ID_CW_Viewpoints", "Viewpoints", "viewpoints",
-                "Bulk rename, renumber and re-folder; batch render; copy overrides.",
+            Cmd("ID_CW_Viewpoints", "Viewpoints", "viewpoints",
+                "Rename, renumber, re-folder and re-camera viewpoints in bulk instead of "
+                + "one at a time down the tree.",
                 new[] { "views", "saved viewpoints", "renumber", "rename" },
                 new[] { "two hundred viewpoints named Viewpoint", "renaming these one at a time" }),
 
-            Act("ID_CW_SectionBox", "Section Box",
-                "Boxes whatever is selected. With nothing selected it switches sectioning off and "
-                + "back on without losing the box.",
+            Cmd("ID_CW_SectionBox", "Section Box", "sectionbox",
+                "Boxes whatever is selected. With nothing selected it switches sectioning "
+                + "off and back on without losing the box.",
                 new[] { "section", "clip", "cut", "crop" },
                 new[] { "I cannot see inside", "turning sectioning off loses my box" }),
 
-            // Panel 6 — Deliver & Automate
-            Pane("ID_CW_Batch", "Batch", "batch",
-                "Jobs and their run history. A job from this document in one click.",
-                new[] { "automation", "scheduled", "overnight", "unattended" },
-                new[] { "doing the same export every week", "this takes an hour every Friday" }),
+            // Panel - Deliver
+            Cmd("ID_CW_ExportGlb", "Export GLB", "exportglb",
+                "The geometry as one file a browser opens, with nothing installed and no "
+                + "licence at the other end.",
+                new[] { "gltf", "glb", "web viewer", "3d", "share the model", "geometry" },
+                new[] { "put this on the web", "send them the geometry",
+                        "they cannot open an nwd" }),
 
-            Pane("ID_CW_Graph", "Graph Editor", "graph",
-                "The graph canvas, in its own pane because it needs the full width.",
-                new[] { "nodes", "visual scripting", "dyncamelo", "workflow" },
-                new[] { "I want to chain these together" }),
+            Cmd("ID_CW_ExportData", "Export Data", "exportsheet",
+                "The properties you name, as a spreadsheet or a CSV, one row per element.",
+                new[] { "csv", "xlsx", "spreadsheet", "excel", "properties", "schedule" },
+                new[] { "they want it in Excel", "send them the properties",
+                        "I need this as a schedule" }),
 
-            Pane("ID_CW_ExportIfc", "Export IFC", "ifc",
-                "The IFC exporter, full pane.",
+            Cmd("ID_CW_ExportDrawing", "Export Drawing", "exportdxf",
+                "The geometry as a DXF every CAD package opens, one layer per discipline.",
+                new[] { "dxf", "dwg", "autocad", "drawing", "cad", "2d" },
+                new[] { "they want a DWG", "send it to the CAD team",
+                        "they do not have Navisworks" }),
+
+            Cmd("ID_CW_ExportIfc", "Export IFC", "ifc",
+                "The model as IFC, with the mapping and the classification it should carry.",
                 new[] { "ifc", "openbim export", "ifc4", "ifc2x3" },
                 new[] { "they want IFC", "export to IFC" }),
 
-            Act("ID_CW_Export", "Export",
-                "Geometry as a GLB a browser opens, or the properties as a spreadsheet.",
-                new[] { "gltf", "glb", "csv", "xlsx", "web viewer", "3d", "share the model" },
-                new[] { "put this on the web", "send them the geometry",
-                        "they cannot open an nwd", "send it to the client" }),
+            Cmd("ID_CW_Extract", "Extract", "extract",
+                "A level, a zone, a room or a view cut out of the federation as something "
+                + "somebody else can open.",
+                new[] { "cut out", "subset", "split", "issue a zone" },
+                new[] { "send them just level 3", "they only need the plant room" }),
 
-            Dialog("ID_CW_Help", "Help",
-                "Guide, limitations, shortcuts, Find a Tool, sample project, diagnostics, updates, about.",
-                new[] { "documentation", "support", "diagnostics", "about", "version" },
-                new[] { "how do I do this", "something is broken", "what version am I on" }),
+            Cmd("ID_CW_Compile", "Compile", "compile",
+                "A folder of supplier drops appended into one deliverable, newest revision "
+                + "of each, with a log of what went in.",
+                new[] { "append", "federate", "combine models", "deliverable", "issue" },
+                new[] { "build this week's federated model", "which revision went into that NWD" }),
+
+            // Panel - Site
+            Cmd("ID_CW_SetOut", "Setting Out", "setout",
+                "The file an engineer loads into a total station and walks the floor with, "
+                + "in site coordinates.",
+                new[] { "survey", "total station", "coordinates", "points", "site" },
+                new[] { "the site engineer needs these points",
+                        "give me setting out for the hangers" }),
+
+            Cmd("ID_CW_Dimensions", "Dimensions", "dimensions",
+                "How long that run is, how far it sits off the slab, whether the hangers "
+                + "are at centres - for every element at once.",
+                new[] { "measure", "lengths", "spacing", "centres", "offsets" },
+                new[] { "are these at 600 centres", "how far off the slab is that" }),
+
+            Cmd("ID_CW_Weight", "Centre of Gravity", "weight",
+                "Where the weight of a module actually sits, so the hook goes in the right "
+                + "place.",
+                new[] { "weight", "mass", "lifting", "cog", "crane" },
+                new[] { "where do we lift this from", "how heavy is that module" }),
+
+            Cmd("ID_CW_Labels", "Site Labels", "labels",
+                "A sheet of stickers with a code on each and the identifier underneath, for "
+                + "somebody to put on the work.",
+                new[] { "qr", "barcode", "stickers", "tags", "labels" },
+                new[] { "we need to tag these on site", "print labels for the spools" }),
+
+            Cmd("ID_CW_Paperwork", "Documents and Photos", "paperwork",
+                "The data sheets, site photos and document-system addresses the model "
+                + "already points at - found, checked, opened.",
+                new[] { "attachments", "links", "documents", "photos", "datasheets" },
+                new[] { "where is the datasheet for that", "are these document links still alive" }),
+
+            // Panel - Automate
+            Cmd("ID_CW_Batch", "Batch", "batch",
+                "A saved list of jobs run in order over the document that is open, in one "
+                + "press.",
+                new[] { "automation", "scheduled", "overnight", "unattended", "jobs" },
+                new[] { "doing the same export every week", "this takes an hour every Friday" }),
+
+            Cmd("ID_CW_Graph", "Graph Editor", "graph",
+                "The same jobs as a graph, for when a list of steps is not enough.",
+                new[] { "nodes", "visual scripting", "dyncamelo", "workflow" },
+                new[] { "I want to chain these together" }),
         };
 
         /// <summary>Look one up by its host command id.</summary>
@@ -265,41 +375,8 @@ namespace CamelWorks.UI.Shell
         private static bool Has(string haystack, string needle) =>
             haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
 
-        private static RibbonCommand Pane(string id, string title, string toolId, string tooltip,
-                                          string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, toolId, tooltip, synonyms, symptoms);
-
-        /// <summary>
-        /// The tool behind a button that has no route of its own.
-        ///
-        /// These were the commands that acted rather than opening a screen, so they never needed
-        /// one. They still name a tool, because a tool is the thing that carries what a button is
-        /// for and what it will do - and Find a Tool has to be able to say that about all of them.
-        /// </summary>
-        private static string? ToolFor(string id)
-        {
-            switch (id)
-            {
-                case "ID_CW_FixLinks": return "links";
-                case "ID_CW_Review": return "review";
-                case "ID_CW_Baseline": return "baseline";
-                case "ID_CW_SectionBox": return "sectionbox";
-                case "ID_CW_Export": return "export";
-                case "ID_CW_Help": return "help";
-                default: return null;
-            }
-        }
-
-        private static RibbonCommand Act(string id, string title, string tooltip,
+        private static RibbonCommand Cmd(string id, string title, string toolId, string tooltip,
                                          string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, ToolFor(id), tooltip, synonyms, symptoms);
-
-        private static RibbonCommand Menu(string id, string title, string tooltip,
-                                          string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, ToolFor(id), tooltip, synonyms, symptoms);
-
-        private static RibbonCommand Dialog(string id, string title, string tooltip,
-                                            string[] synonyms, string[] symptoms) =>
-            new RibbonCommand(id, title, ToolFor(id), tooltip, synonyms, symptoms);
+            new RibbonCommand(id, title, toolId, tooltip, synonyms, symptoms);
     }
 }

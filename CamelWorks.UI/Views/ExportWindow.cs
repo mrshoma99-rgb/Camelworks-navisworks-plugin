@@ -28,8 +28,10 @@ namespace CamelWorks.UI.Views
     /// somebody who sends a client a GLB expecting IFC has sent the wrong thing and will not find
     /// out until they are asked for a property.
     ///
-    /// The spreadsheet and CSV halves are the properties, which is the other half of what people
-    /// mean by "send them the model".
+    /// The spreadsheet and the drawing are the other two things people mean by "send them the
+    /// model": the properties, and a DXF a CAD package opens. Three buttons and three windows,
+    /// because the three share a scope picker and nothing else - different inputs, a different
+    /// file, and a different person at the other end.
     /// </summary>
     public static class ExportWindow
     {
@@ -38,18 +40,38 @@ namespace CamelWorks.UI.Views
 
 
         /// <summary>
-        /// Show the window.
+        /// Show one export.
+        ///
+        /// One window, one format. It used to be one window with both: a GLB card and a
+        /// spreadsheet card stacked under a shared scope, each with its own inputs and its own
+        /// button. Opening it for the first time, there was no way to tell which half was the one
+        /// you wanted, and the reported experience was exactly that - "you have no idea what to
+        /// fill and what to click".
+        ///
+        /// They are not two views of one job. Geometry for a browser and properties for a
+        /// spreadsheet go to different people for different reasons on different days.
         /// </summary>
+        /// <param name="what">Which export: <c>glb</c>, <c>dxf</c>, or anything else for properties.</param>
         /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
+        public static string? Show(string what)
         {
             var session = Host.Current;
             if (session == null) return Host.NoModel;
 
-            return ToolWindow.Show(Tools.Find("export"), () => Ui.Scroll(Body(session)), 720, 640);
+            var kind = Kind(what);
+
+            return ToolWindow.Show(Tools.Find("export" + kind),
+                                   () => Ui.Scroll(Body(session, kind)),
+                                   640, kind == "sheet" ? 620 : 560);
         }
 
-        private static UIElement Body(Session session)
+        /// <summary>Which of the three, defaulting to the properties rather than throwing.</summary>
+        private static string Kind(string what) =>
+            string.Equals(what, "glb", StringComparison.OrdinalIgnoreCase) ? "glb"
+            : string.Equals(what, "dxf", StringComparison.OrdinalIgnoreCase) ? "dxf"
+            : "sheet";
+
+        private static UIElement Body(Session session, string kind)
         {
             var scope = "Current selection";
             var picker = Ui.Choice(new[] { "Current selection", "Everything loaded" }, scope,
@@ -59,8 +81,9 @@ namespace CamelWorks.UI.Views
             // what it is for, and a second copy underneath reads as two screens.
             return Ui.Stack(
                 Ui.Field("Scope", picker),
-                Geometry(session, () => scope),
-                Properties(session, () => scope));
+                kind == "glb" ? Geometry(session, () => scope)
+                : kind == "dxf" ? Drawing(session, () => scope)
+                : Properties(session, () => scope));
         }
 
         /// <summary>Which elements the scope means, in the order the model has them.</summary>
@@ -167,14 +190,17 @@ namespace CamelWorks.UI.Views
                     "wrote " + Ui.Count(written.Meshes, "object") + " as GLB");
             });
 
-            return Ui.Card("Geometry, as a GLB a browser can open",
-                "One file. Nothing to install at the other end.",
+            // No card around it. The window is this job and nothing else now, and the frame above
+            // already carries the name and the sentence a card title would repeat.
+            return Ui.Stack(
                 Ui.Line("What goes in it: triangles, one named object per element, and a colour. "
                         + "Coordinates are in metres and the model comes out the right way up.", 0.85),
                 Ui.Line("What does not: every property, the selection tree's structure, clashes, "
                         + "viewpoints, sets and layers. This is geometry, not a model - if somebody "
                         + "is going to ask you for a property, they want IFC and not this.", 0.85),
-                Ui.Field("Colour", colours),
+                Ui.Field("Colour", colours,
+                         "One colour per discipline is what makes services readable against "
+                         + "structure at the other end."),
                 Ui.PathField("Write to", path, PathKind.Save),
                 run,
                 results);
@@ -203,10 +229,24 @@ namespace CamelWorks.UI.Views
         {
             if (by == "One grey") return;
 
-            var key = by == "By model"
-                ? item.Model.DisplayName
-                : session.Profile.DisciplineOf(item.Model.DisplayName) ?? item.Model.DisplayName;
+            Shade(mesh, Grouping(session, item, by));
+        }
 
+        /// <summary>
+        /// The name the element groups under: its discipline, its model, or its category.
+        ///
+        /// One function because the GLB calls it a material and the drawing calls it a layer, and
+        /// they have to agree - a person who exports both and finds the services grouped one way
+        /// in the browser and another way in AutoCAD has two files that disagree about the model.
+        /// </summary>
+        private static string Grouping(Session session, IModelItem item, string by) =>
+            by == "By model" ? item.Model.DisplayName
+            : by == "By category" ? (item.Category ?? item.TypeName ?? "element")
+            : session.Profile.DisciplineOf(item.Model.DisplayName) ?? item.Model.DisplayName;
+
+        /// <summary>Give the mesh a colour derived from the name it groups under.</summary>
+        private static void Shade(GltfMesh mesh, string key)
+        {
             mesh.Material = string.IsNullOrWhiteSpace(key) ? "default" : key;
 
             // A hash rather than a palette, because a federation has as many disciplines as it has
@@ -218,6 +258,153 @@ namespace CamelWorks.UI.Views
             mesh.Red = 0.45 + (((hash >> 0) & 0xFF) / 255.0 * 0.45);
             mesh.Green = 0.45 + (((hash >> 8) & 0xFF) / 255.0 * 0.45);
             mesh.Blue = 0.45 + (((hash >> 16) & 0xFF) / 255.0 * 0.45);
+        }
+
+        // ===================================================================================
+        // Drawing
+        // ===================================================================================
+
+        /// <summary>
+        /// The model as a DXF every CAD package opens.
+        ///
+        /// The third thing people mean by "send them the model". A structural engineer who wants
+        /// the services in AutoCAD does not want a GLB and cannot use a spreadsheet.
+        ///
+        /// Extract can also write a DXF, and that is not this. Extract cuts a named piece of the
+        /// federation out to a recipe - a level, a zone, a room - and needs one before it will do
+        /// anything. This draws what is selected, or everything loaded, with nothing set up
+        /// first. Somebody who has picked forty pipes and wants them in AutoCAD had no way there.
+        /// </summary>
+        private static UIElement Drawing(Session session, Func<string> scope)
+        {
+            var path = Ui.Text(Suggested(session, ".dxf"), null, 380);
+            var by = "By discipline";
+            var results = Ui.Stack();
+
+            var grouping = Ui.Choice(new[] { "By discipline", "By model", "By category" }, by,
+                                     pick => by = pick);
+
+            var run = Ui.Runner("Write the drawing", results, job =>
+            {
+                var file = path.Text.Trim();
+
+                if (file.Length == 0)
+                {
+                    results.Children.Add(Ui.Problem("Say where to write it."));
+                    return;
+                }
+
+                job.Say("Reading geometry...");
+
+                var geometry = new NavGeometry(session.Model);
+                var solids = new List<DxfSolid>();
+                var read = 0;
+                var silent = 0;
+                var capped = false;
+
+                foreach (var item in Scope(session, scope()))
+                {
+                    if (!job.Step(read, "elements read")) return;
+
+                    if (read >= Ceiling) { capped = true; break; }
+
+                    read++;
+
+                    if (!item.HasGeometry) continue;
+
+                    var mesh = geometry.Read(item, Name(item));
+
+                    if (mesh == null) { silent++; continue; }
+
+                    var layer = Grouping(session, item, by);
+
+                    Shade(mesh, layer);
+
+                    var solid = DxfSolid.From(mesh);
+
+                    if (solid == null) { silent++; continue; }
+
+                    solid.Layer = layer;
+
+                    // The name and the model as extended entity data, so a solid in the drawing
+                    // can still say what it was. Nothing more than that: XDATA is per entity, and
+                    // a federation's worth of properties makes a drawing CAD takes a minute to
+                    // open. Somebody who wants the properties wants Export Data.
+                    solid.Data.Add(new KeyValuePair<string, string>("NAME", Name(item)));
+                    solid.Data.Add(new KeyValuePair<string, string>("MODEL", item.Model.DisplayName));
+
+                    solids.Add(solid);
+                }
+
+                if (read == 0)
+                {
+                    results.Children.Add(Ui.Empty("Nothing in scope.",
+                        scope() == "Current selection"
+                            ? "Select some elements, or switch the scope to everything loaded."
+                            : "No models are loaded."));
+                    return;
+                }
+
+                job.Say("Writing the file...");
+
+                var written = DxfWriter.Write(solids);
+
+                if (!written.IsUsable)
+                {
+                    results.Children.Add(Ui.Problem(written.Explain()));
+                    return;
+                }
+
+                try
+                {
+                    // No byte-order mark. DXF is read by everything from AutoCAD to a script
+                    // somebody wrote in 1998, and a BOM in front of the first group code is how a
+                    // valid drawing becomes "invalid file" in a reader nobody can patch.
+                    File.WriteAllText(file, written.Text, new UTF8Encoding(false));
+                }
+                catch (Exception e)
+                {
+                    results.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                results.Children.Add(Ui.Line(written.Explain(), 1, true));
+                results.Children.Add(Ui.Done("Written to " + file + "."));
+
+                foreach (var note in written.Notes) results.Children.Add(Ui.Note(note));
+
+                if (silent > 0)
+                    results.Children.Add(Ui.Note(Ui.Count(silent, "element")
+                        + " the model says carry geometry gave no triangles when read, and are not "
+                        + "in the drawing. A handful is ordinary - a group node that owns its "
+                        + "children's geometry rather than any of its own reads this way."));
+
+                if (capped)
+                    results.Children.Add(Ui.Note("It stopped at " + Ui.Count(Ceiling, "element")
+                        + ". That is a limit on this export, not on the model: what is in the file "
+                        + "is the first " + Ui.Count(Ceiling, "element") + " of the scope and the "
+                        + "rest is not. Export a selection or a level rather than the whole "
+                        + "federation."));
+
+                session.Record(ActivityKind.Export,
+                    "wrote " + Ui.Count(written.Solids, "element") + " as DXF");
+            });
+
+            return Ui.Stack(
+                Ui.Line("Solid faces, one layer per group, in metres. R12 ASCII, which is the "
+                        + "dialect every CAD package still reads without asking which version.",
+                        0.85),
+                Ui.Line("Each solid carries its element name and its model as extended entity "
+                        + "data, so a face in the drawing can still say what it was.", 0.85),
+                Ui.Line("What does not go in it: every other property, the selection tree's "
+                        + "structure, clashes and viewpoints. It is a drawing, not a model - if "
+                        + "somebody wants the properties, they want Export Data.", 0.85),
+                Ui.Field("Layers", grouping,
+                         "Layer names are cleaned to what the format allows - spaces, slashes and "
+                         + "commas become underscores."),
+                Ui.PathField("Write to", path, PathKind.Save),
+                run,
+                results);
         }
 
         // ===================================================================================
@@ -339,11 +526,15 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Export, "wrote " + Ui.Count(rows, "row") + " of properties");
             });
 
-            return Ui.Card("Properties, as a spreadsheet",
-                "The other half of what people mean by \"send them the model\".",
+            return Ui.Stack(
                 Ui.Field("Format", formats),
-                Ui.Field("Property tab", tab),
-                Ui.Field("Properties", names),
+                Ui.Field("Property tab", tab,
+                         "Which tab in the element's properties to read from. \"Element\" is the "
+                         + "Revit one; leave it and anything not found there is looked for on "
+                         + "Item as well."),
+                Ui.Field("Properties", names,
+                         "One column each, comma separated. These four are a starting point, "
+                         + "not a requirement - name whatever the person asking wants."),
                 Ui.PathField("Write to", path, PathKind.Save),
                 run,
                 results);

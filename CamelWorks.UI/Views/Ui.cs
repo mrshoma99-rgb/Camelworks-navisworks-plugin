@@ -14,6 +14,46 @@ using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
 {
+    /// <summary>
+    /// A fraction of whatever it is bound to.
+    ///
+    /// One use: giving a table a height budget taken from the pane it is in rather than from a
+    /// number. WPF is resolution independent, so a pixel figure already survives a change of DPI -
+    /// what it does not survive is a change of pane. The same 420 that overflowed a dock pane at
+    /// its 340 minimum left two thirds of a tall monitor empty.
+    /// </summary>
+    internal sealed class Portion : IValueConverter
+    {
+        /// <summary>Make one.</summary>
+        /// <param name="of">How much of the bound value to take, 0 to 1.</param>
+        /// <param name="least">Never return less than this, so a collapsed pane still shows rows.</param>
+        internal Portion(double of, double least)
+        {
+            Of = of;
+            Least = least;
+        }
+
+        /// <summary>How much of the bound value to take.</summary>
+        internal double Of { get; }
+
+        /// <summary>The floor.</summary>
+        internal double Least { get; }
+
+        /// <inheritdoc />
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            // A ScrollViewer that has not been measured reports zero, and a zero-height table is a
+            // table nobody can see. The floor is what it falls back to until layout has run.
+            var whole = value is double number && number > 0 ? number : 0;
+
+            return whole <= 0 ? Least : Math.Max(Least, whole * Of);
+        }
+
+        /// <inheritdoc />
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+            Binding.DoNothing;
+    }
+
     /// <summary>What a path field is asking for, and therefore which dialog it opens.</summary>
     public enum PathKind
     {
@@ -450,6 +490,53 @@ namespace CamelWorks.UI.Views
             panel.Children.Add(number);
             panel.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap }.Wearing("Hint"));
             return panel;
+        }
+
+        /// <summary>
+        /// A figure that is also the control for it.
+        ///
+        /// A board that prints "12 new" over a list, and separately offers a dropdown with "New"
+        /// in it, has said the same thing twice and made the reader work out that the two are
+        /// connected. The number somebody is looking at when they decide to narrow the list is the
+        /// number they should be able to press.
+        /// </summary>
+        /// <param name="value">The number.</param>
+        /// <param name="label">What it counts.</param>
+        /// <param name="tone">How it reads.</param>
+        /// <param name="onClick">What pressing it does.</param>
+        /// <param name="active">Whether the board is already narrowed to this one.</param>
+        public static UIElement Figure(string value, string label, Tone tone, Action onClick,
+                                       bool active = false)
+        {
+            if (onClick == null) throw new ArgumentNullException(nameof(onClick));
+
+            var frame = new Border
+            {
+                Child = Figure(value, label, tone),
+                Background = Brushes.Transparent,
+                Cursor = Cursors.Hand,
+                Padding = new Thickness(8, 4, 2, 0),
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(active ? 1 : 0),
+            };
+
+            if (active)
+            {
+                frame.Tint(Border.BackgroundProperty, "Card2");
+                frame.Tint(Border.BorderBrushProperty, "BdStrong");
+            }
+
+            frame.MouseLeftButtonUp += (s, e) => onClick();
+
+            // Hover only when it is not already the one showing: a lit control that lights further
+            // on hover reads as two states of the same thing rather than one state and a hint.
+            if (!active)
+            {
+                frame.MouseEnter += (s, e) => frame.Tint(Border.BackgroundProperty, "Card2");
+                frame.MouseLeave += (s, e) => frame.Background = Brushes.Transparent;
+            }
+
+            return frame;
         }
 
         /// <summary>A small labelled pill, for status and counts.</summary>
@@ -1731,7 +1818,15 @@ namespace CamelWorks.UI.Views
         public static UIElement Info(string message) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx");
 
-        private static UIElement Banner(string message, string glyph, string wash, string edge, string ink)
+        /// <summary>Background worth having, with the one thing you can do about it.</summary>
+        /// <param name="message">The note.</param>
+        /// <param name="caption">What the button says.</param>
+        /// <param name="onClick">What it does.</param>
+        public static UIElement Info(string message, string caption, Action onClick) =>
+            Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx", caption, onClick);
+
+        private static UIElement Banner(string message, string glyph, string wash, string edge,
+                                        string ink, string? caption = null, Action? onClick = null)
         {
             var text = new TextBlock
             {
@@ -1746,8 +1841,32 @@ namespace CamelWorks.UI.Views
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             row.Children.Add(Glyph(glyph, 16, ink, new Thickness(0, 1, 9, 0)));
-            Grid.SetColumn(text, 1);
-            row.Children.Add(text);
+
+            UIElement said = text;
+
+            if (caption != null && onClick != null)
+            {
+                // The button sits beside the sentence rather than under it. A strip is one line
+                // tall and has to stay that way: it is above the screen's own content, and a
+                // banner that grows pushes the work down the page every time it appears.
+                var pair = new Grid { VerticalAlignment = VerticalAlignment.Center };
+
+                pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                pair.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var press = Button(caption, onClick);
+                press.Margin = new Thickness(12, 0, 0, 0);
+                press.VerticalAlignment = VerticalAlignment.Center;
+
+                Grid.SetColumn(press, 1);
+                pair.Children.Add(text);
+                pair.Children.Add(press);
+
+                said = pair;
+            }
+
+            Grid.SetColumn(said, 1);
+            row.Children.Add(said);
 
             var frame = new Border
             {
@@ -1818,6 +1937,10 @@ namespace CamelWorks.UI.Views
         {
             var grid = new GridView { AllowsColumnReorder = false };
             var flexible = new List<GridViewColumn>();
+
+            // Every fixed column with the width it asked for, kept so the asking figure survives
+            // being compressed - otherwise one narrow pane would ratchet the columns down for good.
+            var asked = new List<KeyValuePair<GridViewColumn, double>>();
             var fixedWidth = 0.0;
 
             for (var i = 0; i < columns.Length; i++)
@@ -1835,6 +1958,7 @@ namespace CamelWorks.UI.Views
                 if (columns[i].Width > 0)
                 {
                     column.Width = columns[i].Width;
+                    asked.Add(new KeyValuePair<GridViewColumn, double>(column, columns[i].Width));
                     fixedWidth += columns[i].Width;
                 }
                 else
@@ -1849,10 +1973,28 @@ namespace CamelWorks.UI.Views
             {
                 View = grid,
                 ItemsSource = rows.ToList(),
-                MaxHeight = 420,
                 Margin = new Thickness(0, Gap, 0, 2),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
             };
+
+            // How tall a table may be is a question about the pane, not a number. It was 420,
+            // which overflowed the dock pane at its 340 minimum and left most of a tall monitor
+            // empty - the same figure doing the wrong thing at both ends.
+            //
+            // Bound to the scroll view the screen sits in, which is the height the pane actually
+            // gave it. No cycle: a ScrollViewer's own height is what its parent allocated and does
+            // not depend on how tall its content turns out to be. Two thirds, so a table never
+            // fills the screen it is one part of, and a floor so a collapsed pane still shows rows
+            // rather than a header and a scrollbar.
+            table.SetBinding(FrameworkElement.MaxHeightProperty, new Binding("ActualHeight")
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+                {
+                    AncestorType = typeof(ScrollViewer),
+                },
+                Converter = new Portion(0.66, 180),
+                FallbackValue = 420.0,
+            });
 
             // A column given a width of zero takes what is left, shared with any other, rather
             // than being left to size itself to its content.
@@ -1862,23 +2004,51 @@ namespace CamelWorks.UI.Views
             // arriving as "12 mi" with eighty pixels of empty pane to its right. Measuring against
             // the pane instead is both correct and what a table in a dock pane should do anyway,
             // since the pane is resized far more often than the data changes.
-            if (flexible.Count > 0)
+            //
+            // And a declared width is what a column wants, not what it must have. Twenty-nine of
+            // the product's fifty-three tables declare more fixed width than the dock pane's own
+            // minimum - the widest asks 750 in a pane that can be dragged to 470 - so holding
+            // those figures meant a horizontal scrollbar in the one place there is no room for
+            // one. When the pane is narrower than the table wants, every column gives up width in
+            // proportion, down to a floor that keeps a header readable; when it is wider they get
+            // what they asked for and the flexible ones take the rest.
+            void Fit()
             {
-                void Fit()
-                {
-                    // The room a vertical scrollbar and the two borders take. Guessed slightly
-                    // high: a column two pixels short of the edge looks intentional, and one two
-                    // pixels over brings a horizontal scrollbar the pane has no room for.
-                    var spare = table.ActualWidth - fixedWidth - 28;
-                    if (spare <= 0) return;
+                // The room a vertical scrollbar and the two borders take. Guessed slightly high:
+                // a column two pixels short of the edge looks intentional, and one two pixels
+                // over brings the horizontal scrollbar back.
+                var room = table.ActualWidth - 28;
+                if (room <= 0) return;
 
-                    var each = Math.Max(70, spare / flexible.Count);
-                    foreach (var column in flexible) column.Width = each;
+                // What the flexible columns need before anything is called spare.
+                var least = flexible.Count * 48;
+
+                if (room < fixedWidth + least && fixedWidth > 0)
+                {
+                    // One ratio for all of them, so the columns keep their relative sizes and the
+                    // table still reads as the same table. Floored, because past a point the
+                    // honest answer is a narrow column and a tooltip rather than four characters.
+                    var ratio = Math.Max(0.4, (room - least) / fixedWidth);
+
+                    foreach (var entry in asked)
+                        entry.Key.Width = Math.Max(40, entry.Value * ratio);
+
+                    foreach (var column in flexible) column.Width = 48;
+                    return;
                 }
 
-                table.SizeChanged += (s, e) => Fit();
-                table.Loaded += (s, e) => Fit();
+                foreach (var entry in asked) entry.Key.Width = entry.Value;
+
+                if (flexible.Count == 0) return;
+
+                var spare = room - fixedWidth;
+                if (spare <= 0) return;
+
+                foreach (var column in flexible) column.Width = Math.Max(70, spare / flexible.Count);
             }
+
+            table.SizeChanged += (s, e) => Fit();
+            table.Loaded += (s, e) => Fit();
 
             // A 3px bar down the left of the row, not the row's text.
             //
@@ -1997,6 +2167,209 @@ namespace CamelWorks.UI.Views
                 if (selected is TableRow row && row.Source != null) picked.Add(row.Source);
 
             return picked;
+        }
+
+        /// <summary>
+        /// The picked rows of a table, as tab separated lines.
+        ///
+        /// Picking hands back the object behind a row, not the row, so getting the text back means
+        /// asking the table which rows are selected. Rebuilding the strings from the source a
+        /// second way is how a copied line stops matching the line on screen.
+        /// </summary>
+        /// <param name="table">The table the rows are in.</param>
+        /// <param name="picked">What <see cref="Picking"/> handed back.</param>
+        public static IEnumerable<string> Lines(ListView table, IReadOnlyList<object> picked)
+        {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
+            var wanted = new HashSet<object>(picked ?? Array.Empty<object>());
+
+            foreach (var item in table.Items)
+            {
+                if (!(item is TableRow row) || row.Source == null) continue;
+                if (!wanted.Contains(row.Source)) continue;
+
+                var cells = new string[row.Count];
+                for (var i = 0; i < row.Count; i++) cells[i] = row[i];
+
+                yield return string.Join("\t", cells);
+            }
+        }
+
+        /// <summary>
+        /// Put lines on the clipboard, and say so.
+        ///
+        /// Tab separated, because the destination is a mail or a sheet and tabs paste as columns
+        /// where commas paste as a sentence.
+        ///
+        /// Here rather than in each screen because the third copy of the same try/catch is the one
+        /// that gets the message wrong - and Clipboard.SetText really does throw, on a machine
+        /// where another process is holding the clipboard open, which is not rare.
+        /// </summary>
+        /// <param name="lines">What to copy, one per line.</param>
+        /// <param name="say">Where to write what happened.</param>
+        /// <param name="unit">What one line is, for the sentence.</param>
+        public static void Copy(IEnumerable<string> lines, Panel say, string unit = "row")
+        {
+            if (say == null) throw new ArgumentNullException(nameof(say));
+
+            say.Children.Clear();
+
+            var text = (lines ?? Array.Empty<string>()).ToList();
+
+            if (text.Count == 0)
+            {
+                say.Children.Add(Note("Nothing to copy."));
+                return;
+            }
+
+            try
+            {
+                System.Windows.Clipboard.SetText(string.Join("\r\n", text));
+                say.Children.Add(Done("Copied " + Count(text.Count, unit) + "."));
+            }
+            catch (Exception error)
+            {
+                say.Children.Add(Problem("Could not copy it: " + Describe(error)));
+            }
+        }
+
+        /// <summary>One thing that can be done to the rows somebody has picked.</summary>
+        public sealed class OnPicked
+        {
+            /// <summary>Name one.</summary>
+            /// <param name="caption">
+            /// The button's caption, with <c>{n}</c> where the count goes - "Assign {n}...". The
+            /// count belongs in the caption and not only in a line above it, because the button is
+            /// what somebody reads immediately before pressing it, and "Assign 40..." stops a
+            /// press that "Assign..." does not.
+            /// </param>
+            /// <param name="act">
+            /// What to do with the picked rows, and where to say what happened. The panel is the
+            /// bar's own, handed over rather than chosen by the caller: three screens passed their
+            /// results panel, and <see cref="Copy"/> clears what it writes to, so copying wiped the
+            /// table it had just copied out of. A parameter nobody can get wrong beats a comment
+            /// saying not to.
+            /// </param>
+            /// <param name="primary">Whether this is the one filled button.</param>
+            /// <param name="danger">Whether this destroys something.</param>
+            public OnPicked(string caption, Action<IReadOnlyList<object>, Panel> act,
+                            bool primary = false, bool danger = false)
+            {
+                Caption = caption;
+                Act = act;
+                Primary = primary;
+                Danger = danger;
+            }
+
+            /// <summary>The caption, with <c>{n}</c> for the count.</summary>
+            public string Caption { get; }
+
+            /// <summary>What to do with the picked rows, and where to report it.</summary>
+            public Action<IReadOnlyList<object>, Panel> Act { get; }
+
+            /// <summary>Whether this is the one filled button.</summary>
+            public bool Primary { get; }
+
+            /// <summary>Whether this destroys something.</summary>
+            public bool Danger { get; }
+        }
+
+        /// <summary>
+        /// A table, and the bar saying what can be done to the rows picked in it.
+        ///
+        /// Every table in the product should have one. A table somebody can only act on a row at a
+        /// time is a table they act on with the mouse forty times - which was the complaint that
+        /// started this: no multi-select, no select-all, no way to clear.
+        ///
+        /// The bar carries four things, each for a reason:
+        ///
+        ///   * the <b>count</b>, because a selection made by shift-clicking down a long list is one
+        ///     somebody wants confirmed before acting on it;
+        ///   * <b>Select all</b> and <b>Clear</b>, because doing either by hand is the tax;
+        ///   * the <b>actions</b>, disabled until something is picked, so the bar reads as
+        ///     unavailable rather than broken;
+        ///   * the <b>count inside each caption</b>, so the last thing read before pressing says
+        ///     how much it is about to happen to.
+        /// </summary>
+        /// <param name="table">The table. It is switched to multi-select here.</param>
+        /// <param name="actions">What can be done to the picked rows.</param>
+        public static UIElement Picking(ListView table, params OnPicked[] actions)
+        {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+
+            table.Multi();
+
+            var bar = new StackPanel { Orientation = Orientation.Horizontal };
+
+            // Where an action says what it did. Below the bar, so a sentence about eleven rows sits
+            // under the button that said eleven.
+            var said = Stack();
+
+            // Not "Count". A local function hides an outer method of the same name outright, so a
+            // local Count() would make the Count(int, string) this uses uncallable.
+            var tally = Line(string.Empty, 0.75);
+            tally.VerticalAlignment = VerticalAlignment.Center;
+
+            var all = Link("Select all", () => table.SelectAll());
+            var none = Link("Clear", () => table.UnselectAll());
+
+            var buttons = new List<System.Windows.Controls.Button>();
+
+            foreach (var action in actions ?? Array.Empty<OnPicked>())
+            {
+                var here = action;
+
+                var button = here.Primary
+                    ? Primary(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said))
+                    : Quiet(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said));
+
+                if (here.Danger) button.Wearing("DangerBtn");
+
+                button.Margin = new Thickness(Gap, 0, 0, 0);
+                button.Tag = here.Caption;
+
+                buttons.Add(button);
+                bar.Children.Add(button);
+            }
+
+            void Say()
+            {
+                var picked = table.SelectedItems.Count;
+                var total = table.Items.Count;
+
+                tally.Text = picked == 0
+                    ? Count(total, "row")
+                    : picked.ToString(CultureInfo.InvariantCulture)
+                      + " of " + Count(total, "row") + " picked";
+
+                foreach (var button in buttons)
+                {
+                    button.IsEnabled = picked > 0;
+
+                    if (button.Tag is string caption)
+                        button.Content = caption.Replace(
+                            "{n}", picked.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            table.SelectionChanged += (s, e) => Say();
+            Say();
+
+            var left = new StackPanel { Orientation = Orientation.Horizontal };
+            left.Children.Add(tally);
+            left.Children.Add(new Border { Width = Gap });
+            left.Children.Add(all);
+            left.Children.Add(new Border { Width = Gap });
+            left.Children.Add(none);
+
+            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, Gap, 0, 0) };
+            DockPanel.SetDock(left, Dock.Left);
+            DockPanel.SetDock(bar, Dock.Right);
+            row.Children.Add(left);
+            row.Children.Add(bar);
+
+            return Stack(table, row, said);
         }
 
         // -----------------------------------------------------------------------------------

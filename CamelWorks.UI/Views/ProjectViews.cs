@@ -274,7 +274,15 @@ namespace CamelWorks.UI.Views
             if (rows.Count == 0)
                 return (Ui.Empty("Nothing is loaded.", "Append or merge a model to start."), false);
 
-            return (Ui.Table(rows, ("Model", 150), ("Discipline", 100), ("Source", 190), ("Path", 0)),
+            var loaded = Ui.Table(rows,
+                ("Model", 150), ("Discipline", 100), ("Source", 190), ("Path", 0));
+
+            // The paths column is the reason to copy: "which files is this federation actually
+            // pointing at" is a question answered by pasting the list somewhere, not by reading
+            // four columns off a screen and retyping them.
+            return (Ui.Picking(loaded,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(loaded, picked), say, "model"))),
                     missing.Count > 0);
         }
 
@@ -405,11 +413,15 @@ namespace CamelWorks.UI.Views
             var units = session.Profile.Units;
             var table = manifest.ModelTable(units);
 
-            body.Children.Add(Ui.Table(table.Rows.Select(r => new TableRow(r,
+            var models = Ui.Table(table.Rows.Select(r => new TableRow(r,
                 r[0] ?? string.Empty, r[2] ?? string.Empty, r[3] ?? string.Empty,
                 r[5] ?? string.Empty, r[6] ?? string.Empty)).ToList(),
                 ("Model", 200), ("Source last written", 150), ("Size", 80),
-                ("Placement", 170), ("Elements", 0)));
+                ("Placement", 170), ("Elements", 0));
+
+            body.Children.Add(Ui.Picking(models,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(models, picked), say, "model"))));
 
             if (intake.HasPrevious)
             {
@@ -417,10 +429,16 @@ namespace CamelWorks.UI.Views
 
                 body.Children.Add(Ui.Eyebrow("Since the last sweep"));
 
-                body.Children.Add(Ui.Table(register.Rows.Select(r => new TableRow(r,
+                var since = Ui.Table(register.Rows.Select(r => new TableRow(r,
                     r[0] ?? string.Empty, r[1] ?? string.Empty, r[2] ?? string.Empty,
                     r[3] ?? string.Empty)).ToList(),
-                    ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0)));
+                    ("Model", 200), ("Discipline", 120), ("State", 200), ("Source last written", 0));
+
+                // "What changed since last week" is the line in the meeting agenda, and it gets
+                // written by hand off this table every week.
+                body.Children.Add(Ui.Picking(since,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(since, picked), say, "model"))));
             }
 
             section.Set(IntakeKey, manifest.ToJson());
@@ -726,25 +744,14 @@ namespace CamelWorks.UI.Views
                 var table = Ui.Table(rows,
                     ("Specification", 250), ("Applies to", 80), ("Pass", 60), ("Fail", 60), ("", 0));
 
-                table.OnPick(picked =>
-                {
-                    if (!(picked is IdsSpecificationResult result)) return;
-
-                    var live = Host.Current;
-                    if (live == null) return;
-
-                    var keys = new List<ElementKey>();
-
-                    foreach (var violation in result.Violations)
-                    {
-                        if (ElementKey.TryParse(violation.ElementId, out var key)) keys.Add(key);
-                    }
-
-                    if (keys.Count > 0) live.Model.Select(keys);
-                });
-
-                results.Children.Add(table);
-                results.Children.Add(Ui.Line("Pick a row to select that specification's failing elements.", 0.6));
+                // It used to reveal one row's failures on selection change, with a line underneath
+                // saying so. Two specifications that fail on the same wall are one conversation
+                // with the architect and not two, and the way to have it is to see both sets at
+                // once - so the reveal became an action on however many rows are picked.
+                results.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Select {n} in the model", Reveal),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "specification"))));
 
                 // The panel answers "are we ready to issue". The workbook answers "what do I fix",
                 // and it is asked by somebody who is not sitting in Navisworks.
@@ -777,6 +784,53 @@ namespace CamelWorks.UI.Views
                 Ui.Rule(),
                 Author(results),
                 results);
+        }
+
+        /// <summary>
+        /// Select every failing element of the picked specifications, as one selection.
+        ///
+        /// Deduplicated by element id before anything is resolved: a wall that fails three
+        /// specifications is one wall, and selecting it three times is three COM lookups for the
+        /// same answer.
+        /// </summary>
+        /// <param name="picked">The specification results the user picked.</param>
+        /// <param name="say">Where to report what happened.</param>
+        private static void Reveal(IReadOnlyList<object> picked, Panel say)
+        {
+            say.Children.Clear();
+
+            var live = Host.Current;
+
+            if (live == null)
+            {
+                say.Children.Add(Ui.Problem(Host.NoModel));
+                return;
+            }
+
+            var keys = new List<ElementKey>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var item in picked)
+            {
+                if (!(item is IdsSpecificationResult result)) continue;
+
+                foreach (var violation in result.Violations)
+                {
+                    if (!seen.Add(violation.ElementId)) continue;
+                    if (ElementKey.TryParse(violation.ElementId, out var key)) keys.Add(key);
+                }
+            }
+
+            if (keys.Count == 0)
+            {
+                say.Children.Add(Ui.Note("Nothing failed in those, or the failures name elements "
+                    + "this federation no longer has."));
+                return;
+            }
+
+            live.Model.Select(keys);
+
+            say.Children.Add(Ui.Done("Selected " + Ui.Count(keys.Count, "element") + " in the model."));
         }
 
         /// <summary>
@@ -941,6 +995,31 @@ namespace CamelWorks.UI.Views
         /// the model: who the parties are, what the priorities are called, which values a coded
         /// property is allowed to hold, and the three operations that write into the model itself.
         /// </summary>
+        /// <summary>
+        /// Project settings: what CamelWorks worked out, and every override, in one window.
+        ///
+        /// These were two ribbon buttons - Project Setup and Project Profile - and nobody could
+        /// say which held what. They are the same subject: values this job runs on, where each
+        /// came from, and the chance to disagree. Two tabs, because the second is about people
+        /// and deliverables rather than about the model, and that division somebody can predict.
+        /// </summary>
+        public static UIElement Settings()
+        {
+            var body = Ui.Stack();
+
+            void ShowTab(string which)
+            {
+                body.Children.Clear();
+                body.Children.Add(which == "This project" ? Setup() : Profile());
+            }
+
+            var tabs = Ui.Segmented(new[] { "This project", "Team & outputs" }, "This project", ShowTab);
+
+            ShowTab("This project");
+
+            return Ui.Stack(tabs, body);
+        }
+
         public static UIElement Profile()
         {
             var session = Host.Current;

@@ -20,7 +20,6 @@ namespace CamelWorks.Nav
     public sealed class NavViewSession : IViewSession
     {
         private readonly NavDocument _document;
-        private string? _sectionBox;
 
         /// <summary>Wrap a document.</summary>
         public NavViewSession(NavDocument document) =>
@@ -250,30 +249,40 @@ namespace CamelWorks.Nav
             // conversion a half-metre margin around a millimetre model is half a millimetre.
             var margin = Math.Max(0, marginMetres) * NavUnits.UnitsPerMetre(_document.Document.Units);
 
-            _sectionBox = Json(
-                box.MinX - margin, box.MinY - margin, box.MinZ - margin,
-                box.MaxX + margin, box.MaxY + margin, box.MaxZ + margin);
+            var extents = new BoundingBox3D(
+                new Point3D(box.MinX - margin, box.MinY - margin, box.MinZ - margin),
+                new Point3D(box.MaxX + margin, box.MaxY + margin, box.MaxZ + margin));
 
-            Host.ActiveView.SetClippingPlanes(_sectionBox);
+            var viewer = Viewer();
+            if (viewer == null) return;
+
+            var planes = viewer.EditClipPlane();
+
+#if NAV2024
+            planes.SetBox(extents);
+            planes.SetEnabled(true);
+#else
+            planes.Box = extents;
+            planes.Enabled = true;
+#endif
         }
 
         /// <inheritdoc />
         public void SetSectionBoxEnabled(bool enabled)
         {
-            if (!enabled)
-            {
-                // Remember what is there before switching it off, so it can be switched back on.
-                // The contract is explicit that disabling must not discard the box, and the host
-                // gives no other way to get it back.
-                var current = Host.ActiveView.GetClippingPlanes();
-                if (!string.IsNullOrWhiteSpace(current) && current.IndexOf("\"Enabled\":false", StringComparison.OrdinalIgnoreCase) < 0)
-                    _sectionBox = current;
+            // Nothing is remembered here. The set keeps its own box when it is switched off, so
+            // asking the host to switch it back on restores what was there - which is the whole
+            // contract, and the JSON version had to hoard a string to fake it.
+            var viewer = Viewer();
+            if (viewer == null) return;
 
-                Host.ActiveView.SetClippingPlanes("{\"Enabled\":false}");
-                return;
-            }
+            var planes = viewer.EditClipPlane();
 
-            if (_sectionBox != null) Host.ActiveView.SetClippingPlanes(_sectionBox);
+#if NAV2024
+            planes.SetEnabled(enabled);
+#else
+            planes.Enabled = enabled;
+#endif
         }
 
         /// <inheritdoc />
@@ -284,26 +293,50 @@ namespace CamelWorks.Nav
                 // Read from the host rather than remembered here: the user can switch sectioning
                 // off with the host's own button, and a toggle that trusted its own memory would
                 // then do the opposite of what the button says.
-                var current = Host.ActiveView.GetClippingPlanes();
+                var viewer = Viewer();
+                if (viewer == null) return false;
 
-                return !string.IsNullOrWhiteSpace(current)
-                       && current.IndexOf("\"Enabled\":true", StringComparison.OrdinalIgnoreCase) >= 0;
+                var planes = viewer.GetClipPlaneSet();
+
+#if NAV2024
+                return planes != null && planes.IsEnabled();
+#else
+                return planes != null && planes.Enabled;
+#endif
             }
         }
 
-        // The host's clipping API is JSON in and JSON out, not an object model — GetClippingPlanes
-        // returns a string. An axis-aligned oriented box with an identity rotation is the shape it
-        // round-trips most reliably across all supported years.
-        private static string Json(double minX, double minY, double minZ,
-                                   double maxX, double maxY, double maxZ)
+        /// <summary>
+        /// The viewer that owns the document's clip planes, or null where there is not one.
+        ///
+        /// <b>Why not the JSON.</b> <c>View.SetClippingPlanes</c> takes a string it calls
+        /// <c>jsonClipPlaneSet</c>, and a payload it dislikes throws
+        /// <c>Failed to set clipping planes</c> out of the button - which is what shipped, because
+        /// the schema was written from the outside and the two keys it leaned on, "OrientedBox"
+        /// and "Box", do not occur anywhere in the assembly. The format is produced by native code
+        /// (<c>GetClippingPlanesAsJsonClipPlaneSet</c>), is undocumented, and there is no reason to
+        /// believe it is stable across the four supported years.
+        ///
+        /// The clip-plane set is the same state as a typed object, on the same assembly. A wrong
+        /// call there does not compile, which is the only kind of check worth having for something
+        /// no test on a build machine can exercise.
+        ///
+        /// <b>Why the one conditional.</b> This path is identical in all four years - and it is
+        /// the only one that is. The set itself was <c>Interop.LcOaClipPlaneSet</c> with
+        /// <c>SetBox</c> and <c>SetEnabled</c> in 2024, and became <c>Api.ClipPlaneSet</c> with
+        /// <c>Box</c> and <c>Enabled</c> properties in 2025. The type is never named here, only
+        /// inferred, so the difference is three lines of member style rather than a second copy of
+        /// the method. <c>Viewpoint</c> offers the same set - as <c>InternalClipPlanes</c> in 2024
+        /// and <c>ClipPlanes</c> after - which would have been two differences instead of one.
+        /// </summary>
+        private static Autodesk.Navisworks.Api.Interop.LcOaViewer? Viewer()
         {
-            return "{\"Enabled\":true,\"Mode\":\"OrientedBox\",\"OrientedBox\":{\"Box\":[["
-                 + N(minX) + "," + N(minY) + "," + N(minZ) + "],["
-                 + N(maxX) + "," + N(maxY) + "," + N(maxZ) + "]],\"Rotation\":[0,0,0,1]}}";
+            var state = Autodesk.Navisworks.Api.Interop.LcOpState.GetActiveInstance();
+
+            return state == null ? null : state.GetViewer();
         }
 
-        private static string N(double value) =>
-            value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+
 
         private static AppearanceState Read(ElementKey key, ModelItem item)
         {

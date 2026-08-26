@@ -568,10 +568,16 @@ namespace CamelWorks.UI.Views
                 foreach (var note in plan.Notes) _verdict.Children.Add(Ui.Note(note));
 
                 if (plan.Models.Count > 0)
-                    _verdict.Children.Add(Ui.Table(
+                {
+                    var perModel = Ui.Table(
                         plan.Models.Select(m => new TableRow(m, m.Model,
                             m.Count.ToString("N0", CultureInfo.InvariantCulture))).ToList(),
-                        ("Model", 220), ("Elements", 0)));
+                        ("Model", 220), ("Elements", 0));
+
+                    _verdict.Children.Add(Ui.Picking(perModel,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(perModel, picked), say, "model"))));
+                }
 
                 if (!plan.IsUsable) return;
 

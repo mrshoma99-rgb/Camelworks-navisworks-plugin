@@ -83,7 +83,7 @@ namespace CamelWorks.UI.Views
                     Ui.Eyebrow("The sheet as it stands"),
                     _sheet.Preview());
 
-                var plan = Ui.Stack(_plan, _warnings);
+                var plan = Ui.Stack(_plan);
                 var make = Make();
 
                 ShowShape();
@@ -156,6 +156,10 @@ namespace CamelWorks.UI.Views
                 }
 
                 _shape.Children.Add(Ui.Actions(Ui.Runner("Read the schedule", _warnings, Read)));
+
+                // The Runner's output panel, on the Runner's own step. It was on the next one,
+                // behind a gate that does not open until the read has worked.
+                _shape.Children.Add(_warnings);
             }
 
             private Panel Number(string label, int value, Action<int> set) =>
@@ -196,7 +200,11 @@ namespace CamelWorks.UI.Views
                                               Ui.Count(s.Conditions, "condition")))
                     .ToList();
 
-                _plan.Children.Add(Ui.Table(rows, ("Set", 260), ("Folder", 160), ("From", 120)));
+                var listed = Ui.Table(rows, ("Set", 260), ("Folder", 160), ("From", 120));
+
+                _plan.Children.Add(Ui.Picking(listed,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(listed, picked), say, "set"))));
             }
 
             private UIElement Make()
@@ -243,7 +251,11 @@ namespace CamelWorks.UI.Views
                                           outcome.IsLive ? "live search" : "fixed list"));
                 }
 
-                into.Children.Add(Ui.Table(rows, ("Set", 260), ("Would hold", 110), ("As", 120)));
+                var costed = Ui.Table(rows, ("Set", 260), ("Would hold", 110), ("As", 120));
+
+                into.Children.Add(Ui.Picking(costed,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(costed, picked), say, "set"))));
 
                 if (empty > 0)
                     into.Children.Add(Ui.Note(Ui.Count(empty, "set")

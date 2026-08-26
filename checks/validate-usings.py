@@ -61,6 +61,13 @@ POSITIONS = [
     # declaration is followed by one of `, ) ; = {`, and prose is not - a ternary's `: ` is the
     # give-away, which is why the closing set does not contain a colon.
     re.compile(r'\b([A-Z]\w+)\??\s+\w+\s*(?=[,)=;])'),
+
+    # The same declaration, generic. `IReadOnlyList<object> picked,` is invisible to the position
+    # above, because that one wants the identifier straight after the type name and this has an
+    # argument list in between - and invisible to the `<X>` position, which reads the argument
+    # rather than the type. A signature taking IReadOnlyList<object> went to CI without
+    # System.Collections.Generic and came back a compile error with both patterns watching it.
+    re.compile(r'\b([A-Z]\w+)<[\w\s,<>?\[\]]+>\??\s+\w+\s*(?=[,)=;{])'),
 ]
 
 # Already written out in full, so no using is needed for it.
@@ -81,6 +88,18 @@ QUALIFIED = re.compile(r'\b[\w.]+\.([A-Z]\w+)\b')
 # is left out entirely: `Path` is in System.IO and System.Windows.Shapes, `Image`, `Style`,
 # `Binding` and `Run` are each in two places, and a table that guessed would be worse than none.
 FRAMEWORK = {
+    # The generic collections. Added after a signature taking IReadOnlyList<object> went to CI
+    # without System.Collections.Generic and came back a compile error - the same hole the WPF
+    # names below were added to close, and the same round trip.
+    #
+    # Stack and Queue are deliberately absent: Ui.Stack is a method on the vocabulary and a bare
+    # Stack in a UI file is far more likely to be that than a collection.
+    "System.Collections.Generic": [
+        "IReadOnlyList", "IReadOnlyDictionary", "IReadOnlyCollection", "IEnumerable",
+        "IEnumerator", "ICollection", "IList", "IDictionary", "ISet",
+        "List", "Dictionary", "HashSet", "SortedDictionary", "SortedSet", "LinkedList",
+        "KeyValuePair", "IEqualityComparer", "IComparer", "EqualityComparer", "Comparer",
+    ],
     "System.Windows": [
         "Window", "Thickness", "Visibility", "GridLength", "GridUnitType", "FrameworkElement",
         "UIElement", "DependencyProperty", "HorizontalAlignment", "VerticalAlignment",

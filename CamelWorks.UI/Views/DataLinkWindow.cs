@@ -562,13 +562,21 @@ namespace CamelWorks.UI.Views
                 foreach (var note in plan.Notes) _verdict.Children.Add(Ui.Note(note));
 
                 if (plan.Orphans.Count > 0)
+                {
+                    var orphans = Ui.Table(plan.Orphans.Take(50)
+                                               .Select(r => new TableRow(r,
+                                                   r.Number.ToString(CultureInfo.InvariantCulture), r.Key))
+                                               .ToList(),
+                                           ("Row", 70), ("Key", 0));
+
+                    // Row numbers and keys, which is what somebody needs in front of them to go and
+                    // fix the sheet - and the sheet is usually not open on this machine.
                     _verdict.Children.Add(Ui.Section("The rows that matched nothing",
                         Ui.Count(plan.Orphans.Count, "row"), false,
-                        Ui.Table(plan.Orphans.Take(50)
-                                     .Select(r => new TableRow(r,
-                                         r.Number.ToString(CultureInfo.InvariantCulture), r.Key))
-                                     .ToList(),
-                                 ("Row", 70), ("Key", 0))));
+                        Ui.Picking(orphans,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(orphans, picked), say, "row")))));
+                }
             }
 
             // -----------------------------------------------------------------------------------

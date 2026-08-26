@@ -225,15 +225,18 @@ namespace CamelWorks.Studio
                         Ui.Field("Priority", Ui.Segmented(new[] { "Low", "Med", "High" }, "Med", null)))),
                 Ui.Actions(Ui.Primary("Raise it against the selection", () => { }))),
 
+            // One filled button, because this window now does one job. The change notice moved
+            // to a window of its own - the two shared an output panel, so pressing either wiped
+            // what the other had just said.
             Ui.Marked(Glyphs.Save, "Freeze",
-                "Sign-off and fabrication release are the same record, and both come with a change notice",
+                "Record where every element on the board is, right now - which is what makes it "
+                + "worth signing",
                 Ui.Form(
                     Ui.Field("What is being frozen", Ui.Text(string.Empty, "Level 04 services", null, 220)),
                     Ui.Pair(
                         Ui.Field("Signed by", Ui.Text(string.Empty, null, 180)),
                         Ui.Field("Release reference", Ui.Text(string.Empty, null, 140)))),
-                Ui.Actions(Ui.Button("Freeze what is on the board", () => { }),
-                           Ui.Quiet("Change notice", () => { }))));
+                Ui.Button("Freeze what is on the board", () => { })));
 
         private static IEnumerable<TableRow> Board()
         {

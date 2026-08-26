@@ -117,15 +117,21 @@ namespace CamelWorks.UI.Shell
                + "week coordinating against it.",
                "Check this federation"),
 
-            Of("setup", "Project Setup", ToolShape.Window, Glyph.Tune,
-               "What CamelWorks already worked out about this job on its own, with an override on "
-               + "every line. Skippable - nothing waits on it.",
+            Of("project", "Project Settings", ToolShape.Window, Glyph.Tune,
+               "Everything CamelWorks worked out about this job on its own, where each answer came "
+               + "from, and an override on every line. Nothing here is required.",
                "Save overrides"),
 
-            Of("project", "Project Profile", ToolShape.Window, Glyph.Tune,
-               "Everything this job's settings are, what CamelWorks worked out on its own, and "
-               + "where each one came from.",
-               "Save"),
+
+            Of("models", "Models", ToolShape.Window, Glyph.Folder,
+               "Every model in the federation: which revision is loaded, where it was brought in "
+               + "from, and whether its placement still matches what it came in as.",
+               "Take a manifest"),
+
+            Of("history", "History", ToolShape.Window, Glyph.Clock,
+               "What has happened on this project and who did it, newest first, so a question "
+               + "about a decision has an answer that is not somebody's memory.",
+               "Copy {n}"),
 
             Of("links", "Fix Broken Links", ToolShape.Window, Glyph.Folder,
                "Find the source files a loaded model can no longer see, and point it at where they "
@@ -134,7 +140,7 @@ namespace CamelWorks.UI.Shell
 
             // ---- Coordinate -------------------------------------------------------------------
 
-            Of("triage", "Clash Triage", ToolShape.Panel, Glyph.Clash,
+            Of("triage", "Clash Board", ToolShape.Panel, Glyph.Clash,
                "Turn every clash the tests found into the handful of issues somebody actually "
                + "fixes, and give each one to whoever fixes it.",
                "Load the board"),
@@ -153,7 +159,7 @@ namespace CamelWorks.UI.Shell
                + "instead of naming forty tests by hand.",
                "Read the matrix"),
 
-            Of("headroom", "Headroom", ToolShape.Window, Glyph.Layers,
+            Of("headroom", "Clearance", ToolShape.Window, Glyph.Layers,
                "Find where the clear height under the services is not there - which no clash test "
                + "can find, because nothing is touching.",
                "Check clear height"),
@@ -183,6 +189,12 @@ namespace CamelWorks.UI.Shell
 
             // ---- Compare ----------------------------------------------------------------------
 
+
+            Of("penetrations", "Penetrations", ToolShape.Window, Glyph.Report,
+               "The services passing through structure, as the schedule the structural engineer "
+               + "asks for before a pour rather than as a pile of clashes.",
+               "Write the report"),
+
             Of("compare", "Compare", ToolShape.Window, Glyph.Compare,
                "Say what changed between the model in front of you and a baseline - moved, "
                + "resized, added, removed, retyped.",
@@ -192,6 +204,16 @@ namespace CamelWorks.UI.Shell
                "The change list, filtered and painted onto the model, so a revision can be walked "
                + "rather than read.",
                "Paint it onto the model"),
+
+            Of("freeze", "Freeze", ToolShape.Window, Glyph.Save,
+               "Record that a scope was agreed and what it was at the moment of agreeing, so a "
+               + "later argument about what changed has a fixed point to argue from.",
+               "Freeze what is on the board"),
+
+            Of("notice", "Change Notice", ToolShape.Window, Glyph.Compare,
+               "What has changed since a scope was frozen, written the way a variation has to be "
+               + "written.",
+               "Write the change notice"),
 
             Of("baseline", "Baseline", ToolShape.Act, Glyph.Save,
                "Record what the model is right now, so a comparison next week has something to "
@@ -228,6 +250,17 @@ namespace CamelWorks.UI.Shell
                "Build a report of model data on a template it proposes from the model itself.",
                "Read the model"),
 
+
+            Of("write", "Write Properties", ToolShape.Window, Glyph.Table,
+               "Put one property onto every element in scope - a value you type, a formula, a code "
+               + "table or a spreadsheet - previewed as a diff before any of it is written.",
+               "Read what is there now"),
+
+            Of("wbs", "Work Breakdown", ToolShape.Window, Glyph.Model,
+               "Write the selection tree's own shape onto the elements as properties, so a "
+               + "schedule can group by a breakdown the model already implies.",
+               "Show me what it would write"),
+
             Of("ids", "IDS", ToolShape.Window, Glyph.Tick,
                "Write down what every model must carry, as the open standard for saying so, and "
                + "check the federation against it.",
@@ -235,7 +268,7 @@ namespace CamelWorks.UI.Shell
 
             // ---- Sets and views ----------------------------------------------------------------
 
-            Of("sets", "Sets", ToolShape.Panel, Glyph.Filter,
+            Of("sets", "Set Builder", ToolShape.Panel, Glyph.Filter,
                "Build the selections every other tool works on, out of properties and other sets.",
                "Publish as a Navisworks set"),
 
@@ -243,6 +276,12 @@ namespace CamelWorks.UI.Shell
                "Turn a spreadsheet of rooms, assets or conditions into that many sets at once, "
                + "rather than building them one at a time.",
                "Read the schedule"),
+
+
+            Of("setlib", "Generate a Set Library", ToolShape.Wizard, Glyph.Filter,
+               "Turn an ordered list of properties into a whole tree of sets at once - discipline, "
+               + "then level, then system - rather than building them one at a time.",
+               "Read the model"),
 
             Of("appearance", "Appearance", ToolShape.Panel, Glyph.Layers,
                "Control what is visible and what colour it is, as layers that stack and can be "
@@ -254,7 +293,7 @@ namespace CamelWorks.UI.Shell
                + "time down the tree.",
                "Read what is selected"),
 
-            Of("restructure", "Restructure", ToolShape.Wizard, Glyph.Model,
+            Of("restructure", "Organise Sets", ToolShape.Wizard, Glyph.Model,
                "Reshape the set library into the folders the properties imply, rather than the "
                + "order they were made in.",
                "Read the model"),
@@ -320,9 +359,22 @@ namespace CamelWorks.UI.Shell
 
             // ---- Everywhere -----------------------------------------------------------------------
 
-            Of("export", "Export", ToolShape.Menu, Glyph.Onward,
-               "Geometry as a file a browser opens, or the properties as a spreadsheet.",
-               null),
+            // Two buttons, not one menu called Export. Geometry for a browser and properties for a
+            // spreadsheet share a scope picker and nothing else: different inputs, different
+            // output, different person at the other end. Behind one word they were a window whose
+            // first-run experience was not knowing which half to fill in.
+            Of("exportglb", "Export GLB", ToolShape.Window, Glyph.Onward,
+               "The geometry as one file a browser opens, on a phone or a tablet, with nothing "
+               + "installed and no licence at the other end.",
+               "Write the GLB"),
+
+            Of("exportsheet", "Export Data", ToolShape.Window, Glyph.Table,
+               "The properties you name, as a spreadsheet or a CSV, one row per element.",
+               "Write it"),
+
+            Of("exportdxf", "Export Drawing", ToolShape.Window, Glyph.Ruler,
+               "The geometry as a DXF every CAD package opens, one layer per discipline.",
+               "Write the drawing"),
 
             Of("help", "Help", ToolShape.Window, Glyph.Empty,
                "The guide, what this cannot do, the shortcuts, a sample project and the "

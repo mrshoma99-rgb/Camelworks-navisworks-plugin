@@ -54,8 +54,18 @@ namespace CamelWorks.UI.Views
                 case "restructure": return RestructureWindow.Show();
                 case "ids": return IdsWindow.Show();
                 case "schedule": return ScheduleWindow.Show();
+                case "setlib": return SetLibraryWindow.Show();
+                case "models": return ModelsWindow.Show();
+                case "penetrations": return PenetrationsWindow.Show();
+                case "write": return WritePropertiesWindow.Show();
+                case "freeze": return FreezeWindow.Show();
+                case "notice": return ChangeNoticeWindow.Show();
+                case "history": return HistoryWindow.Show();
+                case "wbs": return BreakdownWindow.Show();
                 case "help": return HelpWindow.Show();
-                case "export": return ExportWindow.Show();
+                case "exportglb": return ExportWindow.Show("glb");
+                case "exportsheet": return ExportWindow.Show("sheet");
+                case "exportdxf": return ExportWindow.Show("dxf");
 
                 // Five field tools, five windows. They share one read of the selection and its
                 // geometry, which is the expensive part - see SiteWindow.
@@ -141,11 +151,10 @@ namespace CamelWorks.UI.Views
             switch (tool.Id)
             {
                 case "health": return ProjectViews.Health;
-                case "setup": return ProjectViews.Setup;
                 case "headroom": return CoordinateViews.ClearHeight;
                 case "merge": return CoordinateViews.Merge;
                 case "excel": return DataViews.Excel;
-                case "project": return ProjectViews.Profile;
+                case "project": return ProjectViews.Settings;
                 case "tests": return CoordinateViews.Tests;
                 case "rules": return CoordinateViews.Rules;
                 case "clashreport": return CoordinateViews.Report;

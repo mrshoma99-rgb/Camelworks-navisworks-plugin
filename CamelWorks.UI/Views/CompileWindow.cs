@@ -386,8 +386,47 @@ namespace CamelWorks.UI.Views
                     Tone = !f.Exists || !f.IsReadable ? Tone.Warn : Tone.Plain,
                 }).ToList();
 
-                _list.Children.Add(Ui.Table(rows, ("File", 230), ("Revision", 80), ("", 0)));
+                var table = Ui.Table(rows, ("File", 230), ("Revision", 80), ("", 0));
+
+                // Taking one file off had no way to happen. The list is built by pointing at a
+                // delivery folder, so it arrives with last month's revision in it as often as not,
+                // and the only control was "Clear the list" - start again, re-pick the folder,
+                // re-read the register.
+                _list.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Take {n} off the list", Drop, danger: true),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "file"))));
+
                 _list.Children.Add(Ui.Line(Ui.Count(_paths.Count, "file") + " on the list", 0.7));
+            }
+
+            /// <summary>Take the picked files off the list, and redraw everything that counted them.</summary>
+            private void Drop(IReadOnlyList<object> picked, Panel say)
+            {
+                var gone = 0;
+
+                foreach (var item in picked)
+                {
+                    if (!(item is SourceFile file)) continue;
+
+                    var at = _paths.FindIndex(
+                        path => string.Equals(path, file.Path, StringComparison.OrdinalIgnoreCase));
+
+                    if (at < 0) continue;
+
+                    _paths.RemoveAt(at);
+                    gone++;
+                }
+
+                if (gone == 0)
+                {
+                    say.Children.Add(Ui.Note("Nothing was taken off."));
+                    return;
+                }
+
+                // The shrunken list is the confirmation, and Draw rebuilds the panel this button
+                // is in - so nothing is said here that would be thrown away a line later.
+                Draw();
             }
 
             private void DrawShape()
@@ -460,27 +499,46 @@ namespace CamelWorks.UI.Views
 
                 foreach (var note in plan.Notes) _verdict.Children.Add(Ui.Note(note));
 
-                _verdict.Children.Add(Ui.Table(
+                var jobs = Ui.Table(
                     plan.Jobs.Take(40).Select(j => new TableRow(j, j.Output,
                         j.Sources.Count.ToString("N0", CultureInfo.InvariantCulture),
                         Size(j.Bytes))).ToList(),
-                    ("Comes out as", 300), ("Models", 80), ("", 0)));
+                    ("Comes out as", 300), ("Models", 80), ("", 0));
+
+                _verdict.Children.Add(Ui.Picking(jobs,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(jobs, picked), say, "job"))));
 
                 if (plan.Superseded.Count > 0)
+                {
+                    var older = Ui.Table(plan.Superseded.Take(60).Select(s => new TableRow(s,
+                        Compilation.NameOf(s.Older.Path),
+                        Compilation.NameOf(s.Newer.Path))).ToList(),
+                        ("Left out", 240), ("Superseded by", 0));
+
                     _verdict.Children.Add(Ui.Section("The revisions being left out",
                         Ui.Count(plan.Superseded.Count, "file"), false,
-                        Ui.Table(plan.Superseded.Take(60).Select(s => new TableRow(s,
-                            Compilation.NameOf(s.Older.Path),
-                            Compilation.NameOf(s.Newer.Path))).ToList(),
-                            ("Left out", 240), ("Superseded by", 0))));
+                        Ui.Picking(older,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(older, picked), say, "file")))));
+                }
 
                 if (plan.Missing.Count + plan.Unreadable.Count > 0)
-                    _verdict.Children.Add(Ui.Section("The files that cannot go in",
-                        Ui.Count(plan.Missing.Count + plan.Unreadable.Count, "file"), false,
-                        Ui.Table(plan.Missing.Select(m => new TableRow(m, m.Path, "not there"))
+                {
+                    // This is the one table in the window whose contents get pasted into an email:
+                    // it is the list the supplier has to be sent.
+                    var refused = Ui.Table(
+                        plan.Missing.Select(m => new TableRow(m, m.Path, "not there"))
                             .Concat(plan.Unreadable.Select(u => new TableRow(u, u.Path, "not a model")))
                             .Take(60).ToList(),
-                            ("File", 320), ("", 0))));
+                        ("File", 320), ("", 0));
+
+                    _verdict.Children.Add(Ui.Section("The files that cannot go in",
+                        Ui.Count(plan.Missing.Count + plan.Unreadable.Count, "file"), false,
+                        Ui.Picking(refused,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(refused, picked), say, "file")))));
+                }
 
                 DrawRun();
             }

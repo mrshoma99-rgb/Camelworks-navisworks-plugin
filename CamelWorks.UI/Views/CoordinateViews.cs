@@ -543,6 +543,16 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// How many times the board has been written down this session.
+        ///
+        /// Not a version and not interesting in itself. It exists so a screen holding figures from
+        /// a load can tell that somebody has changed the board since — assigned a group, marked
+        /// results, applied a returned worksheet — and say so, rather than showing last load's
+        /// numbers over this load's rows.
+        /// </summary>
+        internal static int BoardEdits { get; private set; }
+
+        /// <summary>
         /// Write the board down, keeping the version it replaces.
         ///
         /// One step of history, not a stack. Every board edit is small and immediately visible, so
@@ -555,6 +565,8 @@ namespace CamelWorks.UI.Views
         /// <param name="summary">What to write in the activity log.</param>
         private static void Save(Session session, ClashPipelineResult board, string? summary = null)
         {
+            BoardEdits++;
+
             var section = session.Store.Section(ProjectStore.ClashSection);
             var previous = section["snapshot"];
 
@@ -698,7 +710,19 @@ namespace CamelWorks.UI.Views
             private HashSet<ClashItem> _regressed = new HashSet<ClashItem>();
 
             private ClashPipelineResult? _board;
+
+            /// <summary>The delta as the board shows it: only results that are on the board.</summary>
             private ClashDelta? _delta;
+
+            /// <summary>The delta as carry-over produced it, before the rules took anything out.</summary>
+            private ClashDelta? _raw;
+
+            /// <summary>Where the "Showing ..." line and the out-of-date warning are drawn.</summary>
+            private readonly StackPanel _state = Ui.Stack();
+
+            /// <summary>What <see cref="BoardEdits"/> stood at when these figures were counted.</summary>
+            private int _counted = -1;
+
             private Session? _session;
 
             internal TriageScreen()
@@ -722,7 +746,13 @@ namespace CamelWorks.UI.Views
 
                     var notes = new List<string>();
                     _board = CoordinateViews.Build(_session, job, notes);
-                    _delta = LastDelta;
+
+                    // Restricted to what reached the board. The raw delta covers every result that
+                    // survived duplicate collapse, including the ones a rule then suppressed, so
+                    // over a board of four it would say twelve and put the other eight nowhere the
+                    // reader could look.
+                    _raw = LastDelta;
+                    _delta = _raw?.OnBoard(_board?.Groups.SelectMany(g => g.Items));
 
                     _regressed = Regressed();
 
@@ -760,11 +790,12 @@ namespace CamelWorks.UI.Views
                     Ui.Actions(run, undo),
                     _summary,
                     _filters,
+                    _state,
                     _rows,
                     _detail,
                     Ui.Rule(),
                     new RaiseScreen().Build(),
-                    FreezeCard()));
+                    FreezeScreen()));
             }
 
             /// <summary>
@@ -789,13 +820,47 @@ namespace CamelWorks.UI.Views
                     // Only the exception is coloured. With all four tinted, colour stopped
                     // discriminating and the one that is actually urgent — the regression — was
                     // the smallest glyph in the row, because a figure sizes by its digit count.
+                    // Three figures, one population: clash results on this board. The fourth used
+                    // to be "unassigned", which counts issues - so the row read as four comparable
+                    // numbers and three of them were results while one was groups. Nobody could
+                    // add them up because they were never addable.
+                    // Pressing a figure narrows the board to it. The dropdown and these numbers
+                    // used to say the same four things in two places, leaving the reader to work
+                    // out that "12 new" and the "New or back again" entry were connected - and
+                    // nothing on screen said which of the two was currently in force.
+                    //
+                    // "Gone" is not pressable and cannot be: those results are not on the board to
+                    // show. A control that filters to nothing is worse than no control.
                     _summary.Children.Add(Ui.Across(
-                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new"),
+                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
+                            Tone.Plain, () => Narrow(Changed), Showing() == Changed),
                         Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
-                            regressed > 0 ? Tone.Bad : Tone.Plain),
+                            regressed > 0 ? Tone.Bad : Tone.Plain, () => Narrow(Changed),
+                            Showing() == Changed),
                         Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone"),
-                        Ui.Figure(unassigned, "unassigned",
-                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Plain)));
+                        Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
+                            "still there")));
+
+                    // And the issues, said as a sentence so the change of unit is impossible to
+                    // miss. These add up: new plus came back plus still there is the board.
+                    _summary.Children.Add(Ui.Line(
+                        Ui.Count(_delta.Accounted, "result") + " on this board, grouped into "
+                        + Ui.Count(funnel.Groups, "issue") + ", " + unassigned + " of which nobody owns.",
+                        1, true));
+
+                    if (funnel.Unassigned > 0)
+                        _summary.Children.Add(Ui.Actions(
+                            Ui.Link("Show me the ones nobody owns", () => Narrow(Unassigned))));
+
+                    // What the rules took out, said where the difference would otherwise be
+                    // unaccounted for.
+                    var hidden = (_raw?.Accounted ?? 0) - _delta.Accounted;
+
+                    if (hidden > 0)
+                        _summary.Children.Add(Ui.Note(Ui.Count(hidden, "result")
+                            + " matched or arrived this run and were suppressed by a rule, so they "
+                            + "are not on the board and not in these figures. \"How this board was "
+                            + "made\" below says which rules."));
 
                     if (regressed > 0)
                         _summary.Children.Add(Ui.Problem(
@@ -817,7 +882,8 @@ namespace CamelWorks.UI.Views
                     _summary.Children.Add(Ui.Across(
                         Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
                         Ui.Figure(unassigned, "unassigned",
-                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good)));
+                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good,
+                            () => Narrow(Unassigned), Showing() == Unassigned)));
 
                     _summary.Children.Add(Ui.Info("This is the first board on this project, so there is "
                         + "nothing to compare it against. Run the tests again after the next issue of "
@@ -848,15 +914,82 @@ namespace CamelWorks.UI.Views
                     Ui.Across(
                         Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
                         Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed"),
-                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into"),
-                        _delta == null ? null
-                            : Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
-                                        "still there")),
+                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into")),
                     Ui.Line(funnel.ToString(), 0.8),
                     funnel.RulesApplied.Count == 0 ? null
                         : Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7)));
 
+                _counted = BoardEdits;
                 _filters.Visibility = Visibility.Visible;
+            }
+
+            /// <summary>Which preset is in force.</summary>
+            private string Showing() => _preset.SelectedItem as string ?? All;
+
+            /// <summary>
+            /// One line saying what the board is showing, and one saying when it was counted.
+            ///
+            /// Two filters that combine silently is a state model nobody can read. "Showing 11 of
+            /// 240" was already there and said how many, never which of the two controls did it,
+            /// so a board narrowed by a search typed ten minutes ago looked like a board with
+            /// eleven issues on it.
+            ///
+            /// The second line is the harder honesty. Every figure above is counted when the board
+            /// loads, and assigning a group or applying a returned worksheet changes the board
+            /// underneath them. Rather than recompute - which would mean re-running the rules over
+            /// the federation on every edit - it says the numbers are from before, and offers the
+            /// reload that makes them true.
+            /// </summary>
+            /// <param name="shown">How many groups the filter leaves.</param>
+            /// <param name="total">How many the board holds.</param>
+            private void State(int shown, int total)
+            {
+                _state.Children.Clear();
+
+                var preset = Showing();
+                var query = _search.Text.Trim();
+
+                if (preset != All || query.Length > 0)
+                {
+                    var said = new List<string>();
+
+                    if (preset != All) said.Add(preset.ToLowerInvariant());
+                    if (query.Length > 0) said.Add("matching \"" + query + "\"");
+
+                    var row = Ui.Across(
+                        Ui.Line("Showing " + shown + " of " + total + " issues - "
+                                + string.Join(", ", said) + ".", 0.75),
+                        Ui.Link("Show everything", () =>
+                        {
+                            _search.Text = string.Empty;
+                            _preset.SelectedItem = All;
+                        }));
+
+                    _state.Children.Add(row);
+                }
+                else if (shown < total)
+                {
+                    _state.Children.Add(Ui.Line("Showing " + shown + " of " + total + " issues.", 0.6));
+                }
+
+                if (_counted >= 0 && BoardEdits != _counted)
+                    _state.Children.Add(Ui.Note("The figures above were counted when this board was "
+                        + "loaded, and the board has been edited since. They describe the run, not "
+                        + "what is on screen now - load the board again to bring them up to date."));
+            }
+
+            /// <summary>
+            /// Narrow the board to one preset, from wherever it was pressed.
+            ///
+            /// It writes into the dropdown rather than into a second variable, so there is one
+            /// place that holds what the board is showing and everything that sets it goes through
+            /// there. Pressing the figure that is already in force clears it, because a control
+            /// that only turns on is a control somebody has to find the off switch for.
+            /// </summary>
+            /// <param name="preset">One of the four, or <see cref="All"/> to clear.</param>
+            private void Narrow(string preset)
+            {
+                _preset.SelectedItem = Showing() == preset ? All : preset;
             }
 
             /// <summary>Which groups the preset and the search box leave.</summary>
@@ -921,17 +1054,21 @@ namespace CamelWorks.UI.Views
 
                 var groups = Filtered();
 
+                // A local, because the lambda below outlives this method and the compiler resets
+                // what it knows about a nullable field at that boundary.
+                var total = _board.Groups.Count;
+
+                // Before the empty case, not after it. "Nothing matches" is exactly the moment
+                // somebody needs to be told what the filter is and offered the way out of it.
+                State(groups.Count, total);
+
                 if (groups.Count == 0)
                 {
                     _rows.Children.Add(Ui.Empty("Nothing matches.",
-                        "The board has " + Ui.Count(_board.Groups.Count, "group")
+                        "The board has " + Ui.Count(total, "group")
                         + "; none of them match this filter."));
                     return;
                 }
-
-                if (groups.Count < _board.Groups.Count)
-                    _rows.Children.Add(Ui.Line("Showing " + groups.Count + " of "
-                                               + _board.Groups.Count + " groups.", 0.6));
 
                 var rows = groups.Select(g => new TableRow(g,
                     g.Name,
@@ -950,8 +1087,13 @@ namespace CamelWorks.UI.Views
                     .OnPick(item =>
                     {
                         _detail.Children.Clear();
+
                         if (item is ClashGroup group && _session != null)
                             _detail.Children.Add(Detail(_session, group));
+
+                        // The detail pane is where the board gets edited, so coming back to the
+                        // list is the moment to re-ask whether the figures still hold.
+                        State(groups.Count, total);
                     }));
             }
 
@@ -1146,25 +1288,15 @@ namespace CamelWorks.UI.Views
         /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
         /// not to enter.
         /// </summary>
-        private static UIElement FreezeCard()
+        /// <summary>
+        /// What is frozen right now, and the way back off it.
+        ///
+        /// Both windows lead with this: freezing on top of a freeze, or writing a notice against
+        /// one that has been edited under you, are the two ways this record misleads somebody.
+        /// </summary>
+        private static Panel FrozenState()
         {
-            // Two panels, not one. Ui.Runner clears its output on every press, and the record of
-            // what is currently frozen — with the Unfreeze button under it — used to live in the
-            // same panel the two runners write to. Pressing "Change notice" deleted the way out.
-            // The comment on this method says the unfreeze is always visible; now it is.
             var state = Ui.Stack();
-            var results = Ui.Stack();
-
-            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
-            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
-            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
-
-            var freeze = Ui.Runner("Freeze what is on the board", results,
-                job => DoFreeze(results, scope, signatory, release, job));
-
-            var notice = Ui.Runner("Change notice", results, primary: false,
-                work: job => DoNotice(results, job));
-
             var session = Host.Current;
 
             if (session != null)
@@ -1198,18 +1330,51 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            return Ui.Marked(Glyphs.Save, "Freeze",
-                "Sign-off and fabrication release are the same record, and both come with a change "
-                + "notice.",
-                state,
+            return state;
+        }
+
+        /// <summary>
+        /// Freeze: record where every element on the board is, right now.
+        ///
+        /// Its own window, and the change notice is another. They shared one card and one output
+        /// panel, so pressing either wiped what the other had just said - and the card asked a
+        /// first-time user to work out which of two buttons was the one they wanted before it had
+        /// told them what a freeze was. One window, one job, one filled button.
+        /// </summary>
+        internal static UIElement FreezeScreen()
+        {
+            var results = Ui.Stack();
+
+            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
+            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
+            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
+
+            return Ui.Stack(
+                FrozenState(),
                 Ui.Form(
                     Ui.Field("What is being frozen", scope),
                     Ui.Pair(Ui.Field("Signed by", signatory), Ui.Field("Release reference", release))),
-                Ui.Across(freeze, notice),
+                Ui.Runner("Freeze what is on the board", results,
+                          job => DoFreeze(results, scope, signatory, release, job)),
                 Ui.Small("A freeze records where every element on the board is, right now. Nothing "
-                         + "edits it afterwards: the change notice is the difference between that "
-                         + "record and the model as it stands, and it is the thing that stops a "
-                         + "hanger being made to a drawing three weeks old."),
+                         + "edits it afterwards - which is what makes it worth signing."),
+                results);
+        }
+
+        /// <summary>
+        /// The change notice: the difference between what was agreed and what the model says now.
+        ///
+        /// The thing that stops a hanger being made to a drawing three weeks old.
+        /// </summary>
+        internal static UIElement NoticeScreen()
+        {
+            var results = Ui.Stack();
+
+            return Ui.Stack(
+                FrozenState(),
+                Ui.Runner("Write the change notice", results, job => DoNotice(results, job)),
+                Ui.Small("Measured against the freeze, not against last week: a notice says what "
+                         + "moved since somebody put their name to it."),
                 results);
         }
 
@@ -1684,7 +1849,113 @@ namespace CamelWorks.UI.Views
                         + "each clash result and CamelWorks does not write into it: two tools disagreeing "
                         + "about whether something is resolved is worse than one of them not knowing."),
                 status,
-                table);
+
+                // The bar goes with the table, not with the buttons. Moving and marking are above,
+                // because each needs its own box to type into, and both told somebody to shift-
+                // click when nothing was picked - an instruction sitting a screen away from the
+                // rows it is about. How many are picked, and tick-all or clear, belong here.
+                Ui.Picking(table,
+                    new Ui.OnPicked("Select {n} in the model",
+                                    (picked, say) => Reveal(session, picked, say),
+                                    primary: true),
+                    new Ui.OnPicked("Attach {n} to an issue...",
+                                    (picked, say) => AttachTo(session, group, picked, say))));
+        }
+
+        /// <summary>
+        /// Put the picked results on an issue somebody raised.
+        ///
+        /// The engine never decides that eleven conflicts are one conversation - so an issue is
+        /// raised by hand, and this is how the conflicts it is about get onto it. A riser in the
+        /// wrong place produces nine results; the thing to send is "this riser is wrong, here are
+        /// the nine", not nine items with the same sentence retyped on each.
+        ///
+        /// It attaches to the most recently raised open issue rather than asking which. There is
+        /// no picker because the sequence people actually follow is raise it, then go and collect
+        /// what it covers - and a dropdown of every issue ever raised, at the moment somebody has
+        /// just written one, is a question with an obvious answer.
+        /// </summary>
+        private static void AttachTo(Session session, ClashGroup group,
+                                     IReadOnlyList<object> picked, Panel say)
+        {
+            say.Children.Clear();
+
+            var items = picked.OfType<ClashItem>().ToList();
+
+            if (items.Count == 0) items = group.Items.ToList();
+
+            var issues = Issues(session);
+
+            var open = issues.Issues
+                .Where(i => i.Status != FindingStatus.Resolved)
+                .OrderByDescending(i => i.RaisedTicks)
+                .ToList();
+
+            if (open.Count == 0)
+            {
+                say.Children.Add(Ui.Note("There is no open issue to attach these to. Raise one below "
+                    + "- an issue is a sentence somebody wrote, so it has to be written before "
+                    + "anything can belong to it."));
+
+                return;
+            }
+
+            var issue = open[0];
+            var attached = issues.Attach(issue, items.Select(i => i.Key));
+
+            SaveIssues(session, issues);
+
+            if (!session.Store.Save())
+            {
+                say.Children.Add(Ui.Problem(session.Store.LastSaveProblem
+                                            ?? "Could not write the project file."));
+                return;
+            }
+
+            session.Record(ActivityKind.Regroup,
+                "attached " + Ui.Count(attached, "result") + " to \"" + issue.Title + "\"");
+
+            say.Children.Add(Ui.Done(attached == 0
+                ? "\"" + issue.Title + "\" already held " + (items.Count == 1 ? "that one" : "all of those")
+                  + ". It holds " + Ui.Count(issue.Attached.Count, "result") + " altogether."
+                : Ui.Count(attached, "result") + " now belong to \"" + issue.Title + "\", which holds "
+                  + Ui.Count(issue.Attached.Count, "result") + " altogether."));
+
+            if (open.Count > 1)
+                say.Children.Add(Ui.Note("That is the most recently raised open issue, of "
+                    + Ui.Count(open.Count, "open issue") + ". A result belongs to one issue at a "
+                    + "time, so attaching it here took it off whichever had it."));
+        }
+
+        /// <summary>
+        /// Select both sides of every picked clash.
+        ///
+        /// Both sides, because a clash is a pair and looking at one half of it tells you nothing
+        /// about why it is a clash.
+        /// </summary>
+        private static void Reveal(Session session, IReadOnlyList<object> picked, Panel status)
+        {
+            status.Children.Clear();
+
+            var keys = new List<ElementKey>();
+
+            foreach (var clash in picked.OfType<ClashItem>())
+            {
+                keys.Add(clash.Key.A);
+                keys.Add(clash.Key.B);
+            }
+
+            if (keys.Count == 0)
+            {
+                status.Children.Add(Ui.Line("Nothing picked.", 0.8));
+                return;
+            }
+
+            session.Model.Select(keys);
+            session.View.ZoomTo(keys, 2.0);
+
+            status.Children.Add(Ui.Done("Selected both sides of "
+                                        + Ui.Count(picked.Count, "clash") + "."));
         }
 
         /// <summary>Repaint the status column in place, so a mark shows without reloading the board.</summary>
@@ -1833,6 +2104,45 @@ namespace CamelWorks.UI.Views
                 Redraw(session);
             }
 
+            /// <summary>
+            /// Take every clash off an issue, without touching the issue.
+            ///
+            /// The way back from an attachment made in a hurry. Deleting the issue would work and
+            /// would also throw away the sentence somebody wrote, which is the half that cost
+            /// them something.
+            /// </summary>
+            /// <param name="session">The session.</param>
+            /// <param name="issue">The issue to empty, or null when nothing is picked.</param>
+            private void Release(Session session, ManualIssue? issue)
+            {
+                _status.Children.Clear();
+
+                if (issue == null)
+                {
+                    _status.Children.Add(Ui.Note("Pick an issue in the list first."));
+                    return;
+                }
+
+                if (issue.Attached.Count == 0)
+                {
+                    _status.Children.Add(Ui.Note("\"" + issue.Title + "\" holds no clashes."));
+                    return;
+                }
+
+                var issues = Issues(session);
+                var held = issues.Find(issue.Id);
+                var gone = issues.Detach(held?.Attached.ToList());
+
+                SaveIssues(session, issues);
+
+                _status.Children.Add(session.Store.Save()
+                    ? Ui.Done(Ui.Count(gone, "clash") + " no longer belong to \"" + issue.Title
+                              + "\". The issue is untouched.")
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                Redraw(session);
+            }
+
             /// <summary>What is already raised, and a way to close or delete one.</summary>
             private void Redraw(Session session)
             {
@@ -1857,6 +2167,12 @@ namespace CamelWorks.UI.Views
                     i.Title,
                     i.AssignedTo ?? "unassigned",
                     i.Priority ?? string.Empty,
+                    // What it covers, which is the difference between a note and an issue. Blank
+                    // rather than "0" when it holds nothing: an issue about something the engine
+                    // cannot see is complete on its own, and a zero would read as a gap in it.
+                    i.Attached.Count > 0
+                        ? i.Attached.Count.ToString("N0", CultureInfo.InvariantCulture) + " clashes"
+                        : string.Empty,
                     i.Status.ToString(),
                     i.RaisedTicks > 0
                         ? new DateTime(i.RaisedTicks).ToLocalTime().ToString("d MMM", CultureInfo.InvariantCulture)
@@ -1866,7 +2182,8 @@ namespace CamelWorks.UI.Views
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Status", 90), ("Raised", 70));
+                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Holds", 90),
+                    ("Status", 90), ("Raised", 70));
 
                 ManualIssue? picked = null;
                 table.OnPick(item => picked = item as ManualIssue);
@@ -1886,6 +2203,7 @@ namespace CamelWorks.UI.Views
                         session.View.ZoomTo(keys, 2.0);
                     }),
                     Ui.Button("Close it", () => Close(session, picked)),
+                    Ui.Button("Let go of its clashes", () => Release(session, picked)),
                     Ui.Danger("Delete it", () => Delete(session, picked))));
             }
 
@@ -2072,8 +2390,12 @@ namespace CamelWorks.UI.Views
                     Ui.Pill(Ui.Count(tests.Sum(t => t.ResultCount), "result")),
                     stale.Count > 0 ? Ui.Pill(stale.Count + " never run", Tone.Warn) : null));
 
-                _list.Children.Add(Ui.Table(rows,
-                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150)));
+                var tested = Ui.Table(rows,
+                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150));
+
+                _list.Children.Add(Ui.Picking(tested,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(tested, picked), say, "test"))));
 
                 if (session.Clash.CanEdit)
                 {
@@ -2627,6 +2949,10 @@ namespace CamelWorks.UI.Views
         /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
         public static UIElement Report() => new ReportScreen().Build();
 
+        /// <summary>The penetration schedule, as its own tool rather than a template choice.</summary>
+        internal static UIElement PenetrationsReport() =>
+            new ReportScreen("Penetration schedule").Build();
+
         /// <summary>
         /// The report, and who it is for.
         ///
@@ -2686,8 +3012,20 @@ namespace CamelWorks.UI.Views
 
             private string _units;
 
-            internal ReportScreen()
+            /// <summary>
+            /// Which template this screen is fixed to, or null when the user picks.
+            ///
+            /// The penetration schedule is its own ribbon button: a structural engineer asking for
+            /// the list before a pour is not writing a clash report, and a window that answers
+            /// "which of three reports?" first is asking a question they do not have.
+            /// </summary>
+            private readonly string? _locked;
+
+            internal ReportScreen(string? locked = null)
             {
+                _locked = locked;
+                if (locked != null) _mode = locked;
+
                 _path = Ui.Text(_kept.Text("folder"), text => _kept.Set("folder", text), 340);
 
                 _template = Ui.Text(_kept.Text("name", Deliverable.DefaultTemplate),
@@ -2732,6 +3070,9 @@ namespace CamelWorks.UI.Views
                     what.Text = Explain(m);
                 });
 
+                // Locked: the template is the tool, so the picker is not a choice this window has.
+                var contents = _locked == null ? Ui.Field("Contents", mode) : null;
+
                 var changed = Ui.Check("Only what the last run had not seen", _changedOnly,
                                        v => { _changedOnly = v; _kept.Set("changedOnly", v); });
 
@@ -2752,7 +3093,7 @@ namespace CamelWorks.UI.Views
                     // is the panel repeating the chrome.
                     Ui.Marked(Glyphs.Report, "Write a report", null,
                         Ui.Form(
-                            Ui.Field("Contents", mode),
+                            contents,
                             what,
                             Ui.Pair(Ui.Field("For", audience), Ui.Field("Format", format))),
                         write,
@@ -4081,9 +4422,13 @@ namespace CamelWorks.UI.Views
                         Tone = known.Contains(t.Guid) ? Tone.Plain : Tone.Good,
                     }).ToList();
 
-                    results.Children.Add(Ui.Table(rows,
+                    var topics = Ui.Table(rows,
                         ("", 50), ("Topic", 220), ("Status", 80), ("Assigned to", 110),
-                        ("Author", 120), ("", 0)));
+                        ("Author", 120), ("", 0));
+
+                    results.Children.Add(Ui.Picking(topics,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(topics, picked), say, "topic"))));
 
                     Remember(session, read.Topics.Select(t => t.Guid));
 
@@ -4310,9 +4655,15 @@ namespace CamelWorks.UI.Views
                      : Tone.Plain,
             }).ToList();
 
-            results.Children.Add(Ui.Table(rows,
+            var answers = Ui.Table(rows,
                 ("Issue", 200), ("They say", 110), ("The board says", 110),
-                ("Would become", 110), ("What they wrote", 0)));
+                ("Would become", 110), ("What they wrote", 0));
+
+            // The reply to the person who sent the sheet back is written off this table: "these
+            // eleven we have taken, these two we have not, here is why". Picking the eleven is it.
+            results.Children.Add(Ui.Picking(answers,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(answers, picked), say, "issue"))));
 
             if (report.Refused > 0)
                 results.Children.Add(Ui.Note(Ui.Count(report.Refused, "row")
@@ -4546,8 +4897,12 @@ namespace CamelWorks.UI.Views
                         Tone = Tone.Warn,
                     }).ToList();
 
-                    results.Children.Add(Ui.Table(clashRows,
-                        ("Issue", 200), ("On", 90), ("Still says", 90), ("They said", 0)));
+                    var disputed = Ui.Table(clashRows,
+                        ("Issue", 200), ("On", 90), ("Still says", 90), ("They said", 0));
+
+                    results.Children.Add(Ui.Picking(disputed,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(disputed, picked), say, "issue"))));
 
                     results.Children.Add(Ui.Note("These kept what they had. Two people who answered "
                         + "the same issue differently were sent the same pack at the same time and "
@@ -4656,9 +5011,13 @@ namespace CamelWorks.UI.Views
                      : Tone.Plain,
             }).ToList();
 
-            results.Children.Add(Ui.Table(rows,
+            var incoming = Ui.Table(rows,
                 ("Group", 200), ("The file says", 120), ("The board says", 110),
-                ("Would become", 110), ("", 0)));
+                ("Would become", 110), ("", 0));
+
+            results.Children.Add(Ui.Picking(incoming,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(incoming, picked), say, "group"))));
 
             if (report.Refused > 0)
                 results.Children.Add(Ui.Note(Ui.Count(report.Refused, "topic")
