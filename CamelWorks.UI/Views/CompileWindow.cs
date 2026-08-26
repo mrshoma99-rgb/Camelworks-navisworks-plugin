@@ -138,7 +138,7 @@ namespace CamelWorks.UI.Views
                     new Ui.Step("Run it", () => run),
                 };
 
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
             /// <summary>

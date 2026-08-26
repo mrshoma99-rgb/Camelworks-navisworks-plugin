@@ -69,14 +69,9 @@ namespace CamelWorks.UI.Views
             private UIElement Build()
             {
                 var sheet = Ui.Stack(
-                    _sheet.Picker(),
-                    Ui.Rule(),
-                    Ui.Eyebrow("Where things are"),
-                    Layout(),
-                    _shape,
-                    Ui.Rule(),
-                    Ui.Eyebrow("The sheet as it stands"),
-                    _sheet.Preview());
+                    Bench.Group(string.Empty, _sheet.Picker()),
+                    Bench.Group("Where things are", Layout(), _shape),
+                    Bench.Group("The sheet as it stands", _sheet.Preview()));
 
                 var plan = Ui.Stack(_plan);
                 var make = Make();
@@ -96,7 +91,7 @@ namespace CamelWorks.UI.Views
 
                 // No finish button of its own: the last step carries Ui.Commit, which is the
                 // two-stage "show me, then do it" a write into the set library has always used.
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
             private UIElement Layout()
@@ -107,9 +102,7 @@ namespace CamelWorks.UI.Views
                     ShowShape();
                 }, 250);
 
-                return Ui.Field("The sheet is", pick,
-                                "Both arrive. A condition table is what somebody writes when describing "
-                                + "sets; the column form is what falls out of a coordination workbook.");
+                return Ui.Field("The sheet is", pick);
             }
 
             /// <summary>
@@ -134,20 +127,18 @@ namespace CamelWorks.UI.Views
                     _shape.Children.Add(Ui.Stack(
                         Ui.Pair(Number("Category column", _mapping.CategoryColumn, v => _mapping.CategoryColumn = v),
                                 Number("Property column", _mapping.PropertyColumn, v => _mapping.PropertyColumn = v)),
-                        Ui.Pair(Number("Operator column", _mapping.OperatorColumn, v => _mapping.OperatorColumn = v),
-                                Number("Value column", _mapping.ValueColumn, v => _mapping.ValueColumn = v)),
-                        Ui.Small("A zero for the operator column reads every row as Equals, which is "
-                                 + "what most schedules mean.")));
+                        Ui.Pair(Number("Operator column", _mapping.OperatorColumn, v => _mapping.OperatorColumn = v,
+                                       "Zero reads every row as Equals."),
+                                Number("Value column", _mapping.ValueColumn, v => _mapping.ValueColumn = v))));
                 }
                 else
                 {
                     _shape.Children.Add(Ui.Stack(
-                        Number("First value column", _mapping.FirstValueColumn, v => _mapping.FirstValueColumn = v),
+                        Number("First value column", _mapping.FirstValueColumn, v => _mapping.FirstValueColumn = v,
+                               "Headings are properties; filled cells become conditions."),
                         Ui.Field("Property category",
                                  Ui.Text(_mapping.Category, text => _mapping.Category = text, 180),
-                                 "One category for the sheet: the columns are properties on the same tab."),
-                        Ui.Small("Each column's heading is the property, and every filled cell becomes "
-                                 + "one condition. A set's conditions are ANDed.")));
+                                 "One category for the whole sheet.")));
                 }
 
                 _shape.Children.Add(Ui.Actions(Ui.Runner("Read the schedule", _warnings, Read)));
@@ -157,12 +148,12 @@ namespace CamelWorks.UI.Views
                 _shape.Children.Add(_warnings);
             }
 
-            private Panel Number(string label, int value, Action<int> set) =>
+            private Panel Number(string label, int value, Action<int> set, string? hint = null) =>
                 Ui.Field(label, Ui.Text(value.ToString(CultureInfo.InvariantCulture), text =>
                 {
                     if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
                         && parsed >= 0) set(parsed);
-                }, 70));
+                }, 70), hint);
 
             private void Read(Job job)
             {

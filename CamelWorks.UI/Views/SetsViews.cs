@@ -103,63 +103,28 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
+                if (session == null)
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 Redraw();
                 RedrawSaved(session);
 
-                // Building one set is what the tab is, so it is not in a box. Generating many is a
-                // second act with a different consequence, and it earns the fold below.
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Form(
-                        _editor,
-                        Ui.Rule(),
-                        Ui.Field("Name", _name, "how it reads in the Navisworks selection tree")),
-                    Actions(session),
-                    _results,
-                    Ui.Small("Groups are ORed together; conditions inside a group are ANDed. A negated "
-                             + "condition compiles to a subtraction rather than a not-equals — those are "
-                             + "different sets, because a host condition on a property an element does not "
-                             + "have matches nothing."),
-                    Reshape(),
-                    Ui.Rule(),
-                    Alike(session),
-                    Ui.Rule(),
-                    Schedule(),
-                    Ui.Rule(),
-                    Ui.Eyebrow("Saved sets"),
-                    Ui.Small("Kept in the project file, so they travel with the job."),
-                    _saved));
+                // The expression being built is the working material, so it lives on the stage
+                // with its dry run and its live count. The scalar inputs - the name, the bulk
+                // ways in - are the setup column, and publishing is the one act at its foot.
+                return Bench.Surface(Setup(session), Publish(session), Stage(session));
             }
 
-            private UIElement Actions(Session session)
+            /// <summary>
+            /// The scalar inputs: what the set is called, and the doors to the bulk tools.
+            ///
+            /// This screen makes one set from an expression, which is the right tool for the set
+            /// somebody is thinking about now. The six disciplines' worth a job starts with arrive
+            /// as a spreadsheet and want reading, not retyping — and the whole tree at once wants
+            /// its own window — so both are a button here rather than a screen.
+            /// </summary>
+            private UIElement Setup(Session session)
             {
-                var preview = Ui.Runner("Select what it catches", _results, job =>
-                {
-                    var plan = DnfCompiler.Compile(Expression());
-
-                    _results.Children.Add(Ui.Line(plan.Explain(), 1, true));
-
-                    foreach (var warning in plan.Warnings) _results.Children.Add(Ui.Note(warning));
-
-                    if (plan.MatchesNothing)
-                    {
-                        _results.Children.Add(Ui.Empty("Matches nothing.",
-                            "The rule contradicts itself — a condition and its negation are both required."));
-                        return;
-                    }
-
-                    job.Say("Searching...");
-                    var outcome = session.Search.Run(plan);
-
-                    _results.Children.Add(Ui.Line(Ui.Count(outcome.Count, "element") + " found", 1, true));
-
-                    foreach (var note in outcome.Notes.Skip(plan.Warnings.Count))
-                        _results.Children.Add(Ui.Note(note));
-
-                    if (outcome.Count > 0) session.Model.Select(outcome.Keys);
-                });
-
                 var save = Ui.Button("Save to project", () =>
                 {
                     _results.Children.Clear();
@@ -187,7 +152,30 @@ namespace CamelWorks.UI.Views
                     RedrawSaved(session);
                 });
 
-                var publish = Ui.Runner("Publish as a Navisworks set", _results, primary: false, work: job =>
+                var schedule = Ui.Button("Open a schedule from a spreadsheet...", () =>
+                {
+                    var problem = ToolViews.Open("schedule");
+                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
+                });
+
+                var reshape = Ui.Button("Rebuild the tree from properties...", () =>
+                {
+                    var problem = ToolViews.Open("restructure");
+                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
+                });
+
+                return Ui.Stack(
+                    Bench.Group(string.Empty,
+                        Ui.Field("Name", _name, "how it reads in the Navisworks selection tree"),
+                        save),
+                    Bench.Group("Many sets at once",
+                        schedule,
+                        reshape));
+            }
+
+            /// <summary>The one act the tool exists for: the rule, into the selection tree.</summary>
+            private UIElement Publish(Session session) =>
+                Ui.Runner("Publish as a Navisworks set", _results, job =>
                 {
                     var title = _name.Text.Trim();
 
@@ -209,7 +197,49 @@ namespace CamelWorks.UI.Views
                                   + "than one search, and Navisworks search sets can only hold one."));
                 });
 
-                return Ui.Actions(preview, save, publish);
+            /// <summary>
+            /// The stage: the rule as it stands, its dry run, and the sets already kept.
+            /// </summary>
+            private UIElement Stage(Session session)
+            {
+                var preview = Ui.Runner("Select what it catches", _results, primary: false, work: job =>
+                {
+                    var plan = DnfCompiler.Compile(Expression());
+
+                    _results.Children.Add(Ui.Line(plan.Explain(), 1, true));
+
+                    foreach (var warning in plan.Warnings) _results.Children.Add(Ui.Note(warning));
+
+                    if (plan.MatchesNothing)
+                    {
+                        _results.Children.Add(Ui.Empty("Matches nothing.",
+                            "The rule contradicts itself — a condition and its negation are both required."));
+                        return;
+                    }
+
+                    job.Say("Searching...");
+                    var outcome = session.Search.Run(plan);
+
+                    _results.Children.Add(Ui.Line(Ui.Count(outcome.Count, "element") + " found", 1, true));
+
+                    foreach (var note in outcome.Notes.Skip(plan.Warnings.Count))
+                        _results.Children.Add(Ui.Note(note));
+
+                    if (outcome.Count > 0) session.Model.Select(outcome.Keys);
+                });
+
+                return Ui.Stack(
+                    Ui.Eyebrow("The rule"),
+                    _editor,
+                    Ui.Small("Groups are ORed together; conditions inside a group are ANDed. A negated "
+                             + "condition compiles to a subtraction rather than a not-equals — those are "
+                             + "different sets, because a host condition on a property an element does not "
+                             + "have matches nothing."),
+                    Ui.Actions(preview),
+                    _results,
+                    Alike(session),
+                    Ui.Eyebrow("Saved sets"),
+                    _saved);
             }
 
             private SetExpression Expression()
@@ -355,7 +385,7 @@ namespace CamelWorks.UI.Views
                                                  + "matching on that finds only the one you picked."));
                 });
 
-                var select = Ui.Runner("Select everything like it", found, work: job =>
+                var select = Ui.Runner("Select everything like it", found, primary: false, work: job =>
                 {
                     var chosen = ticks.Where(t => t.Box.IsChecked == true).Select(t => t.Facet).ToList();
 
@@ -380,67 +410,18 @@ namespace CamelWorks.UI.Views
                     session.Model.Select(outcome.Keys);
 
                     found.Children.Add(Ui.Line("Selected " + Ui.Count(outcome.Count, "element") + ".", 1, true));
-                    found.Children.Add(Ui.Small("Save it as a set above if it is worth keeping."));
+                    found.Children.Add(Ui.Small("Name it and save it to the project if it is worth keeping."));
 
                     session.Record(ActivityKind.Regroup,
                         "selected " + Ui.Count(outcome.Count, "element") + " like the one picked");
                 });
 
-                return Ui.Marked(Glyphs.Find, "Everything like this one",
-                    "Select one element, read what it carries, and tick what has to match.",
+                return Ui.Stack(
+                    Ui.Eyebrow("Everything like this one"),
                     Ui.Actions(read),
                     facets,
                     Ui.Actions(select),
                     found);
-            }
-
-            /// <summary>
-            /// The way to forty sets at once.
-            ///
-            /// This screen makes one set from an expression, which is the right tool for the set
-            /// you are thinking about now. It is the wrong tool for the six disciplines' worth a
-            /// job starts with, which arrive as a spreadsheet and want reading, not retyping.
-            /// </summary>
-            /// <summary>
-            /// The whole library at once, from the properties the model already carries.
-            ///
-            /// This screen builds one set from an expression, which is the right tool for the set
-            /// somebody is thinking about now. It is the wrong tool for the tree - four levels,
-            /// each reading its own property tab, with somewhere for the elements that carry
-            /// nothing and a list of what moved since the last revision. That wants a window.
-            /// </summary>
-            private UIElement Reshape()
-            {
-                var open = Ui.Button("Rebuild the tree from properties...", () =>
-                {
-                    var problem = ToolViews.Open("restructure");
-                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
-                });
-
-                return Ui.Stack(
-                    Ui.Eyebrow("The whole library at once"),
-                    Ui.Small("The Selection Tree is the shape the model was exported in, not the "
-                             + "shape the job is run in. Name the properties that describe the "
-                             + "project - level, discipline, system, package - and it builds the "
-                             + "library to match, keeps the recipe, and tells you what moved when "
-                             + "the next revision lands."),
-                    Ui.Actions(open));
-            }
-
-            private UIElement Schedule()
-            {
-                var open = Ui.Button("Open a schedule from a spreadsheet...", () =>
-                {
-                    var problem = ToolViews.Open("schedule");
-                    if (problem != null) _results.Children.Add(Ui.Problem(problem));
-                });
-
-                return Ui.Stack(
-                    Ui.Eyebrow("Many sets at once"),
-                    Ui.Small("Already have the sets as a spreadsheet - a row per condition, or a row "
-                             + "per set with a column per property? Read it rather than retyping it, "
-                             + "and run the same schedule again when the next revision lands."),
-                    Ui.Actions(open));
             }
 
             private void RedrawSaved(Session session)
@@ -534,7 +515,6 @@ namespace CamelWorks.UI.Views
             private readonly List<AppearanceLayer> _layers = new List<AppearanceLayer>();
             private readonly StackPanel _stack = Ui.Stack();
             private readonly StackPanel _results = Ui.Stack();
-            private readonly StackPanel _adder = Ui.Stack();
             private readonly StackPanel _foreign = Ui.Stack();
             private readonly StackPanel _travel = Ui.Stack();
 
@@ -544,33 +524,34 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
+                if (session == null)
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 _layers.AddRange(LayerStackJson.Read(session.Store.Section(ProjectStore.LayersSection)["stack"]));
 
                 Redraw(session);
-                BuildAdder(session);
 
-                // The stack is what this tab is, so it is not in a box: the layers, then the
-                // button that puts them on the model, then the two things you can do next.
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Eyebrow("Top of the list wins"),
-                    _stack,
-                    Actions(session),
-                    _results,
-                    _adder,
-                    Ui.Rule(),
-                    Elsewhere(session),
-                    Ui.Rule(),
-                    Travel(session)));
+                // The stack is what this tool is, so the stack is the stage: the layers in their
+                // precedence, what else is going on that they do not account for, and everything a
+                // run reports. Making a layer is setup; putting the stack on the model is the foot.
+                return Bench.Surface(
+                    Ui.Stack(Adder(session), Travel(session)),
+                    Apply(session),
+                    Stage(session));
             }
 
             /// <summary>
             /// The scheme, off this model and onto another one.
             ///
-            /// Everything else on this tab is better than the host at deciding what a federation
+            /// Everything else on this tool is better than the host at deciding what a federation
             /// looks like, and none of it could leave the document. A scheme agreed in a workshop
             /// is an afternoon's work that lived in one person's Navisworks and died with it.
+            ///
+            /// The identity is tried first and the name second, because a key does not survive a
+            /// re-export — and how each element was found is reported, since found-by-name is a
+            /// guess. Hidden elements travel only by choice: a colour scheme is a way of reading a
+            /// model, a hidden element is a claim that something should not be looked at, and
+            /// somebody taking the first rarely wants the second.
             /// </summary>
             private UIElement Travel(Session session)
             {
@@ -583,25 +564,16 @@ namespace CamelWorks.UI.Views
                 var put = Ui.Runner("Bring a scheme in...", _travel, primary: false,
                                     work: job => Bring(session, job, options));
 
-                return Ui.Stack(
-                    Ui.Eyebrow("Somewhere else"),
-                    Ui.Small("Every override in this model, written down and replayed into another. "
-                             + "The identity is tried first and the name second, because a key does "
-                             + "not survive a re-export - and how each element was found is reported, "
-                             + "since found-by-name is a guess."),
-                    Ui.Form(
-                        Ui.Field("Call it", note),
-                        Ui.Check("Bring the colours", options.Colours, on => options.Colours = on),
-                        Ui.Check("Bring the transparency", options.Transparency,
-                                 on => options.Transparency = on),
-                        Ui.Check("Bring what was hidden", options.Hidden, on => options.Hidden = on),
-                        Ui.Small("A colour scheme is a way of reading a model; a hidden element is a "
-                                 + "claim that something should not be looked at. Somebody taking the "
-                                 + "first rarely wants the second."),
-                        Ui.Check("Fall back to the element's name", options.ByPath,
-                                 on => options.ByPath = on)),
-                    Ui.Actions(take, put),
-                    _travel);
+                return Bench.Group("Somewhere else",
+                    Ui.Field("Call it", note),
+                    Ui.Check("Bring the colours", options.Colours, on => options.Colours = on),
+                    Ui.Check("Bring the transparency", options.Transparency,
+                             on => options.Transparency = on),
+                    Ui.Check("Bring what was hidden", options.Hidden, on => options.Hidden = on),
+                    Ui.Check("Fall back to the element's name", options.ByPath,
+                             on => options.ByPath = on),
+                    take,
+                    put);
             }
 
             /// <summary>Every element's appearance, read in chunks so Stop means something.</summary>
@@ -759,51 +731,12 @@ namespace CamelWorks.UI.Views
                     "brought in an appearance scheme: " + match.Explain());
             }
 
-            private UIElement Actions(Session session)
+            /// <summary>
+            /// The stage: the stack in its precedence, what no layer accounts for, and where every
+            /// run — apply, reset, scan, travel — reports.
+            /// </summary>
+            private UIElement Stage(Session session)
             {
-                var apply = Ui.Runner("Apply the stack", _results, job =>
-                {
-                    job.Say("Resolving layers...");
-
-                    var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
-
-                    job.Say("Reading what the model looks like now...");
-
-                    var keys = fold.Elements.Select(e => e.Key).ToList();
-                    var current = session.View.ReadAppearance(keys);
-
-                    var plan = AppearancePlanner.Plan(fold, current);
-
-                    _results.Children.Add(Ui.Line(fold.ToString(), 1, true));
-                    _results.Children.Add(Ui.Line(plan.Explain(), 0.8));
-
-                    if (plan.Foreign.Count > 0)
-                        _results.Children.Add(Ui.Note(Ui.Count(plan.Foreign.Count, "element")
-                            + " carry an override CamelWorks did not author. They are left exactly as they are: "
-                            + "clearing somebody else's work because it was in the way is how a tool loses trust."));
-
-                    if (plan.IsEmpty)
-                    {
-                        _results.Children.Add(Ui.Empty("Nothing to change.",
-                            "The model already looks the way this stack says it should."));
-                    }
-                    else
-                    {
-                        job.Say("Applying...");
-                        Execute(session, plan);
-
-                        _results.Children.Add(Ui.Done("Applied."));
-                        session.Record(ActivityKind.Appearance, "applied the appearance stack: " + plan.Explain());
-                    }
-
-                    foreach (var report in fold.Layers.Where(l => l.IsDead))
-                        _results.Children.Add(Ui.Note("\"" + report.Layer.Name + "\" covers "
-                            + Ui.Count(report.Covers, "element") + " and decides nothing about any of them — "
-                            + "every property it sets is overruled by a layer above it."));
-
-                    Explain(session, fold);
-                });
-
                 var save = Ui.Button("Save the stack", () =>
                 {
                     _results.Children.Clear();
@@ -857,8 +790,59 @@ namespace CamelWorks.UI.Views
                             + "but still coloured, because that colour is somebody else's work."));
                 });
 
-                return Ui.Across(apply, save, reset);
+                return Ui.Stack(
+                    Ui.Eyebrow("Top of the list wins"),
+                    _stack,
+                    Ui.Actions(save, reset),
+                    _results,
+                    Elsewhere(session),
+                    _travel);
             }
+
+            /// <summary>The foot: the stack, resolved, planned and put onto the model.</summary>
+            private UIElement Apply(Session session) =>
+                Ui.Runner("Apply the stack", _results, job =>
+                {
+                    job.Say("Resolving layers...");
+
+                    var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
+
+                    job.Say("Reading what the model looks like now...");
+
+                    var keys = fold.Elements.Select(e => e.Key).ToList();
+                    var current = session.View.ReadAppearance(keys);
+
+                    var plan = AppearancePlanner.Plan(fold, current);
+
+                    _results.Children.Add(Ui.Line(fold.ToString(), 1, true));
+                    _results.Children.Add(Ui.Line(plan.Explain(), 0.8));
+
+                    if (plan.Foreign.Count > 0)
+                        _results.Children.Add(Ui.Note(Ui.Count(plan.Foreign.Count, "element")
+                            + " carry an override CamelWorks did not author. They are left exactly as they are: "
+                            + "clearing somebody else's work because it was in the way is how a tool loses trust."));
+
+                    if (plan.IsEmpty)
+                    {
+                        _results.Children.Add(Ui.Empty("Nothing to change.",
+                            "The model already looks the way this stack says it should."));
+                    }
+                    else
+                    {
+                        job.Say("Applying...");
+                        Execute(session, plan);
+
+                        _results.Children.Add(Ui.Done("Applied."));
+                        session.Record(ActivityKind.Appearance, "applied the appearance stack: " + plan.Explain());
+                    }
+
+                    foreach (var report in fold.Layers.Where(l => l.IsDead))
+                        _results.Children.Add(Ui.Note("\"" + report.Layer.Name + "\" covers "
+                            + Ui.Count(report.Covers, "element") + " and decides nothing about any of them — "
+                            + "every property it sets is overruled by a layer above it."));
+
+                    Explain(session, fold);
+                });
 
             /// <summary>
             /// Everything the model is in that this stack did not ask for.
@@ -877,7 +861,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Elsewhere(Session session)
             {
-                var scan = Ui.Runner("Scan the model", _foreign, job =>
+                var scan = Ui.Runner("Scan the model", _foreign, primary: false, work: job =>
                 {
                     _picked = null;
 
@@ -950,10 +934,8 @@ namespace CamelWorks.UI.Views
                     _foreign.Children.Add(Ui.Across(SelectButton(session), AdoptButton(session), PutBackButton(session)));
                 });
 
-                return Ui.Marked(Glyphs.Find, "What else is going on",
-                    "Everything hidden or overridden that no layer above accounts for. Reading it is a "
-                    + "pass over the whole federation, so it happens when you ask rather than every "
-                    + "time this opens.",
+                return Ui.Stack(
+                    Ui.Eyebrow("What else is going on"),
                     scan,
                     _foreign);
             }
@@ -1022,8 +1004,8 @@ namespace CamelWorks.UI.Views
                 var appearance = fold.For(selected[0]);
                 if (appearance == null) return;
 
-                _results.Children.Add(Ui.Card("The selected element",
-                    "Why it looks the way it does.", Ui.Line(appearance.Explain(), 0.85)));
+                _results.Children.Add(Ui.Eyebrow("The selected element"));
+                _results.Children.Add(Ui.Line(appearance.Explain(), 0.85));
             }
 
             private void Redraw(Session session)
@@ -1144,7 +1126,8 @@ namespace CamelWorks.UI.Views
                 Redraw(session);
             }
 
-            private void BuildAdder(Session session)
+            /// <summary>A new layer: hidden or coloured, over whatever it is pointed at.</summary>
+            private UIElement Adder(Session session)
             {
                 var name = Ui.Text("New layer", null, 170);
                 var note = Ui.Text(string.Empty, null, 240);
@@ -1214,15 +1197,14 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                _adder.Children.Add(Ui.Section("Add a layer",
-                    "hidden or coloured, over whatever you point it at", false,
-                    Ui.Form(
-                        Ui.Pair(Ui.Field("Name", name), Ui.Field("Covers", source)),
-                        Ui.Pair(Ui.Field("Visibility", visibility),
-                                Ui.Field("Colour (#rrggbb)", colour)),
-                        Ui.Pair(Ui.Field("Transparency (0-1)", transparency),
-                                Ui.Field("Why", note))),
-                    add));
+                return Bench.Group("Add a layer",
+                    Ui.Field("Name", name),
+                    Ui.Field("Covers", source),
+                    Ui.Field("Visibility", visibility),
+                    Ui.Field("Colour (#rrggbb)", colour),
+                    Ui.Field("Transparency (0-1)", transparency),
+                    Ui.Field("Why", note),
+                    add);
             }
         }
 
@@ -1252,7 +1234,8 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
+                if (session == null)
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 Redraw(session);
 
@@ -1265,21 +1248,27 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Scroll(Ui.Stack(
+                // The table is the stage: what the document holds, and where every batch reports.
+                // Each verb keeps its own inputs and its own runner, grouped in the setup column,
+                // and acts on what is ticked in the table — or on everything, deleting excepted.
+                var generate = Generate(session);
+
+                return Bench.Surface(
+                    Ui.Stack(
+                        Rename(session),
+                        Refolder(session),
+                        Render(session),
+                        CopyOverrides(session),
+                        generate.Setup,
+                        Walkthrough(session),
+                        Sweep(session)),
                     save,
-                    _list,
-                    Ui.Small("Tick the ones to act on. With nothing ticked, everything below acts on "
-                             + "all of them — except deleting, which never does."),
-                    Rename(session),
-                    Refolder(session),
-                    Render(session),
-                    CopyOverrides(session),
-                    Sweep(session),
-                    _results,
-                    Ui.Rule(),
-                    Generate(session),
-                    Ui.Rule(),
-                    Walkthrough(session)));
+                    Ui.Stack(
+                        _list,
+                        Ui.Small("Tick the ones to act on. With nothing ticked, the verbs in the "
+                                 + "column act on all of them — except deleting, which never does."),
+                        _results,
+                        generate.Stage));
             }
 
             /// <summary>
@@ -1290,8 +1279,12 @@ namespace CamelWorks.UI.Views
             /// nobody does, which is why a review is one person driving and everybody else watching.
             /// Renaming forty viewpoints is a nuisance; not having them is the reason there is
             /// nothing to rename.
+            ///
+            /// Split across the surface: the recipe's inputs are a setup group, and the two-stage
+            /// commit — show what it would make, then make it — leads its part of the stage,
+            /// because the list of names it proposes is a result.
             /// </summary>
-            private UIElement Generate(Session session)
+            private (UIElement Setup, UIElement Stage) Generate(Session session)
             {
                 var recipe = new ViewpointRecipe();
 
@@ -1351,16 +1344,18 @@ namespace CamelWorks.UI.Views
                     },
                     apply: job => Capture(session, run, recipe, job));
 
-                return Ui.Marked(Glyphs.Camera, "Make one for each element",
-                    "Select what the walkthrough is about, and get a numbered viewpoint framed on "
-                    + "every one of them. Nothing has to be set up first.",
-                    Ui.Form(
+                return (
+                    Bench.Group("Make one for each element",
                         Ui.Field("Name them", pattern, "{n} is the number, {name} is the element's own name."),
-                        Ui.Pair(Ui.Field("Start at", start), Ui.Field("Digits", padding)),
-                        Ui.Pair(Ui.Field("Look from", from), Ui.Field("Room around (m)", margin)),
-                        Ui.Field("Put them in folder", folder)),
-                    section,
-                    make);
+                        Ui.Field("Start at", start),
+                        Ui.Field("Digits", padding),
+                        Ui.Field("Look from", from),
+                        Ui.Field("Room around (m)", margin),
+                        Ui.Field("Put them in folder", folder),
+                        section),
+                    Ui.Stack(
+                        Ui.Eyebrow("Make one for each element"),
+                        make));
             }
 
             /// <summary>What is selected, with each element's own name, in tree order.</summary>
@@ -1486,15 +1481,10 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Section("Rename them",
-                    () => pattern.Text.Replace("{n}", start.Text.PadLeft(2, '0'))
-                                      .Replace("{name}", "Riser at core")
-                                      .Replace("{folder}", "Coordination"),
-                    false,
-                    Ui.Form(Ui.Pair(
-                        Ui.Field("Pattern", pattern, "{n} the number, {name} the current name, "
-                                                     + "{folder} the folder"),
-                        Ui.Field("Start at", start))),
+                return Bench.Group("Rename them",
+                    Ui.Field("Pattern", pattern, "{n} the number, {name} the current name, "
+                                                 + "{folder} the folder"),
+                    Ui.Field("Start at", start),
                     run);
             }
 
@@ -1553,9 +1543,9 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Section("File them into a folder", () => into.Text.Trim(), false,
-                    Ui.Form(Ui.Field("Into folder", into, "made if it is not there; one already in "
-                                                          + "it is left where it is")),
+                return Bench.Group("File them into a folder",
+                    Ui.Field("Into folder", into, "made if it is not there; one already in "
+                                                  + "it is left where it is"),
                     move);
             }
 
@@ -1650,11 +1640,10 @@ namespace CamelWorks.UI.Views
                     session.Record(ActivityKind.Export, "rendered " + Ui.Count(written, "viewpoint"));
                 });
 
-                return Ui.Section("Render them to images", () => _size, false,
-                    Ui.Form(Ui.Pair(
-                        Ui.PathField("Write into", into, PathKind.Folder,
-                                     hint: "blank writes them to your documents"),
-                        Ui.Field("Size", size))),
+                return Bench.Group("Render them to images",
+                    Ui.PathField("Write into", into, PathKind.Folder,
+                                 hint: "blank writes them to your documents"),
+                    Ui.Field("Size", size),
                     render,
                     Ui.Small("The camera goes back where it was when the run finishes."));
             }
@@ -1738,8 +1727,8 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Section("Copy overrides onto the rest", "from " + names[0], false,
-                    Ui.Form(Ui.Field("Take them from", source)),
+                return Bench.Group("Copy overrides onto the rest",
+                    Ui.Field("Take them from", source),
                     copy,
                     Ui.Note("Rewriting a saved viewpoint replaces its redlines with the source's. That is "
                             + "the host's own behaviour and there is no call that avoids it, so a viewpoint "
@@ -1797,7 +1786,7 @@ namespace CamelWorks.UI.Views
                     }));
                 });
 
-                return Ui.Section("Delete them", "asks once more first", false, ask, status).Grave();
+                return Bench.Group("Delete them", ask, status);
             }
 
             /// <summary>
@@ -1816,7 +1805,7 @@ namespace CamelWorks.UI.Views
                 var folder = Ui.Text("Coordination", null, 180);
                 var pattern = Ui.Text("{n}. {group}", null, 200);
 
-                var make = Ui.Runner("Save one per group on the board", _results, job =>
+                var make = Ui.Runner("Save one per group on the board", _results, primary: false, work: job =>
                 {
                     var board = CoordinateViews.LastBoard;
 
@@ -1874,14 +1863,11 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                return Ui.Marked(Glyphs.Camera, "A viewpoint per issue",
-                    "The walkthrough a coordination meeting is actually run from: one saved view per "
-                    + "group on the board, framed on the group.",
-                    Ui.Form(Ui.Pair(
-                        Ui.Field("Folder", folder),
-                        Ui.Field("Name pattern", pattern,
-                                 "like \"01. Duct through transfer beam\" — {n} number, {group} "
-                                 + "group, {who} party, {count} clashes"))),
+                return Bench.Group("A viewpoint per issue",
+                    Ui.Field("Folder", folder),
+                    Ui.Field("Name pattern", pattern,
+                             "like \"01. Duct through transfer beam\" — {n} number, {group} "
+                             + "group, {who} party, {count} clashes"),
                     make,
                     Ui.Small("Each one carries the overrides that were in force when it was made. If "
                              + "you want them clean, apply the Appearance stack you want first and "
@@ -1925,8 +1911,8 @@ namespace CamelWorks.UI.Views
                 _table = table;
 
                 // The bar, with no buttons on it. Every action here - rename, re-folder, render,
-                // delete - is its own section further down, because each needs its own inputs, and
-                // each already works on what is ticked or on everything when nothing is. What was
+                // delete - is its own group in the setup column, because each needs its own inputs,
+                // and each already works on what is ticked or on everything when nothing is. What was
                 // missing is the part that says how many are ticked and lets somebody tick or
                 // clear the lot without dragging down two hundred rows.
                 _list.Children.Add(Ui.Picking(table));

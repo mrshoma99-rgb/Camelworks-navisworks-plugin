@@ -106,7 +106,7 @@ namespace CamelWorks.UI.Views
 
                 // No finish button of its own: the last step carries Ui.Commit, which is the
                 // two-stage "show me, then do it" this has always used.
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
             // ---------------------------------------------------------------------------------
@@ -116,10 +116,7 @@ namespace CamelWorks.UI.Views
             private UIElement Source() =>
                 Ui.Stack(
                     Ui.Eyebrow("The spreadsheet"),
-                    _sheet.Picker(),
-                    Ui.Small("Nobody's matrix is laid out like anybody else's, so nothing is assumed "
-                             + "about where things are. The preview below is the sheet as it stands; "
-                             + "read the row and column numbers off it and fill them in."));
+                    _sheet.Picker());
 
             private UIElement Preview() =>
                 Ui.Stack(Ui.Eyebrow("The sheet as it stands"), _sheet.Preview());
@@ -136,9 +133,7 @@ namespace CamelWorks.UI.Views
                             Number("First grid column", _mapping.FirstBodyColumn, v => _mapping.FirstBodyColumn = v)),
                     Ui.Pair(Number("Numbers across the top", _mapping.HeaderNumberRow, v => _mapping.HeaderNumberRow = v),
                             Number("Sets across the top", _mapping.HeaderSetRow, v => _mapping.HeaderSetRow = v)),
-                    Ui.Small("A zero means the sheet does not have that one. The columns across the "
-                             + "top are matched back to the categories down the side by number, then "
-                             + "by set name - never by position, so a spacer column costs nothing."));
+                    Ui.Small("Zero means the sheet does not have that one."));
 
                 var read = Ui.Runner("Read the matrix", _warnings, Read);
 
@@ -273,10 +268,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _grid.Children.Add(table);
-                _grid.Children.Add(Ui.Small("Only the top half is editable: the bottom half is the "
-                                            + "same pair seen from the other side. The diagonal is a "
-                                            + "category against itself, which finds the duct running "
-                                            + "through its own hanger."));
+                _grid.Children.Add(Ui.Small("Top half only; the diagonal is a category against itself."));
             }
 
             private static string Short(MatrixCategory category) =>
@@ -322,10 +314,7 @@ namespace CamelWorks.UI.Views
                     _legendRows.Children.Add(row);
                 }
 
-                _legendRows.Children.Add(Ui.Small("A symbol nobody has described arrives as an "
-                                                  + "ordinary hard clash, so a sheet reads before its "
-                                                  + "key has been typed in. Correct the ones that are "
-                                                  + "not hard clashes."));
+                _legendRows.Children.Add(Ui.Small("An undescribed symbol reads as a hard clash."));
             }
 
             private static TextBlock Frozen(string text)

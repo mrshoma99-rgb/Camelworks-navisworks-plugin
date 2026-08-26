@@ -207,7 +207,7 @@ namespace CamelWorks.UI.Views
                 // No finish button of its own: the last step carries Ui.Commit, which is the
                 // two-stage "show me, then do it" this write has always used. A third button
                 // above it saying the same thing and doing nothing would be worse than none.
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
 

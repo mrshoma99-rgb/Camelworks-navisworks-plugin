@@ -691,15 +691,6 @@ namespace CamelWorks.UI.Views
             private readonly ComboBox _preset;
 
             /// <summary>
-            /// The two filters, hidden until there is something to filter.
-            ///
-            /// A pair of empty boxes over an empty list is the screen telling somebody to fill in a
-            /// form before it will show them anything, which is precisely backwards: they are
-            /// controls over a result, and until the result exists they are furniture.
-            /// </summary>
-            private readonly Border _filters;
-
-            /// <summary>
             /// The results this run found back again, by reference.
             ///
             /// A regression is not a status. Carry-over sets a returning result to Active — it has
@@ -729,9 +720,6 @@ namespace CamelWorks.UI.Views
             {
                 _search = Ui.Text(string.Empty, _ => Redraw(), 220);
                 _preset = Ui.Choice(new[] { All, Unassigned, Changed, Mine }, All, _ => Redraw(), 170);
-
-                _filters = Ui.Form(Ui.Pair(Ui.Field("Show", _preset), Ui.Field("Find", _search)));
-                _filters.Visibility = Visibility.Collapsed;
             }
 
             internal UIElement Build()
@@ -764,14 +752,11 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 });
 
-                // No card around the board. The board is what this tab is - wrapping it in a
-                // titled box to sit beside three other titled boxes was what made four unrelated
-                // things look like four equals.
                 // The undo is for the whole board, not for a group, and it used to live inside the
                 // panel that opens when you pick a row — so a user who applied a BCF reply, and
                 // was told by BCF to come here for it, had to load the board and click an
-                // arbitrary issue to find it.
-                var undo = Ui.Button("Undo the last board edit", () =>
+                // arbitrary issue to find it. It sits on the stage under the figures it rewinds.
+                var undo = Ui.Quiet("Undo the last board edit", () =>
                 {
                     var session = Host.Current;
                     if (session == null) return;
@@ -786,26 +771,41 @@ namespace CamelWorks.UI.Views
                                      ?? "There is no earlier version of the board to go back to."));
                 });
 
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Actions(run, undo),
-                    _summary,
-                    _filters,
-                    _state,
-                    _rows,
-                    _detail,
-                    Ui.Rule(),
-                    new RaiseScreen().Build(),
-                    FreezeScreen()));
+                // Before the first load the stage says what the one action reads; the runner
+                // clears the panel on press, so the statement never sits over a result.
+                _summary.Children.Add(Bench.Ready(
+                    "Loading the board reads every clash test and runs the project's rules over "
+                    + "the results.",
+                    "What is new, what came back, and who owns what all land here."));
+
+                var raise = new RaiseScreen();
+
+                // The board is the stage — the filters and the raise form are the only inputs,
+                // so they are the setup column, and the one action is the Monday load.
+                return Bench.Surface(
+                    Ui.Stack(
+                        Bench.Group("Show",
+                            Ui.Field("Show", _preset),
+                            Ui.Field("Find", _search)),
+                        raise.Setup()),
+                    run,
+                    Ui.Stack(
+                        _summary,
+                        Ui.Actions(undo),
+                        _state,
+                        _rows,
+                        _detail,
+                        raise.Stage()));
             }
 
             /// <summary>
-            /// What changed since the last run, and — folded away — how the board was arrived at.
+            /// What changed since the last run, and how the board was arrived at.
             ///
             /// The four figures at the top are the four the meeting is about: what is new, what
             /// came back, what went away, and what nobody owns. The funnel that produced them —
             /// results in, rules applied, results suppressed — is provenance. It answers "why is
             /// this number what it is", which is a real question and never the first one, so it
-            /// sits behind a disclosure instead of above the answer.
+            /// prints last, under its own label, after the answer.
             /// </summary>
             private void Summarise()
             {
@@ -908,19 +908,19 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                _summary.Children.Add(Ui.Section("How this board was made",
-                    funnel.Input.ToString("N0", CultureInfo.InvariantCulture) + " results in, "
-                    + funnel.Groups.ToString("N0", CultureInfo.InvariantCulture) + " issues out", false,
-                    Ui.Across(
-                        Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                        Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed"),
-                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into")),
-                    Ui.Line(funnel.ToString(), 0.8),
-                    funnel.RulesApplied.Count == 0 ? null
-                        : Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7)));
+                _summary.Children.Add(Ui.Eyebrow("How this board was made"));
+
+                _summary.Children.Add(Ui.Across(
+                    Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
+                    Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed"),
+                    Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into")));
+
+                _summary.Children.Add(Ui.Line(funnel.ToString(), 0.8));
+
+                if (funnel.RulesApplied.Count > 0)
+                    _summary.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7));
 
                 _counted = BoardEdits;
-                _filters.Visibility = Visibility.Visible;
             }
 
             /// <summary>Which preset is in force.</summary>
@@ -1140,17 +1140,23 @@ namespace CamelWorks.UI.Views
         ///
         /// It had a ribbon button of its own and that button opened Clash Triage, because Headroom
         /// was a card on the Clash Tests screen and the route pointed at the nearest tab. It is
-        /// the same card; it just answers its own button now.
+        /// the same tool; it just answers its own button, on its own bench, now.
         /// </summary>
         /// <remarks>
         /// Named ClearHeight rather than Headroom because the Core type that does the work is
         /// called Headroom, and a member of the same name in a file that imports it shadows it.
         /// </remarks>
-        public static UIElement ClearHeight() => Ui.Scroll(Ui.Stack(HeadroomCard()));
+        public static UIElement ClearHeight() => HeadroomCard();
 
         private static UIElement HeadroomCard()
         {
             var results = Ui.Stack();
+
+            results.Children.Add(Bench.Ready(
+                "Measures the clear height above every walkable surface and lists where the "
+                + "minimum is not there.",
+                "A duct 1.9 m over a corridor clashes with nothing — this is the check that "
+                + "finds it."));
 
             var floors = "Floors and slabs";
             var targets = "Everything else";
@@ -1265,15 +1271,15 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Regroup, "checked clear height: " + found);
             });
 
-            return Ui.Marked(Glyphs.Layers, "Clear height",
-                "The check a clash test cannot do: a duct 1.9 m above a corridor clashes with nothing.",
-                Ui.Form(Ui.Field("Minimum clear height (" + Unit() + ")", minimum)),
-                run,
-                Ui.Section("What counts as a floor", "Floors and slabs, under everything else", false,
-                    Ui.Form(
+            return Bench.Surface(
+                Ui.Stack(
+                    Bench.Group("",
+                        Ui.Field("Minimum clear height (" + Unit() + ")", minimum)),
+                    Bench.Group("What counts as a floor",
                         Ui.Field("Surfaces", floorPicker),
                         Ui.Field("Look above at", targetPicker))),
-                results);
+                run,
+                Ui.Stack(results));
         }
 
         /// <summary>
@@ -1349,16 +1355,21 @@ namespace CamelWorks.UI.Views
             var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
             var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
 
-            return Ui.Stack(
-                FrozenState(),
-                Ui.Form(
-                    Ui.Field("What is being frozen", scope),
-                    Ui.Pair(Ui.Field("Signed by", signatory), Ui.Field("Release reference", release))),
+            results.Children.Add(Bench.Ready(
+                "Records where every element on the board is, right now.",
+                "Nothing edits the record afterwards - which is what makes it worth signing."));
+
+            return Bench.Surface(
+                Ui.Stack(
+                    Bench.Group("",
+                        Ui.Field("What is being frozen", scope),
+                        Ui.Field("Signed by", signatory),
+                        Ui.Field("Release reference", release))),
                 Ui.Runner("Freeze what is on the board", results,
                           job => DoFreeze(results, scope, signatory, release, job)),
-                Ui.Small("A freeze records where every element on the board is, right now. Nothing "
-                         + "edits it afterwards - which is what makes it worth signing."),
-                results);
+                Ui.Stack(
+                    FrozenState(),
+                    results));
         }
 
         /// <summary>
@@ -1370,12 +1381,16 @@ namespace CamelWorks.UI.Views
         {
             var results = Ui.Stack();
 
-            return Ui.Stack(
-                FrozenState(),
+            results.Children.Add(Bench.Ready(
+                "Says what has moved since somebody put their name to the freeze.",
+                "Measured against the freeze, not against last week."));
+
+            return Bench.Surface(
+                null,
                 Ui.Runner("Write the change notice", results, job => DoNotice(results, job)),
-                Ui.Small("Measured against the freeze, not against last week: a notice says what "
-                         + "moved since somebody put their name to it."),
-                results);
+                Ui.Stack(
+                    FrozenState(),
+                    results));
         }
 
         /// <summary>Record where everything on the board is, right now.</summary>
@@ -1825,10 +1840,13 @@ namespace CamelWorks.UI.Views
                 Redraw(table, group);
             });
 
-            return Ui.Card(group.Name,
-                Ui.Count(group.Items.Count, "clash")
-                + (group.Items.Count > DetailCap ? ", first " + DetailCap + " shown" : string.Empty)
-                + (group.IsPinned ? " - made by hand" : string.Empty),
+            // An eyebrow rather than a card: the detail is stage content under the board, and the
+            // group's name is a label over it, not a box beside three other boxes.
+            return Ui.Stack(
+                Ui.Eyebrow(group.Name),
+                Ui.Line(Ui.Count(group.Items.Count, "clash")
+                    + (group.Items.Count > DetailCap ? ", first " + DetailCap + " shown" : string.Empty)
+                    + (group.IsPinned ? " - made by hand" : string.Empty), 0.75),
                 Ui.Field("Assign to", picker),
                 Ui.Across(assign, release),
                 Ui.Field("What to do", verbPicker),
@@ -1993,7 +2011,11 @@ namespace CamelWorks.UI.Views
             private string? _party;
             private string _priority = "Medium";
 
-            internal UIElement Build()
+            /// <summary>
+            /// The inputs, as a setup group: the sentence, its owner, and the one act. Empty before
+            /// a model is open, because there is nothing to raise an issue against.
+            /// </summary>
+            internal UIElement Setup()
             {
                 var session = Host.Current;
                 if (session == null) return Ui.Stack();
@@ -2007,21 +2029,18 @@ namespace CamelWorks.UI.Views
 
                 Redraw(session);
 
-                return Ui.Section("Raise an issue", "For what the clash engine cannot see", false,
-                    Ui.Small("It joins the board and behaves like everything else on it."),
-                    Ui.Form(
-                        Ui.Field("What is wrong", _title),
-                        Ui.Field("More", _note),
-                        Ui.Pair(
-                            Ui.Field("Who", who),
-                            Ui.Field("Priority", how))),
-                    Ui.Actions(Ui.Primary("Raise it against the selection", () => Raise(session))),
-                    Ui.Note("The elements come from what is selected in the model right now. Select the "
-                            + "door and the corridor, not the whole level — a viewpoint that opens on "
-                            + "half a building tells the reader nothing."),
-                    _status,
-                    _list);
+                return Bench.Group("Raise an issue",
+                    Ui.Field("What is wrong", _title),
+                    Ui.Field("More", _note),
+                    Ui.Field("Who", who),
+                    Ui.Field("Priority", how),
+                    Ui.Actions(Ui.Button("Raise it against the selection", () => Raise(session))),
+                    Ui.Small("The elements come from what is selected in the model right now. "
+                             + "Select the door and the corridor, not the whole level."));
             }
+
+            /// <summary>The raised issues and the last act's answer, for the board's stage.</summary>
+            internal UIElement Stage() => Ui.Stack(_status, _list);
 
             private void Raise(Session session)
             {
@@ -2329,28 +2348,95 @@ namespace CamelWorks.UI.Views
                 _session = Host.Current;
 
                 if (_session == null)
-                    return Ui.Scroll(Ui.Stack(Ui.Heading("Tests"), Ui.Sub(Host.NoModel)));
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 if (!_session.Clash.IsAvailable)
-                    return Ui.Scroll(Ui.Stack(
-                        Ui.Heading("Tests"),
-                        Ui.Note(_session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Note(
+                        _session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
 
                 Redraw();
 
-                // Headroom sits here rather than on the board. It is a test - it is run to produce
-                // findings, exactly like a clash test - and it was on Triage only because its
-                // findings look like clashes. What a screen is for is the act, not the output.
-                //
-                // _runs is inside _list because that is where the button that fills it is; the
-                // matrix keeps _results inside its own card for the same reason. An answer at the
-                // top of a panel, produced by a button at the bottom of it, is off screen at the
-                // moment it arrives.
-                return Ui.Scroll(Ui.Stack(
+                // The one action is the Monday one: six models landed, run everything again. The
+                // setup column holds the matrix builder - the way tests get made without an
+                // afternoon in Add Test - and the stage holds the tests as they stand, with
+                // everything a run or a build produces landing under them.
+                var canEdit = _session.Clash.CanEdit;
+
+                var foot = canEdit
+                    ? Ui.Runner("Run them", _runs, job => Run(_session!.Clash.Tests(), job))
+                    : null;
+
+                return Bench.Surface(Setup(canEdit), foot, Ui.Stack(
                     _list,
-                    Ui.Rule(),
-                    Matrix(),
-                    HeadroomCard()));
+                    _runs,
+                    _grid,
+                    _results));
+            }
+
+            /// <summary>
+            /// The setup column: the matrix builder, its naming, and the spreadsheet way in.
+            /// </summary>
+            private UIElement Setup(bool canEdit)
+            {
+                var axes = new[] { ByDiscipline, ByModel };
+
+                var rows = Ui.Choice(axes, _rows, pick => _rows = pick);
+                var columns = Ui.Choice(axes, _columns, pick => _columns = pick);
+                var diagonal = Ui.Check("Include each side against itself", _selfPairs, v => _selfPairs = v);
+
+                var grid = Ui.Runner("Show me the grid", _grid, primary: false, work: job => Plan());
+
+                var sheet = Ui.Quiet("Read their spreadsheet...", () =>
+                {
+                    var problem = ToolViews.Open("matrix");
+                    if (problem != null) _grid.Children.Add(Ui.Problem(problem));
+                });
+
+                return Ui.Stack(
+                    Bench.Group("Build a matrix",
+                        Ui.Field("Rows", rows),
+                        Ui.Field("Columns", columns),
+                        diagonal,
+                        canEdit ? grid : null),
+                    Bench.Group("How the tests are made",
+                        Ui.Field("Name pattern", _pattern),
+                        Ui.Field("Tolerance (m)", _tolerance),
+                        Ui.Field("Put them in folder", _folder,
+                                 "Empty keeps them beside the existing tests.")),
+                    Bench.Group("Already drawn by the client?",
+                        Ui.Small("A matrix that arrives as a spreadsheet, with its own symbols "
+                                 + "and a different tolerance per cell, opens in its own reader."),
+                        sheet));
+            }
+
+            /// <summary>Work out the grid the axes imply, onto the stage.</summary>
+            private void Plan()
+            {
+                _plan = null;
+
+                var session = _session;
+                if (session == null) return;
+
+                var a = Sides(session, _rows);
+                var b = Sides(session, _columns);
+
+                if (a.Count == 0 || b.Count == 0)
+                {
+                    _grid.Children.Add(Ui.Empty("Nothing to pair up.",
+                        "No models are loaded, so there is nothing on either axis."));
+                    return;
+                }
+
+                var plan = ClashMatrix.Build(a, b, new MatrixOptions
+                {
+                    Tolerance = Metres(_tolerance.Text),
+                    SelfPairs = _selfPairs,
+                    NamePattern = _pattern.Text,
+                    Existing = session.Clash.Tests().Select(t => t.Name).ToList(),
+                });
+
+                _plan = plan;
+                Show(plan);
             }
 
             /// <summary>The tests as they stand, and the one action worth having beside them.</summary>
@@ -2397,90 +2483,9 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Copy {n}",
                         (picked, say) => Ui.Copy(Ui.Lines(tested, picked), say, "test"))));
 
-                if (session.Clash.CanEdit)
-                {
-                    // The Monday task is "six models landed, run everything again", and the only
-                    // run control used to be the one for tests that had never run at all.
-                    _list.Children.Add(Ui.Runner("Run all " + Ui.Count(tests.Count, "test"), _runs,
-                        job => Run(tests, job)));
-
-                    if (stale.Count > 0)
-                        _list.Children.Add(Ui.Runner("Run only the " + stale.Count + " that never have",
-                            _runs, primary: false, work: job => Run(stale, job)));
-                }
-
-                _list.Children.Add(_runs);
-            }
-
-            /// <summary>The builder.</summary>
-            private UIElement Matrix()
-            {
-                var axes = new[] { ByDiscipline, ByModel };
-
-                var rows = Ui.Choice(axes, _rows, pick => _rows = pick);
-                var columns = Ui.Choice(axes, _columns, pick => _columns = pick);
-                var diagonal = Ui.Check("Include each side against itself", _selfPairs, v => _selfPairs = v);
-
-                var build = Ui.Runner("Show me the grid", _grid, primary: false, work: job =>
-                {
-                    _plan = null;
-
-                    var session = _session;
-                    if (session == null) return;
-
-                    var a = Sides(session, _rows);
-                    var b = Sides(session, _columns);
-
-                    if (a.Count == 0 || b.Count == 0)
-                    {
-                        _grid.Children.Add(Ui.Empty("Nothing to pair up.",
-                            "No models are loaded, so there is nothing on either axis."));
-                        return;
-                    }
-
-                    var plan = ClashMatrix.Build(a, b, new MatrixOptions
-                    {
-                        Tolerance = Metres(_tolerance.Text),
-                        SelfPairs = _selfPairs,
-                        NamePattern = _pattern.Text,
-                        Existing = session.Clash.Tests().Select(t => t.Name).ToList(),
-                    });
-
-                    _plan = plan;
-                    Show(plan);
-                });
-
-                // The quick way stays here, in the pane, because it is genuinely quick: two lists
-                // and every pairing between them, with nothing to set up first. The full matrix -
-                // the one that comes from the client as a spreadsheet, with its own symbols and a
-                // different tolerance per cell - opens in a window, because a square of categories
-                // with a key beside it does not fit in a column four hundred and seventy pixels
-                // wide, and squeezing it in there is what turned it into two dropdowns.
-                var sheet = Ui.Button("Open the matrix from a spreadsheet...", () =>
-                {
-                    var problem = ToolViews.Open("matrix");
-                    if (problem != null) _grid.Children.Add(Ui.Problem(problem));
-                });
-
-                return Ui.Marked(Glyphs.Clash, "Build a matrix",
-                    "Two lists, every pairing between them, made in the engine in one go. Nothing has to "
-                    + "be set up first: the disciplines come from what CamelWorks already worked out about "
-                    + "the models that are loaded.",
-                    Ui.Form(Ui.Pair(Ui.Field("Rows", rows), Ui.Field("Columns", columns))),
-                    build,
-                    Ui.Section("How the tests are made",
-                        () => _pattern.Text + " at " + _tolerance.Text + " m", false,
-                        Ui.Form(
-                            Ui.Field("Name pattern", _pattern),
-                            Ui.Field("Tolerance (m)", _tolerance),
-                            Ui.Field("Put them in folder", _folder)),
-                        diagonal),
-                    _grid,
-                    _results,
-                    Ui.Rule(),
-                    Ui.Small("Already have the matrix as a spreadsheet, with its own symbols and a "
-                             + "different tolerance per cell?"),
-                    Ui.Actions(sheet));
+                if (session.Clash.CanEdit && stale.Count > 0)
+                    _list.Children.Add(Ui.Runner("Run only the " + stale.Count + " that never have",
+                        _runs, primary: false, work: job => Run(stale, job)));
             }
 
             /// <summary>The grid, with a tick on every row that is going to be made.</summary>
@@ -2669,7 +2674,8 @@ namespace CamelWorks.UI.Views
             {
                 var session = Host.Current;
 
-                if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
+                if (session == null)
+                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
                 _rules = ClashRuleSet.FromJson(session.Store.Section(ProjectStore.ClashSection)["rules"]);
 
@@ -2718,17 +2724,27 @@ namespace CamelWorks.UI.Views
                                                   + "would look like if it were."));
                 });
 
-                // The sentence Ui.Numbered exists to delete. Its own doc comment: "a number on
-                // each card says it without being read, and then the sentence can go."
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Numbered(1, "Suppress and flag", "Applied to every result before anything else.", _filters),
-                    Ui.Numbered(2, "Group", "Outermost rule first. Empty means the built-in stack.", _grouping),
-                    Ui.Numbered(3, "Assign", "First match wins.", _assigns),
-                    Ui.Actions(tryOut, save),
-                    _status,
-                    Ui.Small("With nothing here the board still works: it groups by model pair, then "
-                             + "level, then proximity, and assigns nothing. These rules narrow that; "
-                             + "they do not switch it on.")));
+                // The pipeline is the working material, so it is the stage: three stretches under
+                // small-caps labels, in the order the rules run. The one action is the preview -
+                // the save is the quiet act beside the answer it makes true.
+                return Bench.Surface(
+                    null,
+                    tryOut,
+                    Ui.Stack(
+                        Ui.Eyebrow("1 · Suppress and flag"),
+                        Ui.Small("Applied to every result before anything else."),
+                        _filters,
+                        Ui.Eyebrow("2 · Group"),
+                        Ui.Small("Outermost rule first. Empty means the built-in stack."),
+                        _grouping,
+                        Ui.Eyebrow("3 · Assign"),
+                        Ui.Small("First match wins."),
+                        _assigns,
+                        Ui.Actions(save),
+                        _status,
+                        Ui.Small("With nothing here the board still works: it groups by model pair, "
+                                 + "then level, then proximity, and assigns nothing. These rules "
+                                 + "narrow that; they do not switch it on.")));
             }
 
             private void Redraw(Session session)
@@ -3087,31 +3103,24 @@ namespace CamelWorks.UI.Views
 
                 var write = Ui.Runner("Write the report", _results, Write);
 
-                return Ui.Scroll(Ui.Stack(
-                    // No subtitle. The tab's purpose line above already says "from a built-in
-                    // template, nothing to configure first"; saying it twice, three pixels apart,
-                    // is the panel repeating the chrome.
-                    Ui.Marked(Glyphs.Report, "Write a report", null,
-                        Ui.Form(
+                _results.Children.Add(Bench.Ready(
+                    "Writes the board out for whoever it is for, from a built-in template.",
+                    "Each issue takes the next revision letter, and its cover says which one it "
+                    + "supersedes."));
+
+                return Bench.Surface(
+                    Ui.Stack(
+                        Bench.Group("",
                             contents,
                             what,
-                            Ui.Pair(Ui.Field("For", audience), Ui.Field("Format", format))),
-                        write,
-                        Ui.Small("Each issue takes the next revision letter and its cover says which "
-                                 + "one it supersedes. A PDF in an inbox that looks exactly like last "
-                                 + "week's is the most common reason a trade builds from the wrong "
-                                 + "information."),
-                        Ui.Section("Where it goes, and what else is in it",
-                            () => (_path.Text.Trim().Length == 0 ? "Beside the document" : "To a folder")
-                                  + (_perParty ? " · per party" : string.Empty)
-                                  + (_keyPlan ? " · key plan" : string.Empty)
-                                  + (_pictures ? " · pictures" : string.Empty),
-                            false,
-                            Ui.Form(
-                                Ui.PathField("Write to", _path, PathKind.Folder,
+                            Ui.Field("For", audience),
+                            Ui.Field("Format", format)),
+                        Bench.Group("Where it goes",
+                            Ui.PathField("Write to", _path, PathKind.Folder,
                                          hint: "blank writes it beside the document"),
-                                Ui.Field("Name it", _template,
-                                         "carries " + string.Join(", ", Deliverable.Tokens))),
+                            Ui.Field("Name it", _template,
+                                     "carries " + string.Join(", ", Deliverable.Tokens))),
+                        Bench.Group("What else is in it",
                             changed,
                             plan,
                             split,
@@ -3119,15 +3128,12 @@ namespace CamelWorks.UI.Views
                             Ui.Small("A picture moves your view while it runs and puts it back "
                                      + "afterwards. On a board of two hundred groups that is two "
                                      + "hundred renders, so it is off until you ask for it.")),
-                        _results),
-
-                    Ui.Rule(),
-
-                    Exchange(),
-
-                    Ui.Rule(),
-
-                    Markers()));
+                        Markers(),
+                        Exchange()),
+                    write,
+                    Ui.Stack(
+                        _results,
+                        _markers));
             }
 
             /// <summary>
@@ -3176,19 +3182,15 @@ namespace CamelWorks.UI.Views
                 var write = Ui.Runner("Make them", _markers, primary: false,
                                       work: job => Mark(job, recipe));
 
-                return Ui.Marked(Glyphs.Model, "Put the clashes in the model", null,
-                    Ui.Small("One ball per clash, coloured by where it stands, grouped by test - so "
-                             + "the Selection Tree collapses to a line per test and expands to the "
-                             + "clashes. They are geometry like anything else: selectable, hideable, "
-                             + "and removable from the host's own file list."),
-                    Ui.Form(
-                        Ui.Pair(Ui.Field("Shape", shape),
-                                Ui.Field("Across", size, "millimetres, on screen")),
-                        Ui.Field("The model is in", units,
-                                 "Only needed if the document does not say. A point written in the "
-                                 + "wrong unit lands a kilometre from the building.")),
-                    write,
-                    _markers);
+                // One marker per clash, grouped by test, as ordinary geometry the host can select,
+                // hide and remove. A setup group rather than its own card: the fields are inputs
+                // and the secondary runner sits at the group's foot, with its answer on the stage.
+                return Bench.Group("Put the clashes in the model",
+                    Ui.Field("Shape", shape),
+                    Ui.Field("Across", size, "millimetres, on screen"),
+                    Ui.Field("The model is in", units,
+                             "only needed if the document does not say"),
+                    write);
             }
 
             private void Mark(Job job, MarkerRecipe recipe)
@@ -3295,19 +3297,17 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Exchange()
             {
-                var open = Ui.Button("Send the board as a clash file...", () =>
+                var open = Ui.Quiet("Send the board as a clash file...", () =>
                 {
                     var problem = ToolViews.Open("clashxml");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
                 });
 
-                return Ui.Marked(Glyphs.Onward, "Send it as a file somebody can work in", null,
-                    Ui.Small("Clash XML, which Navisworks and every reviewing tool reads. Choose "
-                             + "which tests go, at which statuses, for which party - and keep that "
-                             + "choice, so next Friday is one press rather than the same twenty "
-                             + "decisions. A file that comes back lands on the elements it left "
-                             + "from."),
-                    Ui.Actions(open));
+                // Clash XML has its own tool; this is the way over to it, at the end of setup.
+                return Bench.Group("A file somebody can work in",
+                    open,
+                    Ui.Small("Clash XML, which every reviewing tool reads. A file that comes back "
+                             + "lands on the elements it left from."));
             }
 
             /// <summary>What the chosen template actually produces, in the reader's terms.</summary>
@@ -4442,31 +4442,32 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "read a BCF file", file);
             });
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Marked(Glyphs.Onward, "Send it out", null,
-                    Ui.Form(Ui.Pair(
+            results.Children.Add(Bench.Ready(
+                "Sends the board out as one topic per issue, for whichever tool answers.",
+                "What comes back is read against the board, and nothing is applied until you "
+                + "press the button that says so."));
+
+            // Merging several returned packs is its own tool - Merge Markups - so the send and
+            // the read-back are the two acts here: the send at the foot, the read on the stage's
+            // own leg via the setup group it belongs to.
+            return Bench.Surface(
+                Ui.Stack(
+                    Bench.Group("",
                         Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
                                                     pick => asSheet = pick == "Spreadsheet")),
-                        Ui.Field("For", forWhom, "one party's rows, on the spreadsheet"))),
-                    Ui.Actions(send),
-                    Ui.Section("How it is written",
-                        () => (asSheet ? "A spreadsheet for " + party : "BCF " + version)
-                              + (asSheet || !snapshots ? string.Empty : " · a view on every topic"),
-                        false,
-                        Ui.Form(
-                            Ui.Pair(Ui.Field("Version", picker), Ui.Field("Snapshots", snapshotBox)),
-                            Ui.PathField("Write to", outFile, PathKind.Save,
-                                         "BCF|*.bcf|Excel|*.xlsx|All files|*.*")))),
-
-                Ui.Marked(Glyphs.Model, "Read the answers back",
-                    "This one changes the board, so it shows you what it would do first.",
-                    Ui.Form(Ui.PathField("File", inFile, PathKind.Open,
-                                         "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*")),
-                    Ui.Actions(read)),
-
-                Together(),
-
-                results));
+                        Ui.Field("For", forWhom, "one party's rows, on the spreadsheet")),
+                    Bench.Group("How it is written",
+                        Ui.Field("Version", picker),
+                        Ui.Field("Snapshots", snapshotBox),
+                        Ui.PathField("Write to", outFile, PathKind.Save,
+                                     "BCF|*.bcf|Excel|*.xlsx|All files|*.*")),
+                    Bench.Group("Read the answers back",
+                        Ui.PathField("File", inFile, PathKind.Open,
+                                     "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*",
+                                     hint: "shows what it would do first"),
+                        read)),
+                send,
+                Ui.Stack(results));
         }
 
         private static void WriteSheet(Panel results, TextBox path, string party, Job job)
@@ -4724,7 +4725,7 @@ namespace CamelWorks.UI.Views
                 : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
             results.Children.Add(Ui.Note("The board changed, not the model. \"Undo the last board edit\" is "
-                + "beside Load the board on Triage, and it puts the board back as it was before this."));
+                + "under the figures on the Clash Board, and it puts the board back as it was before this."));
 
             session.Record(ActivityKind.Exchange,
                 "applied a returned worksheet: " + Ui.Count(groups, "group") + " moved");
@@ -4794,7 +4795,7 @@ namespace CamelWorks.UI.Views
         /// exporting: it is the one job where two people disagreeing has to be shown rather than
         /// resolved by whoever was read last.
         /// </summary>
-        public static UIElement Merge() => Ui.Scroll(Ui.Stack(Together()));
+        public static UIElement Merge() => Together();
 
         private static UIElement Together()
         {
@@ -4918,19 +4919,26 @@ namespace CamelWorks.UI.Views
                     "merged " + Ui.Count(returns.Count, "returned pack"), merged.Explain());
             });
 
-            return Ui.Marked(Glyphs.Layers, "Bring several answers together",
-                "Six packs went out on Monday and six come back on Thursday, each holding the same "
-                + "issues with a handful answered. This reads all of them at once.",
-                files,
-                Ui.Actions(more),
-                Ui.Field("When two people disagree",
-                         Ui.Segmented(new[] { Ask, Latest }, Ask,
-                                      pick => policy = pick == Latest ? StatusConflicts.Latest : StatusConflicts.Ask),
-                         "Leaving it is right when the packs went out together, which is the usual "
-                         + "case. Take the most recent when reviews were sequential and a later "
-                         + "reviewer saw the earlier answer."),
-                Ui.Actions(merge),
-                results);
+            results.Children.Add(Bench.Ready(
+                "Reads every returned pack at once and folds their answers onto one board.",
+                "Six packs go out on Monday and six come back on Thursday, each holding the same "
+                + "issues with a handful answered. Where two people disagree, it shows the "
+                + "disagreement rather than letting the last one win."));
+
+            return Bench.Surface(
+                Ui.Stack(
+                    Bench.Group("Returned packs",
+                        files,
+                        Ui.Actions(more)),
+                    Bench.Group("",
+                        Ui.Field("When two people disagree",
+                                 Ui.Segmented(new[] { Ask, Latest }, Ask,
+                                              pick => policy = pick == Latest
+                                                  ? StatusConflicts.Latest
+                                                  : StatusConflicts.Ask),
+                                 "take the most recent only when reviews were sequential"))),
+                merge,
+                Ui.Stack(results));
         }
 
         /// <summary>
@@ -5085,7 +5093,7 @@ namespace CamelWorks.UI.Views
                 : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
 
             results.Children.Add(Ui.Note("The board changed, not the model. \"Undo the last board edit\" is "
-                + "beside Load the board on Triage, and it puts the board back as it was before this."));
+                + "under the figures on the Clash Board, and it puts the board back as it was before this."));
 
             session.Record(ActivityKind.Exchange,
                 "applied a BCF reply: " + Ui.Count(groups, "group") + " moved");

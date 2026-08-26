@@ -166,7 +166,7 @@ namespace CamelWorks.UI.Views
                     new Ui.Step("Take it out", () => take),
                 };
 
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
             private UIElement Saved()
