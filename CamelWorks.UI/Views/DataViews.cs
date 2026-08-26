@@ -1033,7 +1033,14 @@ namespace CamelWorks.UI.Views
                             .Select(e => new TableRow(e, e.From, e.To))
                             .ToList();
 
-                        into.Children.Add(Ui.Table(rows, ("There now", 240), ("Would be", 240)));
+                        var examples = Ui.Table(rows, ("There now", 240), ("Would be", 240));
+
+                        // Picking here changes nothing about what gets written - the apply works
+                        // off the staged set. It is for taking the before-and-after pairs into the
+                        // message that asks somebody whether this rename is right.
+                        into.Children.Add(Ui.Picking(examples,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(examples, picked), say, "example"))));
                     }
 
                     staged = pending;
@@ -1274,8 +1281,12 @@ namespace CamelWorks.UI.Views
                             Tone = c.Kind == WriteChange.Added ? Tone.Good : Tone.Warn,
                         }).ToList();
 
-                        _status.Children.Add(Ui.Table(rows,
-                            ("Element", 200), ("Now", 130), ("Would become", 130), ("", 0)));
+                        var changing = Ui.Table(rows,
+                            ("Element", 200), ("Now", 130), ("Would become", 130), ("", 0));
+
+                        _status.Children.Add(Ui.Picking(changing,
+                            new Ui.OnPicked("Copy {n}",
+                                (picked, say) => Ui.Copy(Ui.Lines(changing, picked), say, "change"))));
 
                         if (diff.Added + diff.Changed + diff.Cleared > diff.Changes.Count)
                             _status.Children.Add(Ui.Line("First " + diff.Changes.Count
@@ -1825,9 +1836,15 @@ namespace CamelWorks.UI.Views
                         b.IsDerived ? "inferred" : levels.Source == LevelSource.Grid ? "from the grid"
                                                                                      : "from the model")).ToList();
 
-                    results.Children.Add(Ui.Table(rows,
+                    var bands = Ui.Table(rows,
                         ("Level", 140), ("Elevation (" + units.LengthUnit + ")", 110),
-                        ("Elements", 110), ("Source", 110)));
+                        ("Elements", 110), ("Source", 110));
+
+                    // A level schedule with the elevations beside it is the thing a coordinator is
+                    // asked for by everybody, and it was previously read off the screen.
+                    results.Children.Add(Ui.Picking(bands,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(bands, picked), say, "level"))));
 
                     results.Children.Add(Ui.Tally(rows.Count, levels.Bands.Count, "level"));
 
@@ -1988,7 +2005,11 @@ namespace CamelWorks.UI.Views
                         .Select(g => new TableRow(g.Key, g.Key, Ui.Count(g.Count(), "element")))
                         .ToList();
 
-                    into.Children.Add(Ui.Table(sample, ("Breakdown", 0), ("Holds", 120)));
+                    var breakdown = Ui.Table(sample, ("Breakdown", 0), ("Holds", 120));
+
+                    into.Children.Add(Ui.Picking(breakdown,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(breakdown, picked), say, "branch"))));
 
                     if (plan.Deepest < recipe.Levels)
                         into.Children.Add(Ui.Note("The tree only reaches "
@@ -2371,7 +2392,13 @@ namespace CamelWorks.UI.Views
                 totals.Add(Read(table.Grand));
                 rows.Add(new TableRow(null, totals.ToArray()) { Tone = Tone.Good });
 
-                _results.Children.Add(Ui.Table(rows, headers.ToArray()));
+                var grid = Ui.Table(rows, headers.ToArray());
+
+                // The same argument as the single-axis totals above it: a cross-tab is read once
+                // and pasted somewhere else, and the totals row goes with whatever is picked.
+                _results.Children.Add(Ui.Picking(grid,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(grid, picked), say, "line"))));
 
                 Provenance();
                 Caveat(table.Grand.IsComplete);

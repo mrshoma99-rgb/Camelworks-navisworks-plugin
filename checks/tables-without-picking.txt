@@ -6,7 +6,6 @@ CamelWorks.UI/Views/ClashExportWindow.cs 2
 CamelWorks.UI/Views/CompareViews.cs 2
 CamelWorks.UI/Views/CoordinateViews.cs 9
 CamelWorks.UI/Views/DataLinkWindow.cs 1
-CamelWorks.UI/Views/DataViews.cs 5
 CamelWorks.UI/Views/ExtractWindow.cs 1
 CamelWorks.UI/Views/HomeView.cs 1
 CamelWorks.UI/Views/MatrixWindow.cs 1
