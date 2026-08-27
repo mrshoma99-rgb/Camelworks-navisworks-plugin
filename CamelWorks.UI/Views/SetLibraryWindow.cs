@@ -38,15 +38,10 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class SetLibraryWindow
     {
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("setlib"), () => new Screen(session).Build(), 820, 640);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            new Screen(session).Build();
 
         private sealed class Screen
         {
@@ -88,23 +83,21 @@ namespace CamelWorks.UI.Views
                     "Tick two or three, in the order the folders should nest."));
 
                 var read = Ui.Stack(
-                    Ui.Sub("Which properties sort this model into a library somebody can use?"),
                     Ui.Runner("Read the model", _found, Read),
                     _found);
 
                 var shape = Ui.Stack(
-                    Ui.Form(
+                    Bench.Group("The library's shape",
                         Ui.Pair(Ui.Field("Name each set", _pattern,
-                                         "{value} is the property's value, {path} the folders above it"),
-                                Ui.Field("Skip sets smaller than", _floor, "elements"))),
-                    Ui.Quiet("Cost it", Cost),
+                                         "{value} the value, {path} the folders above."),
+                                Ui.Field("Skip sets smaller than", _floor, "elements")),
+                        Ui.Actions(Ui.Quiet("Cost it", Cost))),
                     _preview);
 
                 var publish = Ui.Stack(
+                    Bench.Ready("Publish the ticked sets into the project, then into the host.",
+                                "A set the host refuses stays saved in the project, ready to publish again."),
                     Ui.Runner("Publish the library", _output, Publish),
-                    Ui.Small("Saved into the project first and pushed to the host second, so a host "
-                             + "that refuses one set leaves a library you can publish again rather "
-                             + "than half a tree with no record of the other half."),
                     _output);
 
                 var steps = new[]

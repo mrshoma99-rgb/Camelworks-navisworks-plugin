@@ -5,17 +5,18 @@ using CamelWorks.UI.Shell;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Opens a tool, in whatever shape that tool takes.
+    /// Sends a tool where it lives.
     ///
-    /// This replaces a switchboard keyed on "workspace/tab". A tool is addressed by its own name
-    /// now: six of them are panels and come up in the dock pane, and everything else opens its own
-    /// window through <see cref="ToolWindow"/> or through a window it already had.
+    /// Three destinations, decided by the tool rather than the caller: the beside-the-model tools
+    /// take the dock pane, Review and Help keep windows of their own, and everything else lands on
+    /// the bench of its desk — one window per job, every tool of the job on its rail. See
+    /// <c>CAMELWORKS_DESIGN.md</c>.
     ///
-    /// <b>Nothing runs when a tool is opened.</b> Every screen here can end up walking a
-    /// federation of a few hundred thousand elements, and doing that because somebody pressed a
-    /// ribbon button freezes the host with no warning and no way to stop it. Each one shows what
-    /// it will do and the button to do it - which is also what makes the zero-setup rule honest,
-    /// since that button works on a raw model with nothing configured.
+    /// <b>Nothing runs when a tool is opened.</b> Every surface can end up walking a federation of
+    /// a few hundred thousand elements, and doing that because somebody pressed a ribbon button
+    /// freezes the host with no warning and no way to stop it. Each one shows what it will do and
+    /// the button to do it — which is also what makes the zero-setup rule honest, since that
+    /// button works on a raw model with nothing configured.
     /// </summary>
     public static class ToolViews
     {
@@ -23,7 +24,7 @@ namespace CamelWorks.UI.Views
         /// Open a tool.
         /// </summary>
         /// <param name="toolId">Which tool.</param>
-        /// <param name="panel">Show a panel tool in the dock pane.</param>
+        /// <param name="panel">Show a panel tool in the dock pane; null routes it through the host.</param>
         /// <returns>Something to tell the user, or null when it opened.</returns>
         public static string? Open(string? toolId, Action<Tool>? panel = null)
         {
@@ -31,60 +32,41 @@ namespace CamelWorks.UI.Views
 
             if (tool == null) return "There is no tool called \"" + (toolId ?? "nothing") + "\".";
 
-            if (tool.Shape == ToolShape.Panel)
+            switch (tool.Shape)
             {
-                if (panel == null) return "That tool needs the CamelWorks pane, which is not open.";
+                case ToolShape.Panel:
+                    if (panel == null) return PaneRouter.Open(tool);
 
-                panel(tool);
-                return null;
+                    panel(tool);
+                    return null;
+
+                case ToolShape.Act:
+                    return Actions.Run(tool.Id == "baseline" ? "ID_CW_Baseline" : "ID_CW_SectionBox");
             }
 
             switch (tool.Id)
             {
-                // Tools whose window is more than a surface: they check something before they open,
-                // or they build their editor themselves. Everything else falls through to the frame.
+                // The two windows that are not desks: Review is a floating palette over the 3D
+                // view, and Help must work when the rest of the product will not.
                 case "review": return ReviewWindow.Show();
-                case "links": return FixLinksWindow.Show();
-                case "matrix": return MatrixWindow.Show();
-                case "clashxml": return ClashExportWindow.Show();
-                case "datalink": return DataLinkWindow.Show();
-                case "report": return ReportBuilderWindow.Show();
-                case "extract": return ExtractWindow.Show();
-                case "compile": return CompileWindow.Show();
-                case "restructure": return RestructureWindow.Show();
-                case "ids": return IdsWindow.Show();
-                case "schedule": return ScheduleWindow.Show();
-                case "setlib": return SetLibraryWindow.Show();
-                case "models": return ModelsWindow.Show();
-                case "penetrations": return PenetrationsWindow.Show();
-                case "write": return WritePropertiesWindow.Show();
-                case "freeze": return FreezeWindow.Show();
-                case "notice": return ChangeNoticeWindow.Show();
-                case "history": return HistoryWindow.Show();
-                case "wbs": return BreakdownWindow.Show();
                 case "help": return HelpWindow.Show();
-                case "exportglb": return ExportWindow.Show("glb");
-                case "exportsheet": return ExportWindow.Show("sheet");
-                case "exportdxf": return ExportWindow.Show("dxf");
-
-                // Five field tools, five windows. They share one read of the selection and its
-                // geometry, which is the expensive part - see SiteWindow.
-                case "weight":
-                case "dimensions":
-                case "setout":
-                case "paperwork":
-                case "labels": return SiteWindow.Show(tool.Id);
-
-                default: return Window(tool, Surface(tool), Wide(tool));
             }
+
+            var desk = Desks.Of(tool.Id);
+
+            if (desk == null)
+                return "\"" + tool.Title + "\" is on no desk. This is a routing mistake in this "
+                       + "build, not anything you did.";
+
+            return DeskWindow.Show(desk.Id, tool.Id);
         }
 
         /// <summary>The surface for a tool that lives in the dock pane.</summary>
-        /// <param name="tool">Which tool, or null for the launcher.</param>
+        /// <param name="tool">Which tool, or null for Home.</param>
         /// <param name="open">Open another tool by id.</param>
         public static UIElement Panel(Tool? tool, Action<string> open)
         {
-            if (tool == null) return Launcher(open);
+            if (tool == null) return HomeView.Build(open);
 
             try
             {
@@ -97,7 +79,7 @@ namespace CamelWorks.UI.Views
                     case "appearance": return SetsViews.Appearance();
                     case "graph": return AutomateView.Build();
 
-                    default: return Launcher(open);
+                    default: return HomeView.Build(open);
                 }
             }
             catch (Exception e)
@@ -108,97 +90,6 @@ namespace CamelWorks.UI.Views
                     Ui.Heading(tool.Title),
                     Ui.Problem("This tool could not be opened: " + Ui.Describe(e))));
             }
-        }
-
-        /// <summary>
-        /// What the pane shows when no tool is open: every tool, and what each one is for.
-        ///
-        /// The switcher this replaces named seven workspaces and told you nothing about any of
-        /// them, and the tab strip under it named eighteen tabs the same way. What each tool is
-        /// trying to do is the thing somebody actually needs, and only at the moment they have not
-        /// chosen yet - so it lives here, at rest, rather than taking a strip off every screen
-        /// forever.
-        /// </summary>
-        /// <param name="open">Open a tool by id.</param>
-        public static UIElement Launcher(Action<string> open)
-        {
-            // The week first, then everything. Somebody who opens the pane on a Monday is doing
-            // the same three things they did last Monday, and a list of forty-two rows makes them
-            // find the three every time.
-            var stack = Ui.Stack(
-                HomeView.Build(open),
-                Ui.Rule(),
-                Ui.Heading("Everything else"),
-                Ui.Sub("Every one of these is on the ribbon too. This is the same list, with what "
-                       + "each one is for and what it will do."));
-
-            foreach (var tool in Tools.All)
-            {
-                if (tool.Shape == ToolShape.Act || tool.Shape == ToolShape.Menu) continue;
-
-                var here = tool;
-
-                stack.Children.Add(Ui.Row(here.Title, here.Purpose, here.MainAction,
-                                          () => open(here.Id)));
-            }
-
-            return Ui.Scroll(stack);
-        }
-
-        /// <summary>The screen a windowed tool shows, or null when it has none of its own.</summary>
-        private static Func<UIElement>? Surface(Tool tool)
-        {
-            switch (tool.Id)
-            {
-                case "health": return ProjectViews.Health;
-                case "headroom": return CoordinateViews.ClearHeight;
-                case "merge": return CoordinateViews.Merge;
-                case "excel": return DataViews.Excel;
-                case "project": return ProjectViews.Settings;
-                case "tests": return CoordinateViews.Tests;
-                case "rules": return CoordinateViews.Rules;
-                case "clashreport": return CoordinateViews.Report;
-                case "bcf": return CoordinateViews.Bcf;
-                case "compare": return CompareViews.Run;
-                case "levels": return DataViews.Zones;
-                case "takeoff": return DataViews.Takeoff;
-                case "viewpoints": return SetsViews.Viewpoints;
-                case "ifc": return ProjectViews.ExportIfc;
-                case "batch": return BatchViews.Jobs;
-                default: return null;
-            }
-        }
-
-        /// <summary>How wide a tool wants to be. Tables and grids want more than a form does.</summary>
-        private static int Wide(Tool tool)
-        {
-            switch (tool.Id)
-            {
-                case "tests":
-                case "rules":
-                case "compare":
-                case "takeoff": return 1100;
-
-                case "bcf":
-                case "merge":
-                case "excel":
-                case "viewpoints":
-                case "levels": return 1000;
-
-                case "headroom": return 900;
-
-                default: return 0;
-            }
-        }
-
-        private static string? Window(Tool? tool, Func<UIElement>? body, int width)
-        {
-            if (tool == null) return "There is no such tool.";
-
-            if (body == null)
-                return "\"" + tool.Title + "\" has no screen of its own yet.";
-
-            return ToolWindow.Show(tool, body, width);
         }
     }
 }

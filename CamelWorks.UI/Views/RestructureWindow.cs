@@ -32,15 +32,10 @@ namespace CamelWorks.UI.Views
         public const string Key = "restructure";
 
 
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("restructure"), () => new Editor(session).View, 1080, 740);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            new Editor(session).View;
 
         private sealed class Editor
         {
@@ -111,19 +106,12 @@ namespace CamelWorks.UI.Views
             private UIElement Build()
             {
                 var recipe = Ui.Stack(
-                    Ui.Eyebrow("What it reads"),
-                    Ui.Field("Scope", Ui.Choice(new[] { WholeModel, Selection }, _scope,
-                                                pick => _scope = pick, 200)),
-                    Ui.Rule(),
-                    Ui.Eyebrow("The levels, outermost first"),
-                    _levels,
-                    Ui.Rule(),
-                    Ui.Eyebrow("What comes out"),
-                    Shape(),
-                    Ui.Rule(),
-                    Ui.Eyebrow("This recipe"),
-                    Keep(),
-                    _saved);
+                    Bench.Group("What it reads",
+                        Ui.Field("Scope", Ui.Choice(new[] { WholeModel, Selection }, _scope,
+                                                    pick => _scope = pick, 200))),
+                    Bench.Group("The levels, outermost first", _levels),
+                    Bench.Group("What comes out", Shape()),
+                    Bench.Group("This recipe", Keep(), _saved));
 
                 var tree = Ui.Stack(
                     Ui.Eyebrow("The tree it would make"),
@@ -150,7 +138,7 @@ namespace CamelWorks.UI.Views
 
                 // No finish button of its own: the last step carries Ui.Commit, which is the
                 // two-stage "show me, then do it" a write into the set library has always used.
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
             // -----------------------------------------------------------------------------------
@@ -188,11 +176,6 @@ namespace CamelWorks.UI.Views
                     : null;
 
                 if (add != null || drop != null) _levels.Children.Add(Ui.Across(add, drop));
-
-                _levels.Children.Add(Ui.Small(
-                    "Four levels is the ceiling. A whole-model tree really is file, level, discipline, "
-                    + "system - past that a federation is thousands of sets holding one element each, "
-                    + "and what people want next is a filter rather than another folder."));
             }
 
             private UIElement Row(int index)
@@ -210,21 +193,14 @@ namespace CamelWorks.UI.Views
                         DrawLevels();
                     }, 170);
 
-                var body = new List<UIElement?>
-                {
+                return Bench.Group("Level " + (index + 1).ToString(CultureInfo.InvariantCulture),
                     Ui.Pair(Ui.Field("Property tab", tab), Ui.Field("Property", name)),
                     Ui.Field("Elements without it", holes),
-                };
-
-                if (level.Missing == MissingValues.Gather)
-                    body.Add(Ui.Field("Called",
-                        Ui.Text(level.GatherAs, text => level.GatherAs = text, 150),
-                        "The branch they land in. A tree that covers most of the model looks "
-                        + "complete, and the part it misses is the part nobody has looked at."));
-
-                return Ui.Section("Level " + (index + 1).ToString(CultureInfo.InvariantCulture),
-                                  () => level.IsUsable ? level.Address : "not set yet",
-                                  index == 0, body.ToArray());
+                    level.Missing == MissingValues.Gather
+                        ? Ui.Field("Called",
+                            Ui.Text(level.GatherAs, text => level.GatherAs = text, 150),
+                            "The branch they land in.")
+                        : null);
             }
 
             private UIElement Shape()
@@ -234,10 +210,9 @@ namespace CamelWorks.UI.Views
 
                 var pattern = Ui.Text(_recipe.NamePattern, text => _recipe.NamePattern = text, 180);
 
-                return Ui.Form(
+                return Ui.Stack(
                     Ui.Field("Top folder", root,
-                             "Everything the recipe makes hangs under it, which is what lets the next "
-                             + "run tell its own sets from the ones somebody made by hand."),
+                             "Everything the recipe makes hangs under it."),
                     Ui.Field("Set name", pattern, "{value} is the branch, {path} the folders above it."),
                     Ui.Pair(
                         Ui.Field("Smallest set", Number(_recipe.Floor, v => _recipe.Floor = v)),
@@ -268,10 +243,8 @@ namespace CamelWorks.UI.Views
                 var name = Ui.Text(_recipe.Name, text => _recipe.Name = text, 180);
 
                 return Ui.Stack(
-                    Ui.Field("Called", name),
-                    Ui.Actions(Ui.Quiet("Keep this recipe in the project", Store)),
-                    Ui.Small("Kept, the next revision is one press: open this, read the model, and "
-                             + "see what moved before anything is written."));
+                    Ui.Field("Called", name, "Kept, the next revision is one press."),
+                    Ui.Actions(Ui.Quiet("Keep this recipe in the project", Store)));
             }
 
             private void Store()

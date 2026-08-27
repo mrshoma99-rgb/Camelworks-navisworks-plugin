@@ -353,6 +353,51 @@
 
   <!-- No border and no fill until hovered. For the third and fourth action on a card, which
        should be reachable without competing with the first. -->
+  <!-- A rail row: a desk's register of tools, and Home's register of desks. Left-aligned,
+       full-width, quiet at rest — a row in a list, not a button in a form. -->
+  <Style x:Key="RailRow" TargetType="Button">
+    <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+    <Setter Property="FontSize" Value="{DynamicResource Size.Body}"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="b" Background="Transparent" CornerRadius="7"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource Hover}"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource Press}"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+              <Setter Property="Cursor" Value="Arrow"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- The rail row whose tool is on the bench. -->
+  <Style x:Key="RailRowOn" TargetType="Button" BasedOn="{StaticResource RailRow}">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="b" Background="{DynamicResource NavActive}" CornerRadius="7"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style x:Key="QuietBtn" TargetType="Button">
     <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Small}"/>

@@ -19,26 +19,21 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class HistoryWindow
     {
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("history"), () => Body(session), 700, 560);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            Body(session);
 
         private static UIElement Body(Session session)
         {
             var entries = session.Store.Activity.Entries.ToList();
 
             if (entries.Count == 0)
-                return Ui.Stack(
+                return Bench.Surface(null, null, Ui.Stack(
                     Ui.Empty("Nothing has happened on this project yet.",
                              "CamelWorks writes a line here every time it changes the model, "
                              + "produces a report or runs the rules - so a project handed over "
-                             + "mid-job can say what was done to it."));
+                             + "mid-job can say what was done to it.")));
 
             var rows = entries
                 .Select(e => new TableRow(e,
@@ -57,12 +52,12 @@ namespace CamelWorks.UI.Views
             var picking = Ui.Picking(table,
                 new Ui.OnPicked("Copy {n}", (picked, say) => Copy(session, picked, say), primary: true));
 
-            return Ui.Stack(
+            return Bench.Surface(null, null, Ui.Stack(
                 Ui.Sub(Ui.Count(entries.Count, "entry") + ", newest first."),
                 picking,
                 Ui.Quiet("Copy the whole log",
                          () => Copy(session, entries.Cast<object>().ToList(), said)),
-                said);
+                said));
         }
 
         /// <summary>The picked entries, as lines somebody can paste into the argument.</summary>

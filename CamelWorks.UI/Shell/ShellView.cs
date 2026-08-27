@@ -400,14 +400,14 @@ namespace CamelWorks.UI.Shell
             _back.Wearing("QuietBtn");
             _back.Padding = new Thickness(9, 4, 9, 4);
             _back.Margin = new Thickness(0, 0, 8, 0);
-            _back.ToolTip = "Every tool, and what each one is for";
+            _back.ToolTip = "Home — the week, the desks and the search";
             _back.Click += (s, e) => Show(null);
 
             var label = new StackPanel { Orientation = Orientation.Horizontal };
             label.Children.Add(Ui.Glyph(Glyphs.Backward, 13, "Muted", new Thickness(0, 0, 6, 0)));
             label.Children.Add(new TextBlock
             {
-                Text = "All tools",
+                Text = "Home",
                 VerticalAlignment = VerticalAlignment.Center,
             });
 
@@ -444,8 +444,8 @@ namespace CamelWorks.UI.Shell
         {
             var launcher = _tool == null;
 
-            _open.Text = launcher ? "All tools" : _tool!.Title;
-            _where.Text = launcher ? Ui.Count(Tools.All.Count, "tool") : _tool!.Title;
+            _open.Text = launcher ? "Home" : _tool!.Title;
+            _where.Text = launcher ? "Home" : _tool!.Title;
 
             // At the launcher there is nowhere back to, so the button that goes there is not
             // offered - a control that does nothing is worse than one that is not there.
@@ -546,8 +546,8 @@ namespace CamelWorks.UI.Shell
 
             _searchResults.Items.Clear();
 
-            foreach (var command in CommandCatalogue.Search(query).Take(12))
-                _searchResults.Items.Add(new ListBoxItem { Content = Result(command), Tag = command });
+            foreach (var tool in Finder.Search(query).Take(12))
+                _searchResults.Items.Add(new ListBoxItem { Content = Result(tool), Tag = tool });
 
             if (_pop != null) _pop.IsOpen = _searchResults.Items.Count > 0;
         }
@@ -555,24 +555,20 @@ namespace CamelWorks.UI.Shell
         /// <summary>
         /// One search hit: what the tool is called, and what it is trying to do.
         ///
-        /// It used to show the "workspace/tab" the tool lived at, which told somebody where to
-        /// click rather than what they would get. "Report" is four different things in a
-        /// coordination tool, and only the sentence tells them apart.
+        /// Only the sentence tells "Report" apart from the three other reports a coordination
+        /// tool has, so it is the sentence that is shown.
         /// </summary>
-        private static UIElement Result(RibbonCommand command)
+        private static UIElement Result(Tool tool)
         {
             var stack = new StackPanel();
-            stack.Children.Add(new TextBlock { Text = command.Title, FontWeight = FontWeights.SemiBold });
+            stack.Children.Add(new TextBlock { Text = tool.Title, FontWeight = FontWeights.SemiBold });
 
-            var purpose = Tools.Find(command.ToolId)?.Purpose;
-
-            if (!string.IsNullOrEmpty(purpose))
-                stack.Children.Add(new TextBlock
-                {
-                    Text = purpose,
-                    TextWrapping = TextWrapping.Wrap,
-                    MaxWidth = 320,
-                }.Wearing("Hint"));
+            stack.Children.Add(new TextBlock
+            {
+                Text = tool.Purpose,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 320,
+            }.Wearing("Hint"));
 
             return stack;
         }
@@ -586,12 +582,12 @@ namespace CamelWorks.UI.Shell
         private void Jump()
         {
             var item = _searchResults.SelectedItem as ListBoxItem;
-            var command = item?.Tag as RibbonCommand;
+            var tool = item?.Tag as Tool;
 
-            if (command?.ToolId == null) return;
+            if (tool == null) return;
 
             Clear();
-            Go(command.ToolId!);
+            Go(tool.Id);
         }
     }
 }

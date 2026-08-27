@@ -50,15 +50,10 @@ namespace CamelWorks.UI.Views
         private const string Plain = "Comma-separated (.csv)";
 
 
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("report"), () => new Builder(session).View, 1180, 780);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            new Builder(session).View;
 
         private sealed class Builder
         {
@@ -130,45 +125,39 @@ namespace CamelWorks.UI.Views
             private UIElement Build()
             {
                 var model = Ui.Stack(
-                    Ui.Form(Ui.Field("Scope",
-                        Ui.Choice(new[] { Selection, Everything }, _scopeChoice, pick =>
-                        {
-                            _scopeChoice = pick;
-                            _kept.Set("scope", pick);
-                        }))),
-                    Ui.Runner("Read the model", _read, Gather),
+                    Bench.Group(string.Empty,
+                        Ui.Field("Scope",
+                            Ui.Choice(new[] { Selection, Everything }, _scopeChoice, pick =>
+                            {
+                                _scopeChoice = pick;
+                                _kept.Set("scope", pick);
+                            })),
+                        Ui.Runner("Read the model", _read, Gather)),
                     _read);
 
                 var columns = Ui.Stack(
                     Ui.Eyebrow("What the model carries"),
-                    Ui.Small("Every property found, and how far it reaches. Pick the ones the "
-                             + "report should have and add them as columns."),
                     _catalogue,
-                    Ui.Rule(),
                     Ui.Eyebrow("The columns"),
                     _columns,
-                    Ui.Rule(),
-                    Ui.Eyebrow("This report"),
-                    Saved());
+                    Bench.Group("This report", Saved()));
 
                 var shape = Ui.Stack(
                     _shape,
-                    Ui.Rule(),
                     Ui.Eyebrow("What that produces"),
                     _preview);
 
                 var write = Ui.Stack(
-                    Ui.Form(Ui.Field("Format",
-                        Ui.Choice(new[] { Book, Plain }, _format, pick =>
-                        {
-                            _format = pick;
-                            _kept.Set("format", pick);
-                            Draw();
-                        }))),
-                    Ui.PathField("File", _file, PathKind.Save,
-                                 "Excel workbook|*.xlsx|Comma-separated|*.csv",
-                                 "The sheet carries the element identities, so it can be filled in "
-                                 + "and brought back through Data ▸ Bring a sheet back in."),
+                    Bench.Group(string.Empty,
+                        Ui.Field("Format",
+                            Ui.Choice(new[] { Book, Plain }, _format, pick =>
+                            {
+                                _format = pick;
+                                _kept.Set("format", pick);
+                                Draw();
+                            })),
+                        Ui.PathField("File", _file, PathKind.Save,
+                                     "Excel workbook|*.xlsx|Comma-separated|*.csv")),
                     Ui.Commit("See what would be written", "Write", "row", Rehearse, Publish),
                     _output,
                     _note);
@@ -188,7 +177,7 @@ namespace CamelWorks.UI.Views
 
                 // No finish button of its own: the last step carries Ui.Commit, which is the
                 // two-stage "show me, then do it" a write has always used here.
-                return Ui.Scroll(Ui.Steps(steps, null, null));
+                return Ui.Steps(steps, null, null);
             }
 
             private UIElement Saved()
@@ -200,11 +189,9 @@ namespace CamelWorks.UI.Views
                 _picker = Ui.Choice(names, _template.Name, Switch, 200);
 
                 return Ui.Stack(
-                    Ui.Small("A saved report runs again next revision on whatever is loaded then. "
-                             + "Nothing has to be saved for the report to work now."),
-                    Ui.Form(
-                        Ui.Field("Saved", _picker),
-                        Ui.Field("Name", _name)),
+                    Ui.Field("Saved", _picker,
+                             "Runs again next revision on whatever is loaded then."),
+                    Ui.Field("Name", _name),
                     Ui.Actions(
                         Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Start again", Fresh),
@@ -411,7 +398,7 @@ namespace CamelWorks.UI.Views
                     ? DataReport.SuggestGroup(_scope, _template)
                     : null;
 
-                _shape.Children.Add(Ui.Form(
+                _shape.Children.Add(Ui.Stack(
                     Ui.Field("Fold rows on",
                         Ui.Choice(groups, _template.GroupBy ?? Nothing, pick =>
                         {
@@ -419,8 +406,7 @@ namespace CamelWorks.UI.Views
                             DrawColumns();
                             DrawPreview();
                         }, 200),
-                        "One row per value instead of one row per element. Each other column then "
-                        + "says what it does with the elements underneath it."),
+                        "One row per value instead of one per element."),
                     Ui.Field("Order by",
                         Ui.Choice(sorts, _template.SortBy ?? ModelOrder, pick =>
                         {
@@ -439,16 +425,14 @@ namespace CamelWorks.UI.Views
                             _template.WithIdentity = on;
                             DrawPreview();
                         }),
-                        "Puts the CamelWorks id on the front so the sheet can be filled in and "
-                        + "brought back. A folded report cannot carry them."),
+                        "Lets the sheet come back in; a folded report cannot."),
                     Ui.Field("Say when a value is missing",
                         Ui.Toggle(string.Empty, _template.BlanksShown, on =>
                         {
                             _template.BlanksShown = on;
                             DrawPreview();
                         }),
-                        "An empty cell and a cell that says \"" + DataReport.Blank + "\" mean "
-                        + "different things to whoever reads the sheet.")));
+                        "An empty cell and \"" + DataReport.Blank + "\" read differently.")));
 
                 if (suggestion != null)
                     _shape.Children.Add(Ui.Info("\"" + suggestion + "\" would fold this into a "

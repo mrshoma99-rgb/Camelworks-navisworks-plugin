@@ -48,75 +48,48 @@ INK = (0x33, 0x38, 0x3D)
 # These values are the light column of Skin.cs's Fam.* rows and have to stay that way. The dark
 # column is not used here: the Navisworks ribbon is light on every supported release, which is why
 # there is one icon set rather than two.
-# Keyed on the panel titles exactly as the markup writes them, entity and all, so the two are
-# obviously the same string rather than nearly the same one.
+# Keyed on the panel titles exactly as the markup writes them, so the two are obviously the
+# same string rather than nearly the same one.
 FAMILY_INK = {
-    "Project":          (0x0F, 0x76, 0x6E),
-    "Clash":            (0xC2, 0x41, 0x0C),
-    "Issues":           (0xC2, 0x41, 0x0C),
-    "Revisions":        (0x6D, 0x46, 0xC8),
-    "Data":             (0x03, 0x69, 0xA1),
-    "Sets &amp; Views": (0xB4, 0x53, 0x09),
-    "Deliver":          (0x4D, 0x7C, 0x0F),
-    "Site":             (0x4D, 0x7C, 0x0F),
-    "Automate":         (0xBE, 0x18, 0x5D),
+    "CamelWorks":   (0x57, 0x61, 0x6C),
+    "Federation":   (0x0F, 0x76, 0x6E),
+    "Coordination": (0xC2, 0x41, 0x0C),
+    "Data":         (0x03, 0x69, 0xA1),
+    "Scenes":       (0xB4, 0x53, 0x09),
+    "Deliver":      (0x4D, 0x7C, 0x0F),
 }
 
-# Kept for the two panes that carry no RibbonPanel of their own in the markup, and as the answer
-# for anything the markup grouping cannot place.
-LOOSE = {
-    "FixLinks":   "Project",
-    "Review":     "Coordinate",
-    "Baseline":   "Compare",
-    "SectionBox": "Sets &amp; Views",
-    "ExportIfc":  "Project",
-    "Help":       "Home",
-}
+# The answer for anything the markup grouping cannot place. Empty today: every command sits in
+# a titled panel.
+LOOSE = {}
 
 SIZES = (16, 32)
 
 # One icon per ribbon command. The command id is the file stem, so the [Command] attribute and the
 # file on disk cannot drift apart without the checker noticing.
 ICONS = {
-    "HealthCheck":     "troubleshoot",
-    "ProjectSettings": "tune",
-    "FixLinks":        "link_off",
-    "Help":            "help",
-    "Board":           "dashboard",
-    "Review":          "fact_check",
-    "ClashTests":      "grid_on",
-    "ClashRules":      "rule",
-    "Clearance":       "height",
-    "ClashReport":     "description",
-    "Bcf":             "sync_alt",
-    "Merge":           "merge",
-    "ClashXml":        "code",
-    "Compare":         "compare",
-    "Changes":         "difference",
-    "Baseline":        "bookmark_add",
-    "ChangeNotice":    "gavel",
-    "DataManager":     "table_chart",
-    "Zones":           "layers",
-    "Takeoff":         "calculate",
-    "Wbs":             "lan",
-    "Ids":             "verified",
-    "Sets":            "filter_alt",
-    "Appearance":      "palette",
-    "Viewpoints":      "photo_camera",
-    "SectionBox":      "crop_free",
-    "ExportGlb":       "view_in_ar",
-    "ExportData":      "table_view",
-    "ExportDrawing":   "architecture",
-    "ExportIfc":       "upload_file",
-    "Extract":         "content_cut",
-    "Compile":         "library_add",
-    "SetOut":          "my_location",
-    "Dimensions":      "straighten",
-    "Weight":          "scale",
-    "Labels":          "qr_code_2",
-    "Paperwork":       "attach_file",
-    "Batch":           "checklist",
-    "Graph":           "account_tree",
+    "Home":             "home",
+    "Help":             "help",
+    "DeskFederation":   "stacks",
+    "HealthCheck":      "troubleshoot",
+    "Compare":          "compare",
+    "Baseline":         "bookmark_add",
+    "DeskCoordination": "hub",
+    "Board":            "dashboard",
+    "ClashTests":       "grid_on",
+    "Review":           "fact_check",
+    "ClashReport":      "description",
+    "DeskData":         "database",
+    "DataManager":      "table_chart",
+    "Takeoff":          "calculate",
+    "DeskScenes":       "category",
+    "Sets":             "filter_alt",
+    "Appearance":       "palette",
+    "SectionBox":       "crop_free",
+    "DeskDeliver":      "local_shipping",
+    "ExportIfc":        "upload_file",
+    "Compile":          "library_add",
+    "Batch":            "checklist",
 }
 
 

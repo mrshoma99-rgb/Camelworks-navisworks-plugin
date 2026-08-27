@@ -22,17 +22,10 @@
 name: ui-shots
 
 on:
+  # On demand only. A Windows runner bills at twice the rate, and the pictures are something
+  # somebody asks for, not something every push owes them - run it from the Actions tab or with
+  # `gh workflow run ui-shots.yml` when the pictures are the thing being asked for.
   workflow_dispatch:
-  push:
-    # The publish step below has always been gated on refs/heads/claude/, but the trigger only
-    # ever fired on main - so on a feature branch it could not run at all, which is how fourteen
-    # windows were built and shipped without anybody seeing one of them. The path filter is what
-    # keeps this honest about minutes: a Windows runner, only when the UI or the harness moved.
-    branches: [main, "claude/**"]
-    paths:
-      - "CamelWorks.UI/**"
-      - "CamelWorks.Studio/**"
-      - ".github/workflows/ui-shots.yml"
 
 # One at a time per branch, and the newer one wins. This job force-pushes an orphan branch, so two
 # runs in flight together are two writers racing over the same ref - and the pictures that survive

@@ -291,7 +291,7 @@ namespace CamelWorks.UI.Shell
             Of("viewpoints", "Viewpoints", ToolShape.Window, Glyph.Camera,
                "Rename, renumber, re-folder and render viewpoints in bulk, instead of one at a "
                + "time down the tree.",
-               "Read what is selected"),
+               "Save this view"),
 
             Of("restructure", "Organise Sets", ToolShape.Wizard, Glyph.Model,
                "Reshape the set library into the folders the properties imply, rather than the "
@@ -337,7 +337,7 @@ namespace CamelWorks.UI.Shell
             Of("setout", "Setting Out", ToolShape.Window, Glyph.Camera,
                "Produce the file an engineer loads into a total station and walks the floor with, "
                + "in site coordinates.",
-               "Write the file"),
+               "Take the points"),
 
             Of("paperwork", "Documents and Photos", ToolShape.Window, Glyph.Folder,
                "Find the data sheets, the site photos and the document-system addresses the model "

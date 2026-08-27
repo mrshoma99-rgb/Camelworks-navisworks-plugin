@@ -30,7 +30,7 @@ namespace CamelWorks.UI.Views
         public static string? Show()
         {
             var body = Ui.Stack(
-                Ui.Card("CamelWorks",
+                Chapter("CamelWorks",
                     "Coordination, data and delivery tools for Navisworks, from bimcamel.com.",
                     Ui.Line("Free to use, including at a commercial firm and on commercial projects. "
                             + "No seat count, no licence key.", 0.85),
@@ -41,7 +41,7 @@ namespace CamelWorks.UI.Views
                             + "The full terms and a plain-words summary are in LICENSE; the icons and "
                             + "anything else shipped alongside are listed in NOTICE.", 0.85)),
 
-                Ui.Card("How it is meant to be used", null,
+                Chapter("How it is meant to be used", null,
                     Ui.Line("Open a model and press a button. Nothing has to be configured first — every "
                             + "screen derives what it needs and tells you what it derived, and Setup exists "
                             + "to correct a guess rather than to be filled in before you start.", 0.85),
@@ -55,7 +55,7 @@ namespace CamelWorks.UI.Views
                             + "both the baseline and the run: a signature on one side compares against "
                             + "nothing, and Compare says so before you spend the time.", 0.85)),
 
-                Ui.Card("What it will not do",
+                Chapter("What it will not do",
                     "Each of these is a real limit, not a missing feature list.",
                     Bullet("Ctrl+Z does not undo a property write. Navisworks does not put custom property "
                            + "writes on its undo stack. CamelWorks records what it changed in the project "
@@ -111,7 +111,7 @@ namespace CamelWorks.UI.Views
         /// Review mode is where the keys are, because that is the one screen somebody works through
         /// a hundred items on without wanting to reach for the mouse.
         /// </summary>
-        private static UIElement Shortcuts() => Ui.Card("Keys",
+        private static UIElement Shortcuts() => Chapter("Keys",
             "In Review mode, opened from the ribbon while the board is loaded.",
             Key("N  or  →", "the next issue"),
             Key("P  or  ←", "the one before"),
@@ -173,7 +173,7 @@ namespace CamelWorks.UI.Views
                                  + "of the platform this build is not getting on with."));
             });
 
-            return Ui.Card("Run the self-test",
+            return Chapter("Run the self-test",
                 "Ten checks against the things that differ from machine to machine rather than "
                 + "against the logic. Takes a moment and needs no model open.",
                 Ui.Across(run),
@@ -218,7 +218,7 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Ui.Card("Copy a support bundle",
+            return Chapter("Copy a support bundle",
                 "One text file with everything a bug report needs.",
                 Ui.Line("What goes in it: the build number, this machine's Navisworks version and "
                         + "culture, the diagnostics above, the self-test result, and the last twenty "
@@ -345,7 +345,7 @@ namespace CamelWorks.UI.Views
             body.Children.Add(Ui.Across(write));
             body.Children.Add(status);
 
-            return Ui.Card("A worked example project", "For reading, not for working in.", body);
+            return Chapter("A worked example project", "For reading, not for working in.", body);
         }
 
         /// <summary>
@@ -355,7 +355,7 @@ namespace CamelWorks.UI.Views
         /// security team has to have an opinion about, and the opinion is usually no. The version is
         /// here and the address is here; looking is a decision somebody makes.
         /// </summary>
-        private static UIElement Updates() => Ui.Card("Updates",
+        private static UIElement Updates() => Chapter("Updates",
             "There is no update check, and there is no telemetry.",
             Ui.Field("This build", Ui.Line(Ui.Release, 0.85)),
             Ui.Field("Newer ones", Ui.Line("bimcamel.com", 0.85)),
@@ -405,7 +405,7 @@ namespace CamelWorks.UI.Views
             if (session == null)
             {
                 Say("Document", "nothing open");
-                return Ui.Card("Diagnostics", "What to quote in a bug report.", rows);
+                return Chapter("Diagnostics", "What to quote in a bug report.", rows);
             }
 
             Say("Document", session.SavedPath ?? "never saved");
@@ -423,7 +423,7 @@ namespace CamelWorks.UI.Views
                 ? session.Clash.Tests().Count.ToString(CultureInfo.InvariantCulture) + " tests"
                 : session.ClashProblem ?? "unavailable");
 
-            return Ui.Card("Diagnostics", "What to quote in a bug report.", rows);
+            return Chapter("Diagnostics", "What to quote in a bug report.", rows);
         }
 
         private static string Folder(Assembly assembly)
@@ -459,5 +459,29 @@ namespace CamelWorks.UI.Views
                 return "unknown";
             }
         }
+        /// <summary>
+        /// One chapter of the guide: a small-caps title, an optional line, and the body.
+        ///
+        /// The reader is a column of chapters rather than a wall of cards — the design law keeps
+        /// cards off every surface, and a guide earns no exception.
+        /// </summary>
+        /// <param name="title">The chapter's title.</param>
+        /// <param name="subtitle">One quieter line under it, or null.</param>
+        /// <param name="body">The chapter's content.</param>
+        private static UIElement Chapter(string title, string? subtitle, params UIElement[] body)
+        {
+            var stack = Ui.Stack();
+
+            var label = Ui.Eyebrow(title);
+            label.Margin = new System.Windows.Thickness(0, 14, 0, 4);
+            stack.Children.Add(label);
+
+            if (!string.IsNullOrEmpty(subtitle)) stack.Children.Add(Ui.Sub(subtitle!));
+
+            foreach (var part in body) stack.Children.Add(part);
+
+            return stack;
+        }
+
     }
 }

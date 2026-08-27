@@ -39,10 +39,35 @@ namespace CamelWorks.UI.Views
         /// sweep now, over one pass of the model, ranked worst first — because the question anybody
         /// opens this tab with has a single answer and it is not five paragraphs long.
         ///
-        /// The IDS card below is a genuinely different act: those are the client's rules, in a file
-        /// somebody with a contract wrote, and nothing on it is CamelWorks' opinion about the data.
+        /// The IDS check is a genuinely different act: those are the client's rules, in a file
+        /// somebody with a contract wrote, and nothing about it is CamelWorks' opinion about the
+        /// data — so its file lives in its own setup group and its answer lands on the same stage.
         /// </summary>
-        public static UIElement Health() => Ui.Scroll(Ui.Stack(Sweep(), Ids()));
+        public static UIElement Health()
+        {
+            var live = Host.Current;
+
+            if (live == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
+
+            var results = Ui.Stack();
+            var idsResults = Ui.Stack();
+            var codes = CodeChoice();
+
+            results.Children.Add(Bench.Ready(
+                "Sweeps " + Ui.Count(live.Model.Models.Count, "model")
+                + " in one pass: placement, geometry, what has arrived, and what it is coded as.",
+                "The verdict lands here, worst first, with the fix under the finding that asks for it."));
+
+            var foot = Ui.Runner("Check this federation", results, job => Sweep(results, codes, job));
+
+            return Bench.Surface(
+                Ui.Stack(
+                    codes.Fields,
+                    IdsGroup(live, idsResults)),
+                foot,
+                Ui.Stack(results, idsResults));
+        }
 
         /// <summary>Where CamelWorks keeps the manifest of what the last check saw.</summary>
         private const string IntakeKey = "intake";
@@ -60,82 +85,66 @@ namespace CamelWorks.UI.Views
         /// four times over, and on a real project each pass is minutes. They want different things
         /// from each element and there is no reason to ask twice.
         /// </summary>
-        private static UIElement Sweep()
+        private static void Sweep(Panel results, CodeSource codes, Job job)
         {
-            var results = Ui.Stack();
-            var codes = CodeChoice();
+            var session = Host.Current;
+            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-            var run = Ui.Runner("Check this federation", results, job =>
+            var review = new FederationReview();
+            var actions = Ui.Stack();
+
+            var loaded = Loaded(session, review);
+            var reading = Walk(session, job, codes);
+
+            if (reading == null) return;   // stopped
+
+            BuiltIn(reading, review);
+            var intake = Arrivals(session, reading, review, actions);
+            CodeCheck(session, reading, codes, review);
+
+            session.Record(ActivityKind.Reconcile, "swept the federation: " + review);
+
+            results.Children.Add(Answer(review));
+            results.Children.Add(Ui.Small(reading.Explain(session)));
+
+            // The remedy goes under the finding that asks for it. A fix appended after five
+            // findings is a fix nobody connects to the one that said "put it back below".
+            foreach (var finding in review.Findings)
             {
-                var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
+                results.Children.Add(Found(session, finding));
 
-                var review = new FederationReview();
-                var actions = Ui.Stack();
-
-                var loaded = Loaded(session, review);
-                var reading = Walk(session, job, codes);
-
-                if (reading == null) return;   // stopped
-
-                BuiltIn(reading, review);
-                var intake = Arrivals(session, reading, review, actions);
-                CodeCheck(session, reading, codes, review);
-
-                session.Record(ActivityKind.Reconcile, "swept the federation: " + review);
-
-                results.Children.Add(Answer(review));
-                results.Children.Add(Ui.Small(reading.Explain(session)));
-
-                // The remedy goes under the finding that asks for it. A fix appended after five
-                // findings is a fix nobody connects to the one that said "put it back below".
-                foreach (var finding in review.Findings)
+                if (finding.Check == Placed && actions.Children.Count > 0)
                 {
-                    results.Children.Add(Found(session, finding));
-
-                    if (finding.Check == Placed && actions.Children.Count > 0)
-                    {
-                        results.Children.Add(actions);
-                        actions = Ui.Stack();
-                    }
-
-                    if (finding.Check == Federated && loaded.AnyMissing)
-                    {
-                        results.Children.Add(Repoint(session));
-                        loaded = (loaded.Table, false);
-                    }
+                    results.Children.Add(actions);
+                    actions = Ui.Stack();
                 }
 
-                foreach (var skipped in review.Missing) results.Children.Add(Ui.Small("Not checked: " + skipped));
+                if (finding.Check == Federated && loaded.AnyMissing)
+                {
+                    results.Children.Add(Repoint(session));
+                    loaded = (loaded.Table, false);
+                }
+            }
 
-                if (actions.Children.Count > 0) results.Children.Add(actions);
+            foreach (var skipped in review.Missing) results.Children.Add(Ui.Small("Not checked: " + skipped));
 
-                results.Children.Add(Ui.Section("What is loaded",
-                    Ui.Count(session.Model.Models.Count, "model") + " in this federation", false,
-                    loaded.Table,
-                    intake));
-            });
+            if (actions.Children.Count > 0) results.Children.Add(actions);
 
-            return Ui.Marked(Glyphs.Tick, "Is this fit to coordinate against?",
-                "Placement, geometry, what has arrived and what it is coded as, in one pass over "
-                + "the models.",
-                run,
-                codes.Fold,
-                results);
+            results.Children.Add(Ui.Eyebrow("What is loaded"));
+            results.Children.Add(Ui.Small(Ui.Count(session.Model.Models.Count, "model")
+                                          + " in this federation"));
+            results.Children.Add(loaded.Table);
+            results.Children.Add(intake);
         }
 
         /// <summary>The verdict, said once and in one line.</summary>
         private static UIElement Answer(FederationReview review)
         {
-            var headline = Ui.Heading(review.Verdict());
-
-            headline.Tint(TextBlock.ForegroundProperty,
-                review.Grade == ReviewGrade.Fault ? "RedTx"
-                : review.Grade == ReviewGrade.Watch ? "AmberTx"
-                : "Ok");
-
             return Ui.Stack(
-                headline,
+                Bench.Verdict(review.Verdict(),
+                    review.Grade == ReviewGrade.Fault ? Tone.Bad
+                    : review.Grade == ReviewGrade.Watch ? Tone.Warn
+                    : Tone.Good),
                 Ui.Across(
                     Ui.Figure(Measure.Count(review.Faults), "to settle",
                               review.Faults > 0 ? Tone.Bad : Tone.Plain),
@@ -579,15 +588,15 @@ namespace CamelWorks.UI.Views
             /// <summary>The property carrying the code, as "Category / Name" or a bare name.</summary>
             public string Property { get; set; } = string.Empty;
 
-            /// <summary>The disclosure holding the two, or null when there is nothing to choose.</summary>
-            public UIElement? Fold { get; set; }
+            /// <summary>The setup group holding the two, or null when there is nothing to choose.</summary>
+            public UIElement? Fields { get; set; }
         }
 
         /// <summary>
-        /// The one thing on this panel anybody can be asked to choose, folded away below the button.
+        /// The one thing on this surface anybody can be asked to choose, as a setup group.
         ///
         /// It defaults to the first table and to a property named after it, which is right often
-        /// enough that most people never open it. A project with no code tables gets no fold at
+        /// enough that most people never touch it. A project with no code tables gets no group at
         /// all rather than an empty one: the sweep says the check was skipped and why.
         /// </summary>
         private static CodeSource CodeChoice()
@@ -612,11 +621,9 @@ namespace CamelWorks.UI.Views
                 property.Text = pick;
             });
 
-            source.Fold = Ui.Section("Which property carries the code",
-                () => source.Table + " · " + source.Property, false,
-                Ui.Form(
-                    Ui.Field("Table", picker),
-                    Ui.Field("Property", property, "\"Category / Name\", or a bare name for any category")));
+            source.Fields = Bench.Group("Which property carries the code",
+                Ui.Field("Table", picker),
+                Ui.Field("Property", property, "\"Category / Name\", or a bare name for any category"));
 
             return source;
         }
@@ -652,22 +659,20 @@ namespace CamelWorks.UI.Views
         ///
         /// An IDS is an employer's information requirements written so a machine can read them —
         /// "every wall carries a fire rating from this list", in a file, from whoever is paying for
-        /// the model. Nothing on this card is CamelWorks' opinion about your data. The file is the
+        /// the model. Nothing in this group is CamelWorks' opinion about your data. The file is the
         /// rules, and the only thing to set up is the file, which somebody else already wrote.
         ///
         /// The hard part is that IDS speaks IFC and a federation does not. See
         /// <see cref="IdsProjection"/> for how the two are bridged, and note that every guess it
         /// makes is reported on screen rather than folded silently into the result.
         /// </summary>
-        private static UIElement Ids()
+        private static UIElement IdsGroup(Session live, Panel results)
         {
-            var results = Ui.Stack();
-
             // The file a client sent is the file they will send a revision of, and the property
             // their exporter puts the IFC class in does not change between Tuesdays.
-            var kept = ToolMemory.Of(Host.Current?.Store, "project.ids");
+            var kept = ToolMemory.Of(live.Store, "project.ids");
 
-            var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), 340);
+            var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), 200);
             var classSource = Ui.Text(kept.Text("classFrom"), text => kept.Set("classFrom", text), 200);
 
             var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
@@ -767,23 +772,12 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
             });
 
-            return Ui.Marked(Glyphs.Report, "The client's own rules",
-                "Answer an IDS — the openBIM way of writing information requirements down — against "
-                + "this federation. Point it at the file and press the button; there is nothing else "
-                + "to fill in.",
-                Ui.Form(Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*")),
+            return Bench.Group("The client's rules",
+                Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*"),
+                Ui.Field("IFC class from", classSource,
+                         "leave it empty unless a run tells you to fill it in"),
                 run,
-                Ui.Section("Where the IFC class is read from", "wherever the readers put it", false,
-                    Ui.Form(Ui.Field("IFC class from", classSource,
-                                     "leave it empty unless a run tells you to fill it in")),
-                    Ui.Small("IDS is written about IFC classes, and a federation only carries those "
-                             + "where a model came from IFC — so CamelWorks looks in the places the "
-                             + "readers put them and believes a value only if it reads like a class "
-                             + "name. A Revit export saying \"Basic Wall\" is a family, not an "
-                             + "IfcWall, and treating it as one would make every row meaningless.")),
-                Ui.Rule(),
-                Author(results),
-                results);
+                Author(results));
         }
 
         /// <summary>
@@ -841,21 +835,12 @@ namespace CamelWorks.UI.Views
         /// by eye. Written as an IDS, the same file checks the model here, travels to the architect
         /// and comes back with the next revision.
         /// </summary>
-        private static UIElement Author(Panel results)
-        {
-            var open = Ui.Button("Write an IDS of our own...", () =>
+        private static UIElement Author(Panel results) =>
+            Ui.Quiet("Write an IDS of our own...", () =>
             {
-                var problem = IdsWindow.Show();
+                var problem = ToolViews.Open("ids");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
-
-            return Ui.Stack(
-                Ui.Eyebrow("Our own rules"),
-                Ui.Small("The properties this job has decided have to be filled in, and on what. "
-                         + "It opens on the specification everybody writes first, keeps the draft "
-                         + "in the project as IDS itself, and saves a .ids anybody's tool reads."),
-                Ui.Actions(open));
-        }
 
         /// <summary>Write the check out as the two sheets somebody works through.</summary>
         private static void Workbook(Panel results, IdsDocument document, IdsReport report, long ticks)
@@ -973,75 +958,123 @@ namespace CamelWorks.UI.Views
         }
 
         // -----------------------------------------------------------------------------------
-        // Setup
+        // Project Settings
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// What CamelWorks already derived, with an override on each line.
+        /// Project settings: what CamelWorks worked out, and every override, on one surface.
         ///
-        /// <b>This screen is skippable and says so.</b> Every value on it already has an answer, so
-        /// nothing here has to be visited before any other feature works — which is the difference
-        /// between a product you can try in a minute and one that starts with an afternoon of forms.
-        /// </summary>
-        /// <summary>
-        /// The project file, as a screen.
+        /// <b>This screen is skippable.</b> Every value on it already has an answer, so nothing
+        /// here has to be visited before any other feature works — which is the difference between
+        /// a product you can try in a minute and one that starts with an afternoon of forms. The
+        /// project file is created lazily and nothing blocks on it.
         ///
-        /// <b>It is created lazily and nothing blocks on it.</b> Every screen in the product works
-        /// against a raw model with none of this filled in; what is here makes the second project
-        /// faster, not the first one possible. A coordinator who never opens this tab gets the
-        /// whole product.
-        ///
-        /// Four things live here because all four are answers about the project rather than about
-        /// the model: who the parties are, what the priorities are called, which values a coded
-        /// property is allowed to hold, and the three operations that write into the model itself.
-        /// </summary>
-        /// <summary>
-        /// Project settings: what CamelWorks worked out, and every override, in one window.
-        ///
-        /// These were two ribbon buttons - Project Setup and Project Profile - and nobody could
-        /// say which held what. They are the same subject: values this job runs on, where each
-        /// came from, and the chance to disagree. Two tabs, because the second is about people
-        /// and deliverables rather than about the model, and that division somebody can predict.
+        /// The register of derived answers is the working material, so it is the stage; the inputs
+        /// that are the project's own — parties, priorities, code tables, the roster — are the
+        /// setup column, and saving the overrides is the one action at its foot. The operations
+        /// that write into the model itself stay at the bottom of the stage, where somebody has to
+        /// go looking for them.
         /// </summary>
         public static UIElement Settings()
         {
-            var body = Ui.Stack();
-
-            void ShowTab(string which)
-            {
-                body.Children.Clear();
-                body.Children.Add(which == "This project" ? Setup() : Profile());
-            }
-
-            var tabs = Ui.Segmented(new[] { "This project", "Team & outputs" }, "This project", ShowTab);
-
-            ShowTab("This project");
-
-            return Ui.Stack(tabs, body);
-        }
-
-        public static UIElement Profile()
-        {
             var session = Host.Current;
 
-            if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
+            if (session == null)
+                return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
 
-            // Three cards, and each earns one: they are three different acts with three different
-            // consequences, and the glyphs are there so that is legible before the titles are read.
-            return Ui.Scroll(Ui.Stack(
-                Ui.Small("Kept " + session.Store.Where),
-                Parties(session),
-                Codes(session),
-                ModelWrites(session)));
+            var profile = session.Profile;
+            var status = Ui.Stack();
+            var rows = Ui.Stack();
+
+            void Fill()
+            {
+                rows.Children.Clear();
+                foreach (var setting in profile.Settings) rows.Children.Add(Row(setting));
+            }
+
+            Fill();
+
+            // The way out of a decision somebody regrets. Every row here is an override of
+            // something CamelWorks worked out for itself, and a register that can only be
+            // overridden is one people are afraid to touch.
+            var reset = Ui.Quiet("Reset them all to derived", () =>
+            {
+                status.Children.Clear();
+
+                foreach (var setting in profile.Settings) setting.Override = null;
+
+                var section = session.Store.Section(ProjectStore.ProfileSection);
+
+                foreach (var key in section.Keys.ToList())
+                    if (profile.Find(key) != null) section.Remove(key);
+
+                Fill();
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Done("Every row is back to what CamelWorks worked out from the models.")
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
+            });
+
+            var save = Ui.Primary("Save overrides", () =>
+            {
+                status.Children.Clear();
+
+                // Written whole rather than merged: the profile object already carries every
+                // override in force, including the ones loaded from the file.
+                var saved = profile.OverridesToJson();
+                var section = session.Store.Section(ProjectStore.ProfileSection);
+
+                foreach (var key in section.Keys.ToList()) section.Remove(key);
+                foreach (var key in saved.Keys) section.Set(key, saved[key]);
+
+                status.Children.Add(session.Store.Save()
+                    ? Ui.Done("Saved " + Ui.Count(saved.Keys.Count, "override") + " to " + session.Store.Where)
+                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
+            });
+
+            // The project file's own problems are reported here, where the file is, rather than
+            // on the front door where they were three banners between the user and their week.
+            // The failures first when there are any: a screen reporting that the project file
+            // could not be read, and putting that below thirty rows of settings, is a screen that
+            // has filed its own alarm at the bottom of the scroll.
+            var broken = Ui.Stack();
+
+            if (session.Store.UsedBackup)
+                broken.Children.Add(Ui.Note("The project file could not be read and its backup was used "
+                                            + "instead. Nothing is lost that was saved before the last write."));
+
+            if (session.Store.ConcurrencyNote.Length > 0)
+                broken.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
+
+            return Bench.Surface(
+                Ui.Stack(
+                    Parties(session),
+                    Codes(session),
+                    People(session)),
+                save,
+                Ui.Stack(
+                    broken,
+                    Ui.Eyebrow("What CamelWorks worked out"),
+                    rows,
+                    Ui.Actions(reset),
+                    status,
+                    ModelWrites(session),
+                    Ui.Split("Project file", session.Store.Where)));
         }
 
-        /// <summary>Who a clash can be assigned to, and what the priorities are called.</summary>
+        /// <summary>
+        /// Who a clash can be assigned to, and what the priorities are called.
+        ///
+        /// Left alone, the board still works: the assignee is free text and the priorities are the
+        /// built-in three. Filling them in turns two free-text boxes into pickers, which is worth
+        /// about a minute a week.
+        /// </summary>
         private static UIElement Parties(Session session)
         {
             var status = Ui.Stack();
 
-            var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, 380);
-            var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, 380);
+            var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, 200);
+            var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, 200);
 
             var save = Ui.Button("Save", () =>
             {
@@ -1056,16 +1089,10 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
             });
 
-            return Ui.Marked(Glyphs.Onward, "Who a clash can be given to",
-                "Comma separated. Derived from the disciplines in the loaded models until you say "
-                + "otherwise.",
-                Ui.Form(
-                    Ui.Field("Parties", parties),
-                    Ui.Field("Priorities", priorities)),
+            return Bench.Group("Who a clash can be given to",
+                Ui.Field("Parties", parties, "comma separated; derived from the models until set"),
+                Ui.Field("Priorities", priorities, "empty keeps the built-in three"),
                 Ui.Actions(save),
-                Ui.Small("Leave these alone and the board still works: the assignee is free text and "
-                         + "the priorities are the built-in three. Filling them in turns two free-text "
-                         + "boxes into pickers, which is worth about a minute a week."),
                 status);
         }
 
@@ -1083,7 +1110,7 @@ namespace CamelWorks.UI.Views
             var list = Ui.Stack();
 
             var name = Ui.Text("Uniclass", null, 180);
-            var body = Ui.Text(string.Empty, null, 420);
+            var body = Ui.Text(string.Empty, null, 200);
 
             var tables = CodeTables.FromJson(
                 session.Store.Section(ProjectStore.ProfileSection)["codeTables"]);
@@ -1150,16 +1177,12 @@ namespace CamelWorks.UI.Views
 
             Redraw();
 
-            return Ui.Marked(Glyphs.Table, "Code tables",
-                "The values a coded property is allowed to hold, and the ones it is not.",
+            return Bench.Group("Code tables",
                 list,
-                Ui.Section("Paste one in", "code, description, parent - one per line", false,
-                    Ui.Form(
-                        Ui.Field("Name", name),
-                        Ui.Field("Rows", body, "commas or tabs between them, and a line starting "
-                                               + "with # is a comment")),
-                    add,
-                    Ui.Small("Paste the column straight out of the spreadsheet your client sent.")),
+                Ui.Field("Name", name),
+                Ui.Field("Rows", body, "commas or tabs between them; # starts a comment"),
+                add,
+                Ui.Small("Paste the column straight out of the spreadsheet your client sent."),
                 status);
         }
 
@@ -1184,7 +1207,7 @@ namespace CamelWorks.UI.Views
         {
             var status = Ui.Stack();
 
-            var count = Ui.Runner("Count what CamelWorks has written", status, job =>
+            var count = Ui.Runner("Count what CamelWorks has written", status, primary: false, work: job =>
             {
                 var carrying = Carrying(session, job, out var read);
 
@@ -1206,8 +1229,8 @@ namespace CamelWorks.UI.Views
                     () => Strip(session, carrying, status)));
             });
 
-            return Ui.Marked(Glyphs.Bin, "Take back what CamelWorks wrote",
-                "Everything the product has put into the model itself, and the way to remove it.",
+            return Ui.Stack(
+                Ui.Eyebrow("Take back what CamelWorks wrote"),
                 count,
                 Ui.Small("Ctrl+Z does not undo a property write - Navisworks does not put custom "
                          + "property writes on its undo stack. What CamelWorks wrote is recorded in "
@@ -1285,85 +1308,6 @@ namespace CamelWorks.UI.Views
 
             session.Store.Section(ProjectStore.ProfileSection)
                    .Set(key, JsonValue.String(string.IsNullOrWhiteSpace(value) ? null : value!.Trim()));
-        }
-
-        public static UIElement Setup()
-        {
-            var session = Host.Current;
-
-            if (session == null) return Ui.Scroll(Ui.Stack(Ui.Problem(Host.NoModel)));
-
-            var profile = session.Profile;
-            var status = Ui.Stack();
-            var rows = Ui.Stack();
-
-            void Fill()
-            {
-                rows.Children.Clear();
-                foreach (var setting in profile.Settings) rows.Children.Add(Row(setting));
-            }
-
-            Fill();
-
-            // The way out of a decision somebody regrets. Every row on this tab is an override of
-            // something CamelWorks worked out for itself, and a tab that can only be overridden is
-            // one people are afraid to touch.
-            var reset = Ui.Quiet("Reset them all to derived", () =>
-            {
-                status.Children.Clear();
-
-                foreach (var setting in profile.Settings) setting.Override = null;
-
-                var section = session.Store.Section(ProjectStore.ProfileSection);
-
-                foreach (var key in section.Keys.ToList())
-                    if (profile.Find(key) != null) section.Remove(key);
-
-                Fill();
-
-                status.Children.Add(session.Store.Save()
-                    ? Ui.Done("Every row is back to what CamelWorks worked out from the models.")
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
-            });
-
-            var save = Ui.Primary("Save overrides", () =>
-            {
-                status.Children.Clear();
-
-                // Written whole rather than merged: the profile object already carries every
-                // override in force, including the ones loaded from the file.
-                var saved = profile.OverridesToJson();
-                var section = session.Store.Section(ProjectStore.ProfileSection);
-
-                foreach (var key in section.Keys.ToList()) section.Remove(key);
-                foreach (var key in saved.Keys) section.Set(key, saved[key]);
-
-                status.Children.Add(session.Store.Save()
-                    ? Ui.Done("Saved " + Ui.Count(saved.Keys.Count, "override") + " to " + session.Store.Where)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "The project file could not be written."));
-            });
-
-            // The project file's own problems are reported here, where the file is, rather than
-            // on the front door where they were three banners between the user and their week.
-            var file = Ui.Stack(Ui.Split("Project file", session.Store.Where));
-            var broken = Ui.Stack();
-
-            if (session.Store.UsedBackup)
-                broken.Children.Add(Ui.Note("The project file could not be read and its backup was used "
-                                            + "instead. Nothing is lost that was saved before the last write."));
-
-            if (session.Store.ConcurrencyNote.Length > 0)
-                broken.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
-
-            // The failures first when there are any. A tab reporting that the project file could
-            // not be read, and putting that below thirty rows of settings, is a tab that has
-            // filed its own alarm at the bottom of the scroll.
-            return Ui.Scroll(Ui.Stack(
-                broken,
-                Ui.Marked(Glyphs.Tune, "What CamelWorks worked out", null,
-                          Ui.Form(rows), Ui.Actions(save, reset), status),
-                People(session),
-                file));
         }
 
         /// <summary>
@@ -1467,15 +1411,11 @@ namespace CamelWorks.UI.Views
                 Keep();
             });
 
-            return Ui.Marked(Glyphs.Tune, "Who is on the job",
-                "The organisations and the people in them. The board offers these when a group is "
-                + "assigned, and more than one person can carry a group.",
+            return Bench.Group("Who is on the job",
                 list,
-                Ui.Form(
-                    Ui.Pair(Ui.Field("Name", name), Ui.Field("Organisation", party)),
-                    Ui.Field("Address", email,
-                             "Optional, and the difference between a BCF file somebody receives "
-                             + "and one that waits in a folder to be noticed.")),
+                Ui.Field("Name", name),
+                Ui.Field("Organisation", party),
+                Ui.Field("Address", email, "optional; where a BCF file reaches them"),
                 Ui.Actions(add),
                 Ui.Small("Unticking somebody keeps them on the roster and out of every list. Their "
                          + "work does not leave when they do, and the board says so."),
@@ -1609,6 +1549,11 @@ namespace CamelWorks.UI.Views
         {
             var status = Ui.Stack();
 
+            status.Children.Add(Bench.Ready(
+                "Opens the BIMCamel IFC exporter, which docks as its own panel.",
+                "The mapping, the classification and the writing all live there, so the two "
+                + "settings forms can never disagree."));
+
             var open = Ui.Primary("Open the IFC exporter", () =>
             {
                 status.Children.Clear();
@@ -1634,9 +1579,7 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Ui.Scroll(Ui.Stack(
-                Ui.Across(open),
-                status));
+            return Bench.Surface(null, open, status);
         }
     }
 }

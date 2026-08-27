@@ -3,38 +3,49 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Project;
-
+using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The front door: the weekly cycle, when each step last happened, and the way to each.
+    /// The front door: the week, the five desks, and what has happened lately.
     ///
     /// A coordinator's week has a shape — bring in the new models, run the rules over what that
     /// broke, send out the result — and a product whose front page is a menu makes them rebuild
-    /// that shape in their head every Monday. This screen is the shape, with the state filled in.
+    /// that shape in their head every Monday. This screen is the shape with the state filled in,
+    /// and under it the five desks, each with the one sentence that says which job it is.
+    ///
+    /// It is what the dock pane shows when no beside-the-model tool has it. It is a place to
+    /// leave from: no tool lives here.
     /// </summary>
     public static class HomeView
     {
         /// <summary>
         /// Build the screen.
-        ///
-        /// Unscrolled, because it is the top of the launcher rather than a screen of its own. It
-        /// was a screen of its own once - a tab called Home - and when the tabs went it went with
-        /// them and nothing called it for a fortnight, while Help went on describing the weekly
-        /// cycle as the front door.
         /// </summary>
         /// <param name="goTo">Open a tool by its id.</param>
         public static UIElement Build(Action<string> goTo)
         {
             var session = Host.Current;
 
-            if (session == null) return Ui.Stack(Ui.Sub(Host.NoModel));
+            var stack = Ui.Stack();
 
-            return Ui.Stack(
-                Header(session),
-                Cycle(session, goTo),
-                Recent(session));
+            if (session == null)
+            {
+                stack.Children.Add(Ui.Empty("No model is open.", Host.NoModel));
+                stack.Children.Add(Ui.Rule());
+                stack.Children.Add(DeskList());
+                return Ui.Scroll(stack);
+            }
+
+            stack.Children.Add(Header(session));
+            stack.Children.Add(Cycle(session, goTo));
+            stack.Children.Add(Ui.Rule());
+            stack.Children.Add(DeskList());
+            stack.Children.Add(Ui.Rule());
+            stack.Children.Add(Recent(session));
+
+            return Ui.Scroll(stack);
         }
 
         private static UIElement Header(Session session)
@@ -49,14 +60,10 @@ namespace CamelWorks.UI.Views
                     ? Ui.Count(session.Clash.Tests().Count, "clash test")
                     : "no clash engine", session.Clash.IsAvailable ? Tone.Plain : Tone.Warn));
 
-            // The project file belongs where its problems are reported, which is Setup.
             var body = Ui.Stack(name, chips);
 
-            // The warn-toned chip above already says there is no clash engine; a sixty-word banner
-            // saying it again is the front door explaining itself instead of showing the week.
-            // Backup-used and concurrency are facts about a file rather than about this week, and
-            // they are reported on Setup, where the file is. Read-only is the one that stops every
-            // button in the product, so it is the one that stays.
+            // Read-only is the one store problem that stops every button in the product, so it is
+            // the one that is said here rather than on Project Settings.
             if (session.Store.IsReadOnly)
                 body.Children.Add(Ui.Note(session.Store.ReadOnlyReason ?? string.Empty));
 
@@ -64,20 +71,20 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The three steps of the week, as three steps.
+        /// The three steps of the week, with when each last happened.
         ///
-        /// This was three stacked paragraphs with a small grey button at the end of each: the same
-        /// information, arranged so that nothing on the front door of the product looked more
-        /// important than anything else. A numbered marker in the step's own colour, the state as a
-        /// chip rather than a sentence, and one weighted action per row is the difference between
-        /// a page somebody reads and a page somebody uses.
+        /// Only the first undone step leads: on a project's first day all three are undone, and
+        /// three blue buttons is the same as none.
         /// </summary>
         private static UIElement Cycle(Session session, Action<string> goTo)
         {
             var rows = Ui.Stack();
-            var step = 0;
 
-            // Only the first undone step leads. Set once, read by every row after it.
+            var label = Ui.Eyebrow("The week");
+            label.Margin = new Thickness(0, 12, 0, 4);
+            rows.Children.Add(label);
+
+            var step = 0;
             var led = false;
 
             foreach (var kind in ActivityKind.Cycle)
@@ -105,9 +112,6 @@ namespace CamelWorks.UI.Views
                 Grid.SetColumn(left, 1);
                 line.Children.Add(left);
 
-                // The FIRST step nobody has done yet is the one that should look like the thing to
-                // press. On a project's first day all three are undone, and three blue buttons is
-                // the same as none.
                 var lead = never && !led;
                 if (never) led = true;
 
@@ -123,11 +127,10 @@ namespace CamelWorks.UI.Views
                 if (step < ActivityKind.Cycle.Count) rows.Children.Add(Ui.Rule());
             }
 
-            return Ui.Marked(Glyphs.Clock, "The week",
-                "Reconcile, regroup, report. Each opens where the work actually happens.", rows);
+            return rows;
         }
 
-        /// <summary>The step's number, in the colour of the workspace it opens.</summary>
+        /// <summary>The step's number, in the colour of the desk it opens.</summary>
         private static UIElement Marker(int step, string kind)
         {
             var badge = new Border
@@ -155,7 +158,6 @@ namespace CamelWorks.UI.Views
         private static string FamilyOf(string kind) => kind switch
         {
             ActivityKind.Reconcile => "Project",
-            ActivityKind.Regroup => "Coordinate",
             _ => "Coordinate",
         };
 
@@ -167,13 +169,7 @@ namespace CamelWorks.UI.Views
             _ => "clashreport",
         };
 
-        /// <summary>
-        /// What the step's button says.
-        ///
-        /// The row is labelled with a verb — Reconcile, Regroup, Report — and the button used to
-        /// be labelled with a place: Models, Board, Reports. Two vocabularies for one step, and
-        /// the first of the three places was a tab called Health.
-        /// </summary>
+        /// <summary>What the step's button says.</summary>
         private static string GoLabel(string kind) => kind switch
         {
             ActivityKind.Reconcile => "Check the models",
@@ -181,15 +177,80 @@ namespace CamelWorks.UI.Views
             _ => "Write the report",
         };
 
+        /// <summary>
+        /// The five desks: the job each one is, and the way to it.
+        /// </summary>
+        private static UIElement DeskList()
+        {
+            var stack = Ui.Stack();
+
+            var label = Ui.Eyebrow("The desks");
+            label.Margin = new Thickness(0, 12, 0, 4);
+            stack.Children.Add(label);
+
+            foreach (var desk in Desks.All)
+            {
+                var here = desk;
+
+                var marker = new Border
+                {
+                    Width = 3,
+                    CornerRadius = new CornerRadius(1.5),
+                    Margin = new Thickness(0, 2, 9, 2),
+                };
+
+                marker.SetResourceReference(Border.BackgroundProperty, "Fam." + here.Family);
+
+                var text = Ui.Stack(
+                    Ui.Line(here.Title, 1, true),
+                    Ui.Line(here.Job, 0.7));
+
+                var row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.Children.Add(marker);
+                Grid.SetColumn(text, 1);
+                row.Children.Add(text);
+
+                var button = new Button
+                {
+                    Content = row,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Padding = new Thickness(8, 6, 8, 6),
+                    Margin = new Thickness(0, 0, 0, 2),
+                };
+
+                button.Wearing("RailRow");
+                button.Click += (s, e) => Ui.Told(DeskWindow.Show(here.Id));
+
+                stack.Children.Add(button);
+            }
+
+            stack.Children.Add(Ui.Small("Every tool is on one of these, and Find a tool above "
+                                        + "knows them all by what they do."));
+
+            return stack;
+        }
+
         private static UIElement Recent(Session session)
         {
             var entries = session.Store.Activity.Entries.Take(12).ToList();
 
+            var stack = Ui.Stack();
+
+            var label = Ui.Eyebrow("Recent");
+            label.Margin = new Thickness(0, 12, 0, 4);
+            stack.Children.Add(label);
+
             if (entries.Count == 0)
-                return Ui.Marked(Glyphs.Report, "Recent", null,
-                    Ui.Empty("Nothing has happened on this project yet.",
-                        "CamelWorks writes a line here every time it changes the model, produces a "
-                        + "report or runs the rules — so a project handed over mid-job says what was done to it."));
+            {
+                stack.Children.Add(Ui.Empty("Nothing has happened on this project yet.",
+                    "CamelWorks writes a line here every time it changes the model, produces a "
+                    + "report or runs the rules — so a project handed over mid-job says what was "
+                    + "done to it."));
+
+                return stack;
+            }
 
             var rows = entries.Select(e => new TableRow(e,
                 ActivityKind.Title(e.Kind),
@@ -198,12 +259,11 @@ namespace CamelWorks.UI.Views
 
             var recent = Ui.Table(rows, ("What", 110), ("Happened", 0), ("When", 110));
 
-            // "What has been done to this project" is the question a handover asks, and the answer
-            // used to be readable and not takeable.
-            return Ui.Marked(Glyphs.Report, "Recent", null,
-                Ui.Picking(recent,
-                    new Ui.OnPicked("Copy {n}",
-                        (picked, say) => Ui.Copy(Ui.Lines(recent, picked), say, "entry"))));
+            stack.Children.Add(Ui.Picking(recent,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(recent, picked), say, "entry"))));
+
+            return stack;
         }
     }
 }

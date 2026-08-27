@@ -7,31 +7,23 @@ using CamelWorks.UI.Views;
 namespace CamelWorks.Studio
 {
     /// <summary>
-    /// The dialogue windows, reconstructed.
+    /// The two windows that are not desks, and the wizard spine, reconstructed.
     ///
-    /// These were the one part of the product nobody had ever looked at. The panes have been
-    /// rendered here since the harness was built; the fourteen windows were added during a sprint
-    /// that closed a capability gap, went straight into the product, and were reviewed by reading
-    /// their layout code - which is how all fourteen ended up with ninety-eight buttons of exactly
-    /// one weight and not a single one marked as the action the window is for.
-    ///
-    /// Same rule as <see cref="Panels"/>: same cards in the same order, same captions, same button
-    /// weights, plausible data where the real one reads the host. Where a reconstruction and its
-    /// window disagree the reconstruction is wrong, and fixing it is part of changing the window.
-    ///
-    /// They are wider than the panes because they are windows: a dialogue is sized to the work,
-    /// which was the whole reason for having them.
+    /// Review is a floating palette over the 3D view and the wizards are a spine of steps down
+    /// the left — both shapes the desks cannot show, so each gets a picture of its own. Same rule
+    /// as <see cref="Panels"/>: same captions, same weights, plausible data where the real one
+    /// reads the host.
     /// </summary>
     public static class Dialogs
     {
-        /// <summary>The windows, in the order the ribbon offers them.</summary>
+        /// <summary>The windows, in the order the product offers them.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
             Sheet("dlg-review", "Window · Review a finding", 720, 620, Review),
-            Sheet("dlg-clashxml", "Window · Clash XML", 940, 760, ClashXml),
-            Sheet("dlg-ids", "Window · IDS authoring", 1000, 1120, Ids),
-            Sheet("dlg-datalink", "Wizard · External Data", 640, 900, DataLink),
-            Sheet("dlg-laststep", "Wizard · The last step", 620, 900, LastStep),
+            Sheet("dlg-clashxml", "Bench · Clash XML", 760, 1180, ClashXml),
+            Sheet("dlg-ids", "Bench · IDS authoring", 1000, 1180, Ids),
+            Sheet("dlg-wizard", "Wizard · The spine", 640, 1000, Wizard),
+            Sheet("dlg-laststep", "Wizard · The last step", 640, 1000, LastStep),
         };
 
         private static Sheet Sheet(string id, string title, int height, int width, Func<UIElement> build) =>
@@ -67,49 +59,41 @@ namespace CamelWorks.Studio
                     + "B boxes, A annotates. Nothing is written until this window closes."));
 
         // -----------------------------------------------------------------------------------
-        // Clash XML — read a board in, write one out, against a named profile
+        // Clash XML — the two-leg editor on the bench
         // -----------------------------------------------------------------------------------
 
-        /// <summary>
-        /// The write leg, which is the one the switch opens on.
-        ///
-        /// The point of the picture is what is folded. Which results go in and how the file is
-        /// written are options, and the profile that remembers them is a convenience, so all three
-        /// are shut. What is open is the board, the file and the one button the tool exists for -
-        /// where the loudest thing used to be a button that saves a settings file.
-        /// </summary>
-        private static UIElement ClashXml() =>
-            // In the real frame, because the frame is most of what somebody sees when a tool opens
-            // and every picture before this one left it out.
-            ToolWindow.Frame(Tools.Find("clashxml"), Sheets.Page(
-            Ui.Segmented(new[] { "Write one", "Read one back" }, "Write one", null),
+        private static UIElement ClashXml()
+        {
+            var setup = Ui.Stack(
+                Bench.Group(string.Empty,
+                    Ui.Segmented(new[] { "Write one", "Read one back" }, "Write one", null)),
+                Bench.Group("This profile",
+                    Ui.Field("Called", Ui.Text("Weekly issue to the contractor", null, 200)),
+                    Ui.Across(
+                        Ui.Quiet("Keep", () => { }),
+                        Ui.Danger("Forget", () => { })),
+                    Ui.Across(
+                        Ui.Quiet("Save the profile to a file...", () => { }),
+                        Ui.Quiet("Load a profile from a file...", () => { }))),
+                Bench.Group("How it is written",
+                    Ui.Check("Keep the folders as folders", true, null),
+                    Ui.Check("Write each result's two elements", true, null)),
+                Bench.Group("The file",
+                    Ui.PathField("File", Ui.Text(@"D:\Projects\Riverside\Clash\week-31.xml",
+                                                 null, 200), PathKind.Save)));
 
-            Ui.Eyebrow("The tests"),
-            Ui.Line("Six tests on this board, 764 results between them.", 1, true),
-            Ui.Table(Tests(), ("Test", 0), ("Clashes", 90), ("In", 60)),
-
-            Ui.Section("What goes in", "which results, and whose", false,
-                Ui.Small("Untick the ones the receiving tool has no use for."),
-                Ui.Actions(
+            var stage = Ui.Stack(
+                Ui.Eyebrow("The tests"),
+                Ui.Line("Six tests on this board, 764 results between them.", 1, true),
+                Ui.Table(Tests(), ("Test", 0), ("Clashes", 90), ("In", 60)),
+                Ui.Across(
                     Ui.Quiet("Tick every test", () => { }),
-                    Ui.Quiet("Untick every test", () => { }))),
+                    Ui.Quiet("Untick every test", () => { })),
+                Ui.Commit("Show me what would go in", "Write", "result",
+                          (job, into) => 0, job => { }));
 
-            Ui.Section("How it is written", "folders, elements, units", false,
-                Ui.Check("Keep the folders as folders", true, null),
-                Ui.Check("Write each result's two elements", true, null)),
-
-            Ui.Section("This profile", "keep these settings for next time", false,
-                Ui.Field("Called", Ui.Text("Weekly issue to the contractor", null, 300)),
-                Ui.Actions(
-                    Ui.Quiet("Keep", () => { }),
-                    Ui.Danger("Forget", () => { }),
-                    Ui.Quiet("Save the profile to a file...", () => { }),
-                    Ui.Quiet("Load a profile from a file...", () => { }))),
-
-            Ui.Rule(),
-
-            Ui.Field("File", Ui.Text(@"D:\Projects\Riverside\Clash\week-31.xml", null, 380)),
-            Ui.Actions(Ui.Runner("Show me what would go in", Ui.Stack(), _ => { }))));
+            return Bench.Surface(setup, null, stage);
+        }
 
         private static IEnumerable<TableRow> Tests()
         {
@@ -120,66 +104,65 @@ namespace CamelWorks.Studio
         }
 
         // -----------------------------------------------------------------------------------
-        // External Data — the first tool to become a wizard
+        // The wizard spine — a step behind, the step itself, three ahead
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// Step two of five, so the rail shows a step behind, the step itself, and three ahead.
+        /// Step two of five, so the spine shows the whole job with one step answered.
         ///
-        /// The point of the picture is the rail and what is missing from the screen: there is no
-        /// column mapping here and no write button, because neither means anything until the file
-        /// and the model have been read. The window this replaced had all five on screen at once.
+        /// The point of the picture is what is missing from the stage: there is no column mapping
+        /// here and no write button, because neither means anything until the file and the model
+        /// have been read.
         /// </summary>
-        private static UIElement DataLink() => Sheets.Page(
+        private static UIElement Wizard() =>
             Ui.Steps(new[]
             {
                 new Ui.Step("The file", () => Ui.Stack(
                     Ui.PathField("Spreadsheet", Ui.Text(@"D:\Projects\Riverside\Asset register.xlsx",
                                                         null, 340), PathKind.Open),
-                    Ui.Form(Ui.Field("Worksheet", Ui.Choice(new[] { "Assets", "Rooms" }, "Assets", null))),
+                    Ui.Field("Worksheet", Ui.Choice(new[] { "Assets", "Rooms" }, "Assets", null)),
                     Ui.Line("412 rows, 9 columns.", 0.85)), () => null),
 
                 new Ui.Step("The model", () => Ui.Stack(
-                    Ui.Form(Ui.Field("Scope",
+                    Ui.Field("Scope",
                         Ui.Choice(new[] { "What is selected", "Everything loaded" },
-                                  "Everything loaded", null))),
+                                  "Everything loaded", null)),
                     Ui.Actions(Ui.Primary("Read the model", () => { })),
                     Ui.Line("41,880 elements read.", 0.85))),
 
                 new Ui.Step("Matching", () => Ui.Stack()),
                 new Ui.Step("Columns", () => Ui.Stack()),
                 new Ui.Step("Write", () => Ui.Stack()),
-            }, null, null));
+            }, null, null);
 
         // -----------------------------------------------------------------------------------
-        // The last step — the one branch of Ui.Steps nothing has ever drawn
+        // The last step — the branch where the step carries its own commit
         // -----------------------------------------------------------------------------------
 
         /// <summary>
         /// The end of a wizard whose last step carries its own two-stage commit.
         ///
-        /// Worth a picture of its own because it is the branch that is easiest to get wrong: on the
-        /// last step Next has nothing to advance to, and where the step already holds the action -
-        /// as five of the six do - there is no finish button either, so the row underneath is Back
-        /// and nothing else. A wizard that ends on a dead button that says "Finish" and does
-        /// nothing is worse than one that ends on no button at all.
+        /// Worth a picture of its own because it is the branch that is easiest to get wrong: on
+        /// the last step Next has nothing to advance to, and where the step already holds the
+        /// action there is no finish button either — the spine's foot is Back and nothing else.
+        /// A wizard that ends on a dead button saying "Finish" is worse than one that ends on no
+        /// button at all.
         /// </summary>
         private static UIElement LastStep() =>
-            ToolWindow.Frame(Tools.Find("matrix"), Sheets.Page(
-                Ui.Steps(new[]
-                {
-                    // Answered, so the wizard opens past them - which is what puts this
-                    // picture on the step it is about.
-                    new Ui.Step("The sheet", () => Ui.Stack(), () => null),
-                    new Ui.Step("The matrix", () => Ui.Stack(), () => null),
-                    new Ui.Step("The tests", () => Ui.Stack(
-                        Ui.Commit("Show me the tests it would make", "Create", "test",
-                                  (job, into) => 0, job => { }),
-                        Ui.Line("38 tests, 6 already there and left alone.", 0.85))),
-                }, null, null)));
+            Ui.Steps(new[]
+            {
+                // Answered, so the wizard opens past them - which is what puts this
+                // picture on the step it is about.
+                new Ui.Step("The sheet", () => Ui.Stack(), () => null),
+                new Ui.Step("The matrix", () => Ui.Stack(), () => null),
+                new Ui.Step("The tests", () => Ui.Stack(
+                    Ui.Commit("Show me the tests it would make", "Create", "test",
+                              (job, into) => 0, job => { }),
+                    Ui.Line("38 tests, 6 already there and left alone.", 0.85))),
+            }, null, null);
 
         // -----------------------------------------------------------------------------------
-        // IDS authoring — the densest window in the product
+        // IDS authoring — the densest editor, unfolded
         // -----------------------------------------------------------------------------------
 
         private static UIElement Ids() => Sheets.Page(
@@ -195,39 +178,33 @@ namespace CamelWorks.Studio
                 Ui.Primary("Save as an .ids file...", () => { }),
                 Ui.Quiet("Keep the draft here", () => { })),
 
-            // Folded, and under the action, because what the file is called is set once and read
-            // never. It used to be the first thing on the screen.
-            Ui.Section("This document", "what the file says it is", false,
-                Ui.Form(
-                    Ui.Field("Called", Ui.Text("Riverside employer's information requirements", null, 340)),
-                    Ui.Pair(Ui.Field("Version", Ui.Text("1.2", null, 90)),
-                            Ui.Field("Author", Ui.Text("coordination@bimcamel.com", null, 220))),
-                    Ui.Field("About", Ui.Text("What every model must carry before it is accepted.", null, 340)))),
+            Ui.Eyebrow("This document"),
+            Ui.Field("Called", Ui.Text("Riverside employer's information requirements", null, 340)),
+            Ui.Pair(Ui.Field("Version", Ui.Text("1.2", null, 90)),
+                    Ui.Field("Author", Ui.Text("coordination@bimcamel.com", null, 220))),
+            Ui.Field("About", Ui.Text("What every model must carry before it is accepted.", null, 340)),
 
             Ui.Rule(),
 
             Ui.Eyebrow("The specification"),
-            Ui.Form(
-                Ui.Field("Called", Ui.Text("Every wall carries a fire rating", null, 340)),
-                Ui.Pair(Ui.Field("Reference", Ui.Text("EIR-04", null, 120)),
-                        Ui.Field("IFC versions", Ui.Text("IFC4", null, 120))),
-                Ui.Field("Instruction", Ui.Text("Ask the architect before the next issue.", null, 340)),
-                Ui.Pair(Ui.Field("At least this many match", Ui.Text("1", null, 90)),
-                        Ui.Field("At most", Ui.Text("", "no limit", null, 90)))),
+            Ui.Field("Called", Ui.Text("Every wall carries a fire rating", null, 340)),
+            Ui.Pair(Ui.Field("Reference", Ui.Text("EIR-04", null, 120)),
+                    Ui.Field("IFC versions", Ui.Text("IFC4", null, 120))),
+            Ui.Field("Instruction", Ui.Text("Ask the architect before the next issue.", null, 340)),
+            Ui.Pair(Ui.Field("At least this many match", Ui.Text("1", null, 90)),
+                    Ui.Field("At most", Ui.Text("", "no limit", null, 90))),
 
             Ui.Eyebrow("It applies to"),
-            Ui.Section("Entity", () => "IFCWALL", false,
-                Ui.Field("This row is a", Ui.Choice(new[] { "Entity", "Property", "Classification" }, "Entity", null)),
-                Ui.Form(Ui.Field("Entity", Ui.Text("IFCWALL", null, 200)))),
+            Ui.Field("This row is a", Ui.Choice(new[] { "Entity", "Property", "Classification" }, "Entity", null)),
+            Ui.Field("Entity", Ui.Text("IFCWALL", null, 200)),
+            Ui.Rule(),
 
             Ui.Eyebrow("Those elements must have"),
-            Ui.Section("Property", () => "Pset_WallCommon / FireRating is set", false,
-                Ui.Field("This row is a", Ui.Choice(new[] { "Entity", "Property", "Classification" }, "Property", null)),
-                Ui.Form(
-                    Ui.Pair(Ui.Field("Property set", Ui.Text("Pset_WallCommon", null, 200)),
-                            Ui.Field("Property", Ui.Text("FireRating", null, 200))),
-                    Ui.Field("It is", Ui.Choice(new[] { "required", "optional", "prohibited" }, "required", null)),
-                    Ui.Actions(Ui.Icon(Glyphs.Bin, "Remove this row", () => { })))),
+            Ui.Field("This row is a", Ui.Choice(new[] { "Entity", "Property", "Classification" }, "Property", null)),
+            Ui.Pair(Ui.Field("Property set", Ui.Text("Pset_WallCommon", null, 200)),
+                    Ui.Field("Property", Ui.Text("FireRating", null, 200))),
+            Ui.Field("It is", Ui.Choice(new[] { "required", "optional", "prohibited" }, "required", null)),
+            Ui.Actions(Ui.Icon(Glyphs.Bin, "Remove this row", () => { })),
 
             Ui.Actions(Ui.Quiet("Add a row", () => { })),
 

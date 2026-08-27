@@ -32,15 +32,10 @@ namespace CamelWorks.UI.Views
         public const string Extension = ".cwexport";
 
 
-        /// <summary>Show the window.</summary>
-        /// <returns>Something to tell the user, or null when it opened.</returns>
-        public static string? Show()
-        {
-            var session = Host.Current;
-            if (session == null) return Host.NoModel;
-
-            return ToolWindow.Show(Tools.Find("clashxml"), () => new Editor(session).View, 1080, 740);
-        }
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static System.Windows.UIElement Surface(Session session) =>
+            new Editor(session).View;
 
         private sealed class Editor
         {
@@ -58,6 +53,9 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _output = Ui.Stack();
             private readonly StackPanel _note = Ui.Stack();
             private readonly StackPanel _back = Ui.Stack();
+
+            /// <summary>The holder the leg switch swaps whole surfaces in and out of.</summary>
+            private readonly ContentControl _half = new ContentControl();
 
             private readonly TextBox _file = Ui.Text(string.Empty, "where to write it", null, 240);
             private readonly TextBox _incoming = Ui.Text(string.Empty, "a file to read", null, 240);
@@ -101,69 +99,71 @@ namespace CamelWorks.UI.Views
             // -----------------------------------------------------------------------------------
 
             /// <summary>
-            /// Two legs, one on screen at a time, and the options folded behind the action.
+            /// Two legs, one on screen at a time, each built to the surface anatomy.
             ///
             /// <b>Not a wizard.</b> Writing a file out and reading a reviewer's file back are the
-            /// same trip a fortnight apart, not two steps of one task. The switch says which one
-            /// you are on.
+            /// same trip a fortnight apart, not two steps of one task. The switch at the top of
+            /// each setup column says which one you are on, and swapping it swaps the whole
+            /// surface — the two legs share nothing but the switch's caption.
             ///
-            /// <b>And the main action is the loudest thing on it, which it was not.</b> This was
-            /// two scrolling columns holding six headed sections, and the only filled button in
-            /// sight belonged to the profile row - so the loudest thing on a screen for writing a
-            /// clash file was a button that saves a settings file. What goes in and how it is
-            /// written are options, and they are folded like options; the profile is a convenience
-            /// and sits under the fold with them.
+            /// The write leg's primary is the two-stage Commit, so it leads the stage and the
+            /// setup column has no foot; the read leg's Runner is an ordinary foot action.
             /// </summary>
             private UIElement Build()
             {
-                var write = Ui.Stack(
-                    Ui.Eyebrow("The tests"),
-                    _match,
-                    _tests,
-                    // One fold, not three. Three folds stacked on one window is three questions
-                    // asked before the job is done, and the answer to all three is "leave it" -
-                    // which is what a fold is for saying. Headings inside it keep the three
-                    // subjects apart without making each one a decision to open.
-                    Ui.Section("Options", "which results, how it is written, and keeping these "
-                               + "settings for next time", false,
-                               Ui.Eyebrow("What goes in"),
-                               _filters,
-                               Ui.Rule(),
-                               Ui.Eyebrow("How it is written"),
-                               Shape(),
-                               Ui.Rule(),
-                               Ui.Eyebrow("This profile"),
-                               Profiles()),
-                    Ui.Rule(),
-                    Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
-                                 "The format Navisworks and every reviewing tool reads."),
-                    Ui.Commit("Show me what would go in", "Write", "result", Rehearse, Publish),
+                var writeSetup = Ui.Stack(
+                    Bench.Group(string.Empty,
+                        Ui.Segmented(new[] { WriteOne, ReadOne }, WriteOne, Leg)),
+                    Bench.Group("The tests", _match, _tests),
+                    Bench.Group("What goes in", _filters),
+                    Bench.Group("How it is written", Shape()),
+                    Bench.Group("This profile", Profiles()),
+                    Bench.Group("The file",
+                        Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
+                                     "The format Navisworks and every reviewing tool reads.")));
+
+                var writeStage = Ui.Stack(
                     _kept,
+                    Ui.Commit("Show me what would go in", "Write", "result", Rehearse, Publish),
                     _output);
 
-                var back = Ui.Stack(
-                    Ui.Small("A reviewer's file, returned. Results that carry a CamelWorks key land "
-                             + "on the elements they left from; the rest are read as a record."),
-                    Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml"),
-                    Ui.Actions(Ui.Runner("Read it", _back, Receive)),
-                    _back);
+                _write = Bench.Surface(writeSetup, null, writeStage);
 
-                var half = new ContentControl { Content = write };
+                var readSetup = Ui.Stack(
+                    Bench.Group(string.Empty,
+                        Ui.Segmented(new[] { WriteOne, ReadOne }, ReadOne, Leg)),
+                    Bench.Group("The file",
+                        Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml",
+                                     "A reviewer's file, returned.")));
 
-                void Leg(string leg)
-                {
-                    // Detached before the other goes in, or the half being left is still claimed
-                    // by this holder when it is handed back to it.
-                    half.Content = null;
-                    half.Content = leg == ReadOne ? back : write;
-                }
+                // The Runner clears its own panel on the way in, so the idle sentence seeded here
+                // lasts exactly until the first read lands where it stood.
+                _back.Children.Add(Bench.Ready(
+                    "Reads the returned file and says what came back.",
+                    "Results carrying a CamelWorks key land on the elements they left from; "
+                    + "nothing on the board changes."));
+
+                _read = Bench.Surface(readSetup,
+                                      Ui.Runner("Read it", _back, Receive),
+                                      Ui.Stack(_back));
 
                 DrawFilters();
                 DrawTests();
 
-                return Ui.Scroll(Ui.Stack(
-                    Ui.Segmented(new[] { WriteOne, ReadOne }, WriteOne, Leg),
-                    half));
+                _half.Content = _write;
+                return _half;
+            }
+
+            private UIElement? _write;
+            private UIElement? _read;
+
+            /// <summary>Put the chosen leg's surface on show, detaching the other first.</summary>
+            private void Leg(string leg)
+            {
+                // Detached before the other goes in, or the half being left is still claimed
+                // by this holder when it is handed back to it.
+                _half.Content = null;
+                _half.Content = leg == ReadOne ? _read : _write;
             }
 
             private UIElement Profiles()
@@ -175,9 +175,7 @@ namespace CamelWorks.UI.Views
                 _picker = Ui.Choice(names, _profile.Name, Switch, 220);
 
                 return Ui.Stack(
-                    Ui.Field("Saved", _picker,
-                             "A weekly issue and a handover are different files. Both are worth "
-                             + "keeping rather than rebuilding."),
+                    Ui.Field("Saved", _picker),
                     Ui.Field("Called", _name),
                     Ui.Across(
                         Ui.Quiet("Keep", Keep),
@@ -192,17 +190,13 @@ namespace CamelWorks.UI.Views
                 var units = Ui.Choice(new[] { "m", "mm", "cm", "ft", "in" }, _profile.Units,
                                       pick => _profile.Units = pick, 100);
 
-                return Ui.Form(
+                return Ui.Stack(
                     Ui.Check("Keep the folders as folders", _profile.KeepGroups,
                              on => _profile.KeepGroups = on),
-                    Ui.Small("A reviewer taking the file into their own tool usually wants it flat. "
-                             + "One who is going to work through it wants the folders that took an "
-                             + "afternoon to make."),
                     Ui.Check("Write each result's two elements", _profile.IncludeObjects,
                              on => _profile.IncludeObjects = on),
                     Ui.Field("Model units", units,
-                             "What the file's header declares. It does not convert anything - it "
-                             + "says what the numbers already are."));
+                             "Declares what the numbers already are; converts nothing."));
             }
 
             // -----------------------------------------------------------------------------------
@@ -231,8 +225,7 @@ namespace CamelWorks.UI.Views
                         }));
                 }
 
-                _filters.Children.Add(Ui.Small("Nothing ticked means every status, which is what a "
-                                               + "review baseline usually wants."));
+                _filters.Children.Add(Ui.Small("Nothing ticked means every status."));
 
                 var parties = Parties();
 
@@ -240,8 +233,7 @@ namespace CamelWorks.UI.Views
 
                 if (parties.Count == 0)
                 {
-                    _filters.Children.Add(Ui.Small("Nothing on the board is assigned yet, so there is "
-                                                   + "nobody to filter by."));
+                    _filters.Children.Add(Ui.Small("Nothing on the board is assigned yet."));
                 }
                 else
                 {
@@ -257,9 +249,7 @@ namespace CamelWorks.UI.Views
                             }));
                     }
 
-                    _filters.Children.Add(Ui.Small("A result nobody has been assigned goes into every "
-                                                   + "party's file. Left out of all of them, it would "
-                                                   + "reach no one."));
+                    _filters.Children.Add(Ui.Small("An unassigned result goes into every party's file."));
                 }
 
                 ShowKept();
