@@ -126,6 +126,8 @@ namespace CamelWorks.UI.Views
                     case "issues": return IssuesStatus(openTab);
                     case "audit": return AuditStatus(openTab);
                     case "track": return TrackStatus(openTab);
+                    case "sets": return SetsStatus(openTab);
+                    case "scenes": return ScenesStatus(openTab);
                     default: return null;
                 }
             }
@@ -289,6 +291,57 @@ namespace CamelWorks.UI.Views
             if (last != null)
                 row.Add(Chip(Skin.Num(last.Changes.Count), "changes found", Tone.Plain,
                                   () => openTab("changes"), "The last comparison's answer"));
+
+            return Strip(row);
+        }
+
+        private static UIElement? SetsStatus(Action<string> openTab)
+        {
+            var session = Host.Current;
+            if (session == null) return null;
+
+            var row = new List<UIElement?>();
+
+            // Two counts, because they are two different facts: the project's rules travel with
+            // the .cw file and re-run anywhere; the document's sets are what every other tool's
+            // "which set" question is answered from.
+            var library = Core.Sets.SetLibrary.FromJson(
+                session.Store.Section(Core.Store.ProjectStore.SetsSection)["items"]);
+
+            row.Add(Chip(Skin.Num(library.Sets.Count), "rules in the project",
+                         library.Sets.Count > 0 ? Tone.Plain : Tone.Warn,
+                         () => openTab("sets"),
+                         "Saved rules, stored in the project file so the next person has them too"));
+
+            row.Add(Chip(Skin.Num(session.Model.Sets().Count), "sets in the document", Tone.Plain,
+                         () => openTab("restructure"),
+                         "The Navisworks selection tree as it stands — what Appearance, Takeoff "
+                         + "and Extract pick from"));
+
+            return Strip(row);
+        }
+
+        private static UIElement? ScenesStatus(Action<string> openTab)
+        {
+            var session = Host.Current;
+            if (session == null) return null;
+
+            var row = new List<UIElement?>();
+
+            var layers = Core.Appearance.LayerStackJson.Read(
+                session.Store.Section(Core.Store.ProjectStore.LayersSection)["stack"]).Count;
+
+            row.Add(Chip(layers > 0 ? Skin.Num(layers) : "none", "layers saved",
+                         Tone.Plain, () => openTab("appearance"),
+                         layers > 0
+                             ? "The saved appearance stack. What the model shows also depends on "
+                               + "overrides the scan on the Appearance tab uncovers"
+                             : "No saved stack: whatever the model looks like, CamelWorks did not "
+                               + "decide it. The Appearance tab's scan says who did"));
+
+            row.Add(Chip(Skin.Num(session.Viewpoints.All().Count), "viewpoints", Tone.Plain,
+                         () => openTab("viewpoints"),
+                         "Saved viewpoints in the document, ready to rename, file or render"));
 
             return Strip(row);
         }

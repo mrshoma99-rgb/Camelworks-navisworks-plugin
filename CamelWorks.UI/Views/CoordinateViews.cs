@@ -3339,8 +3339,12 @@ namespace CamelWorks.UI.Views
 
                 if (board == null)
                 {
-                    _markers.Children.Add(Ui.Problem("The board has not been built yet. Open Clash "
-                        + "Triage and run it first - this marks what the board holds."));
+                    _markers.Children.Add(Ui.Info("The board has not been built yet, and this marks "
+                        + "what the board holds.", "Load the board in Clash Manager", () =>
+                        {
+                            LoadOnArrival = true;
+                            Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                        }));
                     return;
                 }
 
@@ -4708,6 +4712,9 @@ namespace CamelWorks.UI.Views
 
             results.Children.Add(Ui.Line("Wrote " + Ui.Count(lines.Count, "issue") + " to " + file, 1, true));
 
+            results.Children.Add(Ui.Small("When the filled-in sheet comes back, put it in \"Read "
+                + "the answers back\" and what it says lands against this board."));
+
             session.Record(ActivityKind.Exchange,
                 "wrote an issue worksheet for " + party + " - " + Ui.Count(lines.Count, "issue"), file);
         }
@@ -4722,8 +4729,13 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Note("Load the board in Triage and read this sheet again. "
-                    + "Without a board there is nothing to reconcile against."));
+                results.Children.Add(Ui.Info("Without a board there is nothing to reconcile this "
+                    + "sheet against. Load it, then read the sheet again.",
+                    "Load the board in Clash Manager", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 return;
             }
 
@@ -5074,6 +5086,10 @@ namespace CamelWorks.UI.Views
                     "merged " + Ui.Count(returns.Count, "returned pack"), merged.Explain());
             });
 
+            results.Children.Add(BoardState("The packs still merge without it, but their answers "
+                + "have nothing to land on — load it first and the merge ends at an apply "
+                + "button rather than at a message."));
+
             results.Children.Add(Bench.Ready(
                 "Reads every returned pack at once and folds their answers onto one board.",
                 "Six packs go out on Monday and six come back on Thursday, each holding the same "
@@ -5125,8 +5141,13 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Note("Load the board in Triage and read this file again to see "
-                    + "what it says about it. Without a board there is nothing to reconcile against."));
+                results.Children.Add(Ui.Info("Without a board there is nothing to reconcile these "
+                    + "answers against. Load it, then read the file again to see what it says.",
+                    "Load the board in Clash Manager", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 return;
             }
 

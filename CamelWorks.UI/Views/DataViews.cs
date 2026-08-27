@@ -676,6 +676,16 @@ namespace CamelWorks.UI.Views
             internal Panel ApplyRow => _applyRow;
 
             /// <summary>
+            /// Point the return leg at a file, for the screen that knows which sheet went out
+            /// last. Only when the box is empty: a path somebody typed is not ours to replace.
+            /// </summary>
+            /// <param name="path">The workbook that went out.</param>
+            internal void SuggestReturn(string path)
+            {
+                if (_in.Text.Trim().Length == 0) _in.Text = path;
+            }
+
+            /// <summary>
             /// Whether an element that already holds a value gets written over.
             ///
             /// Set from the one picker on the panel rather than owned here. Three write tools each
@@ -851,7 +861,9 @@ namespace CamelWorks.UI.Views
                 _column = writable[0];
                 _property = Suggested(_column);
 
-                var name = Ui.Text(_property, null, 200);
+                // A picker, so the returned column can land on a property spelled the way the
+                // model already spells it rather than the way the sheet's author did.
+                var name = Pickers.Property(_property, null, 200);
                 var picker = Ui.Choice(writable, _column, pick =>
                 {
                     _column = pick;
@@ -1028,7 +1040,9 @@ namespace CamelWorks.UI.Views
         {
             var rule = new Replacement { Kind = MatchKind.Part };
 
-            var property = Ui.Text(string.Empty, "Category / Name", text =>
+            // A picker rather than a bare box: the property being corrected is by definition one
+            // the model already carries, so its spelling is in the dropdown.
+            var property = Pickers.Property(string.Empty, text =>
             {
                 var (category, name) = NameOf(text);
                 rule.Category = category;
@@ -1132,7 +1146,8 @@ namespace CamelWorks.UI.Views
             return Ui.Stack(
                 Heading("Correct a value"),
                 Ui.Form(
-                    Ui.Field("Property", property, "which one to correct, as it reads in the table above"),
+                    Ui.Field("Property", property,
+                             "picked from the model; a bare name matches whichever tab carries it"),
                     Ui.Pair(Ui.Field("Find", find), Ui.Field("Replace with", with)),
                     Ui.Field("Matching", how)),
                 cased,
@@ -1254,7 +1269,7 @@ namespace CamelWorks.UI.Views
 
             private const string Worked = "worked out from other properties";
 
-            private readonly TextBox _name;
+            private readonly ComboBox _name;
             private readonly TextBox _value;
             private readonly TextBox _formula;
             private readonly StackPanel _status = Ui.Stack();
@@ -1275,7 +1290,10 @@ namespace CamelWorks.UI.Views
                 // under a count worked out for a different one. The formula path was stale the
                 // other way round, applying the parsed formula from the last preview rather than
                 // the text on screen. Two different wrong answers in one screen.
-                _name = Ui.Text("Zone", _ => Stale(), 150);
+                // The name is a picker: half the time the property being written already exists
+                // on part of the model, and the naming standard's spelling is in the dropdown
+                // rather than in whoever's memory is filling it in.
+                _name = Pickers.Property("Zone", _ => Stale(), 150);
                 _value = Ui.Text(string.Empty, _ => Stale(), 200);
                 _formula = Ui.Text(string.Empty, _ => Stale(), 340);
 
@@ -1642,7 +1660,9 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _column = Ui.Text(string.Empty, null, 150);
+            // The column is a picker - it exists on the model or there is nothing to rename. The
+            // new name stays a box, because a new name is by definition not in any dropdown.
+            private readonly ComboBox _column = Pickers.Property(string.Empty, null, 150);
             private readonly TextBox _renamed = Ui.Text(string.Empty, null, 150);
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _actions = Ui.Stack();
