@@ -1178,6 +1178,32 @@ namespace CamelWorks.UI.Views
                 + " into a workbook anyone can edit without Navisworks.",
                 "Reading it back previews a diff, element by element, before anything is written."));
 
+            // The two legs of the trip happen days apart, often to different people, and the
+            // activity log is the only place that remembers which file went out in between. The
+            // person opening this tab on Thursday is here for the return leg, so the file that
+            // went out is stated and offered as the file to read back.
+            var trip = session.Store.Activity.Entries.FirstOrDefault(a =>
+                string.Equals(a.Kind, ActivityKind.Export, StringComparison.Ordinal)
+                && a.Summary.StartsWith("wrote properties to a spreadsheet", StringComparison.Ordinal));
+
+            if (trip != null)
+            {
+                var back = session.Store.Activity.Entries.FirstOrDefault(a =>
+                    string.Equals(a.Kind, ActivityKind.Write, StringComparison.Ordinal)
+                    && a.Summary.StartsWith("brought ", StringComparison.Ordinal));
+
+                var returned = back != null && back.WhenTicks >= trip.WhenTicks;
+
+                screen.Status.Children.Add(Ui.Line("The last sheet went out "
+                    + ActivityLog.Ago(trip.WhenTicks, session.NowTicks)
+                    + (trip.Detail == null ? string.Empty : " to " + trip.Detail)
+                    + (returned
+                        ? ", and edits came back " + ActivityLog.Ago(back!.WhenTicks, session.NowTicks) + "."
+                        : ", and nothing has come back in since."), 0.7));
+
+                if (trip.Detail != null) screen.SuggestReturn(trip.Detail);
+            }
+
             return Bench.Surface(
                 Ui.Stack(
                     Bench.Scope(keys.Count == 0
@@ -1978,6 +2004,7 @@ namespace CamelWorks.UI.Views
                     after.Children.Add(Stamp(session, levels, items));
                     after.Children.Add(GridStamp(session, grids));
                     after.Children.Add(BreakdownInline(session));
+                    after.Children.Add(LevelHandoffs(results));
                 }
 
                 Show(chosen);
@@ -1992,6 +2019,39 @@ namespace CamelWorks.UI.Views
                 Ui.Stack(Bench.Scope("Everything loaded, wherever it has geometry.")),
                 run,
                 Ui.Stack(results, after));
+        }
+
+        /// <summary>
+        /// Where a stamped level goes to work.
+        ///
+        /// The stamps above write Level and Grid into the CamelWorks tab, and the tools that read
+        /// that tab by name live in other apps — one selection set per level in Sets Manager,
+        /// quantities by level in Quantify. Without these the tab derives, stamps and stops, and
+        /// the coordinator asked "how much ductwork per floor" is left to find the next tool by
+        /// themselves.
+        /// </summary>
+        /// <param name="results">Where to say so if a window will not open.</param>
+        private static UIElement LevelHandoffs(Panel results)
+        {
+            var sets = Ui.Button("Build a set per level...", () =>
+            {
+                var problem = ToolViews.Open("setlib");
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            var takeoff = Ui.Button("Take off quantities by level...", () =>
+            {
+                var problem = ToolViews.Open("takeoff");
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Rule(),
+                Heading("What the stamp unlocks"),
+                Ui.Actions(sets, takeoff),
+                Ui.Small("Both read what was just stamped: Generate Library makes one selection "
+                         + "set per Level value, and the takeoff's Level axis prefers the "
+                         + "CamelWorks tab over the models' own."));
         }
 
         /// <summary>Where a set of levels came from, as a sentence can use it.</summary>

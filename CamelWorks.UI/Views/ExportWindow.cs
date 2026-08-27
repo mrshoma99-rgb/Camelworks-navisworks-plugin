@@ -559,6 +559,8 @@ namespace CamelWorks.UI.Views
                              "\"Element\" is the Revit one; Item is read as well."),
                     Ui.Field("Properties", names,
                              "One column each, comma separated."),
+                    Ui.Field("Add one", add,
+                             "the model's own names — a pick joins the list above"),
                     Ui.PathField("Write to", path, PathKind.Save)));
 
             return Bench.Surface(setup, run, Ui.Stack(idle, results));

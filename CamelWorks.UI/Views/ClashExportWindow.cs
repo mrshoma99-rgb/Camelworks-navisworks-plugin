@@ -354,8 +354,13 @@ namespace CamelWorks.UI.Views
 
                 if (results.Count == 0)
                 {
-                    _kept.Children.Add(Ui.Note("The board has not been built yet. Open Clash Triage "
-                        + "and run it, then everything here has something to count."));
+                    _kept.Children.Add(Ui.Info("The board is not loaded, and this writes what the "
+                        + "board holds. Load it in Clash Manager and everything here has "
+                        + "something to count.", "Load the board in Clash Manager", () =>
+                        {
+                            CoordinateViews.LoadOnArrival = true;
+                            Ui.Told(AppWindow.Show("clash", "triage"));
+                        }));
                     return;
                 }
 
@@ -372,9 +377,13 @@ namespace CamelWorks.UI.Views
 
                 if (results.Count == 0)
                 {
-                    into.Children.Add(Ui.Problem("The board has not been built yet. Open Clash Triage "
-                        + "and run it first - this writes what the board holds, not what the host "
-                        + "happens to have open."));
+                    into.Children.Add(Ui.Info("The board has not been built yet, and this writes "
+                        + "what the board holds — not what the host happens to have open.",
+                        "Load the board in Clash Manager", () =>
+                        {
+                            CoordinateViews.LoadOnArrival = true;
+                            Ui.Told(AppWindow.Show("clash", "triage"));
+                        }));
                     return 0;
                 }
 
@@ -441,6 +450,10 @@ namespace CamelWorks.UI.Views
 
                 _output.Children.Add(Ui.Done("Wrote " + Ui.Count(written.Results, "result")
                     + " across " + Ui.Count(written.Tests.Count, "test") + " to " + path + "."));
+
+                _output.Children.Add(Ui.Small("When the reviewer sends it back, the \"Read one "
+                    + "back\" leg at the top says what came back — and the BCF tab's read is "
+                    + "where a reply lands on the board."));
 
                 // The date each test last went out, which is what turns a list of tests into a work
                 // list: which went last Friday, and which have never gone at all.
@@ -519,6 +532,9 @@ namespace CamelWorks.UI.Views
                 _back.Children.Add(Ui.Note("Nothing on the board has changed. This says what came "
                     + "back; taking it on is a decision the board makes, where what it would change "
                     + "is visible next to what it would change from."));
+
+                _back.Children.Add(Ui.Actions(Ui.Quiet("Open the Clash Board",
+                    () => Ui.Told(AppWindow.Show("clash", "triage")))));
             }
 
             private static string Counted(ClashXmlTest test, FindingStatus status) =>
