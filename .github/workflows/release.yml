@@ -95,6 +95,11 @@ jobs:
           # rather than a broken build.
           $required = 'CamelWorks.UI.dll', 'CamelWorks.Nav.dll', 'CamelWorks.Nav.Clash.dll', 'CamelWorks.Core.dll'
 
+          # Counted from the source tree rather than hard-coded. The old floor of 50 was written
+          # for a 39-command ribbon; the desk redesign ships 22 commands and 45 PNGs, and the
+          # first release after it failed on a number nothing had kept honest.
+          $wanted = (Get-ChildItem "CamelWorks.UI/Resources" -Filter *.png).Count
+
           foreach ($year in $years) {
             foreach ($file in $required) {
               if (-not (Test-Path "$staging/CamelWorks.bundle/$year/$file")) {
@@ -106,7 +111,7 @@ jobs:
               Write-Host "::error::CamelWorks.xaml missing from the staged $year folder"
               exit 1
             }
-            if ((Get-ChildItem "$staging/CamelWorks.bundle/$year/Resources" -Filter *.png).Count -lt 50) {
+            if ((Get-ChildItem "$staging/CamelWorks.bundle/$year/Resources" -Filter *.png).Count -ne $wanted) {
               Write-Host "::error::ribbon icons missing from the staged $year folder"
               exit 1
             }
