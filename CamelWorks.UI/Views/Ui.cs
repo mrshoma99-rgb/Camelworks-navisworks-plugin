@@ -1534,17 +1534,16 @@ namespace CamelWorks.UI.Views
 
             while (at < steps.Count - 1 && steps[at].Ready != null && steps[at].Ready!() == null) at++;
 
-            // The spine: every step down the left, where a surface's setup column would be, with
-            // its state visible — the shape of the whole job before the first decision is taken.
-            // The current step's surface takes the stage, and the way forward sits at the spine's
-            // foot, in the same place a tool's one action always is.
-            var spine = new StackPanel();
+            // The steps: every one across the top with its state visible, the way an export
+            // suite draws them — the shape of the whole job before the first decision is taken.
+            // The current step's surface takes the data area, and the way forward sits
+            // bottom-right in the footer, where the one action always is.
+            var spine = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
             var body = new ContentControl();
             var why = Small(string.Empty);
             why.TextWrapping = TextWrapping.Wrap;
             var back = Quiet("Back", () => { });
             var next = Primary("Next", () => { });
-            next.HorizontalAlignment = HorizontalAlignment.Stretch;
 
             void Draw()
             {
@@ -1590,7 +1589,8 @@ namespace CamelWorks.UI.Views
                     var row = new StackPanel
                     {
                         Orientation = Orientation.Horizontal,
-                        Margin = new Thickness(0, 4, 0, 4),
+                        Margin = new Thickness(0, 0, 18, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
                     };
 
                     row.Children.Add(pip);
@@ -1643,7 +1643,18 @@ namespace CamelWorks.UI.Views
 
             Draw();
 
-            return Bench.Surface(spine, Stack(next, back, why), body, setupWidth: 224);
+            // The strip rides over the step's own surface; Back and Next go to the footer,
+            // reading left to right the way the journey does.
+            var forward = new StackPanel { Orientation = Orientation.Horizontal };
+            why.VerticalAlignment = VerticalAlignment.Center;
+            why.Margin = new Thickness(0, 0, 10, 0);
+            why.MaxWidth = 300;
+            back.Margin = new Thickness(0, 0, 8, 0);
+            forward.Children.Add(why);
+            forward.Children.Add(back);
+            forward.Children.Add(next);
+
+            return Bench.Surface(null, forward, Stack(spine, body));
         }
 
         /// <summary>

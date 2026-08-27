@@ -28,11 +28,13 @@ namespace CamelWorks.UI.Views
                 case "health": return ProjectViews.Health();
                 case "ids": return OnModel(IdsWindow.Surface);
                 case "compare": return CompareViews.Run();
+                case "changes": return CompareViews.Changes();
                 case "notice": return OnModel(_ => CoordinateViews.NoticeScreen());
                 case "history": return OnModel(HistoryWindow.Surface);
                 case "project": return ProjectViews.Settings();
 
                 // ---- Coordination ----
+                case "triage": return CoordinateViews.Triage();
                 case "tests": return CoordinateViews.Tests();
                 case "matrix": return OnModel(MatrixWindow.Surface);
                 case "headroom": return CoordinateViews.ClearHeight();
@@ -45,6 +47,7 @@ namespace CamelWorks.UI.Views
                 case "freeze": return OnModel(_ => CoordinateViews.FreezeScreen());
 
                 // ---- Data ----
+                case "data": return DataViews.Manager();
                 case "write": return OnModel(_ => DataViews.WriteProperties());
                 case "excel": return DataViews.Excel();
                 case "datalink": return OnModel(DataLinkWindow.Surface);
@@ -55,6 +58,8 @@ namespace CamelWorks.UI.Views
                 case "exportsheet": return OnModel(s => ExportWindow.Surface(s, "sheet"));
 
                 // ---- Scenes ----
+                case "sets": return SetsViews.Builder();
+                case "appearance": return SetsViews.Appearance();
                 case "schedule": return OnModel(ScheduleWindow.Surface);
                 case "setlib": return OnModel(SetLibraryWindow.Surface);
                 case "restructure": return OnModel(RestructureWindow.Surface);
@@ -71,6 +76,7 @@ namespace CamelWorks.UI.Views
                 case "labels":
                 case "paperwork": return OnModel(s => SiteWindow.Surface(s, toolId!));
                 case "batch": return BatchViews.Jobs();
+                case "graph": return AutomateView.Build();
 
                 default:
                     return Ui.Stack(Ui.Problem(

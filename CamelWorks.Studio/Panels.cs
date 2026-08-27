@@ -10,13 +10,12 @@ using CamelWorks.UI.Views;
 namespace CamelWorks.Studio
 {
     /// <summary>
-    /// The desks, reconstructed.
+    /// The apps, reconstructed.
     ///
-    /// One page per desk, each drawn as the desk window draws it — the header with the desk's
-    /// colour, the rail read from the real <see cref="Desks"/> registry, and a flagship surface
-    /// on the bench built to the anatomy in <c>CAMELWORKS_DESIGN.md</c>: setup column, one action
-    /// at its foot, the answer on the stage. Two more pages show the beside-the-model shape at
-    /// pane width, where the same anatomy stacks.
+    /// One page per app worth looking at, each drawn as the app window draws it — the title
+    /// strip with the app's accent, the flat tab strip read from the real <see cref="Apps"/>
+    /// registry, and a flagship tab built to the anatomy in <c>CAMELWORKS_DESIGN.md</c>: the
+    /// data filling the window, the options on the right, the one action bottom-right.
     ///
     /// Same rule as ever: same captions, same weights, plausible data where the real surface
     /// reads the host. Where a reconstruction and its surface disagree the reconstruction is
@@ -25,32 +24,19 @@ namespace CamelWorks.Studio
     public static class Panels
     {
         /// <summary>Every desk page, in ribbon order.</summary>
+        /// <summary>Every app page, in ribbon order.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            Desk("desk-federation", "Desk · Federation", 780, Federation),
-            Desk("desk-coordination", "Desk · Coordination", 820, Coordination),
-            Desk("desk-data", "Desk · Data", 780, Data),
-            Desk("desk-scenes", "Desk · Scenes", 780, Scenes),
-            Desk("desk-deliver", "Desk · Deliver", 780, Deliver),
-            new Sheet
-            {
-                Id = "board",
-                Title = "Pane · Clash Board",
-                Height = 1000,
-                Builder = _ => Board(),
-                Widths = new[] { 470, 640 },
-            },
-            new Sheet
-            {
-                Id = "appearance",
-                Title = "Pane · Appearance",
-                Height = 1000,
-                Builder = _ => Appearance(),
-                Widths = new[] { 470 },
-            },
+            Page("app-clash-tests", "Clash Manager · Tests", 780, Coordination),
+            Page("app-clash-board", "Clash Manager · Board", 780, Board),
+            Page("app-audit", "Model Audit · Health", 780, Federation),
+            Page("app-data", "Data Manager · Properties", 780, Data),
+            Page("app-scenes-appearance", "Scene Kit · Appearance", 780, Appearance),
+            Page("app-scenes-viewpoints", "Scene Kit · Viewpoints", 780, Scenes),
+            Page("app-automate-jobs", "Automate · Jobs", 780, Deliver),
         };
 
-        private static Sheet Desk(string id, string title, int height, Func<UIElement> build) =>
+        private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };
 
         // -----------------------------------------------------------------------------------
@@ -58,78 +44,107 @@ namespace CamelWorks.Studio
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// A desk window's content: header, rail, bench strip, surface.
+        /// An app window's content: title strip, tab strip, and the tab's surface.
         ///
-        /// The rail is read from the shipping registry rather than restated, so a tool moved from
-        /// one stage to another moves here by itself — the one honest way to keep a picture true.
+        /// The strip is read from the shipping registry rather than restated, so a tab renamed or
+        /// moved changes here by itself — the one honest way to keep a picture true.
         /// </summary>
-        private static UIElement Deck(string deskId, string toolId, UIElement bench)
+        private static UIElement Deck(string appId, string toolId, UIElement bench)
         {
-            var desk = Desks.Find(deskId)!;
-            var tool = Tools.Find(toolId)!;
+            var app = Apps.Find(appId)!;
 
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            root.Children.Add(Header(desk));
+            root.Children.Add(Header(app));
 
-            var body = new Grid();
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(212) });
-            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var strip = new StackPanel { Orientation = Orientation.Horizontal };
 
-            var rail = new Border
+            foreach (var tab in app.Tabs)
             {
-                Child = new ScrollViewer
+                var current = string.Equals(tab.ToolId, toolId, StringComparison.OrdinalIgnoreCase);
+
+                var label = new TextBlock
                 {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    Content = Rail(desk, tool),
-                    Padding = new Thickness(10, 10, 10, 10),
-                },
-                BorderThickness = new Thickness(0, 0, 1, 0),
+                    Text = tab.Title,
+                    FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal,
+                    Margin = new Thickness(12, 8, 12, 7),
+                };
+
+                label.SetResourceReference(TextBlock.ForegroundProperty, current ? "Text" : "Muted");
+
+                var mark = new Border { Height = 2, Background = Brushes.Transparent };
+                if (current) mark.SetResourceReference(Border.BackgroundProperty, "Fam." + app.Family);
+
+                var face = new Grid();
+                face.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                face.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                face.Children.Add(label);
+                Grid.SetRow(mark, 1);
+                face.Children.Add(mark);
+
+                var button = new Button { Content = face, Padding = new Thickness(0) };
+                button.Wearing("RailRow");
+                strip.Children.Add(button);
+            }
+
+            var tabs = new Border
+            {
+                Padding = new Thickness(10, 0, 10, 0),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = strip,
             };
 
-            rail.SetResourceReference(Border.BackgroundProperty, "Pane");
-            rail.SetResourceReference(Border.BorderBrushProperty, "Bd");
-            body.Children.Add(rail);
+            tabs.SetResourceReference(Border.BackgroundProperty, "Pane");
+            tabs.SetResourceReference(Border.BorderBrushProperty, "Bd");
+            Grid.SetRow(tabs, 1);
+            root.Children.Add(tabs);
 
-            var benched = new Grid();
-            benched.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            benched.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            benched.Children.Add(Strip(tool));
-            Grid.SetRow(bench, 1);
-            benched.Children.Add(bench);
-
-            Grid.SetColumn(benched, 1);
-            body.Children.Add(benched);
-
-            Grid.SetRow(body, 1);
-            root.Children.Add(body);
+            Grid.SetRow(bench, 2);
+            root.Children.Add(bench);
 
             var ground = new Border { Child = root };
             ground.SetResourceReference(Border.BackgroundProperty, "Bg");
             return ground;
         }
 
-        private static UIElement Header(Desk desk)
+        private static UIElement Header(App app)
         {
-            var titles = new StackPanel { Margin = new Thickness(16, 12, 16, 11) };
+            var titles = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(16, 10, 16, 9),
+            };
 
-            var name = new TextBlock { Text = desk.Title, FontSize = 17, FontWeight = FontWeights.SemiBold };
+            var name = new TextBlock
+            {
+                Text = app.Title,
+                FontSize = 17,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
             name.SetResourceReference(TextBlock.ForegroundProperty, "Text");
             titles.Children.Add(name);
 
-            var job = Ui.Sub(desk.Job);
-            job.Margin = new Thickness(0, 1, 0, 0);
-            titles.Children.Add(job);
+            var suite = new TextBlock
+            {
+                Text = "CamelWorks",
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            suite.Wearing("Hint");
+            titles.Children.Add(suite);
 
             var bar = new Border { Child = titles, BorderThickness = new Thickness(0, 0, 0, 1) };
             bar.SetResourceReference(Border.BackgroundProperty, "Nav");
             bar.SetResourceReference(Border.BorderBrushProperty, "Bd");
 
             var accent = new Border { Height = 2 };
-            accent.SetResourceReference(Border.BackgroundProperty, "Fam." + desk.Family);
+            accent.SetResourceReference(Border.BackgroundProperty, "Fam." + app.Family);
 
             var header = new Grid();
             header.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -139,119 +154,6 @@ namespace CamelWorks.Studio
             header.Children.Add(accent);
 
             return header;
-        }
-
-        private static UIElement Rail(Desk desk, Tool current)
-        {
-            var rail = new StackPanel();
-            var first = true;
-
-            foreach (var stage in desk.Stages)
-            {
-                var label = Ui.Eyebrow(stage.Title);
-                label.Margin = new Thickness(8, first ? 2 : 16, 0, 5);
-                rail.Children.Add(label);
-                first = false;
-
-                foreach (var toolId in stage.ToolIds)
-                {
-                    var tool = Tools.Find(toolId);
-                    if (tool == null) continue;
-
-                    rail.Children.Add(Row(desk, tool, tool.Id == current.Id));
-                }
-            }
-
-            return rail;
-        }
-
-        private static UIElement Row(Desk desk, Tool tool, bool current)
-        {
-            var text = new StackPanel();
-
-            var name = new TextBlock
-            {
-                Text = tool.Title,
-                FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-
-            name.SetResourceReference(TextBlock.ForegroundProperty, "Text");
-            text.Children.Add(name);
-
-            var aside = tool.Shape == ToolShape.Panel ? "opens beside the model"
-                : tool.Shape == ToolShape.Act ? "runs now"
-                : null;
-
-            if (aside != null)
-            {
-                var hint = new TextBlock { Text = aside, FontSize = 10.5 };
-                hint.Wearing("Hint");
-                text.Children.Add(hint);
-            }
-
-            var marker = new Border
-            {
-                Width = 3,
-                CornerRadius = new CornerRadius(1.5),
-                Margin = new Thickness(0, 2, 7, 2),
-                Background = Brushes.Transparent,
-            };
-
-            if (current) marker.SetResourceReference(Border.BackgroundProperty, "Fam." + desk.Family);
-
-            var row = new Grid();
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.Children.Add(marker);
-            Grid.SetColumn(text, 1);
-            row.Children.Add(text);
-
-            var button = new Button
-            {
-                Content = row,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(7, 5, 7, 5),
-                Margin = new Thickness(0, 0, 0, 1),
-            };
-
-            button.Wearing(current ? "RailRowOn" : "RailRow");
-            return button;
-        }
-
-        private static UIElement Strip(Tool tool)
-        {
-            var titles = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(16, 8, 16, 8),
-            };
-
-            var name = new TextBlock
-            {
-                Text = tool.Title,
-                FontWeight = FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
-            name.SetResourceReference(TextBlock.ForegroundProperty, "Text");
-            titles.Children.Add(name);
-
-            var purpose = new TextBlock
-            {
-                Text = "—  " + tool.Purpose,
-                Margin = new Thickness(8, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            };
-
-            purpose.Wearing("Hint");
-            titles.Children.Add(purpose);
-
-            var strip = new Border { Child = titles, BorderThickness = new Thickness(0, 0, 0, 1) };
-            strip.SetResourceReference(Border.BackgroundProperty, "Pane");
-            strip.SetResourceReference(Border.BorderBrushProperty, "Bd");
-            return strip;
         }
 
         // -----------------------------------------------------------------------------------
@@ -279,7 +181,7 @@ namespace CamelWorks.Studio
                 Ui.Finding(false, "Codes", "412 elements carry a value Uniclass does not list",
                            "Most are one system with a typo in its family; the table below names them."));
 
-            return Deck("federation", "health",
+            return Deck("audit", "health",
                 Bench.Surface(setup, Ui.Runner("Check this federation", Ui.Stack(), _ => { }), stage));
         }
 
@@ -315,7 +217,7 @@ namespace CamelWorks.Studio
                 Ui.Line("36 pairings, 30 to make — 6 are already in the document and left alone.", 1, true),
                 Ui.Runner("Create the ticked ones", Ui.Stack(), _ => { }));
 
-            return Deck("coordination", "tests",
+            return Deck("clash", "tests",
                 Bench.Surface(setup, Ui.Runner("Run them", Ui.Stack(), _ => { }), stage));
         }
 
@@ -414,7 +316,7 @@ namespace CamelWorks.Studio
                 Ui.Eyebrow("What has run"),
                 Ui.Table(RunRows(), ("Run", 0), ("When", 110)));
 
-            return Deck("deliver", "batch",
+            return Deck("automate", "batch",
                 Bench.Surface(setup, Ui.Runner("Run the selected job", Ui.Stack(), _ => { }), stage));
         }
 
@@ -451,7 +353,8 @@ namespace CamelWorks.Studio
                 Ui.Quiet("Undo the last board edit", () => { }),
                 Ui.Table(BoardRows(), ("Issue", 150), ("Δ", 40), ("Owner", 90), ("Status", 0)));
 
-            return Bench.Surface(setup, Ui.Runner("Load the board", Ui.Stack(), _ => { }), stage);
+            return Deck("clash", "triage",
+                Bench.Surface(setup, Ui.Runner("Load the board", Ui.Stack(), _ => { }), stage));
         }
 
         private static IEnumerable<TableRow> BoardRows()
@@ -488,7 +391,8 @@ namespace CamelWorks.Studio
                 Ui.Small("Everything hidden or overridden that no layer above accounts for."),
                 Ui.Runner("Scan the model", Ui.Stack(), _ => { }, primary: false));
 
-            return Bench.Surface(setup, Ui.Runner("Apply the stack", Ui.Stack(), _ => { }), stage);
+            return Deck("scenes", "appearance",
+                Bench.Surface(setup, Ui.Runner("Apply the stack", Ui.Stack(), _ => { }), stage));
         }
 
         private static UIElement Layer(string name, string what, Color paint)

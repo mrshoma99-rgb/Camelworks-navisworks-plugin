@@ -7,12 +7,12 @@ namespace CamelWorks.UI.Shell
     /// <summary>One ribbon command: a button, and the one place it goes.</summary>
     public sealed class RibbonCommand
     {
-        internal RibbonCommand(string id, string title, string? toolId, string? deskId, string tooltip)
+        internal RibbonCommand(string id, string title, string? toolId, string? appId, string tooltip)
         {
             Id = id;
             Title = title;
             ToolId = toolId;
-            DeskId = deskId;
+            AppId = appId;
             Tooltip = tooltip;
         }
 
@@ -22,13 +22,13 @@ namespace CamelWorks.UI.Shell
         /// <summary>How it reads on the button.</summary>
         public string Title { get; }
 
-        /// <summary>The tool it opens, or null for a desk button and for Home.</summary>
+        /// <summary>The tool it opens, or null for an app button and for the hub.</summary>
         public string? ToolId { get; }
 
-        /// <summary>The desk it opens, or null for a tool button and for Home.</summary>
-        public string? DeskId { get; }
+        /// <summary>The app it opens, or null for a tool button and for the hub.</summary>
+        public string? AppId { get; }
 
-        /// <summary>The tool this opens, or null when it opens a desk or Home.</summary>
+        /// <summary>The tool this opens, or null when it opens an app or the hub.</summary>
         public Tool? Tool => Tools.Find(ToolId);
 
         /// <summary>The tooltip.</summary>
@@ -39,107 +39,74 @@ namespace CamelWorks.UI.Shell
     }
 
     /// <summary>
-    /// Every ribbon command, as data.
+    /// Every ribbon command, as data: the suite, flat.
     ///
-    /// Twenty-two buttons where there were thirty-seven: Home, Help, one button per desk, and the
-    /// daily tools as direct entries that land inside their desk with the tool already on the
-    /// bench. Every other tool is one desk-click away and findable by <see cref="Finder"/> under
-    /// the words somebody would actually use.
+    /// One button per app, at one size, in one row — the shape of the plug-in collections the
+    /// client named — plus the hub, the one instant act, and Help. Fourteen commands. Every
+    /// button opens the app it names; nothing on the ribbon opens a menu or somebody else's
+    /// window, and every tool that has no button of its own is one tab inside the app that does.
     ///
     /// One list, because the ribbon handler and the markup would otherwise each carry their own
     /// copy, and a command present in one and missing from the other is invisible in exactly one
-    /// place — which is the hardest kind of gap to notice. A check holds the markup, the
-    /// [Command] attributes and this list to the same set.
+    /// place. A check holds the markup, the [Command] attributes and this list to the same set.
     /// </summary>
     public static class CommandCatalogue
     {
-        /// <summary>All twenty-two, in ribbon order.</summary>
+        /// <summary>All fourteen, in ribbon order.</summary>
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
-            // Panel — CamelWorks
-            Home("ID_CW_Home", "Home",
-                "The week, the five desks, what has happened lately, and the tool search."),
+            Hub("ID_CW_Home", "CamelWorks",
+                "The week, the search, and the way to every app."),
 
-            Cmd("ID_CW_Help", "Help", "help",
-                "The guide, what this cannot do, the shortcuts, a sample project and the "
-                + "diagnostics."),
+            AppCmd("ID_CW_AppClash", "Clash Manager", "clash",
+                "Find what fights, and decide it — tests, the matrix, clearance, rules, the "
+                + "board and freeze."),
 
-            // Panel — Federation
-            Desk("ID_CW_DeskFederation", "Federation", "federation",
-                "Bring the models in, and know whether to trust them — every arrival, trust and "
-                + "tracking tool on one desk."),
+            AppCmd("ID_CW_AppIssues", "Issue Link", "issues",
+                "Issues out to the world and answers back — the report, BCF, clash XML, merge "
+                + "and the penetration schedule."),
 
-            Cmd("ID_CW_HealthCheck", "Health Check", "health",
-                "Whether this federation is fit to coordinate against, before anybody spends a "
-                + "week finding out it was not."),
+            AppCmd("ID_CW_AppAudit", "Model Audit", "audit",
+                "Whether this federation is fit to coordinate against — health, IDS, the model "
+                + "register, broken links and the project profile."),
 
-            Cmd("ID_CW_Compare", "Compare Revisions", "compare",
-                "What changed against a baseline: added, removed, moved, retyped — and how it "
-                + "knows."),
+            AppCmd("ID_CW_AppTrack", "Compare Track", "track",
+                "What changed, against what, since when — compare, changes, the change notice "
+                + "and the history."),
 
-            Cmd("ID_CW_Baseline", "Baseline", "baseline",
-                "Record what the model is right now, so next week has something to compare "
-                + "against."),
+            AppCmd("ID_CW_AppData", "Data Manager", "data",
+                "What the elements carry and the pen to fix it — properties, writing, Excel, "
+                + "external data, levels and the breakdown."),
 
-            // Panel — Coordination
-            Desk("ID_CW_DeskCoordination", "Coordination", "coordination",
-                "Find what fights, decide it, and send it — the whole clash week on one desk."),
+            AppCmd("ID_CW_AppQuantify", "Quantify", "quantify",
+                "Numbers out of the model — takeoff, the report builder and the data export."),
 
-            Cmd("ID_CW_Board", "Clash Board", "triage",
-                "Every result the tests found, worked down to the issues somebody fixes — and "
-                + "your decisions survive the next run."),
+            AppCmd("ID_CW_AppSets", "Sets Manager", "sets",
+                "The selections everything else works on — the builder, schedules, the library "
+                + "generator and reorganising."),
 
-            Cmd("ID_CW_ClashTests", "Clash Tests", "tests",
-                "What gets tested against what, and how close is too close."),
+            AppCmd("ID_CW_AppScenes", "Scene Kit", "scenes",
+                "What is visible and what colour it is — the appearance stack and the "
+                + "viewpoints."),
 
-            Cmd("ID_CW_Review", "Review", "review",
-                "One issue at a time in front of the geometry, both hands on the keyboard."),
+            AppCmd("ID_CW_AppExports", "Export Kit", "exports",
+                "The model as a file somebody else opens — IFC, GLB, a drawing, an extract or "
+                + "a compiled deliverable."),
 
-            Cmd("ID_CW_ClashReport", "Clash Report", "clashreport",
-                "The board as a document somebody without Navisworks can read."),
+            AppCmd("ID_CW_AppSite", "Site Pack", "site",
+                "The model reaching the people building it — setting out, dimensions, weight, "
+                + "labels and documents."),
 
-            // Panel — Data
-            Desk("ID_CW_DeskData", "Data", "data",
-                "What the elements carry and the pen to fix it — reading, writing and reporting "
-                + "properties on one desk."),
-
-            Cmd("ID_CW_DataManager", "Data Manager", "data",
-                "Every property the elements carry, in one grid — and the pen to fix what is "
-                + "missing."),
-
-            Cmd("ID_CW_Takeoff", "Takeoff", "takeoff",
-                "The quantities the model carries, summed how a bill wants them."),
-
-            // Panel — Scenes
-            Desk("ID_CW_DeskScenes", "Scenes", "scenes",
-                "What is selected, what is visible, and what colour it is — sets, appearance and "
-                + "viewpoints on one desk."),
-
-            Cmd("ID_CW_Sets", "Set Builder", "sets",
-                "The selections everything else works on, said in plain rows."),
-
-            Cmd("ID_CW_Appearance", "Appearance", "appearance",
-                "What is coloured, what is hidden, and which layer did it — stacked, and every "
-                + "layer takes back off."),
+            AppCmd("ID_CW_AppAutomate", "Automate", "automate",
+                "Doing all of it again next Friday — saved jobs and the graph canvas."),
 
             Cmd("ID_CW_SectionBox", "Section Box", "sectionbox",
                 "Boxes whatever is selected. With nothing selected it switches sectioning off "
                 + "and back on without losing the box."),
 
-            // Panel — Deliver
-            Desk("ID_CW_DeskDeliver", "Deliver", "deliver",
-                "The model leaving the building — cuts, files, the site pack and the batch jobs "
-                + "on one desk."),
-
-            Cmd("ID_CW_ExportIfc", "Export IFC", "ifc",
-                "The model as IFC, with the mapping and the classification it should carry."),
-
-            Cmd("ID_CW_Compile", "Compile", "compile",
-                "A folder of supplier drops appended into one deliverable, newest revision of "
-                + "each, with a log of what went in."),
-
-            Cmd("ID_CW_Batch", "Batch", "batch",
-                "A saved list of jobs run in order over the document that is open, in one press."),
+            Cmd("ID_CW_Help", "Help", "help",
+                "The guide, what this cannot do, the shortcuts, a sample project and the "
+                + "diagnostics."),
         };
 
         /// <summary>Look one up by its host command id.</summary>
@@ -150,10 +117,10 @@ namespace CamelWorks.UI.Shell
         private static RibbonCommand Cmd(string id, string title, string toolId, string tooltip) =>
             new RibbonCommand(id, title, toolId, null, tooltip);
 
-        private static RibbonCommand Desk(string id, string title, string deskId, string tooltip) =>
-            new RibbonCommand(id, title, null, deskId, tooltip);
+        private static RibbonCommand AppCmd(string id, string title, string appId, string tooltip) =>
+            new RibbonCommand(id, title, null, appId, tooltip);
 
-        private static RibbonCommand Home(string id, string title, string tooltip) =>
+        private static RibbonCommand Hub(string id, string title, string tooltip) =>
             new RibbonCommand(id, title, null, null, tooltip);
     }
 }

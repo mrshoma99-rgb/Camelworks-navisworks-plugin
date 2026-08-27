@@ -47,7 +47,7 @@ namespace CamelWorks.UI.Views
                             + "to correct a guess rather than to be filled in before you start.", 0.85),
                     Ui.Line("The weekly cycle is the front door: bring in the new models, run the rules "
                             + "over what that broke, send out the result.", 0.85),
-                    Ui.Line("Find a tool, top right of the panel, searches what things do as well as what "
+                    Ui.Line("The search on the CamelWorks hub finds tools by what they do as well as what "
                             + "they are called. \"Why is this thing hidden\" finds Appearance.", 0.85),
                     Ui.Line("Compare reads bounding boxes by default and can read the actual triangles "
                             + "instead — the only way to see an element remodelled inside its own "

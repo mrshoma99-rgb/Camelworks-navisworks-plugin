@@ -140,7 +140,7 @@ namespace CamelWorks.UI.Shell
 
             // ---- Coordinate -------------------------------------------------------------------
 
-            Of("triage", "Clash Board", ToolShape.Panel, Glyph.Clash,
+            Of("triage", "Clash Board", ToolShape.Window, Glyph.Clash,
                "Turn every clash the tests found into the handful of issues somebody actually "
                + "fixes, and give each one to whoever fixes it.",
                "Load the board"),
@@ -200,7 +200,7 @@ namespace CamelWorks.UI.Shell
                + "resized, added, removed, retyped.",
                "Run the comparison"),
 
-            Of("changes", "Changes", ToolShape.Panel, Glyph.Model,
+            Of("changes", "Changes", ToolShape.Window, Glyph.Model,
                "The change list, filtered and painted onto the model, so a revision can be walked "
                + "rather than read.",
                "Paint it onto the model"),
@@ -222,7 +222,7 @@ namespace CamelWorks.UI.Shell
 
             // ---- Data -------------------------------------------------------------------------
 
-            Of("data", "Data Manager", ToolShape.Panel, Glyph.Table,
+            Of("data", "Data Manager", ToolShape.Window, Glyph.Table,
                "Browse every property the elements carry, and write the ones that are missing.",
                "Read properties"),
 
@@ -268,7 +268,7 @@ namespace CamelWorks.UI.Shell
 
             // ---- Sets and views ----------------------------------------------------------------
 
-            Of("sets", "Set Builder", ToolShape.Panel, Glyph.Filter,
+            Of("sets", "Set Builder", ToolShape.Window, Glyph.Filter,
                "Build the selections every other tool works on, out of properties and other sets.",
                "Publish as a Navisworks set"),
 
@@ -283,7 +283,7 @@ namespace CamelWorks.UI.Shell
                + "then level, then system - rather than building them one at a time.",
                "Read the model"),
 
-            Of("appearance", "Appearance", ToolShape.Panel, Glyph.Layers,
+            Of("appearance", "Appearance", ToolShape.Window, Glyph.Layers,
                "Control what is visible and what colour it is, as layers that stack and can be "
                + "taken back off.",
                "Apply the stack"),
@@ -353,7 +353,7 @@ namespace CamelWorks.UI.Shell
                "Run a saved sequence of steps over the document that is open, in one press.",
                "Run the selected job"),
 
-            Of("graph", "Graph Editor", ToolShape.Panel, Glyph.Play,
+            Of("graph", "Graph Editor", ToolShape.Window, Glyph.Play,
                "Build that sequence as a graph, when a list of steps is not enough.",
                "Run the graph"),
 
