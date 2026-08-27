@@ -25,6 +25,8 @@ namespace CamelWorks.UI.Shell
 
         private readonly App _app;
         private readonly StackPanel _strip = new StackPanel { Orientation = Orientation.Horizontal };
+        private readonly ContentControl _status = new ContentControl();
+        private readonly Border _statusBar;
         private readonly ContentControl _surface = new ContentControl();
         private string? _toolId;
         private bool _hooked;
@@ -51,6 +53,7 @@ namespace CamelWorks.UI.Shell
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             root.Children.Add(Header());
@@ -67,7 +70,22 @@ namespace CamelWorks.UI.Shell
             Grid.SetRow(tabs, 1);
             root.Children.Add(tabs);
 
-            Grid.SetRow(_surface, 2);
+            // The status strip: where this app's workflow stands, on every tab, with each figure
+            // jumping to the tab that owns it. Refreshed on every tab switch and after every run.
+            _statusBar = new Border
+            {
+                Padding = new Thickness(16, 7, 16, 7),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = _status,
+                Visibility = Visibility.Collapsed,
+            };
+
+            _statusBar.Tint(Border.BackgroundProperty, "Nav");
+            _statusBar.Tint(Border.BorderBrushProperty, "Bd");
+            Grid.SetRow(_statusBar, 2);
+            root.Children.Add(_statusBar);
+
+            Grid.SetRow(_surface, 3);
             root.Children.Add(_surface);
 
             var ground = new Border { Child = LeaseStrip.Over(root) };
@@ -193,6 +211,16 @@ namespace CamelWorks.UI.Shell
             }
 
             _surface.Content = surface;
+            RefreshStatus();
+        }
+
+        /// <summary>Recompute the status strip from cheap reads. Never throws, never traverses.</summary>
+        private void RefreshStatus()
+        {
+            var strip = Views.Surfaces.Status(_app.Id, toolId => Tab(toolId));
+
+            _status.Content = strip;
+            _statusBar.Visibility = strip == null ? Visibility.Collapsed : Visibility.Visible;
         }
 
         /// <summary>
@@ -257,8 +285,15 @@ namespace CamelWorks.UI.Shell
             }
         }
 
-        private void OnRunning(object? sender, int count) =>
+        private void OnRunning(object? sender, int count)
+        {
             _strip.IsEnabled = count == 0;
+
+            // A finished run is the moment the strip's numbers changed: tests ran, the board
+            // loaded, a baseline landed. Refreshing here is what keeps the app honest about
+            // itself without anybody pressing anything.
+            if (count == 0) RefreshStatus();
+        }
 
         /// <summary>
         /// Rebuild after a theme change, for the parts built with a brush resolved at the time.

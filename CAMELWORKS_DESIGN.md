@@ -84,6 +84,14 @@ Every tab of every app renders to one shape (`Views/Bench.cs`):
 6. No `Ui.Section`, `Ui.Card`, `Ui.Marked`, `Ui.Numbered` anywhere. `checks/folds.txt` stays
    empty and ratcheted.
 
+## 3a. An app is a product, not a binder
+
+The anatomy says how a tab looks; `CAMELWORKS_APPS.md` says what an app owes its user — the
+checklist every tab is audited against (the job, the missing next step, hostile inputs, useless
+data, invisible dependencies) and the two mechanisms that answer it: the **status strip** every
+app draws under its tabs, and **hand-offs** that carry context between tabs and between apps.
+An app without its audit in `docs/apps/` has not been through the pass.
+
 ## 4. What the design system keeps
 
 Everything in `Skin.cs` and `SkinSheet.xaml`, and the `Ui.cs` primitives. The app chrome — title
