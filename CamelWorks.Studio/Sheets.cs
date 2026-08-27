@@ -36,7 +36,7 @@ namespace CamelWorks.Studio
         /// </summary>
         public Action<FrameworkElement>? Drive { get; set; }
 
-        /// <summary>Which pane widths to draw it at, or null for all of them.</summary>
+        /// <summary>Which widths to draw it at, or null for all of them.</summary>
         public int[]? Widths { get; set; }
 
         /// <summary>How tall the window is while it is drawn.</summary>
@@ -47,14 +47,13 @@ namespace CamelWorks.Studio
     }
 
     /// <summary>
-    /// What the harness draws.
+    /// What the harness draws besides the desks.
     ///
-    /// Three of these are reconstructions rather than the real screens, and that is the honest
-    /// trade: the real screens read the host, and there is no host here. What they are made of is
-    /// real — every control below is the same <see cref="Ui"/> call the screen itself makes, on the
-    /// same skin — so a spacing, weight or disclosure decision proved here is proved for all
-    /// sixteen screens at once. The shell page is not a reconstruction at all: it is the shipping
-    /// chrome, with the content showing what a screen does when it cannot reach Navisworks.
+    /// The shell page is not a reconstruction at all: it is the shipping chrome, with the content
+    /// showing what a screen does when it cannot reach Navisworks. Home and the working page are
+    /// reconstructions — the real ones read the host on their first line — and the vocabulary
+    /// pages are a specimen sheet, because a spacing or weight decision proved there is proved
+    /// for every screen at once.
     /// </summary>
     public static class Sheets
     {
@@ -62,18 +61,16 @@ namespace CamelWorks.Studio
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
             new Sheet { Id = "shell", Title = "The pane", Height = 900, Builder = _ => Shell(), Widths = new[] { 470, 900 } },
-            new Sheet { Id = "home", Title = "Home", Height = 1000, Builder = _ => HomePane(), Widths = new[] { 470 } },
+            new Sheet { Id = "home", Title = "Home", Height = 1150, Builder = _ => HomePane(), Widths = new[] { 470 } },
             new Sheet { Id = "controls", Title = "Every control", Height = 2100, Builder = _ => Controls(), Widths = new[] { 470 } },
-            new Sheet { Id = "sets", Title = "Sets", Height = 1500, Builder = _ => SetsPane(), Widths = new[] { 470, 640 } },
-            new Sheet { Id = "appearance", Title = "Appearance", Height = 1200, Builder = _ => Appearance(), Widths = new[] { 470 } },
-            new Sheet { Id = "takeoff", Title = "Takeoff", Height = 900, Builder = _ => Takeoff(), Widths = new[] { 470 } },
+            new Sheet { Id = "bench", Title = "The anatomy", Height = 700, Builder = _ => BenchSheet(), Widths = new[] { 470, 900 } },
             new Sheet
             {
                 Id = "working",
                 Title = "Work in flight",
                 Height = 700,
                 Builder = Working,
-                Widths = new[] { 470 },
+                Widths = new[] { 640 },
                 Drive = host => Click(host, "Run the comparison"),
             },
             new Sheet { Id = "states", Title = "Empty, wrong, done", Height = 900, Builder = _ => States(), Widths = new[] { 470 } },
@@ -110,50 +107,48 @@ namespace CamelWorks.Studio
 
             return Page(
                 Ui.Heading("Every control, in one place"),
-                Ui.Sub("The vocabulary all sixteen screens are built from."),
+                Ui.Sub("The vocabulary every surface is built from."),
 
-                Ui.Marked(Glyphs.Report, "Type", null,
-                    Ui.Eyebrow("Eyebrow"),
-                    Ui.Heading("A card heading"),
-                    Ui.Sub("The line under it that says what the card is for."),
-                    Ui.Line("An ordinary line of body text, which wraps when the pane is narrow enough that it has to."),
-                    Ui.Line("The same line, secondary.", 0.75),
-                    Ui.Small("Small print: the sentence under a control that explains what to put in it."),
-                    Ui.Code("D:\\Projects\\Riverside\\Models\\ARC-Riverside-Block-B-r7.nwc")),
+                Ui.Eyebrow("Type"),
+                Ui.Heading("A heading"),
+                Ui.Sub("The line under it that says what a screen is for."),
+                Ui.Line("An ordinary line of body text, which wraps when the pane is narrow enough that it has to."),
+                Ui.Line("The same line, secondary.", 0.75),
+                Ui.Small("Small print: the sentence under a control that explains what to put in it."),
+                Ui.Code("D:\\Projects\\Riverside\\Models\\ARC-Riverside-Block-B-r7.nwc"),
+                Ui.Rule(),
 
-                Ui.Marked(Glyphs.Table, "Numbers and status", null, figures, pills),
+                Ui.Eyebrow("Numbers and status"),
+                figures,
+                pills,
+                Ui.Rule(),
 
-                Ui.Marked(Glyphs.Tune, "Fields", null,
-                    Ui.Form(
-                    Ui.Field("Set name", Ui.Text("Level 04 — mechanical", null, 200), "Shown in the Navisworks selection tree."),
-                    Ui.Field("Property tab", Ui.Choice(new[] { "Element", "Item", "Revit Type", "IFC" }, "Element", null)),
-                    Ui.Pair(
-                        Ui.Field("Skip values under", Ui.Text("25", null, 60)),
-                        Ui.Field("Start numbering at", Ui.Text("1", null, 60))),
-                    Ui.Field("Split on", Ui.Segmented(new[] { "Level", "Discipline", "Zone" }, "Level", null)),
-                    Ui.Toggle("Publish into folders as well as saving", true, null),
-                    Ui.Check("Include elements with no value", false, null))),
+                Ui.Eyebrow("Fields"),
+                Ui.Field("Set name", Ui.Text("Level 04 — mechanical", null, 200), "Shown in the Navisworks selection tree."),
+                Ui.Field("Property tab", Ui.Choice(new[] { "Element", "Item", "Revit Type", "IFC" }, "Element", null)),
+                Ui.Pair(
+                    Ui.Field("Skip values under", Ui.Text("25", null, 60)),
+                    Ui.Field("Start numbering at", Ui.Text("1", null, 60))),
+                Ui.Field("Split on", Ui.Segmented(new[] { "Level", "Discipline", "Zone" }, "Level", null)),
+                Ui.Toggle("Publish into folders as well as saving", true, null),
+                Ui.Check("Include elements with no value", false, null),
+                Ui.Rule(),
 
-                Ui.Marked(Glyphs.Play, "Buttons", null,
-                    Ui.Across(
-                        Ui.Primary("Run the comparison", () => { }),
-                        Ui.Button("Save to project", () => { }),
-                        Ui.Quiet("Reset", () => { }),
-                        Ui.Danger("Delete baseline", () => { }),
-                        Ui.Icon(Glyphs.Up, "Move up", () => { }),
-                        Ui.Icon(Glyphs.Down, "Move down", () => { }),
-                        Ui.Icon(Glyphs.Bin, "Remove", () => { })),
-                    Ui.Link("What does publishing do?", () => { })),
+                Ui.Eyebrow("Buttons"),
+                Ui.Across(
+                    Ui.Primary("Run the comparison", () => { }),
+                    Ui.Button("Save to project", () => { }),
+                    Ui.Quiet("Reset", () => { }),
+                    Ui.Danger("Delete baseline", () => { }),
+                    Ui.Icon(Glyphs.Up, "Move up", () => { }),
+                    Ui.Icon(Glyphs.Down, "Move down", () => { }),
+                    Ui.Icon(Glyphs.Bin, "Remove", () => { })),
+                Ui.Link("What does publishing do?", () => { }),
+                Ui.Rule(),
 
-                Ui.Section("Advanced matching", "Tolerance 1 mm · property watch: standard", false,
-                    Ui.Field("Position tolerance", Ui.Text("0.001", null, 80), "In metres. Anything moved by less than this counts as unchanged."),
-                    Ui.Field("Property watch", Ui.Segmented(new[] { "None", "Standard", "All" }, "Standard", null)),
-                    Ui.Toggle("Read the actual triangles", false, null),
-                    Ui.Small("Slow on a large federation, and the only way to notice an element that was remodelled in place.")),
-
-                Ui.Marked(Glyphs.Table, "A table", null,
-                    Ui.Table(Rows(),
-                        ("Element", 150), ("Model", 110), ("What changed", 0))));
+                Ui.Eyebrow("A table"),
+                Ui.Table(Rows(),
+                    ("Element", 150), ("Model", 110), ("What changed", 0)));
         }
 
         private static IEnumerable<TableRow> Rows()
@@ -168,180 +163,31 @@ namespace CamelWorks.Studio
 
         // -----------------------------------------------------------------------------------
 
-        /// <summary>
-        /// The Sets screen, rebuilt.
-        ///
-        /// This is the pane the redesign was called for: a rule builder and two generators, each
-        /// with every field it owns on screen at once, one under another, all reading as one
-        /// undifferentiated column of labels and boxes. Folded up, with each section saying what it
-        /// is set to, the same screen is four lines until you want more.
-        /// </summary>
-        private static UIElement SetsPane()
+        // harness: vocabulary
+        //
+        // The surface anatomy itself, drawn empty enough to read as a diagram: setup column, the
+        // one action at its foot, the stage. At 470 the same page proves the stacked shape.
+        private static UIElement BenchSheet()
         {
-            var conditions = Ui.Stack(
-                Row("Category", "is", "Walls"),
-                Row("Level", "is", "Level 04"),
-                Ui.Across(
-                    Ui.Quiet("+ and...", () => { }),
-                    Ui.Quiet("+ Add an OR group", () => { })));
+            var setup = Ui.Stack(
+                Bench.Scope("3,120 elements in the selection"),
+                Bench.Group("The inputs",
+                    Ui.Field("A field", Ui.Text("its value", null, 160)),
+                    Ui.Field("A choice", Ui.Choice(new[] { "This", "That" }, "This", null)),
+                    Ui.Check("A yes or no", true, null)),
+                Bench.Group("More of them",
+                    Ui.Field("Another", Ui.Text(string.Empty, "empty, with a hint", null, 160),
+                             "Under ten words, or it is prose.")));
 
-            return Page(
-                Ui.Form(
-                    conditions,
-                    Ui.Rule(),
-                    Ui.Field("Name", Ui.Text("Level 04 — walls", null, 220),
-                             "how it reads in the Navisworks selection tree")),
-
-                Ui.Actions(
-                    Ui.Primary("Run the graph", () => { }),
-                    Ui.Button("Save to project", () => { }),
-                    Ui.Button("Publish as a Navisworks set", () => { })),
-
-                Ui.Done("Saved \"Level 04 — walls\" to the project file."),
-
-                Ui.Small("Groups are ORed together; conditions inside a group are ANDed. A negated "
-                         + "condition compiles to a subtraction rather than a not-equals — those are "
-                         + "different sets, because a host condition on a property an element does "
-                         + "not have matches nothing."),
-
-                Ui.Eyebrow("The whole library at once"),
-                Ui.Small("The Selection Tree is the shape the model was exported in, not the shape "
-                         + "the job is run in. Name the properties that describe the project - "
-                         + "level, discipline, system, package - and it builds the library to match, "
-                         + "keeps the recipe, and tells you what moved when the next revision lands."),
-                Ui.Actions(Ui.Button("Rebuild the tree from properties...", () => { })),
-
+            var stage = Ui.Stack(
+                Bench.Ready("What pressing the action will do, to what.",
+                            "One quieter line of consequence — computed from the live model, "
+                            + "never boilerplate."),
                 Ui.Rule(),
+                Bench.Verdict("The answer, stated in one phrase", Tone.Good),
+                Ui.Line("Everything a run produces lands here, under the verdict.", 0.75));
 
-                Ui.Eyebrow("Many sets at once"),
-                Ui.Small("Already have the sets as a spreadsheet - a row per condition, or a row per "
-                         + "set with a column per property? Read it rather than retyping it, and run "
-                         + "the same schedule again when the next revision lands."),
-                Ui.Actions(Ui.Button("Open a schedule from a spreadsheet...", () => { })),
-
-                Ui.Rule(),
-
-                Ui.Eyebrow("Saved sets"),
-                Ui.Small("Kept in the project file, so they travel with the job."),
-                Ui.Table(Saved(), ("Set", 200), ("Elements", 80), ("Last run", 0)));
-        }
-
-        private static UIElement Row(string property, string test, string value)
-        {
-            var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.9, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            Add(grid, 0, Ui.Text(property, null, 60));
-            Add(grid, 2, Ui.Choice(new[] { "is", "is not", "contains" }, test, null, 60));
-            Add(grid, 4, Ui.Text(value, null, 60));
-            Add(grid, 5, Ui.Icon(Glyphs.Close, "Remove this condition", () => { }));
-            return grid;
-        }
-
-        internal static void Add(Grid grid, int column, UIElement child)
-        {
-            Grid.SetColumn(child, column);
-            grid.Children.Add(child);
-        }
-
-        private static IEnumerable<TableRow> Saved()
-        {
-            yield return new TableRow(null, "Level 04 — walls", "412", "12 minutes ago");
-            yield return new TableRow(null, "MEP — chilled water", "1,905", "Yesterday");
-            yield return new TableRow(null, "Structure — transfer level", "88", "Last Tuesday");
-        }
-
-        // -----------------------------------------------------------------------------------
-
-        private static UIElement Appearance()
-        {
-            return Page(
-                Ui.Eyebrow("Top of the list wins"),
-                Layer("Clashing elements", "Red, opaque", Color.FromRgb(0xC8, 0x10, 0x2E)),
-                Layer("Level 04 only", "Everything else 85% transparent", Color.FromRgb(0x9A, 0xA3, 0xAD)),
-                Layer("Temporary works", "Hidden", Color.FromRgb(0xB4, 0xBC, 0xC5)),
-
-                Ui.Actions(
-                    Ui.Primary("Apply the stack", () => { }),
-                    Ui.Button("Save the stack", () => { }),
-                    Ui.Button("Put the model back", () => { })),
-
-                Ui.Info("A layer only paints what it covers. Elements no layer covers keep whatever "
-                        + "Navisworks already had for them."),
-
-                Ui.Section("Add a layer", "hidden or coloured, over whatever you point it at", false,
-                    Ui.Form(
-                        Ui.Pair(
-                            Ui.Field("Name", Ui.Text(string.Empty, "Level 04 only", null, 160)),
-                            Ui.Field("Covers", Ui.Choice(new[] { "The selection", "A saved set", "A search" }, "The selection", null))),
-                        Ui.Pair(
-                            Ui.Field("Visibility", Ui.Choice(new[] { "Leave it", "Hide it", "Show it" }, "Leave it", null)),
-                            Ui.Field("Colour (#rrggbb)", Ui.Text(string.Empty, "#c8102e", null, 110))),
-                        Ui.Pair(
-                            Ui.Field("Transparency (0-1)", Ui.Text(string.Empty, "0.85", null, 90)),
-                            Ui.Field("Why", Ui.Text(string.Empty, "for the Tuesday walkthrough", null, 180)))),
-                    Ui.Actions(Ui.Button("Add layer", () => { }))),
-
-                Ui.Rule(),
-
-                Ui.Marked(Glyphs.Find, "What else is going on",
-                    "Everything hidden or overridden that no layer above accounts for. Reading it is "
-                    + "a pass over the whole federation, so it happens when you ask rather than when "
-                    + "the tab opens.",
-                    Ui.Actions(Ui.Primary("Scan the model", () => { }))));
-        }
-
-        private static UIElement Layer(string name, string what, Color paint)
-        {
-            var grid = new Grid { Margin = new Thickness(0, 0, 0, 4) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            // The literal colour the layer writes, not a Tone. Skin.Ink is a text token and its
-            // three values are the severity palette, so a layer set to red used to show salmon in
-            // the dark theme and a layer with no colour showed as near-white — a preview of the
-            // pane rather than of the model.
-            var swatch = new Border
-            {
-                Width = 10,
-                Height = 34,
-                CornerRadius = new CornerRadius(3),
-                Background = new SolidColorBrush(paint),
-                Margin = new Thickness(0, 0, 10, 0),
-            };
-
-            grid.Children.Add(swatch);
-
-            var text = Ui.Stack(
-                Ui.Line(name, 1, true),
-                Ui.Small(what));
-
-            Grid.SetColumn(text, 1);
-            grid.Children.Add(text);
-
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            buttons.Children.Add(Ui.Icon(Glyphs.Up, "Move up", () => { }));
-            buttons.Children.Add(Ui.Icon(Glyphs.Down, "Move down", () => { }));
-            buttons.Children.Add(Ui.Icon(Glyphs.Bin, "Remove this layer", () => { }));
-
-            Grid.SetColumn(buttons, 2);
-            grid.Children.Add(buttons);
-
-            var frame = new Border
-            {
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(0, 6, 0, 6),
-                Child = grid,
-            };
-
-            frame.SetResourceReference(Border.BorderBrushProperty, "Bd");
-            return frame;
+            return Bench.Surface(setup, Ui.Runner("The one action", Ui.Stack(), _ => { }), stage);
         }
 
         // -----------------------------------------------------------------------------------
@@ -376,15 +222,16 @@ namespace CamelWorks.Studio
                 shoot();
             });
 
-            return Page(
-                Ui.Marked(Glyphs.Compare, "Run", "Pick a baseline and see what changed.",
-                    Ui.Form(
-                    Ui.Field("Baseline", Ui.Choice(new[] { "Week 32 — Friday issue", "Week 30", "Week 28" }, "Week 32 — Friday issue", null))),
-                    Ui.Section("What counts as a change", "1 mm · standard properties · no triangle read", false,
-                        Ui.Field("Position tolerance", Ui.Text("0.001", null, 80)),
-                        Ui.Toggle("Read the actual triangles", false, null)),
-                    runner,
-                    output));
+            var setup = Ui.Stack(
+                Bench.Group(string.Empty,
+                    Ui.Field("Compare against",
+                        Ui.Choice(new[] { "Week 32 — Friday issue", "Week 30", "Week 28" },
+                                  "Week 32 — Friday issue", null))),
+                Bench.Group("What counts as a change",
+                    Ui.Field("Position tolerance", Ui.Text("0.001", null, 80)),
+                    Ui.Toggle("Read the actual triangles", false, null)));
+
+            return Bench.Surface(setup, runner, Ui.Stack(output));
         }
 
         private static void Click(DependencyObject root, string caption)
@@ -425,8 +272,8 @@ namespace CamelWorks.Studio
         /// The front door, reconstructed.
         ///
         /// Worth having as a page of its own because it is the screen a first-time user sees
-        /// before any other, and until now it was the one screen nobody had ever looked at: it
-        /// reads the host on its very first line, so the shell page can only ever show it failing.
+        /// before any other — and the real one reads the host on its very first line, so the
+        /// shell page can only ever show it failing.
         /// </summary>
         private static UIElement HomePane()
         {
@@ -435,22 +282,68 @@ namespace CamelWorks.Studio
                 Ui.Pill("Metres"),
                 Ui.Pill("4 clash tests"));
 
+            var desks = Ui.Stack();
+            var label = Ui.Eyebrow("The desks");
+            label.Margin = new Thickness(0, 12, 0, 4);
+            desks.Children.Add(label);
+
+            foreach (var desk in Desks.All)
+                desks.Children.Add(DeskRow(desk));
+
             return Page(
                 Ui.Stack(Ui.Eyebrow("RIVERSIDE — BLOCK B"), chips),
 
-                Ui.Marked(Glyphs.Clock, "The week",
-                    "Reconcile, regroup, report. Each opens where the work actually happens.",
-                    Step(1, "Project", "Reconcile", "Six models came in on Friday; two moved.",
-                         "2 days ago", false, "Check the models"),
-                    Ui.Rule(),
-                    Step(2, "Coordinate", "Regroup", "1,284 clashes became 96 issues.",
-                         "Yesterday", false, "Open the board"),
-                    Ui.Rule(),
-                    Step(3, "Coordinate", "Report", "Send this week's out.",
-                         null, true, "Write the report")),
+                Ui.Eyebrow("The week"),
+                Step(1, "Project", "Reconcile", "Six models came in on Friday; two moved.",
+                     "2 days ago", false, "Check the models"),
+                Ui.Rule(),
+                Step(2, "Coordinate", "Regroup", "1,284 clashes became 96 issues.",
+                     "Yesterday", false, "Open the board"),
+                Ui.Rule(),
+                Step(3, "Coordinate", "Report", "Send this week's out.",
+                     null, true, "Write the report"),
 
-                Ui.Marked(Glyphs.Report, "Recent", null,
-                    Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96))));
+                Ui.Rule(),
+                desks,
+
+                Ui.Rule(),
+                Ui.Eyebrow("Recent"),
+                Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96)));
+        }
+
+        /// <summary>One desk on the front door: its colour, its name, and the job it is.</summary>
+        private static UIElement DeskRow(Desk desk)
+        {
+            var marker = new Border
+            {
+                Width = 3,
+                CornerRadius = new CornerRadius(1.5),
+                Margin = new Thickness(0, 2, 9, 2),
+            };
+
+            marker.SetResourceReference(Border.BackgroundProperty, "Fam." + desk.Family);
+
+            var text = Ui.Stack(
+                Ui.Line(desk.Title, 1, true),
+                Ui.Line(desk.Job, 0.7));
+
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.Children.Add(marker);
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+
+            var button = new System.Windows.Controls.Button
+            {
+                Content = row,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(8, 6, 8, 6),
+                Margin = new Thickness(0, 0, 0, 2),
+            };
+
+            button.Wearing("RailRow");
+            return button;
         }
 
         private static UIElement Step(int number, string family, string title, string what,
@@ -510,66 +403,23 @@ namespace CamelWorks.Studio
             yield return new TableRow(null, "Reconcile", "Brought in 6 models", "2 days ago");
         }
 
-        /// <summary>
-        /// Takeoff, reconstructed.
-        ///
-        /// Here because it is the screen most at risk of still reading as a form: four settings, a
-        /// folded group of two more, and one button. If the card, the well and the pairing do not
-        /// rescue this one they have not rescued anything.
-        /// </summary>
-        private static UIElement Takeoff()
-        {
-            return Page(
-                Ui.Form(
-                    Ui.Field("Scope", Ui.Segmented(new[] { "Whole model", "Selection", "A saved set" }, "Whole model", null)),
-                    Ui.Pair(
-                        Ui.Field("Measure", Ui.Choice(new[] { "Volume", "Area", "Length", "Count" }, "Volume", null)),
-                        Ui.Field("Rows", Ui.Choice(new[] { "Level", "Category", "Model", "Discipline" }, "Level", null))),
-                    Ui.Field("Columns", Ui.Text(string.Empty, "nothing — a flat list", null, 140),
-                             "Leave it to get a flat list.")),
-
-                Ui.Actions(Ui.Primary("Sum it", () => { })),
-
-                Ui.Section("If the values need tidying first", "Off — values read exactly as they are", false,
-                    Ui.Field("Take the number matching", Ui.Text(string.Empty, null, 200)),
-                    Ui.Field("When it has no unit, read it as", Ui.Choice(new[] { "leave it", "m3", "m2", "m" }, "leave it", null))),
-
-                Ui.Marked(Glyphs.Table, "1,178.5 m³", "Volume by level, across 3,412 elements",
-                    Ui.Across(
-                        Ui.Figure("1,178.5", "m³ total"),
-                        Ui.Figure("3,412", "elements"),
-                        Ui.Figure("17", "unreadable", Tone.Warn)),
-                    Ui.Table(Sums(), ("Level", 130), ("Volume", 0), ("Elements", 80)),
-                    Ui.Tally(4, 7, "level"),
-                    Ui.Actions(Ui.Quiet("Write it to a spreadsheet", () => { }))));
-        }
-
-        private static IEnumerable<TableRow> Sums()
-        {
-            yield return new TableRow(null, "Level 00", "412.8 m³", "1,204");
-            yield return new TableRow(null, "Level 01", "388.1 m³", "1,118");
-            yield return new TableRow(null, "Level 02", "377.6 m³", "1,090");
-            yield return new TableRow(null, "Unreadable", "—", "17") { Tone = Tone.Warn };
-        }
-
         private static UIElement States()
         {
             return Page(
                 Ui.Heading("What a screen says when it has nothing to say"),
                 Ui.Sub("Every one of these is an answer. A blank panel is a bug report."),
 
-                Ui.Marked(Glyphs.Info, "States", null,
-                    Ui.Empty("No clashes matched these rules",
-                             "Every clash in the four tests was suppressed by a rule.",
-                             "Clear the rules", () => { }),
-                    Ui.Note("This model has no saved viewpoints yet, so there is nothing to rename. "
-                            + "Save one first, or run this after a coordination session."),
-                    Ui.Problem("The project file is open in another Navisworks. CamelWorks will not "
-                               + "write over somebody else's work; close it there, or carry on and export "
-                               + "without saving."),
-                    Ui.Done("Published 46 sets into 6 folders. They are in the Sets window now."),
-                    Ui.Info("Removed elements are drawn from the baseline model, which CamelWorks appends "
-                            + "as a hidden model and takes back out again when you clear the comparison.")));
+                Ui.Empty("No clashes matched these rules",
+                         "Every clash in the four tests was suppressed by a rule.",
+                         "Clear the rules", () => { }),
+                Ui.Note("This model has no saved viewpoints yet, so there is nothing to rename. "
+                        + "Save one first, or run this after a coordination session."),
+                Ui.Problem("The project file is open in another Navisworks. CamelWorks will not "
+                           + "write over somebody else's work; close it there, or carry on and export "
+                           + "without saving."),
+                Ui.Done("Published 46 sets into 6 folders. They are in the Sets window now."),
+                Ui.Info("Removed elements are drawn from the baseline model, which CamelWorks appends "
+                        + "as a hidden model and takes back out again when you clear the comparison."));
         }
     }
 }

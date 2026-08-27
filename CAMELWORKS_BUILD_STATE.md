@@ -95,63 +95,34 @@ carry the clash `Tests` property the other three do.
 
 ---
 
-## UI — built and wired
+## UI — the desks
 
-**Forty-two tools, six ribbon panels, twenty-seven buttons.** There is no tab strip and no workspace
-switcher: a ribbon button opens *its own* tool, in its own window, and the six tools that are read
-continuously open in the dock pane instead. Find a Tool searches symptom phrasing, not just names.
+**Fifty-one tools, five desks, twenty-two ribbon buttons.** The third design, recorded in
+`CAMELWORKS_DESIGN.md`. A coordinator has five jobs, and each is a **desk** — one window with a
+permanent rail naming every tool of that job, grouped under its stage in small caps, nothing
+folded and nothing tabbed. One tool is on the bench at a time; the rail says which. The
+beside-the-model tools — the board, changes, the data grid, the set builder, appearance — open in
+the dock pane from wherever they are summoned, and the pane at rest is **Home**: the week's three
+steps with their state, the five desks, the tool search, and recent activity. Review keeps a
+floating palette over the 3D view; Help keeps a window that works when nothing else does.
 
-Every tool carries three things in one registry (`Shell/Tools.cs`): its name, a sentence saying what
-it is trying to do, and **one main action** — the caption on the one filled button that tool exists
-to offer. A tool that cannot name its action in three or four words is telling you it is two tools,
-and five of them were.
+Every tool still carries three things in one registry (`Shell/Tools.cs`): its name, a sentence
+saying what it is trying to do, and **one main action**. `Shell/Desks.cs` says which desk and
+stage each tool sits on; `Views/Surfaces.cs` is the one dispatch a desk benches from; and a
+ribbon check holds all of it consistent — every tool on exactly one desk, every benched tool with
+a surface, no two buttons opening the same thing.
 
-| Tool | Its one action | What it does |
-|---|---|---|
-| **Health Check** | Check this federation | One sweep over one pass of the models — placement, geometry, arrivals, codes and the federation itself — ranked worst first into one verdict, plus the client's own IDS |
-| **Project Setup** | Save overrides | What was derived, why, an override per line, and the way back to derived |
-| **Project Profile** | Save | Responsible parties, priorities, code tables, what may be written to the model |
-| **Fix Broken Links** | Bring in | The source files a loaded model can no longer see, and where they went |
-| **Clash Triage** *(pane)* | Load the board | The board, filtered and searched; what changed since the last run; statuses and hand grouping; an issue no clash produced; freeze; undo |
-| **Review** | Record | The board one finding at a time, with the keyboard, from the model's own view |
-| **Clash Tests** | Run them | What gets tested against what, and how close is too close |
-| **Clash Matrix** *(wizard)* | Read the matrix | A whole test set from a grid of one discipline against another, instead of forty tests by hand |
-| **Headroom** | Check clear height | Where the clear height under the services is not there — which no clash test finds, because nothing is touching |
-| **Clash Rules** | Try these on the board | The pipeline, edited through one editor that draws every rule |
-| **Clash Report** | Write the report | PDF, XLSX or HTML, one file per party, filtered to what changed, with a picture per group |
-| **BCF** | Send the board | Out with cameras and components; a reply read back and reconciled against the board |
-| **Merge Markups** | Bring them together | Several people's markups on one model, in one place |
-| **Clash XML** | Show me what would go in | Write a board into the format other tools speak, or read one back — two legs, one switch |
-| **Compare** | Run the comparison | Pick a baseline, set what counts as a change, go; the scoreboard, the per-model tally with the reason each pairing was made, what this baseline cannot answer, and every baseline kept |
-| **Changes** *(pane)* | Paint it onto the model | The change list, filtered and searched; paint it, walk it, stamp it, raise it, report it |
-| **Baseline** *(acts)* | — | The model as it stands, recorded, in one press |
-| **Data Manager** *(pane)* | Read properties | Every property folded to one row, and one write pipeline — a typed value, a formula, a code table or a spreadsheet — previewed element by element |
-| **Excel Round-trip** | Write a sheet | Out to a workbook, edited by somebody without Navisworks, and back in |
-| **External Data** *(wizard)* | Read the file | A register, a schedule or an asset list joined onto the model by a key column, either way |
-| **Levels and Zones** | Derive levels | What level and what zone every element is on, from whatever the model already carries |
-| **Takeoff** | Sum it | The quantities the model carries, grouped how a bill wants them, saying what could not be read |
-| **Report Builder** *(wizard)* | Read the model | A report of model data on a template proposed from the model itself |
-| **IDS** | Save as an .ids file | What every model must carry, in the open standard for saying so, checked against the federation |
-| **Sets** *(pane)* | Publish as a Navisworks set | The boolean builder, and a generator that makes a set per value and nests them |
-| **Sets from a Schedule** *(wizard)* | Read the schedule | A spreadsheet of rooms, assets or conditions turned into that many sets at once |
-| **Appearance** *(pane)* | Apply the stack | The layers system, and everything hidden or overridden that no layer accounts for |
-| **Viewpoints** | Read what is selected | Rename, renumber, re-folder and render in bulk, instead of one at a time |
-| **Restructure** *(wizard)* | Read the model | The set library reshaped into the folders the properties imply |
-| **Section Box** *(acts)* | — | Box what is selected, or switch sectioning off when nothing is |
-| **Extract** *(wizard)* | Read it | A level, a zone, a room or a view cut out as a set, a drawing or a model somebody else can open |
-| **Compile** *(wizard)* | Compile | A list of models appended into one deliverable, newest revision of each, with a log of what went in |
-| **Export IFC** | Open the IFC exporter | The exporter's own panel, with the mapping and classification it should carry |
-| **Centre of Gravity** | Work out where it sits | Where the hook goes, by declared weight or by volume — and it says which |
-| **Dimensions** | Measure it | How long that run is, how far off the slab, whether those hangers are at centres |
-| **Setting Out** | Write the file | The file the engineer loads into a total station, with what it is referenced to written in |
-| **Documents and Photos** | Find what is attached | The data sheets, the site photos, the address into a document system |
-| **Site Labels** | Make the labels | A label per element, with a QR code that survives a wet Tuesday |
-| **Batch** | Run the selected job | Saved graphs, run without opening the canvas |
-| **Graph Editor** *(pane)* | Run the graph | The node graph, over twenty-two nodes including the coordination ones |
+**Every surface is one anatomy** (`Views/Bench.cs`): a setup column on the left holding every
+input, all of them visible; the tool's one action at the column's foot, in the same place on
+every tool; and the stage on the right, where the answer lands and dominates. At pane width the
+same anatomy stacks. Wizards are the same shape with a spine: every step listed down the left
+with its state, the current step's surface on the stage, Next at the spine's foot (`Ui.Steps`).
+There are **zero collapsible sections in the product** — `checks/folds.txt` is empty and
+ratcheted, and `Ui.Card`/`Ui.Marked`/`Ui.Numbered` appear on no tool surface.
 
-The three commands that are not screens each earn it: Section Box acts on the model you are looking
-at, Baseline is a one-click weekly habit that should not need a screen, and Help is a window because
-it has to work when the panel does not.
+The ribbon is six panels: Home and Help, then one panel per desk — the desk's button plus the
+daily tools as direct entries that land inside the desk with the tool already on the bench.
+Find a Tool (`Shell/Finder.cs`) knows all fifty-one tools by name, synonyms and symptom phrasing.
 
 **Icons** are Google Material Symbols (Apache-2.0, attributed in `NOTICE`), fetched and rasterised by
 `tools/icons.py` and committed. The tool is in the repository rather than the PNGs alone, so the set

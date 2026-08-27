@@ -1,5 +1,11 @@
 # The panel grammar
 
+**Superseded.** The third design replaced panels-with-cards with the desks and the surface
+anatomy in [`CAMELWORKS_DESIGN.md`](CAMELWORKS_DESIGN.md), which is the law now. This file stays
+as the record of what the second design learned — its rule 5 (prose above a control is deleted on
+sight) survives verbatim in the new law, and its diagnosis is why the anatomy exists.
+
+
 Three independent design reviews of the nineteen panels reached the same diagnosis, so it is
 written down here rather than left in a pull request nobody will find again.
 
