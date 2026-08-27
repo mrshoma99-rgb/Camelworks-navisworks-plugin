@@ -54,6 +54,9 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _note = Ui.Stack();
             private readonly StackPanel _back = Ui.Stack();
 
+            /// <summary>The holder the leg switch swaps whole surfaces in and out of.</summary>
+            private readonly ContentControl _half = new ContentControl();
+
             private readonly TextBox _file = Ui.Text(string.Empty, "where to write it", null, 240);
             private readonly TextBox _incoming = Ui.Text(string.Empty, "a file to read", null, 240);
             private readonly TextBox _name = Ui.Text("Everything", null, 200);
@@ -150,9 +153,6 @@ namespace CamelWorks.UI.Views
                 _half.Content = _write;
                 return _half;
             }
-
-            /// <summary>The holder the leg switch swaps whole surfaces in and out of.</summary>
-            private readonly ContentControl _half = new ContentControl();
 
             private UIElement? _write;
             private UIElement? _read;

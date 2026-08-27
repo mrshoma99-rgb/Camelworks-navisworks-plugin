@@ -104,24 +104,21 @@ namespace CamelWorks.UI.Views
             private UIElement Build()
             {
                 var input = Ui.Stack(
-                    Ui.Actions(
-                        Ui.Button("Add files...", AddFiles),
-                        Ui.Quiet("Add a folder...", AddFolder),
-                        Ui.Quiet("Clear the list", Clear)),
-                    Ui.PathField("Spreadsheet", _sheet, PathKind.Open,
-                                 "Spreadsheet|*.xlsx;*.xlsm|All files|*.*",
-                                 "a register the project already keeps, if there is one"),
-                    Ui.Actions(Ui.Quiet("Read the paths out of it", FromSheet)),
+                    Bench.Group(string.Empty,
+                        Ui.Actions(
+                            Ui.Button("Add files...", AddFiles),
+                            Ui.Quiet("Add a folder...", AddFolder),
+                            Ui.Quiet("Clear the list", Clear)),
+                        Ui.PathField("Spreadsheet", _sheet, PathKind.Open,
+                                     "Spreadsheet|*.xlsx;*.xlsm|All files|*.*",
+                                     "a register the project already keeps, if there is one"),
+                        Ui.Actions(Ui.Quiet("Read the paths out of it", FromSheet))),
                     _list,
-                    Ui.Rule(),
-                    Ui.Eyebrow("This compilation"),
-                    Saved());
+                    Bench.Group("This compilation", Saved()));
 
                 var output = Ui.Stack(
                     _shape,
-                    Ui.Rule(),
-                    Ui.Eyebrow("What would happen"),
-                    _verdict);
+                    Bench.Group("What would happen", _verdict));
 
                 var run = Ui.Stack(Warning(), _run, _note);
 
@@ -173,11 +170,8 @@ namespace CamelWorks.UI.Views
                 _picker = Ui.Choice(names, _recipe.Name, Switch, 220);
 
                 return Ui.Stack(
-                    Ui.Small("Saved, this runs again next week against whatever is in the delivery "
-                             + "folder then."),
-                    Ui.Form(
-                        Ui.Field("Saved", _picker),
-                        Ui.Field("Name", _name, "what a combined file is named after")),
+                    Ui.Field("Saved", _picker, "Re-runs next week against whatever the folder holds."),
+                    Ui.Field("Name", _name, "what a combined file is named after"),
                     Ui.Actions(
                         Ui.Quiet("Save this one", Keep),
                         Ui.Quiet("Forget it", Forget)));
@@ -428,7 +422,7 @@ namespace CamelWorks.UI.Views
             {
                 _shape.Children.Clear();
 
-                _shape.Children.Add(Ui.Form(
+                _shape.Children.Add(Ui.Stack(
                     Ui.Field("Produce",
                         Ui.Choice(new[] { Combined, Separate },
                                   _recipe.Mode == CompileMode.Individual ? Separate : Combined,
@@ -511,11 +505,11 @@ namespace CamelWorks.UI.Views
                         Compilation.NameOf(s.Newer.Path))).ToList(),
                         ("Left out", 240), ("Superseded by", 0));
 
-                    _verdict.Children.Add(Ui.Section("The revisions being left out",
-                        Ui.Count(plan.Superseded.Count, "file"), false,
-                        Ui.Picking(older,
-                            new Ui.OnPicked("Copy {n}",
-                                (picked, say) => Ui.Copy(Ui.Lines(older, picked), say, "file")))));
+                    _verdict.Children.Add(Ui.Eyebrow("The revisions being left out — "
+                        + Ui.Count(plan.Superseded.Count, "file")));
+                    _verdict.Children.Add(Ui.Picking(older,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(older, picked), say, "file"))));
                 }
 
                 if (plan.Missing.Count + plan.Unreadable.Count > 0)
@@ -528,11 +522,11 @@ namespace CamelWorks.UI.Views
                             .Take(60).ToList(),
                         ("File", 320), ("", 0));
 
-                    _verdict.Children.Add(Ui.Section("The files that cannot go in",
-                        Ui.Count(plan.Missing.Count + plan.Unreadable.Count, "file"), false,
-                        Ui.Picking(refused,
-                            new Ui.OnPicked("Copy {n}",
-                                (picked, say) => Ui.Copy(Ui.Lines(refused, picked), say, "file")))));
+                    _verdict.Children.Add(Ui.Eyebrow("The files that cannot go in — "
+                        + Ui.Count(plan.Missing.Count + plan.Unreadable.Count, "file")));
+                    _verdict.Children.Add(Ui.Picking(refused,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(refused, picked), say, "file"))));
                 }
 
                 DrawRun();

@@ -43,7 +43,7 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The open document.</param>
         /// <param name="what">Which export: "glb", "sheet" or "dxf".</param>
         public static System.Windows.UIElement Surface(Session session, string what) =>
-            Ui.Scroll(Body(session, Kind(what)));
+            Body(session, Kind(what));
 
         /// <summary>Which of the three, defaulting to the properties rather than throwing.</summary>
         private static string Kind(string what) =>
@@ -57,13 +57,13 @@ namespace CamelWorks.UI.Views
             var picker = Ui.Choice(new[] { "Current selection", "Everything loaded" }, scope,
                                    pick => scope = pick);
 
-            // No heading of its own: the frame carries the tool's name and the sentence saying
-            // what it is for, and a second copy underneath reads as two screens.
-            return Ui.Stack(
-                Ui.Field("Scope", picker),
-                kind == "glb" ? Geometry(session, () => scope)
-                : kind == "dxf" ? Drawing(session, () => scope)
-                : Properties(session, () => scope));
+            // The scope group is the same on all three because it is the one thing they share;
+            // everything after it is that format's own.
+            var scoped = Bench.Group("", Ui.Field("Scope", picker));
+
+            return kind == "glb" ? Geometry(session, scoped, () => scope)
+                : kind == "dxf" ? Drawing(session, scoped, () => scope)
+                : Properties(session, scoped, () => scope);
         }
 
         /// <summary>Which elements the scope means, in the order the model has them.</summary>
@@ -76,17 +76,27 @@ namespace CamelWorks.UI.Views
         // Geometry
         // ===================================================================================
 
-        private static UIElement Geometry(Session session, Func<string> scope)
+        private static UIElement Geometry(Session session, UIElement scoped, Func<string> scope)
         {
-            var path = Ui.Text(Suggested(session, ".glb"), null, 380);
+            var path = Ui.Text(Suggested(session, ".glb"), null, 240);
             var colour = "By discipline";
             var results = Ui.Stack();
+
+            // The idle statement stands where the answer will: it says what the file is and is
+            // not, because somebody who sends a client a GLB expecting IFC finds out too late.
+            var idle = Ui.Stack(Bench.Ready(
+                "Writes what is in scope as one GLB file a browser opens.",
+                "Triangles, one named object per element and a colour go, in metres and the right "
+                + "way up. Properties, the selection tree, clashes, viewpoints, sets and layers do "
+                + "not - if somebody is going to ask for a property, they want IFC and not this."));
 
             var colours = Ui.Choice(new[] { "By discipline", "By model", "One grey" }, colour,
                                     pick => colour = pick);
 
             var run = Ui.Runner("Write the GLB", results, job =>
             {
+                idle.Children.Clear();
+
                 var file = path.Text.Trim();
 
                 if (file.Length == 0)
@@ -170,20 +180,14 @@ namespace CamelWorks.UI.Views
                     "wrote " + Ui.Count(written.Meshes, "object") + " as GLB");
             });
 
-            // No card around it. The window is this job and nothing else now, and the frame above
-            // already carries the name and the sentence a card title would repeat.
-            return Ui.Stack(
-                Ui.Line("What goes in it: triangles, one named object per element, and a colour. "
-                        + "Coordinates are in metres and the model comes out the right way up.", 0.85),
-                Ui.Line("What does not: every property, the selection tree's structure, clashes, "
-                        + "viewpoints, sets and layers. This is geometry, not a model - if somebody "
-                        + "is going to ask you for a property, they want IFC and not this.", 0.85),
-                Ui.Field("Colour", colours,
-                         "One colour per discipline is what makes services readable against "
-                         + "structure at the other end."),
-                Ui.PathField("Write to", path, PathKind.Save),
-                run,
-                results);
+            var setup = Ui.Stack(
+                scoped,
+                Bench.Group("How it is written",
+                    Ui.Field("Colour", colours,
+                             "One colour per discipline keeps services readable against structure."),
+                    Ui.PathField("Write to", path, PathKind.Save)));
+
+            return Bench.Surface(setup, run, Ui.Stack(idle, results));
         }
 
         /// <summary>What the object is called in the viewer's tree.</summary>
@@ -255,17 +259,27 @@ namespace CamelWorks.UI.Views
         /// anything. This draws what is selected, or everything loaded, with nothing set up
         /// first. Somebody who has picked forty pipes and wants them in AutoCAD had no way there.
         /// </summary>
-        private static UIElement Drawing(Session session, Func<string> scope)
+        private static UIElement Drawing(Session session, UIElement scoped, Func<string> scope)
         {
-            var path = Ui.Text(Suggested(session, ".dxf"), null, 380);
+            var path = Ui.Text(Suggested(session, ".dxf"), null, 240);
             var by = "By discipline";
             var results = Ui.Stack();
+
+            var idle = Ui.Stack(Bench.Ready(
+                "Writes what is in scope as one DXF every CAD package opens.",
+                "Solid faces, one layer per group, in metres — R12 ASCII, the dialect nothing asks "
+                + "questions about. Each solid carries its element name and model as extended "
+                + "entity data. Every other property, the tree, clashes and viewpoints do not go: "
+                + "it is a drawing, not a model, and somebody who wants the properties wants "
+                + "Export Data."));
 
             var grouping = Ui.Choice(new[] { "By discipline", "By model", "By category" }, by,
                                      pick => by = pick);
 
             var run = Ui.Runner("Write the drawing", results, job =>
             {
+                idle.Children.Clear();
+
                 var file = path.Text.Trim();
 
                 if (file.Length == 0)
@@ -370,34 +384,32 @@ namespace CamelWorks.UI.Views
                     "wrote " + Ui.Count(written.Solids, "element") + " as DXF");
             });
 
-            return Ui.Stack(
-                Ui.Line("Solid faces, one layer per group, in metres. R12 ASCII, which is the "
-                        + "dialect every CAD package still reads without asking which version.",
-                        0.85),
-                Ui.Line("Each solid carries its element name and its model as extended entity "
-                        + "data, so a face in the drawing can still say what it was.", 0.85),
-                Ui.Line("What does not go in it: every other property, the selection tree's "
-                        + "structure, clashes and viewpoints. It is a drawing, not a model - if "
-                        + "somebody wants the properties, they want Export Data.", 0.85),
-                Ui.Field("Layers", grouping,
-                         "Layer names are cleaned to what the format allows - spaces, slashes and "
-                         + "commas become underscores."),
-                Ui.PathField("Write to", path, PathKind.Save),
-                run,
-                results);
+            var setup = Ui.Stack(
+                scoped,
+                Bench.Group("How it is written",
+                    Ui.Field("Layers", grouping,
+                             "Names are cleaned to what the format allows."),
+                    Ui.PathField("Write to", path, PathKind.Save)));
+
+            return Bench.Surface(setup, run, Ui.Stack(idle, results));
         }
 
         // ===================================================================================
         // Properties
         // ===================================================================================
 
-        private static UIElement Properties(Session session, Func<string> scope)
+        private static UIElement Properties(Session session, UIElement scoped, Func<string> scope)
         {
-            var path = Ui.Text(Suggested(session, ".xlsx"), null, 380);
+            var path = Ui.Text(Suggested(session, ".xlsx"), null, 240);
             var format = "Spreadsheet (.xlsx)";
             var tab = Ui.Text("Element", null, 150);
-            var names = Ui.Text("Category, Type, Level, Discipline", null, 300);
+            var names = Ui.Text("Category, Type, Level, Discipline", null, 240);
             var results = Ui.Stack();
+
+            var idle = Ui.Stack(Bench.Ready(
+                "Writes the properties you name, one row per element in scope.",
+                "An element carrying none of them is still a row — a spreadsheet whose row count "
+                + "disagrees with the model's is one somebody spends an afternoon reconciling."));
 
             var formats = Ui.Choice(new[] { "Spreadsheet (.xlsx)", "Comma-separated (.csv)" }, format,
                 pick =>
@@ -412,6 +424,8 @@ namespace CamelWorks.UI.Views
 
             var run = Ui.Runner("Write it", results, job =>
             {
+                idle.Children.Clear();
+
                 var file = path.Text.Trim();
 
                 if (file.Length == 0)
@@ -506,18 +520,17 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Export, "wrote " + Ui.Count(rows, "row") + " of properties");
             });
 
-            return Ui.Stack(
-                Ui.Field("Format", formats),
-                Ui.Field("Property tab", tab,
-                         "Which tab in the element's properties to read from. \"Element\" is the "
-                         + "Revit one; leave it and anything not found there is looked for on "
-                         + "Item as well."),
-                Ui.Field("Properties", names,
-                         "One column each, comma separated. These four are a starting point, "
-                         + "not a requirement - name whatever the person asking wants."),
-                Ui.PathField("Write to", path, PathKind.Save),
-                run,
-                results);
+            var setup = Ui.Stack(
+                scoped,
+                Bench.Group("How it is written",
+                    Ui.Field("Format", formats),
+                    Ui.Field("Property tab", tab,
+                             "\"Element\" is the Revit one; Item is read as well."),
+                    Ui.Field("Properties", names,
+                             "One column each, comma separated."),
+                    Ui.PathField("Write to", path, PathKind.Save)));
+
+            return Bench.Surface(setup, run, Ui.Stack(idle, results));
         }
 
         /// <summary>

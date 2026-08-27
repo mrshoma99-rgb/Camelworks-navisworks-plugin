@@ -505,12 +505,11 @@ namespace CamelWorks.UI.Views
                              + "a file another tool can read."),
                     _output,
                     Ui.Rule(),
-                    Ui.Section("This document", "what the file says it is", false,
-                        Ui.Form(
-                            Ui.Field("Called", _title),
-                            Ui.Pair(Ui.Field("Version", _version),
-                                    Ui.Field("Author", _author, "an email address, or left out")),
-                            Ui.Field("About", _about)))));
+                    Ui.Eyebrow("This document"),
+                    Ui.Field("Called", _title),
+                    Ui.Pair(Ui.Field("Version", _version),
+                            Ui.Field("Author", _author, "an email address, or left out")),
+                    Ui.Field("About", _about)));
 
                 Grid.SetColumn(left, 0);
                 columns.Children.Add(left);
@@ -753,24 +752,15 @@ namespace CamelWorks.UI.Views
                     Look();
                 })));
 
-                return Ui.Section(row.Kind, () => Summary(row), false,
-                                  Ui.Field("This row is a", kind), Ui.Form(body.ToArray()));
-            }
+                // Every row open, none folded: a rule somebody is checking a federation against
+                // is not something to hide behind its own summary.
+                var open = Ui.Stack(
+                    Ui.Eyebrow(row.Kind),
+                    Ui.Field("This row is a", kind),
+                    Ui.Form(body.ToArray()),
+                    Ui.Rule());
 
-            private static string Summary(Row row)
-            {
-                var first = row.First.Trim();
-
-                if (first.Length == 0)
-                    return row.Kind == Material ? "any material at all" : "not filled in";
-
-                var what = row.HasSecond && row.Second.Trim().Length > 0
-                    ? first + " / " + row.Second.Trim()
-                    : first;
-
-                if (row.Kind == PartOf || row.Kind == Entity || row.Test == Present) return what;
-
-                return what + " " + row.Test.Replace("is ", string.Empty);
+                return open;
             }
 
             // -----------------------------------------------------------------------------------
