@@ -688,12 +688,19 @@ namespace CamelWorks.UI.Views
 
                 var body = new List<UIElement?>();
 
-                var first = Ui.Text(row.First, text => { row.First = text; Look(); }, 180);
+                // Property rows get pickers fed from the model: the set and name being demanded
+                // usually exist on the compliant elements already, and typing "Pset_WallCommon"
+                // from memory is how a specification fails a model that actually complies. Both
+                // stay editable — a name the federation does not carry yet is still a legitimate
+                // requirement to write down.
+                FrameworkElement first = row.Kind == Property
+                    ? Pickers.Tab(row.First, text => { row.First = text; Look(); }, 180)
+                    : (FrameworkElement)Ui.Text(row.First, text => { row.First = text; Look(); }, 180);
 
                 body.Add(row.HasSecond
                     ? Ui.Pair(Ui.Field(row.FirstLabel, first),
-                              Ui.Field("Property", Ui.Text(row.Second,
-                                                           text => { row.Second = text; Look(); }, 180)))
+                              Ui.Field("Property", Pickers.Property(row.Second,
+                                                       text => { row.Second = text; Look(); }, 180)))
                     : Ui.Field(row.FirstLabel, first));
 
                 if (row.Kind == PartOf)
@@ -913,6 +920,11 @@ namespace CamelWorks.UI.Views
                 }
 
                 _output.Children.Add(Ui.Done("Wrote " + written.Explain() + " to " + dialog.FileName));
+
+                // The file's whole point is being run: the check lives on the Health tab, where
+                // "IDS file" is a box waiting for the path that was just written.
+                _output.Children.Add(Ui.Actions(Ui.Quiet("Check the federation against it",
+                    () => Ui.Told(AppWindow.Show("audit", "health")))));
 
                 foreach (var warning in written.Warnings.Take(6)) _output.Children.Add(Ui.Note(warning));
 

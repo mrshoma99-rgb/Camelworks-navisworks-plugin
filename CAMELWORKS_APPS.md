@@ -46,7 +46,7 @@ mid-week, on a real federation:
 | Model Audit | [docs/apps/audit.md](docs/apps/audit.md) |
 | Compare Track | [docs/apps/track.md](docs/apps/track.md) |
 | Data Manager | [docs/apps/data.md](docs/apps/data.md) |
-| Quantify | [docs/apps/data.md](docs/apps/data.md) *(shares the data audit's scope notes)* |
+| Quantify | [docs/apps/quantify.md](docs/apps/quantify.md) |
 | Sets Manager | [docs/apps/sets.md](docs/apps/sets.md) |
 | Scene Kit | [docs/apps/scenes.md](docs/apps/scenes.md) |
 | Export Kit | [docs/apps/exports.md](docs/apps/exports.md) |

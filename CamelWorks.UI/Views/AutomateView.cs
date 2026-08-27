@@ -124,6 +124,16 @@ namespace CamelWorks.UI.Views
 
                 var picker = Ui.Choice(kinds, picked, v => picked = v, 210);
 
+                // Loading used to mean typing the job's name into the Name box, spelt exactly as it
+                // was saved - a name the project file already knows. The saved jobs are offered
+                // instead, and a job saved this session joins the list the moment it is saved.
+                var saved = SavedNames(session);
+                var pickedJob = saved.Count == 0 ? null : saved[0];
+
+                var jobs = Ui.Choice(saved, pickedJob, v => pickedJob = v, 180);
+
+                jobs.IsEnabled = saved.Count > 0;
+
                 var add = Ui.Button("Add node", () =>
                 {
                     var kind = NodeCatalogue.All.FirstOrDefault(k => k.Group + ": " + k.Title == picked);
@@ -155,33 +165,46 @@ namespace CamelWorks.UI.Views
 
                     section.Set("items", JsonValue.Array(items));
 
-                    _log.Children.Add(session.Store.Save()
-                        ? Ui.Done("Saved \"" + _graph.Name + "\" to " + session.Store.Where + ".")
-                        : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
+                    if (!session.Store.Save())
+                    {
+                        _log.Children.Add(Ui.Problem(session.Store.LastSaveProblem
+                                                     ?? "Could not write the project file."));
+                        return;
+                    }
+
+                    _log.Children.Add(Ui.Done("Saved \"" + _graph.Name + "\" to "
+                                              + session.Store.Where + "."));
+
+                    if (!jobs.Items.Contains(_graph.Name)) jobs.Items.Add(_graph.Name);
+
+                    jobs.SelectedItem = _graph.Name;
+                    jobs.IsEnabled = true;
                 });
 
                 var load = Ui.Button("Load job", () =>
                 {
                     _log.Children.Clear();
 
-                    var section = session.Store.Section(ProjectStore.JobsSection);
-
-                    var saved = section["items"].Items
-                        .FirstOrDefault(j => string.Equals(j["name"].AsString(), _name.Text.Trim(),
-                                                           StringComparison.OrdinalIgnoreCase));
-
-                    if (saved == null)
+                    if (pickedJob == null)
                     {
-                        var names = section["items"].Items.Select(j => j["name"].AsString() ?? "?").ToList();
-
-                        _log.Children.Add(names.Count == 0
-                            ? Ui.Empty("No jobs saved on this project yet.", "Build one and press Save job.")
-                            : Ui.Line("No job called \"" + _name.Text.Trim() + "\". Saved: "
-                                      + string.Join(", ", names), 0.8));
+                        _log.Children.Add(Ui.Empty("No jobs saved on this project yet.",
+                                                   "Build one and press Save job."));
                         return;
                     }
 
-                    _graph = Graph.FromJson(saved);
+                    var section = session.Store.Section(ProjectStore.JobsSection);
+
+                    var found = section["items"].Items
+                        .FirstOrDefault(j => string.Equals(j["name"].AsString(), pickedJob,
+                                                           StringComparison.OrdinalIgnoreCase));
+
+                    if (found == null)
+                    {
+                        _log.Children.Add(Ui.Line("No job called \"" + pickedJob + "\" any more.", 0.8));
+                        return;
+                    }
+
+                    _graph = Graph.FromJson(found);
                     _name.Text = _graph.Name;
                     _armed = null;
                     Redraw();
@@ -199,12 +222,24 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Bench.Group("Job",
                         Ui.Field("Name", _name),
-                        Ui.Across(save, load)),
+                        Ui.Across(save)),
+                    Bench.Group("Saved on this project",
+                        Ui.Field("Job", jobs,
+                                 saved.Count == 0 ? "nothing saved yet" : null),
+                        Ui.Across(load)),
                     Bench.Group("Nodes",
                         picker,
                         Ui.Across(add, clear)),
                     _hint);
             }
+
+            /// <summary>The saved jobs' names, in the order the project file holds them.</summary>
+            private static IReadOnlyList<string> SavedNames(Session session) =>
+                session.Store.Section(ProjectStore.JobsSection)["items"].Items
+                       .Select(j => j["name"].AsString())
+                       .Where(n => !string.IsNullOrWhiteSpace(n))
+                       .Select(n => n!)
+                       .ToList();
 
             private void Seed()
             {

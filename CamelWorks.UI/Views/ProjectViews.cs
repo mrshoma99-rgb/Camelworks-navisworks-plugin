@@ -122,6 +122,13 @@ namespace CamelWorks.UI.Views
                 if (finding.Check == Federated && loaded.AnyMissing)
                 {
                     results.Children.Add(Repoint(session));
+
+                    // The search above reports; Broken Links is the tab that can also bring the
+                    // found file in. The sweep should not dead-end one press short of the fix.
+                    results.Children.Add(Ui.Actions(Ui.Quiet(
+                        "Open Broken Links — it can bring the found files in",
+                        () => Ui.Told(Shell.AppWindow.Show("audit", "links")))));
+
                     loaded = (loaded.Table, false);
                 }
             }
@@ -613,7 +620,9 @@ namespace CamelWorks.UI.Views
             source.Table = tables.Names[0];
             source.Property = tables.Names[0];
 
-            var property = Ui.Text(source.Property, typed => source.Property = typed, 240);
+            // A picker, because the property carrying the code is a name the model already knows
+            // and typing it from memory is how the check reports "nothing carries it" all morning.
+            var property = Pickers.Property(source.Property, typed => source.Property = typed, 240);
 
             var picker = Ui.Choice(tables.Names, source.Table, pick =>
             {
@@ -673,7 +682,11 @@ namespace CamelWorks.UI.Views
             var kept = ToolMemory.Of(live.Store, "project.ids");
 
             var path = Ui.Text(kept.Text("file"), text => kept.Set("file", text), 200);
-            var classSource = Ui.Text(kept.Text("classFrom"), text => kept.Set("classFrom", text), 200);
+
+            // A picker over the model's property names: when a run says "put one of these in the
+            // box", the box should already be offering them rather than asking for a retype.
+            var classSource = Pickers.Property(kept.Text("classFrom"),
+                                               text => kept.Set("classFrom", text), 200);
 
             var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
             {
@@ -762,6 +775,22 @@ namespace CamelWorks.UI.Views
                 // and it is asked by somebody who is not sitting in Navisworks.
                 results.Children.Add(Ui.Actions(Ui.Primary("Save it as a workbook...",
                     () => Workbook(results, document, report, session.NowTicks))));
+
+                // Property failures have a pen in this suite — Data Manager's Write tab can put
+                // the missing value on the elements. Offered only when a failure actually is a
+                // property one: an entity, classification or aggregation failure is the
+                // exporter's to fix, and a button pretending otherwise would be a lie.
+                if (report.Results.Any(r => r.Violations.Any(v => v.Requirement is IdsPropertyFacet)))
+                {
+                    results.Children.Add(Ui.Actions(Ui.Quiet(
+                        "Fill the failing properties in Data Manager...",
+                        () => Ui.Told(Shell.AppWindow.Show("data", "write")))));
+
+                    results.Children.Add(Ui.Small("Write puts the value on the elements in this "
+                        + "federation, which is enough to pass this check and issue. The authoring "
+                        + "model still needs the same fix, and the workbook is how its author "
+                        + "hears about it."));
+                }
 
                 foreach (var detail in Details(report)) results.Children.Add(detail);
 

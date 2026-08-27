@@ -2538,6 +2538,10 @@ namespace CamelWorks.UI.Views
                 Provenance();
                 Caveat(result.IsComplete);
 
+                if (_rows == "Level")
+                    LevelGap(result.Groups
+                        .FirstOrDefault(g => g.Name == PivotLine.None)?.Count ?? 0);
+
                 session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
                                                     + " by " + _rows.ToLowerInvariant() + ": " + result);
             }
@@ -2598,6 +2602,11 @@ namespace CamelWorks.UI.Views
                 Provenance();
                 Caveat(table.Grand.IsComplete);
 
+                if (_rows == "Level")
+                    LevelGap(table.RowTotal(PivotLine.None)?.Count ?? 0);
+                else if (_columns == "Level")
+                    LevelGap(table.ColumnTotal(PivotLine.None)?.Count ?? 0);
+
                 if (table.DroppedRows > 0 || table.DroppedColumns > 0)
                     _results.Children.Add(Ui.Note("The largest rows and columns are shown. What is not on "
                         + "screen is still in every total on it, so the numbers add up whether or not "
@@ -2606,6 +2615,26 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
                                                     + " by " + _rows.ToLowerInvariant() + " and "
                                                     + _columns.ToLowerInvariant() + ": " + table);
+            }
+
+            /// <summary>
+            /// The quantities that landed in "(none)" because elements carry no Level.
+            ///
+            /// Said with the way out rather than left as a row to puzzle over: the Level this
+            /// takeoff reads first is the one Levels &amp; Zones stamps from the geometry itself,
+            /// so the gap is one tab away from closed — and a bill split by level with a fat
+            /// unplaced row is exactly the sheet nobody will sign.
+            /// </summary>
+            /// <param name="missing">How many elements had no Level to be grouped by.</param>
+            private void LevelGap(int missing)
+            {
+                if (missing == 0) return;
+
+                _results.Children.Add(Ui.Info(Ui.Count(missing, "element") + " in scope carries "
+                    + "no Level, so its quantities sit in the \"" + PivotLine.None + "\" line. "
+                    + "Levels & Zones works the levels out from the geometry and stamps them on, "
+                    + "and this takeoff reads that stamp first.",
+                    "Open Levels & Zones", () => Ui.Told(ToolViews.Open("levels"))));
             }
 
             /// <summary>Which unit the column is in, for the heading rather than every cell.</summary>
@@ -2665,8 +2694,19 @@ namespace CamelWorks.UI.Views
 
                 if (file.Length == 0)
                 {
-                    file = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    // Beside the project file first, because that is the folder the rest of the
+                    // team can see; a takeoff in one person's Documents is a takeoff re-run by
+                    // the next person who needs it.
+                    var project = session.Store.Path;
+
+                    var folder = string.IsNullOrWhiteSpace(project)
+                        ? null
+                        : System.IO.Path.GetDirectoryName(project);
+
+                    if (string.IsNullOrEmpty(folder))
+                        folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+                    file = System.IO.Path.Combine(folder!,
                         session.Profile.ProjectName + " takeoff.xlsx");
 
                     _path.Text = file;

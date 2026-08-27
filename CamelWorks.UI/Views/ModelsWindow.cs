@@ -54,7 +54,7 @@ namespace CamelWorks.UI.Views
             var missing = SourcesMissing(session);
 
             if (missing > 0)
-                ((StackPanel)stage).Children.Insert(1, Ui.Info(Ui.Count(missing, "model")
+                stage.Children.Insert(1, Ui.Info(Ui.Count(missing, "model")
                     + " cannot find its source file, so its geometry here is a cached copy of "
                     + "unknown age. Broken Links finds where the files went.",
                     "Open Broken Links", () => Ui.Told(AppWindow.Show("audit", "links"))));
@@ -62,6 +62,32 @@ namespace CamelWorks.UI.Views
             return Bench.Surface(null,
                 Ui.Runner("Take a manifest", results, job => Take(session, results, job)),
                 stage);
+        }
+
+        /// <summary>
+        /// How many loaded models have no source file on disk — the same cheap read the status
+        /// strip makes, repeated here because this tab is where somebody is actually looking at
+        /// the federation.
+        /// </summary>
+        private static int SourcesMissing(Session session)
+        {
+            var missing = 0;
+
+            foreach (var model in session.Model.Models)
+            {
+                if (string.IsNullOrWhiteSpace(model.SourcePath)) continue;
+
+                try
+                {
+                    if (!System.IO.File.Exists(model.SourcePath)) missing++;
+                }
+                catch (Exception)
+                {
+                    // Unknown is not missing; an unreachable share is a VPN, not a lost model.
+                }
+            }
+
+            return missing;
         }
 
         /// <summary>The picked register rows, as columns somebody can paste.</summary>

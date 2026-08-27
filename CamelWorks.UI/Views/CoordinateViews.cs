@@ -3522,7 +3522,9 @@ namespace CamelWorks.UI.Views
 
                 if (was != null) _results.Children.Add(Ui.Line(was.Supersedes, 0.8));
 
-                NextSteps(_results, "bcf", "clashxml");
+                // Not after a penetration schedule: that goes to the structural engineer as the
+                // document it is, and nobody answers a pour list through a BCF tool.
+                if (_mode != Penetration) NextSteps(_results, "bcf", "clashxml");
 
                 session.Record(ActivityKind.Report,
                     "wrote a " + _format + " clash report, revision " + revision, file);
@@ -3592,7 +3594,7 @@ namespace CamelWorks.UI.Views
 
                 _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
 
-                if (written > 0) NextSteps(_results, "bcf", "clashxml");
+                if (written > 0 && _mode != Penetration) NextSteps(_results, "bcf", "clashxml");
 
                 session.Record(ActivityKind.Report,
                     "wrote " + Ui.Count(written, "clash report") + ", one per party");

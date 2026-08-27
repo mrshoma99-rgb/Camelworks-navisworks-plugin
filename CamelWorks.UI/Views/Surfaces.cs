@@ -128,6 +128,10 @@ namespace CamelWorks.UI.Views
                     case "track": return TrackStatus(openTab);
                     case "sets": return SetsStatus(openTab);
                     case "scenes": return ScenesStatus(openTab);
+                    case "data": return DataStatus(openTab);
+                    case "quantify": return QuantifyStatus(openTab);
+                    case "exports": return ExportsStatus(openTab);
+                    case "automate": return AutomateStatus(openTab);
                     default: return null;
                 }
             }
@@ -271,6 +275,92 @@ namespace CamelWorks.UI.Views
             return Strip(row);
         }
 
+        private static UIElement? DataStatus(Action<string> openTab)
+        {
+            var session = Host.Current;
+            if (session == null) return null;
+
+            var row = new List<UIElement?>();
+
+            // The pen's own history, from the activity log: writing properties is the one
+            // irreversible thing the suite does, so when it last happened is the first figure a
+            // returning coordinator wants — and "never" is worth a colour, because a project
+            // where the pen has never touched the model is usually one where it should have.
+            var write = session.Store.Activity.Latest(Core.Project.ActivityKind.Write);
+
+            row.Add(Chip(
+                write == null ? "never" : Core.Project.ActivityLog.Ago(write.WhenTicks, session.NowTicks),
+                "last write", write == null ? Tone.Warn : Tone.Plain,
+                () => openTab("write"),
+                write?.Summary ?? "No property has been written onto this model"));
+
+            // The Excel round trip's out leg, found by its summary because the Export kind is
+            // shared with geometry exports. Its detail is the path, which is what the person
+            // waiting for the QS's edits actually wants to see.
+            var sheet = session.Store.Activity.Entries.FirstOrDefault(a =>
+                string.Equals(a.Kind, Core.Project.ActivityKind.Export, StringComparison.Ordinal)
+                && a.Summary.StartsWith("wrote properties to a spreadsheet", StringComparison.Ordinal));
+
+            row.Add(Chip(
+                sheet == null ? "never" : Core.Project.ActivityLog.Ago(sheet.WhenTicks, session.NowTicks),
+                "last sheet out", Tone.Plain,
+                () => openTab("excel"),
+                sheet?.Detail ?? sheet?.Summary ?? "No property sheet has gone out for editing"));
+
+            var links = Core.Data.DataLink.Saved(
+                session.Store.Section(Core.Project.ProjectStore.DataSection)[DataLinkWindow.Key]).Count;
+
+            if (links > 0)
+                row.Add(Chip(Skin.Num(links), "saved links", Tone.Plain,
+                                  () => openTab("datalink"),
+                                  "Spreadsheet joins saved to run again on a newer drop"));
+
+            return Strip(row);
+        }
+
+        private static UIElement? QuantifyStatus(Action<string> openTab)
+        {
+            var session = Host.Current;
+            if (session == null) return null;
+
+            var row = new List<UIElement?>();
+
+            // Both takeoff records land under the Report kind, told apart by their summaries -
+            // "took off ..." for the sum, "wrote a takeoff spreadsheet" for the file.
+            var takeoff = session.Store.Activity.Entries.FirstOrDefault(a =>
+                string.Equals(a.Kind, Core.Project.ActivityKind.Report, StringComparison.Ordinal)
+                && a.Summary.StartsWith("took off", StringComparison.Ordinal));
+
+            row.Add(Chip(
+                takeoff == null ? "never" : Core.Project.ActivityLog.Ago(takeoff.WhenTicks, session.NowTicks),
+                "last takeoff", takeoff == null ? Tone.Warn : Tone.Plain,
+                () => openTab("takeoff"),
+                takeoff?.Summary ?? "No quantities have been summed on this project"));
+
+            var reports = Core.Data.DataReport.Saved(
+                session.Store.Section(Core.Project.ProjectStore.DataSection)[ReportBuilderWindow.Key]).Count;
+
+            row.Add(Chip(reports > 0 ? Skin.Num(reports) : "none", "saved reports", Tone.Plain,
+                              () => openTab("report"),
+                              reports > 0
+                                  ? "Report shapes saved with the project, ready to run again "
+                                    + "next revision"
+                                  : "Read the model on Report Builder and it proposes one"));
+
+            var written = session.Store.Activity.Entries.FirstOrDefault(a =>
+                string.Equals(a.Kind, Core.Project.ActivityKind.Export, StringComparison.Ordinal)
+                && a.Summary.StartsWith("Wrote the report", StringComparison.Ordinal));
+
+            row.Add(Chip(
+                written == null ? "never" : Core.Project.ActivityLog.Ago(written.WhenTicks, session.NowTicks),
+                "last report written", Tone.Plain,
+                () => openTab("report"),
+                written?.Detail ?? written?.Summary
+                    ?? "No data report has been written out on this project"));
+
+            return Strip(row);
+        }
+
         private static UIElement? TrackStatus(Action<string> openTab)
         {
             var session = Host.Current;
@@ -305,8 +395,8 @@ namespace CamelWorks.UI.Views
             // Two counts, because they are two different facts: the project's rules travel with
             // the .cw file and re-run anywhere; the document's sets are what every other tool's
             // "which set" question is answered from.
-            var library = Core.Sets.SetLibrary.FromJson(
-                session.Store.Section(Core.Store.ProjectStore.SetsSection)["items"]);
+            var library = Core.Project.SetLibrary.FromJson(
+                session.Store.Section(Core.Project.ProjectStore.SetsSection)["items"]);
 
             row.Add(Chip(Skin.Num(library.Sets.Count), "rules in the project",
                          library.Sets.Count > 0 ? Tone.Plain : Tone.Warn,
@@ -328,8 +418,8 @@ namespace CamelWorks.UI.Views
 
             var row = new List<UIElement?>();
 
-            var layers = Core.Appearance.LayerStackJson.Read(
-                session.Store.Section(Core.Store.ProjectStore.LayersSection)["stack"]).Count;
+            var layers = Core.Project.LayerStackJson.Read(
+                session.Store.Section(Core.Project.ProjectStore.LayersSection)["stack"]).Count;
 
             row.Add(Chip(layers > 0 ? Skin.Num(layers) : "none", "layers saved",
                          Tone.Plain, () => openTab("appearance"),
@@ -342,6 +432,69 @@ namespace CamelWorks.UI.Views
             row.Add(Chip(Skin.Num(session.Viewpoints.All().Count), "viewpoints", Tone.Plain,
                          () => openTab("viewpoints"),
                          "Saved viewpoints in the document, ready to rename, file or render"));
+
+            return Strip(row);
+        }
+
+        private static UIElement? ExportsStatus(Action<string> openTab)
+        {
+            var session = Host.Current;
+            if (session == null) return null;
+
+            var row = new List<UIElement?>();
+
+            // One kind covers every file the suite writes out, Site Pack's included - which is
+            // honest for a chip that answers "did anything leave this project this week".
+            var export = session.Store.Activity.Latest(Core.Project.ActivityKind.Export);
+
+            row.Add(Chip(
+                export == null ? "never" : Core.Project.ActivityLog.Ago(export.WhenTicks, session.NowTicks),
+                "last export", export == null ? Tone.Warn : Tone.Plain,
+                () => openTab("exportglb"),
+                export?.Summary ?? "Nothing has been exported on this project"));
+
+            var data = session.Store.Section(Core.Project.ProjectStore.DataSection);
+
+            var extracts = Core.Publish.Extract.Saved(data[ExtractWindow.Key]).Count;
+
+            if (extracts > 0)
+                row.Add(Chip(Skin.Num(extracts), "saved extracts", Tone.Plain,
+                             () => openTab("extract"),
+                             "Rules that cut a named piece out of whatever is loaded today"));
+
+            var compilations = Core.Publish.Compilation.Saved(data[CompileWindow.Key]).Count;
+
+            if (compilations > 0)
+                row.Add(Chip(Skin.Num(compilations), "saved compilations", Tone.Plain,
+                             () => openTab("compile"),
+                             "The deliverables Compile rebuilds from next week's folder"));
+
+            return Strip(row);
+        }
+
+        private static UIElement? AutomateStatus(Action<string> openTab)
+        {
+            var session = Host.Current;
+            if (session == null) return null;
+
+            var row = new List<UIElement?>();
+
+            var jobs = session.Store.Section(Core.Project.ProjectStore.JobsSection)["items"];
+            var count = jobs.Kind == Core.Store.JsonKind.Array ? jobs.Items.Count() : 0;
+
+            row.Add(count == 0
+                ? Chip("none", "jobs saved", Tone.Warn, () => openTab("graph"),
+                       "Build one on the canvas and press Save job")
+                : Chip(Skin.Num(count), "jobs saved", Tone.Plain, () => openTab("batch"),
+                       "In the project file, so whoever opens the model next has them too"));
+
+            var ran = session.Store.Activity.Latest(Core.Project.ActivityKind.Job);
+
+            row.Add(Chip(
+                ran == null ? "never" : Core.Project.ActivityLog.Ago(ran.WhenTicks, session.NowTicks),
+                "last run", ran == null ? Tone.Warn : Tone.Plain,
+                () => openTab("batch"),
+                ran?.Summary ?? "No job has run on this project"));
 
             return Strip(row);
         }
