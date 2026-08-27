@@ -423,6 +423,15 @@ namespace CamelWorks.UI.Views
                 _session.Record(ActivityKind.Regroup,
                                 "generated " + Ui.Count(published, "set") + " from "
                                 + string.Join(" / ", _chosen));
+
+                // A library is made to be consumed: the by-level colouring and the per-system
+                // takeoff are the two jobs people generate one for, so both are one press away.
+                if (published > 0)
+                    _output.Children.Add(Ui.Across(
+                        Ui.Button("Colour or hide them in Scene Kit",
+                                  () => Ui.Told(AppWindow.Show("scenes", "appearance"))),
+                        Ui.Button("Take quantities off them",
+                                  () => Ui.Told(AppWindow.Show("quantify", "takeoff")))));
             }
         }
     }

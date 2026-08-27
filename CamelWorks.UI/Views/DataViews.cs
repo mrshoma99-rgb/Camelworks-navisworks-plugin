@@ -44,10 +44,27 @@ namespace CamelWorks.UI.Views
         internal static UIElement WriteProperties()
         {
             var scope = Selection;
+            string? readScope = null;
             var results = Ui.Stack();
             var editor = Ui.Stack();
 
-            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick => scope = pick);
+            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick =>
+            {
+                scope = pick;
+
+                // The writers keep the elements they were opened on; flipping this box does not
+                // move them. Left unsaid, a coordinator reads a selection, widens the scope, and
+                // writes "everything" onto forty elements without anything having disagreed.
+                if (readScope != null && !string.Equals(readScope, pick, StringComparison.Ordinal))
+                {
+                    var was = readScope;
+                    readScope = null;
+
+                    results.Children.Add(Ui.Note("The scope box now says \"" + pick + "\", but the "
+                        + "writers below still hold what was read from \"" + was + "\". Read again "
+                        + "to point them at the new scope."));
+                }
+            });
 
             var read = Ui.Runner("Read what is there now", results, job =>
             {
@@ -55,8 +72,9 @@ namespace CamelWorks.UI.Views
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var keys = new List<ElementKey>();
+                var readFrom = scope;
 
-                var traversal = scope == Selection
+                var traversal = readFrom == Selection
                     ? TraversalScope.CurrentSelection
                     : TraversalScope.WholeDocument;
 
@@ -69,14 +87,18 @@ namespace CamelWorks.UI.Views
                 if (keys.Count == 0)
                 {
                     results.Children.Add(Ui.Empty(
-                        scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
-                        scope == Selection
+                        readFrom == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        readFrom == Selection
                             ? "Select elements in the model, or switch the scope to everything loaded."
                             : "Append a model first."));
                     return;
                 }
 
-                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " in scope.", 1, true));
+                readScope = readFrom;
+
+                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " read from "
+                    + (readFrom == Selection ? "the current selection" : "everything loaded")
+                    + ". The writers below work on exactly those.", 1, true));
 
                 editor.Children.Clear();
                 editor.Children.Add(Writes(session, keys));
@@ -103,10 +125,26 @@ namespace CamelWorks.UI.Views
         public static UIElement Manager()
         {
             var scope = Selection;
+            string? readScope = null;
             var results = Ui.Stack();
             var editor = Ui.Stack();
 
-            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick => scope = pick);
+            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick =>
+            {
+                scope = pick;
+
+                // Same rule as the Write tab: the table and the writers hold what was read, not
+                // what the box says now, and the one moment to say so is the flip itself.
+                if (readScope != null && !string.Equals(readScope, pick, StringComparison.Ordinal))
+                {
+                    var was = readScope;
+                    readScope = null;
+
+                    results.Children.Add(Ui.Note("The scope box now says \"" + pick + "\", but the "
+                        + "table and the writers below still hold what was read from \"" + was
+                        + "\". Read again to point them at the new scope."));
+                }
+            });
 
             var read = Ui.Runner("Read properties", results, job =>
             {
@@ -116,8 +154,9 @@ namespace CamelWorks.UI.Views
                 var keys = new List<ElementKey>();
                 var values = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
                 var blanks = new Dictionary<string, int>(StringComparer.Ordinal);
+                var readFrom = scope;
 
-                var traversal = scope == Selection ? TraversalScope.CurrentSelection : TraversalScope.WholeDocument;
+                var traversal = readFrom == Selection ? TraversalScope.CurrentSelection : TraversalScope.WholeDocument;
 
                 foreach (var item in session.Model.Traverse(traversal))
                 {
@@ -146,12 +185,14 @@ namespace CamelWorks.UI.Views
                 if (keys.Count == 0)
                 {
                     results.Children.Add(Ui.Empty(
-                        scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
-                        scope == Selection
+                        readFrom == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        readFrom == Selection
                             ? "Select elements in the model, or switch the scope to everything loaded."
                             : "Append a model first."));
                     return;
                 }
+
+                readScope = readFrom;
 
                 var rows = values.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Select(p =>
                     new TableRow(p.Key,
@@ -161,7 +202,8 @@ namespace CamelWorks.UI.Views
                             ? blank.ToString(CultureInfo.InvariantCulture) + " blank"
                             : string.Empty)).ToList();
 
-                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + ", "
+                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " read from "
+                    + (readFrom == Selection ? "the current selection" : "everything loaded") + ", "
                     + Ui.Count(rows.Count, "property"), 1, true));
 
                 var found = Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0));
@@ -321,7 +363,7 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _source;
+            private readonly ComboBox _source;
             private readonly TextBox _target;
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
@@ -336,7 +378,10 @@ namespace CamelWorks.UI.Views
                 // Editing either of these makes the preview a preview of something else, so both
                 // of them drop it. Apply reads the target name live, which is how a preview of
                 // "Code" could write into "Uniclass" without anybody being shown that.
-                _source = Ui.Text("Element / Classification", _ => Stale(), 240);
+                //
+                // The source is a picker fed from the model, because the property a code table
+                // reads is exactly the kind of name somebody otherwise retypes from an element.
+                _source = Pickers.Property("Element / Classification", _ => Stale(), 240);
                 _target = Ui.Text("Code", _ => Stale(), 160);
 
                 _session = session;
@@ -368,7 +413,8 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Ui.Form(
                         Ui.Field("Table", picker),
-                        Ui.Field("Read from", _source, "a property on the elements, as \"Category / Name\""),
+                        Ui.Field("Read from", _source,
+                                 "picked from the model; \"Category / Name\" narrows it to one tab"),
                         Ui.Field("Write as", _target)),
                     preview,
                     Ui.Small("A value the table does not list is left alone and counted, never "

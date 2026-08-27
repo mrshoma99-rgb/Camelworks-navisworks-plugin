@@ -3035,6 +3035,65 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
+        /// <summary>
+        /// Where the board stands, said at the top of every Issue Link tab.
+        ///
+        /// Everything in Issue Link issues the board, and the board lives in Clash Manager. A tab
+        /// that only says so at the press — "the board has not been built yet" — has already let
+        /// somebody set up a report of nothing. So each tab opens on the fact: loaded and how many
+        /// issues, or not loaded with Clash Manager's Board one press away, loading on arrival.
+        /// </summary>
+        /// <param name="whenMissing">What pressing on without a board means, on this tab.</param>
+        private static UIElement BoardState(string whenMissing)
+        {
+            var board = LastBoard;
+
+            if (board == null)
+                return Ui.Info("The board is not loaded. " + whenMissing,
+                    "Load the board in Clash Manager",
+                    () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    });
+
+            return Ui.Line("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
+                + Ui.Count(board.Groups.Sum(g => g.Items.Count), "clash")
+                + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel)
+                + ". This tab sends what the Clash Board shows.", 0.75);
+        }
+
+        /// <summary>
+        /// What leaves after a report or a file has left: the other format, and the way back.
+        ///
+        /// The Thursday issue is rarely one artefact — the PDF goes to the meeting, the BCF or the
+        /// clash file goes to whoever answers in a tool — and the reply lands the following week.
+        /// Saying so at the moment of a successful send is what keeps the round trip one workflow
+        /// instead of three windows somebody has to remember are related.
+        /// </summary>
+        /// <param name="into">Where the send just reported.</param>
+        /// <param name="also">The other formats worth sending, as tool ids of this app's tabs.</param>
+        private static void NextSteps(Panel into, params string[] also)
+        {
+            var buttons = new List<UIElement?>();
+
+            foreach (var tool in also)
+            {
+                var here = tool;
+
+                buttons.Add(Ui.Quiet(
+                    here == "bcf" ? "Send it as BCF too"
+                    : here == "clashxml" ? "Send it as a clash file too"
+                    : "Write the report to go with it",
+                    () => Ui.Told(Shell.AppWindow.Show("issues", here))));
+            }
+
+            into.Children.Add(Ui.Actions(buttons.FirstOrDefault(), buttons.Skip(1).ToArray()));
+
+            into.Children.Add(Ui.Small("When an answered file comes back, the BCF tab reads it "
+                + "against this board — and several reviewers' returns come together on Merge."));
+        }
+
         public static UIElement Report() => new ReportScreen().Build();
 
         /// <summary>The penetration schedule, as its own tool rather than a template choice.</summary>
@@ -3174,6 +3233,10 @@ namespace CamelWorks.UI.Views
                                      v => { _perParty = v; _kept.Set("perParty", v); });
 
                 var write = Ui.Runner("Write the report", _results, Write);
+
+                _results.Children.Add(BoardState("Writing will build it fresh from the tests and "
+                    + "the saved rules — load it in Clash Manager first to report the board as "
+                    + "you triaged it."));
 
                 _results.Children.Add(Bench.Ready(
                     "Writes the board out for whoever it is for, from a built-in template.",
@@ -3455,6 +3518,8 @@ namespace CamelWorks.UI.Views
 
                 if (was != null) _results.Children.Add(Ui.Line(was.Supersedes, 0.8));
 
+                NextSteps(_results, "bcf", "clashxml");
+
                 session.Record(ActivityKind.Report,
                     "wrote a " + _format + " clash report, revision " + revision, file);
             }
@@ -3522,6 +3587,8 @@ namespace CamelWorks.UI.Views
                 session.Store.Save();
 
                 _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
+
+                if (written > 0) NextSteps(_results, "bcf", "clashxml");
 
                 session.Record(ActivityKind.Report,
                     "wrote " + Ui.Count(written, "clash report") + ", one per party");
@@ -4434,6 +4501,14 @@ namespace CamelWorks.UI.Views
                 session.Store.Save();
 
                 results.Children.Add(Ui.Line("Wrote " + file, 0.8));
+
+                results.Children.Add(Ui.Actions(Ui.Quiet("Write the report to go with it",
+                    () => Ui.Told(Shell.AppWindow.Show("issues", "clashreport")))));
+
+                results.Children.Add(Ui.Small("When it comes back answered, put it in \"Read the "
+                    + "answers back\" and what it says lands against this board. Several "
+                    + "reviewers' returns come together on the Merge tab."));
+
                 session.Record(ActivityKind.Exchange, "exported BCF " + version, file);
             });
 
@@ -4514,6 +4589,10 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "read a BCF file", file);
             });
 
+            results.Children.Add(BoardState("Sending will build it fresh from the tests and the "
+                + "saved rules — load it in Clash Manager first to send the board as you "
+                + "triaged it. The spreadsheet leg needs it loaded either way."));
+
             results.Children.Add(Bench.Ready(
                 "Sends the board out as one topic per issue, for whichever tool answers.",
                 "What comes back is read against the board, and nothing is applied until you "
@@ -4551,8 +4630,12 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Note("Load the board in Triage first. The worksheet is of the "
-                    + "board, and without one there is nothing to send."));
+                results.Children.Add(Ui.Info("The worksheet is of the board, and without one there "
+                    + "is nothing to send.", "Load the board in Clash Manager", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 return;
             }
 

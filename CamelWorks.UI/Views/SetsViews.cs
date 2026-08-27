@@ -1721,10 +1721,46 @@ namespace CamelWorks.UI.Views
 
                 return Bench.Group("Render them to images",
                     Ui.PathField("Write into", into, PathKind.Folder,
-                                 hint: "blank writes them to your documents"),
+                                 hint: "suggested beside the model, so the pack lands where the "
+                                       + "job lives"),
                     Ui.Field("Size", size),
                     render,
                     Ui.Small("The camera goes back where it was when the run finishes."));
+            }
+
+            /// <summary>
+            /// A render folder beside the document, or in the user's own documents.
+            ///
+            /// The box used to open blank and the fallback only revealed itself after the run —
+            /// which is a decision the tool can state up front instead of taking silently. Same
+            /// reasoning as the export paths: the person collecting the pack looks next to the
+            /// model first.
+            /// </summary>
+            private static string SuggestedRenderFolder(Session session)
+            {
+                var name = Deliverable.Safe(session.Profile.ProjectName + " viewpoints");
+
+                try
+                {
+                    var saved = session.SavedPath;
+
+                    if (!string.IsNullOrWhiteSpace(saved))
+                    {
+                        var folder = Path.GetDirectoryName(saved);
+
+                        if (!string.IsNullOrEmpty(folder)) return Path.Combine(folder!, name);
+                    }
+
+                    var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+                    return string.IsNullOrEmpty(documents) ? name : Path.Combine(documents, name);
+                }
+                catch (Exception)
+                {
+                    // A profile or path the host will not give up still leaves a usable relative
+                    // name; the run's own CreateDirectory says so if even that cannot be made.
+                    return name;
+                }
             }
 
             /// <summary>The chosen render size.</summary>
@@ -1892,6 +1928,12 @@ namespace CamelWorks.UI.Views
                     {
                         _results.Children.Add(Ui.Note("Load the board in Triage first. These viewpoints are "
                             + "of its groups, so there has to be a board to make them from."));
+
+                        // The missing input lives one app over, so the way there is a button
+                        // rather than an instruction to go and find it.
+                        _results.Children.Add(Ui.Button("Open the board in Clash Manager",
+                            () => Ui.Told(Shell.AppWindow.Show("clash", "triage"))));
+
                         return;
                     }
 

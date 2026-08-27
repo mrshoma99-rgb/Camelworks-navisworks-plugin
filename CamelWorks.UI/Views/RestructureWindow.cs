@@ -182,8 +182,11 @@ namespace CamelWorks.UI.Views
             {
                 var level = _recipe.Levels[index];
 
-                var tab = Ui.Text(level.Category, text => level.Category = text, 150);
-                var name = Ui.Text(level.Property, text => level.Property = text, 150);
+                // The two fields the whole recipe stands on, fed from the model: a level typed
+                // as "Levels" where the federation says "Level" is a tree with one branch called
+                // "(no value)", found out only after the read.
+                var tab = Pickers.Tab(level.Category, text => level.Category = text, 150);
+                var name = Pickers.Property(level.Property, text => level.Property = text, 150);
 
                 var holes = Ui.Choice(new[] { GatherThem, LeaveThem },
                     level.Missing == MissingValues.Leave ? LeaveThem : GatherThem,

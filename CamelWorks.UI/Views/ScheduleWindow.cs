@@ -136,8 +136,11 @@ namespace CamelWorks.UI.Views
                     _shape.Children.Add(Ui.Stack(
                         Number("First value column", _mapping.FirstValueColumn, v => _mapping.FirstValueColumn = v,
                                "Headings are properties; filled cells become conditions."),
+                        // Fed from the model, because this is the field that decides whether all
+                        // forty sets match anything: the sheet knows its property names, but the
+                        // category is spelled the host's way, not the schedule's.
                         Ui.Field("Property category",
-                                 Ui.Text(_mapping.Category, text => _mapping.Category = text, 180),
+                                 Pickers.Tab(_mapping.Category, text => _mapping.Category = text, 180),
                                  "One category for the whole sheet.")));
                 }
 
@@ -289,6 +292,16 @@ namespace CamelWorks.UI.Views
 
                 _session.Record(ActivityKind.Regroup,
                     "published " + Ui.Count(made, "set") + " from a schedule");
+
+                // The schedule's sets are the input everything downstream asks for by name, and
+                // the wizard used to end on a count. The two tabs whose first field is "which
+                // set" are one press away instead of a hunt through the ribbon.
+                if (made > 0)
+                    _output.Children.Add(Ui.Across(
+                        Ui.Button("Colour or hide them in Scene Kit",
+                                  () => Ui.Told(AppWindow.Show("scenes", "appearance"))),
+                        Ui.Button("Take quantities off them",
+                                  () => Ui.Told(AppWindow.Show("quantify", "takeoff")))));
             }
         }
     }
