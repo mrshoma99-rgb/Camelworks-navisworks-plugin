@@ -499,7 +499,7 @@ namespace CamelWorks.UI.Views
                     _list,
                     Ui.Rule(),
                     Ui.Actions(
-                        Ui.Primary("Save as an .ids file...", Save),
+                        Ui.Primary("Save IDS...", Save),
                         Ui.Quiet("Keep the draft here", Keep)),
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
@@ -923,7 +923,7 @@ namespace CamelWorks.UI.Views
 
                 // The file's whole point is being run: the check lives on the Health tab, where
                 // "IDS file" is a box waiting for the path that was just written.
-                _output.Children.Add(Ui.Actions(Ui.Quiet("Check the federation against it",
+                _output.Children.Add(Ui.Actions(Ui.Quiet("Check it",
                     () => Ui.Told(AppWindow.Show("audit", "health")))));
 
                 foreach (var warning in written.Warnings.Take(6)) _output.Children.Add(Ui.Note(warning));

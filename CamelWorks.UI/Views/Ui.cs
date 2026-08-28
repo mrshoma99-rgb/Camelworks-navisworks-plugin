@@ -2647,9 +2647,11 @@ namespace CamelWorks.UI.Views
 
             table.Multi();
 
-            // A wrap rather than a strip: the clash manager puts eight verbs on one table, and a
-            // bar that cannot wrap would push the last of them off the window edge silently.
-            var bar = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            var verbs = actions ?? Array.Empty<OnPicked>();
+
+            // A wrap rather than a strip: some tables carry a dozen verbs, and a bar that cannot
+            // wrap pushes the last of them off the window edge silently.
+            var bar = new WrapPanel();
 
             // Where an action says what it did. Below the bar, so a sentence about eleven rows sits
             // under the button that said eleven.
@@ -2657,30 +2659,44 @@ namespace CamelWorks.UI.Views
 
             // Not "Count". A local function hides an outer method of the same name outright, so a
             // local Count() would make the Count(int, string) this uses uncallable.
-            var tally = Line(string.Empty, 0.75);
+            var tally = Small(string.Empty);
             tally.VerticalAlignment = VerticalAlignment.Center;
+            tally.Margin = new Thickness(0, 0, Gap, 0);
 
-            var all = Link("Select all", () => table.SelectAll());
-            var none = Link("Clear", () => table.UnselectAll());
+            var all = Link("All", () => table.SelectAll());
+            var none = Link("None", () => table.UnselectAll());
 
             var buttons = new List<System.Windows.Controls.Button>();
 
-            foreach (var action in actions ?? Array.Empty<OnPicked>())
+            bar.Children.Add(tally);
+
+            foreach (var action in verbs)
             {
                 var here = action;
+                var glyph = Symbol(here.Caption);
 
-                var button = here.Primary
-                    ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
-                    : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said));
+                // A symbol where the verb has one, with the caption as its tooltip; the words
+                // where it does not. Twelve one-word buttons under a table is a wall of text
+                // where the eye wants a row of shapes - but a verb nobody can draw is worse as a
+                // shape nobody can read.
+                var button = glyph == null
+                    ? (here.Primary
+                        ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
+                        : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said)))
+                    : Icon(glyph, here.Caption.Replace("{n}", "0"), () => Verb(here, table, said));
 
-                if (here.Danger) button.Wearing("DangerBtn");
+                if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
-                button.Margin = new Thickness(Gap, 2, 0, 2);
+                button.Margin = new Thickness(glyph == null ? Gap : 1, 2, 0, 2);
                 button.Tag = here.Caption;
 
                 buttons.Add(button);
                 bar.Children.Add(button);
             }
+
+            bar.Children.Add(new Border { Width = Gap });
+            bar.Children.Add(all);
+            bar.Children.Add(none);
 
             void Say()
             {
@@ -2696,29 +2712,90 @@ namespace CamelWorks.UI.Views
                 {
                     button.IsEnabled = picked > 0;
 
-                    if (button.Tag is string caption)
-                        button.Content = caption.Replace(
-                            "{n}", picked.ToString(CultureInfo.InvariantCulture));
+                    if (!(button.Tag is string caption)) continue;
+
+                    var worded = caption.Replace("{n}", picked.ToString(CultureInfo.InvariantCulture));
+
+                    // An icon keeps its shape and moves the count into the tooltip; a worded
+                    // button carries it where it is read, immediately before the press.
+                    if (Symbol(caption) == null) button.Content = worded;
+                    else button.ToolTip = worded;
                 }
             }
 
             table.SelectionChanged += (s, e) => Say();
             Say();
 
-            var left = new StackPanel { Orientation = Orientation.Horizontal };
-            left.Children.Add(tally);
-            left.Children.Add(new Border { Width = Gap });
-            left.Children.Add(all);
-            left.Children.Add(new Border { Width = Gap });
-            left.Children.Add(none);
+            // The same verbs on right-click, on every table that has a bar. It is where a hand
+            // already is, and offering both costs nothing.
+            table.Menu(verbs.Select(v => new OnMenu(v.Caption, picked => v.Act(picked, said))).ToArray());
 
-            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, Gap, 0, 0) };
-            DockPanel.SetDock(left, Dock.Left);
-            DockPanel.SetDock(bar, Dock.Right);
-            row.Children.Add(left);
-            row.Children.Add(bar);
+            return Stack(table, bar, said);
+        }
 
-            return Stack(table, row, said);
+        /// <summary>
+        /// The symbol for a verb, by the word it starts with, or null for one nobody can draw.
+        ///
+        /// Keyed on the caption rather than declared at every call site, because the vocabulary is
+        /// small and shared: forty tables across the product say Focus, Copy, Delete, Run, Rename
+        /// and Assign, and the table that says Paint should get the same shape as the next one.
+        /// A verb with no shape keeps its words rather than being given a shape that has to be
+        /// learned.
+        /// </summary>
+        /// <param name="caption">The verb's caption.</param>
+        public static string? Symbol(string? caption)
+        {
+            if (string.IsNullOrWhiteSpace(caption)) return null;
+
+            var word = caption!.Trim();
+            var space = word.IndexOf(' ');
+            if (space > 0) word = word.Substring(0, space);
+
+            switch (word.ToLowerInvariant())
+            {
+                case "focus":
+                case "frame":
+                case "zoom": return Glyphs.Focus;
+                case "isolate": return Glyphs.Eye;
+                case "show": return Glyphs.EyeOff;
+                case "select":
+                case "pick": return Glyphs.Boxed;
+                case "copy": return Glyphs.Copy;
+                case "delete":
+                case "remove":
+                case "drop":
+                case "forget": return Glyphs.Bin;
+                case "run":
+                case "try": return Glyphs.Play;
+                case "rename":
+                case "edit": return Glyphs.Pencil;
+                case "renumber": return Glyphs.Number;
+                case "move": return Glyphs.MoveIn;
+                case "compact": return Glyphs.Compact;
+                case "mark":
+                case "approve":
+                case "tick": return Glyphs.Tick;
+                case "assign": return Glyphs.Person;
+                case "comment": return Glyphs.Comment;
+                case "group": return Glyphs.Group;
+                case "sphere": return Glyphs.Sphere;
+                case "snapshot":
+                case "capture": return Glyphs.Camera;
+                case "raise": return Glyphs.Issue;
+                case "add":
+                case "new": return Glyphs.Add;
+                case "save":
+                case "keep": return Glyphs.Save;
+                case "open":
+                case "read": return Glyphs.Read;
+                case "send":
+                case "export": return Glyphs.Onward;
+                case "write":
+                case "report": return Glyphs.Report;
+                case "paint": return Glyphs.Layers;
+                case "find": return Glyphs.Find;
+                default: return null;
+            }
         }
 
         // -----------------------------------------------------------------------------------

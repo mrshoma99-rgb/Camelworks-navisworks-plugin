@@ -74,8 +74,9 @@ Every tab of every app renders to one shape (`Views/Bench.cs`):
 1. **The data fills the window** and lands first: current state, live counts, the table. Before
    the first run it states, computed from the live model, what the primary will do — one line
    over the empty grid, never a welcome paragraph.
-2. **Options on the right**, fixed width, grouped under small-caps labels, every one visible.
-   An option that seems to deserve hiding is a default that should state itself, or clutter.
+2. **Options on the right**, fixed width, grouped under small-caps labels — for a tool that is
+   configured and then run. A bench somebody works in for an afternoon uses the second anatomy
+   below instead; the two are not a matter of taste, they are a matter of what the tab is for.
 3. **The footer is the contract.** Progress and its Stop on the left, the one primary action on
    the right, quiet secondaries beside it. Same place in every app, every tab.
 4. **Destructive writes keep the two-step**: preview as a diff in the data area, then a commit
@@ -83,6 +84,42 @@ Every tab of every app renders to one shape (`Views/Bench.cs`):
 5. **Prose above a control is deleted on sight** — the one law every design has kept.
 6. No `Ui.Section`, `Ui.Card`, `Ui.Marked`, `Ui.Numbered` anywhere. `checks/folds.txt` stays
    empty and ratcheted.
+
+## 3b. The second anatomy: a bench
+
+A tab whose job is *worked* rather than *run* — the clash results, the clearance findings, the
+issue register — renders to `Bench.Split` and `Bench.Pane` instead:
+
+```
+┌───────────────────────────────────────────────────────────┐
+│  🔍 search · what it covers · the ticks touched constantly │
+├──────────────────────┬────────────────────────────────────┤
+│  THE MASTER          │  THE DETAIL                        │
+│  tests, sets, files  │  what the picked master rows hold  │
+│                      │                                    │
+├──────────────────────┼────────────────────────────────────┤
+│ ▶ ✎ # ⇢ ⇕ 🗑 ⧉        │ ⊙ 👁 ✓ 👤 💬 ⬚ ● 📷 ⊕ ⧉            │
+├──────────────────────┴────────────────────────────────────┤
+│  [ PRIMARY ]   ⚙ filters  ⚙ columns  ⚙ the round  …       │
+└───────────────────────────────────────────────────────────┘
+```
+
+1. **The tables get the window.** Two related tables sit side by side with a draggable split, not
+   stacked with an options column beside them.
+2. **What is touched every few minutes is on the surface**: one search over both tables, what it
+   covers, and the status ticks. Nothing else.
+3. **Verbs are symbols under the table they act on** — greyed until something is picked, the
+   caption and the count in the tooltip — and the same verbs are on right-click. `Ui.Picking`
+   does both for every table in the product; a verb with no shape keeps its words rather than
+   being given one that has to be learned.
+4. **Everything decided once for the job lives in a configuration window** (`Ui.Configure`),
+   opened from the symbol on the action row that names it. Edits apply live; closing redraws.
+5. **The action row reads left to right**: the primary press, then the windows. Not right-aligned,
+   because it carries more than one thing.
+
+The law behind both anatomies is the same one: *the work gets the window, and setup does not
+compete with it.* Rule 2 of §3 stands for tools that are configured and run; a bench earns the
+split the moment its options outgrow the eye.
 
 ## 3a. An app is a product, not a binder
 

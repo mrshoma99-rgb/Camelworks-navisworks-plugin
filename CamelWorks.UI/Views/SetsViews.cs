@@ -152,13 +152,13 @@ namespace CamelWorks.UI.Views
                     RedrawSaved(session);
                 });
 
-                var schedule = Ui.Button("Open a schedule from a spreadsheet...", () =>
+                var schedule = Ui.Button("From a schedule...", () =>
                 {
                     var problem = ToolViews.Open("schedule");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
                 });
 
-                var reshape = Ui.Button("Rebuild the tree from properties...", () =>
+                var reshape = Ui.Button("Rebuild the tree...", () =>
                 {
                     var problem = ToolViews.Open("restructure");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
@@ -204,9 +204,9 @@ namespace CamelWorks.UI.Views
                         + "can pick it up.", 0.8));
 
                     _results.Children.Add(Ui.Across(
-                        Ui.Button("Colour or hide it in Scene Kit",
+                        Ui.Button("Colour it...",
                                   () => Ui.Told(Shell.AppWindow.Show("scenes", "appearance"))),
-                        Ui.Button("Take quantities off it",
+                        Ui.Button("Take it off",
                                   () => Ui.Told(Shell.AppWindow.Show("quantify", "takeoff"))),
                         Ui.Button("Extract it as a model",
                                   () => Ui.Told(Shell.AppWindow.Show("exports", "extract")))));
@@ -1864,7 +1864,7 @@ namespace CamelWorks.UI.Views
             {
                 var status = Ui.Stack();
 
-                var ask = Ui.Danger("Delete the ticked ones", () =>
+                var ask = Ui.Danger("Delete", () =>
                 {
                     status.Children.Clear();
 

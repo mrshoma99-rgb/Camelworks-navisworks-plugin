@@ -428,9 +428,9 @@ namespace CamelWorks.UI.Views
                 // takeoff are the two jobs people generate one for, so both are one press away.
                 if (published > 0)
                     _output.Children.Add(Ui.Across(
-                        Ui.Button("Colour or hide them in Scene Kit",
+                        Ui.Button("Colour them...",
                                   () => Ui.Told(AppWindow.Show("scenes", "appearance"))),
-                        Ui.Button("Take quantities off them",
+                        Ui.Button("Take them off",
                                   () => Ui.Told(AppWindow.Show("quantify", "takeoff")))));
             }
         }

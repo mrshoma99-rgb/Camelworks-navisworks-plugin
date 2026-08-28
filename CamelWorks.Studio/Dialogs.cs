@@ -73,8 +73,8 @@ namespace CamelWorks.Studio
                         Ui.Quiet("Keep", () => { }),
                         Ui.Danger("Forget", () => { })),
                     Ui.Across(
-                        Ui.Quiet("Save the profile to a file...", () => { }),
-                        Ui.Quiet("Load a profile from a file...", () => { }))),
+                        Ui.Quiet("Save...", () => { }),
+                        Ui.Quiet("Load...", () => { }))),
                 Bench.Group("How it is written",
                     Ui.Check("Keep the folders as folders", true, null),
                     Ui.Check("Write each result's two elements", true, null)),
@@ -175,7 +175,7 @@ namespace CamelWorks.Studio
             Ui.Rule(),
 
             Ui.Actions(
-                Ui.Primary("Save as an .ids file...", () => { }),
+                Ui.Primary("Save IDS...", () => { }),
                 Ui.Quiet("Keep the draft here", () => { })),
 
             Ui.Eyebrow("This document"),

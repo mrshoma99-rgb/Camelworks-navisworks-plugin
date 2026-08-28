@@ -159,6 +159,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _list = Ui.Stack();
             private readonly StackPanel _detail = Ui.Stack();
+            private readonly StackPanel _strip = Ui.Stack();
 
             private readonly HashSet<string> _show;
             private readonly HashSet<string> _pickedIds = new HashSet<string>(StringComparer.Ordinal);
@@ -191,7 +192,7 @@ namespace CamelWorks.UI.Views
 
             internal UIElement Build()
             {
-                var stage = Ui.Stack(_log, _list, _detail);
+                var stage = Ui.Stack(_strip, _log, _list, _detail);
 
                 if (_register.Unreadable > 0)
                     _log.Children.Add(Ui.Note(Ui.Count(_register.Unreadable, "saved issue")
@@ -199,39 +200,104 @@ namespace CamelWorks.UI.Views
                         + " left out of the list. The project file has them; this build cannot "
                         + "read that record."));
 
+                RedrawStrip();
                 Redraw();
 
-                return Bench.Surface(Setup(), Ui.Actions(Ui.Primary("New issue", NewIssue)), stage);
+                return Bench.Surface(null, Foot(), stage);
+            }
+
+            /// <summary>
+            /// The register's own filters, above the list.
+            ///
+            /// Status, who owns it and a search are what somebody changes as they work a register;
+            /// everything else - the type, what raised it, what the bulk verb writes - is set once
+            /// and lives a window away.
+            /// </summary>
+            private void RedrawStrip()
+            {
+                _strip.Children.Clear();
+
+                var row = new WrapPanel();
+
+                row.Children.Add(Ui.Icon(Glyphs.Find, "Search the register", () => _find.Focus()));
+                row.Children.Add(_find);
+                row.Children.Add(new Border { Width = 14 });
+
+                foreach (var status in Issue.Statuses)
+                {
+                    var here = status;
+
+                    row.Children.Add(new Border { Width = 8 });
+                    row.Children.Add(Ui.Check(here, _show.Contains(here), on =>
+                    {
+                        if (on) _show.Add(here); else _show.Remove(here);
+                        Redraw();
+                    }));
+                }
+
+                row.Children.Add(new Border { Width = 14 });
+                row.Children.Add(Ui.Check("Only mine", _onlyMine, on => { _onlyMine = on; Redraw(); }));
+                row.Children.Add(new Border { Width = 8 });
+                row.Children.Add(Ui.Check("Only overdue", _onlyOverdue, on => { _onlyOverdue = on; Redraw(); }));
+
+                _strip.Children.Add(row);
+
+                _strip.Children.Add(Ui.Across(
+                    Ui.Figure(Skin.Num(_register.Open), "open"),
+                    Ui.Figure(Skin.Num(_register.Overdue(Now)), "overdue",
+                              _register.Overdue(Now) > 0 ? Tone.Bad : Tone.Plain),
+                    Ui.Figure(Skin.Num(_register.Of(Issue.ClosedStatus)), "closed", Tone.Good)));
+            }
+
+            /// <summary>The action row: raise one, then the windows the rest lives in.</summary>
+            private UIElement Foot()
+            {
+                var row = new WrapPanel();
+
+                row.Children.Add(Ui.Primary("New issue", NewIssue));
+                row.Children.Add(new Border { Width = 14 });
+
+                row.Children.Add(Ui.Icon(Glyphs.Filter, "Narrow the register", () => Configure("narrow")));
+                row.Children.Add(Ui.Icon(Glyphs.Tick, "What the bulk verbs write", () => Configure("verbs")));
+                row.Children.Add(Ui.Icon(Glyphs.Read, "Import BCF",
+                                         () => Ui.Told(Shell.AppWindow.Show("issuemgr", "issuein"))));
+                row.Children.Add(Ui.Icon(Glyphs.Onward, "Export BCF",
+                                         () => Ui.Told(Shell.AppWindow.Show("issuemgr", "issueout"))));
+                row.Children.Add(Ui.Icon(Glyphs.Report, "Write the register to a spreadsheet", Sheet));
+
+                return row;
             }
 
             // -------------------------------------------------------------------------------
-            // The filter rail
+            // What is set up once
             // -------------------------------------------------------------------------------
 
-            private UIElement Setup()
+            /// <summary>The register's set-once options, in a window of their own.</summary>
+            /// <param name="section">Which section to open on.</param>
+            private void Configure(string section)
             {
-                var panel = Ui.Stack();
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("Narrow it", NarrowPage),
+                    new Ui.Page("On the picked issues", VerbsPage),
+                };
 
-                var counts = Ui.Stack(
-                    Ui.Split("Open", Skin.Num(_register.Open)),
-                    Ui.Split("Overdue", Skin.Num(_register.Overdue(Now)),
-                             _register.Overdue(Now) > 0 ? Tone.Bad : Tone.Plain),
-                    Ui.Split("Closed", Skin.Num(_register.Of(Issue.ClosedStatus)), Tone.Good));
+                if (section == "verbs")
+                {
+                    var wanted = pages[1];
+                    pages.RemoveAt(1);
+                    pages.Insert(0, wanted);
+                }
 
-                panel.Children.Add(Bench.Group("Where it stands", counts));
+                Ui.Configure("Issue register", () =>
+                {
+                    RedrawStrip();
+                    Redraw();
+                }, pages.ToArray());
+            }
 
-                var ticks = Issue.Statuses.Select(status => (UIElement)Ui.Check(status,
-                    _show.Contains(status), on =>
-                    {
-                        if (on) _show.Add(status); else _show.Remove(status);
-                        Redraw();
-                    })).ToList();
-
-                panel.Children.Add(Bench.Group("Status",
-                    Ui.Stack(ticks.ToArray()),
-                    Ui.Check("Only overdue", _onlyOverdue, on => { _onlyOverdue = on; Redraw(); }),
-                    Ui.Check("Only mine", _onlyMine, on => { _onlyMine = on; Redraw(); })));
-
+            private UIElement NarrowPage()
+            {
                 var people = new List<string> { AnyOne };
                 people.AddRange(Assignees());
 
@@ -245,31 +311,24 @@ namespace CamelWorks.UI.Views
                 if (!people.Contains(_who)) _who = AnyOne;
                 if (!types.Contains(_type)) _type = AnyType;
 
-                panel.Children.Add(Bench.Group("Narrow it",
+                return Bench.Group("Narrow it",
                     Ui.Field("Assigned to", Ui.Choice(people, _who, pick => { _who = pick; Redraw(); }, 170)),
                     Ui.Field("Type", Ui.Choice(types, _type, pick => { _type = pick; Redraw(); }, 170)),
                     Ui.Field("Raised by", Ui.Choice(
                         new[] { AnySource, "Raised", "Clash", "Clearance", "Imported" },
                         _source, pick => { _source = pick; Redraw(); }, 170)),
-                    Ui.Field("Find", _find, "title, description, number or assignee")));
-
-                panel.Children.Add(Bench.Group("On the picked issues",
-                    Ui.Field("Set status to", Ui.Choice(Issue.Statuses, _mark, pick =>
-                    {
-                        _mark = pick;
-                        Redraw();
-                    }, 150))));
-
-                panel.Children.Add(Bench.Group("The file",
-                    Ui.Actions(
-                        Ui.Quiet("Import...", () => Ui.Told(Shell.AppWindow.Show("issuemgr", "issuein"))),
-                        Ui.Quiet("Export...", () => Ui.Told(Shell.AppWindow.Show("issuemgr", "issueout")))),
-                    Ui.Actions(Ui.Quiet("Excel...", Sheet)),
-                    Ui.Small("BCF in and out is the exchange; the spreadsheet is the register as "
-                             + "it is filtered, for the meeting.")));
-
-                return panel;
+                    Ui.Small("Status, mine, overdue and the search are on the strip above the "
+                             + "register, where they are changed as somebody works."));
             }
+
+            private UIElement VerbsPage() => Bench.Group("On the picked issues",
+                Ui.Field("Set status to", Ui.Choice(Issue.Statuses, _mark, pick =>
+                {
+                    _mark = pick;
+                    Redraw();
+                }, 150)),
+                Ui.Small("The status symbol under the register writes this. Assigning writes "
+                         + "whoever \"Assigned to\" names on the previous page."));
 
             private List<string> Assignees()
             {

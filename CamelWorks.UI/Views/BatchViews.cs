@@ -59,7 +59,7 @@ namespace CamelWorks.UI.Views
 
                 // A list of jobs that can only be run is a list nobody can maintain: a graph saved
                 // by mistake, or superseded three weeks ago, had no way off this panel.
-                body.Children.Add(Ui.Danger("Delete the selected job", () =>
+                body.Children.Add(Ui.Danger("Delete", () =>
                 {
                     log.Children.Clear();
 
@@ -173,7 +173,7 @@ namespace CamelWorks.UI.Views
 
             var name = Ui.Text("Weekly coordination", null, 220);
 
-            var make = Ui.Button("Make a job from what is open", () =>
+            var make = Ui.Button("Job from this...", () =>
             {
                 status.Children.Clear();
 

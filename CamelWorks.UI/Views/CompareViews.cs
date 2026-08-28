@@ -403,25 +403,33 @@ namespace CamelWorks.UI.Views
 
                 var view = CompareLayers.Build(_result);
 
-                // The setup column holds the filters over the list and the way back from the
-                // paint; the one action at its foot is the paint itself, and everything the list,
-                // the walk, the stamp and the raise produce lands on the stage.
-                var setup = Ui.Stack(
-                    Bench.Group("Filter",
-                        Ui.Field("Show", Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); })),
-                        Ui.Field("Find", Ui.Text(_search, text => { _search = text ?? string.Empty; Redraw(); }, 200))),
-                    Bench.Group("Paint",
-                        Clear(),
-                        Ui.Button("Show everything", () =>
-                        {
-                            _output.Children.Clear();
-                            _session.View.ShowAll();
-                            _output.Children.Add(Ui.Done("Everything is visible again."));
-                        })));
+                // The bench law: what is changed while working - the bucket filter and the search
+                // - sits above the list; the paint's undo and the way back to a whole model are
+                // symbols on the action row, next to the paint itself.
+                var strip = new WrapPanel();
 
-                var foot = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
+                strip.Children.Add(Ui.Icon(Glyphs.Find, "Search the changes", () => { }));
+                strip.Children.Add(Ui.Text(_search, "element, type or what changed",
+                                           text => { _search = text ?? string.Empty; Redraw(); }, 240));
+                strip.Children.Add(new Border { Width = 10 });
+                strip.Children.Add(Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); }, 180));
+
+                var paint = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
+
+                var foot = new WrapPanel();
+
+                foot.Children.Add(paint);
+                foot.Children.Add(new Border { Width = 14 });
+                foot.Children.Add(Ui.Icon(Glyphs.Compact, "Take the colours off", TakeColoursOff));
+                foot.Children.Add(Ui.Icon(Glyphs.EyeOff, "Show everything again", () =>
+                {
+                    _output.Children.Clear();
+                    _session.View.ShowAll();
+                    _output.Children.Add(Ui.Done("Everything is visible again."));
+                }));
 
                 var stage = Ui.Stack(
+                    strip,
                     Ui.Eyebrow(_result.Between()),
                     Counts(),
                     _list,
@@ -430,7 +438,7 @@ namespace CamelWorks.UI.Views
                     Keep(),
                     _output);
 
-                return Bench.Surface(setup, foot, stage);
+                return Bench.Surface(null, foot, stage);
             }
 
             /// <summary>
@@ -618,29 +626,34 @@ namespace CamelWorks.UI.Views
             /// The figures on the stage are already the legend - added green, removed red, moved
             /// amber - so painting needs no card of its own.
             /// </summary>
-            private UIElement Clear() =>
-                Ui.Button("Take the colours off", () =>
-                {
-                    _output.Children.Clear();
+            /// <summary>
+            /// The way back from the paint, beside the press that put it on.
+            ///
+            /// The figures on the stage are already the legend - added green, removed red, moved
+            /// amber - so the undo needs no card of its own.
+            /// </summary>
+            private void TakeColoursOff()
+            {
+                _output.Children.Clear();
 
-                    // Every element the comparison touched, including the unchanged ones that
-                    // carry the fade. This is the exact inverse of what Paint wrote, which is why
-                    // the fade names its elements rather than covering the whole model: nothing
-                    // outside the comparison has been written to, so nothing outside it is undone.
-                    var keys = new List<ElementKey>();
+                // Every element the comparison touched, including the unchanged ones that carry
+                // the fade. This is the exact inverse of what Paint wrote, which is why the fade
+                // names its elements rather than covering the whole model: nothing outside the
+                // comparison has been written to, so nothing outside it is undone.
+                var keys = new List<ElementKey>();
 
-                    foreach (var bucket in new[]
-                             {
-                                 ChangeBucket.Added, ChangeBucket.Removed, ChangeBucket.Moved,
-                                 ChangeBucket.Changed, ChangeBucket.Unchanged,
-                             })
-                        keys.AddRange(_result.KeysIn(bucket));
+                foreach (var bucket in new[]
+                         {
+                             ChangeBucket.Added, ChangeBucket.Removed, ChangeBucket.Moved,
+                             ChangeBucket.Changed, ChangeBucket.Unchanged,
+                         })
+                    keys.AddRange(_result.KeysIn(bucket));
 
-                    _session.View.ClearOverrides(keys);
+                _session.View.ClearOverrides(keys);
 
-                    _output.Children.Add(Ui.Done("Cleared the comparison's colour and fade on "
-                        + Ui.Count(keys.Count, "element") + ". Nothing else was touched."));
-                });
+                _output.Children.Add(Ui.Done("Cleared the comparison's colour and fade on "
+                    + Ui.Count(keys.Count, "element") + ". Nothing else was touched."));
+            }
 
             private void ApplyView(Job job, CompareView view)
             {
@@ -1073,7 +1086,7 @@ namespace CamelWorks.UI.Views
                 // Named and asked twice. A red button whose only description of its target is
                 // "the selected one" is a button that deletes something you cannot check first,
                 // and a baseline is a week of history nothing else in the product can rebuild.
-                Ui.Danger("Delete the selected one", () =>
+                Ui.Danger("Delete", () =>
                 {
                     results.Children.Clear();
 

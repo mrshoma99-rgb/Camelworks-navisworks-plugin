@@ -352,7 +352,7 @@ namespace CamelWorks.UI.Views
                         Ui.Count(_shown?.Count ?? 0, "element") + " visible in it", 0.75));
                 }
 
-                _how.Children.Add(Ui.Actions(Ui.Quiet("Go to it and see what it shows", Looking)));
+                _how.Children.Add(Ui.Actions(Ui.Quiet("Open it", Looking)));
 
                 _how.Children.Add(Ui.Small("Applying it moves the camera."));
             }
@@ -464,14 +464,14 @@ namespace CamelWorks.UI.Views
                     }, 200)));
 
                 _how.Children.Add(Ui.Actions(
-                    Ui.Button("Take it from what is selected", () => Box(false)),
-                    Ui.Quiet("Take it from everything loaded", () => Box(true))));
+                    Ui.Button("From the selection", () => Box(false)),
+                    Ui.Quiet("From everything", () => Box(true))));
 
                 if (box != null)
                     _how.Children.Add(Ui.Actions(
                         Ui.Quiet("Show me the box", () => _session.View.SetSectionBox(
                             new BoundingBox(box.MinX, box.MinY, box.MinZ, box.MaxX, box.MaxY, box.MaxZ), 0)),
-                        Ui.Quiet("Put the section box away",
+                        Ui.Quiet("Box away",
                                  () => _session.View.SetSectionBoxEnabled(false))));
             }
 
@@ -558,12 +558,12 @@ namespace CamelWorks.UI.Views
                 if (!plan.IsUsable) return;
 
                 _verdict.Children.Add(Ui.Actions(
-                    Ui.Quiet("Select it in the model", () =>
+                    Ui.Quiet("Select it", () =>
                     {
                         _session.Model.Select(plan.Keys);
                         _session.View.ZoomTo(plan.Keys, 2.0);
                     }),
-                    Ui.Quiet("Leave only it on screen", () => Only(plan)),
+                    Ui.Quiet("Isolate it", () => Only(plan)),
                     Ui.Quiet("Make it a set", () => AsSet(plan))));
 
                 DrawOut(plan);

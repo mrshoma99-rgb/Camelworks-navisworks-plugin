@@ -1472,7 +1472,7 @@ namespace CamelWorks.UI.Views
 
                 _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
 
-                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them into this model", () =>
+                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them in", () =>
                 {
                     try
                     {
@@ -1503,7 +1503,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Exchange()
             {
-                var open = Ui.Quiet("Send the board as a clash file...", () =>
+                var open = Ui.Quiet("Clash file...", () =>
                 {
                     var problem = ToolViews.Open("clashxml");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));

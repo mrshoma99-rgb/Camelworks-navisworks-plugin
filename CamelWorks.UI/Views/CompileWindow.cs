@@ -112,7 +112,7 @@ namespace CamelWorks.UI.Views
                         Ui.PathField("Spreadsheet", _sheet, PathKind.Open,
                                      "Spreadsheet|*.xlsx;*.xlsm|All files|*.*",
                                      "a register the project already keeps, if there is one"),
-                        Ui.Actions(Ui.Quiet("Read the paths out of it", FromSheet))),
+                        Ui.Actions(Ui.Quiet("Read the paths", FromSheet))),
                     _list,
                     Bench.Group("This compilation", Saved()));
 

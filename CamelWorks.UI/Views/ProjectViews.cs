@@ -191,7 +191,7 @@ namespace CamelWorks.UI.Views
                     session.View.ZoomTo(keys, 2.0);
                 });
 
-            var only = Ui.Quiet("Leave only these on screen", () =>
+            var only = Ui.Quiet("Isolate them", () =>
             {
                 session.Model.Select(keys);
                 session.View.ZoomTo(keys, 2.0);
@@ -773,7 +773,7 @@ namespace CamelWorks.UI.Views
 
                 // The panel answers "are we ready to issue". The workbook answers "what do I fix",
                 // and it is asked by somebody who is not sitting in Navisworks.
-                results.Children.Add(Ui.Actions(Ui.Primary("Save it as a workbook...",
+                results.Children.Add(Ui.Actions(Ui.Primary("Excel...",
                     () => Workbook(results, document, report, session.NowTicks))));
 
                 // Property failures have a pen in this suite — Data Manager's Write tab can put
@@ -865,7 +865,7 @@ namespace CamelWorks.UI.Views
         /// and comes back with the next revision.
         /// </summary>
         private static UIElement Author(Panel results) =>
-            Ui.Quiet("Write an IDS of our own...", () =>
+            Ui.Quiet("Write IDS...", () =>
             {
                 var problem = ToolViews.Open("ids");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
@@ -1026,7 +1026,7 @@ namespace CamelWorks.UI.Views
             // The way out of a decision somebody regrets. Every row here is an override of
             // something CamelWorks worked out for itself, and a register that can only be
             // overridden is one people are afraid to touch.
-            var reset = Ui.Quiet("Reset them all to derived", () =>
+            var reset = Ui.Quiet("Reset all", () =>
             {
                 status.Children.Clear();
 

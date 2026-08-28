@@ -167,7 +167,7 @@ namespace CamelWorks.Studio
                     Ui.PathField("An .ids file", Ui.Text(string.Empty, "none — built-in rules only",
                                                          null, 200), PathKind.Open),
                     Ui.Runner("Check against an IDS", Ui.Stack(), _ => { }, primary: false),
-                    Ui.Quiet("Write an IDS of our own...", () => { })));
+                    Ui.Quiet("Write IDS...", () => { })));
 
             var stage = Ui.Stack(
                 Bench.Verdict("Watch — two models disagree about where the site is", Tone.Warn),
@@ -349,11 +349,11 @@ namespace CamelWorks.Studio
                     Ui.Line("STR-Riverside-Block-B-r4.nwc", 0.6),
                     Ui.Field("Call it", Ui.Text("Weekly coordination", null, 200),
                              "The Monday morning job, from what is open."),
-                    Ui.Across(Ui.Button("Make a job from what is open", () => { }))));
+                    Ui.Across(Ui.Button("Job from this...", () => { }))));
 
             var stage = Ui.Stack(
                 Ui.Table(JobRows(), ("Job", 170), ("Size", 90), ("What it does", 0)),
-                Ui.Danger("Delete the selected job", () => { }),
+                Ui.Danger("Delete", () => { }),
                 Ui.Small("A job runs on the model that is open now, using whatever is selected now."),
                 Ui.Rule(),
                 Ui.Eyebrow("What has run"),

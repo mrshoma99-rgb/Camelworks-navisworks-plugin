@@ -589,7 +589,7 @@ namespace CamelWorks.UI.Views
                         result.X.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Y.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Z.ToString("0.###", CultureInfo.InvariantCulture))),
-                    Ui.Quiet("Put a section box round it", () => Box(result))));
+                    Ui.Quiet("Section box", () => Box(result))));
 
                 if (silent > 0)
                     _weight.Children.Add(Ui.Note(Ui.Count(silent, "element")

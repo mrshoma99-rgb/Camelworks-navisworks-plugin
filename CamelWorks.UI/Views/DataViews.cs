@@ -271,7 +271,7 @@ namespace CamelWorks.UI.Views
         /// <param name="results">Where to say so if the window will not open.</param>
         private static UIElement Piece(Panel results)
         {
-            var open = Ui.Button("Take a piece of the model out...", () =>
+            var open = Ui.Button("Extract...", () =>
             {
                 var problem = ToolViews.Open("extract");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
@@ -293,7 +293,7 @@ namespace CamelWorks.UI.Views
         /// <param name="results">Where to say so if the window will not open.</param>
         private static UIElement Link(Panel results)
         {
-            var open = Ui.Button("Link a spreadsheet to the model...", () =>
+            var open = Ui.Button("Link a sheet...", () =>
             {
                 var problem = ToolViews.Open("datalink");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
@@ -315,7 +315,7 @@ namespace CamelWorks.UI.Views
         /// <param name="results">Where to say so if the window will not open.</param>
         private static UIElement Report(Panel results)
         {
-            var open = Ui.Button("Build a report from the model's data...", () =>
+            var open = Ui.Button("Report...", () =>
             {
                 var problem = ToolViews.Open("report");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
@@ -2033,13 +2033,13 @@ namespace CamelWorks.UI.Views
         /// <param name="results">Where to say so if a window will not open.</param>
         private static UIElement LevelHandoffs(Panel results)
         {
-            var sets = Ui.Button("Build a set per level...", () =>
+            var sets = Ui.Button("Sets per level...", () =>
             {
                 var problem = ToolViews.Open("setlib");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
             });
 
-            var takeoff = Ui.Button("Take off quantities by level...", () =>
+            var takeoff = Ui.Button("Takeoff by level...", () =>
             {
                 var problem = ToolViews.Open("takeoff");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
@@ -2496,7 +2496,7 @@ namespace CamelWorks.UI.Views
 
                 _output.Children.Add(Ui.PathField("Write to", _path, PathKind.Save,
                                                   "Excel|*.xlsx|CSV|*.csv|All files|*.*"));
-                _output.Children.Add(Ui.Across(Ui.Button("Write it to a spreadsheet", () => Export(session))));
+                _output.Children.Add(Ui.Across(Ui.Button("Excel...", () => Export(session))));
             }
 
             /// <summary>The single-axis answer.</summary>

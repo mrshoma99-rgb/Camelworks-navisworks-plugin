@@ -65,6 +65,7 @@ namespace CamelWorks.UI.Views
             internal UIElement Build()
             {
                 var stage = Ui.Stack(
+                    Setup(),
                     Bench.Ready("Compares two things that are both loaded now — two models, or two "
                                 + "sets — and says what is in one and not the other.",
                                 "The supplier's model against yours, this week's revision against "
@@ -73,7 +74,7 @@ namespace CamelWorks.UI.Views
                     _log,
                     _results);
 
-                return Bench.Surface(Setup(), Ui.Runner("Compare", _log, Run), stage);
+                return Bench.Surface(null, Foot(Ui.Runner("Compare", _log, Run)), stage);
             }
 
             private UIElement Setup()
@@ -126,40 +127,55 @@ namespace CamelWorks.UI.Views
                                  + "whether it has moved or changed.")));
                 }
 
-                panel.Children.Add(Bench.Group("What counts as a change",
-                    Ui.Field("Move over", Ui.Text(
-                        Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture),
-                        text =>
-                        {
-                            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                                out var value) && value >= 0)
-                                Settings.Tolerance = value;
-                        }, 90),
-                        "model units - below this, nothing has moved"),
-                    Ui.Field("Properties", Ui.Choice(
-                        new[] { "Standard list", "Every property", "No properties" },
-                        Settings.Watch == PropertyWatch.All ? "Every property"
-                        : Settings.Watch == PropertyWatch.None ? "No properties" : "Standard list",
-                        pick => Settings.Watch = pick == "Every property" ? PropertyWatch.All
-                                              : pick == "No properties" ? PropertyWatch.None
-                                              : PropertyWatch.Standard, 150)),
-                    Ui.Field("Match on", Ui.Choice(
-                        new[] { "GUID, tree path or shape", "GUID or tree path", "GUID only" },
-                        Settings.WeakestRung == KeyRung.InstanceGuid ? "GUID only"
-                        : Settings.WeakestRung == KeyRung.TreePath ? "GUID or tree path"
-                        : "GUID, tree path or shape",
-                        pick => Settings.WeakestRung = pick == "GUID only" ? KeyRung.InstanceGuid
-                                                     : pick == "GUID or tree path" ? KeyRung.TreePath
-                                                     : KeyRung.Geometry, 200))));
-
-                panel.Children.Add(Bench.Group("Out of the tab",
-                    Ui.Actions(Ui.Quiet("Excel...", Sheet)),
-                    Ui.Small("Bounding boxes and properties, not triangles: an element remodelled "
-                             + "inside its own box reads as unchanged here. The baseline "
-                             + "comparison on the Compare tab is the one that reads triangles.")));
-
                 return panel;
             }
+
+            /// <summary>The action row: compare, then the window the terms live in.</summary>
+            private UIElement Foot(UIElement run)
+            {
+                var row = new WrapPanel();
+
+                row.Children.Add(run);
+                row.Children.Add(new Border { Width = 14 });
+
+                row.Children.Add(Ui.Icon(Glyphs.Tune, "What counts as a change", Configure));
+                row.Children.Add(Ui.Icon(Glyphs.Report, "Write the differences to a spreadsheet", Sheet));
+
+                return row;
+            }
+
+            /// <summary>What counts as a change, set once for the job.</summary>
+            private void Configure() =>
+                Ui.Configure("Side by side", null, new Ui.Page("What counts as a change", TermsPage));
+
+            private UIElement TermsPage() => Bench.Group("What counts as a change",
+                Ui.Field("Move over", Ui.Text(
+                    Settings.Tolerance.ToString("0.####", CultureInfo.InvariantCulture),
+                    text =>
+                    {
+                        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                            out var value) && value >= 0)
+                            Settings.Tolerance = value;
+                    }, 90),
+                    "model units - below this, nothing has moved"),
+                Ui.Field("Properties", Ui.Choice(
+                    new[] { "Standard list", "Every property", "No properties" },
+                    Settings.Watch == PropertyWatch.All ? "Every property"
+                    : Settings.Watch == PropertyWatch.None ? "No properties" : "Standard list",
+                    pick => Settings.Watch = pick == "Every property" ? PropertyWatch.All
+                                          : pick == "No properties" ? PropertyWatch.None
+                                          : PropertyWatch.Standard, 150)),
+                Ui.Field("Match on", Ui.Choice(
+                    new[] { "GUID, tree path or shape", "GUID or tree path", "GUID only" },
+                    Settings.WeakestRung == KeyRung.InstanceGuid ? "GUID only"
+                    : Settings.WeakestRung == KeyRung.TreePath ? "GUID or tree path"
+                    : "GUID, tree path or shape",
+                    pick => Settings.WeakestRung = pick == "GUID only" ? KeyRung.InstanceGuid
+                                                 : pick == "GUID or tree path" ? KeyRung.TreePath
+                                                 : KeyRung.Geometry, 200)),
+                Ui.Small("Bounding boxes and properties, not triangles: an element remodelled "
+                         + "inside its own box reads as unchanged here. The baseline comparison "
+                         + "on the Compare tab is the one that reads triangles."));
 
             // ---------------------------------------------------------------------------------
             // Running

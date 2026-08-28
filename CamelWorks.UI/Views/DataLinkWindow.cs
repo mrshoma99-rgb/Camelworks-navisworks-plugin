@@ -441,7 +441,7 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Which property", property)));
 
                 _join.Children.Add(Ui.Actions(
-                    Ui.Quiet("Work it out from the file", Rework)));
+                    Ui.Quiet("Work it out", Rework)));
             }
 
             private void DrawColumns()

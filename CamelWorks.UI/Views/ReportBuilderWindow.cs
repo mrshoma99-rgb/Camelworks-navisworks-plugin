@@ -316,7 +316,7 @@ namespace CamelWorks.UI.Views
                 _catalogue.Children.Add(table);
                 _catalogue.Children.Add(Ui.Actions(
                     Ui.Button("Add the chosen ones", AddChosen),
-                    Ui.Quiet("Propose a report from all of it", Suggest)));
+                    Ui.Quiet("Propose one", Suggest)));
             }
 
             private void DrawColumns()
@@ -377,7 +377,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _columns.Children.Add(Ui.Actions(
-                    Ui.Quiet("Add the selection tree", () => AddBuilt(ReportField.Path)),
+                    Ui.Quiet("Add the tree", () => AddBuilt(ReportField.Path)),
                     Ui.Quiet("Add a tree level", () => AddBuilt(ReportField.PathLevel)),
                     Ui.Quiet("Add the model name", () => AddBuilt(ReportField.Model))));
             }

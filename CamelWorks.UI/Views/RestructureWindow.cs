@@ -247,7 +247,7 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Stack(
                     Ui.Field("Called", name, "Kept, the next revision is one press."),
-                    Ui.Actions(Ui.Quiet("Keep this recipe in the project", Store)));
+                    Ui.Actions(Ui.Quiet("Keep the recipe", Store)));
             }
 
             private void Store()
