@@ -34,7 +34,7 @@ namespace CamelWorks.UI
         DisplayName = "CamelWorks", ToolTip = "The week, the search, and the way to every app")]
     [Command("ID_CW_AppClash", Icon = "Resources\\AppClash_16.png", LargeIcon = "Resources\\AppClash_32.png",
         DisplayName = "Clash Manager", ToolTip = "Find what fights, and decide it")]
-    [Command("ID_CW_AppIssueManager", Icon = "Resources\\AppIssues_16.png", LargeIcon = "Resources\\AppIssues_32.png",
+    [Command("ID_CW_AppIssueManager", Icon = "Resources\\AppIssueManager_16.png", LargeIcon = "Resources\\AppIssueManager_32.png",
         DisplayName = "Issue Manager", ToolTip = "Everything raised on this job, in one register")]
     [Command("ID_CW_AppIssues", Icon = "Resources\\AppIssues_16.png", LargeIcon = "Resources\\AppIssues_32.png",
         DisplayName = "Issue Link", ToolTip = "Issues out to the world, and answers back in")]

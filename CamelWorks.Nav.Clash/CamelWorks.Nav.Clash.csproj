@@ -35,6 +35,21 @@
     <NavisPkgVersion Condition="'$(NavisPkgVersion)' == '' and '$(NavisworksYear)' == '2025'">2025.0.0</NavisPkgVersion>
     <NavisPkgVersion Condition="'$(NavisPkgVersion)' == '' and '$(NavisworksYear)' == '2026'">2026.0.1</NavisPkgVersion>
     <NavisPkgVersion Condition="'$(NavisPkgVersion)' == '' and '$(NavisworksYear)' == '2027'">2027.0.0</NavisPkgVersion>
+
+    <!--
+      THE CLASH API CHANGED SHAPE MID-RANGE, and the four supported releases are not one API.
+
+      2026 turned an assignee from a string into an Assignee object: the result's AssignedTo, the
+      write that sets it, and a new "who is doing this" argument on the status write. 2027 did the
+      same to a comment's author, and dropped the one-argument TestsRemove.
+
+      The constants below name the OLD shape, not the new one, so a release nobody has built
+      against yet compiles as the newest API rather than the oldest. A year that changes again
+      will fail loudly here, which is the point; a year that does not will simply work.
+    -->
+    <DefineConstants>$(DefineConstants);NAV$(NavisworksYear)</DefineConstants>
+    <DefineConstants Condition="'$(NavisworksYear)' == '2024' Or '$(NavisworksYear)' == '2025'">$(DefineConstants);NAV_STRING_ASSIGNEE</DefineConstants>
+    <DefineConstants Condition="'$(NavisworksYear)' == '2024' Or '$(NavisworksYear)' == '2025' Or '$(NavisworksYear)' == '2026'">$(DefineConstants);NAV_STRING_COMMENT_AUTHOR</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

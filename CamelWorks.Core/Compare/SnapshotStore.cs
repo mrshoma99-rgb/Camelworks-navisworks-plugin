@@ -221,11 +221,16 @@ namespace CamelWorks.Core.Compare
 
         /// <summary>Read one back, or null when it cannot be read.</summary>
         /// <param name="entry">Which baseline.</param>
-        public ModelSnapshot? Load(BaselineEntry? entry)
+        /// <param name="onProgress">
+        /// Called every few thousand lines while the file is parsed, so a screen can say something
+        /// during the read of a large baseline rather than going silent between the press and the
+        /// first status line.
+        /// </param>
+        public ModelSnapshot? Load(BaselineEntry? entry, Action<int>? onProgress = null)
         {
             if (entry == null || Folder == null) return null;
 
-            return ModelSnapshot.Read(_fs.ReadAllText(PathText.Join(Folder, entry.File)));
+            return ModelSnapshot.Read(_fs.ReadAllText(PathText.Join(Folder, entry.File)), onProgress);
         }
 
         /// <summary>

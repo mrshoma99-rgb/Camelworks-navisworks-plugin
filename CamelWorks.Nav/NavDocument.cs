@@ -439,22 +439,10 @@ namespace CamelWorks.Nav
 
         private IEnumerable<IModelItem> Wrap(IEnumerable<ModelItem> items)
         {
-            // The counter is raised for exactly as long as a host enumerator is open, and every
-            // exit path lowers it - a caller that stops early disposes the iterator, which runs
-            // the finally. See IsWalking for what reads it.
-            Walking++;
-
-            try
+            foreach (var item in items)
             {
-                foreach (var item in items)
-                {
-                    var model = ModelFor(item);
-                    if (model != null) yield return new NavModelItem(this, item, model);
-                }
-            }
-            finally
-            {
-                Walking--;
+                var model = ModelFor(item);
+                if (model != null) yield return new NavModelItem(this, item, model);
             }
         }
 
@@ -535,25 +523,66 @@ namespace CamelWorks.Nav
         // Geometry-bearing nodes, taking a node's own geometry when nothing beneath it produced
         // any. Some formats hang reference planes and annotations under a part that carries the
         // mesh itself, and the naive "only childless nodes" rule loses the entire part.
+        /// <summary>
+        /// The geometry leaves under a set of roots, depth first, without a host enumerator open
+        /// across the yield.
+        ///
+        /// <b>Why it is a stack and not recursion.</b> The recursive version held one live host
+        /// enumerator per level of the tree for the whole walk. Callers report progress as they go,
+        /// reporting progress pumps the message loop, and pumping while the host's own collections
+        /// are being enumerated lets Navisworks act on a click that mutates them - which ends the
+        /// process in native code where no handler can reach it. Here each node's children are
+        /// read into a list and the host's enumerator is finished with immediately, so at the
+        /// moment a caller pumps, nothing of the host's is open.
+        /// </summary>
         private static IEnumerable<ModelItem> Leaves(IEnumerable<ModelItem> roots)
         {
-            foreach (var root in roots)
-                foreach (var leaf in LeavesOf(root))
-                    yield return leaf;
-        }
+            // Materialised for the same reason: this is usually Document.Models.RootItems, and it
+            // must not stay open for the length of the walk.
+            Stack<ModelItem> stack;
 
-        private static IEnumerable<ModelItem> LeavesOf(ModelItem item)
-        {
-            var any = false;
+            Walking++;
 
-            foreach (var child in item.Children)
-                foreach (var leaf in LeavesOf(child))
+            try
+            {
+                stack = new Stack<ModelItem>(roots.Reverse().ToList());
+            }
+            finally
+            {
+                Walking--;
+            }
+
+            while (stack.Count > 0)
+            {
+                var item = stack.Pop();
+
+                List<ModelItem> children;
+
+                Walking++;
+
+                try
                 {
-                    any = true;
-                    yield return leaf;
+                    children = item.Children.ToList();
+                }
+                catch (Exception)
+                {
+                    // A node the host will not open. Treated as a leaf rather than losing the
+                    // branch: one awkward node must not end a walk of two hundred thousand.
+                    children = new List<ModelItem>();
+                }
+                finally
+                {
+                    Walking--;
                 }
 
-            if (!any && item.HasGeometry) yield return item;
+                if (children.Count == 0)
+                {
+                    if (item.HasGeometry) yield return item;
+                    continue;
+                }
+
+                for (var i = children.Count - 1; i >= 0; i--) stack.Push(children[i]);
+            }
         }
     }
 

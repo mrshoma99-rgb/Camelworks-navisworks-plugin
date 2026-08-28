@@ -227,9 +227,6 @@ namespace CamelWorks.UI.Views
 
                 var taken = DateTimeOffset.UtcNow;
 
-                job.Say("Reading the model tree - the window will not repaint until this part "
-                        + "is done...");
-
                 var whole = SnapshotBuilder.Take(_session.Model, taken, "both", Settings,
                                                  TraversalScope.WholeDocument,
                                                  _session.Model.Document?.FileName,

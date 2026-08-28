@@ -133,7 +133,7 @@ namespace CamelWorks.Nav.Clash
                         var trail = new List<Core.Clash.ClashComment>(comments.Count);
 
                         foreach (Comment comment in comments)
-                            trail.Add(new Core.Clash.ClashComment(comment.Author ?? string.Empty,
+                            trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
                                 CreationTicks(comment), comment.Body ?? string.Empty));
 
                         info.Comments = trail;
@@ -302,13 +302,17 @@ namespace CamelWorks.Nav.Clash
             }
 
             return OnResults(testId, resultIds, (clash, result) =>
+#if NAV_STRING_ASSIGNEE
                 clash.TestsData.TestsEditResultStatus(result, parsed));
+#else
+                clash.TestsData.TestsEditResultStatus(result, parsed, Me()));
+#endif
         }
 
         /// <inheritdoc />
         public bool Assign(string testId, IReadOnlyList<string> resultIds, string assignee) =>
             OnResults(testId, resultIds, (clash, result) =>
-                clash.TestsData.TestsEditResultAssignedTo(result, assignee ?? string.Empty));
+                clash.TestsData.TestsEditResultAssignedTo(result, Party(assignee)));
 
         /// <inheritdoc />
         public bool Comment(string testId, IReadOnlyList<string> resultIds, string body, string author)
@@ -334,7 +338,7 @@ namespace CamelWorks.Nav.Clash
                         // here is what lets a markup sync run twice without doubling every
                         // conversation.
                         if (string.Equals(existing.Body, body, StringComparison.Ordinal)
-                            && string.Equals(existing.Author, author ?? string.Empty,
+                            && string.Equals(Named(existing.Author), author ?? string.Empty,
                                              StringComparison.OrdinalIgnoreCase))
                             return;
 
@@ -343,7 +347,7 @@ namespace CamelWorks.Nav.Clash
                 }
                 catch (Exception) { /* a result whose comments cannot be read still takes one */ }
 
-                comments.Add(new Comment(body, CommentStatus.New, author ?? string.Empty));
+                comments.Add(new Comment(body, CommentStatus.New, Writer(author)));
                 clash.TestsData.TestsEditResultComments(result, comments);
             });
         }
@@ -599,8 +603,19 @@ namespace CamelWorks.Nav.Clash
 
                 try
                 {
-                    if (test.Parent is GroupItem parent) clash.TestsData.TestsRemove(parent, test);
-                    else clash.TestsData.TestsRemove(test);
+                    // Always the two-argument form: it is the only one 2027 kept, and the root
+                    // folder is a GroupItem like any other, so a test at the top level is not a
+                    // special case that needs its own call.
+                    var parent = test.Parent as GroupItem ?? clash.TestsData.Value.TestsRoot;
+
+                    if (parent == null)
+                    {
+                        failed++;
+                        LastProblem = "The document's clash tests could not be reached.";
+                        continue;
+                    }
+
+                    clash.TestsData.TestsRemove(parent, test);
                 }
                 catch (Exception e)
                 {
@@ -1171,6 +1186,46 @@ namespace CamelWorks.Nav.Clash
                     CollectTests(nested.Children, Join(folder, nested.DisplayName), found);
             }
         }
+
+        // ------------------------------------------------------------------------------------
+        // The four supported releases are not one API
+        // ------------------------------------------------------------------------------------
+        //
+        // 2026 made an assignee an object rather than a string; 2027 did the same to a comment's
+        // author. These four are every place that reaches the product, so the difference lives
+        // here and nowhere else - the code above reads the same on every release.
+
+#if NAV_STRING_COMMENT_AUTHOR
+        /// <summary>A comment's author, as text.</summary>
+        private static string Named(string? author) => author ?? string.Empty;
+
+        /// <summary>An author, as the host's comment constructor takes one.</summary>
+        private static string Writer(string? author) => author ?? string.Empty;
+#else
+        /// <summary>A comment's author, as text.</summary>
+        private static string Named(Assignee? author) =>
+            author == null ? string.Empty : author.DisplayName ?? author.ToString() ?? string.Empty;
+
+        /// <summary>An author, as the host's comment constructor takes one.</summary>
+        private static Assignee Writer(string? author) => new Assignee(author ?? string.Empty);
+#endif
+
+#if NAV_STRING_ASSIGNEE
+        /// <summary>Whoever the result is being given to, as the host's write takes them.</summary>
+        private static string Party(string? assignee) => assignee ?? string.Empty;
+#else
+        /// <summary>Whoever the result is being given to, as the host's write takes them.</summary>
+        private static Assignee Party(string? assignee) => new Assignee(assignee ?? string.Empty);
+
+        /// <summary>
+        /// Who is making the change, which the status write has required since 2026.
+        ///
+        /// The signed-in Windows user: the host records it against the result, and a status
+        /// changed by "CamelWorks" would be a worse answer to "who marked this approved" than
+        /// the name of the person sitting at the machine.
+        /// </summary>
+        private static Assignee Me() => new Assignee(Environment.UserName ?? "CamelWorks");
+#endif
 
         private static string? Join(string? folder, string? name)
         {
