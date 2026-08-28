@@ -40,7 +40,7 @@ namespace CamelWorks.UI.Views
                 case "tests": return CoordinateViews.Tests();
                 case "manage": return OnModel(ClashManageViews.Manage);
                 case "matrix": return OnModel(MatrixWindow.Surface);
-                case "headroom": return CoordinateViews.ClearHeight();
+                case "headroom": return OnModel(ClearanceViews.Check);
                 case "rules": return CoordinateViews.Rules();
                 case "clashreport": return CoordinateViews.Report();
                 case "bcf": return CoordinateViews.Bcf();

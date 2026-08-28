@@ -3,7 +3,7 @@
 
 CamelWorks.UI/Views/BatchViews.cs 1
 CamelWorks.UI/Views/CompareViews.cs 1
-CamelWorks.UI/Views/CoordinateViews.cs 4
+CamelWorks.UI/Views/CoordinateViews.cs 3
 CamelWorks.UI/Views/ReportBuilderWindow.cs 1
 CamelWorks.UI/Views/SetsViews.cs 2
 CamelWorks.UI/Views/SiteWindow.cs 1

@@ -75,7 +75,7 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Tests", "tests"),
                 new AppTab("Manage", "manage"),
                 new AppTab("Matrix", "matrix"),
-                new AppTab("Clearance", "headroom"),
+                new AppTab("Clearance Check", "headroom"),
                 new AppTab("Rules", "rules"),
                 new AppTab("Board", "triage"),
                 new AppTab("Freeze", "freeze")),

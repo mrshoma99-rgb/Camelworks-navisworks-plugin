@@ -69,7 +69,7 @@ verbs on the picked rows:
   the five native values, and hand-grouping, manual issues, freeze-aware banners and undo all
   survive.
 
-## Rules / Matrix / Clearance
+## Rules / Matrix
 
 - Rules previews against the live board and its "try" lands where the board shows it.
 - **The matrix has three ways in**: by hand (categories picked from the model's own search
@@ -82,7 +82,35 @@ verbs on the picked rows:
   whole matrix exported back out as an Excel file (grid on one sheet, legend on the next).
   The matrix survives tab switches, and the legend's test type now actually reaches the host —
   it was silently Hard for every cell before.
-- Clearance is the test no clash engine runs; it lives beside the tests because it is one.
+
+## Clearance Check — the test no clash engine runs
+
+The tab was called "Clearance", asked "what counts as a floor", offered *Floors and slabs* as an
+answer, and printed a table nobody could do anything with.
+
+- *Was wrong:* neither input could name a set. A coordinator who has spent the week building
+  search sets was offered a category guess, the current selection, or everything — so the check
+  could not be pointed at the corridors, and there was no way to say what "floors and slabs" even
+  meant. **Both inputs now list every search set and selection set the document holds**, plus the
+  current selection and everything loaded. The guess survives as one option, renamed *Walking
+  surfaces (a guess)* and spelled out on screen: it takes anything whose category or type contains
+  floor, slab, stair, landing, ramp, platform or deck. The second input's *Everything except the
+  surfaces* now means exactly that — the elements the first input did not take — instead of a
+  second silent category guess.
+- *Was wrong:* the findings were a dead table. Clicking a row selected it and that was the whole
+  vocabulary. **The findings now get the Manage tab's bench**: click-to-sort on every column, a
+  contains-filter over any column or one picked column, status ticks and only-with-comments,
+  an ordered grouping chain (status, assignee, group, either element, either category, how short
+  it is, commented or not, and any property column) with a summary band table that narrows the
+  grid, element-property columns read off the surface, off what is over it, or both, and bulk
+  Focus / Isolate / Mark / Assign / Comment / Group / Sphere / Copy on the picked rows.
+- *Held honestly:* the judgement lives on the rows, not in the model's clash data — no clash
+  engine found these, so there is nothing there to write into. It survives a re-run instead:
+  status, assignment, comments and groups carry over onto the same surface-and-obstruction pair,
+  so re-checking after a model update does not reopen everything somebody closed.
+- **Out of the tab:** the grid to a spreadsheet exactly as filtered, and every shown finding as a
+  clash XML file — which the Manage tab's "A file" source opens, so a clearance list runs the same
+  offline review round as a clash export.
 
 ## Freeze — the record tab
 

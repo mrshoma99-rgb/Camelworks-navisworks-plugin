@@ -165,10 +165,10 @@ namespace CamelWorks.UI.Shell
                + "instead of naming forty tests by hand.",
                "Read the matrix"),
 
-            Of("headroom", "Clearance", ToolShape.Window, Glyph.Layers,
+            Of("headroom", "Clearance Check", ToolShape.Window, Glyph.Layers,
                "Find where the clear height under the services is not there - which no clash test "
-               + "can find, because nothing is touching.",
-               "Check clear height"),
+               + "can find, because nothing is touching - and work the findings like clash results.",
+               "Check"),
 
             Of("rules", "Clash Rules", ToolShape.Window, Glyph.Filter,
                "Suppress what does not matter, group what is one issue, and assign what is left - "

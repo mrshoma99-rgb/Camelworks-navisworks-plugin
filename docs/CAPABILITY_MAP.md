@@ -68,7 +68,7 @@ surfaces work, not things a coordinator opens.
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
 | `Resolution`, `FindingStatus`, `FindingStatusLattice`, `Finding` | Clash Board detail + Review |
 | `ClashMatrix`, `MatrixSide`, `MatrixOptions`, `MatrixPlan`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix (both forks) |
-| `Headroom` | Clearance |
+| `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
 | `Freeze`, `ChangeNotice` | **Freeze** + **Change notice** (new) |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
