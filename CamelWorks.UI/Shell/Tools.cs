@@ -136,7 +136,7 @@ namespace CamelWorks.UI.Shell
             Of("links", "Fix Broken Links", ToolShape.Window, Glyph.Folder,
                "Find the source files a loaded model can no longer see, and point it at where they "
                + "went.",
-               "Bring in"),
+               "Look for them"),
 
             // ---- Coordinate -------------------------------------------------------------------
 

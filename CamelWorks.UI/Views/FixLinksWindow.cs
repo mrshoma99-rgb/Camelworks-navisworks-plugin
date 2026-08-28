@@ -36,14 +36,15 @@ namespace CamelWorks.UI.Views
             var results = Ui.Stack();
             var folder = Ui.Text(string.Empty, null, 220);
 
-            var broken = Missing(session);
+            var broken = Missing(session).Select(m => new Broken(m)).ToList();
 
-            // The folder the healthy models live in is where a moved file most often went — a
+            // The folder the healthy models live in is where a moved file most often went - a
             // republish landed beside the others while the federation still points at the old
             // path. Offered as a prefill, not a decision: the box stays the user's.
             if (broken.Count > 0) folder.Text = Suggest(session) ?? string.Empty;
 
-            var look = Ui.Runner("Look for them", results, job => Search(session, folder, broken, results, job));
+            var look = Ui.Runner("Look for them", results,
+                                 job => Search(session, folder, broken, results, job));
 
             var head = broken.Count == 0
                 ? Ui.Line("Every loaded model's source file is where the federation expects it.", 1, true)
@@ -51,10 +52,12 @@ namespace CamelWorks.UI.Views
                     + " cannot find its source file. Navisworks is showing you its own cached copy of "
                     + "each of them, with no warning anywhere, and it may be months old.");
 
+            // The broken models are a table rather than a stack of sentences, because every one of
+            // them is something to act on: a path to paste into an email, a file to bring in once
+            // the search has found it. A line of text is a dead end; a row carries verbs.
             var list = Ui.Stack();
 
-            foreach (var model in broken)
-                list.Children.Add(Ui.Line(model.DisplayName + " - expected at " + model.SourcePath, 0.8));
+            if (broken.Count > 0) Draw(session, broken, list);
 
             var setup = Ui.Stack(
                 Bench.Group(string.Empty,
@@ -71,11 +74,109 @@ namespace CamelWorks.UI.Views
                         + "path: the document can append, merge and open, and nothing replaces one "
                         + "model's source in place or removes a single model. So bringing the right "
                         + "file in adds it alongside the stale one. Remove the stale one in the "
-                        + "Selection Tree and save the federation, and the link is fixed properly."),
-                Ui.Note("Everything else in CamelWorks reads what is loaded. Until the stale model is "
-                        + "out of the federation, the board and every report include it."));
+                        + "Selection Tree and save the federation, and the link is fixed properly - "
+                        + "until you do, the board and every report still include the stale copy."));
 
             return Bench.Surface(setup, look, stage);
+        }
+
+        /// <summary>One model whose source has gone, and what the search made of it.</summary>
+        private sealed class Broken
+        {
+            public Broken(IModelSource model)
+            {
+                Model = model;
+            }
+
+            /// <summary>The loaded model.</summary>
+            public IModelSource Model { get; }
+
+            /// <summary>Where the federation still expects the file.</summary>
+            public string Expected => Model.SourcePath ?? string.Empty;
+
+            /// <summary>Where the search found a file of the same name, if it did.</summary>
+            public string? Match { get; set; }
+
+            /// <summary>How many others of the same name were under the folder.</summary>
+            public int Others { get; set; }
+
+            /// <summary>Whether it has already been brought into the federation.</summary>
+            public bool BroughtIn { get; set; }
+
+            /// <summary>What the row says has become of it.</summary>
+            public string Say =>
+                BroughtIn ? "brought in"
+                : Match != null ? "found" + (Others > 0 ? " (" + Others + " more of that name)" : string.Empty)
+                : "not looked for yet";
+        }
+
+        /// <summary>Draw the broken models as a table with the verbs that apply to them.</summary>
+        private static void Draw(Session session, IReadOnlyList<Broken> broken, Panel into)
+        {
+            into.Children.Clear();
+
+            var table = Ui.Table(broken.Select(b => new TableRow(b,
+                                     b.Model.DisplayName,
+                                     b.Say,
+                                     b.Match ?? b.Expected)
+                                 {
+                                     Tone = b.BroughtIn ? Tone.Good
+                                          : b.Match != null ? Tone.Warn
+                                          : Tone.Plain
+                                 }),
+                                 ("Model", 220), ("State", 200), ("Path", 420));
+
+            into.Children.Add(table);
+
+            into.Children.Add(Ui.Picking(table,
+                new Ui.OnPicked("Bring in {n}", (picked, say) =>
+                {
+                    var brought = 0;
+
+                    foreach (var row in picked.OfType<Broken>())
+                    {
+                        if (row.Match == null || row.BroughtIn) continue;
+
+                        try
+                        {
+                            session.Model.Document.AppendFile(row.Match);
+                            session.Model.Invalidate();
+
+                            row.BroughtIn = true;
+                            brought++;
+
+                            session.Record(ActivityKind.Reconcile,
+                                           "brought in " + row.Model.DisplayName + " from " + row.Match);
+                        }
+                        catch (Exception error)
+                        {
+                            say.Children.Add(Ui.Problem("The host refused to append "
+                                + System.IO.Path.GetFileName(row.Match) + ": " + error.Message));
+                        }
+                    }
+
+                    if (brought == 0)
+                    {
+                        say.Children.Add(Ui.Line("Nothing to bring in: look for the files first.", 0.8));
+                        return;
+                    }
+
+                    Draw(session, broken, into);
+
+                    say.Children.Add(Ui.Line(Ui.Count(brought, "model")
+                        + " is in the federation. Remove the stale copies in the Selection Tree and "
+                        + "save.", 1, true));
+
+                    // The natural next question is "is it fit to coordinate against now" - which is
+                    // the Health tab's sweep, one press away rather than a memory.
+                    say.Children.Add(Ui.Actions(Ui.Quiet("Check the federation",
+                        () => Ui.Told(AppWindow.Show("audit", "health")))));
+                }, primary: true),
+                new Ui.OnPicked("Copy {n} paths", (picked, say) =>
+                    Ui.Copy(picked.OfType<Broken>().Select(b => b.Model.DisplayName + "\t"
+                                                              + b.Expected + "\t"
+                                                              + (b.Match ?? string.Empty)),
+                            say, "model"))));
         }
 
         /// <summary>The folder a healthy model's source lives in, as the first place to look.</summary>
@@ -122,8 +223,8 @@ namespace CamelWorks.UI.Views
             return broken;
         }
 
-        /// <summary>Look for each missing source under a folder, and offer to bring it in.</summary>
-        private static void Search(Session session, TextBox folder, IReadOnlyList<IModelSource> broken,
+        /// <summary>Look for each missing source under a folder, and fill the table with what turned up.</summary>
+        private static void Search(Session session, TextBox folder, IReadOnlyList<Broken> broken,
                                    Panel results, Job job)
         {
             var where = folder.Text.Trim();
@@ -149,12 +250,15 @@ namespace CamelWorks.UI.Views
             }
 
             var looked = 0;
+            var found = 0;
 
-            foreach (var model in broken)
+            foreach (var row in broken)
             {
                 if (!job.Step(looked++, broken.Count, "models checked")) return;
 
-                var name = System.IO.Path.GetFileName(model.SourcePath);
+                if (row.BroughtIn) continue;
+
+                var name = System.IO.Path.GetFileName(row.Expected);
 
                 string[] candidates;
 
@@ -170,43 +274,23 @@ namespace CamelWorks.UI.Views
 
                 if (candidates.Length == 0)
                 {
-                    results.Children.Add(Ui.Line(model.DisplayName + " - nothing called " + name
-                        + " under that folder.", 0.75));
+                    row.Match = null;
+                    row.Others = 0;
 
                     continue;
                 }
 
-                var found = candidates[0];
+                row.Match = candidates[0];
+                row.Others = candidates.Length - 1;
 
-                results.Children.Add(Ui.Line(model.DisplayName + " - found at " + found, 1, true));
-
-                if (candidates.Length > 1)
-                    results.Children.Add(Ui.Line("and " + (candidates.Length - 1)
-                        + " more with the same name; the first is offered.", 0.55));
-
-                results.Children.Add(Ui.Primary("Bring in " + name, () =>
-                {
-                    try
-                    {
-                        session.Model.Document.AppendFile(found);
-                        session.Model.Invalidate();
-
-                        results.Children.Add(Ui.Line(name + " is in the federation. Remove the stale "
-                            + model.DisplayName + " in the Selection Tree and save.", 1, true));
-
-                        // The natural next question is "is it fit to coordinate against now" —
-                        // which is the Health tab's sweep, one press away rather than a memory.
-                        results.Children.Add(Ui.Actions(Ui.Quiet("Check the federation",
-                            () => Ui.Told(AppWindow.Show("audit", "health")))));
-
-                        session.Record(ActivityKind.Reconcile, "brought in " + name + " from " + found);
-                    }
-                    catch (Exception error)
-                    {
-                        results.Children.Add(Ui.Problem("The host refused to append it: " + error.Message));
-                    }
-                }));
+                found++;
             }
+
+            results.Children.Add(found == 0
+                ? Ui.Problem("Nothing of those names is under that folder. Try the folder the "
+                             + "publisher writes to.")
+                : Ui.Line(Ui.Count(found, "model") + " has a file of the same name under that folder. "
+                          + "Pick the rows above and bring them in.", 1, true));
         }
     }
 }

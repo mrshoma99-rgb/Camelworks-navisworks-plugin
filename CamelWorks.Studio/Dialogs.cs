@@ -170,19 +170,14 @@ namespace CamelWorks.Studio
             Ui.Stack(
                 Ui.Button("Every wall carries a fire rating", () => { }),   // harness: data
                 Ui.Button("Every duct carries a system name", () => { }),  // harness: data
-                Ui.Actions(Ui.Quiet("Add a specification", () => { }))),
+                Ui.Actions(Ui.Icon(Glyphs.Add, "Add a specification", () => { }))),
 
             Ui.Rule(),
 
             Ui.Actions(
                 Ui.Primary("Save IDS...", () => { }),
-                Ui.Quiet("Keep the draft here", () => { })),
-
-            Ui.Eyebrow("This document"),
-            Ui.Field("Called", Ui.Text("Riverside employer's information requirements", null, 340)),
-            Ui.Pair(Ui.Field("Version", Ui.Text("1.2", null, 90)),
-                    Ui.Field("Author", Ui.Text("coordination@bimcamel.com", null, 220))),
-            Ui.Field("About", Ui.Text("What every model must carry before it is accepted.", null, 340)),
+                Ui.Icon(Glyphs.Save, "Keep the draft here", () => { }),
+                Ui.Icon(Glyphs.Tune, "What this document is called", () => { })),
 
             Ui.Rule(),
 

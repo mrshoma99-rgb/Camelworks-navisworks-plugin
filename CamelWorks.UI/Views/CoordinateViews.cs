@@ -1306,6 +1306,20 @@ namespace CamelWorks.UI.Views
                     "Each issue takes the next revision letter, and its cover says which one it "
                     + "supersedes."));
 
+                // The rail keeps what is chosen per report; where it lands, what the markers
+                // look like and the way over to a file are decided once for the job and live in
+                // the window behind the symbols beside the press.
+                var foot = new WrapPanel();
+
+                foot.Children.Add(write);
+                foot.Children.Add(new Border { Width = 14 });
+                foot.Children.Add(Ui.Icon(Glyphs.Folder, "Where it goes and what it is called",
+                                          () => Configure("where")));
+                foot.Children.Add(Ui.Icon(Glyphs.Sphere, "Markers in the model",
+                                          () => Configure("markers")));
+                foot.Children.Add(Ui.Icon(Glyphs.Onward, "Send it as a file somebody works in",
+                                          () => Configure("file")));
+
                 return Bench.Surface(
                     Ui.Stack(
                         Bench.Group("",
@@ -1313,11 +1327,6 @@ namespace CamelWorks.UI.Views
                             what,
                             Ui.Field("For", audience),
                             Ui.Field("Format", format)),
-                        Bench.Group("Where it goes",
-                            Ui.PathField("Write to", _path, PathKind.Folder,
-                                         hint: "blank writes it beside the document"),
-                            Ui.Field("Name it", _template,
-                                     "carries " + string.Join(", ", Deliverable.Tokens))),
                         Bench.Group("What else is in it",
                             changed,
                             plan,
@@ -1325,13 +1334,39 @@ namespace CamelWorks.UI.Views
                             pictures,
                             Ui.Small("A picture moves your view while it runs and puts it back "
                                      + "afterwards. On a board of two hundred groups that is two "
-                                     + "hundred renders, so it is off until you ask for it.")),
-                        Markers(),
-                        Exchange()),
-                    write,
+                                     + "hundred renders, so it is off until you ask for it."))),
+                    foot,
                     Ui.Stack(
                         _results,
                         _markers));
+            }
+
+            /// <summary>What is set once for the job, in a window of its own.</summary>
+            /// <param name="section">Which section to open on.</param>
+            private void Configure(string section)
+            {
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("Where it goes", () => Bench.Group("Where it goes",
+                        Ui.PathField("Write to", _path, PathKind.Folder,
+                                     hint: "blank writes it beside the document"),
+                        Ui.Field("Name it", _template,
+                                 "carries " + string.Join(", ", Deliverable.Tokens)))),
+                    new Ui.Page("Markers", Markers),
+                    new Ui.Page("A file somebody works in", Exchange),
+                };
+
+                var order = new[] { "where", "markers", "file" };
+                var at = Math.Max(0, Array.IndexOf(order, section));
+
+                if (at > 0)
+                {
+                    var wanted = pages[at];
+                    pages.RemoveAt(at);
+                    pages.Insert(0, wanted);
+                }
+
+                Ui.Configure("Report", null, pages.ToArray());
             }
 
             /// <summary>
@@ -2686,24 +2721,36 @@ namespace CamelWorks.UI.Views
             // Merging several returned packs is its own tool - Merge Markups - so the send and
             // the read-back are the two acts here: the send at the foot, the read on the stage's
             // own leg via the setup group it belongs to.
-            return Bench.Surface(
-                Ui.Stack(
-                    Bench.Group("",
-                        Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
-                                                    pick => asSheet = pick == "Spreadsheet")),
-                        Ui.Field("For", forWhom, "one party's rows, on the spreadsheet")),
+            // The two legs are both acts, so both are on the stage: the send at the foot with
+            // the choices that change per send beside it, and the read-back as its own band under
+            // the results. How the file is written is decided once for the job, so it is a window.
+            var back = Ui.Stack(
+                Ui.Rule(),
+                Ui.Eyebrow("When it comes back"),
+                Ui.PathField("File", inFile, PathKind.Open,
+                             "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*",
+                             hint: "shows what it would do first"),
+                read);
+
+            var foot = new WrapPanel();
+
+            foot.Children.Add(send);
+            foot.Children.Add(new Border { Width = 14 });
+            foot.Children.Add(Ui.Icon(Glyphs.Tune, "How it is written", () =>
+                Ui.Configure("BCF", null, new Ui.Page("How it is written", () =>
                     Bench.Group("How it is written",
                         Ui.Field("Version", picker),
                         Ui.Field("Snapshots", snapshotBox),
                         Ui.PathField("Write to", outFile, PathKind.Save,
-                                     "BCF|*.bcf|Excel|*.xlsx|All files|*.*")),
-                    Bench.Group("Read the answers back",
-                        Ui.PathField("File", inFile, PathKind.Open,
-                                     "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*",
-                                     hint: "shows what it would do first"),
-                        read)),
-                send,
-                Ui.Stack(results));
+                                     "BCF|*.bcf|Excel|*.xlsx|All files|*.*"))))));
+
+            return Bench.Surface(
+                Bench.Group("",
+                    Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
+                                                pick => asSheet = pick == "Spreadsheet")),
+                    Ui.Field("For", forWhom, "one party's rows, on the spreadsheet")),
+                foot,
+                Ui.Stack(results, back));
         }
 
         private static void WriteSheet(Panel results, TextBox path, string party, Job job)

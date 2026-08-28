@@ -48,6 +48,11 @@ namespace CamelWorks.UI.Views
                           + "revision was that against?\" is a record rather than a memory."),
                 results);
 
+            // What is loaded, on landing, as rows rather than as a count in a sentence. A tab whose
+            // whole subject is the federation should not make somebody press a button before it
+            // will say which models are in it: the manifest is the record, the table is the view.
+            if (loaded.Count > 0) stage.Children.Insert(1, Loaded(session));
+
             // Said on landing rather than left for the manifest: a register of what is loaded
             // that stays quiet about a source file nobody can find is the register describing a
             // federation nobody is actually building against.
@@ -62,6 +67,52 @@ namespace CamelWorks.UI.Views
             return Bench.Surface(null,
                 Ui.Runner("Take a manifest", results, job => Take(session, results, job)),
                 stage);
+        }
+
+        /// <summary>What is loaded right now, with the verbs that apply to a model.</summary>
+        private static UIElement Loaded(Session session)
+        {
+            var rows = new List<TableRow>();
+
+            foreach (var model in session.Model.Models)
+            {
+                var path = model.SourcePath ?? string.Empty;
+                var here = OnDisk(path);
+
+                rows.Add(new TableRow(model,
+                    model.DisplayName,
+                    path.Length == 0 ? "no source path" : here ? "found" : "source is missing",
+                    path)
+                {
+                    Tone = path.Length == 0 ? Tone.Plain : here ? Tone.Good : Tone.Bad,
+                });
+            }
+
+            var table = Ui.Table(rows, ("Model", 220), ("Source", 150), ("Where it came from", 0));
+
+            return Ui.Stack(
+                Ui.Eyebrow("Loaded now"),
+                table,
+                Ui.Picking(table,
+                    new Ui.OnPicked("Copy {n}", (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "model")),
+                    new Ui.OnPicked("Find the missing ones",
+                        (picked, say) => Ui.Told(AppWindow.Show("audit", "links")))));
+        }
+
+        /// <summary>Whether a source path names a file that is actually there.</summary>
+        private static bool OnDisk(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+
+            try
+            {
+                return System.IO.File.Exists(path);
+            }
+            catch (Exception)
+            {
+                // Unknown is not missing; an unreachable share is a VPN, not a lost model.
+                return true;
+            }
         }
 
         /// <summary>
