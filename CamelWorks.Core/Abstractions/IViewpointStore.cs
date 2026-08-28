@@ -210,6 +210,25 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="testIds">Which tests.</param>
         /// <param name="folder">The folder name, or null for the root.</param>
         bool MoveTests(IReadOnlyList<string> testIds, string? folder);
+
+        /// <summary>
+        /// Put the camera where the host's own saved view of one result stands — the view the
+        /// engine composed when the test ran, which frames both elements the way the native
+        /// clash window would. False when the host has no view for it.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        bool ApplyResultView(string testId, string resultId);
+
+        /// <summary>
+        /// The host's rendered image of one result — scene plus the clash highlight — as PNG
+        /// bytes, or null when the host cannot make one.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <param name="width">Pixels.</param>
+        /// <param name="height">Pixels.</param>
+        byte[]? ResultSnapshot(string testId, string resultId, int width, int height);
     }
 
     /// <summary>
@@ -434,6 +453,21 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>The newest native comment's text, or null when there is none.</summary>
         public string? LastComment { get; set; }
+
+        /// <summary>
+        /// The full authored comment trail, oldest first.
+        ///
+        /// The whole trail and not just the newest, because a review round exports it and a
+        /// manager displays it — and a conversation whose middle is missing is not a record.
+        /// </summary>
+        public IReadOnlyList<Clash.ClashComment> Comments { get; set; } =
+            Array.Empty<Clash.ClashComment>();
+
+        /// <summary>
+        /// The host's distance for the result, in document units, or null when it has none.
+        /// Negative is penetration on a hard clash; positive is the shortfall on a clearance.
+        /// </summary>
+        public double? Distance { get; set; }
 
         /// <summary>The stable key for this result.</summary>
         public ClashKey Key(double cell = ClashKey.DefaultCell) =>

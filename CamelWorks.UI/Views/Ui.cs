@@ -2074,6 +2074,48 @@ namespace CamelWorks.UI.Views
             table.SizeChanged += (s, e) => Fit();
             table.Loaded += (s, e) => Fit();
 
+            // Click a header to sort by that column; click it again to turn the sort around.
+            // Every table in the product, one behaviour — a clash manager sorting eighteen
+            // thousand results by status is the same gesture as a job list sorting by name.
+            // Numeric when every filled cell reads as a number, so "18,844" sorts after "620"
+            // instead of before it.
+            var sortedBy = -1;
+            var ascending = true;
+
+            table.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+                new RoutedEventHandler((s, e) =>
+                {
+                    if (!(e.OriginalSource is GridViewColumnHeader header) || header.Column == null)
+                        return;
+
+                    var index = grid.Columns.IndexOf(header.Column);
+                    if (index < 0) return;
+                    if (!(table.ItemsSource is List<TableRow> current)) return;
+
+                    ascending = sortedBy == index ? !ascending : true;
+                    sortedBy = index;
+
+                    var numeric = current.All(row =>
+                    {
+                        var cell = row[index];
+                        return cell.Length == 0
+                               || double.TryParse(cell, NumberStyles.Any,
+                                                  CultureInfo.InvariantCulture, out _);
+                    });
+
+                    var sorted = numeric
+                        ? current.OrderBy(row => double.TryParse(row[index], NumberStyles.Any,
+                              CultureInfo.InvariantCulture, out var value)
+                              ? value
+                              : double.MinValue).ToList()
+                        : current.OrderBy(row => row[index],
+                                          StringComparer.OrdinalIgnoreCase).ToList();
+
+                    if (!ascending) sorted.Reverse();
+
+                    table.ItemsSource = sorted;
+                }));
+
             // A 3px bar down the left of the row, not the row's text.
             //
             // Painting every cell with the tone made a job name green in one row and red in the

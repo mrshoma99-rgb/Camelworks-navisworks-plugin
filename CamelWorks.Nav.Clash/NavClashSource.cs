@@ -123,11 +123,34 @@ namespace CamelWorks.Nav.Clash
                 {
                     var comments = result.Comments;
                     info.CommentCount = comments.Count;
-                    if (comments.Count > 0) info.LastComment = comments[comments.Count - 1].Body;
+
+                    if (comments.Count > 0)
+                    {
+                        info.LastComment = comments[comments.Count - 1].Body;
+
+                        // The whole trail, not just the newest: it displays in the manager and
+                        // travels in the baseline. Results carry a handful at most.
+                        var trail = new List<Core.Clash.ClashComment>(comments.Count);
+
+                        foreach (Comment comment in comments)
+                            trail.Add(new Core.Clash.ClashComment(comment.Author ?? string.Empty,
+                                CreationTicks(comment), comment.Body ?? string.Empty));
+
+                        info.Comments = trail;
+                    }
                 }
                 catch (Exception)
                 {
                     // A result whose comments cannot be read still counts and displays.
+                }
+
+                try
+                {
+                    info.Distance = result.Distance;
+                }
+                catch (Exception)
+                {
+                    // A result with no distance simply has none.
                 }
 
                 results.Add(info);
@@ -574,6 +597,111 @@ namespace CamelWorks.Nav.Clash
             }
 
             return true;
+        }
+
+        /// <inheritdoc />
+        public bool ApplyResultView(string testId, string resultId)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+
+            if (clash == null)
+            {
+                LastProblem = "This document has no clash engine.";
+                return false;
+            }
+
+            var found = FindResult(clash, testId, resultId);
+
+            if (found == null)
+            {
+                LastProblem = "That result is no longer in the document. Re-read it.";
+                return false;
+            }
+
+            try
+            {
+                var viewpoint = clash.TestsData.TestsViewpointForResult(found);
+
+                if (viewpoint == null)
+                {
+                    LastProblem = "The host has no saved view for that result.";
+                    return false;
+                }
+
+                _document.Document.CurrentViewpoint.CopyFrom(viewpoint);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not show that result: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public byte[]? ResultSnapshot(string testId, string resultId, int width, int height)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null) return null;
+
+            var found = FindResult(clash, testId, resultId);
+
+            if (found == null)
+            {
+                LastProblem = "That result is no longer in the document. Re-read it.";
+                return null;
+            }
+
+            try
+            {
+                using (var image = clash.TestsData.TestsImageForResult(found,
+                           ImageGenerationStyle.ScenePlusOverlay,
+                           Math.Max(64, width), Math.Max(64, height)))
+                {
+                    if (image == null) return null;
+
+                    using (var bytes = new System.IO.MemoryStream())
+                    {
+                        image.Save(bytes, System.Drawing.Imaging.ImageFormat.Png);
+                        return bytes.ToArray();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not render that result: " + e.Message;
+                return null;
+            }
+        }
+
+        private static ClashResult? FindResult(DocumentClash clash, string testId, string resultId)
+        {
+            var test = FindTest(clash, testId);
+            if (test == null) return null;
+
+            var found = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, found);
+
+            return found
+                .Select(f => f.Result)
+                .FirstOrDefault(r => string.Equals(r.Guid.ToString(), resultId,
+                                                   StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static long CreationTicks(Comment comment)
+        {
+            try
+            {
+                return comment.CreationDate.ToUniversalTime().Ticks;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
         }
 
         // -----------------------------------------------------------------------------------

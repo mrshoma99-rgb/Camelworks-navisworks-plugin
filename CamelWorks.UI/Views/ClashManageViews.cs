@@ -9,6 +9,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Report;
 
 namespace CamelWorks.UI.Views
 {
@@ -86,6 +87,8 @@ namespace CamelWorks.UI.Views
                 Group = info.GroupName ?? string.Empty;
                 Comments = info.CommentCount;
                 LastComment = info.LastComment ?? string.Empty;
+
+                foreach (var comment in info.Comments) Trail.Add(comment);
             }
 
             internal string TestId { get; }
@@ -135,6 +138,9 @@ namespace CamelWorks.UI.Views
             private double _markerAcross = 300;
 
             private readonly HashSet<string> _pickedTests = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>What the results grid currently shows, for the spreadsheet writer.</summary>
+            private List<Row> _shown = new List<Row>();
 
             internal Screen(Session session)
             {
@@ -317,12 +323,14 @@ namespace CamelWorks.UI.Views
                         CategoryB = result.Item?.CategoryB,
                         CommentCount = result.Comments.Count,
                         LastComment = last?.Body,
+                        Comments = result.Comments,
+                        Distance = result.Item?.Distance,
                     };
 
-                    var row = new Row(result.Test, result.Test, info) { FileItem = result.Item };
-
-                    row.Trail.AddRange(result.Comments);
-                    entry.Rows.Add(row);
+                    entry.Rows.Add(new Row(result.Test, result.Test, info)
+                    {
+                        FileItem = result.Item,
+                    });
                 }
 
                 _file = round;
@@ -411,6 +419,16 @@ namespace CamelWorks.UI.Views
                         _session.View.ShowAll();
                         Said(Ui.Done("Everything is visible again."));
                     }))));
+
+                panel.Children.Add(Bench.Group("Beyond the engine",
+                    Ui.Actions(
+                        Ui.Quiet("Find cross-test duplicates", Duplicates),
+                        Ui.Quiet("Write the grid to a spreadsheet...", Sheet)),
+                    Ui.Actions(Ui.Quiet("Save a baseline file at full fidelity...", SaveBaseline)),
+                    Ui.Small("Duplicates are the same conflict reported by two tests - marked "
+                             + "Approved with a comment naming the one that stays open. The "
+                             + "baseline carries statuses, assignments, comment trails and "
+                             + "groups, ready for reviewers.")));
 
                 if (!OnFile)
                 {
@@ -553,11 +571,14 @@ namespace CamelWorks.UI.Views
                 const int most = 2500;
                 var shown = rows.Count > most ? rows.Take(most).ToList() : rows;
 
+                _shown = shown;
+
                 var table = Ui.Table(shown.Select(r => new TableRow(r,
                     r.Info.Name ?? string.Empty,
                     r.TestName,
                     r.Group,
                     r.Status,
+                    Worst(r),
                     r.Assigned,
                     r.Comments == 0 ? string.Empty : r.LastComment,
                     r.Info.NameA ?? string.Empty,
@@ -569,7 +590,8 @@ namespace CamelWorks.UI.Views
                          : Tone.Plain,
                 }).ToList(),
                     ("Result", 110), ("Test", 150), ("Group", 90), ("Status", 70),
-                    ("Assigned", 90), ("Comment", 150), ("Item 1", 130), ("Item 2", 0));
+                    ("Worst", 65), ("Assigned", 90), ("Comment", 140), ("Item 1", 120),
+                    ("Item 2", 0));
 
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
@@ -579,6 +601,7 @@ namespace CamelWorks.UI.Views
                     new Ui.OnPicked("Comment {n}", CommentPicked),
                     new Ui.OnPicked("Group {n}", GroupPicked),
                     new Ui.OnPicked("Sphere {n}", Spheres),
+                    new Ui.OnPicked("Snapshot {n}", Snapshots),
                     new Ui.OnPicked("Copy {n}",
                         (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "result"))));
 
@@ -764,6 +787,18 @@ namespace CamelWorks.UI.Views
                 }
 
                 _session.Model.Select(keys);
+
+                // One result from the model gets the host's own composed view of it - the frame
+                // the engine saved when the test ran, which reads like the native clash window.
+                // More than one, or a file row, gets a fit around everything picked.
+                if (!OnFile && rows.Count == 1
+                    && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
+                {
+                    say.Children.Add(Ui.Done("Showing the engine's own view of \""
+                        + (rows[0].Info.Name ?? "the result") + "\"."));
+                    return;
+                }
+
                 _session.View.ZoomTo(keys, 1.0);
 
                 say.Children.Add(Ui.Done("Selected and framed "
@@ -971,6 +1006,306 @@ namespace CamelWorks.UI.Views
                 {
                     say.Children.Add(Ui.Problem("Could not append the markers: " + Ui.Describe(e)));
                 }
+            }
+
+            /// <summary>The result's worst distance, told in honest units, or nothing.</summary>
+            private string Worst(Row row)
+            {
+                if (!row.Info.Distance.HasValue) return string.Empty;
+
+                var metres = Math.Abs(row.Info.Distance.Value) * (OnFile ? 1.0 : _session.MetresPerUnit);
+
+                return metres >= 1
+                    ? metres.ToString("0.00", CultureInfo.InvariantCulture) + " m"
+                    : (metres * 1000).ToString("0", CultureInfo.InvariantCulture) + " mm";
+            }
+
+            /// <summary>
+            /// The host's rendered image of each picked result - scene plus highlight - written
+            /// as PNGs beside the project file, where a report or an email can pick them up.
+            /// </summary>
+            private void Snapshots(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                if (OnFile)
+                {
+                    say.Children.Add(Ui.Problem("Snapshots are rendered by the clash engine, so "
+                        + "they need the model source."));
+                    return;
+                }
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var project = _session.Store.Path;
+                var beside = string.IsNullOrWhiteSpace(project)
+                    ? System.IO.Path.GetTempPath()
+                    : System.IO.Path.GetDirectoryName(project) ?? System.IO.Path.GetTempPath();
+                var folder = System.IO.Path.Combine(beside, "clash-snapshots");
+
+                try
+                {
+                    System.IO.Directory.CreateDirectory(folder);
+                }
+                catch (Exception e)
+                {
+                    say.Children.Add(Ui.Problem("Could not make the folder: " + Ui.Describe(e)));
+                    return;
+                }
+
+                var written = 0;
+
+                foreach (var row in rows)
+                {
+                    var bytes = _session.Clash.ResultSnapshot(row.TestId, row.Info.Id, 1280, 720);
+                    if (bytes == null) continue;
+
+                    var name = Safe(row.TestName) + "_" + Safe(row.Info.Name ?? row.Info.Id) + ".png";
+
+                    try
+                    {
+                        System.IO.File.WriteAllBytes(System.IO.Path.Combine(folder, name), bytes);
+                        written++;
+                    }
+                    catch (Exception e)
+                    {
+                        say.Children.Add(Ui.Problem(name + ": " + Ui.Describe(e)));
+                    }
+                }
+
+                say.Children.Add(written == 0
+                    ? (UIElement)Ui.Problem(_session.Clash.LastProblem
+                        ?? "The host rendered none of them.")
+                    : Ui.Done(Ui.Count(written, "snapshot") + " written to " + folder + "."));
+            }
+
+            /// <summary>
+            /// Find the same conflict reported by more than one test - the thing no native clash
+            /// window can do, and the reason a board says 214 where the tests say 18,844.
+            /// </summary>
+            private void Duplicates()
+            {
+                var read = Current();
+
+                if (read == null)
+                {
+                    Said(Ui.Problem("Read the results first."));
+                    return;
+                }
+
+                var of = new Dictionary<ClashItem, Row>();
+                var items = new List<ClashItem>();
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                foreach (var row in read.SelectMany(e => e.Rows))
+                {
+                    if (row.Info.A.IsEmpty || row.Info.B.IsEmpty) continue;
+
+                    var item = new ClashItem(row.Info.Key(), row.TestName)
+                    {
+                        X = row.Info.PointX * scale,
+                        Y = row.Info.PointY * scale,
+                        Z = row.Info.PointZ * scale,
+                    };
+
+                    of[item] = row;
+                    items.Add(item);
+                }
+
+                var collapse = DuplicateCollapse.Across(items, _session.Profile.DuplicateBand);
+
+                if (collapse.Count == 0)
+                {
+                    Said(Ui.Done("No two tests report the same conflict."));
+                    return;
+                }
+
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Done(Ui.Count(collapse.Count, "result") + " are the same "
+                    + "conflict found by more than one test - the same pipe through the same "
+                    + "wall, counted twice."));
+
+                _log.Children.Add(Ui.Actions(Ui.Quiet(
+                    "Mark the duplicates Approved, naming the keeper", () =>
+                {
+                    var marked = 0;
+
+                    foreach (var pair in collapse.FoldedInto)
+                    {
+                        if (!of.TryGetValue(pair.Key, out var dupe)) continue;
+                        if (!of.TryGetValue(pair.Value, out var keeper)) continue;
+
+                        var note = "Duplicate of " + keeper.TestName + " / "
+                                   + (keeper.Info.Name ?? "its result") + ".";
+
+                        if (OnFile)
+                        {
+                            dupe.Status = "Approved";
+                            dupe.Comments++;
+                            dupe.LastComment = note;
+                            dupe.Trail.Add(new ClashComment(
+                                Environment.UserName ?? "reviewer", DateTime.UtcNow.Ticks, note));
+                            marked++;
+                            continue;
+                        }
+
+                        var one = new[] { dupe.Info.Id };
+
+                        if (!_session.Clash.SetStatus(dupe.TestId, one, "Approved")) continue;
+
+                        _session.Clash.Comment(dupe.TestId, one, note,
+                                               Environment.UserName ?? "reviewer");
+
+                        dupe.Status = "Approved";
+                        dupe.Comments++;
+                        dupe.LastComment = note;
+                        marked++;
+                    }
+
+                    if (!OnFile && marked > 0)
+                        _session.Record(ActivityKind.Regroup, "approved "
+                            + Ui.Count(marked, "cross-test duplicate") + ", each naming its keeper");
+
+                    RedrawTests();
+                    Tell("Marked " + Ui.Count(marked, "duplicate") + " Approved, each with a "
+                         + "comment naming the result that stays open."
+                         + (OnFile ? " Save the markup to keep it." : string.Empty), null);
+                })));
+            }
+
+            /// <summary>
+            /// Write the current state - picked tests, or everything - as a baseline file, at
+            /// full fidelity: statuses, assignees, the whole comment trail, and the groups.
+            /// </summary>
+            private void SaveBaseline()
+            {
+                var read = Current();
+
+                if (read == null)
+                {
+                    Said(Ui.Problem("Read the results first."));
+                    return;
+                }
+
+                var from = _pickedTests.Count == 0
+                    ? read
+                    : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
+
+                var items = new List<ClashItem>();
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                foreach (var row in from.SelectMany(e => e.Rows))
+                {
+                    if (row.Info.A.IsEmpty || row.Info.B.IsEmpty) continue;
+
+                    var item = new ClashItem(row.Info.Key(), row.TestName)
+                    {
+                        X = row.Info.PointX * scale,
+                        Y = row.Info.PointY * scale,
+                        Z = row.Info.PointZ * scale,
+                        Status = Enum.TryParse<FindingStatus>(row.Status, true, out var status)
+                            ? status
+                            : FindingStatus.New,
+                        AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
+                        CarriedGroup = row.Group.Length == 0 ? null : row.Group,
+                        CategoryA = row.Info.CategoryA,
+                        CategoryB = row.Info.CategoryB,
+                        Distance = row.Info.Distance,
+                    };
+
+                    foreach (var comment in row.Trail) item.Comments.Add(comment);
+
+                    items.Add(item);
+                }
+
+                if (items.Count == 0)
+                {
+                    Said(Ui.Problem("Nothing here can be written: no result names elements by key."));
+                    return;
+                }
+
+                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                {
+                    SourceFile = _session.Store.Path,
+                    WhenTicks = DateTime.UtcNow.Ticks,
+                });
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the baseline",
+                    Filter = "Clash XML|*.xml",
+                    FileName = "clash-baseline.xml",
+                    AddExtension = true,
+                    DefaultExt = ".xml",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    System.IO.File.WriteAllText(dialog.FileName, written.Text);
+                }
+                catch (Exception e)
+                {
+                    Said(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
+
+                Said(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()
+                    + " Statuses, assignments, comment trails and groups all travel in it. "
+                    + "Reviewers open it on this tab and save their markups beside it."));
+            }
+
+            /// <summary>The results grid, exactly as filtered and shown, as a spreadsheet.</summary>
+            private void Sheet()
+            {
+                if (_shown.Count == 0)
+                {
+                    Said(Ui.Problem("Nothing is on the grid to write."));
+                    return;
+                }
+
+                var block = new TableBlock("Test", "Result", "Group", "Status", "Worst",
+                                           "Assigned", "Comments", "Latest comment",
+                                           "Item 1", "Item 2");
+
+                foreach (var row in _shown)
+                    block.Row(row.TestName, row.Info.Name ?? string.Empty, row.Group, row.Status,
+                              Worst(row), row.Assigned,
+                              row.Comments.ToString(CultureInfo.InvariantCulture),
+                              row.LastComment, row.Info.NameA ?? string.Empty,
+                              row.Info.NameB ?? string.Empty);
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Write the results to a spreadsheet",
+                    Filter = "Excel|*.xlsx",
+                    FileName = "clash-results.xlsx",
+                    AddExtension = true,
+                    DefaultExt = ".xlsx",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    System.IO.File.WriteAllBytes(dialog.FileName,
+                                                 XlsxWriter.Write("Clash results", block));
+                }
+                catch (Exception e)
+                {
+                    Said(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Export, "wrote the clash results grid",
+                                Ui.Count(_shown.Count, "row") + " to " + dialog.FileName);
+
+                Said(Ui.Done("Wrote " + Ui.Count(_shown.Count, "row") + " to "
+                             + dialog.FileName + " - the grid exactly as it is filtered."));
             }
 
             // -------------------------------------------------------------------------------
