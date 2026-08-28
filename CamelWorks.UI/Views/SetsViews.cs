@@ -488,10 +488,46 @@ namespace CamelWorks.UI.Views
                     .Select(s => new TableRow(s, s.Name, s.Expression.Describe()))
                     .ToList();
 
-                _saved.Children.Add(Ui.Table(rows, ("Set", 160), ("Rule", 0)).OnPick(item =>
+                var table = Ui.Table(rows, ("Set", 160), ("Rule", 0)).OnPick(item =>
                 {
                     if (item is SavedSet set) Load(set);
-                }));
+                });
+
+                _saved.Children.Add(table);
+
+                // Clicking a row still opens it in the builder, which is the common act. The verbs
+                // are for the rest: a set nobody wants any more used to be a row you could only
+                // load, and the way to be rid of it was to edit the project file.
+                _saved.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(picked.OfType<SavedSet>()
+                                                     .Select(set => set.Name + "\t" + set.Expression.Describe()),
+                                                 say, "set")),
+                    new Ui.OnPicked("Delete {n}", (picked, say) =>
+                    {
+                        say.Children.Clear();
+
+                        var going = picked.OfType<SavedSet>().ToList();
+
+                        if (going.Count == 0) return;
+
+                        say.Children.Add(Ui.Danger("Yes, delete " + Ui.Count(going.Count, "set"), () =>
+                        {
+                            var held = SetLibrary.FromJson(
+                                session.Store.Section(ProjectStore.SetsSection)["items"]);
+
+                            foreach (var set in going) held.Remove(set.Id);
+
+                            session.Store.Section(ProjectStore.SetsSection).Set("items", held.ToJson());
+
+                            RedrawSaved(session);
+
+                            _saved.Children.Add(session.Store.Save()
+                                ? Ui.Done("Deleted " + Ui.Count(going.Count, "set") + ".")
+                                : Ui.Problem(session.Store.LastSaveProblem
+                                             ?? "The project file could not be written."));
+                        }));
+                    }, danger: true)));
             }
 
             private void Load(SavedSet set)
@@ -564,7 +600,6 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _foreign = Ui.Stack();
             private readonly StackPanel _travel = Ui.Stack();
 
-            private ForeignGroup? _picked;
 
             internal UIElement Build()
             {
@@ -909,7 +944,6 @@ namespace CamelWorks.UI.Views
             {
                 var scan = Ui.Runner("Scan the model", _foreign, primary: false, work: job =>
                 {
-                    _picked = null;
 
                     job.Say("Resolving layers...");
                     var fold = AppearanceStack.Fold(_layers, new HostResolver(session));
@@ -965,8 +999,23 @@ namespace CamelWorks.UI.Views
                         Tone = g.IsHidden ? Tone.Warn : Tone.Plain,
                     }).ToList();
 
-                    _foreign.Children.Add(Ui.Table(rows, ("State", 260), ("Elements", 90), ("", 0))
-                        .OnPick(item => _picked = item as ForeignGroup));
+                    var table = Ui.Table(rows, ("State", 260), ("Elements", 90), ("", 0));
+
+                    _foreign.Children.Add(table);
+
+                    // The verbs are on the rows. "Pick a row, then choose what to do with it" was
+                    // a table and a separate row of buttons that did not say what they were aimed
+                    // at, and nothing there worked on more than one state at a time.
+                    _foreign.Children.Add(Ui.Picking(table,
+                        new Ui.OnPicked("Select {n}", (picked, say) =>
+                        {
+                            var keys = picked.OfType<ForeignGroup>().SelectMany(g => g.Keys).ToList();
+
+                            session.Model.Select(keys);
+                            say.Children.Add(Ui.Line("Selected " + Ui.Count(keys.Count, "element") + ".", 0.8));
+                        }),
+                        new Ui.OnPicked("Make {n} a layer", (picked, say) => Adopt(session, picked, say)),
+                        new Ui.OnPicked("Put {n} back", (picked, say) => PutBack(session, picked, say))));
 
                     if (audit.OtherGroups > 0)
                         _foreign.Children.Add(Ui.Note(
@@ -976,8 +1025,6 @@ namespace CamelWorks.UI.Views
                             + "each carry their own colour is a painted model, not a coordination "
                             + "problem, and a table of them would be unreadable."));
 
-                    _foreign.Children.Add(Ui.Line("Pick a row, then choose what to do with it.", 0.6));
-                    _foreign.Children.Add(Ui.Across(SelectButton(session), AdoptButton(session), PutBackButton(session)));
                 });
 
                 return Ui.Stack(
@@ -986,49 +1033,55 @@ namespace CamelWorks.UI.Views
                     _foreign);
             }
 
-            private System.Windows.Controls.Button SelectButton(Session session) =>
-                Ui.Button("Select them", () =>
-                {
-                    if (_picked == null) return;
-                    session.Model.Select(_picked.Keys);
-                });
+            /// <summary>Turn each picked foreign state into a layer of this model's own stack.</summary>
+            private void Adopt(Session session, IReadOnlyList<object> picked, Panel say)
+            {
+                var made = 0;
 
-            private System.Windows.Controls.Button AdoptButton(Session session) =>
-                Ui.Button("Make it a layer", () =>
+                foreach (var group in picked.OfType<ForeignGroup>())
                 {
-                    if (_picked == null) return;
-
-                    var layer = ForeignAppearance.Adopt(_picked,
-                        "adopted-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
+                    var layer = ForeignAppearance.Adopt(group,
+                        "adopted-" + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture)
+                        + "-" + made.ToString(CultureInfo.InvariantCulture));
 
                     _layers.Add(layer);
-                    Redraw(session);
-
-                    _foreign.Children.Add(Ui.Line("\"" + layer.Name + "\" is now on top of the stack. "
-                        + "The model looks exactly as it did — what changed is that the stack now says "
-                        + "why.", 0.8));
+                    made++;
 
                     session.Record(ActivityKind.Appearance, "adopted " + layer.Name);
-                });
+                }
 
-            private System.Windows.Controls.Button PutBackButton(Session session) =>
-                Ui.Button("Put them back", () =>
+                if (made == 0) return;
+
+                Redraw(session);
+
+                say.Children.Add(Ui.Line(Ui.Count(made, "layer") + " is now on top of the stack. "
+                    + "The model looks exactly as it did - what changed is that the stack now says "
+                    + "why.", 0.8));
+            }
+
+            /// <summary>Clear somebody else's overrides off each picked state.</summary>
+            private void PutBack(Session session, IReadOnlyList<object> picked, Panel say)
+            {
+                var cleared = 0;
+
+                foreach (var group in picked.OfType<ForeignGroup>())
                 {
-                    if (_picked == null) return;
-
-                    var keys = _picked.Keys;
+                    var keys = group.Keys;
 
                     session.View.ClearOverrides(keys);
-                    if (_picked.IsHidden) session.View.SetVisible(keys, true);
+                    if (group.IsHidden) session.View.SetVisible(keys, true);
 
-                    _foreign.Children.Add(Ui.Line("Reset " + Ui.Count(keys.Count, "element")
-                        + ". Scan again to see what is left.", 0.8));
+                    cleared += keys.Count;
+                }
 
-                    session.Record(ActivityKind.Appearance,
-                        "reset " + Ui.Count(keys.Count, "element") + " somebody else had overridden");
+                if (cleared == 0) return;
 
-                    _picked = null;
-                });
+                say.Children.Add(Ui.Line("Reset " + Ui.Count(cleared, "element")
+                    + ". Scan again to see what is left.", 0.8));
+
+                session.Record(ActivityKind.Appearance,
+                    "reset " + Ui.Count(cleared, "element") + " somebody else had overridden");
+            }
 
             private static void Execute(Session session, AppearancePlan plan)
             {
@@ -1307,6 +1360,15 @@ namespace CamelWorks.UI.Views
             /// <summary>The table itself, so the verbs below it can read what is ticked.</summary>
             private ListView? _table;
 
+            /// <summary>
+            /// Where a batch says what it did.
+            ///
+            /// The batches live in the configuration window now, and a run reporting onto a stage
+            /// behind a modal is a run nobody sees. So each page hands its own panel over before
+            /// it builds the group, and the runner writes where the person pressing it is looking.
+            /// </summary>
+            private StackPanel _say = Ui.Stack();
+
             private string _size = "1920 x 1080";
 
             internal UIElement Build()
@@ -1327,27 +1389,82 @@ namespace CamelWorks.UI.Views
                     Redraw(session);
                 });
 
-                // The table is the stage: what the document holds, and where every batch reports.
-                // Each verb keeps its own inputs and its own runner, grouped in the setup column,
-                // and acts on what is ticked in the table — or on everything, deleting excepted.
+                // The table is the whole tab: what the document holds, and what every batch acts
+                // on. The six batches were six cards down the setup column, which made a screen
+                // whose subject is a list of viewpoints four fifths a form - so each is a symbol
+                // at the foot, opening on its own page, and the table gets the room.
                 var generate = Generate(session);
 
+                var foot = new WrapPanel();
+
+                foot.Children.Add(save);
+                foot.Children.Add(new Border { Width = 14 });
+
+                void Batch(string glyph, string tip, string section)
+                {
+                    foot.Children.Add(Ui.Icon(glyph, tip, () => Batches(session, section)));
+                }
+
+                Batch(Glyphs.Pencil, "Rename them", "rename");
+                Batch(Glyphs.Folder, "File them into a folder", "folder");
+                Batch(Glyphs.Camera, "Render them to images", "render");
+                Batch(Glyphs.Theme, "Copy overrides onto the rest", "overrides");
+                Batch(Glyphs.Issue, "A viewpoint per issue", "issues");
+                Batch(Glyphs.Bin, "Delete them", "delete");
+
                 return Bench.Surface(
-                    Ui.Stack(
-                        Rename(session),
-                        Refolder(session),
-                        Render(session),
-                        CopyOverrides(session),
-                        generate.Setup,
-                        Walkthrough(session),
-                        Sweep(session)),
-                    save,
+                    null,
+                    foot,
                     Ui.Stack(
                         _list,
-                        Ui.Small("Tick the ones to act on. With nothing ticked, the verbs in the "
-                                 + "column act on all of them — except deleting, which never does."),
+                        Ui.Small("Tick the ones to act on. With nothing ticked, the batches act on "
+                                 + "all of them - except deleting, which never does."),
                         _results,
+                        Ui.Rule(),
+                        Ui.Eyebrow("Make one for each element"),
+                        generate.Setup,
                         generate.Stage));
+            }
+
+            /// <summary>
+            /// The six batches, each on its own page, opened on the one whose symbol was pressed.
+            ///
+            /// Every page hands the group a fresh panel to report into before building it, so a
+            /// rename that says how many it renamed says it where the button was, rather than on
+            /// a stage the window is covering.
+            /// </summary>
+            private void Batches(Session session, string section)
+            {
+                UIElement Page(Func<Session, UIElement> build)
+                {
+                    var say = Ui.Stack();
+
+                    _say = say;
+
+                    return Ui.Stack(build(session), say);
+                }
+
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("Rename them", () => Page(Rename)),
+                    new Ui.Page("File them into a folder", () => Page(Refolder)),
+                    new Ui.Page("Render them to images", () => Page(Render)),
+                    new Ui.Page("Copy overrides onto the rest", () => Page(CopyOverrides)),
+                    new Ui.Page("A viewpoint per issue", () => Page(Walkthrough)),
+                    new Ui.Page("Delete them", () => Page(Sweep)),
+                };
+
+                var order = new[] { "rename", "folder", "render", "overrides", "issues", "delete" };
+                var at = Math.Max(0, Array.IndexOf(order, section));
+
+                if (at > 0)
+                {
+                    var wanted = pages[at];
+                    pages.RemoveAt(at);
+                    pages.Insert(0, wanted);
+                }
+
+                Ui.Configure("Viewpoints", () => Redraw(session), pages.ToArray());
             }
 
             /// <summary>
@@ -1529,7 +1646,7 @@ namespace CamelWorks.UI.Views
                 var pattern = Ui.Text("{n}. {name}", null, 200);
                 var start = Ui.Text("1", null, 60);
 
-                var run = Ui.Runner("Rename them", _results, primary: false, work: job =>
+                var run = Ui.Runner("Rename them", _say, primary: false, work: job =>
                 {
                     var views = Chosen(session);
 
@@ -1556,7 +1673,7 @@ namespace CamelWorks.UI.Views
                         n++;
                     }
 
-                    _results.Children.Add(Ui.Done("Renamed " + Ui.Count(done, "viewpoint") + "."));
+                    _say.Children.Add(Ui.Done("Renamed " + Ui.Count(done, "viewpoint") + "."));
                     Redraw(session);
                 });
 
@@ -1579,7 +1696,7 @@ namespace CamelWorks.UI.Views
             {
                 var into = Ui.Text("Coordination", null, 180);
 
-                var move = Ui.Runner("Move them", _results, primary: false, work: job =>
+                var move = Ui.Runner("Move them", _say, primary: false, work: job =>
                 {
                     var wanted = into.Text.Trim();
                     var moving = Chosen(session);
@@ -1606,15 +1723,15 @@ namespace CamelWorks.UI.Views
                             moved++;
                     }
 
-                    _results.Children.Add(Ui.Done("Moved " + Ui.Count(moved, "viewpoint")
+                    _say.Children.Add(Ui.Done("Moved " + Ui.Count(moved, "viewpoint")
                         + (wanted.Length == 0 ? " to the top level." : " into \"" + wanted + "\".")));
 
                     if (already > 0)
-                        _results.Children.Add(Ui.Line(Ui.Count(already, "viewpoint")
+                        _say.Children.Add(Ui.Line(Ui.Count(already, "viewpoint")
                             + " were already there and were left alone.", 0.7));
 
                     if (refused > 0)
-                        _results.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
+                        _say.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
                             + " could not be moved. A viewpoint the host will not take out of its folder "
                             + "keeps its old place rather than being lost, so nothing has gone missing."));
 
@@ -1644,7 +1761,7 @@ namespace CamelWorks.UI.Views
                 var size = Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080",
                                      pick => _size = pick);
 
-                var render = Ui.Runner("Render them", _results, primary: false, work: job =>
+                var render = Ui.Runner("Render them", _say, primary: false, work: job =>
                 {
                     var views = Chosen(session);
                     var folder = into.Text.Trim();
@@ -1661,7 +1778,7 @@ namespace CamelWorks.UI.Views
                     try { Directory.CreateDirectory(folder); }
                     catch (Exception e)
                     {
-                        _results.Children.Add(Ui.Problem("Could not make that folder: " + Ui.Describe(e)));
+                        _say.Children.Add(Ui.Problem("Could not make that folder: " + Ui.Describe(e)));
                         return;
                     }
 
@@ -1706,15 +1823,15 @@ namespace CamelWorks.UI.Views
                         }
                     }
 
-                    _results.Children.Add(Ui.Done("Wrote " + Ui.Count(written, "image") + " to " + folder + "."));
+                    _say.Children.Add(Ui.Done("Wrote " + Ui.Count(written, "image") + " to " + folder + "."));
 
                     if (blank > 0)
-                        _results.Children.Add(Ui.Note(Ui.Count(blank, "viewpoint")
+                        _say.Children.Add(Ui.Note(Ui.Count(blank, "viewpoint")
                             + " produced no image. Off-screen rendering is not available in every "
                             + "configuration - a machine with no graphics context, a document still "
                             + "loading. Nothing was written for those rather than an empty file."));
 
-                    foreach (var problem in failed.Take(6)) _results.Children.Add(Ui.Problem(problem));
+                    foreach (var problem in failed.Take(6)) _say.Children.Add(Ui.Problem(problem));
 
                     session.Record(ActivityKind.Export, "rendered " + Ui.Count(written, "viewpoint"));
                 });
@@ -1793,14 +1910,14 @@ namespace CamelWorks.UI.Views
                 var from = names[0];
                 var source = Ui.Choice(names, from, pick => from = pick, 260);
 
-                var copy = Ui.Runner("Copy them across", _results, primary: false, work: job =>
+                var copy = Ui.Runner("Copy them across", _say, primary: false, work: job =>
                 {
                     var chosen = session.Viewpoints.All()
                         .FirstOrDefault(v => string.Equals(v.ToString(), from, StringComparison.Ordinal));
 
                     if (string.IsNullOrEmpty(chosen.Id))
                     {
-                        _results.Children.Add(Ui.Problem("That viewpoint is no longer in the document."));
+                        _say.Children.Add(Ui.Problem("That viewpoint is no longer in the document."));
                         return;
                     }
 
@@ -1810,7 +1927,7 @@ namespace CamelWorks.UI.Views
 
                     if (targets.Count == 0)
                     {
-                        _results.Children.Add(Ui.Line("There is nothing else to put them on.", 0.8));
+                        _say.Children.Add(Ui.Line("There is nothing else to put them on.", 0.8));
                         return;
                     }
 
@@ -1828,11 +1945,11 @@ namespace CamelWorks.UI.Views
                         }
                     }
 
-                    _results.Children.Add(Ui.Done("Copied the overrides onto " + Ui.Count(done, "viewpoint")
+                    _say.Children.Add(Ui.Done("Copied the overrides onto " + Ui.Count(done, "viewpoint")
                         + "."));
 
                     if (refused > 0)
-                        _results.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
+                        _say.Children.Add(Ui.Note(Ui.Count(refused, "viewpoint")
                             + " were left exactly as they were, because the host would not rewrite them. "
                             + "A refusal costs nothing: none of them has been changed."));
 
@@ -1920,7 +2037,7 @@ namespace CamelWorks.UI.Views
                 var folder = Ui.Text("Coordination", null, 180);
                 var pattern = Ui.Text("{n}. {group}", null, 200);
 
-                var make = Ui.Runner("Save one per group on the board", _results, primary: false, work: job =>
+                var make = Ui.Runner("Save one per group on the board", _say, primary: false, work: job =>
                 {
                     var board = CoordinateViews.LastBoard;
 
@@ -1928,7 +2045,7 @@ namespace CamelWorks.UI.Views
                     {
                         // The missing input is built where it is missing, rather than somewhere
                         // else the user has to go and find.
-                        _results.Children.Add(CoordinateViews.LoadHere("These viewpoints are of "
+                        _say.Children.Add(CoordinateViews.LoadHere("These viewpoints are of "
                             + "the board's groups, so there has to be a board to make them from."));
 
                         return;
@@ -1968,11 +2085,11 @@ namespace CamelWorks.UI.Views
                         }
                     }
 
-                    _results.Children.Add(Ui.Done("Saved " + Ui.Count(made, "viewpoint")
+                    _say.Children.Add(Ui.Done("Saved " + Ui.Count(made, "viewpoint")
                         + (into.Length == 0 ? "." : " into \"" + into + "\".")));
 
                     if (empty > 0)
-                        _results.Children.Add(Ui.Note(Ui.Count(empty, "group")
+                        _say.Children.Add(Ui.Note(Ui.Count(empty, "group")
                             + " had no positioned results to frame, so no viewpoint was made for "
                             + (empty == 1 ? "it" : "them") + "."));
 

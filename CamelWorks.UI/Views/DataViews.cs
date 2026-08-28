@@ -2421,23 +2421,31 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Measure", measure)),
                     Bench.Group("Grouped how",
                         Ui.Field("Rows", rows),
-                        Ui.Field("Columns", down, "Leave it to get a flat list.")),
+                        Ui.Field("Columns", down, "Leave it to get a flat list.")));
 
-                    // Both settings are off until somebody sets them, and a property that already
-                    // reads as a quantity needs neither - but they stay on the glass, because an
-                    // option that seems to deserve hiding is a default that should state itself.
-                    Bench.Group("If the values need tidying first",
-                        Ui.Field("Take the number matching", _clean),
-                        Ui.Across(
-                            Ui.Quiet("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
-                            Ui.Quiet("Clear it", () => _clean.Text = string.Empty)),
-                        Ui.Field("When it has no unit, read it as", assume),
-                        Ui.Note("Nothing here invents a number. A pattern that matches nothing leaves the "
-                                + "value alone, so the takeoff still counts it unreadable and names it - "
-                                + "turning what it could not clean into a zero would move the failure out "
-                                + "of a line that admits it and into a total that is quietly wrong.")));
+                // Both settings are off until somebody sets them, and a property that already
+                // reads as a quantity needs neither - so they are one symbol away rather than
+                // three fields between the scope and the button. The window states itself when
+                // it is opened, which is the point at which anybody cares what it does.
+                var foot = new WrapPanel();
 
-                return Bench.Surface(setup, run, Ui.Stack(_results, _output));
+                foot.Children.Add(run);
+                foot.Children.Add(new Border { Width = 14 });
+
+                foot.Children.Add(Ui.Icon(Glyphs.Tune, "If the values need tidying first", () =>
+                    Ui.Configure("Reading the values", null,
+                        new Ui.Page("If the values need tidying first", () => Ui.Stack(
+                            Ui.Field("Take the number matching", _clean),
+                            Ui.Across(
+                                Ui.Quiet("Just the first number", () => _clean.Text = ValueCleaner.FirstNumber),
+                                Ui.Quiet("Clear it", () => _clean.Text = string.Empty)),
+                            Ui.Field("When it has no unit, read it as", assume),
+                            Ui.Note("Nothing here invents a number. A pattern that matches nothing leaves the "
+                                    + "value alone, so the takeoff still counts it unreadable and names it - "
+                                    + "turning what it could not clean into a zero would move the failure out "
+                                    + "of a line that admits it and into a total that is quietly wrong."))))));
+
+                return Bench.Surface(setup, foot, Ui.Stack(_results, _output));
             }
 
             private void Run(Job job)
