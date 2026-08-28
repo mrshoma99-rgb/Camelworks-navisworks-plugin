@@ -302,6 +302,8 @@ namespace CamelWorks.UI.Views
 
             public bool CompactTests(System.Collections.Generic.IReadOnlyList<string> testIds) => false;
 
+            public ClashTestSides? Sides(string testId) => null;
+
             public bool ApplyResultView(string testId, string resultId) => false;
 
             public byte[]? ResultSnapshot(string testId, string resultId, int width, int height) => null;

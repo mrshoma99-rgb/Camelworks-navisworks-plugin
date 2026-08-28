@@ -156,7 +156,7 @@ namespace CamelWorks.Studio
                 new Ui.Step("The sheet", () => Ui.Stack(), () => null),
                 new Ui.Step("The matrix", () => Ui.Stack(), () => null),
                 new Ui.Step("The tests", () => Ui.Stack(
-                    Ui.Commit("Show me the tests it would make", "Create", "test",
+                    Ui.Commit("Preview", "Create", "test",
                               (job, into) => 0, job => { }),
                     Ui.Line("38 tests, 6 already there and left alone.", 0.85))),
             }, null, null);

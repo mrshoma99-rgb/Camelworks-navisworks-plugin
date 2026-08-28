@@ -50,7 +50,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Empty(build.Tests);
             Assert.Single(build.Skipped);
-            Assert.Contains("Ductwork names no saved set", build.Skipped[0]);
+            Assert.Contains("Ductwork is backed by nothing", build.Skipped[0]);
         }
 
         [Fact]

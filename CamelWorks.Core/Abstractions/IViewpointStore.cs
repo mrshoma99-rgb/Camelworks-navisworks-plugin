@@ -229,6 +229,14 @@ namespace CamelWorks.Core.Abstractions
         bool CompactTests(IReadOnlyList<string> testIds);
 
         /// <summary>
+        /// What one test is made of, as far as the host will say: a saved set per side, whole
+        /// models per side, or neither when the side is an arbitrary selection. Null when the
+        /// test is gone. This is what lets a matrix be read back OUT of a document's tests.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        ClashTestSides? Sides(string testId);
+
+        /// <summary>
         /// Put the camera where the host's own saved view of one result stands — the view the
         /// engine composed when the test ran, which frames both elements the way the native
         /// clash window would. False when the host has no view for it.
@@ -336,14 +344,27 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="b">The second side.</param>
         /// <param name="tolerance">Tolerance in metres. The adapter converts to document units.</param>
         /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
-        public ClashTestSpec(string name, ClashSide a, ClashSide b, double tolerance, string? folder = null)
+        /// <param name="kind">Which kind of test. Hard unless the matrix's legend says otherwise.</param>
+        public ClashTestSpec(string name, ClashSide a, ClashSide b, double tolerance,
+                             string? folder = null,
+                             Clash.MatrixTest kind = Clash.MatrixTest.Hard)
         {
             Name = string.IsNullOrWhiteSpace(name) ? "CamelWorks test" : name.Trim();
             A = a ?? throw new ArgumentNullException(nameof(a));
             B = b ?? throw new ArgumentNullException(nameof(b));
             Tolerance = tolerance;
             Folder = folder;
+            Kind = kind;
         }
+
+        /// <summary>
+        /// Which kind of test: hard, conservative, clearance or duplicates.
+        ///
+        /// On the spec and not left to the adapter's default, because the matrix's whole point is
+        /// that each cell chooses — and for a long time this was silently Hard for every cell, so
+        /// a clearance legend produced hard tests and nobody was told.
+        /// </summary>
+        public Clash.MatrixTest Kind { get; }
 
         /// <summary>What the test is called.</summary>
         public string Name { get; }
@@ -368,6 +389,47 @@ namespace CamelWorks.Core.Abstractions
 
         /// <inheritdoc />
         public override string ToString() => Name + ": " + A + " against " + B;
+    }
+
+    /// <summary>What a test's two sides are made of, as read back from the host.</summary>
+    public sealed class ClashTestSides
+    {
+        /// <summary>Create a description.</summary>
+        public ClashTestSides(string? setA, string? setB,
+                              IReadOnlyList<string> scopesA, IReadOnlyList<string> scopesB,
+                              string kind, double toleranceMetres)
+        {
+            SetA = setA;
+            SetB = setB;
+            ScopesA = scopesA ?? Array.Empty<string>();
+            ScopesB = scopesB ?? Array.Empty<string>();
+            Kind = kind ?? "Hard";
+            ToleranceMetres = toleranceMetres;
+        }
+
+        /// <summary>The saved set behind side A, or null when it is not a single set.</summary>
+        public string? SetA { get; }
+
+        /// <summary>The saved set behind side B, or null when it is not a single set.</summary>
+        public string? SetB { get; }
+
+        /// <summary>The whole models behind side A, when it is whole models.</summary>
+        public IReadOnlyList<string> ScopesA { get; }
+
+        /// <summary>The whole models behind side B, when it is whole models.</summary>
+        public IReadOnlyList<string> ScopesB { get; }
+
+        /// <summary>The host's test type name.</summary>
+        public string Kind { get; }
+
+        /// <summary>The tolerance, converted to metres.</summary>
+        public double ToleranceMetres { get; }
+
+        /// <summary>True when side A could be described at all.</summary>
+        public bool KnowsA => SetA != null || ScopesA.Count > 0;
+
+        /// <summary>True when side B could be described at all.</summary>
+        public bool KnowsB => SetB != null || ScopesB.Count > 0;
     }
 
     /// <summary>One clash test.</summary>

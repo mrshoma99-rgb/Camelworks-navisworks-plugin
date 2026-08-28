@@ -72,8 +72,16 @@ verbs on the picked rows:
 ## Rules / Matrix / Clearance
 
 - Rules previews against the live board and its "try" lands where the board shows it.
-- The matrix reads the client's own spreadsheet; the quick grid builder stays on Tests, where
-  the Monday user is.
+- **The matrix has three ways in**: by hand (categories picked from the model's own search
+  sets, selection sets or whole models — never typed), read back out of the model's existing
+  tests (each test's sides become categories, each distinct kind-and-tolerance becomes a
+  lettered legend symbol), or the client's spreadsheet (mapping dialog, preview, and a sanity
+  check that every category names a set this model actually has). One grid and one legend
+  either way — symbol, test type, tolerance, on/off — a name pattern and a folder for the
+  tests it creates, a per-kind report after creating, jumps to run or manage them, and the
+  whole matrix exported back out as an Excel file (grid on one sheet, legend on the next).
+  The matrix survives tab switches, and the legend's test type now actually reaches the host —
+  it was silently Hard for every cell before.
 - Clearance is the test no clash engine runs; it lives beside the tests because it is one.
 
 ## Freeze — the record tab

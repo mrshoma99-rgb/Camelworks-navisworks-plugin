@@ -438,7 +438,7 @@ namespace CamelWorks.UI.Views
                         Ui.PathField("Open", _path, PathKind.Open,
                                      "Clash XML|*.xml|All files|*.*",
                                      "the baseline a Manage seat exported, or a saved markup"),
-                        Ui.Actions(Ui.Primary("Save the markup", SaveMarkup)),
+                        Ui.Actions(Ui.Primary("Save markup", SaveMarkup)),
                         Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
                                  + "after you — it never touches the baseline or anyone else's "
                                  + "markup.")));
@@ -480,9 +480,9 @@ namespace CamelWorks.UI.Views
                     Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
                     Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
                                                     _newSide, pick => _newSide = pick, 150)),
-                    Ui.Actions(Ui.Quiet("Add the column", AddColumn)),
+                    Ui.Actions(Ui.Quiet("Add", AddColumn)),
                     _columnList,
-                    Ui.Runner("Read the values", _fill, primary: false, work: FillColumns),
+                    Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
                     _fill,
                     Ui.Small("Each column reads that property off the clashing elements "
                              + "themselves - the results table carries whatever the model "
@@ -522,7 +522,7 @@ namespace CamelWorks.UI.Views
                                     CultureInfo.InvariantCulture, out var mm) && mm > 0)
                                 _markerAcross = mm;
                         }, 90), "millimetres across"),
-                    Ui.Actions(Ui.Quiet("Show everything again", () =>
+                    Ui.Actions(Ui.Quiet("Show all", () =>
                     {
                         _session.View.ShowAll();
                         Said(Ui.Done("Everything is visible again."));
@@ -530,9 +530,9 @@ namespace CamelWorks.UI.Views
 
                 panel.Children.Add(Bench.Group("Beyond the engine",
                     Ui.Actions(
-                        Ui.Quiet("Find cross-test duplicates", Duplicates),
-                        Ui.Quiet("Write the grid to a spreadsheet...", Sheet)),
-                    Ui.Actions(Ui.Quiet("Save a baseline file at full fidelity...", SaveBaseline)),
+                        Ui.Quiet("Find duplicates", Duplicates),
+                        Ui.Quiet("Excel...", Sheet)),
+                    Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
                     Ui.Small("Duplicates are the same conflict reported by two tests - marked "
                              + "Approved with a comment naming the one that stays open. The "
                              + "baseline carries statuses, assignments, comment trails and "
@@ -541,7 +541,7 @@ namespace CamelWorks.UI.Views
                 if (!OnFile)
                 {
                     panel.Children.Add(Bench.Group("The review round",
-                        Ui.Actions(Ui.Quiet("Send the picked tests out as a file...", () =>
+                        Ui.Actions(Ui.Quiet("Export...", () =>
                         {
                             ClashExportWindow.Preferred = _pickedTests.ToList();
                             Ui.Told(Shell.AppWindow.Show("issues", "clashxml"));
@@ -549,8 +549,7 @@ namespace CamelWorks.UI.Views
                         Ui.PathField("Markups", _markups, PathKind.Open,
                                      "Clash XML|*.xml|All files|*.*",
                                      "a markup file, or the baseline — every markup beside it is read"),
-                        Ui.Runner("Bring the markups into the model", _sync, primary: false,
-                                  work: Sync),
+                        Ui.Runner("Sync markups", _sync, primary: false, work: Sync),
                         _sync,
                         Ui.Small("Reviewers on Simulate open the exported file on this tab, mark "
                                  + "it up, and save. This reads their markups back and writes the "
@@ -635,7 +634,7 @@ namespace CamelWorks.UI.Views
                     : Ui.Picking(table,
                         new Ui.OnPicked("Run {n}", RunTests, primary: true),
                         new Ui.OnPicked("Rename {n}", RenameTests),
-                        new Ui.OnPicked("Rename {n}'s results", RenameResults),
+                        new Ui.OnPicked("Renumber {n}", RenameResults),
                         new Ui.OnPicked("Move {n}", MoveTests),
                         new Ui.OnPicked("Compact {n}", CompactTests),
                         new Ui.OnPicked("Delete {n}", DeleteTests, danger: true),
@@ -1033,8 +1032,7 @@ namespace CamelWorks.UI.Views
                 if (tests.Count == 0) return;
 
                 // Two presses for the one verb here that cannot be undone.
-                say.Children.Add(Ui.Danger("Yes, delete " + Ui.Count(tests.Count, "test")
-                    + " and every result in them", () =>
+                say.Children.Add(Ui.Danger("Yes, delete " + Ui.Count(tests.Count, "test"), () =>
                 {
                     say.Children.Clear();
 
@@ -1411,7 +1409,7 @@ namespace CamelWorks.UI.Views
                 RedrawFilterScope();
                 RedrawGroups();
 
-                Said(Ui.Done("Added \"" + title + "\". Press \"Read the values\" to fill it."));
+                Said(Ui.Done("Added \"" + title + "\". Press \"Read values\" to fill it."));
             }
 
             private void RedrawColumnList()
@@ -1789,7 +1787,7 @@ namespace CamelWorks.UI.Views
                     + "wall, counted twice."));
 
                 _log.Children.Add(Ui.Actions(Ui.Quiet(
-                    "Mark the duplicates Approved, naming the keeper", () =>
+                    "Approve duplicates", () =>
                 {
                     var marked = 0;
 

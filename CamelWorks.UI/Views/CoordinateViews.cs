@@ -2717,12 +2717,12 @@ namespace CamelWorks.UI.Views
                     // status-by-status pass. The manager re-reads on arrival, so the fresh run
                     // is what it shows.
                     _runs.Children.Add(Ui.Actions(
-                        Ui.Primary("Open the board with these results", () =>
+                        Ui.Primary("Open board", () =>
                         {
                             LoadOnArrival = true;
                             Ui.Told(Shell.AppWindow.Show("clash", "triage"));
                         }),
-                        Ui.Quiet("Work the results one by one", () =>
+                        Ui.Quiet("Open results", () =>
                         {
                             ClashManageViews.Forget();
                             Ui.Told(Shell.AppWindow.Show("clash", "manage"));

@@ -205,7 +205,16 @@ namespace CamelWorks.Nav.Clash
                 var test = new ClashTest
                 {
                     CustomTestName = spec.Name,
-                    TestType = ClashTestType.Hard,
+
+                    // The kind the cell's legend chose. For a long time this said Hard for
+                    // every spec, so a clearance matrix quietly made hard tests.
+                    TestType = spec.Kind switch
+                    {
+                        Core.Clash.MatrixTest.HardConservative => ClashTestType.HardConservative,
+                        Core.Clash.MatrixTest.Clearance => ClashTestType.Clearance,
+                        Core.Clash.MatrixTest.Duplicate => ClashTestType.Duplicate,
+                        _ => ClashTestType.Hard,
+                    },
                     Tolerance = spec.Tolerance * NavUnits.UnitsPerMetre(_document.Document.Units),
                 };
 
@@ -676,6 +685,105 @@ namespace CamelWorks.Nav.Clash
             }
 
             return true;
+        }
+
+        /// <inheritdoc />
+        public ClashTestSides? Sides(string testId)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null) return null;
+
+            var test = FindTest(clash, testId);
+            if (test == null) return null;
+
+            try
+            {
+                var (setA, scopesA) = SideOf(test.SelectionA);
+                var (setB, scopesB) = SideOf(test.SelectionB);
+
+                var metres = NavUnits.MetresPerUnit(_document.Document.Units);
+
+                return new ClashTestSides(setA, setB, scopesA, scopesB,
+                                          test.TestType.ToString(),
+                                          test.Tolerance * metres);
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not describe that test: " + e.Message;
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// What one side is: a single saved set, whole models, or neither.
+        ///
+        /// A set is recognised by value against every saved set's own source - the host compares
+        /// sources by what they point at, so a renamed folder does not break the match. Whole
+        /// models are recognised as a selection made only of root items.
+        /// </summary>
+        private (string? Set, IReadOnlyList<string> Scopes) SideOf(ClashSelection selection)
+        {
+            var none = (string?)null;
+            var empty = (IReadOnlyList<string>)Array.Empty<string>();
+
+            try
+            {
+                var sources = selection.Selection.SelectionSources;
+
+                if (sources != null && sources.Count == 1)
+                {
+                    var sets = _document.Document.SelectionSets;
+                    var wanted = sources[0];
+
+                    foreach (var set in AllSets(sets.Value))
+                    {
+                        try
+                        {
+                            if (sets.CreateSelectionSource(set).Equals(wanted))
+                                return (set.DisplayName, empty);
+                        }
+                        catch (Exception)
+                        {
+                            // A set the host will not source cannot be this side.
+                        }
+                    }
+
+                    return (none, empty);
+                }
+
+                var items = selection.Selection.GetSelectedItems();
+
+                if (items != null && items.Count > 0)
+                {
+                    var scopes = new List<string>();
+
+                    foreach (ModelItem item in items)
+                    {
+                        if (item.Parent != null) return (none, empty);
+                        scopes.Add(NavKeys.ScopeOf(item.Model));
+                    }
+
+                    return (none, scopes);
+                }
+            }
+            catch (Exception)
+            {
+                // A side the host will not describe is a side we do not guess at.
+            }
+
+            return (none, empty);
+        }
+
+        private static IEnumerable<SelectionSet> AllSets(SavedItemCollection items)
+        {
+            foreach (SavedItem item in items)
+            {
+                if (item is SelectionSet set) yield return set;
+                else if (item is GroupItem folder)
+                    foreach (var nested in AllSets(folder.Children)) yield return nested;
+            }
         }
 
         /// <inheritdoc />
