@@ -1,5 +1,15 @@
 # Compare Track — product audit
 
+## The redesign pass: the Compare tab
+
+The baselines were a table you could look at and a dropdown you chose from — two controls for
+one decision, which is how somebody ends up comparing against last month. The row is the choice
+now: pick a baseline in the table, and the line under it says what the run will compare against.
+The table carries verbs (copy, delete — still named and asked twice, now for however many were
+picked), and "what counts as a change" moved off the rail into the configuration window, leaving
+the rail to the one act the tab is for: recording a new baseline.
+
+
 **The app's job.** Time. Fix a point (baseline), measure against it (compare), walk what moved
 (changes), put a number and a name to it (change notice), and answer "who did what" (history).
 The coordinator opens it when a revision lands and when somebody says "that moved after we

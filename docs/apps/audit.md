@@ -1,5 +1,28 @@
 # Model Audit — product audit
 
+## The redesign pass
+
+Held to the nine faults in `CAMELWORKS_DESIGN.md` §3b:
+
+- **Broken Links** listed the missing models as sentences you could not click, and offered each
+  found file its own "Bring in X" button as the search stacked results down the screen. Both are
+  one table now: model, what became of it, where it is. The search fills the table in place, and
+  the picked rows are brought into the federation or copied out as columns for an email. The
+  tool's promised action is the search, which is what precedes everything else.
+- **Models** would not say what was loaded until a manifest had been taken. The federation is on
+  the tab when you arrive, with each source file marked found or missing, and the missing ones
+  hand off to Broken Links.
+- **IDS** put what the document is called — its title, version, author, description — under the
+  list of specifications somebody is actually editing. That is set once and read never: it is
+  behind a symbol now. Adding a specification and keeping the draft are symbols too.
+- **Health** carried "which property carries the code" on the rail, above a button it has nothing
+  to do with. It moved into the configuration window; the rail keeps the client's own rules,
+  which are a second run with a second file.
+- **Project** laid out parties, code tables and the roster beside a register of thirty-odd
+  derived answers, tripling the height of a screen whose subject is the register. Three symbols
+  at the foot, and the register gained the search it always needed.
+
+
 **The app's job.** The manager's question before anybody coordinates: is this federation fit to
 work on? A fresh drop of models lands Monday morning; Health sweeps it, Models registers which
 revisions arrived, Broken Links repairs what the federation can no longer find, IDS holds the
