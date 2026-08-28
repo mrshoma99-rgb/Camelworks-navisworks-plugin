@@ -45,6 +45,14 @@ Three separate costs, all paid on the UI thread:
 
 ## Beyond what any of the benchmarks have
 
+- **Property columns and a chained grouping over them.** Add a column that reads any element
+  property off the clashing elements themselves — picked from the model's own tabs and
+  properties, from the first item, the second, or both — then chain the grouping: Level, then
+  System, then anything a column carries, in any order, reordered live. The chain renders a
+  group-summary table (counts per band, bulk mark/assign/comment on picked bands) that narrows
+  the results grid, and both the columns and the chain go out in the spreadsheet. Values are
+  read once, in a pumped pass, and survive re-reads.
+
 - **Cross-test duplicate finder.** The same pipe through the same wall reported by two tests is
   one conflict; no native window can see that. One press finds them (the board's own collapse
   engine, run over the manager's rows) and, if asked, marks each duplicate Approved with a

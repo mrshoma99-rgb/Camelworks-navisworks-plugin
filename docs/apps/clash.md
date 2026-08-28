@@ -36,6 +36,10 @@ verbs on the picked rows:
 - Filters: status ticks, only-with-comments, test-name search, hide-empty-tests.
 - **Send the picked tests out as a file...** jumps to Issue Link's Clash XML leg with those
   tests already ticked.
+- **Property columns + chained grouping**: any element property as a results column (model-fed
+  pickers, first/second/both items), and an ordered grouping chain over Test, Status, Assigned,
+  host group and any property column — a group-summary band table with counts and bulk verbs
+  that narrows the grid, all of it travelling into the spreadsheet.
 - **Beyond the engine**: a cross-test duplicate finder (the same conflict reported by two
   tests, marked Approved with the keeper named), the grid written to a spreadsheet exactly as
   filtered, a full-fidelity baseline saved from the manager itself, the engine's own composed

@@ -10,6 +10,7 @@ using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
+using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
 {
@@ -42,6 +43,12 @@ namespace CamelWorks.UI.Views
         private static FileRound? _file;
         private static string _source = FromModel;
 
+        // The property columns and the grouping chain survive tab switches with the read: they
+        // are how somebody set their bench up, and a bench that resets when glanced away from
+        // is a bench nobody trusts with a long afternoon.
+        private static readonly List<PropColumn> _columns = new List<PropColumn>();
+        private static readonly List<string> _chain = new List<string>();
+
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Manage(Session session) => new Screen(session).Build();
@@ -50,6 +57,44 @@ namespace CamelWorks.UI.Views
         internal static void Forget() => _read = null;
 
         // -----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// One custom column: an element property, read from one side of each clash or both.
+        ///
+        /// This is the move the engine's own window never learned: the results table showing the
+        /// System Name, the Workset, the fire rating - whatever the elements carry - and the
+        /// grouping chain running over exactly those values.
+        /// </summary>
+        private sealed class PropColumn
+        {
+            internal PropColumn(string tab, string name, string side, string title)
+            {
+                Id = Guid.NewGuid().ToString("N");
+                Tab = tab;
+                Name = name;
+                Side = side;
+                Title = title;
+            }
+
+            internal string Id { get; }
+            internal string Tab { get; }
+            internal string Name { get; }
+            internal string Side { get; }
+            internal string Title { get; }
+        }
+
+        /// <summary>One leaf of the grouping chain, with the rows that fell into it.</summary>
+        private sealed class Bucket
+        {
+            internal Bucket(string name) => Name = name;
+
+            internal string Name { get; }
+
+            internal List<Row> Rows { get; } = new List<Row>();
+
+            internal int Of(string status) =>
+                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+        }
 
         /// <summary>One file, read for markup, with where it came from.</summary>
         private sealed class FileRound
@@ -105,6 +150,10 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The authored comment trail, held in full only for file rows.</summary>
             internal List<ClashComment> Trail { get; } = new List<ClashComment>();
+
+            /// <summary>Custom column values, by column id, once "Read the values" has run.</summary>
+            internal Dictionary<string, string> Custom { get; } =
+                new Dictionary<string, string>(StringComparer.Ordinal);
         }
 
         // -----------------------------------------------------------------------------------
@@ -142,6 +191,21 @@ namespace CamelWorks.UI.Views
             /// <summary>What the results grid currently shows, for the spreadsheet writer.</summary>
             private List<Row> _shown = new List<Row>();
 
+            private readonly StackPanel _groups = Ui.Stack();
+            private readonly StackPanel _columnList = Ui.Stack();
+            private readonly StackPanel _chainList = Ui.Stack();
+            private readonly StackPanel _fill = Ui.Stack();
+            private readonly HashSet<string> _pickedGroups = new HashSet<string>(StringComparer.Ordinal);
+
+            private string _newTab = string.Empty;
+            private string _newProp = string.Empty;
+            private string _newSide = BothSides;
+            private string _chainAdd = string.Empty;
+
+            private const string FirstSide = "First item";
+            private const string SecondSide = "Second item";
+            private const string BothSides = "Both";
+
             internal Screen(Session session)
             {
                 _session = session;
@@ -176,6 +240,7 @@ namespace CamelWorks.UI.Views
                     _log,
                     _tests,
                     Ui.Rule(),
+                    _groups,
                     _results);
 
                 if (Current() == null)
@@ -222,6 +287,7 @@ namespace CamelWorks.UI.Views
 
             private void ReadModel(Job job)
             {
+                var carried = Harvest(_read);
                 var entries = new List<TestEntry>();
                 var seen = 0;
 
@@ -232,7 +298,7 @@ namespace CamelWorks.UI.Views
                     foreach (var result in _session.Clash.Results(test.Id))
                     {
                         if (!job.Step(++seen, "results read")) return;
-                        entry.Rows.Add(new Row(test.Id, test.Name, result));
+                        entry.Rows.Add(Restored(new Row(test.Id, test.Name, result), carried));
                     }
 
                     entries.Add(entry);
@@ -373,7 +439,7 @@ namespace CamelWorks.UI.Views
                     _show.Contains(status), on =>
                     {
                         if (on) _show.Add(status); else _show.Remove(status);
-                        RedrawResults();
+                        RedrawGroups();
                     })).ToList();
 
                 var mark = Ui.Choice(Statuses, _mark, pick => _mark = pick, 150);
@@ -383,8 +449,30 @@ namespace CamelWorks.UI.Views
                     Ui.Check("Only ones with comments", _onlyCommented, on =>
                     {
                         _onlyCommented = on;
-                        RedrawResults();
+                        RedrawGroups();
                     })));
+
+                RedrawColumnList();
+                RedrawChainList();
+
+                panel.Children.Add(Bench.Group("Property columns",
+                    Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
+                    Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
+                    Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
+                                                    _newSide, pick => _newSide = pick, 150)),
+                    Ui.Actions(Ui.Quiet("Add the column", AddColumn)),
+                    _columnList,
+                    Ui.Runner("Read the values", _fill, primary: false, work: FillColumns),
+                    _fill,
+                    Ui.Small("Each column reads that property off the clashing elements "
+                             + "themselves - the results table carries whatever the model "
+                             + "carries, and the grouping below can chain over it.")));
+
+                panel.Children.Add(Bench.Group("Group by, in order",
+                    _chainList,
+                    Ui.Small("Chained: the first entry makes the bands, the next splits each "
+                             + "band, and so on - Level, then System, then anything a property "
+                             + "column carries. Pick group rows to work just those results.")));
 
                 var tests = Bench.Group("Tests",
                     Ui.Field("Find", _find, "matches the test's name"),
@@ -513,7 +601,7 @@ namespace CamelWorks.UI.Views
                     foreach (var picked in table.PickedMany())
                         if (picked is TestEntry entry) _pickedTests.Add(entry.Test.Id);
 
-                    RedrawResults();
+                    RedrawGroups();
                 };
 
                 _tests.Children.Add(Ui.Eyebrow("The tests"));
@@ -533,29 +621,124 @@ namespace CamelWorks.UI.Views
                         new Ui.OnPicked("Copy {n}",
                             (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "test"))));
 
-                RedrawResults();
+                RedrawGroups();
             }
 
-            private void RedrawResults()
+            /// <summary>The rows the filters allow, before any group pick narrows them.</summary>
+            private List<Row> Filtered()
             {
-                _results.Children.Clear();
-
                 var read = Current();
-                if (read == null) return;
+                if (read == null) return new List<Row>();
 
                 var from = _pickedTests.Count == 0
                     ? read
                     : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
 
-                var rows = from
+                return from
                     .SelectMany(e => e.Rows)
                     .Where(r => _show.Contains(r.Status))
                     .Where(r => !_onlyCommented || r.Comments > 0)
                     .ToList();
+            }
 
-                _results.Children.Add(Ui.Eyebrow(_pickedTests.Count == 0
-                    ? "Every result"
-                    : "Results of " + Ui.Count(_pickedTests.Count, "picked test")));
+            /// <summary>
+            /// The grouping chain's summary: one row per leaf band, with its counts, its own
+            /// bulk verbs, and picking that narrows the results grid to the picked bands. The
+            /// same master-detail the tests table already is, one level further in.
+            /// </summary>
+            private void RedrawGroups()
+            {
+                _groups.Children.Clear();
+                _pickedGroups.Clear();
+
+                if (_chain.Count == 0)
+                {
+                    RedrawResults();
+                    return;
+                }
+
+                var rows = Filtered();
+
+                var buckets = new Dictionary<string, Bucket>(StringComparer.Ordinal);
+
+                foreach (var row in rows)
+                {
+                    var name = ChainKey(row);
+
+                    if (!buckets.TryGetValue(name, out var bucket))
+                    {
+                        bucket = new Bucket(name);
+                        buckets[name] = bucket;
+                    }
+
+                    bucket.Rows.Add(row);
+                }
+
+                var ordered = buckets.Values
+                    .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                _groups.Children.Add(Ui.Eyebrow("Grouped by "
+                    + string.Join(" · ", _chain.Select(ChainTitle))));
+
+                var table = Ui.Table(ordered.Select(b => new TableRow(b,
+                    b.Name,
+                    Skin.Num(b.Rows.Count),
+                    Skin.Num(b.Of("New")),
+                    Skin.Num(b.Of("Active")),
+                    Skin.Num(b.Of("Reviewed")),
+                    Skin.Num(b.Of("Approved")),
+                    Skin.Num(b.Of("Resolved")))
+                {
+                    Tone = b.Of("New") > 0 ? Tone.Warn : Tone.Plain,
+                }).ToList(),
+                    ("Group", 300), ("Results", 70), ("New", 55), ("Active", 55),
+                    ("Reviewed", 70), ("Approved", 70), ("Resolved", 0));
+
+                table.SelectionChanged += (s, e) =>
+                {
+                    _pickedGroups.Clear();
+
+                    foreach (var picked in table.PickedMany())
+                        if (picked is Bucket bucket) _pickedGroups.Add(bucket.Name);
+
+                    RedrawResults();
+                };
+
+                _groups.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Mark {n}", (picked, say) =>
+                        Mark(Flatten(picked), say)),
+                    new Ui.OnPicked("Assign {n}", (picked, say) =>
+                        AssignPicked(Flatten(picked), say)),
+                    new Ui.OnPicked("Comment {n}", (picked, say) =>
+                        CommentPicked(Flatten(picked), say)),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "group"))));
+
+                RedrawResults();
+            }
+
+            /// <summary>The picked buckets' rows, as the row verbs expect them.</summary>
+            private static IReadOnlyList<object> Flatten(IReadOnlyList<object> picked) =>
+                picked.OfType<Bucket>().SelectMany(b => b.Rows).Cast<object>().ToList();
+
+            private void RedrawResults()
+            {
+                _results.Children.Clear();
+
+                if (Current() == null) return;
+
+                var rows = Filtered();
+
+                if (_chain.Count > 0 && _pickedGroups.Count > 0)
+                    rows = rows.Where(r => _pickedGroups.Contains(ChainKey(r))).ToList();
+
+                _results.Children.Add(Ui.Eyebrow(
+                    _chain.Count > 0 && _pickedGroups.Count > 0
+                        ? "Results of " + Ui.Count(_pickedGroups.Count, "picked group")
+                        : _pickedTests.Count == 0
+                            ? "Every result"
+                            : "Results of " + Ui.Count(_pickedTests.Count, "picked test")));
 
                 if (rows.Count == 0)
                 {
@@ -573,25 +756,48 @@ namespace CamelWorks.UI.Views
 
                 _shown = shown;
 
-                var table = Ui.Table(shown.Select(r => new TableRow(r,
-                    r.Info.Name ?? string.Empty,
-                    r.TestName,
-                    r.Group,
-                    r.Status,
-                    Worst(r),
-                    r.Assigned,
-                    r.Comments == 0 ? string.Empty : r.LastComment,
-                    r.Info.NameA ?? string.Empty,
-                    r.Info.NameB ?? string.Empty)
+                // The columns are built as lists because the custom ones come and go: the
+                // property columns land between Worst and Assigned, where the eye is already
+                // reading facts about the elements.
+                var headers = new List<(string, double)>
                 {
-                    Tone = string.Equals(r.Status, "New", StringComparison.OrdinalIgnoreCase) ? Tone.Bad
-                         : string.Equals(r.Status, "Resolved", StringComparison.OrdinalIgnoreCase)
-                           || string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase) ? Tone.Good
-                         : Tone.Plain,
-                }).ToList(),
-                    ("Result", 110), ("Test", 150), ("Group", 90), ("Status", 70),
-                    ("Worst", 65), ("Assigned", 90), ("Comment", 140), ("Item 1", 120),
-                    ("Item 2", 0));
+                    ("Result", 110), ("Test", 140), ("Group", 80), ("Status", 70), ("Worst", 65),
+                };
+
+                foreach (var column in _columns) headers.Add((column.Title, 95));
+
+                headers.Add(("Assigned", 85));
+                headers.Add(("Comment", 130));
+                headers.Add(("Item 1", 110));
+                headers.Add(("Item 2", 0));
+
+                TableRow Line(Row r)
+                {
+                    var cells = new List<string?>
+                    {
+                        r.Info.Name ?? string.Empty, r.TestName, r.Group, r.Status, Worst(r),
+                    };
+
+                    foreach (var column in _columns)
+                        cells.Add(r.Custom.TryGetValue(column.Id, out var value)
+                            ? value
+                            : string.Empty);
+
+                    cells.Add(r.Assigned);
+                    cells.Add(r.Comments == 0 ? string.Empty : r.LastComment);
+                    cells.Add(r.Info.NameA ?? string.Empty);
+                    cells.Add(r.Info.NameB ?? string.Empty);
+
+                    return new TableRow(r, cells.ToArray())
+                    {
+                        Tone = string.Equals(r.Status, "New", StringComparison.OrdinalIgnoreCase) ? Tone.Bad
+                             : string.Equals(r.Status, "Resolved", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase) ? Tone.Good
+                             : Tone.Plain,
+                    };
+                }
+
+                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray());
 
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
@@ -1008,6 +1214,262 @@ namespace CamelWorks.UI.Views
                 }
             }
 
+            // -------------------------------------------------------------------------------
+            // Property columns and the grouping chain
+            // -------------------------------------------------------------------------------
+
+            private void AddColumn()
+            {
+                var name = _newProp.Trim();
+
+                if (name.Length == 0)
+                {
+                    Said(Ui.Problem("Pick or type the property first."));
+                    return;
+                }
+
+                // The title has to tell two columns apart: the bare name until it collides,
+                // the tab beside it after, the side beside that when both sides are read apart.
+                var title = name;
+
+                if (_columns.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))
+                    && _newTab.Trim().Length > 0)
+                    title = _newTab.Trim() + " / " + name;
+
+                if (_newSide == FirstSide) title += " (1)";
+                else if (_newSide == SecondSide) title += " (2)";
+
+                _columns.Add(new PropColumn(_newTab.Trim(), name, _newSide, title));
+
+                RedrawColumnList();
+                RedrawChainList();
+                RedrawGroups();
+
+                Said(Ui.Done("Added \"" + title + "\". Press \"Read the values\" to fill it."));
+            }
+
+            private void RedrawColumnList()
+            {
+                _columnList.Children.Clear();
+
+                foreach (var column in _columns)
+                {
+                    var here = column;
+
+                    _columnList.Children.Add(Ui.Across(
+                        Ui.Line(here.Title, 0.85),
+                        Ui.Icon(Glyphs.Close, "Take the column out", () =>
+                        {
+                            _columns.Remove(here);
+                            _chain.Remove("col:" + here.Id);
+                            RedrawColumnList();
+                            RedrawChainList();
+                            RedrawGroups();
+                        })));
+                }
+            }
+
+            /// <summary>Everything the chain can group by: the fixed facts, then the columns.</summary>
+            private List<(string Key, string Title)> ChainOptions()
+            {
+                var options = new List<(string, string)>
+                {
+                    ("test", "Test"),
+                    ("status", "Status"),
+                    ("assigned", "Assigned to"),
+                    ("hostgroup", "Host group"),
+                };
+
+                foreach (var column in _columns) options.Add(("col:" + column.Id, column.Title));
+
+                return options;
+            }
+
+            private void RedrawChainList()
+            {
+                _chainList.Children.Clear();
+
+                for (var i = 0; i < _chain.Count; i++)
+                {
+                    var at = i;
+                    var key = _chain[at];
+
+                    _chainList.Children.Add(Ui.Across(
+                        Ui.Line((at + 1).ToString(CultureInfo.InvariantCulture) + ". "
+                                + ChainTitle(key), 0.85),
+                        Ui.Icon(Glyphs.Up, "Group by this sooner", () =>
+                        {
+                            if (at == 0) return;
+                            _chain.RemoveAt(at);
+                            _chain.Insert(at - 1, key);
+                            RedrawChainList();
+                            RedrawGroups();
+                        }),
+                        Ui.Icon(Glyphs.Down, "Group by this later", () =>
+                        {
+                            if (at >= _chain.Count - 1) return;
+                            _chain.RemoveAt(at);
+                            _chain.Insert(at + 1, key);
+                            RedrawChainList();
+                            RedrawGroups();
+                        }),
+                        Ui.Icon(Glyphs.Close, "Take it out of the chain", () =>
+                        {
+                            _chain.RemoveAt(at);
+                            RedrawChainList();
+                            RedrawGroups();
+                        })));
+                }
+
+                var options = ChainOptions()
+                    .Where(o => !_chain.Contains(o.Key))
+                    .ToList();
+
+                if (options.Count == 0) return;
+
+                var titles = options.Select(o => o.Title).ToList();
+
+                if (!titles.Contains(_chainAdd)) _chainAdd = titles[0];
+
+                _chainList.Children.Add(Ui.Across(
+                    Ui.Choice(titles, _chainAdd, pick => _chainAdd = pick, 160),
+                    Ui.Quiet("Add", () =>
+                    {
+                        var chosen = options.FirstOrDefault(
+                            o => string.Equals(o.Title, _chainAdd, StringComparison.Ordinal));
+
+                        if (chosen.Key == null) return;
+
+                        _chain.Add(chosen.Key);
+                        RedrawChainList();
+                        RedrawGroups();
+                    })));
+            }
+
+            private string ChainTitle(string key)
+            {
+                foreach (var option in ChainOptions())
+                    if (string.Equals(option.Key, key, StringComparison.Ordinal)) return option.Title;
+
+                return "(a removed column)";
+            }
+
+            /// <summary>One row's value for one link of the chain, with absence said honestly.</summary>
+            private static string GroupValue(Row row, string key)
+            {
+                switch (key)
+                {
+                    case "test": return row.TestName;
+                    case "status": return row.Status;
+                    case "assigned": return row.Assigned.Length == 0 ? "(unassigned)" : row.Assigned;
+                    case "hostgroup": return row.Group.Length == 0 ? "(no group)" : row.Group;
+                }
+
+                if (key.StartsWith("col:", StringComparison.Ordinal))
+                {
+                    if (!row.Custom.TryGetValue(key.Substring(4), out var value))
+                        return "(values not read)";
+
+                    return value.Length == 0 ? "(none)" : value;
+                }
+
+                return "(unknown)";
+            }
+
+            private string ChainKey(Row row) =>
+                string.Join(" · ", _chain.Select(key => GroupValue(row, key)));
+
+            /// <summary>
+            /// Read every custom column's value off the clashing elements themselves.
+            ///
+            /// The one deliberately user-started read that touches the element index: the first
+            /// resolve builds it for the whole federation, which is exactly the cost the board
+            /// build was cured of paying by accident. Asked for by a press, it is worth it - and
+            /// it is paid once, not once per glance.
+            /// </summary>
+            private void FillColumns(Job job)
+            {
+                if (_columns.Count == 0)
+                {
+                    _fill.Children.Add(Ui.Problem("Add a column first."));
+                    return;
+                }
+
+                var read = Current();
+
+                if (read == null)
+                {
+                    _fill.Children.Add(Ui.Problem("Read the results first."));
+                    return;
+                }
+
+                job.Say("Finding the elements (the first look indexes the federation)...");
+
+                var rows = read.SelectMany(e => e.Rows).ToList();
+                var filled = 0;
+                var blank = 0;
+                var done = 0;
+
+                foreach (var row in rows)
+                {
+                    if (!job.Step(++done, "results read")) return;
+
+                    var a = row.Info.A.IsEmpty ? null : _session.Model.Resolve(row.Info.A);
+                    var b = row.Info.B.IsEmpty ? null : _session.Model.Resolve(row.Info.B);
+
+                    foreach (var column in _columns)
+                    {
+                        var tab = column.Tab.Length == 0 ? null : column.Tab;
+
+                        var fromA = column.Side == SecondSide
+                            ? null
+                            : Value(a, tab, column.Name);
+
+                        var fromB = column.Side == FirstSide
+                            ? null
+                            : Value(b, tab, column.Name);
+
+                        var value = column.Side == BothSides
+                            ? (fromA != null && fromB != null && fromA != fromB
+                                ? fromA + " | " + fromB
+                                : fromA ?? fromB)
+                            : column.Side == FirstSide ? fromA : fromB;
+
+                        row.Custom[column.Id] = value ?? string.Empty;
+
+                        if (value == null) blank++; else filled++;
+                    }
+                }
+
+                RedrawGroups();
+
+                _fill.Children.Add(Ui.Done(Ui.Count(filled, "value") + " read into "
+                    + Ui.Count(_columns.Count, "column") + "."
+                    + (blank > 0
+                        ? " " + Ui.Count(blank, "cell") + " came back empty - elements that do "
+                          + "not carry the property, or results a file could not identify here."
+                        : string.Empty)));
+            }
+
+            private static string? Value(IModelItem? item, string? tab, string name)
+            {
+                if (item == null) return null;
+
+                try
+                {
+                    // Named tab first; without one, the tabs a value usually lives on.
+                    if (tab != null) return item.Property(tab, name);
+
+                    return item.Property("Element", name)
+                           ?? item.Property("Item", name)
+                           ?? item.Property(NavWriteTransaction.TabName, name);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+
             /// <summary>The result's worst distance, told in honest units, or nothing.</summary>
             private string Worst(Row row)
             {
@@ -1268,16 +1730,44 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var block = new TableBlock("Test", "Result", "Group", "Status", "Worst",
-                                           "Assigned", "Comments", "Latest comment",
-                                           "Item 1", "Item 2");
+                var headers = new List<string>
+                {
+                    "Test", "Result", "Group", "Status", "Worst",
+                };
+
+                foreach (var column in _columns) headers.Add(column.Title);
+                if (_chain.Count > 0) headers.Add("Grouped as");
+
+                headers.AddRange(new[]
+                {
+                    "Assigned", "Comments", "Latest comment", "Item 1", "Item 2",
+                });
+
+                var block = new TableBlock(headers.ToArray());
 
                 foreach (var row in _shown)
-                    block.Row(row.TestName, row.Info.Name ?? string.Empty, row.Group, row.Status,
-                              Worst(row), row.Assigned,
-                              row.Comments.ToString(CultureInfo.InvariantCulture),
-                              row.LastComment, row.Info.NameA ?? string.Empty,
-                              row.Info.NameB ?? string.Empty);
+                {
+                    var cells = new List<string>
+                    {
+                        row.TestName, row.Info.Name ?? string.Empty, row.Group, row.Status,
+                        Worst(row),
+                    };
+
+                    foreach (var column in _columns)
+                        cells.Add(row.Custom.TryGetValue(column.Id, out var value)
+                            ? value
+                            : string.Empty);
+
+                    if (_chain.Count > 0) cells.Add(ChainKey(row));
+
+                    cells.Add(row.Assigned);
+                    cells.Add(row.Comments.ToString(CultureInfo.InvariantCulture));
+                    cells.Add(row.LastComment);
+                    cells.Add(row.Info.NameA ?? string.Empty);
+                    cells.Add(row.Info.NameB ?? string.Empty);
+
+                    block.Row(cells.ToArray());
+                }
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -1624,6 +2114,8 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Reread(string did, List<string>? problems)
             {
+                var carried = Harvest(_read);
+
                 _read = null;
 
                 var entries = new List<TestEntry>();
@@ -1633,7 +2125,7 @@ namespace CamelWorks.UI.Views
                     var entry = new TestEntry(test);
 
                     foreach (var result in _session.Clash.Results(test.Id))
-                        entry.Rows.Add(new Row(test.Id, test.Name, result));
+                        entry.Rows.Add(Restored(new Row(test.Id, test.Name, result), carried));
 
                     entries.Add(entry);
                 }
@@ -1642,6 +2134,33 @@ namespace CamelWorks.UI.Views
                 RedrawTests();
 
                 Tell(did, problems);
+            }
+
+            /// <summary>
+            /// The custom column values a read is about to replace, keyed by result — so a run,
+            /// a rename or a sync does not cost the property read somebody already paid for.
+            /// </summary>
+            private static Dictionary<string, Dictionary<string, string>> Harvest(List<TestEntry>? read)
+            {
+                var kept = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+                if (read == null) return kept;
+
+                foreach (var row in read.SelectMany(e => e.Rows))
+                    if (row.Custom.Count > 0)
+                        kept[row.TestId + "\u001f" + row.Info.Id] = row.Custom;
+
+                return kept;
+            }
+
+            private static Row Restored(Row row,
+                                        Dictionary<string, Dictionary<string, string>> carried)
+            {
+                if (!carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
+                    return row;
+
+                foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
+
+                return row;
             }
 
             private void Tell(string did, List<string>? problems)
