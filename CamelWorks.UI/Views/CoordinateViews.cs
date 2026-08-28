@@ -956,7 +956,7 @@ namespace CamelWorks.UI.Views
                 var suppress = Ui.Choice(new[] { "suppress", "flag" }, "suppress", null, 100);
                 var editor = new SpecEditor(PredicateSpec.Kinds);
 
-                var add = Ui.Button("Add", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
                 {
                     var spec = editor.Spec();
                     if (spec == null) return;
@@ -976,7 +976,7 @@ namespace CamelWorks.UI.Views
             {
                 var editor = new SpecEditor(GroupingSpec.Kinds);
 
-                var add = Ui.Button("Add", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
                 {
                     var kind = editor.Kind();
                     if (kind == null) return;
@@ -1002,7 +1002,7 @@ namespace CamelWorks.UI.Views
                 var picker = Ui.Choice(parties, party, p => party = p);
                 var editor = new SpecEditor(PredicateSpec.Kinds);
 
-                var add = Ui.Button("Add", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
                 {
                     var spec = editor.Spec();
                     if (spec == null) return;

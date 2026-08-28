@@ -1153,7 +1153,7 @@ namespace CamelWorks.UI.Views
             var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, 200);
             var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, 200);
 
-            var save = Ui.Button("Save", () =>
+            var save = Ui.Icon(Glyphs.Save, "Save these", () =>
             {
                 status.Children.Clear();
 
@@ -1212,12 +1212,12 @@ namespace CamelWorks.UI.Views
 
                     list.Children.Add(Ui.Across(
                         Ui.Pill(table.ToString()),
-                        Ui.Button("Load", () =>
+                        Ui.Icon(Glyphs.MoveIn, "Load this table", () =>
                         {
                             name.Text = mine;
                             body.Text = table.ToText();
                         }),
-                        Ui.Danger("Remove", () =>
+                        Ui.Icon(Glyphs.Bin, "Remove this table", () =>
                         {
                             tables.Remove(mine);
                             Store(session, tables, status);
@@ -1464,7 +1464,7 @@ namespace CamelWorks.UI.Views
 
             Fill();
 
-            var add = Ui.Button("Add", () =>
+            var add = Ui.Icon(Glyphs.Add, "Add this person", () =>
             {
                 status.Children.Clear();
 

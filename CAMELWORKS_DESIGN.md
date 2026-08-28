@@ -121,6 +121,28 @@ The law behind both anatomies is the same one: *the work gets the window, and se
 compete with it.* Rule 2 of §3 stands for tools that are configured and run; a bench earns the
 split the moment its options outgrow the eye.
 
+### What the pass over every tab held each one to
+
+The rebuild of the clash Manage tab named the faults it was fixing, and every other tab in the
+product was then audited against the same nine:
+
+1. A tab that shows something you cannot act on. Every table carries a picking bar; the ratchet
+   in `checks/tables-without-picking.txt` is at zero, and a list of sentences where rows would do
+   (the missing models, the foreign appearance states) is the same fault in a thinner disguise.
+2. A dead end that sends you somewhere else without taking you there.
+3. Rail bloat — anything set once for a project laid out beside the work it has nothing to do
+   with. It moves into `Ui.Configure`, behind a symbol on the action row that names it.
+4. A search that is missing, or is not at the top of the list it searches.
+5. A verb that is not on the rows it acts on, or a table with no right-click.
+6. A button captioned with a sentence where a symbol and a tooltip would do.
+7. No way to act on more than one row, and no way to get the answer out.
+8. Two tabs doing the same job.
+9. A run that succeeds and then stops, with no hand-off to whatever comes next.
+
+Two controls for one decision is rule 1 in a different disguise: the Compare tab had a table of
+baselines and a dropdown of the same baselines, which is how somebody ends up comparing against
+last month. The row is the choice.
+
 ## 3a. An app is a product, not a binder
 
 The anatomy says how a tab looks; `CAMELWORKS_APPS.md` says what an app owes its user — the

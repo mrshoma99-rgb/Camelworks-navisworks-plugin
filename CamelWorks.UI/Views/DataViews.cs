@@ -1734,7 +1734,7 @@ namespace CamelWorks.UI.Views
                         + string.Join(", ", census.Before.Where(v => v.Value != null).Select(v => v.ToString())), 0.7));
 
                     _actions.Children.Add(Ui.Across(
-                        Ui.Button("Rename it", () => Rename(column, census.Present)),
+                        Ui.Icon(Glyphs.Pencil, "Rename it", () => Rename(column, census.Present)),
 
                         // Red, and asked twice. Stripping a column off forty thousand elements is
                         // the harshest act on this tab and it used to be the same grey rectangle

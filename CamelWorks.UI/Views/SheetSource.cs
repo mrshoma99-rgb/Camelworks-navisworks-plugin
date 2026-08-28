@@ -50,7 +50,7 @@ namespace CamelWorks.UI.Views
         /// <summary>The picker: the path, the button, and the sheet.</summary>
         internal UIElement Picker()
         {
-            var open = Ui.Button("Open it", Open);
+            var open = Ui.Icon(Glyphs.Folder, "Open it", Open);
 
             return Ui.Stack(
                 Ui.PathField("Workbook", _file, PathKind.Open,

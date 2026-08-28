@@ -134,7 +134,7 @@ namespace CamelWorks.UI.Views
 
                 jobs.IsEnabled = saved.Count > 0;
 
-                var add = Ui.Button("Add node", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add node", () =>
                 {
                     var kind = NodeCatalogue.All.FirstOrDefault(k => k.Group + ": " + k.Title == picked);
                     if (kind == null) return;
@@ -149,7 +149,7 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 });
 
-                var save = Ui.Button("Save job", () =>
+                var save = Ui.Icon(Glyphs.Save, "Save job", () =>
                 {
                     _log.Children.Clear();
 
@@ -181,7 +181,7 @@ namespace CamelWorks.UI.Views
                     jobs.IsEnabled = true;
                 });
 
-                var load = Ui.Button("Load job", () =>
+                var load = Ui.Icon(Glyphs.MoveIn, "Load job", () =>
                 {
                     _log.Children.Clear();
 
@@ -212,7 +212,7 @@ namespace CamelWorks.UI.Views
                     _log.Children.Add(Ui.Line("Loaded " + _graph + ".", 0.8));
                 });
 
-                var clear = Ui.Button("Empty the canvas", () =>
+                var clear = Ui.Icon(Glyphs.Bin, "Empty the canvas", () =>
                 {
                     _graph = new Graph(_name.Text.Trim());
                     _armed = null;
