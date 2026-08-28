@@ -778,9 +778,16 @@ namespace CamelWorks.UI.Views
                     + Ui.Count(table.Rows.Count, "row") + "."));
 
                 if (table.WithIdentity)
-                    _output.Children.Add(Ui.Small("Fill it in and bring it back through "
-                        + "Data ▸ Bring a sheet back in. The identity column is how each row "
-                        + "finds its element again, so it has to survive the round trip."));
+                {
+                    _output.Children.Add(Ui.Small("The identity column is how each row finds its "
+                        + "element again, so it has to survive the round trip."));
+
+                    // The return leg lives in Data Manager, and "go and find the Excel tab" is
+                    // exactly the sentence this suite has stopped saying: the way back is a press.
+                    _output.Children.Add(Ui.Actions(
+                        Ui.Quiet("When it comes back filled in, read it in on Data Manager",
+                                 () => Ui.Told(ToolViews.Open("excel")))));
+                }
             }
 
             private string Extended(string file)

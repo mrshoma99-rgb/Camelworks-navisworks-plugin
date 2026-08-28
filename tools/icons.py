@@ -52,44 +52,54 @@ INK = (0x33, 0x38, 0x3D)
 # same string rather than nearly the same one.
 FAMILY_INK = {
     "CamelWorks":   (0x57, 0x61, 0x6C),
-    "Federation":   (0x0F, 0x76, 0x6E),
-    "Coordination": (0xC2, 0x41, 0x0C),
+    "Coordinate":   (0xC2, 0x41, 0x0C),
+    "Project":      (0x0F, 0x76, 0x6E),
+    "Compare":      (0x6D, 0x46, 0xC8),
     "Data":         (0x03, 0x69, 0xA1),
-    "Scenes":       (0xB4, 0x53, 0x09),
-    "Deliver":      (0x4D, 0x7C, 0x0F),
+    "Sets":         (0xB4, 0x53, 0x09),
+    "Batch":        (0x4D, 0x7C, 0x0F),
+    "Automate":     (0xBE, 0x18, 0x5D),
 }
 
-# The answer for anything the markup grouping cannot place. Empty today: every command sits in
-# a titled panel.
-LOOSE = {}
+# The suite sits in one ribbon panel, so the panel title cannot carry each app's colour any
+# more. Each command names its family here instead - the same hues the app windows draw their
+# accents in - and this table wins over the panel scan.
+LOOSE = {
+    "Home":         "CamelWorks",
+    "Help":         "CamelWorks",
+    "AppClash":     "Coordinate",
+    "AppIssues":    "Coordinate",
+    "AppAudit":     "Project",
+    "AppTrack":     "Compare",
+    "AppData":      "Data",
+    "AppQuantify":  "Data",
+    "AppSets":      "Sets",
+    "AppScenes":    "Sets",
+    "AppExports":   "Batch",
+    "AppSite":      "Batch",
+    "AppAutomate":  "Automate",
+    "SectionBox":   "Sets",
+}
 
 SIZES = (16, 32)
 
 # One icon per ribbon command. The command id is the file stem, so the [Command] attribute and the
 # file on disk cannot drift apart without the checker noticing.
 ICONS = {
-    "Home":             "home",
-    "Help":             "help",
-    "DeskFederation":   "stacks",
-    "HealthCheck":      "troubleshoot",
-    "Compare":          "compare",
-    "Baseline":         "bookmark_add",
-    "DeskCoordination": "hub",
-    "Board":            "dashboard",
-    "ClashTests":       "grid_on",
-    "Review":           "fact_check",
-    "ClashReport":      "description",
-    "DeskData":         "database",
-    "DataManager":      "table_chart",
-    "Takeoff":          "calculate",
-    "DeskScenes":       "category",
-    "Sets":             "filter_alt",
-    "Appearance":       "palette",
-    "SectionBox":       "crop_free",
-    "DeskDeliver":      "local_shipping",
-    "ExportIfc":        "upload_file",
-    "Compile":          "library_add",
-    "Batch":            "checklist",
+    "Home":         "home",
+    "Help":         "help",
+    "AppClash":     "hub",
+    "AppIssues":    "sync_alt",
+    "AppAudit":     "troubleshoot",
+    "AppTrack":     "compare",
+    "AppData":      "table_chart",
+    "AppQuantify":  "calculate",
+    "AppSets":      "filter_alt",
+    "AppScenes":    "palette",
+    "AppExports":   "upload_file",
+    "AppSite":      "my_location",
+    "AppAutomate":  "account_tree",
+    "SectionBox":   "crop_free",
 }
 
 
@@ -398,7 +408,7 @@ def families():
     """
     source = (ROOT / "CamelWorks.UI" / "CamelWorks.xaml").read_text(encoding="utf-8")
 
-    found = dict(LOOSE)
+    found = {}
     panel = None
 
     for line in source.splitlines():
@@ -413,6 +423,9 @@ def families():
         if button and panel:
             found[button.group(1)] = panel
 
+    # The explicit table wins: one panel holds the whole suite now, so the panel title says
+    # nothing about which app a button is.
+    found.update(LOOSE)
     return found
 
 

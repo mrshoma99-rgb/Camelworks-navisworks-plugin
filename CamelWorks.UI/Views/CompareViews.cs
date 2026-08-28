@@ -120,14 +120,18 @@ namespace CamelWorks.UI.Views
                     : Ui.Line("It will be kept in " + store.Folder + ".", 0.7))
                 : null;
 
+            // The baselines are this tab's data, so they land first: the register of fixed
+            // points the week is measured against, with the comparison's answer under it once
+            // there is one. A tab that opened on empty space over a buried register made the
+            // first question — "what can I even compare against?" — a scroll.
             var stage = Ui.Stack(
                 warning,
-                ready,
-                keeping,
-                results,
-                Ui.Rule(),
                 Ui.Eyebrow("Baselines kept"),
-                listed);
+                listed,
+                keeping,
+                Ui.Rule(),
+                ready,
+                results);
 
             var foot = Ui.Runner("Run the comparison", results, job => Go(session, store, results, job));
 
@@ -1120,7 +1124,7 @@ namespace CamelWorks.UI.Views
         // Odds and ends
         // -------------------------------------------------------------------------------------
 
-        private static SnapshotStore StoreFor(Session session) =>
+        internal static SnapshotStore StoreFor(Session session) =>
             new SnapshotStore(PhysicalFileSystem.Instance,
                               SnapshotStore.FolderFor(session.SavedPath, UserFolder()));
 

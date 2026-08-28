@@ -82,6 +82,10 @@ namespace CamelWorks.UI.Views
 
             private static Session? _readFor;
 
+            // When the shared read happened, so a tab opened later can say how stale it is. A
+            // count with no age reads as current, and a selection read before lunch is not.
+            private static long _readTicks;
+
             private readonly List<AttachmentRule> _rules = new List<AttachmentRule>();
 
             private readonly StackPanel _read = Ui.Stack();
@@ -128,6 +132,7 @@ namespace CamelWorks.UI.Views
                     Chosen.Clear();
                     Shapes.Clear();
                     _readFor = null;
+                    _readTicks = 0;
                 }
 
                 _kept = ToolMemory.Of(session.Store, "field.site");
@@ -147,11 +152,13 @@ namespace CamelWorks.UI.Views
 
                 View = Build();
 
-                // A window opened after another has already read says so, or it looks unread while
-                // showing an answer.
+                // A window opened after another has already read says so — count and age, or it
+                // looks unread while showing an answer, or fresh while showing a stale one. The
+                // runner above the line is the way to read again if the selection has moved.
                 if (Chosen.Count > 0)
                     _read.Children.Add(Ui.Line(Ui.Count(Chosen.Count, "element")
-                        + " already read, from the selection at the time.", 0.75));
+                        + " read " + ActivityLog.Ago(_readTicks, session.NowTicks)
+                        + ", shared by the five tabs. Read again if the selection has moved.", 0.75));
             }
 
             internal UIElement View { get; }
@@ -344,6 +351,7 @@ namespace CamelWorks.UI.Views
                         + " were read."));
 
                 _readFor = _session;
+                _readTicks = _session.NowTicks;
 
                 Draw();
             }

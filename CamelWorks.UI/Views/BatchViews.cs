@@ -31,16 +31,30 @@ namespace CamelWorks.UI.Views
                 body.Children.Add(Ui.Empty("No jobs saved on this project.",
                     "A job is a graph and the settings it runs with. Build one on the Automate canvas and "
                     + "press Save job — or make one from what is open, on the left. It goes in the project "
-                    + "file, so whoever opens the model next has it too."));
+                    + "file, so whoever opens the model next has it too.",
+                    "Open the canvas", () => Ui.Told(Shell.AppWindow.Show("automate", "graph"))));
             }
             else
             {
+                // The activity log already knows when each job last ran; without this column the
+                // person joins the jobs table and the history below it by eye, which is exactly
+                // the Friday question this tab exists to answer.
+                string LastRan(string name)
+                {
+                    var hit = session.Store.Activity.Entries.FirstOrDefault(e =>
+                        e.Kind == ActivityKind.Job
+                        && e.Summary.StartsWith("ran \"" + name + "\"", StringComparison.OrdinalIgnoreCase));
+
+                    return hit == null ? "never" : ActivityLog.Ago(hit.WhenTicks, session.NowTicks);
+                }
+
                 var rows = graphs.Select(g => new TableRow(g,
                     g.Name,
                     Ui.Count(g.Nodes.Count, "node"),
-                    string.Join(", ", g.Nodes.Select(n => n.Definition?.Title ?? n.Kind).Distinct().Take(4)))).ToList();
+                    string.Join(", ", g.Nodes.Select(n => n.Definition?.Title ?? n.Kind).Distinct().Take(4)),
+                    LastRan(g.Name))).ToList();
 
-                body.Children.Add(Ui.Table(rows, ("Job", 170), ("Size", 90), ("What it does", 0))
+                body.Children.Add(Ui.Table(rows, ("Job", 170), ("Size", 90), ("What it does", 0), ("Last ran", 100))
                     .OnPick(item => picked = item as Graph));
 
                 // A list of jobs that can only be run is a list nobody can maintain: a graph saved

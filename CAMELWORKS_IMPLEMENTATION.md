@@ -208,11 +208,11 @@ Resolved on every re-run, so reading those back as truth would silently overwrit
 ---
 
 > **What shipped differs here.** Sections 3 and 4 below describe a ribbon that routes to a pane
-> of tabs; a second design replaced that with thirty-seven buttons opening forty-two windows.
-> Neither survived review. The shipped shape is the third design — five desks, one per job a
-> coordinator has, each a window with a permanent rail of its tools and one surface anatomy —
-> recorded in `CAMELWORKS_DESIGN.md`, with `CamelWorks.UI/Shell/Tools.cs` as the tool registry and
-> `CamelWorks.UI/Shell/Desks.cs` as the map. `CAMELWORKS_BUILD_STATE.md` lists what is built. The
+> of tabs; later designs tried forty-two windows, then five desks. What shipped is the fourth
+> design — a flat suite of eleven apps in the style of the DiRoots collections, each app one
+> window with its modes as tabs and its one action bottom-right — recorded in
+> `CAMELWORKS_DESIGN.md`, with `CamelWorks.UI/Shell/Tools.cs` as the tool registry and
+> `CamelWorks.UI/Shell/Apps.cs` as the map. `CAMELWORKS_BUILD_STATE.md` lists what is built. The
 > rest of this plan — the services, the cut list, the sequencing, the argument for each feature —
 > still holds.
 

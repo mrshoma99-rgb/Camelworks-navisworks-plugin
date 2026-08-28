@@ -44,10 +44,27 @@ namespace CamelWorks.UI.Views
         internal static UIElement WriteProperties()
         {
             var scope = Selection;
+            string? readScope = null;
             var results = Ui.Stack();
             var editor = Ui.Stack();
 
-            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick => scope = pick);
+            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick =>
+            {
+                scope = pick;
+
+                // The writers keep the elements they were opened on; flipping this box does not
+                // move them. Left unsaid, a coordinator reads a selection, widens the scope, and
+                // writes "everything" onto forty elements without anything having disagreed.
+                if (readScope != null && !string.Equals(readScope, pick, StringComparison.Ordinal))
+                {
+                    var was = readScope;
+                    readScope = null;
+
+                    results.Children.Add(Ui.Note("The scope box now says \"" + pick + "\", but the "
+                        + "writers below still hold what was read from \"" + was + "\". Read again "
+                        + "to point them at the new scope."));
+                }
+            });
 
             var read = Ui.Runner("Read what is there now", results, job =>
             {
@@ -55,8 +72,9 @@ namespace CamelWorks.UI.Views
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
                 var keys = new List<ElementKey>();
+                var readFrom = scope;
 
-                var traversal = scope == Selection
+                var traversal = readFrom == Selection
                     ? TraversalScope.CurrentSelection
                     : TraversalScope.WholeDocument;
 
@@ -69,14 +87,18 @@ namespace CamelWorks.UI.Views
                 if (keys.Count == 0)
                 {
                     results.Children.Add(Ui.Empty(
-                        scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
-                        scope == Selection
+                        readFrom == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        readFrom == Selection
                             ? "Select elements in the model, or switch the scope to everything loaded."
                             : "Append a model first."));
                     return;
                 }
 
-                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " in scope.", 1, true));
+                readScope = readFrom;
+
+                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " read from "
+                    + (readFrom == Selection ? "the current selection" : "everything loaded")
+                    + ". The writers below work on exactly those.", 1, true));
 
                 editor.Children.Clear();
                 editor.Children.Add(Writes(session, keys));
@@ -103,10 +125,26 @@ namespace CamelWorks.UI.Views
         public static UIElement Manager()
         {
             var scope = Selection;
+            string? readScope = null;
             var results = Ui.Stack();
             var editor = Ui.Stack();
 
-            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick => scope = pick);
+            var picker = Ui.Choice(new[] { Selection, WholeModel }, scope, pick =>
+            {
+                scope = pick;
+
+                // Same rule as the Write tab: the table and the writers hold what was read, not
+                // what the box says now, and the one moment to say so is the flip itself.
+                if (readScope != null && !string.Equals(readScope, pick, StringComparison.Ordinal))
+                {
+                    var was = readScope;
+                    readScope = null;
+
+                    results.Children.Add(Ui.Note("The scope box now says \"" + pick + "\", but the "
+                        + "table and the writers below still hold what was read from \"" + was
+                        + "\". Read again to point them at the new scope."));
+                }
+            });
 
             var read = Ui.Runner("Read properties", results, job =>
             {
@@ -116,8 +154,9 @@ namespace CamelWorks.UI.Views
                 var keys = new List<ElementKey>();
                 var values = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
                 var blanks = new Dictionary<string, int>(StringComparer.Ordinal);
+                var readFrom = scope;
 
-                var traversal = scope == Selection ? TraversalScope.CurrentSelection : TraversalScope.WholeDocument;
+                var traversal = readFrom == Selection ? TraversalScope.CurrentSelection : TraversalScope.WholeDocument;
 
                 foreach (var item in session.Model.Traverse(traversal))
                 {
@@ -146,12 +185,14 @@ namespace CamelWorks.UI.Views
                 if (keys.Count == 0)
                 {
                     results.Children.Add(Ui.Empty(
-                        scope == Selection ? "Nothing is selected." : "Nothing is loaded.",
-                        scope == Selection
+                        readFrom == Selection ? "Nothing is selected." : "Nothing is loaded.",
+                        readFrom == Selection
                             ? "Select elements in the model, or switch the scope to everything loaded."
                             : "Append a model first."));
                     return;
                 }
+
+                readScope = readFrom;
 
                 var rows = values.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase).Select(p =>
                     new TableRow(p.Key,
@@ -161,7 +202,8 @@ namespace CamelWorks.UI.Views
                             ? blank.ToString(CultureInfo.InvariantCulture) + " blank"
                             : string.Empty)).ToList();
 
-                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + ", "
+                results.Children.Add(Ui.Line(Ui.Count(keys.Count, "element") + " read from "
+                    + (readFrom == Selection ? "the current selection" : "everything loaded") + ", "
                     + Ui.Count(rows.Count, "property"), 1, true));
 
                 var found = Ui.Table(rows, ("Property", 260), ("Value", 200), ("", 0));
@@ -321,7 +363,7 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _source;
+            private readonly ComboBox _source;
             private readonly TextBox _target;
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _applyRow = Ui.Stack();
@@ -336,7 +378,10 @@ namespace CamelWorks.UI.Views
                 // Editing either of these makes the preview a preview of something else, so both
                 // of them drop it. Apply reads the target name live, which is how a preview of
                 // "Code" could write into "Uniclass" without anybody being shown that.
-                _source = Ui.Text("Element / Classification", _ => Stale(), 240);
+                //
+                // The source is a picker fed from the model, because the property a code table
+                // reads is exactly the kind of name somebody otherwise retypes from an element.
+                _source = Pickers.Property("Element / Classification", _ => Stale(), 240);
                 _target = Ui.Text("Code", _ => Stale(), 160);
 
                 _session = session;
@@ -368,7 +413,8 @@ namespace CamelWorks.UI.Views
                 return Ui.Stack(
                     Ui.Form(
                         Ui.Field("Table", picker),
-                        Ui.Field("Read from", _source, "a property on the elements, as \"Category / Name\""),
+                        Ui.Field("Read from", _source,
+                                 "picked from the model; \"Category / Name\" narrows it to one tab"),
                         Ui.Field("Write as", _target)),
                     preview,
                     Ui.Small("A value the table does not list is left alone and counted, never "
@@ -630,6 +676,16 @@ namespace CamelWorks.UI.Views
             internal Panel ApplyRow => _applyRow;
 
             /// <summary>
+            /// Point the return leg at a file, for the screen that knows which sheet went out
+            /// last. Only when the box is empty: a path somebody typed is not ours to replace.
+            /// </summary>
+            /// <param name="path">The workbook that went out.</param>
+            internal void SuggestReturn(string path)
+            {
+                if (_in.Text.Trim().Length == 0) _in.Text = path;
+            }
+
+            /// <summary>
             /// Whether an element that already holds a value gets written over.
             ///
             /// Set from the one picker on the panel rather than owned here. Three write tools each
@@ -805,7 +861,9 @@ namespace CamelWorks.UI.Views
                 _column = writable[0];
                 _property = Suggested(_column);
 
-                var name = Ui.Text(_property, null, 200);
+                // A picker, so the returned column can land on a property spelled the way the
+                // model already spells it rather than the way the sheet's author did.
+                var name = Pickers.Property(_property, null, 200);
                 var picker = Ui.Choice(writable, _column, pick =>
                 {
                     _column = pick;
@@ -982,7 +1040,9 @@ namespace CamelWorks.UI.Views
         {
             var rule = new Replacement { Kind = MatchKind.Part };
 
-            var property = Ui.Text(string.Empty, "Category / Name", text =>
+            // A picker rather than a bare box: the property being corrected is by definition one
+            // the model already carries, so its spelling is in the dropdown.
+            var property = Pickers.Property(string.Empty, text =>
             {
                 var (category, name) = NameOf(text);
                 rule.Category = category;
@@ -1086,7 +1146,8 @@ namespace CamelWorks.UI.Views
             return Ui.Stack(
                 Heading("Correct a value"),
                 Ui.Form(
-                    Ui.Field("Property", property, "which one to correct, as it reads in the table above"),
+                    Ui.Field("Property", property,
+                             "picked from the model; a bare name matches whichever tab carries it"),
                     Ui.Pair(Ui.Field("Find", find), Ui.Field("Replace with", with)),
                     Ui.Field("Matching", how)),
                 cased,
@@ -1116,6 +1177,32 @@ namespace CamelWorks.UI.Views
                 + (keys.Count == 0 ? "the model carries" : "of the " + Ui.Count(keys.Count, "selected element"))
                 + " into a workbook anyone can edit without Navisworks.",
                 "Reading it back previews a diff, element by element, before anything is written."));
+
+            // The two legs of the trip happen days apart, often to different people, and the
+            // activity log is the only place that remembers which file went out in between. The
+            // person opening this tab on Thursday is here for the return leg, so the file that
+            // went out is stated and offered as the file to read back.
+            var trip = session.Store.Activity.Entries.FirstOrDefault(a =>
+                string.Equals(a.Kind, ActivityKind.Export, StringComparison.Ordinal)
+                && a.Summary.StartsWith("wrote properties to a spreadsheet", StringComparison.Ordinal));
+
+            if (trip != null)
+            {
+                var back = session.Store.Activity.Entries.FirstOrDefault(a =>
+                    string.Equals(a.Kind, ActivityKind.Write, StringComparison.Ordinal)
+                    && a.Summary.StartsWith("brought ", StringComparison.Ordinal));
+
+                var returned = back != null && back.WhenTicks >= trip.WhenTicks;
+
+                screen.Status.Children.Add(Ui.Line("The last sheet went out "
+                    + ActivityLog.Ago(trip.WhenTicks, session.NowTicks)
+                    + (trip.Detail == null ? string.Empty : " to " + trip.Detail)
+                    + (returned
+                        ? ", and edits came back " + ActivityLog.Ago(back!.WhenTicks, session.NowTicks) + "."
+                        : ", and nothing has come back in since."), 0.7));
+
+                if (trip.Detail != null) screen.SuggestReturn(trip.Detail);
+            }
 
             return Bench.Surface(
                 Ui.Stack(
@@ -1208,7 +1295,7 @@ namespace CamelWorks.UI.Views
 
             private const string Worked = "worked out from other properties";
 
-            private readonly TextBox _name;
+            private readonly ComboBox _name;
             private readonly TextBox _value;
             private readonly TextBox _formula;
             private readonly StackPanel _status = Ui.Stack();
@@ -1229,7 +1316,10 @@ namespace CamelWorks.UI.Views
                 // under a count worked out for a different one. The formula path was stale the
                 // other way round, applying the parsed formula from the last preview rather than
                 // the text on screen. Two different wrong answers in one screen.
-                _name = Ui.Text("Zone", _ => Stale(), 150);
+                // The name is a picker: half the time the property being written already exists
+                // on part of the model, and the naming standard's spelling is in the dropdown
+                // rather than in whoever's memory is filling it in.
+                _name = Pickers.Property("Zone", _ => Stale(), 150);
                 _value = Ui.Text(string.Empty, _ => Stale(), 200);
                 _formula = Ui.Text(string.Empty, _ => Stale(), 340);
 
@@ -1596,7 +1686,9 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
             private readonly IReadOnlyList<ElementKey> _keys;
 
-            private readonly TextBox _column = Ui.Text(string.Empty, null, 150);
+            // The column is a picker - it exists on the model or there is nothing to rename. The
+            // new name stays a box, because a new name is by definition not in any dropdown.
+            private readonly ComboBox _column = Pickers.Property(string.Empty, null, 150);
             private readonly TextBox _renamed = Ui.Text(string.Empty, null, 150);
             private readonly StackPanel _status = Ui.Stack();
             private readonly StackPanel _actions = Ui.Stack();
@@ -1912,6 +2004,7 @@ namespace CamelWorks.UI.Views
                     after.Children.Add(Stamp(session, levels, items));
                     after.Children.Add(GridStamp(session, grids));
                     after.Children.Add(BreakdownInline(session));
+                    after.Children.Add(LevelHandoffs(results));
                 }
 
                 Show(chosen);
@@ -1926,6 +2019,39 @@ namespace CamelWorks.UI.Views
                 Ui.Stack(Bench.Scope("Everything loaded, wherever it has geometry.")),
                 run,
                 Ui.Stack(results, after));
+        }
+
+        /// <summary>
+        /// Where a stamped level goes to work.
+        ///
+        /// The stamps above write Level and Grid into the CamelWorks tab, and the tools that read
+        /// that tab by name live in other apps — one selection set per level in Sets Manager,
+        /// quantities by level in Quantify. Without these the tab derives, stamps and stops, and
+        /// the coordinator asked "how much ductwork per floor" is left to find the next tool by
+        /// themselves.
+        /// </summary>
+        /// <param name="results">Where to say so if a window will not open.</param>
+        private static UIElement LevelHandoffs(Panel results)
+        {
+            var sets = Ui.Button("Build a set per level...", () =>
+            {
+                var problem = ToolViews.Open("setlib");
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            var takeoff = Ui.Button("Take off quantities by level...", () =>
+            {
+                var problem = ToolViews.Open("takeoff");
+                if (problem != null) results.Children.Add(Ui.Problem(problem));
+            });
+
+            return Ui.Stack(
+                Ui.Rule(),
+                Heading("What the stamp unlocks"),
+                Ui.Actions(sets, takeoff),
+                Ui.Small("Both read what was just stamped: Generate Library makes one selection "
+                         + "set per Level value, and the takeoff's Level axis prefers the "
+                         + "CamelWorks tab over the models' own."));
         }
 
         /// <summary>Where a set of levels came from, as a sentence can use it.</summary>
@@ -2412,6 +2538,10 @@ namespace CamelWorks.UI.Views
                 Provenance();
                 Caveat(result.IsComplete);
 
+                if (_rows == "Level")
+                    LevelGap(result.Groups
+                        .FirstOrDefault(g => g.Name == PivotLine.None)?.Count ?? 0);
+
                 session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
                                                     + " by " + _rows.ToLowerInvariant() + ": " + result);
             }
@@ -2472,6 +2602,11 @@ namespace CamelWorks.UI.Views
                 Provenance();
                 Caveat(table.Grand.IsComplete);
 
+                if (_rows == "Level")
+                    LevelGap(table.RowTotal(PivotLine.None)?.Count ?? 0);
+                else if (_columns == "Level")
+                    LevelGap(table.ColumnTotal(PivotLine.None)?.Count ?? 0);
+
                 if (table.DroppedRows > 0 || table.DroppedColumns > 0)
                     _results.Children.Add(Ui.Note("The largest rows and columns are shown. What is not on "
                         + "screen is still in every total on it, so the numbers add up whether or not "
@@ -2480,6 +2615,26 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Report, "took off " + _measure.ToLowerInvariant()
                                                     + " by " + _rows.ToLowerInvariant() + " and "
                                                     + _columns.ToLowerInvariant() + ": " + table);
+            }
+
+            /// <summary>
+            /// The quantities that landed in "(none)" because elements carry no Level.
+            ///
+            /// Said with the way out rather than left as a row to puzzle over: the Level this
+            /// takeoff reads first is the one Levels &amp; Zones stamps from the geometry itself,
+            /// so the gap is one tab away from closed — and a bill split by level with a fat
+            /// unplaced row is exactly the sheet nobody will sign.
+            /// </summary>
+            /// <param name="missing">How many elements had no Level to be grouped by.</param>
+            private void LevelGap(int missing)
+            {
+                if (missing == 0) return;
+
+                _results.Children.Add(Ui.Info(Ui.Count(missing, "element") + " in scope carries "
+                    + "no Level, so its quantities sit in the \"" + PivotLine.None + "\" line. "
+                    + "Levels & Zones works the levels out from the geometry and stamps them on, "
+                    + "and this takeoff reads that stamp first.",
+                    "Open Levels & Zones", () => Ui.Told(ToolViews.Open("levels"))));
             }
 
             /// <summary>Which unit the column is in, for the heading rather than every cell.</summary>
@@ -2539,8 +2694,19 @@ namespace CamelWorks.UI.Views
 
                 if (file.Length == 0)
                 {
-                    file = System.IO.Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    // Beside the project file first, because that is the folder the rest of the
+                    // team can see; a takeoff in one person's Documents is a takeoff re-run by
+                    // the next person who needs it.
+                    var project = session.Store.Path;
+
+                    var folder = string.IsNullOrWhiteSpace(project)
+                        ? null
+                        : System.IO.Path.GetDirectoryName(project);
+
+                    if (string.IsNullOrEmpty(folder))
+                        folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+                    file = System.IO.Path.Combine(folder!,
                         session.Profile.ProjectName + " takeoff.xlsx");
 
                     _path.Text = file;

@@ -482,13 +482,17 @@ namespace CamelWorks.UI.Views
 
                     if (here.Action != LinkAction.Ignore) mapped++;
 
-                    var tab = Ui.Text(here.Category, text =>
+                    // Both fed from the model: the tab a column reads its existing values from,
+                    // and the property a column lands on, are names the federation already
+                    // carries, and retyping either from memory is how a mapping quietly reads
+                    // the wrong tab.
+                    var tab = Pickers.Tab(here.Category, text =>
                     {
                         here.Category = string.IsNullOrWhiteSpace(text) ? DataLink.DefaultTab : text.Trim();
                         DrawVerdict();
                     }, 130);
 
-                    var name = Ui.Text(here.Property, text =>
+                    var name = Pickers.Property(here.Property, text =>
                     {
                         here.Property = string.IsNullOrWhiteSpace(text) ? here.Heading : text.Trim();
                         DrawVerdict();

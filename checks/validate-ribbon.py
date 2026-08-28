@@ -25,7 +25,7 @@ from xml.etree import ElementTree
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
-EXPECTED_COMMANDS = 22
+EXPECTED_COMMANDS = 14
 EXPECTED_TOOLS = 51
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
@@ -159,40 +159,42 @@ def main():
         if action == "null" and tool_id != "help":
             problems |= fail(f'tool "{tool_id}" is a {shape} with no main action')
 
-    # Every tool must sit on exactly one desk, and every benched tool must have a surface.
+    # Every tool must sit in exactly one app, and every tab must have a surface.
     #
-    # This replaced a check that ToolViews carried a route per tool. Routing goes through the
-    # desks now: a tool the desk registry has never heard of is unreachable from everywhere but
-    # search, and a desk rail row whose tool has no case in Surfaces.cs benches "no surface
-    # here". Help is the one tool on no desk - it is the window that must work when the rest of
-    # the product will not - and Review sits on the Coordination desk but opens its palette.
-    desks_source = read("Shell/Desks.cs")
-    on_desks = re.findall(r'new DeskStage\("[^"]+"(?:, "([a-z]+)")(?:, "([a-z]+)")?(?:, "([a-z]+)")?(?:, "([a-z]+)")?(?:, "([a-z]+)")?\)', desks_source)
-    desk_tools = [t for row in on_desks for t in row if t]
+    # Routing goes through the apps: a tool the app registry has never heard of is unreachable
+    # from everywhere but search, and a tab whose tool has no case in Surfaces.cs opens on "no
+    # surface here". Four tools live outside the table by design - Review's palette, the two
+    # acts, and Help - and each has its own route through ToolViews.
+    apps_source = read("Shell/Apps.cs")
+    on_apps = re.findall(r'new AppTab\("[^"]+", "([a-z]+)"\)', apps_source)
 
-    seen_desk = {}
-    for tool_id in desk_tools:
-        if tool_id in seen_desk:
-            problems |= fail(f'tool "{tool_id}" appears on the desks twice')
-        seen_desk[tool_id] = True
+    seen_app = {}
+    for tool_id in on_apps:
+        if tool_id in seen_app:
+            problems |= fail(f'tool "{tool_id}" appears in the apps twice')
+        seen_app[tool_id] = True
 
     surfaces = read("Views/Surfaces.cs")
     benched = set(re.findall(r'case "([a-z]+)"', surfaces))
 
+    OUTSIDE = {"review", "sectionbox", "baseline", "help"}
+
     for tool_id, shape in re.findall(
             r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),', tools_source):
-        if tool_id == "help":
+        if tool_id in OUTSIDE:
+            if tool_id in seen_app:
+                problems |= fail(f'tool "{tool_id}" lives outside the apps and inside one at once')
             continue
-        if tool_id not in seen_desk:
-            problems |= fail(f'tool "{tool_id}" is on no desk, so no rail reaches it')
-        if shape in ("Act", "Menu", "Panel") or tool_id == "review":
+        if tool_id not in seen_app:
+            problems |= fail(f'tool "{tool_id}" is in no app, so no tab reaches it')
+        if shape in ("Act", "Menu"):
             continue
         if tool_id not in benched:
             problems |= fail(f'tool "{tool_id}" is a {shape} with no surface in Surfaces.cs')
 
     # And no two tools may fall through to the same surface, unless the surface is told which
     # tool it is for. Five field tools share SiteWindow and the three exports share
-    # ExportWindow; both are told, so five rail rows bench five different tools.
+    # ExportWindow; both are told, so five tabs bench five different tools.
     for group in re.finditer(r'((?:\s*case "[a-z]+":\n)+\s*case "[a-z]+": return [^\n]+)', surfaces):
         block = group.group(1)
         ids = re.findall(r'case "([a-z]+)":', block)
@@ -200,7 +202,7 @@ def main():
 
         if len(ids) > 1 and "toolid" not in answer.lower() and "what" not in answer.lower():
             problems |= fail(f"{len(ids)} tools ({', '.join(ids)}) all bench "
-                             f"{answer.strip().rstrip(';')} - a rail row per tool, one surface "
+                             f"{answer.strip().rstrip(';')} - a tab per tool, one surface "
                              f"between them")
 
     # And the main action must be a button that exists.
@@ -242,7 +244,18 @@ def main():
             problems |= fail(f'tool "{tool_id}" promises the action {action} '
                              f"and no Primary, Runner or picked action has that caption")
 
-    named = re.findall(r'Cmd\("(ID_CW_\w+)", "[^"]+", "([a-z]+)"', catalogue_source)
+    named = re.findall(r'(?<![pA])Cmd\("(ID_CW_\w+)", "[^"]+", "([a-z]+)"', catalogue_source)
+
+    # App buttons name an app that exists, and no two name the same one.
+    apps = set(re.findall(r'new App\("([a-z]+)"', apps_source))
+    seen_button = {}
+
+    for cid, app_id in re.findall(r'AppCmd\("(ID_CW_\w+)", "[^"]+", "([a-z]+)"', catalogue_source):
+        if app_id not in apps:
+            problems |= fail(f"{cid} names an app that does not exist: {app_id}")
+        if app_id in seen_button:
+            problems |= fail(f"{cid} and {seen_button[app_id]} both open \"{app_id}\"")
+        seen_button[app_id] = cid
     seen = {}
 
     for cid, tool_id in named:

@@ -195,6 +195,21 @@ namespace CamelWorks.UI.Views
                         ? Ui.Note("Saved as a search set: it re-runs, so elements added later appear in it.")
                         : Ui.Note("Saved as a selection set holding these exact elements. This rule needs more "
                                   + "than one search, and Navisworks search sets can only hold one."));
+
+                    // The set is the input to half the suite, and the screen used to end here —
+                    // published into the tree with nothing saying what the week does with it next.
+                    // These are the three tabs whose first question is "which set".
+                    _results.Children.Add(Ui.Line(
+                        "\"" + title + "\" is in the selection tree now, where the rest of the suite "
+                        + "can pick it up.", 0.8));
+
+                    _results.Children.Add(Ui.Across(
+                        Ui.Button("Colour or hide it in Scene Kit",
+                                  () => Ui.Told(Shell.AppWindow.Show("scenes", "appearance"))),
+                        Ui.Button("Take quantities off it",
+                                  () => Ui.Told(Shell.AppWindow.Show("quantify", "takeoff"))),
+                        Ui.Button("Extract it as a model",
+                                  () => Ui.Told(Shell.AppWindow.Show("exports", "extract")))));
                 });
 
             /// <summary>
@@ -256,6 +271,11 @@ namespace CamelWorks.UI.Views
 
                         if (condition.SetReference != null)
                         {
+                            // A reference row whose set has not been picked yet is a half-typed
+                            // row, same as a numeric comparison with no number: skipped so the
+                            // preview stays usable while the rule is being written.
+                            if (condition.SetReference.Trim().Length == 0) continue;
+
                             leaf = SetExpression.InSet(condition.SetReference, condition.SetReference);
                         }
                         else
@@ -304,8 +324,18 @@ namespace CamelWorks.UI.Views
                     foreach (var condition in group.ToList())
                         _editor.Children.Add(Row(group, condition));
 
+                    // Two doors into a group, because the tool's stated job is properties AND other
+                    // sets — and until now only Load could produce a set-reference row, so the
+                    // second half of the job had no way in from the screen.
                     var add = Ui.Quiet("+ and...", () => { group.Add(new Condition()); Redraw(); });
-                    _editor.Children.Add(Ui.Across(add));
+
+                    var inSet = Ui.Quiet("+ and in a set...", () =>
+                    {
+                        group.Add(new Condition { SetReference = string.Empty });
+                        Redraw();
+                    });
+
+                    _editor.Children.Add(Ui.Across(add, inSet));
                 }
 
                 _editor.Children.Add(Ui.Across(
@@ -317,16 +347,32 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
 
                 row.Children.Add(Ui.Check("not", condition.Negated, v => condition.Negated = v));
-                row.Children.Add(Ui.Text(condition.Category, v => condition.Category = v, 110));
-                row.Children.Add(Ui.Text(condition.Property, v => condition.Property = v, 110));
 
-                row.Children.Add(Ui.Choice(
-                    Enum.GetNames(typeof(SetOperator)),
-                    condition.Operator.ToString(),
-                    v => { if (Enum.TryParse<SetOperator>(v, out var op)) condition.Operator = op; },
-                    150));
+                if (condition.SetReference != null)
+                {
+                    // A set-reference row used to render as a property row with its defaults on
+                    // show, so a loaded rule that meant "in Ductwork" read as "Element.Category".
+                    // It draws as what it is: membership of a set the document already has.
+                    row.Children.Add(Ui.Line("in the set", 0.85));
+                    row.Children.Add(Pickers.Set(condition.SetReference,
+                                                 v => condition.SetReference = v, 220));
+                }
+                else
+                {
+                    // The tab and property come out of the model rather than out of memory — the
+                    // exact spelling is the difference between a set and an empty set. The value
+                    // stays typed: it is often a fragment (Contains "duct") no scan would offer.
+                    row.Children.Add(Pickers.Tab(condition.Category, v => condition.Category = v, 110));
+                    row.Children.Add(Pickers.Property(condition.Property, v => condition.Property = v, 110));
 
-                row.Children.Add(Ui.Text(condition.Value, v => condition.Value = v, 130));
+                    row.Children.Add(Ui.Choice(
+                        Enum.GetNames(typeof(SetOperator)),
+                        condition.Operator.ToString(),
+                        v => { if (Enum.TryParse<SetOperator>(v, out var op)) condition.Operator = op; },
+                        150));
+
+                    row.Children.Add(Ui.Text(condition.Value, v => condition.Value = v, 130));
+                }
 
                 row.Children.Add(Ui.Icon(Glyphs.Close, "Remove this condition",
                                          () => { group.Remove(condition); Redraw(); }));
@@ -1014,9 +1060,14 @@ namespace CamelWorks.UI.Views
 
                 if (_layers.Count == 0)
                 {
-                    _stack.Children.Add(Ui.Empty("No layers yet.",
-                        "Add one from the current selection or from a saved set. Until then CamelWorks is not "
-                        + "deciding anything about how the model looks."));
+                    // The first question on landing is not "what do I add" but "what am I looking
+                    // at" — a federation is nearly always already coloured or part-hidden by
+                    // somebody. The scan below is the answer, so the empty stack points at it.
+                    _stack.Children.Add(Ui.Empty("No layers yet, so CamelWorks is deciding nothing "
+                        + "about how the model looks.",
+                        "What you see now is the host's state — isolates, colours and hidden elements "
+                        + "somebody left behind. Press \"Scan the model\" below to see exactly what "
+                        + "that is, or add a layer from a set or the current selection."));
                     return;
                 }
 
@@ -1143,6 +1194,27 @@ namespace CamelWorks.UI.Views
                 var sources = new List<string> { "Current selection", "Everything" };
                 sources.AddRange(library.Sets.Select(s => "Set: " + s.Name));
 
+                // The document's own sets too, whatever tool made them. A coordinator's sets
+                // mostly live in the Navisworks tree, not in the project library, and a layer
+                // that could not cover them sent people back to select-by-hand.
+                try
+                {
+                    var taken = new HashSet<string>(library.Sets.Select(s => s.Name),
+                                                    StringComparer.OrdinalIgnoreCase);
+
+                    sources.AddRange(session.Model.Sets()
+                        .Select(s => s.DisplayName)
+                        .Where(n => !string.IsNullOrWhiteSpace(n) && !taken.Contains(n))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                        .Select(n => "Navisworks set: " + n));
+                }
+                catch (Exception)
+                {
+                    // A host that cannot list its sets leaves the choice as it was; the project
+                    // library and the selection still work, and that is not worth an error.
+                }
+
                 var source = Ui.Choice(sources, from, v => from = v);
 
                 var add = Ui.Button("Add layer", () =>
@@ -1160,6 +1232,13 @@ namespace CamelWorks.UI.Views
 
                         if (set == null) return;
                         target = LayerTarget.Set(set.Expression, set.Name);
+                    }
+                    else if (from.StartsWith("Navisworks set: ", StringComparison.Ordinal))
+                    {
+                        // A rule target by reference, so the layer follows the set: republish
+                        // the set with more elements in it and the layer covers them too.
+                        var name = from.Substring("Navisworks set: ".Length);
+                        target = LayerTarget.Set(SetExpression.InSet(name, name), name);
                     }
                     else
                     {
@@ -1561,7 +1640,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Render(Session session)
             {
-                var into = Ui.Text(string.Empty, null, 340);
+                var into = Ui.Text(SuggestedRenderFolder(session), null, 340);
                 var size = Ui.Choice(new[] { "1280 x 720", "1920 x 1080", "2560 x 1440" }, "1920 x 1080",
                                      pick => _size = pick);
 
@@ -1642,10 +1721,46 @@ namespace CamelWorks.UI.Views
 
                 return Bench.Group("Render them to images",
                     Ui.PathField("Write into", into, PathKind.Folder,
-                                 hint: "blank writes them to your documents"),
+                                 hint: "suggested beside the model, so the pack lands where the "
+                                       + "job lives"),
                     Ui.Field("Size", size),
                     render,
                     Ui.Small("The camera goes back where it was when the run finishes."));
+            }
+
+            /// <summary>
+            /// A render folder beside the document, or in the user's own documents.
+            ///
+            /// The box used to open blank and the fallback only revealed itself after the run —
+            /// which is a decision the tool can state up front instead of taking silently. Same
+            /// reasoning as the export paths: the person collecting the pack looks next to the
+            /// model first.
+            /// </summary>
+            private static string SuggestedRenderFolder(Session session)
+            {
+                var name = Deliverable.Safe(session.Profile.ProjectName + " viewpoints");
+
+                try
+                {
+                    var saved = session.SavedPath;
+
+                    if (!string.IsNullOrWhiteSpace(saved))
+                    {
+                        var folder = Path.GetDirectoryName(saved);
+
+                        if (!string.IsNullOrEmpty(folder)) return Path.Combine(folder!, name);
+                    }
+
+                    var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+                    return string.IsNullOrEmpty(documents) ? name : Path.Combine(documents, name);
+                }
+                catch (Exception)
+                {
+                    // A profile or path the host will not give up still leaves a usable relative
+                    // name; the run's own CreateDirectory says so if even that cannot be made.
+                    return name;
+                }
             }
 
             /// <summary>The chosen render size.</summary>
@@ -1813,6 +1928,12 @@ namespace CamelWorks.UI.Views
                     {
                         _results.Children.Add(Ui.Note("Load the board in Triage first. These viewpoints are "
                             + "of its groups, so there has to be a board to make them from."));
+
+                        // The missing input lives one app over, so the way there is a button
+                        // rather than an instruction to go and find it.
+                        _results.Children.Add(Ui.Button("Open the board in Clash Manager",
+                            () => Ui.Told(Shell.AppWindow.Show("clash", "triage"))));
+
                         return;
                     }
 

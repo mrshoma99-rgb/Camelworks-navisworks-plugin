@@ -38,6 +38,11 @@ namespace CamelWorks.UI.Views
 
             var broken = Missing(session);
 
+            // The folder the healthy models live in is where a moved file most often went — a
+            // republish landed beside the others while the federation still points at the old
+            // path. Offered as a prefill, not a decision: the box stays the user's.
+            if (broken.Count > 0) folder.Text = Suggest(session) ?? string.Empty;
+
             var look = Ui.Runner("Look for them", results, job => Search(session, folder, broken, results, job));
 
             var head = broken.Count == 0
@@ -53,7 +58,10 @@ namespace CamelWorks.UI.Views
 
             var setup = Ui.Stack(
                 Bench.Group(string.Empty,
-                    Ui.PathField("Look in", folder, PathKind.Folder)));
+                    Ui.PathField("Look in", folder, PathKind.Folder,
+                                 hint: broken.Count > 0 && folder.Text.Length > 0
+                                     ? "prefilled with where the healthy models live"
+                                     : null)));
 
             var stage = Ui.Stack(
                 head,
@@ -68,6 +76,27 @@ namespace CamelWorks.UI.Views
                         + "out of the federation, the board and every report include it."));
 
             return Bench.Surface(setup, look, stage);
+        }
+
+        /// <summary>The folder a healthy model's source lives in, as the first place to look.</summary>
+        private static string? Suggest(Session session)
+        {
+            foreach (var model in session.Model.Models)
+            {
+                if (string.IsNullOrWhiteSpace(model.SourcePath)) continue;
+
+                try
+                {
+                    if (File.Exists(model.SourcePath))
+                        return System.IO.Path.GetDirectoryName(model.SourcePath);
+                }
+                catch (Exception)
+                {
+                    // A path the OS will not parse suggests nothing.
+                }
+            }
+
+            return null;
         }
 
         /// <summary>The loaded models whose source file is not where the federation says it is.</summary>
@@ -164,6 +193,11 @@ namespace CamelWorks.UI.Views
 
                         results.Children.Add(Ui.Line(name + " is in the federation. Remove the stale "
                             + model.DisplayName + " in the Selection Tree and save.", 1, true));
+
+                        // The natural next question is "is it fit to coordinate against now" —
+                        // which is the Health tab's sweep, one press away rather than a memory.
+                        results.Children.Add(Ui.Actions(Ui.Quiet("Check the federation",
+                            () => Ui.Told(AppWindow.Show("audit", "health")))));
 
                         session.Record(ActivityKind.Reconcile, "brought in " + name + " from " + found);
                     }

@@ -95,34 +95,32 @@ carry the clash `Tests` property the other three do.
 
 ---
 
-## UI — the desks
+## UI — the suite
 
-**Fifty-one tools, five desks, twenty-two ribbon buttons.** The third design, recorded in
-`CAMELWORKS_DESIGN.md`. A coordinator has five jobs, and each is a **desk** — one window with a
-permanent rail naming every tool of that job, grouped under its stage in small caps, nothing
-folded and nothing tabbed. One tool is on the bench at a time; the rail says which. The
-beside-the-model tools — the board, changes, the data grid, the set builder, appearance — open in
-the dock pane from wherever they are summoned, and the pane at rest is **Home**: the week's three
-steps with their state, the five desks, the tool search, and recent activity. Review keeps a
-floating palette over the 3D view; Help keeps a window that works when nothing else does.
+**Fifty-one tools, eleven apps, fourteen ribbon buttons.** The fourth design, recorded in
+`CAMELWORKS_DESIGN.md` and modelled on the plug-in collections the client named. The ribbon is
+one flat row: the hub, one button per app, the section-box act and Help. Each app is a
+self-contained window — Clash Manager, Issue Link, Model Audit, Compare Track, Data Manager,
+Quantify, Sets Manager, Scene Kit, Export Kit, Site Pack, Automate — with its modes as a flat
+tab strip across the top, never collapsible, and its accent carried from the ribbon to the tab
+strip. There are no dock panes: an app opens, does its job, and closes. Review keeps its
+floating palette over the 3D view; Help keeps a window that works when nothing else does; the
+**hub** holds the week's three steps with their state, the suite directory, and the Find-a-Tool
+search (`Shell/Finder.cs`), which knows all fifty-one tools by name, synonyms and symptom
+phrasing.
 
 Every tool still carries three things in one registry (`Shell/Tools.cs`): its name, a sentence
-saying what it is trying to do, and **one main action**. `Shell/Desks.cs` says which desk and
-stage each tool sits on; `Views/Surfaces.cs` is the one dispatch a desk benches from; and a
-ribbon check holds all of it consistent — every tool on exactly one desk, every benched tool with
-a surface, no two buttons opening the same thing.
+saying what it is trying to do, and **one main action**. `Shell/Apps.cs` says which app and tab
+each tool is; `Views/Surfaces.cs` is the one dispatch a tab renders from; and a ribbon check
+holds all of it consistent — every tool in exactly one app, every tab with a surface, no two
+buttons opening the same thing.
 
-**Every surface is one anatomy** (`Views/Bench.cs`): a setup column on the left holding every
-input, all of them visible; the tool's one action at the column's foot, in the same place on
-every tool; and the stage on the right, where the answer lands and dominates. At pane width the
-same anatomy stacks. Wizards are the same shape with a spine: every step listed down the left
-with its state, the current step's surface on the stage, Next at the spine's foot (`Ui.Steps`).
+**Every tab renders to one anatomy** (`Views/Bench.cs`): the data fills the window and lands
+first; the options sit in a compact right-hand panel, grouped and all visible; and the one
+action sits bottom-right in a footer bar every app shares, with its progress beside it. Wizards
+are the same shape with their steps across the top and Back/Next in the footer (`Ui.Steps`).
 There are **zero collapsible sections in the product** — `checks/folds.txt` is empty and
-ratcheted, and `Ui.Card`/`Ui.Marked`/`Ui.Numbered` appear on no tool surface.
-
-The ribbon is six panels: Home and Help, then one panel per desk — the desk's button plus the
-daily tools as direct entries that land inside the desk with the tool already on the bench.
-Find a Tool (`Shell/Finder.cs`) knows all fifty-one tools by name, synonyms and symptom phrasing.
+ratcheted, and `Ui.Card`/`Ui.Marked`/`Ui.Numbered` appear on no surface.
 
 **Icons** are Google Material Symbols (Apache-2.0, attributed in `NOTICE`), fetched and rasterised by
 `tools/icons.py` and committed. The tool is in the repository rather than the PNGs alone, so the set

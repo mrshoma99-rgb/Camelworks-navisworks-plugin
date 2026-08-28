@@ -33,6 +33,12 @@ namespace CamelWorks.UI.Views
         /// </summary>
         internal static ClashPipelineResult? LastBoard { get; private set; }
 
+        /// <summary>
+        /// Set by the Tests tab's hand-off: the Board tab presses its own load once on arrival,
+        /// because the user asked for this board the moment they pressed Run.
+        /// </summary>
+        internal static bool LoadOnArrival { get; set; }
+
         /// <summary>What the last board was of, for a report's cover.</summary>
         internal static string? LastBoardLabel { get; private set; }
 
@@ -771,18 +777,41 @@ namespace CamelWorks.UI.Views
                                      ?? "There is no earlier version of the board to go back to."));
                 });
 
-                // Before the first load the stage says what the one action reads; the runner
-                // clears the panel on press, so the statement never sits over a result.
-                _summary.Children.Add(Bench.Ready(
-                    "Loading the board reads every clash test and runs the project's rules over "
-                    + "the results.",
-                    "What is new, what came back, and who owns what all land here."));
+                // A board loaded earlier this session survives leaving the tab. Losing an hour's
+                // triage view to a glance at the Rules tab was the single worst behaviour this
+                // screen had, and the fix is nothing more than hydrating from what the last load
+                // already holds — no host read, no rules run, just the same object redrawn.
+                if (LastBoard != null && Host.Current != null)
+                {
+                    _session = Host.Current;
+                    _board = LastBoard;
+                    _raw = LastDelta;
+                    _delta = _raw?.OnBoard(_board?.Groups.SelectMany(g => g.Items));
+                    _regressed = Regressed();
+
+                    Summarise();
+                    Redraw();
+                }
+                else
+                {
+                    // Before the first load the stage says what the one action reads; the runner
+                    // clears the panel on press, so the statement never sits over a result.
+                    _summary.Children.Add(Bench.Ready(
+                        "Loading the board reads every clash test and runs the project's rules over "
+                        + "the results.",
+                        "What is new, what came back, and who owns what all land here."));
+                }
 
                 var raise = new RaiseScreen();
 
                 // The board is the stage — the filters and the raise form are the only inputs,
                 // so they are the setup column, and the one action is the Monday load.
-                return Bench.Surface(
+                // The board's own next step: one finding at a time in front of the geometry.
+                // Review lost its ribbon button when the suite went flat, and a palette only
+                // reachable through search is a palette nobody finds.
+                var review = Ui.Quiet("Walk them in Review", () => Ui.Told(ReviewWindow.Show()));
+
+                var surface = Bench.Surface(
                     Ui.Stack(
                         Bench.Group("Narrow the board",
                             Ui.Field("Show", _preset),
@@ -791,11 +820,45 @@ namespace CamelWorks.UI.Views
                     run,
                     Ui.Stack(
                         _summary,
-                        Ui.Actions(undo),
+                        Ui.Actions(review, undo),
                         _state,
                         _rows,
                         _detail,
                         raise.Stage()));
+
+                // A run on the Tests tab can send the user here with the results still warm. The
+                // load presses itself then — once, after the surface is on screen — because
+                // "press the button I just told you to press" is a hoop, not a safeguard: the
+                // user already asked for this board by pressing Run.
+                if (LoadOnArrival && LastBoard == null && surface is FrameworkElement fe)
+                {
+                    LoadOnArrival = false;
+
+                    fe.Loaded += (s, e) => fe.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var go = FirstButton(run);
+                        go?.RaiseEvent(new RoutedEventArgs(
+                            System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+
+                return surface;
+            }
+
+            /// <summary>The runner's own go button, so a hand-off can press it.</summary>
+            private static System.Windows.Controls.Button? FirstButton(DependencyObject root)
+            {
+                if (root is System.Windows.Controls.Button button) return button;
+
+                foreach (var child in LogicalTreeHelper.GetChildren(root))
+                {
+                    if (!(child is DependencyObject node)) continue;
+
+                    var found = FirstButton(node);
+                    if (found != null) return found;
+                }
+
+                return null;
             }
 
             /// <summary>
@@ -1460,6 +1523,11 @@ namespace CamelWorks.UI.Views
                     + "They cannot be reported on later either, which is worth knowing now."));
 
             session.Record(ActivityKind.Regroup, record.Describe());
+
+            // A freeze exists so a later argument has a fixed point; the argument itself is
+            // written in Compare Track, and next month's user should not have to remember that.
+            results.Children.Add(Ui.Quiet("When it changes, write the change notice here",
+                () => Ui.Told(Shell.AppWindow.Show("track", "notice"))));
         }
 
         /// <summary>What has moved since somebody put their name to it.</summary>
@@ -2602,11 +2670,15 @@ namespace CamelWorks.UI.Views
 
                 if (ran > 0)
                 {
-                    _runs.Children.Add(Ui.Note("Load the board in Triage to see what they found. "
-                        + "CamelWorks does not read results automatically — a run that takes ten minutes "
-                        + "should not also decide when you look at it."));
-
                     session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "test"));
+
+                    // The run's whole point is the board, so the board is one press away and
+                    // loads itself on arrival — the week's find-to-decide hand-off.
+                    _runs.Children.Add(Ui.Primary("Open the board with these results", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 }
 
                 Redraw();
@@ -2963,6 +3035,65 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>PDF, XLSX or HTML from the board, with nothing to configure first.</summary>
+        /// <summary>
+        /// Where the board stands, said at the top of every Issue Link tab.
+        ///
+        /// Everything in Issue Link issues the board, and the board lives in Clash Manager. A tab
+        /// that only says so at the press — "the board has not been built yet" — has already let
+        /// somebody set up a report of nothing. So each tab opens on the fact: loaded and how many
+        /// issues, or not loaded with Clash Manager's Board one press away, loading on arrival.
+        /// </summary>
+        /// <param name="whenMissing">What pressing on without a board means, on this tab.</param>
+        private static UIElement BoardState(string whenMissing)
+        {
+            var board = LastBoard;
+
+            if (board == null)
+                return Ui.Info("The board is not loaded. " + whenMissing,
+                    "Load the board in Clash Manager",
+                    () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    });
+
+            return Ui.Line("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
+                + Ui.Count(board.Groups.Sum(g => g.Items.Count), "clash")
+                + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel)
+                + ". This tab sends what the Clash Board shows.", 0.75);
+        }
+
+        /// <summary>
+        /// What leaves after a report or a file has left: the other format, and the way back.
+        ///
+        /// The Thursday issue is rarely one artefact — the PDF goes to the meeting, the BCF or the
+        /// clash file goes to whoever answers in a tool — and the reply lands the following week.
+        /// Saying so at the moment of a successful send is what keeps the round trip one workflow
+        /// instead of three windows somebody has to remember are related.
+        /// </summary>
+        /// <param name="into">Where the send just reported.</param>
+        /// <param name="also">The other formats worth sending, as tool ids of this app's tabs.</param>
+        private static void NextSteps(Panel into, params string[] also)
+        {
+            var buttons = new List<UIElement?>();
+
+            foreach (var tool in also)
+            {
+                var here = tool;
+
+                buttons.Add(Ui.Quiet(
+                    here == "bcf" ? "Send it as BCF too"
+                    : here == "clashxml" ? "Send it as a clash file too"
+                    : "Write the report to go with it",
+                    () => Ui.Told(Shell.AppWindow.Show("issues", here))));
+            }
+
+            into.Children.Add(Ui.Actions(buttons.FirstOrDefault(), buttons.Skip(1).ToArray()));
+
+            into.Children.Add(Ui.Small("When an answered file comes back, the BCF tab reads it "
+                + "against this board — and several reviewers' returns come together on Merge."));
+        }
+
         public static UIElement Report() => new ReportScreen().Build();
 
         /// <summary>The penetration schedule, as its own tool rather than a template choice.</summary>
@@ -3103,6 +3234,10 @@ namespace CamelWorks.UI.Views
 
                 var write = Ui.Runner("Write the report", _results, Write);
 
+                _results.Children.Add(BoardState("Writing will build it fresh from the tests and "
+                    + "the saved rules — load it in Clash Manager first to report the board as "
+                    + "you triaged it."));
+
                 _results.Children.Add(Bench.Ready(
                     "Writes the board out for whoever it is for, from a built-in template.",
                     "Each issue takes the next revision letter, and its cover says which one it "
@@ -3204,8 +3339,12 @@ namespace CamelWorks.UI.Views
 
                 if (board == null)
                 {
-                    _markers.Children.Add(Ui.Problem("The board has not been built yet. Open Clash "
-                        + "Triage and run it first - this marks what the board holds."));
+                    _markers.Children.Add(Ui.Info("The board has not been built yet, and this marks "
+                        + "what the board holds.", "Load the board in Clash Manager", () =>
+                        {
+                            LoadOnArrival = true;
+                            Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                        }));
                     return;
                 }
 
@@ -3383,6 +3522,10 @@ namespace CamelWorks.UI.Views
 
                 if (was != null) _results.Children.Add(Ui.Line(was.Supersedes, 0.8));
 
+                // Not after a penetration schedule: that goes to the structural engineer as the
+                // document it is, and nobody answers a pour list through a BCF tool.
+                if (_mode != Penetration) NextSteps(_results, "bcf", "clashxml");
+
                 session.Record(ActivityKind.Report,
                     "wrote a " + _format + " clash report, revision " + revision, file);
             }
@@ -3450,6 +3593,8 @@ namespace CamelWorks.UI.Views
                 session.Store.Save();
 
                 _results.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "file") + ".", 1, true));
+
+                if (written > 0 && _mode != Penetration) NextSteps(_results, "bcf", "clashxml");
 
                 session.Record(ActivityKind.Report,
                     "wrote " + Ui.Count(written, "clash report") + ", one per party");
@@ -4362,6 +4507,14 @@ namespace CamelWorks.UI.Views
                 session.Store.Save();
 
                 results.Children.Add(Ui.Line("Wrote " + file, 0.8));
+
+                results.Children.Add(Ui.Actions(Ui.Quiet("Write the report to go with it",
+                    () => Ui.Told(Shell.AppWindow.Show("issues", "clashreport")))));
+
+                results.Children.Add(Ui.Small("When it comes back answered, put it in \"Read the "
+                    + "answers back\" and what it says lands against this board. Several "
+                    + "reviewers' returns come together on the Merge tab."));
+
                 session.Record(ActivityKind.Exchange, "exported BCF " + version, file);
             });
 
@@ -4442,6 +4595,10 @@ namespace CamelWorks.UI.Views
                 session.Record(ActivityKind.Exchange, "read a BCF file", file);
             });
 
+            results.Children.Add(BoardState("Sending will build it fresh from the tests and the "
+                + "saved rules — load it in Clash Manager first to send the board as you "
+                + "triaged it. The spreadsheet leg needs it loaded either way."));
+
             results.Children.Add(Bench.Ready(
                 "Sends the board out as one topic per issue, for whichever tool answers.",
                 "What comes back is read against the board, and nothing is applied until you "
@@ -4479,8 +4636,12 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Note("Load the board in Triage first. The worksheet is of the "
-                    + "board, and without one there is nothing to send."));
+                results.Children.Add(Ui.Info("The worksheet is of the board, and without one there "
+                    + "is nothing to send.", "Load the board in Clash Manager", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 return;
             }
 
@@ -4553,6 +4714,9 @@ namespace CamelWorks.UI.Views
 
             results.Children.Add(Ui.Line("Wrote " + Ui.Count(lines.Count, "issue") + " to " + file, 1, true));
 
+            results.Children.Add(Ui.Small("When the filled-in sheet comes back, put it in \"Read "
+                + "the answers back\" and what it says lands against this board."));
+
             session.Record(ActivityKind.Exchange,
                 "wrote an issue worksheet for " + party + " - " + Ui.Count(lines.Count, "issue"), file);
         }
@@ -4567,8 +4731,13 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Note("Load the board in Triage and read this sheet again. "
-                    + "Without a board there is nothing to reconcile against."));
+                results.Children.Add(Ui.Info("Without a board there is nothing to reconcile this "
+                    + "sheet against. Load it, then read the sheet again.",
+                    "Load the board in Clash Manager", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 return;
             }
 
@@ -4919,6 +5088,10 @@ namespace CamelWorks.UI.Views
                     "merged " + Ui.Count(returns.Count, "returned pack"), merged.Explain());
             });
 
+            results.Children.Add(BoardState("The packs still merge without it, but their answers "
+                + "have nothing to land on — load it first and the merge ends at an apply "
+                + "button rather than at a message."));
+
             results.Children.Add(Bench.Ready(
                 "Reads every returned pack at once and folds their answers onto one board.",
                 "Six packs go out on Monday and six come back on Thursday, each holding the same "
@@ -4970,8 +5143,13 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Note("Load the board in Triage and read this file again to see "
-                    + "what it says about it. Without a board there is nothing to reconcile against."));
+                results.Children.Add(Ui.Info("Without a board there is nothing to reconcile these "
+                    + "answers against. Load it, then read the file again to see what it says.",
+                    "Load the board in Clash Manager", () =>
+                    {
+                        LoadOnArrival = true;
+                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                    }));
                 return;
             }
 

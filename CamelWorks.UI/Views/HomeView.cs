@@ -15,7 +15,7 @@ namespace CamelWorks.UI.Views
     /// that shape in their head every Monday. This screen is the shape with the state filled in,
     /// and under it the five desks, each with the one sentence that says which job it is.
     ///
-    /// It is what the dock pane shows when no beside-the-model tool has it. It is a place to
+    /// It is what the hub window shows. It is a place to
     /// leave from: no tool lives here.
     /// </summary>
     public static class HomeView
@@ -178,19 +178,19 @@ namespace CamelWorks.UI.Views
         };
 
         /// <summary>
-        /// The five desks: the job each one is, and the way to it.
+        /// The suite: every app, the job it is, and the way to it.
         /// </summary>
         private static UIElement DeskList()
         {
             var stack = Ui.Stack();
 
-            var label = Ui.Eyebrow("The desks");
+            var label = Ui.Eyebrow("The apps");
             label.Margin = new Thickness(0, 12, 0, 4);
             stack.Children.Add(label);
 
-            foreach (var desk in Desks.All)
+            foreach (var app in Apps.All)
             {
-                var here = desk;
+                var here = app;
 
                 var marker = new Border
                 {
@@ -221,12 +221,12 @@ namespace CamelWorks.UI.Views
                 };
 
                 button.Wearing("RailRow");
-                button.Click += (s, e) => Ui.Told(DeskWindow.Show(here.Id));
+                button.Click += (s, e) => Ui.Told(AppWindow.Show(here.Id));
 
                 stack.Children.Add(button);
             }
 
-            stack.Children.Add(Ui.Small("Every tool is on one of these, and Find a tool above "
+            stack.Children.Add(Ui.Small("Every tool is a tab of one of these, and the search above "
                                         + "knows them all by what they do."));
 
             return stack;

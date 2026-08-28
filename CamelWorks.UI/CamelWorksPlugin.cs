@@ -7,13 +7,13 @@ using CamelWorks.UI.Views;
 namespace CamelWorks.UI
 {
     /// <summary>
-    /// The CamelWorks ribbon tab and its twenty-two commands.
+    /// The CamelWorks ribbon tab and its fourteen commands.
     ///
-    /// A button goes to one of three places, decided by the catalogue entry: Home brings up the
-    /// dock pane at rest, a desk button opens that desk's window, and a tool button sends the
-    /// tool where it lives — its desk's bench, the dock pane for the beside-the-model tools, or
-    /// its own window for Review and Help. No button opens a modal, because a modal over a 3D
-    /// view hides the very thing the user is deciding about.
+    /// One flat row: the hub, one button per app of the suite, the section-box act and Help. A
+    /// button goes to one of three places, decided by the catalogue entry: the hub window, an
+    /// app's window on the tab its work stopped at, or a tool that lives outside the apps —
+    /// Review's palette, the acts, Help. No button opens a modal, because a modal over a 3D view
+    /// hides the very thing the user is deciding about.
     ///
     /// The command ids here must match CamelWorks.xaml exactly. They also appear in
     /// <see cref="CommandCatalogue"/>, which is the one place the routing and the tooltips come
@@ -31,56 +31,40 @@ namespace CamelWorks.UI
     [RibbonLayout("CamelWorks.xaml")]
     [RibbonTab("ID_Tab_CamelWorks")]
     [Command("ID_CW_Home", Icon = "Resources\\Home_16.png", LargeIcon = "Resources\\Home_32.png",
-        DisplayName = "Home", ToolTip = "The week, the desks, and the tool search")]
-    [Command("ID_CW_Help", Icon = "Resources\\Help_16.png", LargeIcon = "Resources\\Help_32.png",
-        DisplayName = "Help", ToolTip = "Guide, limitations, shortcuts, diagnostics and about")]
-    [Command("ID_CW_DeskFederation", Icon = "Resources\\DeskFederation_16.png", LargeIcon = "Resources\\DeskFederation_32.png",
-        DisplayName = "Federation", ToolTip = "Bring the models in, and know whether to trust them")]
-    [Command("ID_CW_HealthCheck", Icon = "Resources\\HealthCheck_16.png", LargeIcon = "Resources\\HealthCheck_32.png",
-        DisplayName = "Health Check", ToolTip = "Is this federation fit to coordinate against?")]
-    [Command("ID_CW_Compare", Icon = "Resources\\Compare_16.png", LargeIcon = "Resources\\Compare_32.png",
-        DisplayName = "Compare Revisions", ToolTip = "What changed against a baseline, and how it knows")]
-    [Command("ID_CW_Baseline", Icon = "Resources\\Baseline_16.png", LargeIcon = "Resources\\Baseline_32.png",
-        DisplayName = "Baseline", ToolTip = "Record what the model is now, in one press")]
-    [Command("ID_CW_DeskCoordination", Icon = "Resources\\DeskCoordination_16.png", LargeIcon = "Resources\\DeskCoordination_32.png",
-        DisplayName = "Coordination", ToolTip = "Find what fights, decide it, and send it")]
-    [Command("ID_CW_Board", Icon = "Resources\\Board_16.png", LargeIcon = "Resources\\Board_32.png",
-        DisplayName = "Clash Board", ToolTip = "Results worked down to owned issues that survive the next run")]
-    [Command("ID_CW_ClashTests", Icon = "Resources\\ClashTests_16.png", LargeIcon = "Resources\\ClashTests_32.png",
-        DisplayName = "Clash Tests", ToolTip = "What clashes against what, and how close is too close")]
-    [Command("ID_CW_Review", Icon = "Resources\\Review_16.png", LargeIcon = "Resources\\Review_32.png",
-        DisplayName = "Review", ToolTip = "One issue at a time over the model, on the keyboard")]
-    [Command("ID_CW_ClashReport", Icon = "Resources\\ClashReport_16.png", LargeIcon = "Resources\\ClashReport_32.png",
-        DisplayName = "Clash Report", ToolTip = "The board as a document somebody without Navisworks can read")]
-    [Command("ID_CW_DeskData", Icon = "Resources\\DeskData_16.png", LargeIcon = "Resources\\DeskData_32.png",
-        DisplayName = "Data", ToolTip = "What the elements carry, and the pen to fix it")]
-    [Command("ID_CW_DataManager", Icon = "Resources\\DataManager_16.png", LargeIcon = "Resources\\DataManager_32.png",
-        DisplayName = "Data Manager", ToolTip = "Every property in one grid, and the pen to fix it")]
-    [Command("ID_CW_Takeoff", Icon = "Resources\\Takeoff_16.png", LargeIcon = "Resources\\Takeoff_32.png",
-        DisplayName = "Takeoff", ToolTip = "Quantities summed how a bill wants them")]
-    [Command("ID_CW_DeskScenes", Icon = "Resources\\DeskScenes_16.png", LargeIcon = "Resources\\DeskScenes_32.png",
-        DisplayName = "Scenes", ToolTip = "What is selected, what is visible, and what colour it is")]
-    [Command("ID_CW_Sets", Icon = "Resources\\Sets_16.png", LargeIcon = "Resources\\Sets_32.png",
-        DisplayName = "Set Builder", ToolTip = "The selections everything else works on")]
-    [Command("ID_CW_Appearance", Icon = "Resources\\Appearance_16.png", LargeIcon = "Resources\\Appearance_32.png",
-        DisplayName = "Appearance", ToolTip = "What is coloured, what is hidden, and which layer did it")]
+        DisplayName = "CamelWorks", ToolTip = "The week, the search, and the way to every app")]
+    [Command("ID_CW_AppClash", Icon = "Resources\\AppClash_16.png", LargeIcon = "Resources\\AppClash_32.png",
+        DisplayName = "Clash Manager", ToolTip = "Find what fights, and decide it")]
+    [Command("ID_CW_AppIssues", Icon = "Resources\\AppIssues_16.png", LargeIcon = "Resources\\AppIssues_32.png",
+        DisplayName = "Issue Link", ToolTip = "Issues out to the world, and answers back in")]
+    [Command("ID_CW_AppAudit", Icon = "Resources\\AppAudit_16.png", LargeIcon = "Resources\\AppAudit_32.png",
+        DisplayName = "Model Audit", ToolTip = "Whether this federation is fit to coordinate against")]
+    [Command("ID_CW_AppTrack", Icon = "Resources\\AppTrack_16.png", LargeIcon = "Resources\\AppTrack_32.png",
+        DisplayName = "Compare Track", ToolTip = "What changed, against what, since when")]
+    [Command("ID_CW_AppData", Icon = "Resources\\AppData_16.png", LargeIcon = "Resources\\AppData_32.png",
+        DisplayName = "Data Manager", ToolTip = "What the elements carry, and the pen to fix it")]
+    [Command("ID_CW_AppQuantify", Icon = "Resources\\AppQuantify_16.png", LargeIcon = "Resources\\AppQuantify_32.png",
+        DisplayName = "Quantify", ToolTip = "Numbers out of the model, the way a bill wants them")]
+    [Command("ID_CW_AppSets", Icon = "Resources\\AppSets_16.png", LargeIcon = "Resources\\AppSets_32.png",
+        DisplayName = "Sets Manager", ToolTip = "The selections everything else works on")]
+    [Command("ID_CW_AppScenes", Icon = "Resources\\AppScenes_16.png", LargeIcon = "Resources\\AppScenes_32.png",
+        DisplayName = "Scene Kit", ToolTip = "What is visible, and what colour it is")]
+    [Command("ID_CW_AppExports", Icon = "Resources\\AppExports_16.png", LargeIcon = "Resources\\AppExports_32.png",
+        DisplayName = "Export Kit", ToolTip = "The model as a file somebody else opens")]
+    [Command("ID_CW_AppSite", Icon = "Resources\\AppSite_16.png", LargeIcon = "Resources\\AppSite_32.png",
+        DisplayName = "Site Pack", ToolTip = "The model reaching the people building it")]
+    [Command("ID_CW_AppAutomate", Icon = "Resources\\AppAutomate_16.png", LargeIcon = "Resources\\AppAutomate_32.png",
+        DisplayName = "Automate", ToolTip = "Doing all of it again next Friday, in one press")]
     [Command("ID_CW_SectionBox", Icon = "Resources\\SectionBox_16.png", LargeIcon = "Resources\\SectionBox_32.png",
         DisplayName = "Section Box", ToolTip = "Box the selection, or switch sectioning off")]
-    [Command("ID_CW_DeskDeliver", Icon = "Resources\\DeskDeliver_16.png", LargeIcon = "Resources\\DeskDeliver_32.png",
-        DisplayName = "Deliver", ToolTip = "The model leaving the building")]
-    [Command("ID_CW_ExportIfc", Icon = "Resources\\ExportIfc_16.png", LargeIcon = "Resources\\ExportIfc_32.png",
-        DisplayName = "Export IFC", ToolTip = "IFC4 or 2x3, with mapping and classification")]
-    [Command("ID_CW_Compile", Icon = "Resources\\Compile_16.png", LargeIcon = "Resources\\Compile_32.png",
-        DisplayName = "Compile", ToolTip = "Supplier drops appended newest-first, with the log")]
-    [Command("ID_CW_Batch", Icon = "Resources\\Batch_16.png", LargeIcon = "Resources\\Batch_32.png",
-        DisplayName = "Batch", ToolTip = "A list of jobs, run in order, in one press")]
+    [Command("ID_CW_Help", Icon = "Resources\\Help_16.png", LargeIcon = "Resources\\Help_32.png",
+        DisplayName = "Help", ToolTip = "Guide, limitations, shortcuts, diagnostics and about")]
     public class CamelWorksPlugin : CommandHandlerPlugin
     {
         /// <summary>
         /// Create the handler.
         ///
-        /// Registers the side-by-side assembly resolver — see <see cref="CamelWorksPaneBase"/> for
-        /// why both entry points do it.
+        /// Registers the side-by-side assembly resolver here, because by the time a screen needs
+        /// CamelWorks.Core the JIT has already tried and failed to find it.
         /// </summary>
         public CamelWorksPlugin() => Host.Ensure();
 
@@ -103,14 +87,13 @@ namespace CamelWorks.UI
             {
                 string? said;
 
-                if (command.DeskId != null)
+                if (command.AppId != null)
                 {
-                    said = DeskWindow.Show(command.DeskId);
+                    said = AppWindow.Show(command.AppId);
                 }
                 else if (command.ToolId == null)
                 {
-                    // Home: the dock pane at rest.
-                    said = OpenHome();
+                    said = HubWindow.Open();
                 }
                 else if (command.Tool?.Shape == ToolShape.Act)
                 {
@@ -139,8 +122,8 @@ namespace CamelWorks.UI
         /// Nearly every one of these needs a model, so with nothing open they are shown but
         /// disabled — visible, so the tab does not look empty and the user can see what the
         /// product offers, and disabled, because a button that looks available and then says
-        /// "open a model first" has wasted the click and taught nothing. Home and Help are the
-        /// two that stay live: Home says what the product is, and Help must work when nothing
+        /// "open a model first" has wasted the click and taught nothing. The hub and Help are the
+        /// two that stay live: the hub says what the product is, and Help must work when nothing
         /// else does.
         /// </summary>
         /// <param name="commandId">The command being asked about.</param>
@@ -154,27 +137,6 @@ namespace CamelWorks.UI
             var ready = document != null && !document.IsClear;
 
             return new CommandState(ready);
-        }
-
-        /// <summary>Bring up the main pane at rest — the week, the desks and the search.</summary>
-        private static string? OpenHome()
-        {
-            var record = Autodesk.Navisworks.Api.Application.Plugins.FindPlugin(PaneRouter.MainPaneKey);
-
-            if (!(record is DockPanePluginRecord dockRecord))
-                return "The CamelWorks panel is not registered with Navisworks. This almost always "
-                       + "means the CamelWorks.UI.dll in this Navisworks year folder was built "
-                       + "against a different release.";
-
-            if (!dockRecord.IsLoaded) dockRecord.LoadPlugin();
-
-            if (dockRecord.LoadedPlugin is CamelWorksPaneBase pane)
-            {
-                pane.Visible = true;
-                pane.Show(null);
-            }
-
-            return null;
         }
 
         private static void Warn(string message) =>

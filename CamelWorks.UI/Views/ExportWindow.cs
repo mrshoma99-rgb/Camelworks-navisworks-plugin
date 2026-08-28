@@ -38,6 +38,11 @@ namespace CamelWorks.UI.Views
         /// <summary>How many elements one export will read before it stops and says so.</summary>
         public const int Ceiling = 250_000;
 
+        // The one thing the three format tabs share is the scope, so it is shared for real: chosen
+        // on GLB, it is already chosen when the Drawing tab opens. A static rather than the project
+        // file, because "what I am exporting this minute" is a fact about the session, not the job.
+        private static string _scope = "Current selection";
+
 
         /// <summary>The surface for one export, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -53,17 +58,16 @@ namespace CamelWorks.UI.Views
 
         private static UIElement Body(Session session, string kind)
         {
-            var scope = "Current selection";
-            var picker = Ui.Choice(new[] { "Current selection", "Everything loaded" }, scope,
-                                   pick => scope = pick);
+            var picker = Ui.Choice(new[] { "Current selection", "Everything loaded" }, _scope,
+                                   pick => _scope = pick);
 
             // The scope group is the same on all three because it is the one thing they share;
             // everything after it is that format's own.
             var scoped = Bench.Group("", Ui.Field("Scope", picker));
 
-            return kind == "glb" ? Geometry(session, scoped, () => scope)
-                : kind == "dxf" ? Drawing(session, scoped, () => scope)
-                : Properties(session, scoped, () => scope);
+            return kind == "glb" ? Geometry(session, scoped, () => _scope)
+                : kind == "dxf" ? Drawing(session, scoped, () => _scope)
+                : Properties(session, scoped, () => _scope);
         }
 
         /// <summary>Which elements the scope means, in the order the model has them.</summary>
@@ -400,11 +404,34 @@ namespace CamelWorks.UI.Views
 
         private static UIElement Properties(Session session, UIElement scoped, Func<string> scope)
         {
+            // The columns and the tab are about this job, not this machine: the person who writes
+            // the same five-column sheet every Friday should find Friday's columns already there.
+            var kept = ToolMemory.Of(session.Store, "publish.sheet");
+
             var path = Ui.Text(Suggested(session, ".xlsx"), null, 240);
             var format = "Spreadsheet (.xlsx)";
-            var tab = Ui.Text("Element", null, 150);
-            var names = Ui.Text("Category, Type, Level, Discipline", null, 240);
+            var tabName = kept.Text("tab", "Element") ?? "Element";
+            var tab = Pickers.Tab(tabName, pick => tabName = pick, 150);
+            var names = Ui.Text(kept.Text("columns", "Category, Type, Level, Discipline"), null, 240);
             var results = Ui.Stack();
+
+            // A pick from the model's own vocabulary joins the list; the box above stays typable
+            // for a name the bounded scan did not reach. SelectionChanged rather than the picker's
+            // onChanged, because onChanged also fires per keystroke and typing must not append.
+            var add = Pickers.Property(null, null, 200);
+
+            add.SelectionChanged += (s, e) =>
+            {
+                if (!(add.SelectedItem is string pick) || pick.Trim().Length == 0) return;
+
+                var have = names.Text.Split(',').Select(n => n.Trim())
+                                     .Where(n => n.Length > 0).ToList();
+
+                if (have.Contains(pick, StringComparer.OrdinalIgnoreCase)) return;
+
+                have.Add(pick.Trim());
+                names.Text = string.Join(", ", have);
+            };
 
             var idle = Ui.Stack(Bench.Ready(
                 "Writes the properties you name, one row per element in scope.",
@@ -434,7 +461,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var category = tab.Text.Trim();
+                var category = tabName.Trim();
 
                 var wanted = names.Text
                     .Split(',')
@@ -517,6 +544,10 @@ namespace CamelWorks.UI.Views
                         + "not dropped: a spreadsheet whose row count disagrees with the model's is one "
                         + "somebody spends an afternoon reconciling."));
 
+                // Remembered on a run that wrote, not on every keystroke: half-typed column lists
+                // are drafts, and the one that produced a file is the one worth finding on Friday.
+                kept.Set("tab", tabName).Set("columns", names.Text).Keep();
+
                 session.Record(ActivityKind.Export, "wrote " + Ui.Count(rows, "row") + " of properties");
             });
 
@@ -528,6 +559,8 @@ namespace CamelWorks.UI.Views
                              "\"Element\" is the Revit one; Item is read as well."),
                     Ui.Field("Properties", names,
                              "One column each, comma separated."),
+                    Ui.Field("Add one", add,
+                             "the model's own names — a pick joins the list above"),
                     Ui.PathField("Write to", path, PathKind.Save)));
 
             return Bench.Surface(setup, run, Ui.Stack(idle, results));

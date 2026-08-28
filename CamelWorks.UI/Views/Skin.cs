@@ -82,7 +82,7 @@ namespace CamelWorks.UI.Views
                         // A duplicate x:Key makes the whole dictionary throw while it is being
                         // built, and every control in the product comes up in Windows' own styling
                         // with nothing anywhere saying why.
-                        Problem = "The CamelWorks skin could not be loaded, so the pane is drawn in "
+                        Problem = "The CamelWorks skin could not be loaded, so the windows are drawn in "
                                   + "Windows' own control styling. Everything still works. "
                                   + e.GetType().Name + ": " + e.Message;
                     }

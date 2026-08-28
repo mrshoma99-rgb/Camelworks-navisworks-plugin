@@ -5,14 +5,13 @@ using System.Windows.Controls;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The surface anatomy every tool is built to. See <c>CAMELWORKS_DESIGN.md</c> §3.
+    /// The app anatomy every tab renders to. See <c>CAMELWORKS_DESIGN.md</c> §3.
     ///
-    /// One shape, everywhere: a <b>setup</b> column on the left holding every input, all of them
-    /// visible; the tool's <b>one action</b> at the column's foot, in the same place on every
-    /// tool; and the <b>stage</b> on the right, where the answer lands and dominates. A tool is a
-    /// rail row, an option is a field in setup, a result is on the stage — and nothing else
-    /// exists, which is the structural answer to "you don't know what is part of a tool and what
-    /// is its own tool".
+    /// One shape, everywhere, and it is the shape of the suites the client named: the <b>data</b>
+    /// fills the window and lands first; the <b>options</b> sit in a compact right-hand panel,
+    /// grouped and all visible; and the <b>one action</b> sits bottom-right in a footer bar every
+    /// app shares, with its progress beside it. Read the data, set the options, press the big
+    /// button — the contract a coordinator already knows from every good dialog they use.
     ///
     /// Built from the design-system primitives in <see cref="Ui"/> and painted by <see cref="Skin"/>
     /// keys. There are no folds anywhere in this anatomy: an option that seems to deserve hiding
@@ -20,19 +19,16 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class Bench
     {
-        /// <summary>How wide the setup column is, unless the surface asks otherwise.</summary>
-        public const double SetupWidth = 312;
-
-        /// <summary>Below this width the two columns stack — the pane's shape, not a different screen.</summary>
-        public const double NarrowBelow = 620;
+        /// <summary>How wide the options panel is, unless the surface asks otherwise.</summary>
+        public const double SetupWidth = 300;
 
         /// <summary>
-        /// A surface: setup column, its foot action, and the stage.
+        /// A surface: the data area, the options panel, and the footer action.
         /// </summary>
-        /// <param name="setup">The inputs, built from <see cref="Group"/> rows. May be null for a tool with none.</param>
-        /// <param name="foot">The one action — usually a <see cref="Ui.Runner"/> panel. May be null while a tool stages its own commit.</param>
-        /// <param name="stage">The answer's home. Scrolls on its own.</param>
-        /// <param name="setupWidth">Setup column width, or zero for the default.</param>
+        /// <param name="setup">The options, built from <see cref="Group"/> rows, shown on the right. Null for a tab with none.</param>
+        /// <param name="foot">The one action — usually a <see cref="Ui.Runner"/> panel — bottom-right. Null while a tab stages its own commit in the data area.</param>
+        /// <param name="stage">The data. Fills the window and scrolls on its own.</param>
+        /// <param name="setupWidth">Options panel width, or zero for the default.</param>
         /// <param name="scrollStage">
         /// False for the one stage that manages its own scrolling — the graph canvas, which needs
         /// a horizontal bar this wrapper deliberately refuses everything else.
@@ -42,12 +38,83 @@ namespace CamelWorks.UI.Views
         {
             if (stage == null) throw new ArgumentNullException(nameof(stage));
 
-            return new SurfaceHost(setup, foot, stage,
-                                   setupWidth > 0 ? setupWidth : SetupWidth, scrollStage);
+            var width = setupWidth > 0 ? setupWidth : SetupWidth;
+
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var body = new Grid();
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var data = scrollStage
+                ? (UIElement)new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = stage,
+                    Padding = new Thickness(16, 12, 16, 16),
+                }
+                : stage;
+
+            var ground = new Border { Child = data };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+            body.Children.Add(ground);
+
+            if (setup != null)
+            {
+                var options = new Border
+                {
+                    Width = width,
+                    BorderThickness = new Thickness(1, 0, 0, 0),
+                    Child = new ScrollViewer
+                    {
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                        Content = setup,
+                        Padding = new Thickness(14, 12, 14, 12),
+                    },
+                };
+
+                options.Tint(Border.BackgroundProperty, "Pane");
+                options.Tint(Border.BorderBrushProperty, "Bd");
+
+                Grid.SetColumn(options, 1);
+                body.Children.Add(options);
+            }
+
+            root.Children.Add(body);
+
+            if (foot != null)
+            {
+                // The footer: the same bar in every app, with the primary on the right. The foot
+                // element is usually a Runner, which carries its own progress and Stop, so the
+                // whole of it is right-aligned rather than split.
+                var footer = new Border
+                {
+                    Padding = new Thickness(16, 9, 16, 10),
+                    BorderThickness = new Thickness(0, 1, 0, 0),
+                    Child = new ContentControl
+                    {
+                        Content = foot,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        MaxWidth = 560,
+                    },
+                };
+
+                footer.Tint(Border.BackgroundProperty, "Pane");
+                footer.Tint(Border.BorderBrushProperty, "Bd");
+
+                Grid.SetRow(footer, 1);
+                root.Children.Add(footer);
+            }
+
+            return root;
         }
 
         /// <summary>
-        /// A group of setup fields under a small-caps label.
+        /// A group of options under a small-caps label.
         ///
         /// The label carries the meaning a card's chrome used to pretend to; the fields are always
         /// visible. Null children are skipped so callers can include a row conditionally.
@@ -79,7 +146,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// What the action will read, stated at the top of setup from the live model.
+        /// What the action will read, stated over the data from the live model.
         ///
         /// Never boilerplate: "3,120 elements in the selection" is a scope line; "choose a scope
         /// below" is a failure to derive one.
@@ -94,8 +161,8 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The stage before the first run: one sentence saying what the action will do, computed
-        /// from what is actually loaded, and where the answer will appear.
+        /// The data area before the first run: one line saying what the action will do, computed
+        /// from what is actually loaded — over the empty grid, never a welcome paragraph.
         /// </summary>
         /// <param name="headline">What pressing the action does, to what.</param>
         /// <param name="detail">One quieter line of consequence, or null.</param>
@@ -103,9 +170,9 @@ namespace CamelWorks.UI.Views
         {
             var stack = new StackPanel
             {
-                MaxWidth = 460,
+                MaxWidth = 520,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 18, 0, 0),
+                Margin = new Thickness(0, 10, 0, 10),
             };
 
             var head = Ui.Line(headline ?? string.Empty, 0.9, bold: true);
@@ -124,7 +191,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The result's first line: the whole outcome in one phrase, largest thing on the stage.
+        /// The result's first line: the whole outcome in one phrase, largest thing on the data area.
         /// </summary>
         /// <param name="text">The outcome.</param>
         /// <param name="tone">How it reads.</param>
@@ -143,172 +210,6 @@ namespace CamelWorks.UI.Views
             if (tone == Tone.Plain) line.Tint(TextBlock.ForegroundProperty, "Text");
 
             return line;
-        }
-
-        /// <summary>
-        /// The two columns, and the stacking below <see cref="NarrowBelow"/>.
-        ///
-        /// One control rather than two layouts a screen picks from, because an element can only
-        /// live in one tree: on a size change the three parts are re-parented, never rebuilt, so
-        /// a half-filled form survives docking the pane narrower.
-        /// </summary>
-        private sealed class SurfaceHost : ContentControl
-        {
-            private readonly UIElement? _setup;
-            private readonly UIElement? _foot;
-            private readonly UIElement _stage;
-            private readonly double _setupWidth;
-            private readonly bool _scrollStage;
-            private bool? _narrow;
-
-            internal SurfaceHost(UIElement? setup, UIElement? foot, UIElement stage, double setupWidth,
-                                 bool scrollStage)
-            {
-                _setup = setup;
-                _foot = foot;
-                _stage = stage;
-                _setupWidth = setupWidth;
-                _scrollStage = scrollStage;
-
-                SizeChanged += (s, e) => Arrange(e.NewSize.Width);
-                Loaded += (s, e) => Arrange(ActualWidth);
-            }
-
-            private void Arrange(double width)
-            {
-                var narrow = width > 0 && width < NarrowBelow;
-                if (_narrow == narrow) return;
-
-                _narrow = narrow;
-
-                Orphan(_setup);
-                Orphan(_foot);
-                Orphan(_stage);
-
-                Content = narrow ? Stacked() : Columns();
-            }
-
-            private static void Orphan(UIElement? element)
-            {
-                if (element == null) return;
-
-                if (System.Windows.Media.VisualTreeHelper.GetParent(element) is Panel panel)
-                    panel.Children.Remove(element);
-                else if (System.Windows.Media.VisualTreeHelper.GetParent(element) is ContentControl content)
-                    content.Content = null;
-                else if (System.Windows.Media.VisualTreeHelper.GetParent(element) is Border border)
-                    border.Child = null;
-                else if (System.Windows.Media.VisualTreeHelper.GetParent(element) is ScrollViewer scroll)
-                    scroll.Content = null;
-            }
-
-            private UIElement Columns()
-            {
-                var grid = new Grid();
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_setupWidth) });
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                grid.Children.Add(SetupColumn(pinFoot: true));
-
-                var stage = StageArea();
-                Grid.SetColumn(stage, 1);
-                grid.Children.Add(stage);
-
-                return grid;
-            }
-
-            private UIElement Stacked()
-            {
-                var grid = new Grid();
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-                var setup = SetupColumn(pinFoot: false);
-                grid.Children.Add(setup);
-
-                var stage = StageArea();
-                Grid.SetRow(stage, 1);
-                grid.Children.Add(stage);
-
-                return grid;
-            }
-
-            /// <summary>
-            /// The setup column: inputs scrolling, the action pinned at the foot.
-            ///
-            /// Pinned in the wide shape only. Stacked, the whole column is short and the foot
-            /// follows the fields, because pinning it would let a long form push the stage off
-            /// the pane entirely.
-            /// </summary>
-            private UIElement SetupColumn(bool pinFoot)
-            {
-                var grid = new Grid();
-                grid.RowDefinitions.Add(new RowDefinition
-                {
-                    Height = pinFoot ? new GridLength(1, GridUnitType.Star) : GridLength.Auto,
-                });
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-                if (_setup != null)
-                {
-                    var fields = new ScrollViewer
-                    {
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                        Content = _setup,
-                        Padding = new Thickness(14, 12, 14, 6),
-                    };
-
-                    // Stacked, the fields must not take the pane: the stage below them is the
-                    // point of the surface.
-                    if (!pinFoot) fields.MaxHeight = 340;
-
-                    grid.Children.Add(fields);
-                }
-
-                if (_foot != null)
-                {
-                    var foot = new Border
-                    {
-                        Padding = new Thickness(14, 10, 14, 12),
-                        BorderThickness = new Thickness(0, 1, 0, 0),
-                        Child = _foot,
-                    };
-
-                    foot.Tint(Border.BorderBrushProperty, "Bd");
-                    Grid.SetRow(foot, 1);
-                    grid.Children.Add(foot);
-                }
-
-                var column = new Border
-                {
-                    Child = grid,
-                    BorderThickness = _narrow == true
-                        ? new Thickness(0, 0, 0, 1)
-                        : new Thickness(0, 0, 1, 0),
-                };
-
-                column.Tint(Border.BackgroundProperty, "Pane");
-                column.Tint(Border.BorderBrushProperty, "Bd");
-                return column;
-            }
-
-            private UIElement StageArea()
-            {
-                var content = _scrollStage
-                    ? (UIElement)new ScrollViewer
-                    {
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                        Content = _stage,
-                        Padding = new Thickness(16, 12, 16, 16),
-                    }
-                    : _stage;
-
-                var ground = new Border { Child = content };
-                ground.Tint(Border.BackgroundProperty, "Bg");
-                return ground;
-            }
         }
     }
 }

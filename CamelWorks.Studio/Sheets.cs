@@ -60,10 +60,9 @@ namespace CamelWorks.Studio
         /// <summary>Every page, in the order the harness lists them.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            new Sheet { Id = "shell", Title = "The pane", Height = 900, Builder = _ => Shell(), Widths = new[] { 470, 900 } },
-            new Sheet { Id = "home", Title = "Home", Height = 1150, Builder = _ => HomePane(), Widths = new[] { 470 } },
+            new Sheet { Id = "home", Title = "The hub", Height = 1150, Builder = _ => HomePane(), Widths = new[] { 560 } },
             new Sheet { Id = "controls", Title = "Every control", Height = 2100, Builder = _ => Controls(), Widths = new[] { 470 } },
-            new Sheet { Id = "bench", Title = "The anatomy", Height = 700, Builder = _ => BenchSheet(), Widths = new[] { 470, 900 } },
+            new Sheet { Id = "bench", Title = "The anatomy", Height = 700, Builder = _ => BenchSheet(), Widths = new[] { 940 } },
             new Sheet
             {
                 Id = "working",
@@ -75,8 +74,6 @@ namespace CamelWorks.Studio
             },
             new Sheet { Id = "states", Title = "Empty, wrong, done", Height = 900, Builder = _ => States(), Widths = new[] { 470 } },
         };
-
-        private static UIElement Shell() => new ShellView(ShellView.MainPane);
 
         internal static UIElement Page(params UIElement?[] children)
         {
@@ -283,12 +280,12 @@ namespace CamelWorks.Studio
                 Ui.Pill("4 clash tests"));
 
             var desks = Ui.Stack();
-            var label = Ui.Eyebrow("The desks");
+            var label = Ui.Eyebrow("The apps");
             label.Margin = new Thickness(0, 12, 0, 4);
             desks.Children.Add(label);
 
-            foreach (var desk in Desks.All)
-                desks.Children.Add(DeskRow(desk));
+            foreach (var app in Apps.All)
+                desks.Children.Add(DeskRow(app));
 
             return Page(
                 Ui.Stack(Ui.Eyebrow("RIVERSIDE — BLOCK B"), chips),
@@ -311,8 +308,8 @@ namespace CamelWorks.Studio
                 Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96)));
         }
 
-        /// <summary>One desk on the front door: its colour, its name, and the job it is.</summary>
-        private static UIElement DeskRow(Desk desk)
+        /// <summary>One app on the front door: its colour, its name, and the job it is.</summary>
+        private static UIElement DeskRow(App app)
         {
             var marker = new Border
             {
@@ -321,11 +318,11 @@ namespace CamelWorks.Studio
                 Margin = new Thickness(0, 2, 9, 2),
             };
 
-            marker.SetResourceReference(Border.BackgroundProperty, "Fam." + desk.Family);
+            marker.SetResourceReference(Border.BackgroundProperty, "Fam." + app.Family);
 
             var text = Ui.Stack(
-                Ui.Line(desk.Title, 1, true),
-                Ui.Line(desk.Job, 0.7));
+                Ui.Line(app.Title, 1, true),
+                Ui.Line(app.Job, 0.7));
 
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
