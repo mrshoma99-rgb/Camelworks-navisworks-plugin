@@ -58,13 +58,22 @@ different — and they are now the **Side by Side** tab.
 
 ## Changes — the walking tab
 
-- Painted, filtered, stamped, raised, reported — and the removed elements still come from the
-  baseline model brought in and taken back out. Unchanged this pass beyond the anatomy.
+- **How a finding reaches the 3D view**, which is the whole point of the tab: paint the four
+  buckets onto the model (added green, removed red, moved amber, changed blue, unchanged faded)
+  with one press and one press back; click a row to select and frame that element; pick rows and
+  **Focus** or **Isolate** them; **Show everything** puts the view back.
+- **Removed elements are the honest exception** — they are not in this document, so nothing can
+  frame them until the baseline's own file is appended, which the tab offers and takes back out
+  again. Until then the red layer has nothing to colour, and the tab says so rather than
+  pretending.
+- *Was wrong:* "Raise them on the board" listed findings, claimed they had been raised, and
+  pointed at a tab that no longer exists — nothing was ever written anywhere. It now raises real
+  issues into the **Issue Manager**, each carrying the elements it is about.
 
 ## Change Notice
 
-- Reads the freeze written in Clash Manager; the freeze now points here at the moment it is
-  made (see `docs/apps/clash.md`), which was the missing half of the pair.
+- Reads the freeze written on the tab before it, and each points at the other. Its grid focuses
+  and copies the picked rows rather than clicking one at a time.
 
 ## History
 
