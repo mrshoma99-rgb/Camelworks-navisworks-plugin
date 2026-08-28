@@ -42,6 +42,11 @@
     <ProjectReference Include="..\CamelWorks.Nav\CamelWorks.Nav.csproj" />
   </ItemGroup>
 
+  <!-- The result-snapshot call hands back a GDI bitmap, so the framework's own imaging is in. -->
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
   <!-- Reference-only: the user's own licensed Navisworks supplies these at run time and they are
        never copied into the bundle. -->
   <ItemGroup>

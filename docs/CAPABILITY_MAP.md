@@ -62,12 +62,16 @@ surfaces work, not things a coordinator opens.
 | `ClashPipeline`, `ClashPipelineOptions`, `ClashFunnel`, `ClashPredicates`, `GroupingRules`, `AssignRule`, `ClashRuleSet`, `FilterSpec`, `GroupingSpec`, `PredicateSpec`, `SpecInput` | Clash Rules |
 | `ClashPipelineResult` — *results no grouping rule could place* | Clash Board — a standing **Ungrouped (N)** row at the foot of the group list. Never hidden: a result nothing grouped is the one most likely to be somebody's problem. |
 | `ClashItem`, `ClashSnapshot`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
-| `ManualIssue`, `ManualIssueList` | Clash Board — "Raise an issue" |
+| `ClashTestSides` | Clash Matrix — "The model's tests" mode reads each test's sides back into categories |
+| `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
+| `Issue`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
+| `IssueBcf`, `IssueImportResult` | **Issue Manager ▸ Import / Export** — BCF in as a merge, BCF out as one topic per issue |
+| `ManualIssue`, `ManualIssueList` | Board pipeline — issues raised in earlier versions still ride the board into reports and BCF |
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
 | `Resolution`, `FindingStatus`, `FindingStatusLattice`, `Finding` | Clash Board detail + Review |
 | `ClashMatrix`, `MatrixSide`, `MatrixOptions`, `MatrixPlan`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix (both forks) |
-| `Headroom` | Clearance |
-| `Freeze`, `ChangeNotice` | **Freeze** + **Change notice** (new) |
+| `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
+| `Freeze`, `ChangeNotice` | **Compare Track ▸ Freeze** and **▸ Change Notice** — sign-off scoped by set, selection, everything or the board |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
 | `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash XML |
@@ -83,6 +87,7 @@ surfaces work, not things a coordinator opens.
 | Engine | Surface |
 |---|---|
 | `SnapshotBuilder`, `ModelSnapshot`, `SnapshotStore`, `ElementFingerprint` | Take a Baseline |
+| `SnapshotBuilder` split per model or per set | **Compare Track ▸ Side by Side** — two loaded models, or two sets, compared against each other |
 | `ModelCompare`, `ModelPair`, `ModelPairing`, `CompareSettings`, `ComparePolicy`, `CompareResult`, `ChangeKind`, `ChangeBucket` | Compare Revisions |
 | `CompareLayers`, `ComparePalette`, `CompareView` | Compare — "Paint the changes" |
 | `CompareStamp` | Compare — "Write the changes onto the elements" (new) |

@@ -11,6 +11,7 @@ using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
@@ -32,12 +33,6 @@ namespace CamelWorks.UI.Views
         /// between, and nothing would say so.
         /// </summary>
         internal static ClashPipelineResult? LastBoard { get; private set; }
-
-        /// <summary>
-        /// Set by the Tests tab's hand-off: the Board tab presses its own load once on arrival,
-        /// because the user asked for this board the moment they pressed Run.
-        /// </summary>
-        internal static bool LoadOnArrival { get; set; }
 
         /// <summary>What the last board was of, for a report's cover.</summary>
         internal static string? LastBoardLabel { get; private set; }
@@ -91,6 +86,45 @@ namespace CamelWorks.UI.Views
         // ===================================================================================
 
         /// <summary>
+        /// The board is not loaded — and the press that loads it, here.
+        ///
+        /// The board used to be a tab, so every screen that needs one sent people to it. It is not
+        /// a tab any more: what a coordinator works is the results grid and the issue register, and
+        /// the board is the derived thing underneath the report, the BCF and the clash file. So the
+        /// screens that need one build it where they stand, and nobody navigates to fetch a
+        /// prerequisite.
+        /// </summary>
+        /// <param name="why">What this tab cannot do until the board exists.</param>
+        internal static UIElement LoadHere(string why)
+        {
+            var said = Ui.Stack();
+
+            var runner = Ui.Runner("Load the board", said, job =>
+            {
+                var session = Host.Current;
+
+                if (session == null) { said.Children.Add(Ui.Line(Host.NoModel)); return; }
+
+                var notes = new List<string>();
+                var board = Build(session, job, notes);
+
+                if (board == null)
+                {
+                    said.Children.Add(Ui.Problem("The board could not be built: "
+                        + (session.ClashProblem ?? "nothing was found to build it from.")));
+                    return;
+                }
+
+                foreach (var note in notes) said.Children.Add(Ui.Note(note));
+
+                said.Children.Add(Ui.Done("The board holds " + Ui.Count(board.Groups.Count, "issue")
+                    + ". Press this tab's own button now."));
+            }, primary: false);
+
+            return Ui.Stack(Ui.Line(why, 0.85), runner, said);
+        }
+
+        /// <summary>
         /// Read the clash engine and run the rules over it.
         ///
         /// Every coordinate is scaled to metres here, once, because every threshold above this line
@@ -115,28 +149,50 @@ namespace CamelWorks.UI.Views
             var items = new List<ClashItem>();
             var levels = Levels(session, job, scale);
 
+            // Model display names once, not once per result: eighteen thousand results times a
+            // linear scan over the model list is a pause somebody can feel.
+            var modelNames = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var model in session.Model.Models)
+                if (!modelNames.ContainsKey(model.Scope)) modelNames[model.Scope] = model.DisplayName;
+
             foreach (var test in session.Clash.Tests())
             {
-                if (!job.Step(items.Count, "results read")) return null;
-
                 foreach (var result in session.Clash.Results(test.Id))
                 {
+                    // Pumped per result, not per test: one test can hold four thousand results,
+                    // and a window that cannot repaint for the length of a test reads as hung.
+                    if (!job.Step(items.Count, "results read")) return null;
+
                     var item = new ClashItem(result.Key(), test.Name)
                     {
                         TestFolder = test.Folder,
                         X = result.PointX * scale,
                         Y = result.PointY * scale,
                         Z = result.PointZ * scale,
-                        ModelA = ModelOf(session, result.A),
-                        ModelB = ModelOf(session, result.B),
+                        ModelA = modelNames.TryGetValue(result.A.ModelScope, out var nameA) ? nameA : null,
+                        ModelB = modelNames.TryGetValue(result.B.ModelScope, out var nameB) ? nameB : null,
                         DisciplineA = session.Profile.DisciplineOf(result.A.ModelScope),
                         DisciplineB = session.Profile.DisciplineOf(result.B.ModelScope),
-                        CategoryA = CategoryOf(session, result.A),
-                        CategoryB = CategoryOf(session, result.B),
+
+                        // Carried on the result by the adapter, which read them while it was
+                        // holding the elements. Resolving the key back through the document
+                        // index here cost a full unpumped federation walk on the first result —
+                        // the freeze a real project hit at 18,844 results.
+                        CategoryA = result.CategoryA,
+                        CategoryB = result.CategoryB,
                         Level = levels.LevelAt(result.PointZ * scale),
                     };
 
-                    if (result.HostAssignedTo != null) item.Properties["Host/AssignedTo"] = result.HostAssignedTo;
+                    if (result.HostAssignedTo != null)
+                    {
+                        item.Properties["Host/AssignedTo"] = result.HostAssignedTo;
+
+                        // Onto the item itself too, so a baseline written for the review round
+                        // travels with its assignments.
+                        item.AssignedTo = result.HostAssignedTo;
+                    }
+
                     if (result.HostStatus != null) item.Properties["Host/Status"] = result.HostStatus;
 
                     items.Add(item);
@@ -301,8 +357,21 @@ namespace CamelWorks.UI.Views
             return board;
         }
 
+        private static LevelSet? _levels;
+        private static string? _levelsShape;
+
         private static LevelSet Levels(Session session, Job job, double scale)
         {
+            // Deriving levels reads the elevation of every element in the federation — the most
+            // expensive read the board makes, and one whose answer only changes when the
+            // federation does. Cached against its shape, so the second board of the day costs
+            // nothing and a reload after an append derives afresh.
+            var shape = string.Join("|", session.Model.Models.Select(m => m.Scope))
+                        + "@" + scale.ToString("R", CultureInfo.InvariantCulture);
+
+            if (_levels != null && string.Equals(_levelsShape, shape, StringComparison.Ordinal))
+                return _levels;
+
             job.Say("Working out levels...");
 
             var elevations = new List<double>();
@@ -316,7 +385,12 @@ namespace CamelWorks.UI.Views
                     return LevelSet.Empty;
             }
 
-            return LevelSet.Derive(elevations);
+            var derived = LevelSet.Derive(elevations);
+
+            _levels = derived;
+            _levelsShape = shape;
+
+            return derived;
         }
 
         private static string? ModelOf(Session session, ElementKey key) =>
@@ -662,945 +736,6 @@ namespace CamelWorks.UI.Views
             if (first.Kind == JsonKind.Null) section.Remove(b); else section.Set(b, first);
         }
 
-        // ===================================================================================
-        // Triage
-        // ===================================================================================
-
-        /// <summary>The board.</summary>
-        public static UIElement Triage() => new TriageScreen().Build();
-
-        /// <summary>
-        /// The board, held as an object because it filters without reloading.
-        ///
-        /// Reading the clash engine and running the rules over a federation is the expensive part,
-        /// and a board that had to redo it to answer "just show me the unassigned ones" would make
-        /// the filter something you use once and then stop using.
-        /// </summary>
-        private sealed class TriageScreen
-        {
-            /// <summary>Everything.</summary>
-            private const string All = "Everything";
-
-            /// <summary>Only groups nobody owns.</summary>
-            private const string Unassigned = "Unassigned";
-
-            /// <summary>Only groups the last run had not seen, or that came back.</summary>
-            private const string Changed = "New or back again";
-
-            /// <summary>Only groups assigned to whoever is sitting here.</summary>
-            private const string Mine = "Mine";
-
-            private readonly StackPanel _summary = Ui.Stack();
-            private readonly StackPanel _rows = Ui.Stack();
-            private readonly StackPanel _detail = Ui.Stack();
-            private readonly TextBox _search;
-            private readonly ComboBox _preset;
-
-            /// <summary>
-            /// The results this run found back again, by reference.
-            ///
-            /// A regression is not a status. Carry-over sets a returning result to Active — it has
-            /// a history, so New would be a lie — and records it in the delta instead, which means
-            /// the only way to know a row came back is to hold the delta's list. The board's items
-            /// and the delta's are the same objects, so identity is the right test.
-            /// </summary>
-            private HashSet<ClashItem> _regressed = new HashSet<ClashItem>();
-
-            private ClashPipelineResult? _board;
-
-            /// <summary>The delta as the board shows it: only results that are on the board.</summary>
-            private ClashDelta? _delta;
-
-            /// <summary>The delta as carry-over produced it, before the rules took anything out.</summary>
-            private ClashDelta? _raw;
-
-            /// <summary>Where the "Showing ..." line and the out-of-date warning are drawn.</summary>
-            private readonly StackPanel _state = Ui.Stack();
-
-            /// <summary>What <see cref="BoardEdits"/> stood at when these figures were counted.</summary>
-            private int _counted = -1;
-
-            private Session? _session;
-
-            internal TriageScreen()
-            {
-                _search = Ui.Text(string.Empty, _ => Redraw(), 220);
-                _preset = Ui.Choice(new[] { All, Unassigned, Changed, Mine }, All, _ => Redraw(), 170);
-            }
-
-            internal UIElement Build()
-            {
-                var run = Ui.Runner("Load the board", _summary, job =>
-                {
-                    _session = Host.Current;
-                    _rows.Children.Clear();
-                    _detail.Children.Clear();
-
-                    if (_session == null) { _summary.Children.Add(Ui.Line(Host.NoModel)); return; }
-
-                    var notes = new List<string>();
-                    _board = CoordinateViews.Build(_session, job, notes);
-
-                    // Restricted to what reached the board. The raw delta covers every result that
-                    // survived duplicate collapse, including the ones a rule then suppressed, so
-                    // over a board of four it would say twelve and put the other eight nowhere the
-                    // reader could look.
-                    _raw = LastDelta;
-                    _delta = _raw?.OnBoard(_board?.Groups.SelectMany(g => g.Items));
-
-                    _regressed = Regressed();
-
-                    foreach (var note in notes) _summary.Children.Add(Ui.Note(note));
-
-                    if (_board == null) return;
-
-                    Summarise();
-                    Redraw();
-                });
-
-                // The undo is for the whole board, not for a group, and it used to live inside the
-                // panel that opens when you pick a row — so a user who applied a BCF reply, and
-                // was told by BCF to come here for it, had to load the board and click an
-                // arbitrary issue to find it. It sits on the stage under the figures it rewinds.
-                var undo = Ui.Quiet("Undo the last board edit", () =>
-                {
-                    var session = Host.Current;
-                    if (session == null) return;
-
-                    _summary.Children.Clear();
-
-                    _summary.Children.Add(Rewind(session)
-                        ? Ui.Done("Put back. Load the board again to see it — and pressing this a "
-                                  + "second time brings the edit back, so an undo of the wrong thing "
-                                  + "is not a one-way door.")
-                        : Ui.Problem(session.Store.LastSaveProblem
-                                     ?? "There is no earlier version of the board to go back to."));
-                });
-
-                // A board loaded earlier this session survives leaving the tab. Losing an hour's
-                // triage view to a glance at the Rules tab was the single worst behaviour this
-                // screen had, and the fix is nothing more than hydrating from what the last load
-                // already holds — no host read, no rules run, just the same object redrawn.
-                if (LastBoard != null && Host.Current != null)
-                {
-                    _session = Host.Current;
-                    _board = LastBoard;
-                    _raw = LastDelta;
-                    _delta = _raw?.OnBoard(_board?.Groups.SelectMany(g => g.Items));
-                    _regressed = Regressed();
-
-                    Summarise();
-                    Redraw();
-                }
-                else
-                {
-                    // Before the first load the stage says what the one action reads; the runner
-                    // clears the panel on press, so the statement never sits over a result.
-                    _summary.Children.Add(Bench.Ready(
-                        "Loading the board reads every clash test and runs the project's rules over "
-                        + "the results.",
-                        "What is new, what came back, and who owns what all land here."));
-                }
-
-                var raise = new RaiseScreen();
-
-                // The board is the stage — the filters and the raise form are the only inputs,
-                // so they are the setup column, and the one action is the Monday load.
-                // The board's own next step: one finding at a time in front of the geometry.
-                // Review lost its ribbon button when the suite went flat, and a palette only
-                // reachable through search is a palette nobody finds.
-                var review = Ui.Quiet("Walk them in Review", () => Ui.Told(ReviewWindow.Show()));
-
-                var surface = Bench.Surface(
-                    Ui.Stack(
-                        Bench.Group("Narrow the board",
-                            Ui.Field("Show", _preset),
-                            Ui.Field("Find", _search)),
-                        raise.Setup()),
-                    run,
-                    Ui.Stack(
-                        _summary,
-                        Ui.Actions(review, undo),
-                        _state,
-                        _rows,
-                        _detail,
-                        raise.Stage()));
-
-                // A run on the Tests tab can send the user here with the results still warm. The
-                // load presses itself then — once, after the surface is on screen — because
-                // "press the button I just told you to press" is a hoop, not a safeguard: the
-                // user already asked for this board by pressing Run.
-                if (LoadOnArrival && LastBoard == null && surface is FrameworkElement fe)
-                {
-                    LoadOnArrival = false;
-
-                    fe.Loaded += (s, e) => fe.Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        var go = FirstButton(run);
-                        go?.RaiseEvent(new RoutedEventArgs(
-                            System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                    }), System.Windows.Threading.DispatcherPriority.Background);
-                }
-
-                return surface;
-            }
-
-            /// <summary>The runner's own go button, so a hand-off can press it.</summary>
-            private static System.Windows.Controls.Button? FirstButton(DependencyObject root)
-            {
-                if (root is System.Windows.Controls.Button button) return button;
-
-                foreach (var child in LogicalTreeHelper.GetChildren(root))
-                {
-                    if (!(child is DependencyObject node)) continue;
-
-                    var found = FirstButton(node);
-                    if (found != null) return found;
-                }
-
-                return null;
-            }
-
-            /// <summary>
-            /// What changed since the last run, and how the board was arrived at.
-            ///
-            /// The four figures at the top are the four the meeting is about: what is new, what
-            /// came back, what went away, and what nobody owns. The funnel that produced them —
-            /// results in, rules applied, results suppressed — is provenance. It answers "why is
-            /// this number what it is", which is a real question and never the first one, so it
-            /// prints last, under its own label, after the answer.
-            /// </summary>
-            private void Summarise()
-            {
-                var board = _board!;
-                var funnel = board.Funnel;
-                var unassigned = funnel.Unassigned.ToString("N0", CultureInfo.InvariantCulture);
-
-                if (_delta != null)
-                {
-                    var regressed = _delta.Regressed.Count;
-
-                    // Only the exception is coloured. With all four tinted, colour stopped
-                    // discriminating and the one that is actually urgent — the regression — was
-                    // the smallest glyph in the row, because a figure sizes by its digit count.
-                    // Three figures, one population: clash results on this board. The fourth used
-                    // to be "unassigned", which counts issues - so the row read as four comparable
-                    // numbers and three of them were results while one was groups. Nobody could
-                    // add them up because they were never addable.
-                    // Pressing a figure narrows the board to it. The dropdown and these numbers
-                    // used to say the same four things in two places, leaving the reader to work
-                    // out that "12 new" and the "New or back again" entry were connected - and
-                    // nothing on screen said which of the two was currently in force.
-                    //
-                    // "Gone" is not pressable and cannot be: those results are not on the board to
-                    // show. A control that filters to nothing is worse than no control.
-                    _summary.Children.Add(Ui.Across(
-                        Ui.Figure(_delta.New.Count.ToString("N0", CultureInfo.InvariantCulture), "new",
-                            Tone.Plain, () => Narrow(Changed), Showing() == Changed),
-                        Ui.Figure(regressed.ToString("N0", CultureInfo.InvariantCulture), "came back",
-                            regressed > 0 ? Tone.Bad : Tone.Plain, () => Narrow(Changed),
-                            Showing() == Changed),
-                        Ui.Figure(_delta.Resolved.Count.ToString("N0", CultureInfo.InvariantCulture), "gone"),
-                        Ui.Figure(_delta.Persisting.Count.ToString("N0", CultureInfo.InvariantCulture),
-                            "still there")));
-
-                    // And the issues, said as a sentence so the change of unit is impossible to
-                    // miss. These add up: new plus came back plus still there is the board.
-                    _summary.Children.Add(Ui.Line(
-                        Ui.Count(_delta.Accounted, "result") + " on this board, grouped into "
-                        + Ui.Count(funnel.Groups, "issue") + ", " + unassigned + " of which nobody owns.",
-                        1, true));
-
-                    if (funnel.Unassigned > 0)
-                        _summary.Children.Add(Ui.Actions(
-                            Ui.Link("Show me the ones nobody owns", () => Narrow(Unassigned))));
-
-                    // What the rules took out, said where the difference would otherwise be
-                    // unaccounted for.
-                    var hidden = (_raw?.Accounted ?? 0) - _delta.Accounted;
-
-                    if (hidden > 0)
-                        _summary.Children.Add(Ui.Note(Ui.Count(hidden, "result")
-                            + " matched or arrived this run and were suppressed by a rule, so they "
-                            + "are not on the board and not in these figures. \"How this board was "
-                            + "made\" below says which rules."));
-
-                    if (regressed > 0)
-                        _summary.Children.Add(Ui.Problem(
-                            Ui.Count(regressed, "clash") + " that a previous run recorded as resolved is "
-                            + "back. Something that was fixed has been undone, or a model went backwards — "
-                            + "either way it is the first thing to look at this week."));
-
-                    if (_delta.WeakMatches > 0)
-                        _summary.Children.Add(Ui.Note(
-                            Ui.Count(_delta.WeakMatches, "result")
-                            + " matched the last run only on a weak key, because the elements involved "
-                            + "carry no stable identity. Their history is a best guess."));
-                }
-                else
-                {
-                    // First run on this project. Saying "0 new, 0 came back" would be four zeroes
-                    // that read as good news, when what they mean is that there is nothing to
-                    // compare against yet.
-                    _summary.Children.Add(Ui.Across(
-                        Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "issues"),
-                        Ui.Figure(unassigned, "unassigned",
-                            funnel.Unassigned > 0 ? Tone.Warn : Tone.Good,
-                            () => Narrow(Unassigned), Showing() == Unassigned)));
-
-                    _summary.Children.Add(Ui.Info("This is the first board on this project, so there is "
-                        + "nothing to compare it against. Run the tests again after the next issue of "
-                        + "models and these figures become what changed."));
-                }
-
-                // Who owes what. The count of clashes is a fact about the model; this is a fact
-                // about the week, and it is the one the meeting is actually about.
-                var session = Host.Current;
-
-                if (session != null)
-                {
-                    var ledger = PartyLedger.Of(board.Groups, Previous(session), LastBoardLabel,
-                                                DateTimeOffset.UtcNow);
-
-                    if (ledger.Lines.Count > 0)
-                    {
-                        _summary.Children.Add(Ui.Eyebrow("Who owes what"));
-
-                        _summary.Children.Add(Ui.Line(string.Join("   ",
-                            ledger.Lines.Take(6).Select(l => l.ToString())), 0.75));
-                    }
-                }
-
-                _summary.Children.Add(Ui.Eyebrow("How this board was made"));
-
-                _summary.Children.Add(Ui.Across(
-                    Ui.Figure(funnel.Input.ToString("N0", CultureInfo.InvariantCulture), "from the engine"),
-                    Ui.Figure(funnel.Suppressed.ToString("N0", CultureInfo.InvariantCulture), "suppressed"),
-                    Ui.Figure(funnel.Groups.ToString("N0", CultureInfo.InvariantCulture), "grouped into")));
-
-                _summary.Children.Add(Ui.Line(funnel.ToString(), 0.8));
-
-                if (funnel.RulesApplied.Count > 0)
-                    _summary.Children.Add(Ui.Line("Rules: " + string.Join(", ", funnel.RulesApplied), 0.7));
-
-                _counted = BoardEdits;
-            }
-
-            /// <summary>Which preset is in force.</summary>
-            private string Showing() => _preset.SelectedItem as string ?? All;
-
-            /// <summary>
-            /// One line saying what the board is showing, and one saying when it was counted.
-            ///
-            /// Two filters that combine silently is a state model nobody can read. "Showing 11 of
-            /// 240" was already there and said how many, never which of the two controls did it,
-            /// so a board narrowed by a search typed ten minutes ago looked like a board with
-            /// eleven issues on it.
-            ///
-            /// The second line is the harder honesty. Every figure above is counted when the board
-            /// loads, and assigning a group or applying a returned worksheet changes the board
-            /// underneath them. Rather than recompute - which would mean re-running the rules over
-            /// the federation on every edit - it says the numbers are from before, and offers the
-            /// reload that makes them true.
-            /// </summary>
-            /// <param name="shown">How many groups the filter leaves.</param>
-            /// <param name="total">How many the board holds.</param>
-            private void State(int shown, int total)
-            {
-                _state.Children.Clear();
-
-                var preset = Showing();
-                var query = _search.Text.Trim();
-
-                if (preset != All || query.Length > 0)
-                {
-                    var said = new List<string>();
-
-                    if (preset != All) said.Add(preset.ToLowerInvariant());
-                    if (query.Length > 0) said.Add("matching \"" + query + "\"");
-
-                    var row = Ui.Across(
-                        Ui.Line("Showing " + shown + " of " + total + " issues - "
-                                + string.Join(", ", said) + ".", 0.75),
-                        Ui.Link("Show everything", () =>
-                        {
-                            _search.Text = string.Empty;
-                            _preset.SelectedItem = All;
-                        }));
-
-                    _state.Children.Add(row);
-                }
-                else if (shown < total)
-                {
-                    _state.Children.Add(Ui.Line("Showing " + shown + " of " + total + " issues.", 0.6));
-                }
-
-                if (_counted >= 0 && BoardEdits != _counted)
-                    _state.Children.Add(Ui.Note("The figures above were counted when this board was "
-                        + "loaded, and the board has been edited since. They describe the run, not "
-                        + "what is on screen now - load the board again to bring them up to date."));
-            }
-
-            /// <summary>
-            /// Narrow the board to one preset, from wherever it was pressed.
-            ///
-            /// It writes into the dropdown rather than into a second variable, so there is one
-            /// place that holds what the board is showing and everything that sets it goes through
-            /// there. Pressing the figure that is already in force clears it, because a control
-            /// that only turns on is a control somebody has to find the off switch for.
-            /// </summary>
-            /// <param name="preset">One of the four, or <see cref="All"/> to clear.</param>
-            private void Narrow(string preset)
-            {
-                _preset.SelectedItem = Showing() == preset ? All : preset;
-            }
-
-            /// <summary>Which groups the preset and the search box leave.</summary>
-            private IReadOnlyList<ClashGroup> Filtered()
-            {
-                if (_board == null) return Array.Empty<ClashGroup>();
-
-                var preset = _preset.SelectedItem as string ?? All;
-                var query = _search.Text.Trim();
-                var me = _session?.Profile.Author;
-
-                return _board.Groups.Where(group =>
-                    Passes(group, preset, me) && Matches(group, query)).ToList();
-            }
-
-            private bool Passes(ClashGroup group, string preset, string? me) => preset switch
-            {
-                Unassigned => group.AssignedTo == null,
-                Changed => CoordinateViews.Changed(group, _regressed),
-                Mine => me != null && string.Equals(group.AssignedTo, me, StringComparison.OrdinalIgnoreCase),
-                _ => true,
-            };
-
-            /// <summary>
-            /// Free text against everything on the row and everything in it.
-            ///
-            /// Searching the items as well as the group is the point: "level 3" and "AHU-02" are
-            /// how people describe where a problem is, and neither is necessarily in the group's
-            /// name.
-            /// </summary>
-            private static bool Matches(ClashGroup group, string query)
-            {
-                if (query.Length == 0) return true;
-
-                if (Has(group.Name, query) || Has(group.AssignedTo, query) || Has(group.Priority, query))
-                    return true;
-
-                foreach (var item in group.Items)
-                    if (Has(item.TestName, query) || Has(item.Level, query) || Has(item.ModelPair, query)
-                        || Has(item.CategoryA, query) || Has(item.CategoryB, query)
-                        || Has(item.Grid, query) || Has(item.Zone, query))
-                        return true;
-
-                return false;
-            }
-
-            private static bool Has(string? text, string query) =>
-                text != null && text.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
-
-            private void Redraw()
-            {
-                _rows.Children.Clear();
-
-                if (_board == null) return;
-
-                if (_board.Groups.Count == 0)
-                {
-                    _rows.Children.Add(Ui.Empty("Nothing on the board.",
-                        "Every result was suppressed by a rule. The funnel above says by which."));
-                    return;
-                }
-
-                var groups = Filtered();
-
-                // A local, because the lambda below outlives this method and the compiler resets
-                // what it knows about a nullable field at that boundary.
-                var total = _board.Groups.Count;
-
-                // Before the empty case, not after it. "Nothing matches" is exactly the moment
-                // somebody needs to be told what the filter is and offered the way out of it.
-                State(groups.Count, total);
-
-                if (groups.Count == 0)
-                {
-                    _rows.Children.Add(Ui.Empty("Nothing matches.",
-                        "The board has " + Ui.Count(total, "group")
-                        + "; none of them match this filter."));
-                    return;
-                }
-
-                var rows = groups.Select(g => new TableRow(g,
-                    g.Name,
-                    g.Items.Count.ToString("N0", CultureInfo.InvariantCulture),
-                    Change(g),
-                    g.AssignedTo ?? "-",
-                    g.Priority ?? string.Empty,
-                    g.IsPinned ? "pinned" : string.Empty)
-                {
-                    Tone = ToneOf(g),
-                }).ToList();
-
-                _rows.Children.Add(Ui.Table(rows,
-                    ("Group", 210), ("Clashes", 70), ("Since last run", 120),
-                    ("Assigned to", 110), ("Priority", 80), ("", 0))
-                    .OnPick(item =>
-                    {
-                        _detail.Children.Clear();
-
-                        if (item is ClashGroup group && _session != null)
-                            _detail.Children.Add(Detail(_session, group));
-
-                        // The detail pane is where the board gets edited, so coming back to the
-                        // list is the moment to re-ask whether the figures still hold.
-                        State(groups.Count, total);
-                    }));
-            }
-
-            /// <summary>What happened to a group since the last run, on one line.</summary>
-            private string Change(ClashGroup group)
-            {
-                if (_delta == null) return string.Empty;
-
-                var fresh = group.Items.Count(i => i.Status == FindingStatus.New);
-                var back = group.Items.Count(i => _regressed.Contains(i));
-
-                if (back > 0 && fresh > 0) return back + " back, " + fresh + " new";
-                if (back > 0) return back + " back";
-                if (fresh == group.Items.Count) return "all new";
-                if (fresh > 0) return fresh + " new";
-
-                return "unchanged";
-            }
-
-            private Tone ToneOf(ClashGroup group)
-            {
-                if (group.Items.Any(i => _regressed.Contains(i))) return Tone.Bad;
-                if (group.AssignedTo == null) return Tone.Warn;
-                return Tone.Plain;
-            }
-        }
-
-        // ===================================================================================
-        // Headroom
-        // ===================================================================================
-
-        /// <summary>
-        /// Clear height between a walkable surface and whatever is above it.
-        ///
-        /// A duct 1.9 m over a corridor is a coordination problem in exactly the way a clash is,
-        /// and it is the one no clash test at any tolerance will ever find — there is air between
-        /// them. So it belongs beside the clash tests, which is where it is run from.
-        /// </summary>
-        /// <summary>The project's own length unit, or metres before a document is open.</summary>
-        private static string Unit() => Host.Current?.Profile.Units.LengthUnit ?? "m";
-
-        /// <summary>
-        /// Clear height, as its own tool.
-        ///
-        /// It had a ribbon button of its own and that button opened Clash Triage, because Headroom
-        /// was a card on the Clash Tests screen and the route pointed at the nearest tab. It is
-        /// the same tool; it just answers its own button, on its own bench, now.
-        /// </summary>
-        /// <remarks>
-        /// Named ClearHeight rather than Headroom because the Core type that does the work is
-        /// called Headroom, and a member of the same name in a file that imports it shadows it.
-        /// </remarks>
-        public static UIElement ClearHeight() => HeadroomCard();
-
-        private static UIElement HeadroomCard()
-        {
-            var results = Ui.Stack();
-
-            results.Children.Add(Bench.Ready(
-                "Measures the clear height above every walkable surface and lists where the "
-                + "minimum is not there.",
-                "A duct 1.9 m over a corridor clashes with nothing — this is the check that "
-                + "finds it."));
-
-            var floors = "Floors and slabs";
-            var targets = "Everything else";
-            var minimum = Ui.Text("2.100", null, 80);
-
-            var floorPicker = Ui.Choice(new[] { "Floors and slabs", "Current selection", "Everything" },
-                                        floors, v => floors = v);
-
-            var targetPicker = Ui.Choice(new[] { "Everything else", "Current selection", "Everything" },
-                                         targets, v => targets = v);
-
-            var run = Ui.Runner("Check clear height", results, job =>
-            {
-                var session = Host.Current;
-                if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
-
-                var units = session.Profile.Units;
-
-                if (!units.TryRead(minimum.Text, out var height) || height <= 0)
-                {
-                    results.Children.Add(Ui.Line("Type a clear height, like " + units.Length(2.1)
-                        + ". A bare number is read in " + units.LengthUnit + ".", 0.8));
-                    return;
-                }
-
-                var scale = session.MetresPerUnit;
-                var selected = new HashSet<ElementKey>(session.Model.SelectedKeys());
-
-                var surfaces = new List<HeadroomElement>();
-                var above = new List<HeadroomElement>();
-                var byId = new Dictionary<string, ElementKey>(StringComparer.Ordinal);
-                var read = 0;
-
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
-                {
-                    if (!job.Step(read++, "elements read")) return;
-                    if (!item.HasGeometry) continue;
-
-                    var bounds = item.Bounds;
-                    var id = item.Key.ToString();
-
-                    byId[id] = item.Key;
-
-                    var element = new HeadroomElement(id, item.DisplayName)
-                    {
-                        MinX = bounds.MinX * scale, MaxX = bounds.MaxX * scale,
-                        MinY = bounds.MinY * scale, MaxY = bounds.MaxY * scale,
-                        MinZ = bounds.MinZ * scale, MaxZ = bounds.MaxZ * scale,
-                    };
-
-                    var walkable = IsWalkable(item);
-                    var isSelected = selected.Contains(item.Key);
-
-                    if (floors == "Everything"
-                        || (floors == "Current selection" && isSelected)
-                        || (floors == "Floors and slabs" && walkable))
-                        surfaces.Add(element);
-
-                    if (targets == "Everything"
-                        || (targets == "Current selection" && isSelected)
-                        || (targets == "Everything else" && !walkable))
-                        above.Add(element);
-                }
-
-                job.Say("Measuring...");
-                var found = Headroom.Check(surfaces, above, height);
-
-                results.Children.Add(Ui.Line(found.ToString(), 1, true));
-
-                if (surfaces.Count == 0)
-                {
-                    results.Children.Add(Ui.Empty("No walkable surfaces found.",
-                        floors == "Floors and slabs"
-                            ? "Nothing loaded has a category that reads as a floor or a slab. Select the "
-                              + "surfaces you mean and run it against the current selection instead."
-                            : "Nothing is selected."));
-                    return;
-                }
-
-                if (found.Spans.Count == 0)
-                {
-                    results.Children.Add(Ui.Empty("Nothing is too low.",
-                        "Every surface has at least " + units.Length(height) + " of clear height above it."));
-                    return;
-                }
-
-                var rows = found.Spans.Take(300).Select(span => new TableRow(span,
-                    units.Bare(span.Clear),
-                    span.Obstruction.Name,
-                    span.Floor.Name,
-                    units.Bare(span.X) + ", " + units.Bare(span.Y))
-                {
-                    Tone = span.Clear < height * 0.8 ? Tone.Bad : Tone.Warn,
-                }).ToList();
-
-                results.Children.Add(Ui.Table(rows,
-                    ("Clear (" + units.LengthUnit + ")", 90), ("Under", 190), ("Over", 190), ("At", 0))
-                    .OnPick(item =>
-                    {
-                        if (!(item is HeadroomSpan span)) return;
-
-                        var keys = new List<ElementKey>();
-                        if (byId.TryGetValue(span.Floor.Id, out var a)) keys.Add(a);
-                        if (byId.TryGetValue(span.Obstruction.Id, out var b)) keys.Add(b);
-
-                        if (keys.Count == 0) return;
-
-                        session.Model.Select(keys);
-                        session.View.ZoomTo(keys, 2.0);
-                    }));
-
-                session.Record(ActivityKind.Regroup, "checked clear height: " + found);
-            });
-
-            return Bench.Surface(
-                Ui.Stack(
-                    Bench.Group("",
-                        Ui.Field("Minimum clear height (" + Unit() + ")", minimum)),
-                    Bench.Group("What counts as a floor",
-                        Ui.Field("Surfaces", floorPicker),
-                        Ui.Field("Look above at", targetPicker))),
-                run,
-                Ui.Stack(results));
-        }
-
-        /// <summary>
-        /// Sign-off and fabrication release, and what has moved since.
-        ///
-        /// Two things a coordination board has to be able to say and cannot: this level was signed
-        /// off on the fourteenth, and these hangers were released to fabrication on the twentieth.
-        /// Both are the same act — somebody put their name to a state of the model — and both are
-        /// worthless unless the tool can afterwards say what has changed since. So it is one
-        /// mechanism, and the Change Notice is the half that earns it.
-        ///
-        /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
-        /// not to enter.
-        /// </summary>
-        /// <summary>
-        /// What is frozen right now, and the way back off it.
-        ///
-        /// Both windows lead with this: freezing on top of a freeze, or writing a notice against
-        /// one that has been edited under you, are the two ways this record misleads somebody.
-        /// </summary>
-        private static Panel FrozenState()
-        {
-            var state = Ui.Stack();
-            var session = Host.Current;
-
-            if (session != null)
-            {
-                var held = Frozen(session);
-
-                if (held != null)
-                {
-                    state.Children.Add(Ui.Line(held.Describe(), 1, true));
-
-                    if (!held.IsIntact)
-                        state.Children.Add(Ui.Problem(
-                            "That record no longer hashes to its own contents. It has been edited in "
-                            + "the project file, by hand or by a merge, and what it says was agreed "
-                            + "is no longer what it says it was."));
-
-                    state.Children.Add(Ui.Button("Unfreeze", () =>
-                    {
-                        state.Children.Clear();
-
-                        session.Store.Section(ProjectStore.ClashSection).Remove("freeze");
-
-                        state.Children.Add(session.Store.Save()
-                            ? Ui.Done("Unfrozen. Nothing on the board changed - only the record that "
-                                      + "it had been agreed.")
-                            : Ui.Problem(session.Store.LastSaveProblem
-                                         ?? "Could not write the project file."));
-
-                        session.Record(ActivityKind.Regroup, "unfroze " + held.Scope);
-                    }));
-                }
-            }
-
-            return state;
-        }
-
-        /// <summary>
-        /// Freeze: record where every element on the board is, right now.
-        ///
-        /// Its own window, and the change notice is another. They shared one card and one output
-        /// panel, so pressing either wiped what the other had just said - and the card asked a
-        /// first-time user to work out which of two buttons was the one they wanted before it had
-        /// told them what a freeze was. One window, one job, one filled button.
-        /// </summary>
-        internal static UIElement FreezeScreen()
-        {
-            var results = Ui.Stack();
-
-            var scope = Ui.Text(string.Empty, "Level 04 services", null, 220);
-            var signatory = Ui.Text(string.Empty, "who is putting their name to it", null, 180);
-            var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
-
-            results.Children.Add(Bench.Ready(
-                "Records where every element on the board is, right now.",
-                "Nothing edits the record afterwards - which is what makes it worth signing."));
-
-            return Bench.Surface(
-                Ui.Stack(
-                    Bench.Group("",
-                        Ui.Field("What is being frozen", scope),
-                        Ui.Field("Signed by", signatory),
-                        Ui.Field("Release reference", release))),
-                Ui.Runner("Freeze what is on the board", results,
-                          job => DoFreeze(results, scope, signatory, release, job)),
-                Ui.Stack(
-                    FrozenState(),
-                    results));
-        }
-
-        /// <summary>
-        /// The change notice: the difference between what was agreed and what the model says now.
-        ///
-        /// The thing that stops a hanger being made to a drawing three weeks old.
-        /// </summary>
-        internal static UIElement NoticeScreen()
-        {
-            var results = Ui.Stack();
-
-            results.Children.Add(Bench.Ready(
-                "Says what has moved since somebody put their name to the freeze.",
-                "Measured against the freeze, not against last week."));
-
-            return Bench.Surface(
-                null,
-                Ui.Runner("Write the change notice", results, job => DoNotice(results, job)),
-                Ui.Stack(
-                    FrozenState(),
-                    results));
-        }
-
-        /// <summary>Record where everything on the board is, right now.</summary>
-        private static void DoFreeze(Panel results, TextBox scope, TextBox signatory, TextBox release,
-                                     Job job)
-        {
-            var session = Host.Current;
-            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
-
-            var board = LastBoard;
-
-            if (board == null)
-            {
-                results.Children.Add(Ui.Note("Load the board first. A freeze is of the board, and "
-                    + "without one there is nothing to agree to."));
-                return;
-            }
-
-            var elements = new List<FrozenElement>();
-            var groups = new List<string>();
-            var missing = 0;
-            var read = 0;
-
-            var metres = session.MetresPerUnit;
-
-            foreach (var group in board.Groups)
-            {
-                groups.Add(group.Name);
-
-                foreach (var item in group.Items)
-                {
-                    foreach (var key in new[] { item.Key.A, item.Key.B })
-                    {
-                        if (!job.Step(read++, "elements read")) return;
-
-                        var element = session.Model.Resolve(key);
-
-                        if (element == null) { missing++; continue; }
-
-                        var b = element.Bounds;
-
-                        elements.Add(new FrozenElement(key, new BoundingBox(
-                            b.MinX * metres, b.MinY * metres, b.MinZ * metres,
-                            b.MaxX * metres, b.MaxY * metres, b.MaxZ * metres)));
-                    }
-                }
-            }
-
-            var record = Freeze.Of(
-                scope.Text.Trim().Length == 0 ? LastBoardLabel : scope.Text,
-                Environment.UserName,
-                DateTimeOffset.UtcNow,
-                groups,
-                elements,
-                signatory.Text,
-                release.Text);
-
-            session.Store.Section(ProjectStore.ClashSection).Set("freeze", record.ToJson());
-
-            results.Children.Add(session.Store.Save()
-                ? Ui.Line(record.Describe(), 1, true)
-                : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-            if (missing > 0)
-                results.Children.Add(Ui.Note(Ui.Count(missing, "element")
-                    + " on the board could not be found in the model and are not in the record. "
-                    + "They cannot be reported on later either, which is worth knowing now."));
-
-            session.Record(ActivityKind.Regroup, record.Describe());
-
-            // A freeze exists so a later argument has a fixed point; the argument itself is
-            // written in Compare Track, and next month's user should not have to remember that.
-            results.Children.Add(Ui.Quiet("When it changes, write the change notice here",
-                () => Ui.Told(Shell.AppWindow.Show("track", "notice"))));
-        }
-
-        /// <summary>What has moved since somebody put their name to it.</summary>
-        private static void DoNotice(Panel results, Job job)
-        {
-            var session = Host.Current;
-            if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
-
-            var held = Frozen(session);
-
-            if (held == null)
-            {
-                results.Children.Add(Ui.Empty("Nothing is frozen.",
-                    "Freeze the board first. A change notice is the difference between a record "
-                    + "somebody agreed to and the model as it stands."));
-                return;
-            }
-
-            var units = session.Profile.Units;
-            var metres = session.MetresPerUnit;
-
-            var now = new Dictionary<string, BoundingBox>(StringComparer.Ordinal);
-            var names = new Dictionary<string, string>(StringComparer.Ordinal);
-
-            var read = 0;
-
-            foreach (var frozen in held.Elements)
-            {
-                if (!job.Step(read++, "elements checked")) return;
-
-                var element = session.Model.Resolve(frozen.Key);
-                if (element == null) continue;
-
-                var b = element.Bounds;
-
-                now[frozen.Key.ToString()] = new BoundingBox(
-                    b.MinX * metres, b.MinY * metres, b.MinZ * metres,
-                    b.MaxX * metres, b.MaxY * metres, b.MaxZ * metres);
-
-                names[frozen.Key.ToString()] = element.DisplayName;
-            }
-
-            var notice = held.Since(now);
-
-            results.Children.Add(Ui.Line(notice.Explain(units), 1, true));
-
-            if (notice.IsClear) return;
-
-            var rows = notice.Changes.Take(400).Select(c => new TableRow(c,
-                names.TryGetValue(c.Was.Key.ToString(), out var name) ? name : c.Was.Key.ToString(),
-                c.Describe(units),
-                c.Moved > 0 ? units.Bare(c.Moved) : string.Empty,
-                c.Resized > 0 ? units.Bare(c.Resized) : string.Empty)
-            {
-                Tone = c.IsMissing ? Tone.Bad : Tone.Warn,
-            }).ToList();
-
-            results.Children.Add(Ui.Table(rows,
-                ("Element", 240), ("What changed", 200),
-                ("Moved (" + units.LengthUnit + ")", 110),
-                ("Resized (" + units.LengthUnit + ")", 0))
-                .OnPick(item =>
-                {
-                    if (!(item is FrozenChange change)) return;
-
-                    var keys = new[] { change.Was.Key };
-                    session.Model.Select(keys);
-                    session.View.ZoomTo(keys, 2.0);
-                }));
-
-            session.Record(ActivityKind.Report, "produced a change notice: " + notice.Explain(units));
-        }
-
         /// <summary>
         /// The groups still worth looking at, in board order.
         ///
@@ -1619,399 +754,6 @@ namespace CamelWorks.UI.Views
         /// <param name="summary">What to write in the activity log.</param>
         internal static void SaveBoard(Session session, ClashPipelineResult board, string summary) =>
             Save(session, board, summary);
-
-        /// <summary>The freeze this project holds, or null.</summary>
-        private static Freeze? Frozen(Session session) =>
-            Freeze.FromJson(session.Store.Section(ProjectStore.ClashSection)["freeze"]);
-
-        /// <summary>
-        /// Whether an element reads as something people walk on.
-        ///
-        /// A guess, and a stated one — the alternative is asking the user to build a set before
-        /// they can run the check at all, which is the setup tax this product exists to not charge.
-        /// </summary>
-        private static bool IsWalkable(IModelItem item)
-        {
-            var category = item.Category ?? string.Empty;
-            var type = item.TypeName ?? string.Empty;
-
-            foreach (var word in new[] { "floor", "slab", "stair", "landing", "ramp", "platform", "deck" })
-                if (category.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0
-                    || type.IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return true;
-
-            return false;
-        }
-
-        /// <summary>
-        /// One group, opened: what is in it, and the four things a coordinator does to it.
-        ///
-        /// Assign it, group some of it differently, mark what has been dealt with, and change your
-        /// mind. Until now the board could be read and filtered but not edited, which meant the
-        /// statuses carry-over exists to preserve had no way of ever being set — the whole
-        /// human-judgement half of the pipeline was unreachable from the product.
-        /// </summary>
-        private static UIElement Detail(Session session, ClashGroup group)
-        {
-            var status = Ui.Stack();
-
-            var rows = group.Items.Take(DetailCap).Select(item => new TableRow(item,
-                item.TestName,
-                item.Level ?? "-",
-                item.ModelPair,
-                (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
-                item.Status.ToString())).ToList();
-
-            var table = Ui.Table(rows,
-                ("Test", 130), ("Level", 90), ("Models", 170), ("What", 170), ("Status", 90))
-                .Multi()
-                .OnPick(item =>
-                {
-                    if (!(item is ClashItem clash)) return;
-
-                    var keys = new[] { clash.Key.A, clash.Key.B };
-                    session.Model.Select(keys);
-                    session.View.ZoomTo(keys, 2.0);
-                });
-
-            // The roster's organisations and the profile's typed ones, together: the roster is a
-            // vocabulary somebody built, and the box is still there for the party nobody has yet.
-            var roster = Roster(session);
-            var book = Assignments(session);
-
-            var parties = session.Profile.Parties
-                .Concat(roster.Parties)
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Select(p => p.Trim())
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            if (parties.Count == 0) parties.Add("Unassigned");
-
-            var party = group.AssignedTo != null && parties.Contains(group.AssignedTo, StringComparer.OrdinalIgnoreCase)
-                ? group.AssignedTo
-                : parties[0];
-
-            var people = Ui.Stack();
-            var chosen = new HashSet<string>(book.For(group.Id), StringComparer.Ordinal);
-
-            void DrawPeople()
-            {
-                people.Children.Clear();
-
-                var within = roster.Suggest(party, book);
-
-                foreach (var stranger in roster.Strangers(book, group.Id))
-                    people.Children.Add(Ui.Note("\"" + stranger + "\" is on this group and not on "
-                        + "the roster any more. Their work did not leave when they did."));
-
-                if (within.Count == 0)
-                {
-                    people.Children.Add(Ui.Small(roster.IsEmpty
-                        ? "Nobody is on the roster yet, so this goes to the organisation and no "
-                          + "further. Add people in Project - Profile and they appear here."
-                        : "Nobody from " + party + " is on the roster, so this goes to the "
-                          + "organisation and no further."));
-                    return;
-                }
-
-                people.Children.Add(Ui.Small("More than one person can carry a group. The order is "
-                    + "who is carrying least."));
-
-                foreach (var member in within)
-                {
-                    var here = member;
-
-                    var row = new WrapPanel { Margin = new Thickness(0, 1, 0, 1) };
-
-                    row.Children.Add(Ui.Check(here.Name, chosen.Contains(here.Id), on =>
-                    {
-                        if (on) chosen.Add(here.Id); else chosen.Remove(here.Id);
-                    }));
-
-                    var carrying = book.Load(here.Id);
-
-                    if (carrying > 0)
-                        row.Children.Add(Ui.Pill(Ui.Count(carrying, "group"), Tone.Plain));
-
-                    if (here.Email == null)
-                        row.Children.Add(Ui.Pill("no address", Tone.Warn));
-
-                    foreach (var child in row.Children.OfType<FrameworkElement>())
-                        child.Margin = new Thickness(0, 0, 8, 0);
-
-                    people.Children.Add(row);
-                }
-            }
-
-            var picker = Ui.Choice(parties, party, p => { party = p; DrawPeople(); });
-
-            DrawPeople();
-
-            var assign = Ui.Button("Assign this group", () =>
-            {
-                status.Children.Clear();
-                group.AssignByHand(party);
-                Remember(session, group.Name, party);
-
-                book.Assign(group.Id, chosen);
-                session.Store.Section(ProjectStore.ClashSection).Set("assignments", book.ToJson());
-
-                var named = roster.On(book, group.Id);
-
-                var told = named.Count == 0
-                    ? string.Empty
-                    : ", to " + string.Join(" and ", named.Select(m => m.Name));
-
-                status.Children.Add(session.Store.Save()
-                    ? Ui.Line("\"" + group.Name + "\" goes to " + party + told
-                              + ". A hand assignment outranks the rules and survives the next run.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                DrawPeople();
-            });
-
-            // --- what to do about it ------------------------------------------------------
-            // Four typed fields rather than a comment box. A comment cannot be drawn as an arrow,
-            // cannot be checked against next week's model, and means three things to three readers.
-            var units = session.Profile.Units;
-
-            var verb = group.Instruction.ActionWord;
-            var verbPicker = Ui.Choice(Resolution.Actions, verb, v => verb = v);
-
-            var way = group.Instruction.DirectionWord;
-            var wayPicker = Ui.Choice(Resolution.Directions, way, v => way = v);
-
-            var howFar = Ui.Text(group.Instruction.Amount.HasValue
-                ? units.Bare(group.Instruction.Amount.Value) : string.Empty, null, 90);
-
-            var why = Ui.Text(group.Instruction.Note ?? string.Empty, null, 260);
-
-            var stated = Ui.Line(group.Instruction.Describe(units), 0.85);
-
-            var instruct = Ui.Button("Record what to do", () =>
-            {
-                status.Children.Clear();
-
-                var action = Resolution.ActionOf(verb);
-
-                double? amount = null;
-
-                if (!string.IsNullOrWhiteSpace(howFar.Text))
-                {
-                    if (!units.TryRead(howFar.Text, out var read))
-                    {
-                        status.Children.Add(Ui.Problem("\"" + howFar.Text.Trim()
-                            + "\" is not a distance. A bare number is read in "
-                            + units.LengthUnit + "."));
-                        return;
-                    }
-
-                    amount = read;
-                }
-
-                // The picked row names the element, when one is picked. Otherwise the instruction
-                // is about the group, which is the honest answer when nobody said otherwise.
-                var picked = table.PickedMany().OfType<ClashItem>().FirstOrDefault();
-
-                var instruction = new Resolution(action,
-                    picked?.CategoryA,
-                    Resolution.AxisOf(way),
-                    amount,
-                    why.Text,
-                    picked?.Key.A.ToString());
-
-                group.Instruct(instruction);
-                Remember(session, group.Name, instruction: instruction);
-
-                stated.Text = instruction.Describe(units);
-
-                status.Children.Add(session.Store.Save()
-                    ? Ui.Line(instruction.IsStated
-                        ? "Recorded. It prints under this group in the report, draws as an arrow in "
-                          + "review, and survives the next run - no rule can restate it."
-                        : "Cleared. The report will say the resolution is not stated, which is the "
-                          + "truth and reads better than a blank line.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-            });
-
-            var newGroup = Ui.Text(group.Name + " - split", null, 200);
-
-            var regroup = Ui.Button("Move the picked ones", () =>
-            {
-                status.Children.Clear();
-
-                var picked = table.PickedMany().OfType<ClashItem>().ToList();
-                var name = newGroup.Text.Trim();
-
-                if (picked.Count == 0)
-                {
-                    status.Children.Add(Ui.Line("Pick the results to move first. "
-                        + "Shift-click and control-click work here the way they do everywhere else.", 0.8));
-                    return;
-                }
-
-                if (name.Length == 0)
-                {
-                    status.Children.Add(Ui.Line("Give the group a name first.", 0.8));
-                    return;
-                }
-
-                Pin(session, name, picked);
-
-                status.Children.Add(session.Store.Save()
-                    ? Ui.Line(Ui.Count(picked.Count, "result") + " will be in \"" + name
-                              + "\" from the next load. A hand-made group is never re-derived, so the "
-                              + "rules will leave it alone.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-            });
-
-            var release = group.IsPinned
-                ? Ui.Button("Let the rules decide this again", () =>
-                {
-                    status.Children.Clear();
-                    Unpin(session, group.Name);
-
-                    status.Children.Add(session.Store.Save()
-                        ? Ui.Line("\"" + group.Name + "\" is no longer hand-made. The next load will group "
-                                  + "its results by the rule stack.", 0.8)
-                        : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-                })
-                : null;
-
-            var mark = FindingStatus.Reviewed;
-            var marks = new[] { "Reviewed", "Approved", "Resolved", "Active" };
-
-            var marker = Ui.Choice(marks, "Reviewed", pick =>
-                mark = Enum.TryParse<FindingStatus>(pick, out var parsed) ? parsed : FindingStatus.Reviewed);
-
-            var apply = Ui.Button("Mark them", () =>
-            {
-                status.Children.Clear();
-
-                var board = LastBoard;
-                if (board == null) { status.Children.Add(Ui.Line("Load the board first.", 0.8)); return; }
-
-                var picked = table.PickedMany().OfType<ClashItem>().ToList();
-                if (picked.Count == 0) picked = group.Items.ToList();
-
-                foreach (var item in picked) item.Status = mark;
-
-                Save(session, board, "marked " + Ui.Count(picked.Count, "result") + " as " + mark);
-
-                status.Children.Add(session.Store.Save()
-                    ? Ui.Line(Ui.Count(picked.Count, "result") + " marked " + mark
-                              + ". Reviewed and Approved are the two the next run will not recompute — "
-                              + "they are the only judgements the engine cannot make for itself.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                Redraw(table, group);
-            });
-
-            // An eyebrow rather than a card: the detail is stage content under the board, and the
-            // group's name is a label over it, not a box beside three other boxes.
-            return Ui.Stack(
-                Ui.Eyebrow(group.Name),
-                Ui.Line(Ui.Count(group.Items.Count, "clash")
-                    + (group.Items.Count > DetailCap ? ", first " + DetailCap + " shown" : string.Empty)
-                    + (group.IsPinned ? " - made by hand" : string.Empty), 0.75),
-                Ui.Field("Assign to", picker),
-                Ui.Across(assign, release),
-                Ui.Field("What to do", verbPicker),
-                Ui.Field("Which way", wayPicker),
-                Ui.Field("How far (" + units.LengthUnit + ")", howFar),
-                Ui.Field("Note", why),
-                Ui.Across(instruct),
-                stated,
-                Ui.Note("Pick a row first and the instruction names that element and starts its arrow "
-                        + "there; leave everything unpicked and it is about the group. A group nobody "
-                        + "has instructed prints \"" + Resolution.Unstated.ToLowerInvariant()
-                        + "\" rather than a blank line."),
-                Ui.Field("Move picked into", newGroup),
-                Ui.Across(regroup),
-                Ui.Field("Mark picked as", marker),
-                Ui.Across(apply),
-                Ui.Note("Marking changes the board, not the model. Navisworks keeps its own status on "
-                        + "each clash result and CamelWorks does not write into it: two tools disagreeing "
-                        + "about whether something is resolved is worse than one of them not knowing."),
-                status,
-
-                // The bar goes with the table, not with the buttons. Moving and marking are above,
-                // because each needs its own box to type into, and both told somebody to shift-
-                // click when nothing was picked - an instruction sitting a screen away from the
-                // rows it is about. How many are picked, and tick-all or clear, belong here.
-                Ui.Picking(table,
-                    new Ui.OnPicked("Select {n} in the model",
-                                    (picked, say) => Reveal(session, picked, say),
-                                    primary: true),
-                    new Ui.OnPicked("Attach {n} to an issue...",
-                                    (picked, say) => AttachTo(session, group, picked, say))));
-        }
-
-        /// <summary>
-        /// Put the picked results on an issue somebody raised.
-        ///
-        /// The engine never decides that eleven conflicts are one conversation - so an issue is
-        /// raised by hand, and this is how the conflicts it is about get onto it. A riser in the
-        /// wrong place produces nine results; the thing to send is "this riser is wrong, here are
-        /// the nine", not nine items with the same sentence retyped on each.
-        ///
-        /// It attaches to the most recently raised open issue rather than asking which. There is
-        /// no picker because the sequence people actually follow is raise it, then go and collect
-        /// what it covers - and a dropdown of every issue ever raised, at the moment somebody has
-        /// just written one, is a question with an obvious answer.
-        /// </summary>
-        private static void AttachTo(Session session, ClashGroup group,
-                                     IReadOnlyList<object> picked, Panel say)
-        {
-            say.Children.Clear();
-
-            var items = picked.OfType<ClashItem>().ToList();
-
-            if (items.Count == 0) items = group.Items.ToList();
-
-            var issues = Issues(session);
-
-            var open = issues.Issues
-                .Where(i => i.Status != FindingStatus.Resolved)
-                .OrderByDescending(i => i.RaisedTicks)
-                .ToList();
-
-            if (open.Count == 0)
-            {
-                say.Children.Add(Ui.Note("There is no open issue to attach these to. Raise one below "
-                    + "- an issue is a sentence somebody wrote, so it has to be written before "
-                    + "anything can belong to it."));
-
-                return;
-            }
-
-            var issue = open[0];
-            var attached = issues.Attach(issue, items.Select(i => i.Key));
-
-            SaveIssues(session, issues);
-
-            if (!session.Store.Save())
-            {
-                say.Children.Add(Ui.Problem(session.Store.LastSaveProblem
-                                            ?? "Could not write the project file."));
-                return;
-            }
-
-            session.Record(ActivityKind.Regroup,
-                "attached " + Ui.Count(attached, "result") + " to \"" + issue.Title + "\"");
-
-            say.Children.Add(Ui.Done(attached == 0
-                ? "\"" + issue.Title + "\" already held " + (items.Count == 1 ? "that one" : "all of those")
-                  + ". It holds " + Ui.Count(issue.Attached.Count, "result") + " altogether."
-                : Ui.Count(attached, "result") + " now belong to \"" + issue.Title + "\", which holds "
-                  + Ui.Count(issue.Attached.Count, "result") + " altogether."));
-
-            if (open.Count > 1)
-                say.Children.Add(Ui.Note("That is the most recently raised open issue, of "
-                    + Ui.Count(open.Count, "open issue") + ". A result belongs to one issue at a "
-                    + "time, so attaching it here took it off whichever had it."));
-        }
 
         /// <summary>
         /// Select both sides of every picked clash.
@@ -2053,318 +795,6 @@ namespace CamelWorks.UI.Views
                 item.ModelPair,
                 (item.CategoryA ?? "?") + " v " + (item.CategoryB ?? "?"),
                 item.Status.ToString())).ToList();
-        }
-
-        /// <summary>
-        /// Raising a coordination problem the clash engine cannot see.
-        ///
-        /// A door swinging into an escape route, a valve with nowhere to be pulled to, an access
-        /// route that stops at a wall, a riser with no builder's work opening. None of them are
-        /// intersections, all of them are coordination, and none of them can be raised in a tool
-        /// whose board only knows what the engine said — so they end up in a spreadsheet beside the
-        /// board, reported separately and closed where nobody can see them next to the work they
-        /// belong with.
-        ///
-        /// The elements come from the current selection, which is where the person already is when
-        /// they notice. Nothing else is required: a title is enough, and every other box has an
-        /// answer already.
-        /// </summary>
-        private sealed class RaiseScreen
-        {
-            private readonly TextBox _title = Ui.Text(string.Empty, null, 260);
-            private readonly TextBox _note = Ui.Text(string.Empty, null, 340);
-            private readonly StackPanel _status = Ui.Stack();
-            private readonly StackPanel _list = Ui.Stack();
-
-            private string? _party;
-            private string _priority = "Medium";
-
-            /// <summary>
-            /// The inputs, as a setup group: the sentence, its owner, and the one act. Empty before
-            /// a model is open, because there is nothing to raise an issue against.
-            /// </summary>
-            internal UIElement Setup()
-            {
-                var session = Host.Current;
-                if (session == null) return Ui.Stack();
-
-                var parties = new List<string> { "Unassigned" };
-                parties.AddRange(session.Profile.Parties);
-                _party = parties[0];
-
-                var who = Ui.Choice(parties, _party, p => _party = p);
-                var how = Ui.Choice(new[] { "High", "Medium", "Low" }, _priority, p => _priority = p);
-
-                Redraw(session);
-
-                return Bench.Group("Raise an issue",
-                    Ui.Field("What is wrong", _title),
-                    Ui.Field("More", _note),
-                    Ui.Field("Who", who),
-                    Ui.Field("Priority", how),
-                    Ui.Actions(Ui.Button("Raise it against the selection", () => Raise(session))),
-                    Ui.Small("The elements come from what is selected in the model right now. "
-                             + "Select the door and the corridor, not the whole level."));
-            }
-
-            /// <summary>The raised issues and the last act's answer, for the board's stage.</summary>
-            internal UIElement Stage() => Ui.Stack(_status, _list);
-
-            private void Raise(Session session)
-            {
-                _status.Children.Clear();
-
-                var title = _title.Text.Trim();
-
-                if (title.Length == 0)
-                {
-                    _status.Children.Add(Ui.Problem("Say what is wrong first. One line is enough."));
-                    return;
-                }
-
-                var selected = session.Model.SelectedKeys();
-
-                if (selected.Count == 0)
-                {
-                    _status.Children.Add(Ui.Problem(
-                        "Nothing is selected. An issue with no elements is a note nobody can find "
-                        + "again, so CamelWorks will not make one."));
-                    return;
-                }
-
-                // Two participants because that is what a board identity is made of. One selected
-                // element pairs with itself, which is a real pair and a stable key.
-                var first = selected[0];
-                var second = selected.Count > 1 ? selected[1] : first;
-
-                double x = 0, y = 0, z = 0;
-                var counted = 0;
-
-                foreach (var key in selected)
-                {
-                    var item = session.Model.Resolve(key);
-                    if (item == null) continue;
-
-                    var bounds = item.Bounds;
-                    x += bounds.CentreX; y += bounds.CentreY; z += bounds.CentreZ;
-                    counted++;
-                }
-
-                if (counted > 0) { x /= counted; y /= counted; z /= counted; }
-
-                var issues = Issues(session);
-                var scale = session.MetresPerUnit;
-
-                // The key is made from the raw host-unit centroid, the way a clash key is, and then
-                // kept forever. The metres go on the issue for everything that reads coordinates.
-                var issue = new ManualIssue(issues.NextId(), ClashKey.Create(first, second, x, y, z), title)
-                {
-                    Note = _note.Text.Trim().Length == 0 ? null : _note.Text.Trim(),
-                    AssignedTo = _party == "Unassigned" ? null : _party,
-                    Priority = _priority,
-                    Level = LevelOf(session, selected),
-                    Author = session.Profile.Author,
-                    RaisedTicks = DateTime.UtcNow.Ticks,
-                    X = x * scale,
-                    Y = y * scale,
-                    Z = z * scale,
-                };
-
-                foreach (var key in selected.Take(IssueElementCap)) issue.Elements.Add(key);
-
-                issues.Put(issue);
-                SaveIssues(session, issues);
-
-                if (issue.AssignedTo != null) Decide(session, issue.Title, issue.AssignedTo, issue.Priority);
-
-                _status.Children.Add(session.Store.Save()
-                    ? Ui.Line("Raised against " + Ui.Count(selected.Count, "element")
-                              + ". Load the board to see it — it will be its own group, named after "
-                              + "the title, and the rules will leave it alone.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                session.Record(ActivityKind.Regroup, "raised an issue: " + title);
-
-                _title.Text = string.Empty;
-                _note.Text = string.Empty;
-
-                Redraw(session);
-            }
-
-            /// <summary>
-            /// Take every clash off an issue, without touching the issue.
-            ///
-            /// The way back from an attachment made in a hurry. Deleting the issue would work and
-            /// would also throw away the sentence somebody wrote, which is the half that cost
-            /// them something.
-            /// </summary>
-            /// <param name="session">The session.</param>
-            /// <param name="issue">The issue to empty, or null when nothing is picked.</param>
-            private void Release(Session session, ManualIssue? issue)
-            {
-                _status.Children.Clear();
-
-                if (issue == null)
-                {
-                    _status.Children.Add(Ui.Note("Pick an issue in the list first."));
-                    return;
-                }
-
-                if (issue.Attached.Count == 0)
-                {
-                    _status.Children.Add(Ui.Note("\"" + issue.Title + "\" holds no clashes."));
-                    return;
-                }
-
-                var issues = Issues(session);
-                var held = issues.Find(issue.Id);
-                var gone = issues.Detach(held?.Attached.ToList());
-
-                SaveIssues(session, issues);
-
-                _status.Children.Add(session.Store.Save()
-                    ? Ui.Done(Ui.Count(gone, "clash") + " no longer belong to \"" + issue.Title
-                              + "\". The issue is untouched.")
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                Redraw(session);
-            }
-
-            /// <summary>What is already raised, and a way to close or delete one.</summary>
-            private void Redraw(Session session)
-            {
-                _list.Children.Clear();
-
-                var issues = Issues(session);
-
-                if (issues.Unreadable > 0)
-                    _list.Children.Add(Ui.Note(Ui.Count(issues.Unreadable, "issue")
-                        + " in the project file could not be read back. They are still in the file; "
-                        + "CamelWorks has not deleted them."));
-
-                if (issues.Issues.Count == 0) return;
-
-                var open = issues.Issues.Count(i => i.Status != FindingStatus.Resolved);
-
-                _list.Children.Add(Ui.Line(Ui.Count(open, "issue") + " open, "
-                    + (issues.Issues.Count - open).ToString(CultureInfo.InvariantCulture)
-                    + " closed and kept as a record.", 0.7));
-
-                var rows = issues.Issues.Select(i => new TableRow(i,
-                    i.Title,
-                    i.AssignedTo ?? "unassigned",
-                    i.Priority ?? string.Empty,
-                    // What it covers, which is the difference between a note and an issue. Blank
-                    // rather than "0" when it holds nothing: an issue about something the engine
-                    // cannot see is complete on its own, and a zero would read as a gap in it.
-                    i.Attached.Count > 0
-                        ? i.Attached.Count.ToString("N0", CultureInfo.InvariantCulture) + " clashes"
-                        : string.Empty,
-                    i.Status.ToString(),
-                    i.RaisedTicks > 0
-                        ? new DateTime(i.RaisedTicks).ToLocalTime().ToString("d MMM", CultureInfo.InvariantCulture)
-                        : string.Empty)
-                {
-                    Tone = i.Status == FindingStatus.Resolved ? Tone.Good : Tone.Warn,
-                }).ToList();
-
-                var table = Ui.Table(rows,
-                    ("Issue", 230), ("Who", 110), ("Priority", 80), ("Holds", 90),
-                    ("Status", 90), ("Raised", 70));
-
-                ManualIssue? picked = null;
-                table.OnPick(item => picked = item as ManualIssue);
-
-                _list.Children.Add(table);
-
-                _list.Children.Add(Ui.Across(
-                    Ui.Button("Show me", () =>
-                    {
-                        if (picked == null || picked.Elements.Count == 0) return;
-
-                        // Materialised once: the seam takes IReadOnlyList, which IList is not, and
-                        // both calls want the same list rather than two copies of it.
-                        var keys = picked.Elements.ToList();
-
-                        session.Model.Select(keys);
-                        session.View.ZoomTo(keys, 2.0);
-                    }),
-                    Ui.Button("Close it", () => Close(session, picked)),
-                    Ui.Button("Let go of its clashes", () => Release(session, picked)),
-                    Ui.Danger("Delete it", () => Delete(session, picked))));
-            }
-
-            private void Close(Session session, ManualIssue? picked)
-            {
-                _status.Children.Clear();
-
-                if (picked == null) { _status.Children.Add(Ui.Line("Pick one first.", 0.8)); return; }
-
-                var issues = Issues(session);
-                var issue = issues.Find(picked.Id);
-
-                if (issue == null) return;
-
-                issue.Status = FindingStatus.Resolved;
-                SaveIssues(session, issues);
-
-                _status.Children.Add(session.Store.Save()
-                    ? Ui.Line("Closed. It stays in this list as a record and leaves the board.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                session.Record(ActivityKind.Regroup, "closed an issue: " + issue.Title);
-                Redraw(session);
-            }
-
-            /// <summary>
-            /// Delete rather than close, for the one raised by mistake.
-            ///
-            /// Closing keeps the record because the record is the evidence the work happened.
-            /// Deleting exists for the typo, and says which of the two it is doing.
-            /// </summary>
-            private void Delete(Session session, ManualIssue? picked)
-            {
-                _status.Children.Clear();
-
-                if (picked == null) { _status.Children.Add(Ui.Line("Pick one first.", 0.8)); return; }
-
-                var issues = Issues(session);
-                issues.Remove(picked.Id);
-                SaveIssues(session, issues);
-
-                _status.Children.Add(session.Store.Save()
-                    ? Ui.Line("Deleted. Closing keeps the record; deleting is for the one raised by "
-                              + "mistake, and this was the second.", 0.8)
-                    : Ui.Problem(session.Store.LastSaveProblem ?? "Could not write the project file."));
-
-                session.Record(ActivityKind.Regroup, "deleted an issue: " + picked.Title);
-                Redraw(session);
-            }
-
-            /// <summary>
-            /// The level of the first element that carries one.
-            ///
-            /// Read off the element rather than worked out from the height, because building the
-            /// level set means a pass over the whole federation and raising an issue should not
-            /// take a minute.
-            /// </summary>
-            private static string? LevelOf(Session session, IReadOnlyList<ElementKey> keys)
-            {
-                foreach (var key in keys.Take(IssueElementCap))
-                {
-                    var item = session.Model.Resolve(key);
-                    if (item == null) continue;
-
-                    var level = item.Property("Element", "Level") ?? item.Property("Item", "Layer");
-                    if (!string.IsNullOrWhiteSpace(level)) return level!.Trim();
-                }
-
-                return null;
-            }
-
-            /// <summary>Record the party against the group the issue will become.</summary>
-            private static void Decide(Session session, string group, string party, string? priority) =>
-                Remember(session, group, party, priority);
         }
 
         // ===================================================================================
@@ -2672,13 +1102,14 @@ namespace CamelWorks.UI.Views
                 {
                     session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "test"));
 
-                    // The run's whole point is the board, so the board is one press away and
-                    // loads itself on arrival — the week's find-to-decide hand-off.
-                    _runs.Children.Add(Ui.Primary("Open the board with these results", () =>
-                    {
-                        LoadOnArrival = true;
-                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                    }));
+                    // The run's whole point is what it found, so what it found is one press
+                    // away. The manager re-reads on arrival, so the fresh run is what it shows.
+                    _runs.Children.Add(Ui.Actions(
+                        Ui.Primary("Open results", () =>
+                        {
+                            ClashManageViews.Forget();
+                            Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                        })));
                 }
 
                 Redraw();
@@ -3049,18 +1480,12 @@ namespace CamelWorks.UI.Views
             var board = LastBoard;
 
             if (board == null)
-                return Ui.Info("The board is not loaded. " + whenMissing,
-                    "Load the board in Clash Manager",
-                    () =>
-                    {
-                        LoadOnArrival = true;
-                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                    });
+                return LoadHere("The board is not loaded. " + whenMissing);
 
             return Ui.Line("On the board: " + Ui.Count(board.Groups.Count, "issue") + ", "
                 + Ui.Count(board.Groups.Sum(g => g.Items.Count), "clash")
                 + (string.IsNullOrEmpty(LastBoardLabel) ? string.Empty : " — " + LastBoardLabel)
-                + ". This tab sends what the Clash Board shows.", 0.75);
+                + ". This tab sends that board.", 0.75);
         }
 
         /// <summary>
@@ -3234,9 +1659,8 @@ namespace CamelWorks.UI.Views
 
                 var write = Ui.Runner("Write the report", _results, Write);
 
-                _results.Children.Add(BoardState("Writing will build it fresh from the tests and "
-                    + "the saved rules — load it in Clash Manager first to report the board as "
-                    + "you triaged it."));
+                _results.Children.Add(BoardState("Writing will build it fresh from the tests "
+                    + "and the saved rules."));
 
                 _results.Children.Add(Bench.Ready(
                     "Writes the board out for whoever it is for, from a built-in template.",
@@ -3339,12 +1763,8 @@ namespace CamelWorks.UI.Views
 
                 if (board == null)
                 {
-                    _markers.Children.Add(Ui.Info("The board has not been built yet, and this marks "
-                        + "what the board holds.", "Load the board in Clash Manager", () =>
-                        {
-                            LoadOnArrival = true;
-                            Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                        }));
+                    _markers.Children.Add(LoadHere("The board has not been built yet, and this "
+                        + "marks what the board holds."));
                     return;
                 }
 
@@ -3361,7 +1781,15 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                recipe.MetresPerUnit = metres.Value;
+                // The board's coordinates were already scaled to metres when it was built, by the
+                // session's own factor. What remains is only the difference between that factor
+                // and the truth: on a document that declares its units the two agree and this is
+                // 1, and on one that declares nothing the session factor was 1 and the picker
+                // supplies the whole conversion. Multiplying by the full factor here a second
+                // time put every marker a thousandfold off on a millimetre model.
+                recipe.MetresPerUnit = session.MetresPerUnit > 0
+                    ? metres.Value / session.MetresPerUnit
+                    : metres.Value;
 
                 job.Say("Building the geometry...");
 
@@ -4585,9 +3013,22 @@ namespace CamelWorks.UI.Views
 
                     Remember(session, read.Topics.Select(t => t.Guid));
 
-                    results.Children.Add(Ui.Note("CamelWorks has recorded which topics it has seen, so the "
-                        + "same file read again reports nothing new. It does not write them into the model: "
-                        + "somebody else's issue list is theirs until you decide what to do with it."));
+                    // Their topics are issues, so they land in the register like every other issue
+                    // — which is where somebody works them. Reading the same file again updates
+                    // what it already brought in rather than raising it all a second time.
+                    var register = IssueViews.Read(session);
+                    var brought = IssueBcf.Merge(register, read.Topics,
+                                                 System.IO.Path.GetFileName(file));
+                    var refused = IssueViews.Write(session, register);
+
+                    results.Children.Add(refused == null
+                        ? Ui.Info(brought.Explain() + " They are in the issue register now.",
+                                  "Open the register", () => IssueViews.Open(null))
+                        : (UIElement)Ui.Problem(refused));
+
+                    results.Children.Add(Ui.Note("Nothing has been written into the model's own "
+                        + "clash data: somebody else's answers are theirs until you take them on, "
+                        + "which is the button below."));
 
                     Reply(session, read.Topics, results);
                 }
@@ -4596,8 +3037,7 @@ namespace CamelWorks.UI.Views
             });
 
             results.Children.Add(BoardState("Sending will build it fresh from the tests and the "
-                + "saved rules — load it in Clash Manager first to send the board as you "
-                + "triaged it. The spreadsheet leg needs it loaded either way."));
+                + "saved rules. The spreadsheet leg needs it loaded either way."));
 
             results.Children.Add(Bench.Ready(
                 "Sends the board out as one topic per issue, for whichever tool answers.",
@@ -4636,12 +3076,8 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Info("The worksheet is of the board, and without one there "
-                    + "is nothing to send.", "Load the board in Clash Manager", () =>
-                    {
-                        LoadOnArrival = true;
-                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                    }));
+                results.Children.Add(LoadHere("The worksheet is of the board, and without one "
+                    + "there is nothing to send."));
                 return;
             }
 
@@ -4731,13 +3167,8 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Info("Without a board there is nothing to reconcile this "
-                    + "sheet against. Load it, then read the sheet again.",
-                    "Load the board in Clash Manager", () =>
-                    {
-                        LoadOnArrival = true;
-                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                    }));
+                results.Children.Add(LoadHere("Without a board there is nothing to reconcile "
+                    + "this sheet against. Load it, then read the sheet again."));
                 return;
             }
 
@@ -5143,13 +3574,8 @@ namespace CamelWorks.UI.Views
 
             if (board == null)
             {
-                results.Children.Add(Ui.Info("Without a board there is nothing to reconcile these "
-                    + "answers against. Load it, then read the file again to see what it says.",
-                    "Load the board in Clash Manager", () =>
-                    {
-                        LoadOnArrival = true;
-                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                    }));
+                results.Children.Add(LoadHere("Without a board there is nothing to reconcile "
+                    + "these answers against. Load it, then read the file again."));
                 return;
             }
 

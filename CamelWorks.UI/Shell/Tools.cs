@@ -140,11 +140,6 @@ namespace CamelWorks.UI.Shell
 
             // ---- Coordinate -------------------------------------------------------------------
 
-            Of("triage", "Clash Board", ToolShape.Window, Glyph.Clash,
-               "Turn every clash the tests found into the handful of issues somebody actually "
-               + "fixes, and give each one to whoever fixes it.",
-               "Load the board"),
-
             Of("review", "Review", ToolShape.Window, Glyph.Camera,
                "Walk the findings one at a time over the model, deciding each in front of the "
                + "geometry rather than off a list.",
@@ -154,20 +149,42 @@ namespace CamelWorks.UI.Shell
                "Say what gets tested against what, and how close is too close.",
                "Run them"),
 
+            Of("manage", "Clash Results", ToolShape.Window, Glyph.Tune,
+               "Work the results the way the engine holds them - status, assignee, comments and "
+               + "groups written back into the model, with the camera, isolation and marker "
+               + "spheres hanging off the same picked rows.",
+               "Read the results"),
+
             Of("matrix", "Clash Matrix", ToolShape.Wizard, Glyph.Table,
                "Build a whole test set at once from a grid of one discipline against another, "
                + "instead of naming forty tests by hand.",
                "Read the matrix"),
 
-            Of("headroom", "Clearance", ToolShape.Window, Glyph.Layers,
+            Of("headroom", "Clearance Check", ToolShape.Window, Glyph.Layers,
                "Find where the clear height under the services is not there - which no clash test "
-               + "can find, because nothing is touching.",
-               "Check clear height"),
+               + "can find, because nothing is touching - and work the findings like clash results.",
+               "Check"),
 
-            Of("rules", "Clash Rules", ToolShape.Window, Glyph.Filter,
+            Of("rules", "Filter Clashes", ToolShape.Window, Glyph.Filter,
                "Suppress what does not matter, group what is one issue, and assign what is left - "
                + "one pipeline, previewed before any of it is applied.",
                "Try these on the board"),
+
+            Of("issuelist", "Issues", ToolShape.Window, Glyph.Report,
+               "Every issue on this project, however it was raised - written by hand, made from "
+               + "clash results, made from the clearance check, or read out of somebody's BCF - "
+               + "with the detail panel that works one.",
+               "New issue"),
+
+            Of("issuein", "Import Issues", ToolShape.Window, Glyph.Onward,
+               "Read a BCF file into the register, merging what it already brought in rather than "
+               + "raising everything twice.",
+               "Read"),
+
+            Of("issueout", "Export Issues", ToolShape.Window, Glyph.Save,
+               "Write the register out as BCF for whoever has to act on it, carrying statuses, "
+               + "assignees, due dates and every comment.",
+               "Write"),
 
             Of("clashreport", "Clash Report", ToolShape.Window, Glyph.Report,
                "Get the board out as a document somebody who does not have Navisworks can read.",
@@ -208,7 +225,13 @@ namespace CamelWorks.UI.Shell
             Of("freeze", "Freeze", ToolShape.Window, Glyph.Save,
                "Record that a scope was agreed and what it was at the moment of agreeing, so a "
                + "later argument about what changed has a fixed point to argue from.",
-               "Freeze what is on the board"),
+               "Freeze"),
+
+            Of("sidebyside", "Side by Side", ToolShape.Window, Glyph.Compare,
+               "Compare two things that are both loaded now - the supplier's model against yours, "
+               + "or two sets that are supposed to hold the same thing - and see what is in one "
+               + "and not the other.",
+               "Compare"),
 
             Of("notice", "Change Notice", ToolShape.Window, Glyph.Compare,
                "What has changed since a scope was frozen, written the way a variation has to be "

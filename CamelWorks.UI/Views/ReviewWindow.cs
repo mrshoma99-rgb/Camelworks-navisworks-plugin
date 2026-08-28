@@ -45,8 +45,9 @@ namespace CamelWorks.UI.Views
             var board = CoordinateViews.LastBoard;
 
             if (board == null)
-                return "Load the board in Triage first. Review walks what is on it, and there is "
-                     + "nothing on it yet.";
+                return "Review walks the board, and it is not loaded. Any tab that needs one "
+                     + "builds it where it stands — Clash Report is the nearest — and Review "
+                     + "opens on it afterwards.";
 
             var groups = CoordinateViews.Reviewable(board);
 

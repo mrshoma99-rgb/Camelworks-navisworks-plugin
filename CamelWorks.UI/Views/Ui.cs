@@ -246,6 +246,16 @@ namespace CamelWorks.UI.Views
             if (_status == null || _dispatcher == null) return;
             if (!force && _sincePump.ElapsedMilliseconds < PumpEveryMs) return;
 
+            // Never while the host is mid-enumeration. Pumping runs a nested message loop, which
+            // lets Navisworks act on a click while we are part way through walking its tree - and
+            // a collection mutated under a native iterator takes the process with it. The text is
+            // still updated; it simply does not reach the glass until the walk is over.
+            if (CamelWorks.Nav.NavDocument.IsWalking)
+            {
+                _status.Text = Describe();
+                return;
+            }
+
             _sincePump.Restart();
 
             _status.Text = Describe();
@@ -339,6 +349,15 @@ namespace CamelWorks.UI.Views
         public static event EventHandler<int>? Running;
 
         private static int _running;
+
+        /// <summary>
+        /// True while any CamelWorks job holds the host.
+        ///
+        /// The host has one thread and one document. Two of our operations running into each
+        /// other - a compare walking the tree while a clash read starts on top of it - is not a
+        /// race we can win by being careful inside each one.
+        /// </summary>
+        public static bool IsBusy => _running > 0;
 
         private static string ReadRelease()
         {
@@ -2036,8 +2055,15 @@ namespace CamelWorks.UI.Views
             // one. When the pane is narrower than the table wants, every column gives up width in
             // proportion, down to a floor that keeps a header readable; when it is wider they get
             // what they asked for and the flexible ones take the rest.
+            // Set true by the first header-gripper drag: from then on the columns are the
+            // user's, and the auto-fit that would snap them back on every window resize stays
+            // out of the way.
+            var userSized = false;
+
             void Fit()
             {
+                if (userSized) return;
+
                 // The room a vertical scrollbar and the two borders take. Guessed slightly high:
                 // a column two pixels short of the edge looks intentional, and one two pixels
                 // over brings the horizontal scrollbar back.
@@ -2073,6 +2099,52 @@ namespace CamelWorks.UI.Views
 
             table.SizeChanged += (s, e) => Fit();
             table.Loaded += (s, e) => Fit();
+
+            table.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
+                new System.Windows.Controls.Primitives.DragCompletedEventHandler(
+                    (s, e) => userSized = true));
+
+            // Click a header to sort by that column; click it again to turn the sort around.
+            // Every table in the product, one behaviour — a clash manager sorting eighteen
+            // thousand results by status is the same gesture as a job list sorting by name.
+            // Numeric when every filled cell reads as a number, so "18,844" sorts after "620"
+            // instead of before it.
+            var sortedBy = -1;
+            var ascending = true;
+
+            table.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+                new RoutedEventHandler((s, e) =>
+                {
+                    if (!(e.OriginalSource is GridViewColumnHeader header) || header.Column == null)
+                        return;
+
+                    var index = grid.Columns.IndexOf(header.Column);
+                    if (index < 0) return;
+                    if (!(table.ItemsSource is List<TableRow> current)) return;
+
+                    ascending = sortedBy == index ? !ascending : true;
+                    sortedBy = index;
+
+                    var numeric = current.All(row =>
+                    {
+                        var cell = row[index];
+                        return cell.Length == 0
+                               || double.TryParse(cell, NumberStyles.Any,
+                                                  CultureInfo.InvariantCulture, out _);
+                    });
+
+                    var sorted = numeric
+                        ? current.OrderBy(row => double.TryParse(row[index], NumberStyles.Any,
+                              CultureInfo.InvariantCulture, out var value)
+                              ? value
+                              : double.MinValue).ToList()
+                        : current.OrderBy(row => row[index],
+                                          StringComparer.OrdinalIgnoreCase).ToList();
+
+                    if (!ascending) sorted.Reverse();
+
+                    table.ItemsSource = sorted;
+                }));
 
             // A 3px bar down the left of the row, not the row's text.
             //
@@ -2191,6 +2263,107 @@ namespace CamelWorks.UI.Views
                 if (selected is TableRow row && row.Source != null) picked.Add(row.Source);
 
             return picked;
+        }
+
+        /// <summary>One entry on a table's right-click menu.</summary>
+        public sealed class OnMenu
+        {
+            /// <summary>Name it and say what it does.</summary>
+            /// <param name="caption">How it reads. <c>{n}</c> becomes the number of picked rows.</param>
+            /// <param name="act">What to do with the picked rows.</param>
+            public OnMenu(string caption, Action<IReadOnlyList<object>> act)
+            {
+                Caption = caption ?? throw new ArgumentNullException(nameof(caption));
+                Act = act ?? throw new ArgumentNullException(nameof(act));
+            }
+
+            internal string Caption { get; }
+
+            internal Action<IReadOnlyList<object>> Act { get; }
+        }
+
+        /// <summary>
+        /// A right-click menu on a table's rows.
+        ///
+        /// The verbs under a grid are the ones somebody uses every minute; the right-click is where
+        /// a person looks for the one they use when something occurs to them — which is exactly
+        /// when an issue gets raised. Right-clicking a row that is not in the current selection
+        /// picks it first, the way every list on the machine behaves: nobody expects a menu to act
+        /// on rows somewhere else on screen.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="entries">The menu, in order.</param>
+        public static ListView Menu(this ListView table, params OnMenu[] entries)
+        {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+            if (entries == null || entries.Length == 0) return table;
+
+            var menu = new ContextMenu();
+
+            table.PreviewMouseRightButtonDown += (s, e) =>
+            {
+                var row = Row(e.OriginalSource as DependencyObject);
+
+                if (row != null && !row.IsSelected)
+                {
+                    table.SelectedItems.Clear();
+                    row.IsSelected = true;
+                }
+            };
+
+            menu.Opened += (s, e) =>
+            {
+                var picked = table.PickedMany();
+
+                menu.Items.Clear();
+
+                foreach (var entry in entries)
+                {
+                    var here = entry;
+
+                    var item = new MenuItem
+                    {
+                        Header = here.Caption.Replace("{n}", picked.Count.ToString(
+                            System.Globalization.CultureInfo.InvariantCulture)),
+                        IsEnabled = picked.Count > 0,
+                    };
+
+                    item.Click += (a, b) => here.Act(table.PickedMany());
+
+                    menu.Items.Add(item);
+                }
+            };
+
+            table.ContextMenu = menu;
+
+            return table;
+        }
+
+        /// <summary>
+        /// A verb press, refused while the host is busy.
+        ///
+        /// Every one of these touches the document - selecting, isolating, writing - and a press
+        /// that arrived while a long job was pumping would run it on top of that job.
+        /// </summary>
+        private static void Verb(OnPicked action, ListView table, Panel said)
+        {
+            if (IsBusy)
+            {
+                said.Children.Clear();
+                said.Children.Add(Note("Something else is still running."));
+                return;
+            }
+
+            action.Act(table.PickedMany(), said);
+        }
+
+        /// <summary>The row a click landed on, or null when it landed on the header or the gap.</summary>
+        private static ListViewItem? Row(DependencyObject? from)
+        {
+            while (from != null && !(from is ListViewItem))
+                from = VisualTreeHelper.GetParent(from);
+
+            return from as ListViewItem;
         }
 
         /// <summary>
@@ -2324,7 +2497,9 @@ namespace CamelWorks.UI.Views
 
             table.Multi();
 
-            var bar = new StackPanel { Orientation = Orientation.Horizontal };
+            // A wrap rather than a strip: the clash manager puts eight verbs on one table, and a
+            // bar that cannot wrap would push the last of them off the window edge silently.
+            var bar = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
 
             // Where an action says what it did. Below the bar, so a sentence about eleven rows sits
             // under the button that said eleven.
@@ -2345,12 +2520,12 @@ namespace CamelWorks.UI.Views
                 var here = action;
 
                 var button = here.Primary
-                    ? Primary(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said))
-                    : Quiet(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said));
+                    ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
+                    : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said));
 
                 if (here.Danger) button.Wearing("DangerBtn");
 
-                button.Margin = new Thickness(Gap, 0, 0, 0);
+                button.Margin = new Thickness(Gap, 2, 0, 2);
                 button.Tag = here.Caption;
 
                 buttons.Add(button);
@@ -2493,6 +2668,14 @@ namespace CamelWorks.UI.Views
         /// <summary>Run an action under a job, reporting into <paramref name="output"/>.</summary>
         private static void Run(Panel output, Action<Job> work)
         {
+            if (IsBusy)
+            {
+                output.Children.Clear();
+                output.Children.Add(Note("Something else is still running. Try again when it has "
+                    + "finished."));
+                return;
+            }
+
             var status = new TextBlock().Wearing("Hint");
             var bar = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 0, 0, 6) };
 
@@ -2591,6 +2774,17 @@ namespace CamelWorks.UI.Views
 
             go.Click += (s, e) =>
             {
+                // A click that arrived while something else was pumping. Starting a second host
+                // operation on top of a live one interleaves two walks of the same document,
+                // which the host does not survive.
+                if (IsBusy)
+                {
+                    output.Children.Clear();
+                    output.Children.Add(Note("Something else is still running. This will be ready "
+                        + "the moment it finishes."));
+                    return;
+                }
+
                 output.Children.Clear();
 
                 go.IsEnabled = false;

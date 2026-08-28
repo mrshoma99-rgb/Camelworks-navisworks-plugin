@@ -25,8 +25,8 @@ from xml.etree import ElementTree
 ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
-EXPECTED_COMMANDS = 14
-EXPECTED_TOOLS = 51
+EXPECTED_COMMANDS = 15
+EXPECTED_TOOLS = 55
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
 MAX_PER_COLUMN = 3

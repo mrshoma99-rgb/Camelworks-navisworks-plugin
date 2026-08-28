@@ -36,13 +36,19 @@ namespace CamelWorks.Core.Clash
         /// <param name="setName">The saved set backing it. Empty when nothing backs it yet.</param>
         /// <param name="number">Its number in the sheet, used in test names. Optional.</param>
         /// <param name="code">A discipline code such as "ST". Optional.</param>
-        public MatrixCategory(string name, string? setName = null, string? number = null, string? code = null)
+        /// <param name="scopes">Whole-model scopes backing it instead of a set, when it is models.</param>
+        public MatrixCategory(string name, string? setName = null, string? number = null, string? code = null,
+                              IReadOnlyList<string>? scopes = null)
         {
             Name = string.IsNullOrWhiteSpace(name) ? "(unnamed)" : name.Trim();
             SetName = (setName ?? string.Empty).Trim();
             Number = (number ?? string.Empty).Trim();
             Code = (code ?? string.Empty).Trim();
+            Scopes = scopes ?? Array.Empty<string>();
         }
+
+        /// <summary>Whole-model scopes backing it, when it is models rather than a set.</summary>
+        public IReadOnlyList<string> Scopes { get; }
 
         /// <summary>How it reads.</summary>
         public string Name { get; }
@@ -56,8 +62,8 @@ namespace CamelWorks.Core.Clash
         /// <summary>Its discipline code, or empty.</summary>
         public string Code { get; }
 
-        /// <summary>True when no saved set backs it, so no test on it could run.</summary>
-        public bool IsUnbacked => SetName.Length == 0;
+        /// <summary>True when nothing backs it - no set and no models - so no test on it could run.</summary>
+        public bool IsUnbacked => SetName.Length == 0 && Scopes.Count == 0;
 
         /// <inheritdoc />
         public override string ToString() =>

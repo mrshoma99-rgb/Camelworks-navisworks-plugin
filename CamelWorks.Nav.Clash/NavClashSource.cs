@@ -82,16 +82,13 @@ namespace CamelWorks.Nav.Clash
             var clash = Clash();
             if (clash == null || string.IsNullOrWhiteSpace(testId)) return results;
 
-            var test = AllTests(clash)
-                .Select(t => t.Test)
-                .FirstOrDefault(t => string.Equals(t.Guid.ToString(), testId, StringComparison.OrdinalIgnoreCase));
-
+            var test = FindTest(clash, testId);
             if (test == null) return results;
 
-            var found = new List<ClashResult>();
-            Collect(test.Children, found);
+            var found = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, found);
 
-            foreach (var result in found)
+            foreach (var (result, group) in found)
             {
                 var a = KeyOf(result.CompositeItem1);
                 var b = KeyOf(result.CompositeItem2);
@@ -103,12 +100,60 @@ namespace CamelWorks.Nav.Clash
 
                 var centre = result.Center;
 
-                results.Add(new ClashResultInfo(
+                var info = new ClashResultInfo(
                     result.Guid.ToString(),
                     a, b,
                     centre.X, centre.Y, centre.Z,
                     StatusOf(result),
-                    AssignedToOf(result)));
+                    AssignedToOf(result))
+                {
+                    // Read while the elements are in hand. Everything here used to be re-derived
+                    // above the seam by resolving the key back through the document index — a
+                    // full-federation walk the board paid on its first result, which is what froze
+                    // it on a real project.
+                    Name = result.DisplayName,
+                    GroupName = group,
+                    NameA = NameOf(result.CompositeItem1),
+                    NameB = NameOf(result.CompositeItem2),
+                    CategoryA = CategoryOf(result.CompositeItem1),
+                    CategoryB = CategoryOf(result.CompositeItem2),
+                };
+
+                try
+                {
+                    var comments = result.Comments;
+                    info.CommentCount = comments.Count;
+
+                    if (comments.Count > 0)
+                    {
+                        info.LastComment = comments[comments.Count - 1].Body;
+
+                        // The whole trail, not just the newest: it displays in the manager and
+                        // travels in the baseline. Results carry a handful at most.
+                        var trail = new List<Core.Clash.ClashComment>(comments.Count);
+
+                        foreach (Comment comment in comments)
+                            trail.Add(new Core.Clash.ClashComment(comment.Author ?? string.Empty,
+                                CreationTicks(comment), comment.Body ?? string.Empty));
+
+                        info.Comments = trail;
+                    }
+                }
+                catch (Exception)
+                {
+                    // A result whose comments cannot be read still counts and displays.
+                }
+
+                try
+                {
+                    info.Distance = result.Distance;
+                }
+                catch (Exception)
+                {
+                    // A result with no distance simply has none.
+                }
+
+                results.Add(info);
             }
 
             return results;
@@ -160,7 +205,16 @@ namespace CamelWorks.Nav.Clash
                 var test = new ClashTest
                 {
                     CustomTestName = spec.Name,
-                    TestType = ClashTestType.Hard,
+
+                    // The kind the cell's legend chose. For a long time this said Hard for
+                    // every spec, so a clearance matrix quietly made hard tests.
+                    TestType = spec.Kind switch
+                    {
+                        Core.Clash.MatrixTest.HardConservative => ClashTestType.HardConservative,
+                        Core.Clash.MatrixTest.Clearance => ClashTestType.Clearance,
+                        Core.Clash.MatrixTest.Duplicate => ClashTestType.Duplicate,
+                        _ => ClashTestType.Hard,
+                    },
                     Tolerance = spec.Tolerance * NavUnits.UnitsPerMetre(_document.Document.Units),
                 };
 
@@ -231,6 +285,766 @@ namespace CamelWorks.Nav.Clash
             {
                 LastProblem = "The host would not run \"" + (test.DisplayName ?? testId) + "\": " + e.Message;
                 return false;
+            }
+        }
+
+        // -----------------------------------------------------------------------------------
+        // The manager's write-backs
+        // -----------------------------------------------------------------------------------
+
+        /// <inheritdoc />
+        public bool SetStatus(string testId, IReadOnlyList<string> resultIds, string status)
+        {
+            if (!Enum.TryParse<ClashResultStatus>(status, true, out var parsed))
+            {
+                LastProblem = "\"" + status + "\" is not a status the host knows.";
+                return false;
+            }
+
+            return OnResults(testId, resultIds, (clash, result) =>
+                clash.TestsData.TestsEditResultStatus(result, parsed));
+        }
+
+        /// <inheritdoc />
+        public bool Assign(string testId, IReadOnlyList<string> resultIds, string assignee) =>
+            OnResults(testId, resultIds, (clash, result) =>
+                clash.TestsData.TestsEditResultAssignedTo(result, assignee ?? string.Empty));
+
+        /// <inheritdoc />
+        public bool Comment(string testId, IReadOnlyList<string> resultIds, string body, string author)
+        {
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                LastProblem = "There is no comment to add.";
+                return false;
+            }
+
+            return OnResults(testId, resultIds, (clash, result) =>
+            {
+                // The host edits comments by handing back the whole collection, so the new entry
+                // is appended to a copy of what is there. Written as a native comment with its
+                // author, so the host's own clash window shows it too.
+                var comments = new CommentCollection();
+
+                try
+                {
+                    foreach (Comment existing in result.Comments)
+                    {
+                        // The same author saying the same thing is the same comment. Skipping it
+                        // here is what lets a markup sync run twice without doubling every
+                        // conversation.
+                        if (string.Equals(existing.Body, body, StringComparison.Ordinal)
+                            && string.Equals(existing.Author, author ?? string.Empty,
+                                             StringComparison.OrdinalIgnoreCase))
+                            return;
+
+                        comments.Add(existing);
+                    }
+                }
+                catch (Exception) { /* a result whose comments cannot be read still takes one */ }
+
+                comments.Add(new Comment(body, CommentStatus.New, author ?? string.Empty));
+                clash.TestsData.TestsEditResultComments(result, comments);
+            });
+        }
+
+        /// <inheritdoc />
+        public bool Regroup(string testId, IReadOnlyList<string> resultIds, string groupName)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+            var target = (groupName ?? string.Empty).Trim();
+
+            try
+            {
+                // The host disposes a saved item's native handle the moment it leaves its
+                // collection, so results cannot be lifted out and re-added — the whole test is
+                // rebuilt on a copy from deep copies, then swapped in as one edit. Statuses,
+                // comments and assignments ride along on the copies.
+                var copy = test.CreateCopy() as ClashTest;
+
+                if (copy == null)
+                {
+                    LastProblem = "The host would not copy the test for editing.";
+                    return false;
+                }
+
+                var flat = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(copy.Children, null, flat);
+
+                var rebuilt = new List<(ClashResult Result, string? Group)>();
+
+                foreach (var (result, group) in flat)
+                {
+                    var clone = result.CreateCopy() as ClashResult;
+                    if (clone == null) continue;
+
+                    var into = wanted.Contains(result.Guid.ToString())
+                        ? (target.Length == 0 ? null : target)
+                        : group;
+
+                    rebuilt.Add((clone, into));
+                }
+
+                copy.Children.Clear();
+
+                var groups = new Dictionary<string, ClashResultGroup>(StringComparer.Ordinal);
+
+                foreach (var (result, group) in rebuilt)
+                {
+                    if (string.IsNullOrEmpty(group))
+                    {
+                        copy.Children.Add(result);
+                        continue;
+                    }
+
+                    if (!groups.TryGetValue(group!, out var host))
+                    {
+                        host = new ClashResultGroup { DisplayName = group };
+                        groups[group!] = host;
+                        copy.Children.Add(host);
+                    }
+
+                    host.Children.Add(result);
+                }
+
+                clash.TestsData.TestsEditTestFromCopy(test, copy);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the regroup: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool RenameResults(string testId, string prefix)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            var stem = string.IsNullOrWhiteSpace(prefix) ? "Clash" : prefix.Trim();
+
+            try
+            {
+                var found = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Children, null, found);
+
+                var number = 1;
+
+                foreach (var (result, _) in found)
+                    clash.TestsData.TestsEditDisplayName(result,
+                        stem + number++.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the rename: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool RenamePicked(string testId, IReadOnlyList<string> resultIds, string prefix)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+            var stem = string.IsNullOrWhiteSpace(prefix) ? "Clash" : prefix.Trim();
+
+            try
+            {
+                var found = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Children, null, found);
+
+                var number = 1;
+                var touched = 0;
+
+                foreach (var (result, _) in found)
+                {
+                    if (!wanted.Contains(result.Guid.ToString())) continue;
+
+                    clash.TestsData.TestsEditDisplayName(result,
+                        stem + number++.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    touched++;
+                }
+
+                if (touched == 0)
+                {
+                    LastProblem = "None of those results are in the test any more. Re-read it.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the rename: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool CompactTests(IReadOnlyList<string> testIds)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            foreach (var id in testIds ?? Array.Empty<string>())
+            {
+                var test = FindTest(clash, id);
+                if (test == null) continue;
+
+                try
+                {
+                    clash.TestsData.TestsCompactTest(test);
+                }
+                catch (Exception e)
+                {
+                    LastProblem = "The host refused to compact \"" + test.DisplayName + "\": " + e.Message;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
+        public bool RenameTest(string testId, string name)
+        {
+            LastProblem = null;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                LastProblem = "A test cannot have an empty name.";
+                return false;
+            }
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            try
+            {
+                clash.TestsData.TestsEditDisplayName(test, name.Trim());
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the rename: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool DeleteTests(IReadOnlyList<string> testIds)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var failed = 0;
+
+            foreach (var id in testIds ?? Array.Empty<string>())
+            {
+                var test = FindTest(clash, id);
+                if (test == null) continue;
+
+                try
+                {
+                    if (test.Parent is GroupItem parent) clash.TestsData.TestsRemove(parent, test);
+                    else clash.TestsData.TestsRemove(test);
+                }
+                catch (Exception e)
+                {
+                    failed++;
+                    LastProblem = "The host refused to delete \"" + test.DisplayName + "\": " + e.Message;
+                }
+            }
+
+            return failed == 0;
+        }
+
+        /// <inheritdoc />
+        public bool MoveTests(IReadOnlyList<string> testIds, string? folder)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var root = clash.TestsData.Value.TestsRoot;
+
+            if (root == null)
+            {
+                LastProblem = "The document's clash tests could not be reached.";
+                return false;
+            }
+
+            GroupItem destination;
+
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                destination = root;
+            }
+            else
+            {
+                var found = FolderIn(root, folder!.Trim());
+
+                if (found == null)
+                {
+                    try
+                    {
+                        clash.TestsData.TestsAddCopy(root, new ClashTestFolder { DisplayName = folder.Trim() });
+                        found = FolderIn(root, folder.Trim());
+                    }
+                    catch (Exception e)
+                    {
+                        LastProblem = "The host refused to make the folder: " + e.Message;
+                        return false;
+                    }
+                }
+
+                if (found == null)
+                {
+                    LastProblem = "The host accepted the folder but it cannot be found again.";
+                    return false;
+                }
+
+                destination = found;
+            }
+
+            foreach (var id in testIds ?? Array.Empty<string>())
+            {
+                var test = FindTest(clash, id);
+                if (test == null) continue;
+
+                var parent = test.Parent as GroupItem ?? root;
+                if (ReferenceEquals(parent, destination)) continue;
+
+                var index = IndexIn(parent, test.Guid);
+
+                if (index < 0) continue;
+
+                try
+                {
+                    clash.TestsData.TestsMove(parent, index, destination, destination.Children.Count);
+                }
+                catch (Exception e)
+                {
+                    LastProblem = "The host refused to move \"" + test.DisplayName + "\": " + e.Message;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
+        public ClashTestSides? Sides(string testId)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null) return null;
+
+            var test = FindTest(clash, testId);
+            if (test == null) return null;
+
+            try
+            {
+                var (setA, scopesA) = SideOf(test.SelectionA);
+                var (setB, scopesB) = SideOf(test.SelectionB);
+
+                var metres = NavUnits.MetresPerUnit(_document.Document.Units);
+
+                return new ClashTestSides(setA, setB, scopesA, scopesB,
+                                          test.TestType.ToString(),
+                                          test.Tolerance * metres);
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not describe that test: " + e.Message;
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// What one side is: a single saved set, whole models, or neither.
+        ///
+        /// A set is recognised by value against every saved set's own source - the host compares
+        /// sources by what they point at, so a renamed folder does not break the match. Whole
+        /// models are recognised as a selection made only of root items.
+        /// </summary>
+        private (string? Set, IReadOnlyList<string> Scopes) SideOf(ClashSelection selection)
+        {
+            var none = (string?)null;
+            var empty = (IReadOnlyList<string>)Array.Empty<string>();
+
+            try
+            {
+                var sources = selection.Selection.SelectionSources;
+
+                if (sources != null && sources.Count == 1)
+                {
+                    var sets = _document.Document.SelectionSets;
+                    var wanted = sources[0];
+
+                    foreach (var set in AllSets(sets.Value))
+                    {
+                        try
+                        {
+                            if (sets.CreateSelectionSource(set).Equals(wanted))
+                                return (set.DisplayName, empty);
+                        }
+                        catch (Exception)
+                        {
+                            // A set the host will not source cannot be this side.
+                        }
+                    }
+
+                    return (none, empty);
+                }
+
+                var items = selection.Selection.GetSelectedItems();
+
+                if (items != null && items.Count > 0)
+                {
+                    var scopes = new List<string>();
+
+                    foreach (ModelItem item in items)
+                    {
+                        if (item.Parent != null) return (none, empty);
+                        scopes.Add(NavKeys.ScopeOf(item.Model));
+                    }
+
+                    return (none, scopes);
+                }
+            }
+            catch (Exception)
+            {
+                // A side the host will not describe is a side we do not guess at.
+            }
+
+            return (none, empty);
+        }
+
+        private static IEnumerable<SelectionSet> AllSets(SavedItemCollection items)
+        {
+            foreach (SavedItem item in items)
+            {
+                if (item is SelectionSet set) yield return set;
+                else if (item is GroupItem folder)
+                    foreach (var nested in AllSets(folder.Children)) yield return nested;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool ApplyResultView(string testId, string resultId)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+
+            if (clash == null)
+            {
+                LastProblem = "This document has no clash engine.";
+                return false;
+            }
+
+            var found = FindResult(clash, testId, resultId);
+
+            if (found == null)
+            {
+                LastProblem = "That result is no longer in the document. Re-read it.";
+                return false;
+            }
+
+            try
+            {
+                var viewpoint = clash.TestsData.TestsViewpointForResult(found);
+
+                if (viewpoint == null)
+                {
+                    LastProblem = "The host has no saved view for that result.";
+                    return false;
+                }
+
+                _document.Document.CurrentViewpoint.CopyFrom(viewpoint);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not show that result: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public byte[]? ResultSnapshot(string testId, string resultId, int width, int height)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null) return null;
+
+            var found = FindResult(clash, testId, resultId);
+
+            if (found == null)
+            {
+                LastProblem = "That result is no longer in the document. Re-read it.";
+                return null;
+            }
+
+            try
+            {
+                using (var image = clash.TestsData.TestsImageForResult(found,
+                           ImageGenerationStyle.ScenePlusOverlay,
+                           Math.Max(64, width), Math.Max(64, height)))
+                {
+                    if (image == null) return null;
+
+                    using (var bytes = new System.IO.MemoryStream())
+                    {
+                        image.Save(bytes, System.Drawing.Imaging.ImageFormat.Png);
+                        return bytes.ToArray();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not render that result: " + e.Message;
+                return null;
+            }
+        }
+
+        private static ClashResult? FindResult(DocumentClash clash, string testId, string resultId)
+        {
+            var test = FindTest(clash, testId);
+            if (test == null) return null;
+
+            var found = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, found);
+
+            return found
+                .Select(f => f.Result)
+                .FirstOrDefault(r => string.Equals(r.Guid.ToString(), resultId,
+                                                   StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static long CreationTicks(Comment comment)
+        {
+            try
+            {
+                return comment.CreationDate.ToUniversalTime().Ticks;
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>Run one in-place edit over each named result of one test.</summary>
+        private bool OnResults(string testId, IReadOnlyList<string> resultIds,
+                               Action<DocumentClash, ClashResult> edit)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+
+            if (wanted.Count == 0)
+            {
+                LastProblem = "No results were named.";
+                return false;
+            }
+
+            try
+            {
+                var found = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Children, null, found);
+
+                var touched = 0;
+
+                foreach (var (result, _) in found)
+                {
+                    if (!wanted.Contains(result.Guid.ToString())) continue;
+
+                    edit(clash, result);
+                    touched++;
+                }
+
+                if (touched == 0)
+                {
+                    LastProblem = "None of those results are in the test any more. Re-read it.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the edit: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>The clash document when it can be written, or null with the reason said.</summary>
+        private DocumentClash? Writable()
+        {
+            var clash = Clash();
+
+            if (clash == null)
+            {
+                LastProblem = "This document has no clash engine to write to.";
+                return null;
+            }
+
+            try
+            {
+                if (clash.TestsData.Value.IsReadOnly)
+                {
+                    LastProblem = "The document's clash data is read-only here.";
+                    return null;
+                }
+            }
+            catch (Exception)
+            {
+                LastProblem = "The document's clash data could not be reached.";
+                return null;
+            }
+
+            return clash;
+        }
+
+        private static ClashTest? FindTest(DocumentClash clash, string testId) =>
+            AllTests(clash)
+                .Select(t => t.Test)
+                .FirstOrDefault(t => string.Equals(t.Guid.ToString(), testId,
+                                                   StringComparison.OrdinalIgnoreCase));
+
+        private static ClashTestFolder? FolderIn(GroupItem root, string name)
+        {
+            foreach (SavedItem item in root.Children)
+            {
+                if (item is ClashTestFolder found &&
+                    string.Equals(found.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+                    return found;
+            }
+
+            return null;
+        }
+
+        private static int IndexIn(GroupItem parent, Guid guid)
+        {
+            for (var i = 0; i < parent.Children.Count; i++)
+            {
+                if (parent.Children[i] is ClashTest test && test.Guid == guid) return i;
+            }
+
+            return -1;
+        }
+
+        private static string? NameOf(ModelItem? item)
+        {
+            if (item == null) return null;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(item.DisplayName)) return item.DisplayName;
+                return item.Parent?.DisplayName;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static string? CategoryOf(ModelItem? item)
+        {
+            if (item == null) return null;
+
+            try
+            {
+                return item.ClassDisplayName ?? item.ClassName;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void CollectWithGroups(SavedItemCollection items, string? group,
+                                              List<(ClashResult Result, string? Group)> results)
+        {
+            if (items == null) return;
+
+            foreach (SavedItem item in items)
+            {
+                if (item is ClashResult result)
+                    results.Add((result, group));
+                else if (item is ClashResultGroup nested)
+                    CollectWithGroups(nested.Children, nested.DisplayName, results);
             }
         }
 

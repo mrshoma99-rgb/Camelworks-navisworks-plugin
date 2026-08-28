@@ -240,6 +240,23 @@ namespace CamelWorks.Core.Testing
             _document.Record("view.transparency " + Layer + " n=" + keys.Count);
         }
 
+        /// <summary>The keys the last <see cref="Isolate"/> kept visible, or null before one.</summary>
+        public IReadOnlyList<ElementKey>? Isolated { get; private set; }
+
+        /// <inheritdoc />
+        public void Isolate(IReadOnlyList<ElementKey> keys)
+        {
+            Isolated = keys;
+            _document.Record("view.isolate n=" + keys.Count);
+        }
+
+        /// <inheritdoc />
+        public void ShowAll()
+        {
+            Isolated = null;
+            _document.Record("view.showAll");
+        }
+
         /// <inheritdoc />
         public void SetVisible(IReadOnlyList<ElementKey> keys, bool visible)
         {

@@ -139,8 +139,121 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="testId">Which test.</param>
         bool Run(string testId);
 
-        /// <summary>Why the last <see cref="Create"/> or <see cref="Run"/> returned nothing.</summary>
+        /// <summary>Why the last write returned nothing or false.</summary>
         string? LastProblem { get; }
+
+        // ---- The manager's write-backs ----------------------------------------------------
+        //
+        // Every one of these follows the same host contract: copy the test, mutate the copy,
+        // replace the original with it. Mutating a live test in place is not supported by the
+        // host, and half-mutating one before an exception would corrupt what the user had. All
+        // return false and set LastProblem when the host refuses — a read-only document and a
+        // Simulate seat are ordinary states, not exceptions.
+
+        /// <summary>
+        /// Set the host status on the given results of one test.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="status">A host status name: New, Active, Reviewed, Approved, Resolved.</param>
+        bool SetStatus(string testId, IReadOnlyList<string> resultIds, string status);
+
+        /// <summary>
+        /// Set the assignee on the given results, into the host's own assigned-to field so the
+        /// native clash window shows it too. Empty clears the assignment.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="assignee">Who, or empty to clear.</param>
+        bool Assign(string testId, IReadOnlyList<string> resultIds, string assignee);
+
+        /// <summary>
+        /// Append an authored comment to the given results, as a native comment so every tool
+        /// that reads the document sees it.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="body">The comment.</param>
+        /// <param name="author">Who wrote it.</param>
+        bool Comment(string testId, IReadOnlyList<string> resultIds, string body, string author);
+
+        /// <summary>
+        /// Put the given results of one test into a named group, making the group when it is not
+        /// there. An empty name moves them out of any group. Projected as the host's own result
+        /// groups, so the native clash window shows the same structure.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="groupName">The group, or empty for none.</param>
+        bool Regroup(string testId, IReadOnlyList<string> resultIds, string groupName);
+
+        /// <summary>
+        /// Rename the results of one test sequentially: prefix1, prefix2, ... in host order.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="prefix">What each name starts with.</param>
+        bool RenameResults(string testId, string prefix);
+
+        /// <summary>
+        /// Rename just the given results of one test: prefix1, prefix2, ... in host order.
+        /// The rest of the test's results keep their names.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="prefix">What each name starts with.</param>
+        bool RenamePicked(string testId, IReadOnlyList<string> resultIds, string prefix);
+
+        /// <summary>Rename one test.</summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="name">The new name.</param>
+        bool RenameTest(string testId, string name);
+
+        /// <summary>Delete the given tests, results and all.</summary>
+        /// <param name="testIds">Which tests.</param>
+        bool DeleteTests(IReadOnlyList<string> testIds);
+
+        /// <summary>
+        /// Move the given tests into a folder, making it when it is not there. Null or empty
+        /// moves them to the root.
+        /// </summary>
+        /// <param name="testIds">Which tests.</param>
+        /// <param name="folder">The folder name, or null for the root.</param>
+        bool MoveTests(IReadOnlyList<string> testIds, string? folder);
+
+        /// <summary>
+        /// Drop the given tests' Resolved results from storage - the host's own compact, and
+        /// the only per-result delete any clash tool honestly has: the engine owns its
+        /// results, and the next run recreates whatever still clashes.
+        /// </summary>
+        /// <param name="testIds">Which tests.</param>
+        bool CompactTests(IReadOnlyList<string> testIds);
+
+        /// <summary>
+        /// What one test is made of, as far as the host will say: a saved set per side, whole
+        /// models per side, or neither when the side is an arbitrary selection. Null when the
+        /// test is gone. This is what lets a matrix be read back OUT of a document's tests.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        ClashTestSides? Sides(string testId);
+
+        /// <summary>
+        /// Put the camera where the host's own saved view of one result stands — the view the
+        /// engine composed when the test ran, which frames both elements the way the native
+        /// clash window would. False when the host has no view for it.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        bool ApplyResultView(string testId, string resultId);
+
+        /// <summary>
+        /// The host's rendered image of one result — scene plus the clash highlight — as PNG
+        /// bytes, or null when the host cannot make one.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <param name="width">Pixels.</param>
+        /// <param name="height">Pixels.</param>
+        byte[]? ResultSnapshot(string testId, string resultId, int width, int height);
     }
 
     /// <summary>
@@ -231,14 +344,27 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="b">The second side.</param>
         /// <param name="tolerance">Tolerance in metres. The adapter converts to document units.</param>
         /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
-        public ClashTestSpec(string name, ClashSide a, ClashSide b, double tolerance, string? folder = null)
+        /// <param name="kind">Which kind of test. Hard unless the matrix's legend says otherwise.</param>
+        public ClashTestSpec(string name, ClashSide a, ClashSide b, double tolerance,
+                             string? folder = null,
+                             Clash.MatrixTest kind = Clash.MatrixTest.Hard)
         {
             Name = string.IsNullOrWhiteSpace(name) ? "CamelWorks test" : name.Trim();
             A = a ?? throw new ArgumentNullException(nameof(a));
             B = b ?? throw new ArgumentNullException(nameof(b));
             Tolerance = tolerance;
             Folder = folder;
+            Kind = kind;
         }
+
+        /// <summary>
+        /// Which kind of test: hard, conservative, clearance or duplicates.
+        ///
+        /// On the spec and not left to the adapter's default, because the matrix's whole point is
+        /// that each cell chooses — and for a long time this was silently Hard for every cell, so
+        /// a clearance legend produced hard tests and nobody was told.
+        /// </summary>
+        public Clash.MatrixTest Kind { get; }
 
         /// <summary>What the test is called.</summary>
         public string Name { get; }
@@ -263,6 +389,47 @@ namespace CamelWorks.Core.Abstractions
 
         /// <inheritdoc />
         public override string ToString() => Name + ": " + A + " against " + B;
+    }
+
+    /// <summary>What a test's two sides are made of, as read back from the host.</summary>
+    public sealed class ClashTestSides
+    {
+        /// <summary>Create a description.</summary>
+        public ClashTestSides(string? setA, string? setB,
+                              IReadOnlyList<string> scopesA, IReadOnlyList<string> scopesB,
+                              string kind, double toleranceMetres)
+        {
+            SetA = setA;
+            SetB = setB;
+            ScopesA = scopesA ?? Array.Empty<string>();
+            ScopesB = scopesB ?? Array.Empty<string>();
+            Kind = kind ?? "Hard";
+            ToleranceMetres = toleranceMetres;
+        }
+
+        /// <summary>The saved set behind side A, or null when it is not a single set.</summary>
+        public string? SetA { get; }
+
+        /// <summary>The saved set behind side B, or null when it is not a single set.</summary>
+        public string? SetB { get; }
+
+        /// <summary>The whole models behind side A, when it is whole models.</summary>
+        public IReadOnlyList<string> ScopesA { get; }
+
+        /// <summary>The whole models behind side B, when it is whole models.</summary>
+        public IReadOnlyList<string> ScopesB { get; }
+
+        /// <summary>The host's test type name.</summary>
+        public string Kind { get; }
+
+        /// <summary>The tolerance, converted to metres.</summary>
+        public double ToleranceMetres { get; }
+
+        /// <summary>True when side A could be described at all.</summary>
+        public bool KnowsA => SetA != null || ScopesA.Count > 0;
+
+        /// <summary>True when side B could be described at all.</summary>
+        public bool KnowsB => SetB != null || ScopesB.Count > 0;
     }
 
     /// <summary>One clash test.</summary>
@@ -300,13 +467,26 @@ namespace CamelWorks.Core.Abstractions
         public override string ToString() => (Folder == null ? Name : Folder + "/" + Name) + " (" + ResultCount + ")";
     }
 
-    /// <summary>One clash result, as the host reports it.</summary>
-    public readonly struct ClashResultInfo
+    /// <summary>
+    /// One clash result, as the host reports it.
+    ///
+    /// A class rather than a struct since the manager grew it: the adapter reads everything the
+    /// board or the manager could want in the one pass where it is already holding the elements,
+    /// because resolving an element key back to its item later costs a full federation index —
+    /// which is exactly what froze the board on a real project.
+    /// </summary>
+    public sealed class ClashResultInfo
     {
-        private readonly string? _id;
+        /// <summary>Create a descriptor.</summary>
+        public ClashResultInfo(string id, ElementKey a, ElementKey b, double x, double y, double z,
+                               string? hostStatus, string? hostAssignedTo)
+        {
+            Id = id ?? string.Empty; A = a; B = b; PointX = x; PointY = y; PointZ = z;
+            HostStatus = hostStatus; HostAssignedTo = hostAssignedTo;
+        }
 
         /// <summary>Host identity within its test.</summary>
-        public string Id => _id ?? string.Empty;
+        public string Id { get; }
 
         /// <summary>First participant.</summary>
         public ElementKey A { get; }
@@ -329,13 +509,44 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>The host's own assignee string.</summary>
         public string? HostAssignedTo { get; }
 
-        /// <summary>Create a descriptor.</summary>
-        public ClashResultInfo(string id, ElementKey a, ElementKey b, double x, double y, double z,
-                               string? hostStatus, string? hostAssignedTo)
-        {
-            _id = id; A = a; B = b; PointX = x; PointY = y; PointZ = z;
-            HostStatus = hostStatus; HostAssignedTo = hostAssignedTo;
-        }
+        /// <summary>The result's display name, as the host shows it.</summary>
+        public string? Name { get; set; }
+
+        /// <summary>The host result group it sits in, or null at the test's root.</summary>
+        public string? GroupName { get; set; }
+
+        /// <summary>First participant's display name.</summary>
+        public string? NameA { get; set; }
+
+        /// <summary>Second participant's display name.</summary>
+        public string? NameB { get; set; }
+
+        /// <summary>First participant's category, read while the adapter held the element.</summary>
+        public string? CategoryA { get; set; }
+
+        /// <summary>Second participant's category, read while the adapter held the element.</summary>
+        public string? CategoryB { get; set; }
+
+        /// <summary>How many native comments the result carries.</summary>
+        public int CommentCount { get; set; }
+
+        /// <summary>The newest native comment's text, or null when there is none.</summary>
+        public string? LastComment { get; set; }
+
+        /// <summary>
+        /// The full authored comment trail, oldest first.
+        ///
+        /// The whole trail and not just the newest, because a review round exports it and a
+        /// manager displays it — and a conversation whose middle is missing is not a record.
+        /// </summary>
+        public IReadOnlyList<Clash.ClashComment> Comments { get; set; } =
+            Array.Empty<Clash.ClashComment>();
+
+        /// <summary>
+        /// The host's distance for the result, in document units, or null when it has none.
+        /// Negative is penetration on a hard clash; positive is the shortfall on a clearance.
+        /// </summary>
+        public double? Distance { get; set; }
 
         /// <summary>The stable key for this result.</summary>
         public ClashKey Key(double cell = ClashKey.DefaultCell) =>

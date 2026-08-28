@@ -106,6 +106,14 @@ namespace CamelWorks.Core.Compare
 
         private readonly List<ElementFingerprint> _elements = new List<ElementFingerprint>();
 
+        /// <summary>
+        /// How many elements the host would not answer for while this was being taken.
+        ///
+        /// Zero on any healthy document. Anything else is worth saying on screen: a snapshot
+        /// quietly missing four thousand elements compares as four thousand things removed.
+        /// </summary>
+        public int Unreadable { get; set; }
+
         /// <summary>True when nothing was recorded.</summary>
         public bool IsEmpty => _elements.Count == 0;
 

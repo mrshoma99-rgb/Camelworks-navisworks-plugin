@@ -28,7 +28,7 @@ namespace CamelWorks.Studio
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
             Page("app-clash-tests", "Clash Manager · Tests", 780, Coordination),
-            Page("app-clash-board", "Clash Manager · Board", 780, Board),
+            Page("app-issue-register", "Issue Manager · Issues", 780, Issues),
             Page("app-audit", "Model Audit · Health", 780, Federation),
             Page("app-data", "Data Manager · Properties", 780, Data),
             Page("app-scenes-appearance", "Scene Kit · Appearance", 780, Appearance),
@@ -336,33 +336,40 @@ namespace CamelWorks.Studio
         // The pane shapes — the same anatomy, stacked at 470
         // -----------------------------------------------------------------------------------
 
-        private static UIElement Board()
+        private static UIElement Issues()
         {
             var setup = Ui.Stack(
-                Bench.Group("Narrow the board",
-                    Ui.Field("Show", Ui.Choice(new[] { "Everything", "Open only", "Regressed only" },
-                                               "Open only", null)),
-                    Ui.Field("Find", Ui.Text(string.Empty, "a word from any column", null, 160))));
+                Bench.Group("Where it stands",
+                    Ui.Split("Open", "24"),
+                    Ui.Split("Overdue", "3", Tone.Bad),
+                    Ui.Split("Closed", "71", Tone.Good)),
+                Bench.Group("Narrow it",
+                    Ui.Field("Assigned to", Ui.Choice(new[] { "Anyone", "Mechanical", "Structures" },
+                                                      "Anyone", null)),
+                    Ui.Field("Raised by", Ui.Choice(new[] { "Any source", "Raised", "Clash",
+                                                            "Clearance", "Imported" },
+                                                    "Any source", null)),
+                    Ui.Field("Find", Ui.Text(string.Empty, "title, number or assignee", null, 160))));
 
             var stage = Ui.Stack(
-                Ui.Across(
-                    Ui.Figure("96", "issues"),
-                    Ui.Figure("12", "new", Tone.Bad),
-                    Ui.Figure("31", "resolved", Tone.Good),
-                    Ui.Figure("3", "regressed", Tone.Bad)),
-                Ui.Quiet("Undo the last board edit", () => { }),
-                Ui.Table(BoardRows(), ("Issue", 150), ("Δ", 40), ("Owner", 90), ("Status", 0)));
+                Ui.Eyebrow("24 issues of 95 on this project"),
+                Ui.Table(IssueRows(), ("Number", 80), ("Title", 220), ("Status", 90),
+                         ("Assigned", 110), ("Due", 100), ("Raised by", 0)));
 
-            return Deck("clash", "triage",
-                Bench.Surface(setup, Ui.Runner("Load the board", Ui.Stack(), _ => { }), stage));
+            return Deck("issuemgr", "issuelist",
+                Bench.Surface(setup, Ui.Actions(Ui.Primary("New issue", () => { })), stage));
         }
 
-        private static IEnumerable<TableRow> BoardRows()
+        private static IEnumerable<TableRow> IssueRows()
         {
-            yield return new TableRow(null, "L04 riser vs frame", "new", "Structures", "Active") { Tone = Tone.Bad };
-            yield return new TableRow(null, "CHW main vs beam", "", "Mechanical", "Reviewed");
-            yield return new TableRow(null, "Cable tray vs duct", "back", "Electrical", "Active") { Tone = Tone.Warn };
-            yield return new TableRow(null, "Sprinkler vs soffit", "", "Fire", "Approved") { Tone = Tone.Good };
+            yield return new TableRow(null, "CW-14", "L04 riser has no opening", "Open",
+                                      "Structures", "4 Mar 2026", "Raised") { Tone = Tone.Bad };
+            yield return new TableRow(null, "CW-15", "9 clashes in L03 MEP v STR", "Open",
+                                      "Mechanical", "11 Mar 2026", "Clash");
+            yield return new TableRow(null, "CW-16", "Clear height 1.85 m under the CHW main",
+                                      "Answered", "Mechanical", "—", "Clearance") { Tone = Tone.Warn };
+            yield return new TableRow(null, "CW-17", "Duct through beam", "Closed",
+                                      "Structures", "—", "Imported") { Tone = Tone.Good };
         }
 
         private static UIElement Appearance()

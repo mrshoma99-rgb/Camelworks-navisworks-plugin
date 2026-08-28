@@ -86,10 +86,20 @@ namespace CamelWorks.Core.Compare
             };
 
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var unreadable = 0;
             var seen = 0;
             var stopped = false;
 
-            foreach (var item in document.Traverse(scope ?? TraversalScope.WholeDocument))
+            // Read into a list before anything is recorded, and never report progress while that
+            // is happening. Reporting progress means pumping the host's message loop, and pumping
+            // it part way through a walk of the host's own tree is how a plug-in gets blamed for
+            // Navisworks vanishing: the user clicks the model tree, the collection moves under a
+            // native iterator, and the process is gone somewhere no exception handler can reach.
+            // The expensive half - reading properties off each element - happens below, where no
+            // enumerator is open and pumping is safe.
+            var items = document.Traverse(scope ?? TraversalScope.WholeDocument).ToList();
+
+            foreach (var item in items)
             {
                 if (item == null) continue;
 
@@ -110,7 +120,18 @@ namespace CamelWorks.Core.Compare
                 // time by CompareSettings.IncludeGroupingNodes. A baseline that threw them away
                 // could never be compared with them included, and the person who wants them is
                 // always the person looking at a six-month-old baseline.
-                snapshot.Add(ElementFingerprint.Of(item, settings));
+                // One element the host will not answer for does not cost the other two hundred
+                // thousand. A handle can go stale between the walk and the read - somebody
+                // refreshed a model - and the answer to that is a smaller snapshot, not none.
+                try
+                {
+                    snapshot.Add(ElementFingerprint.Of(item, settings));
+                }
+                catch (Exception)
+                {
+                    unreadable++;
+                    continue;
+                }
 
                 var scopeHash = item.Model?.Scope;
 
@@ -119,6 +140,7 @@ namespace CamelWorks.Core.Compare
             }
 
             snapshot.Models = ModelManifest.Of(document.Models, itemCounts: counts, takenUtc: takenUtc).Models;
+            snapshot.Unreadable = unreadable;
 
             onProgress?.Invoke(new SnapshotProgress(seen, snapshot.Count, stopped));
 

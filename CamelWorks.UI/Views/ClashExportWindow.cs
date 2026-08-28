@@ -31,6 +31,14 @@ namespace CamelWorks.UI.Views
         /// <summary>What a profile file is called on disk.</summary>
         public const string Extension = ".cwexport";
 
+        /// <summary>
+        /// Test ids the clash manager asked to send, applied to the next editor once.
+        ///
+        /// The hand-off from the Manage tab: "export these three tests" should arrive with those
+        /// three ticked, not with a memory test about which three they were.
+        /// </summary>
+        internal static IReadOnlyList<string>? Preferred { get; set; }
+
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -279,6 +287,24 @@ namespace CamelWorks.UI.Views
 
                 var match = _profile.Match(refs);
 
+                // The Manage tab's hand-off: arrive with its picked tests ticked, once.
+                if (Preferred != null && Preferred.Count > 0)
+                {
+                    var names = new HashSet<string>(
+                        refs.Where(r => r.Id != null && Preferred.Contains(r.Id!)).Select(r => r.Name),
+                        StringComparer.OrdinalIgnoreCase);
+
+                    if (names.Count > 0)
+                    {
+                        foreach (var test in _profile.Tests) test.Chosen = names.Contains(test.Name);
+
+                        _match.Children.Add(Ui.Info(Ui.Count(names.Count, "test")
+                            + " arrived ticked from the clash manager."));
+                    }
+
+                    Preferred = null;
+                }
+
                 _match.Children.Add(Ui.Line(match.Explain(), 1, true));
 
                 foreach (var renamed in match.Renamed.Take(6))
@@ -354,13 +380,8 @@ namespace CamelWorks.UI.Views
 
                 if (results.Count == 0)
                 {
-                    _kept.Children.Add(Ui.Info("The board is not loaded, and this writes what the "
-                        + "board holds. Load it in Clash Manager and everything here has "
-                        + "something to count.", "Load the board in Clash Manager", () =>
-                        {
-                            CoordinateViews.LoadOnArrival = true;
-                            Ui.Told(AppWindow.Show("clash", "triage"));
-                        }));
+                    _kept.Children.Add(CoordinateViews.LoadHere("The board is not loaded, and "
+                        + "this writes what the board holds."));
                     return;
                 }
 
@@ -377,13 +398,9 @@ namespace CamelWorks.UI.Views
 
                 if (results.Count == 0)
                 {
-                    into.Children.Add(Ui.Info("The board has not been built yet, and this writes "
-                        + "what the board holds — not what the host happens to have open.",
-                        "Load the board in Clash Manager", () =>
-                        {
-                            CoordinateViews.LoadOnArrival = true;
-                            Ui.Told(AppWindow.Show("clash", "triage"));
-                        }));
+                    into.Children.Add(CoordinateViews.LoadHere("The board has not been built "
+                        + "yet, and this writes what the board holds — not what the host happens "
+                        + "to have open."));
                     return 0;
                 }
 
@@ -529,12 +546,12 @@ namespace CamelWorks.UI.Views
 
                 // Read, not applied. Carrying a reviewer's statuses onto the board is the board's
                 // decision to make, on the board, where the before and after are both visible.
-                _back.Children.Add(Ui.Note("Nothing on the board has changed. This says what came "
-                    + "back; taking it on is a decision the board makes, where what it would change "
-                    + "is visible next to what it would change from."));
+                _back.Children.Add(Ui.Note("Nothing in the model has changed. This says what came "
+                    + "back; taking it on is done in Clash Results, where what it would change is "
+                    + "visible next to what it would change from."));
 
-                _back.Children.Add(Ui.Actions(Ui.Quiet("Open the Clash Board",
-                    () => Ui.Told(AppWindow.Show("clash", "triage")))));
+                _back.Children.Add(Ui.Actions(Ui.Quiet("Open results",
+                    () => Ui.Told(AppWindow.Show("clash", "manage")))));
             }
 
             private static string Counted(ClashXmlTest test, FindingStatus status) =>

@@ -247,7 +247,9 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
-            job.Say("Walking the model...");
+            // Said before the walk, because the walk cannot repaint: progress reporting pumps the
+            // message loop, and pumping mid-walk is what takes the host down.
+            job.Say("Reading the model tree - the window will not repaint until this part is done...");
 
             var after = SnapshotBuilder.Take(
                 session.Model, DateTimeOffset.UtcNow, "Now", Settings,
@@ -260,6 +262,11 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Note("Stopped. Nothing was changed."));
                 return;
             }
+
+            if (after.Unreadable > 0)
+                results.Children.Add(Ui.Note(Ui.Count(after.Unreadable, "element")
+                    + " could not be read while the model was being walked and are not in this "
+                    + "comparison. They would otherwise read as removed."));
 
             if (_readTriangles)
             {
@@ -400,7 +407,13 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Show", Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); })),
                         Ui.Field("Find", Ui.Text(_search, text => { _search = text ?? string.Empty; Redraw(); }, 200))),
                     Bench.Group("Paint",
-                        Clear()));
+                        Clear(),
+                        Ui.Button("Show everything", () =>
+                        {
+                            _output.Children.Clear();
+                            _session.View.ShowAll();
+                            _output.Children.Add(Ui.Done("Everything is visible again."));
+                        })));
 
                 var foot = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
 
@@ -491,7 +504,10 @@ namespace CamelWorks.UI.Views
                 // matter and selecting them together is what somebody does before they screenshot
                 // it for the architect.
                 _list.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Select {n} in the model", Show, primary: true)));
+                    new Ui.OnPicked("Focus {n}", Show, primary: true),
+                    new Ui.OnPicked("Isolate {n}", Alone),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "row"))));
 
                 if (_result.TotalDropped > 0)
                     _list.Children.Add(Ui.Note(Ui.Count(_result.TotalDropped, "row")
@@ -536,6 +552,45 @@ namespace CamelWorks.UI.Views
                         ? " " + Ui.Count(gone, "removed one") + " left out - they are not in this "
                           + "model any more."
                         : string.Empty)));
+            }
+
+            /// <summary>
+            /// The picked rows alone in the view.
+            ///
+            /// Paint answers "where is all of it"; isolation answers "what does this one look
+            /// like with the other four hundred thousand elements out of the way", which is the
+            /// question somebody asks just before they screenshot it.
+            /// </summary>
+            private void Alone(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var keys = new List<ElementKey>();
+                var gone = 0;
+
+                foreach (var change in picked.OfType<ElementChange>())
+                {
+                    if (change.Bucket == ChangeBucket.Removed) { gone++; continue; }
+                    if (change.Print.TryKey(out var key)) keys.Add(key);
+                }
+
+                if (keys.Count == 0)
+                {
+                    say.Children.Add(Ui.Note(gone > 0
+                        ? "Those are removed elements: they are not in this document, so there is "
+                          + "nothing to isolate. Bring the old revision in below and they become "
+                          + "ordinary elements again."
+                        : "Nothing there to isolate."));
+                    return;
+                }
+
+                _session.View.Isolate(keys);
+                _session.Model.Select(keys);
+                _session.View.ZoomTo(keys, 1.5);
+
+                say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
+                    + "\"Show everything\" beside the paint puts the rest back."
+                    + (gone > 0 ? " " + Ui.Count(gone, "removed row") + " left out." : string.Empty)));
             }
 
             private void Look(ElementChange? change)
@@ -863,7 +918,7 @@ namespace CamelWorks.UI.Views
                                                  + "."));
                 });
 
-                var raise = Ui.Button("Raise them on the board", () =>
+                var raise = Ui.Button("Raise them as issues", () =>
                 {
                     _output.Children.Clear();
 
@@ -876,20 +931,43 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    foreach (var finding in findings)
-                        _output.Children.Add(Ui.Line(finding.Title + " — "
-                            + Ui.Count(finding.Children.Count, "element"), 0.85));
+                    var at = 0;
+                    var against = _result.Between();
+
+                    var (made, problem) = IssueViews.Raise(_session, id =>
+                    {
+                        var finding = findings[at++];
+
+                        var issue = new Core.Issues.Issue(id, finding.Title)
+                        {
+                            Type = "Coordination",
+                            Source = against,
+                            Description = Ui.Count(finding.Children.Count, "element")
+                                          + " — " + against,
+                        };
+
+                        foreach (var key in finding.AllElements())
+                            if (!issue.Elements.Contains(key)) issue.Elements.Add(key);
+
+                        return issue;
+                    }, findings.Count);
+
+                    if (problem != null)
+                    {
+                        _output.Children.Add(Ui.Problem(problem));
+                        return;
+                    }
 
                     _output.Children.Add(Ui.Note("Moves are left off by default: on most revisions "
-                        + "they are hundreds of elements settling by a few millimetres, and a board "
-                        + "full of them is a board nobody opens."));
+                        + "they are hundreds of elements settling by a few millimetres, and a "
+                        + "register full of them is a register nobody opens."));
 
-                    _output.Children.Add(Ui.Line("Raised " + Ui.Count(findings.Count, "issue")
-                        + " on the board. Coordinate → Triage to work through them, or "
-                        + "Coordinate → BCF to send them out.", 0.85));
+                    _output.Children.Add(Ui.Info("Raised " + Ui.Count(made, "issue")
+                        + " in the register, each carrying the elements it is about.",
+                        "Open the register", () => IssueViews.Open(null)));
 
                     _session.Record(ActivityKind.Reconcile,
-                        "raised " + Ui.Count(findings.Count, "issue") + " from the comparison");
+                        "raised " + Ui.Count(made, "issue") + " from the comparison");
                 });
 
                 var report = Ui.Button("Save the report", () =>
@@ -1029,7 +1107,9 @@ namespace CamelWorks.UI.Views
 
             var button = Ui.Runner("Take a baseline", results, primary: primary, work: job =>
             {
-                job.Say("Walking the model...");
+                // Said before the walk, because the walk cannot repaint: progress reporting pumps the
+            // message loop, and pumping mid-walk is what takes the host down.
+            job.Say("Reading the model tree - the window will not repaint until this part is done...");
 
                 var snapshot = SnapshotBuilder.Take(
                     session.Model, DateTimeOffset.UtcNow, label, Settings,

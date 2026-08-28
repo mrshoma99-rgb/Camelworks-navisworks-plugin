@@ -39,7 +39,11 @@ namespace CamelWorks.Core.Clash
         /// <summary>What to hand the host.</summary>
         /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
         public ClashTestSpec Spec(string? folder = null) =>
-            new ClashTestSpec(Name, ClashSide.Set(A.SetName), ClashSide.Set(B.SetName), Tolerance, folder);
+            new ClashTestSpec(Name, Side(A), Side(B), Tolerance, folder, Test);
+
+        private static ClashSide Side(MatrixCategory category) =>
+            category.Scopes.Count > 0 ? ClashSide.Models(category.Scopes)
+                                      : ClashSide.Set(category.SetName);
 
         /// <inheritdoc />
         public override string ToString() => Name;
@@ -142,9 +146,9 @@ namespace CamelWorks.Core.Clash
                 {
                     skipped.Add(pair + ": "
                                 + (first.IsUnbacked && second.IsUnbacked
-                                    ? "neither category names a saved set."
+                                    ? "neither category is backed by a set or a model."
                                     : (first.IsUnbacked ? first.Name : second.Name)
-                                      + " names no saved set."));
+                                      + " is backed by nothing."));
                     continue;
                 }
 

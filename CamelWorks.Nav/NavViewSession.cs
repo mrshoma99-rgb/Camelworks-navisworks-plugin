@@ -64,6 +64,51 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
+        public void Isolate(IReadOnlyList<ElementKey> keys)
+        {
+            var items = _document.ItemsFor(keys);
+            if (items.Count == 0) return;
+
+            // Hide everything that is not a target and not on the path to one. An ancestor of a
+            // target must stay visible (hiding a parent hides its subtree), so the walk descends
+            // through ancestors and hides every other branch whole - which also keeps the hidden
+            // list short on a deep tree.
+            var keep = new HashSet<ModelItem>();
+            var open = new HashSet<ModelItem>();
+
+            foreach (ModelItem item in items)
+            {
+                keep.Add(item);
+                foreach (var ancestor in item.Ancestors) open.Add(ancestor);
+            }
+
+            var hide = new List<ModelItem>();
+
+            foreach (Model model in Host.Models)
+                CollectToHide(model.RootItem, keep, open, hide);
+
+            Host.Models.ResetAllHidden();
+            if (hide.Count > 0) Host.Models.SetHidden(hide, true);
+        }
+
+        private static void CollectToHide(ModelItem item, HashSet<ModelItem> keep,
+                                          HashSet<ModelItem> open, List<ModelItem> hide)
+        {
+            if (keep.Contains(item)) return;
+
+            if (open.Contains(item))
+            {
+                foreach (var child in item.Children) CollectToHide(child, keep, open, hide);
+                return;
+            }
+
+            hide.Add(item);
+        }
+
+        /// <inheritdoc />
+        public void ShowAll() => Host.Models.ResetAllHidden();
+
+        /// <inheritdoc />
         public void ClearOverrides(IReadOnlyList<ElementKey> keys)
         {
             if (Layer == OverrideLayer.Temporary)

@@ -68,6 +68,9 @@ namespace CamelWorks.Core.Project
         /// <summary>Saved model-data reports, and what else the data tools keep for the job.</summary>
         public const string DataSection = "data";
 
+        /// <summary>The issue register: everything raised on this project, however it was found.</summary>
+        public const string IssuesSection = "issues";
+
         private readonly IFileSystem _fs;
         private readonly VersionedDocument _document;
 

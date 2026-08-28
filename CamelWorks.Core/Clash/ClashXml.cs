@@ -121,6 +121,16 @@ namespace CamelWorks.Core.Clash
             X = x; Y = y; Z = z; Item = item;
         }
 
+        /// <summary>The file's own id for the result, or null when it carried none.</summary>
+        public string? FileGuid { get; internal set; }
+
+        /// <summary>Who the file says it is assigned to, or null.</summary>
+        public string? AssignedTo { get; internal set; }
+
+        /// <summary>The authored comment trail the file carried, oldest first.</summary>
+        public IReadOnlyList<ClashComment> Comments { get; internal set; } =
+            Array.Empty<ClashComment>();
+
         /// <summary>What the file calls it.</summary>
         public string Name { get; }
 
@@ -262,6 +272,17 @@ namespace CamelWorks.Core.Clash
                 }
 
                 if (tests.Count > 1) spanning.Add(group.Name);
+            }
+
+            // No board groups handed in, but items carrying their own group names: the review
+            // round writes from the manager's rows, whose grouping lives on each item. Folding
+            // them here means the reviewer's folders survive as real <clashgroup> folders rather
+            // than only as a tag ours alone reads back.
+            if (groupOf.Count == 0)
+            {
+                foreach (var item in all)
+                    if (!string.IsNullOrWhiteSpace(item.CarriedGroup))
+                        groupOf[item.Key] = item.CarriedGroup!;
             }
 
             if (how.KeepGroups && spanning.Count > 0)
@@ -450,7 +471,30 @@ namespace CamelWorks.Core.Clash
                  .Append(item.Distance.Value.ToString("0.000000", CultureInfo.InvariantCulture))
                  .Append('"');
 
+            // The review round's two markup fields. Attributes another reader shrugs past, and
+            // exactly what the sync needs back.
+            if (!string.IsNullOrWhiteSpace(item.AssignedTo))
+                s.Append(" assignedto=\"").Append(Xml.Escape(item.AssignedTo!)).Append('"');
+
             s.Append(">\n");
+
+            if (item.Comments.Count > 0)
+            {
+                s.Append(pad).Append("  <comments>\n");
+
+                foreach (var comment in item.Comments)
+                {
+                    if (comment == null || string.IsNullOrWhiteSpace(comment.Body)) continue;
+
+                    s.Append(pad).Append("    <comment user=\"").Append(Xml.Escape(comment.Author))
+                     .Append("\" when=\"")
+                     .Append(comment.WhenTicks.ToString(CultureInfo.InvariantCulture))
+                     .Append("\"><body>").Append(Xml.Escape(comment.Body))
+                     .Append("</body></comment>\n");
+                }
+
+                s.Append(pad).Append("  </comments>\n");
+            }
 
             s.Append(pad).Append("  <clashpoint><pos3f x=\"")
              .Append(item.X.ToString("0.000000", CultureInfo.InvariantCulture)).Append("\" y=\"")
@@ -695,6 +739,8 @@ namespace CamelWorks.Core.Clash
         {
             var name = Value(entry, "name") ?? "Clash";
             var status = Status(Value(entry, "status") ?? Value(entry, "resultstatus"));
+            var assigned = Value(entry, "assignedto");
+            var trail = Trail(entry);
 
             var point = entry.Descendants().FirstOrDefault(e => e.Name.LocalName == "pos3f");
 
@@ -710,7 +756,8 @@ namespace CamelWorks.Core.Clash
             tags.TryGetValue(ClashXmlOptions.KeyTag, out var wire);
 
             if (!ClashKey.TryParse(wire, out var key))
-                return new ClashXmlResult(name, test, group, status, x, y, z, null);
+                return Dressed(new ClashXmlResult(name, test, group, status, x, y, z, null),
+                               entry, assigned, trail);
 
             var item = new ClashItem(key, test)
             {
@@ -744,9 +791,44 @@ namespace CamelWorks.Core.Clash
             // way back is how a folder structure quietly becomes an afternoon somebody repeats.
             if (group != null && item.CarriedGroup == null) item.CarriedGroup = group;
 
+            item.AssignedTo = assigned;
+            foreach (var comment in trail) item.Comments.Add(comment);
+
             Sides(entry, item);
 
-            return new ClashXmlResult(name, test, group, status, x, y, z, item);
+            return Dressed(new ClashXmlResult(name, test, group, status, x, y, z, item),
+                           entry, assigned, trail);
+        }
+
+        /// <summary>The markup fields, put on the read row whether or not it identified.</summary>
+        private static ClashXmlResult Dressed(ClashXmlResult result, XElement entry,
+                                              string? assigned, IReadOnlyList<ClashComment> trail)
+        {
+            result.FileGuid = Value(entry, "guid");
+            result.AssignedTo = assigned;
+            result.Comments = trail;
+            return result;
+        }
+
+        /// <summary>The authored comment trail a result carries, oldest first.</summary>
+        private static IReadOnlyList<ClashComment> Trail(XElement entry)
+        {
+            var trail = new List<ClashComment>();
+
+            foreach (var comment in entry.Descendants().Where(e => e.Name.LocalName == "comment"))
+            {
+                var body = comment.Elements().FirstOrDefault(e => e.Name.LocalName == "body")?.Value
+                           ?? comment.Value;
+
+                if (string.IsNullOrWhiteSpace(body)) continue;
+
+                long.TryParse(Value(comment, "when"), NumberStyles.Integer,
+                              CultureInfo.InvariantCulture, out var when);
+
+                trail.Add(new ClashComment(Value(comment, "user") ?? "(unknown)", when, body.Trim()));
+            }
+
+            return trail;
         }
 
         /// <summary>The two elements' properties, in the order the file lists them.</summary>

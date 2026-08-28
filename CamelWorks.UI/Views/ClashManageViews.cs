@@ -1,0 +1,2492 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Clash;
+using CamelWorks.Core.Findings;
+using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
+using CamelWorks.Core.Project;
+using CamelWorks.Core.Report;
+using CamelWorks.Nav;
+
+namespace CamelWorks.UI.Views
+{
+    /// <summary>
+    /// The results, the way the engine holds them — and the pen to work them.
+    ///
+    /// The Board derives issues; this tab manages results. They are different jobs. A coordinator
+    /// in a Friday meeting is asked "what is the status of clash 214 in test A2B4", and the answer
+    /// has to be read, changed, commented and assigned <i>in the model's own clash data</i>, so
+    /// that the native clash window, the exports and every other tool see the same thing.
+    ///
+    /// <b>Two sources, one workbench.</b> From the model, edits write straight through the seam.
+    /// From a file, the same verbs mark up the file's own data — which is the whole review round:
+    /// a Manage seat exports the baseline, every Simulate seat opens it here, marks, comments and
+    /// assigns, and saves a markup beside it; the Manage seat then reads the markups back in and
+    /// the model carries everyone's answers. Simulate has no clash engine, and for the file leg it
+    /// does not need one.
+    /// </summary>
+    public static class ClashManageViews
+    {
+        private static readonly string[] Statuses = { "New", "Active", "Reviewed", "Approved", "Resolved" };
+
+        private const string FromModel = "The model";
+        private const string FromFile = "A file";
+
+        // The reads survive tab switches and window closes, like the board does: re-reading
+        // eighteen thousand results because somebody glanced at the Rules tab would make the tab
+        // switch cost more than the work.
+        private static List<TestEntry>? _read;
+        private static FileRound? _file;
+        private static string _source = FromModel;
+
+        // The property columns and the grouping chain survive tab switches with the read: they
+        // are how somebody set their bench up, and a bench that resets when glanced away from
+        // is a bench nobody trusts with a long afternoon.
+        private static readonly List<PropColumn> _columns = new List<PropColumn>();
+        private static readonly List<string> _chain = new List<string>();
+
+        /// <summary>The surface, for a desk to bench.</summary>
+        /// <param name="session">The open document.</param>
+        public static UIElement Manage(Session session) => new Screen(session).Build();
+
+        /// <summary>Forget the cached model read, so the next visit reads afresh.</summary>
+        internal static void Forget() => _read = null;
+
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// One custom column: an element property, read from one side of each clash or both.
+        ///
+        /// This is the move the engine's own window never learned: the results table showing the
+        /// System Name, the Workset, the fire rating - whatever the elements carry - and the
+        /// grouping chain running over exactly those values.
+        /// </summary>
+        private sealed class PropColumn
+        {
+            internal PropColumn(string tab, string name, string side, string title)
+            {
+                Id = Guid.NewGuid().ToString("N");
+                Tab = tab;
+                Name = name;
+                Side = side;
+                Title = title;
+            }
+
+            internal string Id { get; }
+            internal string Tab { get; }
+            internal string Name { get; }
+            internal string Side { get; }
+            internal string Title { get; }
+        }
+
+        /// <summary>One leaf of the grouping chain, with the rows that fell into it.</summary>
+        private sealed class Bucket
+        {
+            internal Bucket(string name) => Name = name;
+
+            internal string Name { get; }
+
+            internal List<Row> Rows { get; } = new List<Row>();
+
+            internal int Of(string status) =>
+                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>One file, read for markup, with where it came from.</summary>
+        private sealed class FileRound
+        {
+            internal FileRound(string path) => Path = path;
+
+            internal string Path { get; }
+
+            internal List<TestEntry> Entries { get; } = new List<TestEntry>();
+
+            internal int Unkeyed { get; set; }
+        }
+
+        private sealed class TestEntry
+        {
+            internal TestEntry(ClashTestInfo test) => Test = test;
+
+            internal ClashTestInfo Test { get; set; }
+
+            internal List<Row> Rows { get; } = new List<Row>();
+
+            internal int Of(string status) =>
+                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private sealed class Row
+        {
+            internal Row(string testId, string testName, ClashResultInfo info)
+            {
+                TestId = testId;
+                TestName = testName;
+                Info = info;
+                Status = info.HostStatus ?? "New";
+                Assigned = info.HostAssignedTo ?? string.Empty;
+                Group = info.GroupName ?? string.Empty;
+                Comments = info.CommentCount;
+                LastComment = info.LastComment ?? string.Empty;
+
+                foreach (var comment in info.Comments) Trail.Add(comment);
+            }
+
+            internal string TestId { get; }
+            internal string TestName { get; }
+            internal ClashResultInfo Info { get; }
+            internal string Status { get; set; }
+            internal string Assigned { get; set; }
+            internal string Group { get; set; }
+            internal int Comments { get; set; }
+            internal string LastComment { get; set; }
+
+            /// <summary>The file's own item, kept so a markup save writes back what was read.</summary>
+            internal ClashItem? FileItem { get; set; }
+
+            /// <summary>The authored comment trail, held in full only for file rows.</summary>
+            internal List<ClashComment> Trail { get; } = new List<ClashComment>();
+
+            /// <summary>Custom column values, by column id, once "Read the values" has run.</summary>
+            internal Dictionary<string, string> Custom { get; } =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        // -----------------------------------------------------------------------------------
+
+        private sealed class Screen
+        {
+            private readonly Session _session;
+
+            private readonly StackPanel _tests = Ui.Stack();
+            private readonly StackPanel _results = Ui.Stack();
+            private readonly StackPanel _log = Ui.Stack();
+            private readonly StackPanel _headline = Ui.Stack();
+            private readonly StackPanel _sync = Ui.Stack();
+
+            private readonly TextBox _find;
+            private readonly TextBox _comment;
+            private readonly TextBox _group;
+            private readonly TextBox _renameTest;
+            private readonly TextBox _renameResults;
+            private readonly TextBox _folder;
+            private readonly TextBox _path;
+            private readonly TextBox _markups;
+            private readonly ComboBox _assign;
+
+            private readonly HashSet<string> _show =
+                new HashSet<string>(Statuses, StringComparer.OrdinalIgnoreCase);
+
+            private string _mark = "Reviewed";
+            private bool _hideEmpty;
+            private bool _onlyCommented;
+            private double _markerAcross = 300;
+
+            private readonly HashSet<string> _pickedTests = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>What the results grid currently shows, for the spreadsheet writer.</summary>
+            private List<Row> _shown = new List<Row>();
+
+            private readonly StackPanel _groups = Ui.Stack();
+            private readonly StackPanel _columnList = Ui.Stack();
+            private readonly StackPanel _chainList = Ui.Stack();
+            private readonly StackPanel _fill = Ui.Stack();
+            private readonly HashSet<string> _pickedGroups = new HashSet<string>(StringComparer.Ordinal);
+
+            private string _newTab = string.Empty;
+            private string _newProp = string.Empty;
+            private string _newSide = BothSides;
+            private string _chainAdd = string.Empty;
+
+            private readonly TextBox _filter;
+            private readonly StackPanel _filterScope = Ui.Stack();
+            private string _filterIn = AnyColumn;
+
+            private const string AnyColumn = "Any column";
+
+            private const string FirstSide = "First item";
+            private const string SecondSide = "Second item";
+            private const string BothSides = "Both";
+
+            internal Screen(Session session)
+            {
+                _session = session;
+
+                // A seat with no clash engine has exactly one source; the switch would be a lie.
+                if (!session.Clash.IsAvailable) _source = FromFile;
+
+                _find = Ui.Text(string.Empty, null, 150);
+                _filter = Ui.Text(string.Empty, null, 150);
+                _filter.TextChanged += (s, e) => RedrawGroups();
+                _comment = Ui.Text(string.Empty, null, 170);
+                _group = Ui.Text(string.Empty, null, 170);
+                _renameTest = Ui.Text(string.Empty, null, 170);
+                _renameResults = Ui.Text(string.Empty, null, 170);
+                _folder = Ui.Text(string.Empty, null, 170);
+                _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
+                _markups = Ui.Text(string.Empty, null, 190);
+                _assign = Suggesting(Assignees());
+                _find.TextChanged += (s, e) => RedrawTests();
+            }
+
+            private bool OnFile => _source == FromFile;
+
+            internal UIElement Build()
+            {
+                // One caption for both sources: the results are what gets read either way, and
+                // the registry promises this exact action.
+                var read = Ui.Runner("Read the results", _log, Read);
+
+                // The log sits above the tables: a verb's outcome must land where the eye already
+                // is, not below two thousand rows of what it just acted on.
+                var stage = Ui.Stack(
+                    _headline,
+                    _log,
+                    _tests,
+                    Ui.Rule(),
+                    _groups,
+                    _results);
+
+                if (Current() == null)
+                {
+                    _headline.Children.Add(Bench.Ready(
+                        OnFile
+                            ? "Reading opens an exported clash file for markup: every verb below "
+                              + "works on the file's own results, and the markup saves beside it "
+                              + "for whoever runs the sync."
+                            : "Reading pulls every test and every result out of the document, with "
+                              + "status, assignee, comments and grouping — then the whole board of "
+                              + "verbs works on whatever you pick.",
+                        OnFile
+                            ? "This is the review round: the file came from a Manage seat, and "
+                              + "your saved markup goes back into the model when they sync."
+                            : "Every edit writes back into the model's own clash data, so the "
+                              + "native clash window and every export see the same thing."));
+
+                    if (!_session.Clash.IsAvailable)
+                        _headline.Children.Add(Ui.Info("This Navisworks edition has no clash "
+                            + "engine, so the model source is off — but the review round is not: "
+                            + "open the exported file, mark it up, save the markup. "
+                            + (_session.ClashProblem ?? string.Empty)));
+                }
+                else
+                {
+                    Redraw();
+                }
+
+                return Bench.Surface(Setup(), read, stage);
+            }
+
+            private List<TestEntry>? Current() => OnFile ? _file?.Entries : _read;
+
+            // -------------------------------------------------------------------------------
+            // Reading
+            // -------------------------------------------------------------------------------
+
+            private void Read(Job job)
+            {
+                if (OnFile) ReadFile(job);
+                else ReadModel(job);
+            }
+
+            private void ReadModel(Job job)
+            {
+                var carried = Harvest(_read);
+                var entries = new List<TestEntry>();
+                var seen = 0;
+
+                foreach (var test in _session.Clash.Tests())
+                {
+                    var entry = new TestEntry(test);
+
+                    foreach (var result in _session.Clash.Results(test.Id))
+                    {
+                        if (!job.Step(++seen, "results read")) return;
+                        entry.Rows.Add(Restored(new Row(test.Id, test.Name, result), carried));
+                    }
+
+                    entries.Add(entry);
+                }
+
+                _read = entries;
+                Redraw();
+
+                _log.Children.Add(Ui.Line(Ui.Count(entries.Count, "test") + ", "
+                    + Ui.Count(entries.Sum(e => e.Rows.Count), "result") + " read.", 1, true));
+            }
+
+            private void ReadFile(Job job)
+            {
+                var path = _path.Text.Trim();
+
+                if (path.Length == 0)
+                {
+                    _log.Children.Add(Ui.Problem("Say which file to open first."));
+                    return;
+                }
+
+                string text;
+
+                try
+                {
+                    text = System.IO.File.ReadAllText(path);
+                }
+                catch (Exception e)
+                {
+                    _log.Children.Add(Ui.Problem("Could not read it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                var read = ClashXml.Read(text);
+
+                if (!read.IsUsable)
+                {
+                    _log.Children.Add(Ui.Problem(read.Explain()));
+                    return;
+                }
+
+                var round = new FileRound(path);
+                var byTest = new Dictionary<string, TestEntry>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var test in read.Tests)
+                {
+                    if (byTest.ContainsKey(test.Name)) continue;
+
+                    var entry = new TestEntry(new ClashTestInfo(test.Name, test.Name,
+                                                                test.Folder, 0, 0));
+                    byTest[test.Name] = entry;
+                    round.Entries.Add(entry);
+                }
+
+                var seen = 0;
+
+                foreach (var result in read.Results)
+                {
+                    if (!job.Step(++seen, "results read")) return;
+
+                    if (!byTest.TryGetValue(result.Test, out var entry))
+                    {
+                        entry = new TestEntry(new ClashTestInfo(result.Test, result.Test, null, 0, 0));
+                        byTest[result.Test] = entry;
+                        round.Entries.Add(entry);
+                    }
+
+                    if (result.Item == null) round.Unkeyed++;
+
+                    var last = result.Comments.Count > 0
+                        ? result.Comments[result.Comments.Count - 1]
+                        : null;
+
+                    var info = new ClashResultInfo(
+                        result.FileGuid ?? result.Test + "/" + result.Name,
+                        result.Item?.Key.A ?? default,
+                        result.Item?.Key.B ?? default,
+                        result.X, result.Y, result.Z,
+                        result.Status.ToString(),
+                        result.AssignedTo)
+                    {
+                        Name = result.Name,
+                        GroupName = result.Group,
+                        NameA = result.Item?.ModelA,
+                        NameB = result.Item?.ModelB,
+                        CategoryA = result.Item?.CategoryA,
+                        CategoryB = result.Item?.CategoryB,
+                        CommentCount = result.Comments.Count,
+                        LastComment = last?.Body,
+                        Comments = result.Comments,
+                        Distance = result.Item?.Distance,
+                    };
+
+                    entry.Rows.Add(new Row(result.Test, result.Test, info)
+                    {
+                        FileItem = result.Item,
+                    });
+                }
+
+                _file = round;
+                Redraw();
+
+                foreach (var warning in read.Warnings) _log.Children.Add(Ui.Note(warning));
+
+                _log.Children.Add(Ui.Line(read.Explain() + " Mark it up below, then save the "
+                                          + "markup.", 1, true));
+            }
+
+            // -------------------------------------------------------------------------------
+            // The options panel
+            // -------------------------------------------------------------------------------
+
+            private UIElement Setup()
+            {
+                var panel = Ui.Stack();
+
+                // The source, first: everything under it reads differently for a file.
+                if (_session.Clash.IsAvailable)
+                    panel.Children.Add(Bench.Group(string.Empty,
+                        Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
+                        {
+                            _source = pick;
+                            Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                        })));
+
+                if (OnFile)
+                    panel.Children.Add(Bench.Group("The file",
+                        Ui.PathField("Open", _path, PathKind.Open,
+                                     "Clash XML|*.xml|All files|*.*",
+                                     "the baseline a Manage seat exported, or a saved markup"),
+                        Ui.Actions(Ui.Primary("Save markup", SaveMarkup)),
+                        Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
+                                 + "after you — it never touches the baseline or anyone else's "
+                                 + "markup.")));
+
+                var showing = Statuses.Select(status => (UIElement)Ui.Check(status,
+                    _show.Contains(status), on =>
+                    {
+                        if (on) _show.Add(status); else _show.Remove(status);
+                        RedrawGroups();
+                    })).ToList();
+
+                var mark = Ui.Choice(Statuses, _mark, pick =>
+                {
+                    _mark = pick;
+
+                    // The button under the grid reads "Mark 12 Reviewed" - the caption is the
+                    // press about to happen, so it follows this choice the moment it changes.
+                    RedrawResults();
+                }, 150);
+
+                RedrawFilterScope();
+
+                panel.Children.Add(Bench.Group("Show results that are",
+                    Ui.Stack(showing.ToArray()),
+                    Ui.Check("Only ones with comments", _onlyCommented, on =>
+                    {
+                        _onlyCommented = on;
+                        RedrawGroups();
+                    }),
+                    Ui.Field("Where", _filterScope),
+                    Ui.Field("contains", _filter,
+                             "matches as you type - any column, or just the one picked")));
+
+                RedrawColumnList();
+                RedrawChainList();
+
+                panel.Children.Add(Bench.Group("Property columns",
+                    Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
+                    Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
+                    Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
+                                                    _newSide, pick => _newSide = pick, 150)),
+                    Ui.Actions(Ui.Quiet("Add", AddColumn)),
+                    _columnList,
+                    Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
+                    _fill,
+                    Ui.Small("Each column reads that property off the clashing elements "
+                             + "themselves - the results table carries whatever the model "
+                             + "carries, and the grouping below can chain over it.")));
+
+                panel.Children.Add(Bench.Group("Group by, in order",
+                    _chainList,
+                    Ui.Small("Chained: the first entry makes the bands, the next splits each "
+                             + "band, and so on - Level, then System, then anything a property "
+                             + "column carries. Pick group rows to work just those results.")));
+
+                var tests = Bench.Group("Tests",
+                    Ui.Field("Find", _find, "matches the test's name"),
+                    Ui.Check("Hide tests with no results", _hideEmpty, on =>
+                    {
+                        _hideEmpty = on;
+                        RedrawTests();
+                    }),
+                    OnFile ? null : Ui.Field("Rename to", _renameTest, "for one picked test"),
+                    OnFile ? null : Ui.Field("Move into", _folder, "a clash folder; blank is the root"),
+                    OnFile ? null : Ui.Field("Results prefix", _renameResults,
+                                             "renames a test's results prefix1, prefix2, ..."));
+
+                panel.Children.Add(tests);
+
+                panel.Children.Add(Bench.Group("On the picked results",
+                    Ui.Field("Mark as", mark),
+                    Ui.Field("Assign to", _assign, "the project's parties, or type a name"),
+                    Ui.Field("Comment", _comment),
+                    Ui.Field("Group into", _group, "blank moves them out of any group")));
+
+                panel.Children.Add(Bench.Group("In the model",
+                    Ui.Field("Marker size", Ui.Text(
+                        _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
+                        {
+                            if (double.TryParse(text, NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                                _markerAcross = mm;
+                        }, 90), "millimetres across"),
+                    Ui.Actions(Ui.Quiet("Show all", () =>
+                    {
+                        _session.View.ShowAll();
+                        Said(Ui.Done("Everything is visible again."));
+                    }))));
+
+                panel.Children.Add(Bench.Group("Beyond the engine",
+                    Ui.Actions(
+                        Ui.Quiet("Find duplicates", Duplicates),
+                        Ui.Quiet("Excel...", Sheet),
+                        Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
+                    Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
+                    Ui.Small("Duplicates are the same conflict reported by two tests - marked "
+                             + "Approved with a comment naming the one that stays open. The "
+                             + "baseline carries statuses, assignments, comment trails and "
+                             + "groups, ready for reviewers.")));
+
+                if (!OnFile)
+                {
+                    panel.Children.Add(Bench.Group("The review round",
+                        Ui.Actions(Ui.Quiet("Export...", () =>
+                        {
+                            ClashExportWindow.Preferred = _pickedTests.ToList();
+                            Ui.Told(Shell.AppWindow.Show("issues", "clashxml"));
+                        })),
+                        Ui.PathField("Markups", _markups, PathKind.Open,
+                                     "Clash XML|*.xml|All files|*.*",
+                                     "a markup file, or the baseline — every markup beside it is read"),
+                        Ui.Runner("Sync markups", _sync, primary: false, work: Sync),
+                        _sync,
+                        Ui.Small("Reviewers on Simulate open the exported file on this tab, mark "
+                                 + "it up, and save. This reads their markups back and writes the "
+                                 + "statuses, comments and assignments into the model's own clash "
+                                 + "data.")));
+                }
+
+                return panel;
+            }
+
+            // -------------------------------------------------------------------------------
+            // Drawing
+            // -------------------------------------------------------------------------------
+
+            private void Redraw()
+            {
+                RedrawTests();
+            }
+
+            private void RedrawTests()
+            {
+                _tests.Children.Clear();
+
+                var read = Current();
+                if (read == null) return;
+
+                var find = _find.Text.Trim();
+
+                var wanted = read
+                    .Where(e => find.Length == 0
+                                || e.Test.Name.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .Where(e => !_hideEmpty || e.Rows.Count > 0)
+                    .ToList();
+
+                _headline.Children.Clear();
+                _headline.Children.Add(Bench.Verdict(
+                    (OnFile && _file != null
+                        ? System.IO.Path.GetFileName(_file.Path) + " — "
+                        : string.Empty)
+                    + Ui.Count(read.Count, "test") + ", "
+                    + Ui.Count(read.Sum(e => e.Rows.Count), "result") + " — "
+                    + Ui.Count(read.Sum(e => e.Of("New")), "new") + ", "
+                    + read.Sum(e => e.Of("Active")).ToString("N0", CultureInfo.InvariantCulture) + " active, "
+                    + read.Sum(e => e.Of("Resolved")).ToString("N0", CultureInfo.InvariantCulture)
+                    + " resolved."));
+
+                var rows = wanted.Select(e => new TableRow(e,
+                    e.Test.Name,
+                    e.Test.Folder ?? string.Empty,
+                    Skin.Num(e.Rows.Count),
+                    Skin.Num(e.Of("New")),
+                    Skin.Num(e.Of("Active")),
+                    Skin.Num(e.Of("Reviewed")),
+                    Skin.Num(e.Of("Approved")),
+                    Skin.Num(e.Of("Resolved")))
+                {
+                    Tone = e.Of("New") > 0 ? Tone.Warn : Tone.Plain,
+                }).ToList();
+
+                var table = Ui.Table(rows,
+                    ("Test", 220), ("Folder", 90), ("Results", 70), ("New", 55), ("Active", 55),
+                    ("Reviewed", 70), ("Approved", 70), ("Resolved", 0));
+
+                table.SelectionChanged += (s, e) =>
+                {
+                    _pickedTests.Clear();
+
+                    foreach (var picked in table.PickedMany())
+                        if (picked is TestEntry entry) _pickedTests.Add(entry.Test.Id);
+
+                    RedrawGroups();
+                };
+
+                _tests.Children.Add(Ui.Eyebrow("The tests"));
+
+                // A file is a record of a run: tests cannot be run, renamed, moved or deleted in
+                // one, and verbs that would say otherwise are not shown rather than shown grey.
+                _tests.Children.Add(OnFile
+                    ? Ui.Picking(table,
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "test")))
+                    : Ui.Picking(table,
+                        new Ui.OnPicked("Run {n}", RunTests, primary: true),
+                        new Ui.OnPicked("Rename {n}", RenameTests),
+                        new Ui.OnPicked("Renumber {n}", RenameResults),
+                        new Ui.OnPicked("Move {n}", MoveTests),
+                        new Ui.OnPicked("Compact {n}", CompactTests),
+                        new Ui.OnPicked("Delete {n}", DeleteTests, danger: true),
+                        new Ui.OnPicked("Copy {n}",
+                            (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "test"))));
+
+                RedrawGroups();
+            }
+
+            /// <summary>The rows the filters allow, before any group pick narrows them.</summary>
+            private List<Row> Filtered()
+            {
+                var read = Current();
+                if (read == null) return new List<Row>();
+
+                var from = _pickedTests.Count == 0
+                    ? read
+                    : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
+
+                var rows = from
+                    .SelectMany(e => e.Rows)
+                    .Where(r => _show.Contains(r.Status))
+                    .Where(r => !_onlyCommented || r.Comments > 0);
+
+                var wanted = _filter.Text.Trim();
+
+                if (wanted.Length > 0)
+                    rows = rows.Where(r => Matches(r, wanted));
+
+                return rows.ToList();
+            }
+
+            /// <summary>Whether a row's chosen column - or any of them - contains the text.</summary>
+            private bool Matches(Row row, string wanted)
+            {
+                bool Has(string? value) =>
+                    value != null && value.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (_filterIn != AnyColumn)
+                {
+                    foreach (var column in _columns)
+                        if (string.Equals(_filterIn, column.Title, StringComparison.Ordinal))
+                            return Has(row.Custom.TryGetValue(column.Id, out var v) ? v : null);
+
+                    return _filterIn switch
+                    {
+                        "Result" => Has(row.Info.Name),
+                        "Test" => Has(row.TestName),
+                        "Group" => Has(row.Group),
+                        "Status" => Has(row.Status),
+                        "Assigned" => Has(row.Assigned),
+                        "Comment" => Has(row.LastComment),
+                        "Item 1" => Has(row.Info.NameA),
+                        "Item 2" => Has(row.Info.NameB),
+                        _ => false,
+                    };
+                }
+
+                if (Has(row.Info.Name) || Has(row.TestName) || Has(row.Group) || Has(row.Status)
+                    || Has(row.Assigned) || Has(row.LastComment)
+                    || Has(row.Info.NameA) || Has(row.Info.NameB)
+                    || Has(row.Info.CategoryA) || Has(row.Info.CategoryB))
+                    return true;
+
+                foreach (var value in row.Custom.Values)
+                    if (Has(value)) return true;
+
+                return false;
+            }
+
+            /// <summary>The filter's column picker, rebuilt when the custom columns change.</summary>
+            private void RedrawFilterScope()
+            {
+                _filterScope.Children.Clear();
+
+                var options = new List<string>
+                {
+                    AnyColumn, "Result", "Test", "Group", "Status", "Assigned", "Comment",
+                    "Item 1", "Item 2",
+                };
+
+                foreach (var column in _columns) options.Add(column.Title);
+
+                if (!options.Contains(_filterIn)) _filterIn = AnyColumn;
+
+                _filterScope.Children.Add(Ui.Choice(options, _filterIn, pick =>
+                {
+                    _filterIn = pick;
+                    if (_filter.Text.Trim().Length > 0) RedrawGroups();
+                }, 150));
+            }
+
+            /// <summary>
+            /// The grouping chain's summary: one row per leaf band, with its counts, its own
+            /// bulk verbs, and picking that narrows the results grid to the picked bands. The
+            /// same master-detail the tests table already is, one level further in.
+            /// </summary>
+            private void RedrawGroups()
+            {
+                _groups.Children.Clear();
+                _pickedGroups.Clear();
+
+                if (_chain.Count == 0)
+                {
+                    RedrawResults();
+                    return;
+                }
+
+                var rows = Filtered();
+
+                var buckets = new Dictionary<string, Bucket>(StringComparer.Ordinal);
+
+                foreach (var row in rows)
+                {
+                    var name = ChainKey(row);
+
+                    if (!buckets.TryGetValue(name, out var bucket))
+                    {
+                        bucket = new Bucket(name);
+                        buckets[name] = bucket;
+                    }
+
+                    bucket.Rows.Add(row);
+                }
+
+                var ordered = buckets.Values
+                    .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                _groups.Children.Add(Ui.Eyebrow("Grouped by "
+                    + string.Join(" · ", _chain.Select(ChainTitle))));
+
+                var table = Ui.Table(ordered.Select(b => new TableRow(b,
+                    b.Name,
+                    Skin.Num(b.Rows.Count),
+                    Skin.Num(b.Of("New")),
+                    Skin.Num(b.Of("Active")),
+                    Skin.Num(b.Of("Reviewed")),
+                    Skin.Num(b.Of("Approved")),
+                    Skin.Num(b.Of("Resolved")))
+                {
+                    Tone = b.Of("New") > 0 ? Tone.Warn : Tone.Plain,
+                }).ToList(),
+                    ("Group", 300), ("Results", 70), ("New", 55), ("Active", 55),
+                    ("Reviewed", 70), ("Approved", 70), ("Resolved", 0));
+
+                table.SelectionChanged += (s, e) =>
+                {
+                    _pickedGroups.Clear();
+
+                    foreach (var picked in table.PickedMany())
+                        if (picked is Bucket bucket) _pickedGroups.Add(bucket.Name);
+
+                    RedrawResults();
+                };
+
+                _groups.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Mark {n}", (picked, say) =>
+                        Mark(Flatten(picked), say)),
+                    new Ui.OnPicked("Assign {n}", (picked, say) =>
+                        AssignPicked(Flatten(picked), say)),
+                    new Ui.OnPicked("Comment {n}", (picked, say) =>
+                        CommentPicked(Flatten(picked), say)),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "group"))));
+
+                RedrawResults();
+            }
+
+            /// <summary>The picked buckets' rows, as the row verbs expect them.</summary>
+            private static IReadOnlyList<object> Flatten(IReadOnlyList<object> picked) =>
+                picked.OfType<Bucket>().SelectMany(b => b.Rows).Cast<object>().ToList();
+
+            private void RedrawResults()
+            {
+                _results.Children.Clear();
+
+                if (Current() == null) return;
+
+                var rows = Filtered();
+
+                if (_chain.Count > 0 && _pickedGroups.Count > 0)
+                    rows = rows.Where(r => _pickedGroups.Contains(ChainKey(r))).ToList();
+
+                _results.Children.Add(Ui.Eyebrow(
+                    _chain.Count > 0 && _pickedGroups.Count > 0
+                        ? "Results of " + Ui.Count(_pickedGroups.Count, "picked group")
+                        : _pickedTests.Count == 0
+                            ? "Every result"
+                            : "Results of " + Ui.Count(_pickedTests.Count, "picked test")));
+
+                if (rows.Count == 0)
+                {
+                    _results.Children.Add(Ui.Empty("Nothing matches.",
+                        "Every result of "
+                        + (_pickedTests.Count == 0 ? "every test" : "the picked tests")
+                        + " is filtered out. Untick a status on the right, or pick other tests."));
+                    return;
+                }
+
+                // The window stays honest about what a table can hold: the verbs below act on
+                // what is picked in what is SHOWN, and a cap this size scrolls rather than hangs.
+                const int most = 2500;
+                var shown = rows.Count > most ? rows.Take(most).ToList() : rows;
+
+                _shown = shown;
+
+                // The columns are built as lists because the custom ones come and go: the
+                // property columns land between Worst and Assigned, where the eye is already
+                // reading facts about the elements.
+                var headers = new List<(string, double)>
+                {
+                    ("Result", 110), ("Test", 140), ("Group", 80), ("Status", 70), ("Worst", 65),
+                };
+
+                foreach (var column in _columns) headers.Add((column.Title, 95));
+
+                headers.Add(("Assigned", 85));
+                headers.Add(("Comment", 130));
+                headers.Add(("Item 1", 110));
+                headers.Add(("Item 2", 0));
+
+                TableRow Line(Row r)
+                {
+                    var cells = new List<string?>
+                    {
+                        r.Info.Name ?? string.Empty, r.TestName, r.Group, r.Status, Worst(r),
+                    };
+
+                    foreach (var column in _columns)
+                        cells.Add(r.Custom.TryGetValue(column.Id, out var value)
+                            ? value
+                            : string.Empty);
+
+                    cells.Add(r.Assigned);
+                    cells.Add(r.Comments == 0 ? string.Empty : r.LastComment);
+                    cells.Add(r.Info.NameA ?? string.Empty);
+                    cells.Add(r.Info.NameB ?? string.Empty);
+
+                    return new TableRow(r, cells.ToArray())
+                    {
+                        Tone = string.Equals(r.Status, "New", StringComparison.OrdinalIgnoreCase) ? Tone.Bad
+                             : string.Equals(r.Status, "Resolved", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase) ? Tone.Good
+                             : Tone.Plain,
+                    };
+                }
+
+                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray())
+                    .Menu(new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
+                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)));
+
+                _results.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Focus {n}", Focus, primary: true),
+                    new Ui.OnPicked("Isolate {n}", Isolate),
+                    new Ui.OnPicked("Mark {n} " + _mark, Mark),
+                    new Ui.OnPicked("Assign {n}", AssignPicked),
+                    new Ui.OnPicked("Comment {n}", CommentPicked),
+                    new Ui.OnPicked("Group {n}", GroupPicked),
+                    new Ui.OnPicked("Rename {n}", RenamePickedResults),
+                    new Ui.OnPicked("Sphere {n}", Spheres),
+                    new Ui.OnPicked("Snapshot {n}", Snapshots),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "result"))));
+
+                if (rows.Count > most)
+                    _results.Children.Add(Ui.Note(Ui.Count(rows.Count, "result") + " match, and the "
+                        + "first " + most.ToString("N0", CultureInfo.InvariantCulture) + " are on "
+                        + "screen. Pick a test above, or tighten the status filter, to see the rest."));
+            }
+
+            // -------------------------------------------------------------------------------
+            // Test verbs (model source only)
+            // -------------------------------------------------------------------------------
+
+            private static List<TestEntry> Entries(IReadOnlyList<object> picked) =>
+                picked.OfType<TestEntry>().ToList();
+
+            private void RunTests(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                var problems = new List<string>();
+                var ran = 0;
+
+                foreach (var entry in tests)
+                {
+                    if (!_session.Clash.Run(entry.Test.Id))
+                    {
+                        problems.Add(_session.Clash.LastProblem
+                                     ?? "The host would not run \"" + entry.Test.Name + "\".");
+                        continue;
+                    }
+
+                    ran++;
+                }
+
+                if (ran == 0)
+                {
+                    foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "clash test"));
+
+                // The run changed what the document holds, so the cache is stale by definition.
+                Reread(Ui.Count(ran, "test") + " ran.", problems);
+            }
+
+            private void RenameTests(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                var name = _renameTest.Text.Trim();
+
+                if (tests.Count != 1)
+                {
+                    say.Children.Add(Ui.Problem("Renaming names one test. Pick exactly one, or use "
+                        + "the results prefix for the rows inside one."));
+                    return;
+                }
+
+                if (name.Length == 0)
+                {
+                    say.Children.Add(Ui.Problem("Type the new name in \"Rename to\" first."));
+                    return;
+                }
+
+                if (!_session.Clash.RenameTest(tests[0].Test.Id, name))
+                {
+                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup,
+                                "renamed the test \"" + tests[0].Test.Name + "\" to \"" + name + "\"");
+                Reread("Renamed.", null);
+            }
+
+            private void RenameResults(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                var prefix = _renameResults.Text.Trim();
+
+                if (prefix.Length == 0)
+                {
+                    say.Children.Add(Ui.Problem("Type the prefix in \"Results prefix\" first."));
+                    return;
+                }
+
+                var done = 0;
+
+                foreach (var entry in tests)
+                {
+                    if (!_session.Clash.RenameResults(entry.Test.Id, prefix))
+                    {
+                        say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                        return;
+                    }
+
+                    done++;
+                }
+
+                _session.Record(ActivityKind.Regroup, "renamed the results of "
+                    + Ui.Count(done, "test") + " to \"" + prefix + "...\"");
+                Reread("Renamed the results of " + Ui.Count(done, "test") + ".", null);
+            }
+
+            private void MoveTests(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                var folder = _folder.Text.Trim();
+
+                if (!_session.Clash.MoveTests(tests.Select(t => t.Test.Id).ToList(),
+                                              folder.Length == 0 ? null : folder))
+                {
+                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, "clash test")
+                    + (folder.Length == 0 ? " to the root" : " into \"" + folder + "\""));
+                Reread("Moved " + Ui.Count(tests.Count, "test") + ".", null);
+            }
+
+            private void DeleteTests(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                if (tests.Count == 0) return;
+
+                // Two presses for the one verb here that cannot be undone.
+                say.Children.Add(Ui.Danger("Yes, delete " + Ui.Count(tests.Count, "test"), () =>
+                {
+                    say.Children.Clear();
+
+                    if (!_session.Clash.DeleteTests(tests.Select(t => t.Test.Id).ToList()))
+                    {
+                        say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                        return;
+                    }
+
+                    _session.Record(ActivityKind.Regroup,
+                                    "deleted " + Ui.Count(tests.Count, "clash test"));
+                    Reread("Deleted " + Ui.Count(tests.Count, "test") + ".", null);
+                }));
+            }
+
+            /// <summary>
+            /// Drop the picked tests' Resolved results from storage - the host's own compact,
+            /// and the only per-result delete any clash tool honestly has: the engine owns its
+            /// results, and the next run recreates whatever still clashes.
+            /// </summary>
+            private void CompactTests(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                if (tests.Count == 0) return;
+
+                if (!_session.Clash.CompactTests(tests.Select(t => t.Test.Id).ToList()))
+                {
+                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup,
+                                "compacted " + Ui.Count(tests.Count, "clash test")
+                                + ", dropping their Resolved results from storage");
+                Reread("Compacted " + Ui.Count(tests.Count, "test") + " - the Resolved results "
+                       + "are out of storage. The next run recreates whatever still clashes.", null);
+            }
+
+            // -------------------------------------------------------------------------------
+            // Result verbs
+            // -------------------------------------------------------------------------------
+
+            private static List<Row> Rows(IReadOnlyList<object> picked) =>
+                picked.OfType<Row>().ToList();
+
+            /// <summary>The element keys behind the picked rows, minus the ones a file could not name.</summary>
+            private static List<ElementKey> Keys(List<Row> rows) =>
+                rows.SelectMany(r => new[] { r.Info.A, r.Info.B })
+                    .Where(k => !k.IsEmpty)
+                    .Distinct()
+                    .ToList();
+
+            private void Focus(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var keys = Keys(rows);
+
+                if (keys.Count == 0)
+                {
+                    say.Children.Add(Ui.Problem("Those results name no elements this federation "
+                        + "has, so there is nothing to look at."));
+                    return;
+                }
+
+                _session.Model.Select(keys);
+
+                // One result from the model gets the host's own composed view of it - the frame
+                // the engine saved when the test ran, which reads like the native clash window.
+                // More than one, or a file row, gets a fit around everything picked.
+                if (!OnFile && rows.Count == 1
+                    && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
+                {
+                    say.Children.Add(Ui.Done("Showing the engine's own view of \""
+                        + (rows[0].Info.Name ?? "the result") + "\"."));
+                    return;
+                }
+
+                _session.View.ZoomTo(keys, 1.0);
+
+                say.Children.Add(Ui.Done("Selected and framed "
+                    + Ui.Count(keys.Count, "element") + "."));
+            }
+
+            /// <summary>
+            /// Make issues out of picked results.
+            ///
+            /// The move the native window has no answer for: eleven results are one conversation
+            /// with one person, and what gets sent, chased and closed is that conversation - not
+            /// eleven rows of geometry. One issue over all of them by default, one each when they
+            /// really are separate problems.
+            /// </summary>
+            /// <param name="picked">The picked results.</param>
+            /// <param name="each">One issue per result, rather than one over all of them.</param>
+            private void RaiseIssue(IReadOnlyList<object> picked, bool each)
+            {
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                // A file's results are already metres; the model's are in document units.
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                Issue? Make(string id, IReadOnlyList<Row> from)
+                {
+                    if (from.Count == 0) return null;
+
+                    var first = from[0];
+
+                    var tests = from.Select(r => r.TestName).Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .ToList();
+
+                    var title = from.Count == 1
+                        ? (first.Info.Name ?? "Clash") + " — " + first.TestName
+                        : Ui.Count(from.Count, "clash") + " in "
+                          + (tests.Count == 1 ? tests[0] : Ui.Count(tests.Count, "test"));
+
+                    var issue = new Issue(id, title, IssueOrigin.Clash)
+                    {
+                        Type = "Clash",
+                        Source = tests.Count == 1 ? tests[0] : string.Join(", ", tests.Take(4)),
+                        Description = string.Join(Environment.NewLine, from.Take(20).Select(r =>
+                            (r.Info.Name ?? "result") + ": " + (r.Info.NameA ?? "?") + " vs "
+                            + (r.Info.NameB ?? "?"))),
+                        AssignedTo = first.Assigned.Length == 0 ? null : first.Assigned,
+                        HasPoint = true,
+                        X = from.Average(r => r.Info.PointX) * scale,
+                        Y = from.Average(r => r.Info.PointY) * scale,
+                        Z = from.Average(r => r.Info.PointZ) * scale,
+                    };
+
+                    foreach (var row in from)
+                    {
+                        issue.Clashes.Add(row.Info.Key());
+
+                        if (!row.Info.A.IsEmpty && !issue.Elements.Contains(row.Info.A))
+                            issue.Elements.Add(row.Info.A);
+
+                        if (!row.Info.B.IsEmpty && !issue.Elements.Contains(row.Info.B))
+                            issue.Elements.Add(row.Info.B);
+                    }
+
+                    return issue;
+                }
+
+                var at = 0;
+
+                var (made, problem) = IssueViews.Raise(_session,
+                    id => each ? Make(id, new[] { rows[at++] }) : Make(id, rows),
+                    each ? rows.Count : 1);
+
+                if (problem != null)
+                {
+                    Said(Ui.Problem(problem));
+                    return;
+                }
+
+                Said(Ui.Info(Ui.Count(made, "issue") + " raised from "
+                    + Ui.Count(rows.Count, "result") + ".",
+                    "Open the register", () => IssueViews.Open(null)));
+            }
+
+            private void Isolate(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var keys = Keys(rows);
+
+                if (keys.Count == 0)
+                {
+                    say.Children.Add(Ui.Problem("Those results name no elements this federation "
+                        + "has, so there is nothing to isolate."));
+                    return;
+                }
+
+                _session.View.Isolate(keys);
+                _session.Model.Select(keys);
+                _session.View.ZoomTo(keys, 1.0);
+
+                say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
+                    + "\"Show everything again\" on the right puts the rest back."));
+            }
+
+            private void Mark(IReadOnlyList<object> picked, Panel say) =>
+                Write(picked, say, "Marked {0} as " + _mark + ".",
+                      (testId, ids) => _session.Clash.SetStatus(testId, ids, _mark),
+                      row => row.Status = _mark);
+
+            private void AssignPicked(IReadOnlyList<object> picked, Panel say)
+            {
+                var who = (_assign.Text ?? string.Empty).Trim();
+
+                Write(picked, say,
+                      who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
+                      (testId, ids) => _session.Clash.Assign(testId, ids, who),
+                      row => row.Assigned = who);
+            }
+
+            private void CommentPicked(IReadOnlyList<object> picked, Panel say)
+            {
+                var body = _comment.Text.Trim();
+
+                if (body.Length == 0)
+                {
+                    say.Children.Clear();
+                    say.Children.Add(Ui.Problem("Type the comment in the panel first."));
+                    return;
+                }
+
+                var author = Environment.UserName ?? "reviewer";
+
+                Write(picked, say, "Commented on {0}.",
+                      (testId, ids) => _session.Clash.Comment(testId, ids, body, author),
+                      row =>
+                      {
+                          row.Comments++;
+                          row.LastComment = body;
+                          row.Trail.Add(new ClashComment(author, DateTime.UtcNow.Ticks, body));
+                      });
+            }
+
+            /// <summary>Rename just the picked results, prefix1, prefix2, ... in host order.</summary>
+            private void RenamePickedResults(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                if (OnFile)
+                {
+                    say.Children.Add(Ui.Problem("A markup regenerates its result names when it "
+                        + "saves, so renaming here would not survive the file. Rename in the "
+                        + "model, where the name is the result's own."));
+                    return;
+                }
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var prefix = _renameResults.Text.Trim();
+
+                if (prefix.Length == 0)
+                {
+                    say.Children.Add(Ui.Problem("Type the prefix in \"Results prefix\" first."));
+                    return;
+                }
+
+                var done = 0;
+                var problems = new List<string>();
+
+                foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
+                {
+                    var ids = byTest.Select(r => r.Info.Id).ToList();
+
+                    if (!_session.Clash.RenamePicked(byTest.Key, ids, prefix))
+                    {
+                        problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                        continue;
+                    }
+
+                    done += ids.Count;
+                }
+
+                if (done == 0)
+                {
+                    foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup, "renamed " + Ui.Count(done, "picked result")
+                    + " to \"" + prefix + "...\"");
+                Reread("Renamed " + Ui.Count(done, "result") + " to \"" + prefix + "...\".",
+                       problems);
+            }
+
+            private void GroupPicked(IReadOnlyList<object> picked, Panel say)
+            {
+                var group = _group.Text.Trim();
+
+                Write(picked, say,
+                      group.Length == 0 ? "Moved {0} out of their groups." : "Grouped {0} into \"" + group + "\".",
+                      (testId, ids) => _session.Clash.Regroup(testId, ids, group),
+                      row => row.Group = group);
+            }
+
+            /// <summary>
+            /// One write over the picked rows, test by test, with the cache kept truthful.
+            ///
+            /// From the model, the host is asked first and the cached rows change only after it
+            /// said yes. From a file, the rows ARE the data, so the edit lands directly and the
+            /// save writes it out — that is what a markup is.
+            /// </summary>
+            private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
+                               Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply)
+            {
+                say.Children.Clear();
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var done = 0;
+                var problems = new List<string>();
+
+                if (OnFile)
+                {
+                    foreach (var row in rows) apply(row);
+                    done = rows.Count;
+                }
+                else
+                {
+                    foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
+                    {
+                        var ids = byTest.Select(r => r.Info.Id).ToList();
+
+                        if (!write(byTest.Key, ids))
+                        {
+                            problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                            continue;
+                        }
+
+                        foreach (var row in byTest) apply(row);
+                        done += ids.Count;
+                    }
+                }
+
+                if (done == 0)
+                {
+                    foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                if (!OnFile)
+                    _session.Record(ActivityKind.Regroup,
+                                    string.Format(CultureInfo.InvariantCulture, didFormat,
+                                                  Ui.Count(done, "result")));
+
+                // Redrawing replaces the table whose bar the message panel lived in, so the
+                // outcome goes to the screen's own log, which survives.
+                RedrawTests();
+                Tell(string.Format(CultureInfo.InvariantCulture, didFormat,
+                                   Ui.Count(done, "result"))
+                     + (OnFile ? " Save the markup to keep it." : string.Empty), problems);
+            }
+
+            private void Spheres(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                // Model results arrive in document units; a file's are already metres.
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                var items = rows.Select(r => new ClashItem(r.Info.Key(), r.TestName)
+                {
+                    X = r.Info.PointX * scale,
+                    Y = r.Info.PointY * scale,
+                    Z = r.Info.PointZ * scale,
+                    Status = Enum.TryParse<FindingStatus>(r.Status, true, out var parsed)
+                        ? parsed
+                        : FindingStatus.New,
+                }).ToList();
+
+                var recipe = new MarkerRecipe
+                {
+                    RadiusMetres = _markerAcross / 2000.0,
+
+                    // The coordinates above are already metres, so no further conversion.
+                    MetresPerUnit = 1.0,
+                };
+
+                var mesh = ClashMarkers.Write(items, recipe);
+
+                if (mesh.Refusal != null)
+                {
+                    say.Children.Add(Ui.Problem(mesh.Refusal));
+                    return;
+                }
+
+                var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "camelworks-markers");
+                var stamp = DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture);
+                var obj = System.IO.Path.Combine(folder, "clash-spheres-" + stamp + ".obj");
+                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+
+                try
+                {
+                    System.IO.Directory.CreateDirectory(folder);
+
+                    System.IO.File.WriteAllText(obj, mesh.Text.Replace(
+                        "mtllib " + mesh.MaterialFile,
+                        "mtllib " + System.IO.Path.GetFileName(mtl)));
+
+                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
+                }
+                catch (Exception e)
+                {
+                    say.Children.Add(Ui.Problem("Could not write the markers: " + Ui.Describe(e)));
+                    return;
+                }
+
+                try
+                {
+                    say.Children.Add(_session.Model.Document.TryAppendFile(obj)
+                        ? Ui.Done(Ui.Count(rows.Count, "sphere") + " dropped at the clash points, "
+                            + "coloured by status. They are ordinary geometry: take them out again "
+                            + "from the host's file list, where the file is called "
+                            + System.IO.Path.GetFileName(obj) + ".")
+                        : (UIElement)Ui.Problem("The host would not append the marker file."));
+                }
+                catch (Exception e)
+                {
+                    say.Children.Add(Ui.Problem("Could not append the markers: " + Ui.Describe(e)));
+                }
+            }
+
+            // -------------------------------------------------------------------------------
+            // Property columns and the grouping chain
+            // -------------------------------------------------------------------------------
+
+            private void AddColumn()
+            {
+                var name = _newProp.Trim();
+
+                if (name.Length == 0)
+                {
+                    Said(Ui.Problem("Pick or type the property first."));
+                    return;
+                }
+
+                // The title has to tell two columns apart: the bare name until it collides,
+                // the tab beside it after, the side beside that when both sides are read apart.
+                var title = name;
+
+                if (_columns.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))
+                    && _newTab.Trim().Length > 0)
+                    title = _newTab.Trim() + " / " + name;
+
+                if (_newSide == FirstSide) title += " (1)";
+                else if (_newSide == SecondSide) title += " (2)";
+
+                _columns.Add(new PropColumn(_newTab.Trim(), name, _newSide, title));
+
+                RedrawColumnList();
+                RedrawChainList();
+                RedrawFilterScope();
+                RedrawGroups();
+
+                Said(Ui.Done("Added \"" + title + "\". Press \"Read values\" to fill it."));
+            }
+
+            private void RedrawColumnList()
+            {
+                _columnList.Children.Clear();
+
+                foreach (var column in _columns)
+                {
+                    var here = column;
+
+                    _columnList.Children.Add(Ui.Across(
+                        Ui.Line(here.Title, 0.85),
+                        Ui.Icon(Glyphs.Close, "Take the column out", () =>
+                        {
+                            _columns.Remove(here);
+                            _chain.Remove("col:" + here.Id);
+                            RedrawColumnList();
+                            RedrawChainList();
+                            RedrawFilterScope();
+                            RedrawGroups();
+                        })));
+                }
+            }
+
+            /// <summary>Everything the chain can group by: the fixed facts, then the columns.</summary>
+            private List<(string Key, string Title)> ChainOptions()
+            {
+                var options = new List<(string, string)>
+                {
+                    ("test", "Test"),
+                    ("status", "Status"),
+                    ("assigned", "Assigned to"),
+                    ("hostgroup", "Host group"),
+                    ("item1", "Item 1"),
+                    ("item2", "Item 2"),
+                    ("cat1", "Category (1)"),
+                    ("cat2", "Category (2)"),
+                    ("worst", "Worst band"),
+                    ("commented", "Commented or not"),
+                };
+
+                foreach (var column in _columns) options.Add(("col:" + column.Id, column.Title));
+
+                return options;
+            }
+
+            private void RedrawChainList()
+            {
+                _chainList.Children.Clear();
+
+                for (var i = 0; i < _chain.Count; i++)
+                {
+                    var at = i;
+                    var key = _chain[at];
+
+                    _chainList.Children.Add(Ui.Across(
+                        Ui.Line((at + 1).ToString(CultureInfo.InvariantCulture) + ". "
+                                + ChainTitle(key), 0.85),
+                        Ui.Icon(Glyphs.Up, "Group by this sooner", () =>
+                        {
+                            if (at == 0) return;
+                            _chain.RemoveAt(at);
+                            _chain.Insert(at - 1, key);
+                            RedrawChainList();
+                            RedrawGroups();
+                        }),
+                        Ui.Icon(Glyphs.Down, "Group by this later", () =>
+                        {
+                            if (at >= _chain.Count - 1) return;
+                            _chain.RemoveAt(at);
+                            _chain.Insert(at + 1, key);
+                            RedrawChainList();
+                            RedrawGroups();
+                        }),
+                        Ui.Icon(Glyphs.Close, "Take it out of the chain", () =>
+                        {
+                            _chain.RemoveAt(at);
+                            RedrawChainList();
+                            RedrawGroups();
+                        })));
+                }
+
+                var options = ChainOptions()
+                    .Where(o => !_chain.Contains(o.Key))
+                    .ToList();
+
+                if (options.Count == 0) return;
+
+                var titles = options.Select(o => o.Title).ToList();
+
+                if (!titles.Contains(_chainAdd)) _chainAdd = titles[0];
+
+                _chainList.Children.Add(Ui.Across(
+                    Ui.Choice(titles, _chainAdd, pick => _chainAdd = pick, 160),
+                    Ui.Quiet("Add", () =>
+                    {
+                        var chosen = options.FirstOrDefault(
+                            o => string.Equals(o.Title, _chainAdd, StringComparison.Ordinal));
+
+                        if (chosen.Key == null) return;
+
+                        _chain.Add(chosen.Key);
+                        RedrawChainList();
+                        RedrawGroups();
+                    })));
+            }
+
+            private string ChainTitle(string key)
+            {
+                foreach (var option in ChainOptions())
+                    if (string.Equals(option.Key, key, StringComparison.Ordinal)) return option.Title;
+
+                return "(a removed column)";
+            }
+
+            /// <summary>One row's value for one link of the chain, with absence said honestly.</summary>
+            private string GroupValue(Row row, string key)
+            {
+                switch (key)
+                {
+                    case "test": return row.TestName;
+                    case "status": return row.Status;
+                    case "assigned": return row.Assigned.Length == 0 ? "(unassigned)" : row.Assigned;
+                    case "hostgroup": return row.Group.Length == 0 ? "(no group)" : row.Group;
+                    case "item1": return Blankless(row.Info.NameA, "(unnamed)");
+                    case "item2": return Blankless(row.Info.NameB, "(unnamed)");
+                    case "cat1": return Blankless(row.Info.CategoryA, "(no category)");
+                    case "cat2": return Blankless(row.Info.CategoryB, "(no category)");
+                    case "worst": return WorstBand(row);
+                    case "commented": return row.Comments > 0 ? "Commented" : "No comments";
+                }
+
+                if (key.StartsWith("col:", StringComparison.Ordinal))
+                {
+                    if (!row.Custom.TryGetValue(key.Substring(4), out var value))
+                        return "(values not read)";
+
+                    return value.Length == 0 ? "(none)" : value;
+                }
+
+                return "(unknown)";
+            }
+
+            private static string Blankless(string? value, string absent) =>
+                string.IsNullOrWhiteSpace(value) ? absent : value!;
+
+            /// <summary>
+            /// The worst distance as a band a person argues in - grouping by the raw millimetre
+            /// would put every clash in a band of one.
+            /// </summary>
+            private string WorstBand(Row row)
+            {
+                if (!row.Info.Distance.HasValue) return "(no distance)";
+
+                var mm = Math.Abs(row.Info.Distance.Value)
+                         * (OnFile ? 1.0 : _session.MetresPerUnit) * 1000;
+
+                return mm < 10 ? "under 10 mm"
+                     : mm < 25 ? "10 - 25 mm"
+                     : mm < 50 ? "25 - 50 mm"
+                     : mm < 100 ? "50 - 100 mm"
+                     : "over 100 mm";
+            }
+
+            private string ChainKey(Row row) =>
+                string.Join(" · ", _chain.Select(key => GroupValue(row, key)));
+
+            /// <summary>
+            /// Read every custom column's value off the clashing elements themselves.
+            ///
+            /// The one deliberately user-started read that touches the element index: the first
+            /// resolve builds it for the whole federation, which is exactly the cost the board
+            /// build was cured of paying by accident. Asked for by a press, it is worth it - and
+            /// it is paid once, not once per glance.
+            /// </summary>
+            private void FillColumns(Job job)
+            {
+                if (_columns.Count == 0)
+                {
+                    _fill.Children.Add(Ui.Problem("Add a column first."));
+                    return;
+                }
+
+                var read = Current();
+
+                if (read == null)
+                {
+                    _fill.Children.Add(Ui.Problem("Read the results first."));
+                    return;
+                }
+
+                job.Say("Finding the elements (the first look indexes the federation)...");
+
+                var rows = read.SelectMany(e => e.Rows).ToList();
+                var filled = 0;
+                var blank = 0;
+                var done = 0;
+
+                foreach (var row in rows)
+                {
+                    if (!job.Step(++done, "results read")) return;
+
+                    var a = row.Info.A.IsEmpty ? null : _session.Model.Resolve(row.Info.A);
+                    var b = row.Info.B.IsEmpty ? null : _session.Model.Resolve(row.Info.B);
+
+                    foreach (var column in _columns)
+                    {
+                        var tab = column.Tab.Length == 0 ? null : column.Tab;
+
+                        var fromA = column.Side == SecondSide
+                            ? null
+                            : Value(a, tab, column.Name);
+
+                        var fromB = column.Side == FirstSide
+                            ? null
+                            : Value(b, tab, column.Name);
+
+                        var value = column.Side == BothSides
+                            ? (fromA != null && fromB != null && fromA != fromB
+                                ? fromA + " | " + fromB
+                                : fromA ?? fromB)
+                            : column.Side == FirstSide ? fromA : fromB;
+
+                        row.Custom[column.Id] = value ?? string.Empty;
+
+                        if (value == null) blank++; else filled++;
+                    }
+                }
+
+                RedrawGroups();
+
+                _fill.Children.Add(Ui.Done(Ui.Count(filled, "value") + " read into "
+                    + Ui.Count(_columns.Count, "column") + "."
+                    + (blank > 0
+                        ? " " + Ui.Count(blank, "cell") + " came back empty - elements that do "
+                          + "not carry the property, or results a file could not identify here."
+                        : string.Empty)));
+            }
+
+            private static string? Value(IModelItem? item, string? tab, string name)
+            {
+                if (item == null) return null;
+
+                try
+                {
+                    // Named tab first; without one, the tabs a value usually lives on.
+                    if (tab != null) return item.Property(tab, name);
+
+                    return item.Property("Element", name)
+                           ?? item.Property("Item", name)
+                           ?? item.Property(NavWriteTransaction.TabName, name);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+
+            /// <summary>The result's worst distance, told in honest units, or nothing.</summary>
+            private string Worst(Row row)
+            {
+                if (!row.Info.Distance.HasValue) return string.Empty;
+
+                var metres = Math.Abs(row.Info.Distance.Value) * (OnFile ? 1.0 : _session.MetresPerUnit);
+
+                return metres >= 1
+                    ? metres.ToString("0.00", CultureInfo.InvariantCulture) + " m"
+                    : (metres * 1000).ToString("0", CultureInfo.InvariantCulture) + " mm";
+            }
+
+            /// <summary>
+            /// The host's rendered image of each picked result - scene plus highlight - written
+            /// as PNGs beside the project file, where a report or an email can pick them up.
+            /// </summary>
+            private void Snapshots(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                if (OnFile)
+                {
+                    say.Children.Add(Ui.Problem("Snapshots are rendered by the clash engine, so "
+                        + "they need the model source."));
+                    return;
+                }
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var project = _session.Store.Path;
+                var beside = string.IsNullOrWhiteSpace(project)
+                    ? System.IO.Path.GetTempPath()
+                    : System.IO.Path.GetDirectoryName(project) ?? System.IO.Path.GetTempPath();
+                var folder = System.IO.Path.Combine(beside, "clash-snapshots");
+
+                try
+                {
+                    System.IO.Directory.CreateDirectory(folder);
+                }
+                catch (Exception e)
+                {
+                    say.Children.Add(Ui.Problem("Could not make the folder: " + Ui.Describe(e)));
+                    return;
+                }
+
+                var written = 0;
+
+                foreach (var row in rows)
+                {
+                    var bytes = _session.Clash.ResultSnapshot(row.TestId, row.Info.Id, 1280, 720);
+                    if (bytes == null) continue;
+
+                    var name = Safe(row.TestName) + "_" + Safe(row.Info.Name ?? row.Info.Id) + ".png";
+
+                    try
+                    {
+                        System.IO.File.WriteAllBytes(System.IO.Path.Combine(folder, name), bytes);
+                        written++;
+                    }
+                    catch (Exception e)
+                    {
+                        say.Children.Add(Ui.Problem(name + ": " + Ui.Describe(e)));
+                    }
+                }
+
+                say.Children.Add(written == 0
+                    ? (UIElement)Ui.Problem(_session.Clash.LastProblem
+                        ?? "The host rendered none of them.")
+                    : Ui.Done(Ui.Count(written, "snapshot") + " written to " + folder + "."));
+            }
+
+            /// <summary>
+            /// Find the same conflict reported by more than one test - the thing no native clash
+            /// window can do, and the reason a board says 214 where the tests say 18,844.
+            /// </summary>
+            private void Duplicates()
+            {
+                var read = Current();
+
+                if (read == null)
+                {
+                    Said(Ui.Problem("Read the results first."));
+                    return;
+                }
+
+                var of = new Dictionary<ClashItem, Row>();
+                var items = new List<ClashItem>();
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                foreach (var row in read.SelectMany(e => e.Rows))
+                {
+                    if (row.Info.A.IsEmpty || row.Info.B.IsEmpty) continue;
+
+                    var item = new ClashItem(row.Info.Key(), row.TestName)
+                    {
+                        X = row.Info.PointX * scale,
+                        Y = row.Info.PointY * scale,
+                        Z = row.Info.PointZ * scale,
+                    };
+
+                    of[item] = row;
+                    items.Add(item);
+                }
+
+                var collapse = DuplicateCollapse.Across(items, _session.Profile.DuplicateBand);
+
+                if (collapse.Count == 0)
+                {
+                    Said(Ui.Done("No two tests report the same conflict."));
+                    return;
+                }
+
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Done(Ui.Count(collapse.Count, "result") + " are the same "
+                    + "conflict found by more than one test - the same pipe through the same "
+                    + "wall, counted twice."));
+
+                _log.Children.Add(Ui.Actions(Ui.Quiet(
+                    "Approve duplicates", () =>
+                {
+                    var marked = 0;
+
+                    foreach (var pair in collapse.FoldedInto)
+                    {
+                        if (!of.TryGetValue(pair.Key, out var dupe)) continue;
+                        if (!of.TryGetValue(pair.Value, out var keeper)) continue;
+
+                        var note = "Duplicate of " + keeper.TestName + " / "
+                                   + (keeper.Info.Name ?? "its result") + ".";
+
+                        if (OnFile)
+                        {
+                            dupe.Status = "Approved";
+                            dupe.Comments++;
+                            dupe.LastComment = note;
+                            dupe.Trail.Add(new ClashComment(
+                                Environment.UserName ?? "reviewer", DateTime.UtcNow.Ticks, note));
+                            marked++;
+                            continue;
+                        }
+
+                        var one = new[] { dupe.Info.Id };
+
+                        if (!_session.Clash.SetStatus(dupe.TestId, one, "Approved")) continue;
+
+                        _session.Clash.Comment(dupe.TestId, one, note,
+                                               Environment.UserName ?? "reviewer");
+
+                        dupe.Status = "Approved";
+                        dupe.Comments++;
+                        dupe.LastComment = note;
+                        marked++;
+                    }
+
+                    if (!OnFile && marked > 0)
+                        _session.Record(ActivityKind.Regroup, "approved "
+                            + Ui.Count(marked, "cross-test duplicate") + ", each naming its keeper");
+
+                    RedrawTests();
+                    Tell("Marked " + Ui.Count(marked, "duplicate") + " Approved, each with a "
+                         + "comment naming the result that stays open."
+                         + (OnFile ? " Save the markup to keep it." : string.Empty), null);
+                })));
+            }
+
+            /// <summary>
+            /// Write the current state - picked tests, or everything - as a baseline file, at
+            /// full fidelity: statuses, assignees, the whole comment trail, and the groups.
+            /// </summary>
+            private void SaveBaseline()
+            {
+                var read = Current();
+
+                if (read == null)
+                {
+                    Said(Ui.Problem("Read the results first."));
+                    return;
+                }
+
+                var from = _pickedTests.Count == 0
+                    ? read
+                    : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
+
+                var items = new List<ClashItem>();
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                foreach (var row in from.SelectMany(e => e.Rows))
+                {
+                    if (row.Info.A.IsEmpty || row.Info.B.IsEmpty) continue;
+
+                    var item = new ClashItem(row.Info.Key(), row.TestName)
+                    {
+                        X = row.Info.PointX * scale,
+                        Y = row.Info.PointY * scale,
+                        Z = row.Info.PointZ * scale,
+                        Status = Enum.TryParse<FindingStatus>(row.Status, true, out var status)
+                            ? status
+                            : FindingStatus.New,
+                        AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned,
+                        CarriedGroup = row.Group.Length == 0 ? null : row.Group,
+                        CategoryA = row.Info.CategoryA,
+                        CategoryB = row.Info.CategoryB,
+                        Distance = row.Info.Distance,
+                    };
+
+                    foreach (var comment in row.Trail) item.Comments.Add(comment);
+
+                    items.Add(item);
+                }
+
+                if (items.Count == 0)
+                {
+                    Said(Ui.Problem("Nothing here can be written: no result names elements by key."));
+                    return;
+                }
+
+                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                {
+                    SourceFile = _session.Store.Path,
+                    WhenTicks = DateTime.UtcNow.Ticks,
+                });
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the baseline",
+                    Filter = "Clash XML|*.xml",
+                    FileName = "clash-baseline.xml",
+                    AddExtension = true,
+                    DefaultExt = ".xml",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    System.IO.File.WriteAllText(dialog.FileName, written.Text);
+                }
+                catch (Exception e)
+                {
+                    Said(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
+
+                Said(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()
+                    + " Statuses, assignments, comment trails and groups all travel in it. "
+                    + "Reviewers open it on this tab and save their markups beside it."));
+            }
+
+            /// <summary>The results grid, exactly as filtered and shown, as a spreadsheet.</summary>
+            private void Sheet()
+            {
+                if (_shown.Count == 0)
+                {
+                    Said(Ui.Problem("Nothing is on the grid to write."));
+                    return;
+                }
+
+                var headers = new List<string>
+                {
+                    "Test", "Result", "Group", "Status", "Worst",
+                };
+
+                foreach (var column in _columns) headers.Add(column.Title);
+                if (_chain.Count > 0) headers.Add("Grouped as");
+
+                headers.AddRange(new[]
+                {
+                    "Assigned", "Comments", "Latest comment", "Item 1", "Item 2",
+                });
+
+                var block = new TableBlock(headers.ToArray());
+
+                foreach (var row in _shown)
+                {
+                    var cells = new List<string>
+                    {
+                        row.TestName, row.Info.Name ?? string.Empty, row.Group, row.Status,
+                        Worst(row),
+                    };
+
+                    foreach (var column in _columns)
+                        cells.Add(row.Custom.TryGetValue(column.Id, out var value)
+                            ? value
+                            : string.Empty);
+
+                    if (_chain.Count > 0) cells.Add(ChainKey(row));
+
+                    cells.Add(row.Assigned);
+                    cells.Add(row.Comments.ToString(CultureInfo.InvariantCulture));
+                    cells.Add(row.LastComment);
+                    cells.Add(row.Info.NameA ?? string.Empty);
+                    cells.Add(row.Info.NameB ?? string.Empty);
+
+                    block.Row(cells.ToArray());
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Write the results to a spreadsheet",
+                    Filter = "Excel|*.xlsx",
+                    FileName = "clash-results.xlsx",
+                    AddExtension = true,
+                    DefaultExt = ".xlsx",
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    System.IO.File.WriteAllBytes(dialog.FileName,
+                                                 XlsxWriter.Write("Clash results", block));
+                }
+                catch (Exception e)
+                {
+                    Said(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Export, "wrote the clash results grid",
+                                Ui.Count(_shown.Count, "row") + " to " + dialog.FileName);
+
+                Said(Ui.Done("Wrote " + Ui.Count(_shown.Count, "row") + " to "
+                             + dialog.FileName + " - the grid exactly as it is filtered."));
+            }
+
+            // -------------------------------------------------------------------------------
+            // The review round: save a markup, sync markups back
+            // -------------------------------------------------------------------------------
+
+            /// <summary>
+            /// Write the file source's current state as this reviewer's markup.
+            ///
+            /// To <c>markups\&lt;reviewer&gt;.xml</c> beside the file it was read from — the same
+            /// convention every reviewer follows, so the sync can find everybody's file and nobody
+            /// can overwrite anybody else's.
+            /// </summary>
+            private void SaveMarkup()
+            {
+                var round = _file;
+
+                if (round == null)
+                {
+                    Said(Ui.Problem("Read a file first — the markup is its edited state."));
+                    return;
+                }
+
+                var items = new List<ClashItem>();
+                var skipped = 0;
+
+                foreach (var row in round.Entries.SelectMany(e => e.Rows))
+                {
+                    var item = row.FileItem;
+
+                    if (item == null)
+                    {
+                        // A result with no CamelWorks key cannot land back on the model, so a
+                        // markup of it would be a record of nothing. Counted, not hidden.
+                        skipped++;
+                        continue;
+                    }
+
+                    item.Status = Enum.TryParse<FindingStatus>(row.Status, true, out var status)
+                        ? status
+                        : FindingStatus.New;
+                    item.AssignedTo = row.Assigned.Length == 0 ? null : row.Assigned;
+                    item.CarriedGroup = row.Group.Length == 0 ? null : row.Group;
+
+                    item.Comments.Clear();
+                    foreach (var comment in row.Trail) item.Comments.Add(comment);
+
+                    items.Add(item);
+                }
+
+                if (items.Count == 0)
+                {
+                    Said(Ui.Problem("Nothing in that file carries a CamelWorks key, so a markup "
+                        + "of it could never land back on the model."));
+                    return;
+                }
+
+                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                {
+                    SourceFile = round.Path,
+                    WhenTicks = DateTime.UtcNow.Ticks,
+                });
+
+                var reviewer = Safe(Environment.UserName ?? "reviewer");
+                var beside = System.IO.Path.GetDirectoryName(round.Path) ?? string.Empty;
+                var folder = System.IO.Path.Combine(beside, "markups");
+                var path = System.IO.Path.Combine(folder, reviewer + ".xml");
+
+                try
+                {
+                    System.IO.Directory.CreateDirectory(folder);
+                    System.IO.File.WriteAllText(path, written.Text);
+                }
+                catch (Exception e)
+                {
+                    Said(Ui.Problem("Could not write the markup: " + Ui.Describe(e)));
+                    return;
+                }
+
+                var note = "Saved your markup: " + path + " — " + written.Explain()
+                           + (skipped > 0
+                               ? " " + Ui.Count(skipped, "unkeyed result") + " could not be "
+                                 + "included."
+                               : string.Empty);
+
+                Said(Ui.Done(note + " Send it back, or leave it there for the sync to find."));
+            }
+
+            /// <summary>
+            /// Read the reviewers' markups and write their answers into the model.
+            ///
+            /// Every markup beside the named file is read, oldest save first, so where two
+            /// reviewers disagree the later save wins — and every authored comment from every
+            /// file survives, because the adapter refuses to write the same author saying the
+            /// same thing twice.
+            /// </summary>
+            private void Sync(Job job)
+            {
+                var named = _markups.Text.Trim();
+
+                if (named.Length == 0)
+                {
+                    _sync.Children.Add(Ui.Problem("Point at a markup file, or at the baseline "
+                        + "beside the markups folder, first."));
+                    return;
+                }
+
+                var files = MarkupFiles(named);
+
+                if (files.Count == 0)
+                {
+                    _sync.Children.Add(Ui.Problem("There is no markup to read there."));
+                    return;
+                }
+
+                job.Say("Reading the model...");
+
+                // The model's results, keyed the same way the files are: the stable clash key.
+                var at = new Dictionary<string, (string TestId, string ResultId, string Status,
+                                                 string Assigned, string Group)>(StringComparer.Ordinal);
+
+                var read = 0;
+
+                foreach (var test in _session.Clash.Tests())
+                {
+                    foreach (var result in _session.Clash.Results(test.Id))
+                    {
+                        if (!job.Step(++read, "results read")) return;
+
+                        at[result.Key().ToString()] = (test.Id, result.Id,
+                                                       result.HostStatus ?? "New",
+                                                       result.HostAssignedTo ?? string.Empty,
+                                                       result.GroupName ?? string.Empty);
+                    }
+                }
+
+                var statuses = 0;
+                var assigns = 0;
+                var comments = 0;
+                var groups = 0;
+                var missing = 0;
+                var problems = new List<string>();
+
+                foreach (var file in files)
+                {
+                    job.Say("Reading " + System.IO.Path.GetFileName(file) + "...");
+
+                    string text;
+
+                    try
+                    {
+                        text = System.IO.File.ReadAllText(file);
+                    }
+                    catch (Exception e)
+                    {
+                        problems.Add(System.IO.Path.GetFileName(file) + ": " + Ui.Describe(e));
+                        continue;
+                    }
+
+                    var markup = ClashXml.Read(text);
+
+                    if (!markup.IsUsable)
+                    {
+                        problems.Add(System.IO.Path.GetFileName(file) + ": " + markup.Explain());
+                        continue;
+                    }
+
+                    // Gathered per test so each write is one seam call, then applied.
+                    var setStatus = new Dictionary<(string Test, string Status), List<string>>();
+                    var setAssign = new Dictionary<(string Test, string Who), List<string>>();
+                    var setGroup = new Dictionary<(string Test, string Group), List<string>>();
+                    var say = new List<(string Test, string Id, ClashComment Comment)>();
+
+                    foreach (var result in markup.Results)
+                    {
+                        if (result.Item == null) continue;
+
+                        if (!at.TryGetValue(result.Item.Key.ToString(), out var found))
+                        {
+                            missing++;
+                            continue;
+                        }
+
+                        var status = result.Status.ToString();
+
+                        if (!string.Equals(status, found.Status, StringComparison.OrdinalIgnoreCase))
+                            Bucket(setStatus, (found.TestId, status), found.ResultId);
+
+                        var who = result.AssignedTo ?? string.Empty;
+
+                        if (who.Length > 0
+                            && !string.Equals(who, found.Assigned, StringComparison.Ordinal))
+                            Bucket(setAssign, (found.TestId, who), found.ResultId);
+
+                        var band = result.Item.CarriedGroup ?? result.Group ?? string.Empty;
+
+                        if (!string.Equals(band, found.Group, StringComparison.Ordinal))
+                            Bucket(setGroup, (found.TestId, band), found.ResultId);
+
+                        foreach (var comment in result.Comments)
+                            say.Add((found.TestId, found.ResultId, comment));
+
+                        // Later files see the state this one just asked for.
+                        at[result.Item.Key.ToString()] =
+                            (found.TestId, found.ResultId, status,
+                             who.Length > 0 ? who : found.Assigned, band);
+                    }
+
+                    foreach (var batch in setStatus)
+                    {
+                        if (_session.Clash.SetStatus(batch.Key.Test, batch.Value, batch.Key.Status))
+                            statuses += batch.Value.Count;
+                        else
+                            problems.Add(_session.Clash.LastProblem ?? "A status write was refused.");
+                    }
+
+                    foreach (var batch in setAssign)
+                    {
+                        if (_session.Clash.Assign(batch.Key.Test, batch.Value, batch.Key.Who))
+                            assigns += batch.Value.Count;
+                        else
+                            problems.Add(_session.Clash.LastProblem ?? "An assignment was refused.");
+                    }
+
+                    foreach (var batch in setGroup)
+                    {
+                        if (_session.Clash.Regroup(batch.Key.Test, batch.Value, batch.Key.Group))
+                            groups += batch.Value.Count;
+                        else
+                            problems.Add(_session.Clash.LastProblem ?? "A regroup was refused.");
+                    }
+
+                    foreach (var (testId, id, comment) in say)
+                    {
+                        // The adapter skips a comment the result already carries word for word,
+                        // so re-running a sync never doubles the conversation.
+                        if (_session.Clash.Comment(testId, new[] { id }, comment.Body, comment.Author))
+                            comments++;
+                    }
+                }
+
+                _session.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
+                    + " into the model", statuses + " statuses, " + comments + " comments, "
+                    + assigns + " assignments");
+
+                Reread("Synced " + Ui.Count(files.Count, "markup") + ": "
+                    + Ui.Count(statuses, "status change") + ", "
+                    + Ui.Count(comments, "comment") + ", "
+                    + Ui.Count(assigns, "assignment") + ", "
+                    + Ui.Count(groups, "regrouped result") + "."
+                    + (missing > 0
+                        ? " " + Ui.Count(missing, "result") + " in the markups are not in the "
+                          + "model any more — usually resolved and gone from a newer run."
+                        : string.Empty), problems);
+            }
+
+            /// <summary>
+            /// The markup files a name points at: everything in the markups folder beside it,
+            /// oldest save first, or just the file itself when there is no such folder.
+            /// </summary>
+            private static List<string> MarkupFiles(string named)
+            {
+                var files = new List<string>();
+
+                try
+                {
+                    var beside = System.IO.Path.GetDirectoryName(named) ?? string.Empty;
+
+                    // Pointing at the baseline finds markups/ beside it; pointing at a file
+                    // inside markups/ finds its siblings; pointing anywhere else syncs that file.
+                    var folder = string.Equals(System.IO.Path.GetFileName(beside), "markups",
+                                               StringComparison.OrdinalIgnoreCase)
+                        ? beside
+                        : System.IO.Path.Combine(beside, "markups");
+
+                    if (System.IO.Directory.Exists(folder))
+                        files.AddRange(System.IO.Directory.GetFiles(folder, "*.xml")
+                            .OrderBy(System.IO.File.GetLastWriteTimeUtc));
+
+                    if (files.Count == 0 && System.IO.File.Exists(named)) files.Add(named);
+                }
+                catch (Exception)
+                {
+                    // An unreadable path reads as no markup, and the caller says so.
+                }
+
+                return files;
+            }
+
+            private static void Bucket<TKey>(Dictionary<TKey, List<string>> into, TKey key, string id)
+                where TKey : notnull
+            {
+                if (!into.TryGetValue(key, out var list))
+                {
+                    list = new List<string>();
+                    into[key] = list;
+                }
+
+                list.Add(id);
+            }
+
+            private static string Safe(string name)
+            {
+                foreach (var wrong in System.IO.Path.GetInvalidFileNameChars())
+                    name = name.Replace(wrong, '_');
+
+                return string.IsNullOrWhiteSpace(name) ? "reviewer" : name;
+            }
+
+            // -------------------------------------------------------------------------------
+
+            /// <summary>
+            /// Re-read from the document and redraw, then say what happened in the screen's own
+            /// log — the panel the verb's bar offered is destroyed by the redraw, so a message
+            /// written there would never be seen.
+            /// </summary>
+            private void Reread(string did, List<string>? problems)
+            {
+                var carried = Harvest(_read);
+
+                _read = null;
+
+                var entries = new List<TestEntry>();
+
+                foreach (var test in _session.Clash.Tests())
+                {
+                    var entry = new TestEntry(test);
+
+                    foreach (var result in _session.Clash.Results(test.Id))
+                        entry.Rows.Add(Restored(new Row(test.Id, test.Name, result), carried));
+
+                    entries.Add(entry);
+                }
+
+                _read = entries;
+                RedrawTests();
+
+                Tell(did, problems);
+            }
+
+            /// <summary>
+            /// The custom column values a read is about to replace, keyed by result — so a run,
+            /// a rename or a sync does not cost the property read somebody already paid for.
+            /// </summary>
+            private static Dictionary<string, Dictionary<string, string>> Harvest(List<TestEntry>? read)
+            {
+                var kept = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+                if (read == null) return kept;
+
+                foreach (var row in read.SelectMany(e => e.Rows))
+                    if (row.Custom.Count > 0)
+                        kept[row.TestId + "\u001f" + row.Info.Id] = row.Custom;
+
+                return kept;
+            }
+
+            private static Row Restored(Row row,
+                                        Dictionary<string, Dictionary<string, string>> carried)
+            {
+                if (!carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
+                    return row;
+
+                foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
+
+                return row;
+            }
+
+            private void Tell(string did, List<string>? problems)
+            {
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Done(did));
+
+                foreach (var problem in problems ?? new List<string>())
+                    _log.Children.Add(Ui.Problem(problem));
+            }
+
+            private void Said(UIElement note)
+            {
+                _log.Children.Clear();
+                _log.Children.Add(note);
+            }
+
+            private List<string> Assignees()
+            {
+                var names = new List<string>();
+
+                foreach (var party in _session.Profile.Parties)
+                    if (!names.Contains(party, StringComparer.OrdinalIgnoreCase)) names.Add(party);
+
+                foreach (var entry in Current() ?? new List<TestEntry>())
+                    foreach (var row in entry.Rows)
+                        if (row.Assigned.Length > 0
+                            && !names.Contains(row.Assigned, StringComparer.OrdinalIgnoreCase))
+                            names.Add(row.Assigned);
+
+                return names;
+            }
+
+            /// <summary>An editable combo: the suggestions are offered, the text stays free.</summary>
+            private static ComboBox Suggesting(IReadOnlyList<string> options)
+            {
+                var combo = new ComboBox
+                {
+                    IsEditable = true,
+                    Width = 170,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                };
+
+                foreach (var option in options) combo.Items.Add(option);
+
+                return combo;
+            }
+        }
+    }
+}
