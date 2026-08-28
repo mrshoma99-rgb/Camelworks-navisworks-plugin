@@ -165,7 +165,7 @@ namespace CamelWorks.UI.Shell
                + "can find, because nothing is touching - and work the findings like clash results.",
                "Check"),
 
-            Of("rules", "Clash Rules", ToolShape.Window, Glyph.Filter,
+            Of("rules", "Filter Clashes", ToolShape.Window, Glyph.Filter,
                "Suppress what does not matter, group what is one issue, and assign what is left - "
                + "one pipeline, previewed before any of it is applied.",
                "Try these on the board"),
@@ -225,7 +225,13 @@ namespace CamelWorks.UI.Shell
             Of("freeze", "Freeze", ToolShape.Window, Glyph.Save,
                "Record that a scope was agreed and what it was at the moment of agreeing, so a "
                + "later argument about what changed has a fixed point to argue from.",
-               "Freeze what is on the board"),
+               "Freeze"),
+
+            Of("sidebyside", "Side by Side", ToolShape.Window, Glyph.Compare,
+               "Compare two things that are both loaded now - the supplier's model against yours, "
+               + "or two sets that are supposed to hold the same thing - and see what is in one "
+               + "and not the other.",
+               "Compare"),
 
             Of("notice", "Change Notice", ToolShape.Window, Glyph.Compare,
                "What has changed since a scope was frozen, written the way a variation has to be "

@@ -76,8 +76,7 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Manage", "manage"),
                 new AppTab("Matrix", "matrix"),
                 new AppTab("Clearance Check", "headroom"),
-                new AppTab("Rules", "rules"),
-                new AppTab("Freeze", "freeze")),
+                new AppTab("Filter Clashes", "rules")),
 
             new App("issuemgr", "Issue Manager",
                 "Everything raised on this job, in one register.", "Coordinate",
@@ -104,7 +103,9 @@ namespace CamelWorks.UI.Shell
             new App("track", "Compare Track",
                 "What changed, against what, since when.", "Compare",
                 new AppTab("Compare", "compare"),
+                new AppTab("Side by Side", "sidebyside"),
                 new AppTab("Changes", "changes"),
+                new AppTab("Freeze", "freeze"),
                 new AppTab("Change Notice", "notice"),
                 new AppTab("History", "history")),
 

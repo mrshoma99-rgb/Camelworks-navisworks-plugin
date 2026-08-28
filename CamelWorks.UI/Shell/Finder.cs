@@ -99,6 +99,12 @@ namespace CamelWorks.UI.Shell
             ["freeze"] = (new[] { "agreed scope", "sign-off", "fixed point", "lock the board" },
                 new[] { "we agreed this scope today", "record what was agreed" }),
 
+            ["sidebyside"] = (new[] { "compare two models", "two sets", "supplier model", "difference",
+                                      "what is in one and not the other", "side by side" },
+                new[] { "they sent the model back, what did they change",
+                        "these two sets should be the same",
+                        "compare this model against that one" }),
+
             ["notice"] = (new[] { "variation", "change order", "claim", "scope change" },
                 new[] { "they changed it after we agreed", "I need to raise a variation" }),
 

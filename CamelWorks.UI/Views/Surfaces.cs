@@ -31,7 +31,8 @@ namespace CamelWorks.UI.Views
                 case "ids": return OnModel(IdsWindow.Surface);
                 case "compare": return CompareViews.Run();
                 case "changes": return CompareViews.Changes();
-                case "notice": return OnModel(_ => CoordinateViews.NoticeScreen());
+                case "notice": return OnModel(_ => FreezeViews.NoticeScreen());
+                case "sidebyside": return OnModel(SideBySideViews.Surface);
                 case "history": return OnModel(HistoryWindow.Surface);
                 case "project": return ProjectViews.Settings();
 
@@ -49,7 +50,7 @@ namespace CamelWorks.UI.Views
                 case "clashxml": return OnModel(ClashExportWindow.Surface);
                 case "penetrations": return OnModel(_ => CoordinateViews.PenetrationsReport());
                 case "merge": return CoordinateViews.Merge();
-                case "freeze": return OnModel(_ => CoordinateViews.FreezeScreen());
+                case "freeze": return OnModel(_ => FreezeViews.FreezeScreen());
 
                 // ---- Data ----
                 case "data": return DataViews.Manager();

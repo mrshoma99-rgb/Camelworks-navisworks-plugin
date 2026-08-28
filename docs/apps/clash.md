@@ -72,9 +72,16 @@ Two things that lived on it moved rather than died: **Raise an issue** is now th
 Manager's own **New issue**, working on any elements rather than only beside a clash; and
 **Review** — the one-finding-at-a-time palette — launches from the Manage tab's rail.
 
-## Rules / Matrix
+## Filter Clashes / Matrix
 
-- Rules previews against the live board and its "try" lands where the board shows it.
+- **Filter Clashes** (called "Rules" before, which said nothing about what it does) is the
+  reduction between the engine and the issue list, in the order it runs: **suppress and flag**
+  every raw result against a predicate, **group** what survives (empty means the built-in
+  model-pair → level → proximity stack), then **assign** first-match-wins. Its one action is
+  *Try these on the board* — it builds the board with the unsaved edits and shows the four
+  figures the rules exist to move — and nothing is written until Save. It acts on clash results,
+  never on issues: a rule that quietly closed something a person wrote a sentence about would be
+  the worst behaviour in the product.
 - **The matrix has three ways in**: by hand (categories picked from the model's own search
   sets, selection sets or whole models — never typed), read back out of the model's existing
   tests (each test's sides become categories, each distinct kind-and-tolerance becomes a
@@ -115,11 +122,14 @@ answer, and printed a table nobody could do anything with.
   clash XML file — which the Manage tab's "A file" source opens, so a clearance list runs the same
   offline review round as a clash export.
 
-## Freeze — the record tab
+## Freeze — moved out
 
-- *Was wrong:* a freeze recorded the agreement and stopped. The entire reason a freeze exists —
-  the later argument — lives in Compare Track's Change Notice, and nothing said so. The freeze
-  result now carries **When it changes, write the change notice here**, jumping there.
+Freeze has left this app for **Compare Track**, beside the Change Notice that reads it. It was
+never clash-shaped: it records each element's box under somebody's name and hashes the lot, and
+the only reason it lived here was that its element list used to be harvested from the board. Its
+scope is now anything the model can name — the current selection, a search or selection set,
+everything loaded, or the board when one happens to be loaded — so a level can be signed off in
+a week when nobody has run a clash test.
 
 ## Out of scope, named
 

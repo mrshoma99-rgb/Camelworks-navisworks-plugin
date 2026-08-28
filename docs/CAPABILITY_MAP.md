@@ -71,7 +71,7 @@ surfaces work, not things a coordinator opens.
 | `Resolution`, `FindingStatus`, `FindingStatusLattice`, `Finding` | Clash Board detail + Review |
 | `ClashMatrix`, `MatrixSide`, `MatrixOptions`, `MatrixPlan`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix (both forks) |
 | `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
-| `Freeze`, `ChangeNotice` | **Freeze** + **Change notice** (new) |
+| `Freeze`, `ChangeNotice` | **Compare Track ▸ Freeze** and **▸ Change Notice** — sign-off scoped by set, selection, everything or the board |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
 | `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash XML |
@@ -87,6 +87,7 @@ surfaces work, not things a coordinator opens.
 | Engine | Surface |
 |---|---|
 | `SnapshotBuilder`, `ModelSnapshot`, `SnapshotStore`, `ElementFingerprint` | Take a Baseline |
+| `SnapshotBuilder` split per model or per set | **Compare Track ▸ Side by Side** — two loaded models, or two sets, compared against each other |
 | `ModelCompare`, `ModelPair`, `ModelPairing`, `CompareSettings`, `ComparePolicy`, `CompareResult`, `ChangeKind`, `ChangeBucket` | Compare Revisions |
 | `CompareLayers`, `ComparePalette`, `CompareView` | Compare — "Paint the changes" |
 | `CompareStamp` | Compare — "Write the changes onto the elements" (new) |
