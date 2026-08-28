@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Compare;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Testing;
 using Xunit;
 using static CamelWorks.Core.Tests.CompareFixtures;
@@ -228,6 +229,82 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(snapshot.Count, read.Count);
             Assert.True(ModelCompare.Of(snapshot, read).IsQuiet);
+        }
+
+        [Fact]
+        public void An_element_the_host_will_not_answer_for_is_counted_rather_than_thrown()
+        {
+            // The crash-shaped case: the host will not answer for one element - a handle that has
+            // gone stale because somebody refreshed a model while the snapshot was being taken.
+            // One element must not cost the other two hundred thousand, and a snapshot quietly
+            // missing them would compare as that many things removed.
+            var document = new AwkwardDocument(Federation(perModel: 2));
+
+            var snapshot = SnapshotBuilder.Take(document, When, "Rev C");
+
+            Assert.Equal(1, snapshot.Unreadable);
+            Assert.Equal(document.Total - 1, snapshot.Count);
+        }
+
+        /// <summary>A federation with one element the host refuses to describe.</summary>
+        private sealed class AwkwardDocument : IModelDocument
+        {
+            private readonly FakeDocument _real;
+
+            internal AwkwardDocument(FakeDocument real) => _real = real;
+
+            internal int Total => _real.Traverse(TraversalScope.WholeDocument).Count();
+
+            public int Generation => _real.Generation;
+
+            public bool IsEmpty => _real.IsEmpty;
+
+            public IReadOnlyList<IModelSource> Models => _real.Models;
+
+            public IModelItem? Resolve(ElementKey key) => _real.Resolve(key);
+
+            public IEnumerable<IModelItem> Traverse(TraversalScope scope)
+            {
+                var first = true;
+
+                foreach (var item in _real.Traverse(scope))
+                {
+                    yield return first ? new Awkward(item) : item;
+                    first = false;
+                }
+            }
+        }
+
+        /// <summary>An element that throws the moment anything is read off it.</summary>
+        private sealed class Awkward : IModelItem
+        {
+            private readonly IModelItem _real;
+
+            internal Awkward(IModelItem real) => _real = real;
+
+            public ElementKey Key => _real.Key;
+
+            public string DisplayName => throw new InvalidOperationException("gone");
+
+            public string? Category => throw new InvalidOperationException("gone");
+
+            public string? TypeName => throw new InvalidOperationException("gone");
+
+            public IModelSource Model => _real.Model;
+
+            public IReadOnlyList<string> TreePath => throw new InvalidOperationException("gone");
+
+            public bool HasGeometry => throw new InvalidOperationException("gone");
+
+            public BoundingBox Bounds => throw new InvalidOperationException("gone");
+
+            public bool IsHidden => throw new InvalidOperationException("gone");
+
+            public string? Property(string category, string name) =>
+                throw new InvalidOperationException("gone");
+
+            public IEnumerable<PropertyValue> Properties() =>
+                throw new InvalidOperationException("gone");
         }
     }
 }

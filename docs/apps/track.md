@@ -24,6 +24,35 @@ different — and they are now the **Side by Side** tab.
 - *Held:* the triangles/bbox trade-off stays a stated choice on both the take and the run; the
   holding-both-revisions trap is still said before the button, not discovered after it.
 
+## The crash on "compare against a baseline" — what was found
+
+Reported as a hard crash of Navisworks itself, every time. Not reproducible without the host, so
+this is a diagnosis and a hardening rather than a confirmed fix, and it wants re-testing.
+
+**The mechanism.** Reporting progress means pumping the message loop, and pumping runs a nested
+Win32 loop that lets Navisworks act on whatever the user does while it spins. The snapshot walk
+was reporting progress *from inside a live enumeration of the host's own tree* — the longest such
+enumeration in the product. A click in the model tree at that moment mutates the collection under
+a native iterator, and the process is gone somewhere no `try`/`catch` can reach. Everything else
+about the compare path was already guarded: the runner catches managed exceptions, the button
+disables itself, the triangle read is off by default and wrapped.
+
+**What changed.**
+
+1. `NavDocument` counts open enumerations, and the progress pump refuses to run while one is open.
+   That closes the hole for all 23 places in the product that report progress inside a walk, not
+   only this one.
+2. Snapshots are taken in two phases: the tree is read into a list with no pumping at all (the
+   window says so before it starts and does not repaint until it is done), then the expensive
+   half — reading properties off each element — reports progress normally, because by then no
+   enumerator is open.
+3. A second job cannot start on top of a running one. Any click that arrives while something is
+   pumping — another tab's run button, a verb under a grid — is refused with a sentence rather
+   than interleaving two walks of the same document.
+4. An element the host will not answer for is counted and skipped rather than throwing: the
+   comparison says how many, because a snapshot quietly missing four thousand elements compares
+   as four thousand things removed.
+
 ## Side by Side — two things that are both here now (new)
 
 - **Two models**: pick either loaded model on each side. They pair as counterparts even when

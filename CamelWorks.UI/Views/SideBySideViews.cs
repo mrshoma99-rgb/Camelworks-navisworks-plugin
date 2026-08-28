@@ -227,13 +227,15 @@ namespace CamelWorks.UI.Views
 
                 var taken = DateTimeOffset.UtcNow;
 
+                job.Say("Reading the model tree - the window will not repaint until this part "
+                        + "is done...");
+
                 var whole = SnapshotBuilder.Take(_session.Model, taken, "both", Settings,
                                                  TraversalScope.WholeDocument,
                                                  _session.Model.Document?.FileName,
                                                  _session.Profile.Units.LengthUnit,
-                                                 keepGoing: () => job.Step(0, "elements read"),
-                                                 onProgress: p => job.Say(
-                                                     Ui.Count(p.Seen, "element") + " read..."));
+                                                 keepGoing: () => !job.IsCancelled,
+                                                 onProgress: p => job.Step(p.Kept, "elements recorded"));
 
                 _leftName = a.DisplayName;
                 _rightName = b.DisplayName;
@@ -326,10 +328,8 @@ namespace CamelWorks.UI.Views
                                             TraversalScope.Set(set),
                                             _session.Model.Document?.FileName,
                                             _session.Profile.Units.LengthUnit,
-                                            keepGoing: () => job.Step(0, "elements read"),
-                                            onProgress: p => job.Say(
-                                                "\"" + set + "\": " + Ui.Count(p.Seen, "element")
-                                                + " read..."));
+                                            keepGoing: () => !job.IsCancelled,
+                                            onProgress: p => job.Step(p.Kept, "elements recorded"));
             }
 
             // ---------------------------------------------------------------------------------

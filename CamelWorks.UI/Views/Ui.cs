@@ -246,6 +246,16 @@ namespace CamelWorks.UI.Views
             if (_status == null || _dispatcher == null) return;
             if (!force && _sincePump.ElapsedMilliseconds < PumpEveryMs) return;
 
+            // Never while the host is mid-enumeration. Pumping runs a nested message loop, which
+            // lets Navisworks act on a click while we are part way through walking its tree - and
+            // a collection mutated under a native iterator takes the process with it. The text is
+            // still updated; it simply does not reach the glass until the walk is over.
+            if (CamelWorks.Nav.NavDocument.IsWalking)
+            {
+                _status.Text = Describe();
+                return;
+            }
+
             _sincePump.Restart();
 
             _status.Text = Describe();
@@ -339,6 +349,15 @@ namespace CamelWorks.UI.Views
         public static event EventHandler<int>? Running;
 
         private static int _running;
+
+        /// <summary>
+        /// True while any CamelWorks job holds the host.
+        ///
+        /// The host has one thread and one document. Two of our operations running into each
+        /// other - a compare walking the tree while a clash read starts on top of it - is not a
+        /// race we can win by being careful inside each one.
+        /// </summary>
+        public static bool IsBusy => _running > 0;
 
         private static string ReadRelease()
         {
@@ -2320,6 +2339,24 @@ namespace CamelWorks.UI.Views
             return table;
         }
 
+        /// <summary>
+        /// A verb press, refused while the host is busy.
+        ///
+        /// Every one of these touches the document - selecting, isolating, writing - and a press
+        /// that arrived while a long job was pumping would run it on top of that job.
+        /// </summary>
+        private static void Verb(OnPicked action, ListView table, Panel said)
+        {
+            if (IsBusy)
+            {
+                said.Children.Clear();
+                said.Children.Add(Note("Something else is still running."));
+                return;
+            }
+
+            action.Act(table.PickedMany(), said);
+        }
+
         /// <summary>The row a click landed on, or null when it landed on the header or the gap.</summary>
         private static ListViewItem? Row(DependencyObject? from)
         {
@@ -2483,8 +2520,8 @@ namespace CamelWorks.UI.Views
                 var here = action;
 
                 var button = here.Primary
-                    ? Primary(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said))
-                    : Quiet(here.Caption.Replace("{n}", "0"), () => here.Act(table.PickedMany(), said));
+                    ? Primary(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said))
+                    : Quiet(here.Caption.Replace("{n}", "0"), () => Verb(here, table, said));
 
                 if (here.Danger) button.Wearing("DangerBtn");
 
@@ -2631,6 +2668,14 @@ namespace CamelWorks.UI.Views
         /// <summary>Run an action under a job, reporting into <paramref name="output"/>.</summary>
         private static void Run(Panel output, Action<Job> work)
         {
+            if (IsBusy)
+            {
+                output.Children.Clear();
+                output.Children.Add(Note("Something else is still running. Try again when it has "
+                    + "finished."));
+                return;
+            }
+
             var status = new TextBlock().Wearing("Hint");
             var bar = new ProgressBar { IsIndeterminate = true, Margin = new Thickness(0, 0, 0, 6) };
 
@@ -2729,6 +2774,17 @@ namespace CamelWorks.UI.Views
 
             go.Click += (s, e) =>
             {
+                // A click that arrived while something else was pumping. Starting a second host
+                // operation on top of a live one interleaves two walks of the same document,
+                // which the host does not survive.
+                if (IsBusy)
+                {
+                    output.Children.Clear();
+                    output.Children.Add(Note("Something else is still running. This will be ready "
+                        + "the moment it finishes."));
+                    return;
+                }
+
                 output.Children.Clear();
 
                 go.IsEnabled = false;

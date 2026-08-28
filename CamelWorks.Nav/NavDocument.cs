@@ -286,6 +286,32 @@ namespace CamelWorks.Nav
             return model == null ? null : new NavModelItem(this, item, model);
         }
 
+        /// <summary>
+        /// How many host enumerations are open on this thread right now.
+        ///
+        /// <b>Why anything needs to know.</b> A long walk reports progress, and reporting progress
+        /// means pumping the message loop - which lets Navisworks process input while we are part
+        /// way through enumerating its own tree. The user clicks the model tree, the host mutates
+        /// the collection under the iterator, and the process dies in native code where no
+        /// try/catch can reach it. So the pump asks this first and stays quiet while a walk is
+        /// open: a window that does not repaint for twenty seconds is a cost; a Navisworks that
+        /// disappears is not a cost, it is a bug report.
+        /// </summary>
+        public static int Walking { get; private set; }
+
+        /// <summary>True while any host enumeration is open - do not pump the message loop.</summary>
+        public static bool IsWalking => Walking > 0;
+
+        /// <summary>
+        /// Every item in a scope, read into a list before the caller does anything else.
+        ///
+        /// For the loops that report progress. Materialising costs a wrapper per element and gives
+        /// back the ability to pump safely for the expensive half - reading properties, hashing,
+        /// measuring - because by then no host enumerator is open.
+        /// </summary>
+        /// <param name="scope">What to walk.</param>
+        public IReadOnlyList<IModelItem> Collect(TraversalScope scope) => Traverse(scope).ToList();
+
         /// <inheritdoc />
         public IEnumerable<IModelItem> Traverse(TraversalScope scope)
         {
@@ -413,10 +439,22 @@ namespace CamelWorks.Nav
 
         private IEnumerable<IModelItem> Wrap(IEnumerable<ModelItem> items)
         {
-            foreach (var item in items)
+            // The counter is raised for exactly as long as a host enumerator is open, and every
+            // exit path lowers it - a caller that stops early disposes the iterator, which runs
+            // the finally. See IsWalking for what reads it.
+            Walking++;
+
+            try
             {
-                var model = ModelFor(item);
-                if (model != null) yield return new NavModelItem(this, item, model);
+                foreach (var item in items)
+                {
+                    var model = ModelFor(item);
+                    if (model != null) yield return new NavModelItem(this, item, model);
+                }
+            }
+            finally
+            {
+                Walking--;
             }
         }
 

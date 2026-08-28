@@ -247,7 +247,9 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
-            job.Say("Walking the model...");
+            // Said before the walk, because the walk cannot repaint: progress reporting pumps the
+            // message loop, and pumping mid-walk is what takes the host down.
+            job.Say("Reading the model tree - the window will not repaint until this part is done...");
 
             var after = SnapshotBuilder.Take(
                 session.Model, DateTimeOffset.UtcNow, "Now", Settings,
@@ -260,6 +262,11 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Note("Stopped. Nothing was changed."));
                 return;
             }
+
+            if (after.Unreadable > 0)
+                results.Children.Add(Ui.Note(Ui.Count(after.Unreadable, "element")
+                    + " could not be read while the model was being walked and are not in this "
+                    + "comparison. They would otherwise read as removed."));
 
             if (_readTriangles)
             {
@@ -1100,7 +1107,9 @@ namespace CamelWorks.UI.Views
 
             var button = Ui.Runner("Take a baseline", results, primary: primary, work: job =>
             {
-                job.Say("Walking the model...");
+                // Said before the walk, because the walk cannot repaint: progress reporting pumps the
+            // message loop, and pumping mid-walk is what takes the host down.
+            job.Say("Reading the model tree - the window will not repaint until this part is done...");
 
                 var snapshot = SnapshotBuilder.Take(
                     session.Model, DateTimeOffset.UtcNow, label, Settings,
