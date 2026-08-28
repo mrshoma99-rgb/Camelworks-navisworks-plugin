@@ -69,7 +69,7 @@ surfaces work, not things a coordinator opens.
 | `ManualIssue`, `ManualIssueList` | Board pipeline — issues raised in earlier versions still ride the board into reports and BCF |
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
 | `Resolution`, `FindingStatus`, `FindingStatusLattice`, `Finding` | Clash Board detail + Review |
-| `ClashMatrix`, `MatrixSide`, `MatrixOptions`, `MatrixPlan`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix (both forks) |
+| `MatrixOptions`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix — by hand, from the model's tests, or from the client's spreadsheet |
 | `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
 | `Freeze`, `ChangeNotice` | **Compare Track ▸ Freeze** and **▸ Change Notice** — sign-off scoped by set, selection, everything or the board |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |

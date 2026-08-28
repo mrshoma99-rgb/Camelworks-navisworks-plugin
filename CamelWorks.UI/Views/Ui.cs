@@ -2265,6 +2265,156 @@ namespace CamelWorks.UI.Views
             return picked;
         }
 
+        /// <summary>One section of a configuration window.</summary>
+        public sealed class Page
+        {
+            /// <summary>Name it and say how to build it.</summary>
+            /// <param name="name">How it reads in the section list.</param>
+            /// <param name="build">Builds the section's fields, on first open.</param>
+            public Page(string name, Func<UIElement> build)
+            {
+                Name = name ?? throw new ArgumentNullException(nameof(name));
+                Build = build ?? throw new ArgumentNullException(nameof(build));
+            }
+
+            internal string Name { get; }
+
+            internal Func<UIElement> Build { get; }
+        }
+
+        /// <summary>
+        /// The options a screen sets up once, in a window of their own.
+        ///
+        /// <b>Why they are not on the screen.</b> A bench with two tables and forty options laid
+        /// out beside them is a screen where the work and the setup compete for the same eye. The
+        /// handful of filters somebody touches every minute stay on the surface; everything that
+        /// is decided once for the job - which properties are columns, what the status verb writes,
+        /// how big a marker is, where the markups live - lives here, one section at a time.
+        ///
+        /// Edits apply as they are made, so there is no Apply to forget. Closing tells the caller
+        /// to redraw, because a column added here changes the grid behind it.
+        /// </summary>
+        /// <param name="title">The window's title.</param>
+        /// <param name="onClosed">Called when it closes, for the screen to redraw itself.</param>
+        /// <param name="sections">The sections, in the order they read.</param>
+        public static void Configure(string title, Action? onClosed, params Page[] sections)
+        {
+            if (sections == null || sections.Length == 0) return;
+
+            var panel = new ContentControl();
+
+            var list = new StackPanel { Margin = new Thickness(6, 8, 6, 8) };
+            var buttons = new List<System.Windows.Controls.Button>();
+
+            void ShowSection(int at)
+            {
+                for (var i = 0; i < buttons.Count; i++)
+                {
+                    buttons[i].Wearing(i == at ? "RailRowOn" : "RailRow");
+                }
+
+                try
+                {
+                    panel.Content = sections[at].Build();
+                }
+                catch (Exception e)
+                {
+                    panel.Content = Problem("This section could not be opened: " + Describe(e));
+                }
+            }
+
+            for (var i = 0; i < sections.Length; i++)
+            {
+                var at = i;
+
+                var button = new System.Windows.Controls.Button
+                {
+                    Content = sections[i].Name,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(10, 7, 10, 7),
+                    Margin = new Thickness(0, 0, 0, 2),
+                };
+
+                button.Click += (s, e) => ShowSection(at);
+
+                buttons.Add(button);
+                list.Children.Add(button);
+            }
+
+            var body = new Grid();
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var rail = new Border
+            {
+                BorderThickness = new Thickness(0, 0, 1, 0),
+                Child = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = list,
+                },
+            };
+
+            rail.Tint(Border.BackgroundProperty, "Pane");
+            rail.Tint(Border.BorderBrushProperty, "Bd");
+            body.Children.Add(rail);
+
+            var stage = new Border
+            {
+                Child = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = panel,
+                    Padding = new Thickness(18, 14, 18, 16),
+                },
+            };
+
+            stage.Tint(Border.BackgroundProperty, "Card");
+            Grid.SetColumn(stage, 1);
+            body.Children.Add(stage);
+
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.Children.Add(body);
+
+            var window = new Window
+            {
+                Title = "CamelWorks - " + title,
+                Width = 720,
+                Height = 520,
+                MinWidth = 520,
+                MinHeight = 380,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var done = Primary("Done", () => window.Close());
+            done.MinWidth = 92;
+
+            var foot = new Border
+            {
+                Padding = new Thickness(14, 9, 14, 10),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Child = new ContentControl { Content = done, HorizontalAlignment = HorizontalAlignment.Right },
+            };
+
+            foot.Tint(Border.BackgroundProperty, "Pane");
+            foot.Tint(Border.BorderBrushProperty, "Bd");
+            Grid.SetRow(foot, 1);
+            root.Children.Add(foot);
+
+            window.Content = root;
+
+            Skin.Apply(window);
+            ShowSection(0);
+
+            if (onClosed != null) window.Closed += (s, e) => onClosed();
+
+            window.ShowDialog();
+        }
+
         /// <summary>One entry on a table's right-click menu.</summary>
         public sealed class OnMenu
         {
@@ -3002,5 +3152,59 @@ namespace CamelWorks.UI.Views
 
         /// <summary>A ruler: a measured dimension.</summary>
         public const string Ruler = "M3,9 L21,9 L21,15 L3,15 Z M7,9 L7,12 M11,9 L11,13 M15,9 L15,12 M19,9 L19,13";
+
+        // The verbs a grid carries. Drawn rather than lettered because a row of one-word buttons
+        // under a table is a wall of text where the eye wants a row of shapes.
+
+        /// <summary>A pencil: rename this.</summary>
+        public const string Pencil = "M4,20 L8,20 L20,8 L16,4 L4,16 Z M14,6 L18,10";
+
+        /// <summary>Two crossing pairs: number them again.</summary>
+        public const string Number = "M9,4 L7,20 M17,4 L15,20 M4,9 L20,9 M3,15 L19,15";
+
+        /// <summary>A folder with something going into it: move it there.</summary>
+        public const string MoveIn = "M3,6.5 L9.5,6.5 L11.5,9 L21,9 L21,19 L3,19 Z M12,16 L12,10.5 M9.8,12.7 L12,10.5 L14.2,12.7";
+
+        /// <summary>Arrows meeting: squeeze out what is finished.</summary>
+        public const string Compact = "M4,12 L20,12 M8,8 L12,4 L16,8 M8,16 L12,20 L16,16";
+
+        /// <summary>Two sheets: copy it.</summary>
+        public const string Copy = "M9,9 L20,9 L20,20 L9,20 Z M5,15 L5,4 L16,4";
+
+        /// <summary>A ringed dot: put the camera on it.</summary>
+        public const string Focus = "M12,8 A4,4 0 1 0 12.01,8 M12,2 L12,5 M12,19 L12,22 M2,12 L5,12 M19,12 L22,12";
+
+        /// <summary>An eye: show only this.</summary>
+        public const string Eye = "M2,12 C5,7 8.5,5.5 12,5.5 C15.5,5.5 19,7 22,12 C19,17 15.5,18.5 12,18.5 C8.5,18.5 5,17 2,12 Z M12,9.6 A2.4,2.4 0 1 0 12.01,9.6";
+
+        /// <summary>An eye struck through: put everything back.</summary>
+        public const string EyeOff = "M3,3 L21,21 M10.6,6.2 C11,6.1 11.5,6 12,6 C18.4,6 22,12 22,12 C21.2,13.3 20.2,14.5 19,15.6 M6.3,7.9 C3.7,9.5 2,12 2,12 C2,12 5.6,18 12,18 C13.1,18 14.2,17.8 15.3,17.5";
+
+        /// <summary>A person: whose problem it is.</summary>
+        public const string Person = "M12,11 A3.4,3.4 0 1 0 12.01,11 M5.4,20 A6.6,6.6 0 0 1 18.6,20";
+
+        /// <summary>A speech bubble: somebody said something.</summary>
+        public const string Comment = "M4,5 L20,5 L20,16 L9,16 L4,20 Z";
+
+        /// <summary>Three boxes: gather these into one.</summary>
+        public const string Group = "M3,4 L10,4 L10,11 L3,11 Z M14,4 L21,4 L21,11 L14,11 Z M8.5,14 L15.5,14 L15.5,20 L8.5,20 Z";
+
+        /// <summary>A ball: a marker dropped in the model.</summary>
+        public const string Sphere = "M12,5 A7,7 0 1 0 12.01,5 M5.4,9.5 C9.4,11.9 14.6,11.9 18.6,9.5";
+
+        /// <summary>A page with a plus: raise an issue about it.</summary>
+        public const string Issue = "M5,4 L16,4 L19,7 L19,20 L5,20 Z M9,12 L15,12 M12,9 L12,15";
+
+        /// <summary>Two columns: what the table shows.</summary>
+        public const string Columns = "M3,4 L21,4 L21,20 L3,20 Z M9,4 L9,20 M15,4 L15,20";
+
+        /// <summary>A circle of arrows: the round trip out and back.</summary>
+        public const string Round = "M4,12 A8,8 0 0 1 17.7,6.3 L20,8 M20,4 L20,8 L16,8 M20,12 A8,8 0 0 1 6.3,17.7 L4,16 M4,20 L4,16 L8,16";
+
+        /// <summary>Three dots: the rest of them.</summary>
+        public const string More = "M5,12 L5.01,12 M12,12 L12.01,12 M19,12 L19.01,12";
+
+        /// <summary>An open book: read what is there.</summary>
+        public const string Read = "M12,6 C10,4.5 7.5,4 4,4 L4,18 C7.5,18 10,18.5 12,20 M12,6 C14,4.5 16.5,4 20,4 L20,18 C16.5,18 14,18.5 12,20 M12,6 L12,20";
     }
 }

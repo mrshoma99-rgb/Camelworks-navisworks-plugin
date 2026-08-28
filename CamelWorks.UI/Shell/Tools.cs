@@ -145,14 +145,10 @@ namespace CamelWorks.UI.Shell
                + "geometry rather than off a list.",
                "Record"),
 
-            Of("tests", "Clash Tests", ToolShape.Window, Glyph.Play,
-               "Say what gets tested against what, and how close is too close.",
-               "Run them"),
-
             Of("manage", "Clash Results", ToolShape.Window, Glyph.Tune,
-               "Work the results the way the engine holds them - status, assignee, comments and "
-               + "groups written back into the model, with the camera, isolation and marker "
-               + "spheres hanging off the same picked rows.",
+               "The bench: every test on the left, its results on the right, and the verbs that "
+               + "work them - status, assignee, comments, groups, the camera, isolation and "
+               + "marker spheres - under the rows they act on.",
                "Read the results"),
 
             Of("matrix", "Clash Matrix", ToolShape.Wizard, Glyph.Table,
