@@ -54,34 +54,39 @@ namespace CamelWorks.UI.Views
                     string.Join(", ", g.Nodes.Select(n => n.Definition?.Title ?? n.Kind).Distinct().Take(4)),
                     LastRan(g.Name))).ToList();
 
-                body.Children.Add(Ui.Table(rows, ("Job", 170), ("Size", 90), ("What it does", 0), ("Last ran", 100))
-                    .OnPick(item => picked = item as Graph));
+                var jobs = Ui.Table(rows, ("Job", 170), ("Size", 90), ("What it does", 0),
+                                    ("Last ran", 100))
+                    .OnPick(item => picked = item as Graph);
+
+                body.Children.Add(jobs);
 
                 // A list of jobs that can only be run is a list nobody can maintain: a graph saved
                 // by mistake, or superseded three weeks ago, had no way off this panel.
-                body.Children.Add(Ui.Danger("Delete", () =>
-                {
-                    log.Children.Clear();
-
-                    if (picked == null)
+                body.Children.Add(Ui.Picking(jobs,
+                    new Ui.OnPicked("Copy {n}",
+                        (chosen, say) => Ui.Copy(Ui.Lines(jobs, chosen), say, "job")),
+                    new Ui.OnPicked("Delete {n}", (chosen, say) =>
                     {
-                        log.Children.Add(Ui.Line("Pick a job first.", 0.8));
-                        return;
-                    }
+                        say.Children.Clear();
 
-                    var doomed = picked;
+                        var doomed = chosen.OfType<Graph>().Select(g => g.Name).ToList();
 
-                    log.Children.Add(Ui.Danger("Yes, delete \"" + doomed.Name + "\"", () =>
-                    {
-                        log.Children.Clear();
-                        Forget(session, doomed.Name);
+                        if (doomed.Count == 0) return;
 
-                        log.Children.Add(session.Store.Save()
-                            ? Ui.Done("Deleted \"" + doomed.Name + "\".")
-                            : Ui.Problem(session.Store.LastSaveProblem
-                                         ?? "Could not write the project file."));
-                    }));
-                }));
+                        say.Children.Add(Ui.Danger("Yes, delete " + (doomed.Count == 1
+                            ? "\"" + doomed[0] + "\""
+                            : Ui.Count(doomed.Count, "job")), () =>
+                        {
+                            say.Children.Clear();
+
+                            foreach (var name in doomed) Forget(session, name);
+
+                            say.Children.Add(session.Store.Save()
+                                ? Ui.Done("Deleted " + Ui.Count(doomed.Count, "job") + ".")
+                                : Ui.Problem(session.Store.LastSaveProblem
+                                             ?? "Could not write the project file."));
+                        }));
+                    }, danger: true)));
 
                 body.Children.Add(Ui.Small("A job runs on the model that is open now, using whatever is "
                     + "selected now. Nothing in it is scheduled or unattended: Navisworks has to be "
