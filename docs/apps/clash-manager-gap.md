@@ -32,7 +32,7 @@ Three separate costs, all paid on the UI thread:
 | Group results by hand | Rule-derived groups only | Group-into verb, projected as native result groups |
 | Focus camera on a clash point; select; isolate; show all | Select+zoom on derived groups only | Focus / Select / Isolate / Show all verbs per picked results |
 | Temp sphere markers at clash points | Marker engine existed but only on the report tab | Markers verb on the picked results, colour by status |
-| Filter/sort tests and results (status, assignee, text) | — | Filter row over both grids |
+| Filter/sort tests and results (status, assignee, text) | — | Status ticks, comments-only, test search, and a contains-filter over any column or one picked column (property columns included); every column sorts on a header click |
 | Bulk rename/delete/move tests; sequential result renaming | Create and run only | Test verbs on the Manage tab |
 | Run all / run selected from the manager | Run from the Tests tab only | Run verbs beside the tests grid |
 | Export XML with full control over which tests/results (status, assignee) | All-or-nothing export | Export leg reads the manager's picked tests + status filter |
@@ -48,7 +48,7 @@ Three separate costs, all paid on the UI thread:
 - **Property columns and a chained grouping over them.** Add a column that reads any element
   property off the clashing elements themselves — picked from the model's own tabs and
   properties, from the first item, the second, or both — then chain the grouping: Level, then
-  System, then anything a column carries, in any order, reordered live. The chain renders a
+  System, then anything a column carries, in any order, reordered live — plus every built-in column: the two items, the two categories, worst-distance bands, commented-or-not. The chain renders a
   group-summary table (counts per band, bulk mark/assign/comment on picked bands) that narrows
   the results grid, and both the columns and the chain go out in the spreadsheet. Values are
   read once, in a pumped pass, and survive re-reads.
