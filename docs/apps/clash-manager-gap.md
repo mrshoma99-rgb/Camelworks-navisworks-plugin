@@ -36,7 +36,8 @@ Three separate costs, all paid on the UI thread:
 | Bulk rename/delete/move tests; sequential result renaming | Create and run only | Test verbs on the Manage tab |
 | Run all / run selected from the manager | Run from the Tests tab only | Run verbs beside the tests grid |
 | Export XML with full control over which tests/results (status, assignee) | All-or-nothing export | Export leg reads the manager's picked tests + status filter |
-| Load from the model or from an exported file | Model only (file went to a separate reader) | Model is the manager; a file opens in the reader, one press away |
+| Load from the model or from an exported file | Model only (file went to a separate reader) | Both are the manager: a source switch on the Manage tab opens either, with the same grids, filters and verbs |
+| The offline review round: baseline out, reviewers mark up the file on seats with no clash engine, markups sync back | Nothing | The whole round (see below) — the file leg is the Manage tab's other source, and it needs no clash engine at all |
 | Matrix by hand or from a spreadsheet | Already there (Matrix tab reads the client's sheet and builds the tests) | Unchanged |
 
 ## What deliberately stays ours
@@ -47,9 +48,32 @@ Manage tab is where a coordinator works the engine's results; the Board is where
 already been decided away. The two agree because the manager's status edits write into the
 model, and the board reads the model.
 
+## The review round — the workflow the whole thing serves
+
+1. **Manage seat** — Manage tab, "Send the picked tests out as a file..." writes the baseline
+   XML: every result with its stable id, status, assignee, comments and grouping.
+2. **Every reviewer, on Simulate** — the same Manage tab, source switched to "A file": the same
+   grids, counts, filters and verbs, working entirely on the file's own data. No clash engine
+   needed, because none is used. "Save the markup" writes `markups\<reviewer>.xml` beside the
+   baseline — never the baseline itself, never anyone else's file.
+3. **Manage seat again** — "Bring the markups into the model" reads every markup beside the
+   baseline, oldest save first (where two reviewers disagree, the later save wins), and writes
+   the statuses, comments, assignments and regroupings into the model's own clash data. The
+   adapter refuses to write the same author saying the same thing twice, so a sync re-run never
+   doubles a conversation.
+
+The file format is the Navisworks-shaped exchange XML every other tool already opens; the
+markup fields (assignee, authored comment trail) ride as attributes and elements a foreign
+reader shrugs past, and each result's id is derived from its clash key, so the same clash keeps
+the same id across exports.
+
 ## Engine honesty
 
-- Write-back requires the clash module (Manage edition) and a writable document; on Simulate
-  the Manage tab reads the sidecar record and refuses edits with the reason stated.
+- Writing into the *model* requires the clash module (Manage edition) and a writable document;
+  on Simulate the model source is off and the tab says why — but the file source is fully
+  writable there, because the review round is the Simulate seat's whole job.
 - New/Active/Resolved are the engine's own verdicts and are recomputed by the next run;
   Reviewed/Approved are human judgement and survive. Said on the tab, not discovered.
+- A baseline written from the board carries assignments; carrying each result's full native
+  comment trail into the baseline is the named next step (the sync direction already handles
+  comments completely).

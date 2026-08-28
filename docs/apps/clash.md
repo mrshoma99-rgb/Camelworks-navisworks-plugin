@@ -36,6 +36,12 @@ verbs on the picked rows:
 - Filters: status ticks, only-with-comments, test-name search, hide-empty-tests.
 - **Send the picked tests out as a file...** jumps to Issue Link's Clash XML leg with those
   tests already ticked.
+- **The review round**, end to end: the tab has a second source — "A file" — where the same
+  verbs mark up an exported baseline with no clash engine needed at all (the Simulate seat's
+  whole job), "Save the markup" writes `markups\<reviewer>.xml` beside it, and on a Manage
+  seat "Bring the markups into the model" reads everyone's markups back and writes their
+  statuses, comments, assignments and groups into the model's own clash data. Re-running a
+  sync never doubles a comment: the adapter skips an author repeating themselves word for word.
 
 ## Board — the decide tab
 

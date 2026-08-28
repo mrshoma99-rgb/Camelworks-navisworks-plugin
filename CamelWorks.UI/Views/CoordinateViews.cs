@@ -150,7 +150,15 @@ namespace CamelWorks.UI.Views
                         Level = levels.LevelAt(result.PointZ * scale),
                     };
 
-                    if (result.HostAssignedTo != null) item.Properties["Host/AssignedTo"] = result.HostAssignedTo;
+                    if (result.HostAssignedTo != null)
+                    {
+                        item.Properties["Host/AssignedTo"] = result.HostAssignedTo;
+
+                        // Onto the item itself too, so a baseline written for the review round
+                        // travels with its assignments.
+                        item.AssignedTo = result.HostAssignedTo;
+                    }
+
                     if (result.HostStatus != null) item.Properties["Host/Status"] = result.HostStatus;
 
                     items.Add(item);

@@ -294,7 +294,21 @@ namespace CamelWorks.Nav.Clash
                 // author, so the host's own clash window shows it too.
                 var comments = new CommentCollection();
 
-                try { comments.AddRange(result.Comments); }
+                try
+                {
+                    foreach (Comment existing in result.Comments)
+                    {
+                        // The same author saying the same thing is the same comment. Skipping it
+                        // here is what lets a markup sync run twice without doubling every
+                        // conversation.
+                        if (string.Equals(existing.Body, body, StringComparison.Ordinal)
+                            && string.Equals(existing.Author, author ?? string.Empty,
+                                             StringComparison.OrdinalIgnoreCase))
+                            return;
+
+                        comments.Add(existing);
+                    }
+                }
                 catch (Exception) { /* a result whose comments cannot be read still takes one */ }
 
                 comments.Add(new Comment(body, CommentStatus.New, author ?? string.Empty));

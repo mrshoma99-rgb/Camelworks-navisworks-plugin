@@ -6,6 +6,33 @@ using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Clash
 {
+    /// <summary>One authored comment on a clash result.</summary>
+    public sealed class ClashComment
+    {
+        /// <summary>Create a comment.</summary>
+        /// <param name="author">Who wrote it.</param>
+        /// <param name="whenTicks">When, as UTC ticks. Zero when the source did not say.</param>
+        /// <param name="body">What they wrote.</param>
+        public ClashComment(string author, long whenTicks, string body)
+        {
+            Author = string.IsNullOrWhiteSpace(author) ? "(unknown)" : author.Trim();
+            WhenTicks = whenTicks;
+            Body = body ?? string.Empty;
+        }
+
+        /// <summary>Who wrote it.</summary>
+        public string Author { get; }
+
+        /// <summary>When, as UTC ticks. Zero when the source did not say.</summary>
+        public long WhenTicks { get; }
+
+        /// <summary>What they wrote.</summary>
+        public string Body { get; }
+
+        /// <inheritdoc />
+        public override string ToString() => Author + ": " + Body;
+    }
+
     /// <summary>
     /// One clash result as the rules see it.
     ///
@@ -51,6 +78,23 @@ namespace CamelWorks.Core.Clash
         /// memory, so it carries or it is lost.
         /// </summary>
         public string? CarriedGroup { get; set; }
+
+        /// <summary>
+        /// Who this result is assigned to, or null.
+        ///
+        /// Carried for the review round: the file a reviewer marks up travels with its
+        /// assignments, and the sync puts them back into the host's own assigned-to field.
+        /// </summary>
+        public string? AssignedTo { get; set; }
+
+        /// <summary>
+        /// The authored comment trail, oldest first.
+        ///
+        /// A list and not a single string, because the whole point of the review round is three
+        /// reviewers writing onto one file — and a format that keeps only the last comment turns
+        /// a conversation into whoever saved last.
+        /// </summary>
+        public IList<ClashComment> Comments { get; } = new List<ClashComment>();
 
         /// <summary>Level name, from the zoning pass. Null when the model has no usable levels.</summary>
         public string? Level { get; set; }
