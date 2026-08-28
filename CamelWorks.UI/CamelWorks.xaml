@@ -33,6 +33,8 @@
                               Size="Large" ShowText="True" Orientation="Vertical" />
         <local:NWRibbonButton x:Uid="CW_AppClash" Id="ID_CW_AppClash"
                               Size="Large" ShowText="True" Orientation="Vertical" />
+        <local:NWRibbonButton x:Uid="CW_AppIssueManager" Id="ID_CW_AppIssueManager"
+                              Size="Large" ShowText="True" Orientation="Vertical" />
         <local:NWRibbonButton x:Uid="CW_AppIssues" Id="ID_CW_AppIssues"
                               Size="Large" ShowText="True" Orientation="Vertical" />
         <local:NWRibbonButton x:Uid="CW_AppAudit" Id="ID_CW_AppAudit"

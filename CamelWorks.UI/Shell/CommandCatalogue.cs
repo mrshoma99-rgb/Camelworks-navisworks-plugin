@@ -52,15 +52,19 @@ namespace CamelWorks.UI.Shell
     /// </summary>
     public static class CommandCatalogue
     {
-        /// <summary>All fourteen, in ribbon order.</summary>
+        /// <summary>All fifteen, in ribbon order.</summary>
         public static IReadOnlyList<RibbonCommand> All { get; } = new[]
         {
             Hub("ID_CW_Home", "CamelWorks",
                 "The week, the search, and the way to every app."),
 
             AppCmd("ID_CW_AppClash", "Clash Manager", "clash",
-                "Find what fights, and decide it — tests, the matrix, clearance, rules, the "
-                + "board and freeze."),
+                "Find what fights, and decide it — tests, results, the matrix, clearance, "
+                + "rules and freeze."),
+
+            AppCmd("ID_CW_AppIssueManager", "Issue Manager", "issuemgr",
+                "Everything raised on this job in one register - by hand, from clash results, "
+                + "from the clearance check, or out of somebody's BCF file."),
 
             AppCmd("ID_CW_AppIssues", "Issue Link", "issues",
                 "Issues out to the world and answers back — the report, BCF, clash XML, merge "

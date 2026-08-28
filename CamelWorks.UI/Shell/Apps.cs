@@ -54,7 +54,7 @@ namespace CamelWorks.UI.Shell
     }
 
     /// <summary>
-    /// The suite: eleven apps, flat, each a self-contained product.
+    /// The suite: twelve apps, flat, each a self-contained product.
     ///
     /// The fourth shape of the front end and the first one modelled on a collection the client
     /// named — the DiRoots plug-in suites, whose law is a flat row of named apps, each opening on
@@ -77,8 +77,13 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Matrix", "matrix"),
                 new AppTab("Clearance Check", "headroom"),
                 new AppTab("Rules", "rules"),
-                new AppTab("Board", "triage"),
                 new AppTab("Freeze", "freeze")),
+
+            new App("issuemgr", "Issue Manager",
+                "Everything raised on this job, in one register.", "Coordinate",
+                new AppTab("Issues", "issuelist"),
+                new AppTab("Import", "issuein"),
+                new AppTab("Export", "issueout")),
 
             new App("issues", "Issue Link",
                 "Issues out to the world, and answers back in.", "Coordinate",

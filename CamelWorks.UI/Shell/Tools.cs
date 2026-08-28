@@ -140,11 +140,6 @@ namespace CamelWorks.UI.Shell
 
             // ---- Coordinate -------------------------------------------------------------------
 
-            Of("triage", "Clash Board", ToolShape.Window, Glyph.Clash,
-               "Turn every clash the tests found into the handful of issues somebody actually "
-               + "fixes, and give each one to whoever fixes it.",
-               "Load the board"),
-
             Of("review", "Review", ToolShape.Window, Glyph.Camera,
                "Walk the findings one at a time over the model, deciding each in front of the "
                + "geometry rather than off a list.",
@@ -174,6 +169,22 @@ namespace CamelWorks.UI.Shell
                "Suppress what does not matter, group what is one issue, and assign what is left - "
                + "one pipeline, previewed before any of it is applied.",
                "Try these on the board"),
+
+            Of("issuelist", "Issues", ToolShape.Window, Glyph.Report,
+               "Every issue on this project, however it was raised - written by hand, made from "
+               + "clash results, made from the clearance check, or read out of somebody's BCF - "
+               + "with the detail panel that works one.",
+               "New issue"),
+
+            Of("issuein", "Import Issues", ToolShape.Window, Glyph.Onward,
+               "Read a BCF file into the register, merging what it already brought in rather than "
+               + "raising everything twice.",
+               "Read"),
+
+            Of("issueout", "Export Issues", ToolShape.Window, Glyph.Save,
+               "Write the register out as BCF for whoever has to act on it, carrying statuses, "
+               + "assignees, due dates and every comment.",
+               "Write"),
 
             Of("clashreport", "Clash Report", ToolShape.Window, Glyph.Report,
                "Get the board out as a document somebody who does not have Navisworks can read.",

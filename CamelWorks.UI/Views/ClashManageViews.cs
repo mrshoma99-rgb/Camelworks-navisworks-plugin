@@ -8,6 +8,7 @@ using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Nav;
@@ -531,7 +532,8 @@ namespace CamelWorks.UI.Views
                 panel.Children.Add(Bench.Group("Beyond the engine",
                     Ui.Actions(
                         Ui.Quiet("Find duplicates", Duplicates),
-                        Ui.Quiet("Excel...", Sheet)),
+                        Ui.Quiet("Excel...", Sheet),
+                        Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
                     Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
                     Ui.Small("Duplicates are the same conflict reported by two tests - marked "
                              + "Approved with a comment naming the one that stays open. The "
@@ -883,7 +885,9 @@ namespace CamelWorks.UI.Views
                     };
                 }
 
-                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray());
+                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray())
+                    .Menu(new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
+                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)));
 
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
@@ -1120,6 +1124,83 @@ namespace CamelWorks.UI.Views
 
                 say.Children.Add(Ui.Done("Selected and framed "
                     + Ui.Count(keys.Count, "element") + "."));
+            }
+
+            /// <summary>
+            /// Make issues out of picked results.
+            ///
+            /// The move the native window has no answer for: eleven results are one conversation
+            /// with one person, and what gets sent, chased and closed is that conversation - not
+            /// eleven rows of geometry. One issue over all of them by default, one each when they
+            /// really are separate problems.
+            /// </summary>
+            /// <param name="picked">The picked results.</param>
+            /// <param name="each">One issue per result, rather than one over all of them.</param>
+            private void RaiseIssue(IReadOnlyList<object> picked, bool each)
+            {
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                // A file's results are already metres; the model's are in document units.
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                Issue? Make(string id, IReadOnlyList<Row> from)
+                {
+                    if (from.Count == 0) return null;
+
+                    var first = from[0];
+
+                    var tests = from.Select(r => r.TestName).Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .ToList();
+
+                    var title = from.Count == 1
+                        ? (first.Info.Name ?? "Clash") + " — " + first.TestName
+                        : Ui.Count(from.Count, "clash") + " in "
+                          + (tests.Count == 1 ? tests[0] : Ui.Count(tests.Count, "test"));
+
+                    var issue = new Issue(id, title, IssueOrigin.Clash)
+                    {
+                        Type = "Clash",
+                        Source = tests.Count == 1 ? tests[0] : string.Join(", ", tests.Take(4)),
+                        Description = string.Join(Environment.NewLine, from.Take(20).Select(r =>
+                            (r.Info.Name ?? "result") + ": " + (r.Info.NameA ?? "?") + " vs "
+                            + (r.Info.NameB ?? "?"))),
+                        AssignedTo = first.Assigned.Length == 0 ? null : first.Assigned,
+                        HasPoint = true,
+                        X = from.Average(r => r.Info.PointX) * scale,
+                        Y = from.Average(r => r.Info.PointY) * scale,
+                        Z = from.Average(r => r.Info.PointZ) * scale,
+                    };
+
+                    foreach (var row in from)
+                    {
+                        issue.Clashes.Add(row.Info.Key());
+
+                        if (!row.Info.A.IsEmpty && !issue.Elements.Contains(row.Info.A))
+                            issue.Elements.Add(row.Info.A);
+
+                        if (!row.Info.B.IsEmpty && !issue.Elements.Contains(row.Info.B))
+                            issue.Elements.Add(row.Info.B);
+                    }
+
+                    return issue;
+                }
+
+                var at = 0;
+
+                var (made, problem) = IssueViews.Raise(_session,
+                    id => each ? Make(id, new[] { rows[at++] }) : Make(id, rows),
+                    each ? rows.Count : 1);
+
+                if (problem != null)
+                {
+                    Said(Ui.Problem(problem));
+                    return;
+                }
+
+                Said(Ui.Info(Ui.Count(made, "issue") + " raised from "
+                    + Ui.Count(rows.Count, "result") + ".",
+                    "Open the register", () => IssueViews.Open(null)));
             }
 
             private void Isolate(IReadOnlyList<object> picked, Panel say)

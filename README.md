@@ -13,7 +13,7 @@ alongside the terms.
 | On the ribbon | |
 |---|---|
 | **Project** | Health — one sweep for placement, geometry, arrivals and codes, ranked into one verdict · Setup, which says what was derived and why · the project profile · fix broken links |
-| **Coordinate** | The clash board · review mode · the engine's tests and a matrix that builds them · headroom · the rule editor · reports · BCF in and out · clash XML |
+| **Coordinate** | The clash results workbench · the issue register, however an issue was raised · review mode · the engine's tests and a matrix that builds them · the clearance check · the rule editor · reports · BCF in and out · clash XML |
 | **Compare** | What changed between two revisions — added, removed, moved, changed — painted onto the model, stamped into the properties, or sent out as a report |
 | **Data** | Every property folded to one row and one write pipeline · the Excel round-trip · joining a register onto the model · levels and zones · takeoff · a report on the model's own data · IDS |
 | **Sets & Views** | The boolean set builder · a spreadsheet of conditions turned into that many sets · the Appearance layers system · bulk viewpoint operations · restructuring the set library |

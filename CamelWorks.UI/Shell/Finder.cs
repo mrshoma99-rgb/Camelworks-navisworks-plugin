@@ -44,10 +44,16 @@ namespace CamelWorks.UI.Shell
                 new[] { "model did not load", "file not found",
                         "the NWF points at the wrong folder" }),
 
-            ["triage"] = (new[] { "clashes", "board", "issues", "results", "grouping", "triage" },
-                new[] { "too many clashes", "thousands of results", "the same clash forty times",
-                        "one pipe through forty joists", "where do I even start",
-                        "did I lose last week's work" }),
+            ["issuelist"] = (new[] { "issues", "issue register", "snags", "punch list", "raise",
+                                     "assign", "due date", "open issues" },
+                new[] { "what is still open", "who owes me an answer", "where do I even start",
+                        "track what we agreed", "the client sent issues back" }),
+
+            ["issuein"] = (new[] { "import bcf", "read bcf", "issues in", "bcfzip" },
+                new[] { "they sent a BCF file", "load their issues" }),
+
+            ["issueout"] = (new[] { "export bcf", "send issues", "issues out" },
+                new[] { "send them the issues", "write a BCF file" }),
 
             ["review"] = (new[] { "walk the clashes", "go through results", "sign off" },
                 new[] { "I need to go through these one at a time" }),

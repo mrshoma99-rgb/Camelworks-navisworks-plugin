@@ -1926,13 +1926,10 @@ namespace CamelWorks.UI.Views
 
                     if (board == null)
                     {
-                        _results.Children.Add(Ui.Note("Load the board in Triage first. These viewpoints are "
-                            + "of its groups, so there has to be a board to make them from."));
-
-                        // The missing input lives one app over, so the way there is a button
-                        // rather than an instruction to go and find it.
-                        _results.Children.Add(Ui.Button("Open the board in Clash Manager",
-                            () => Ui.Told(Shell.AppWindow.Show("clash", "triage"))));
+                        // The missing input is built where it is missing, rather than somewhere
+                        // else the user has to go and find.
+                        _results.Children.Add(CoordinateViews.LoadHere("These viewpoints are of "
+                            + "the board's groups, so there has to be a board to make them from."));
 
                         return;
                     }

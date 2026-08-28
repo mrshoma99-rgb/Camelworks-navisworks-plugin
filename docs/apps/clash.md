@@ -4,17 +4,17 @@
 away, decide what is left, and record what was agreed. A coordinator opens it Monday after the
 new models land and lives in it until the meeting.
 
-**The status strip** (on every tab): how many tests and results, when anything last ran, what
-the board holds and its delta — each figure jumping to the tab that owns it. This is the app's
-own answer to "where does my week stand", visible before any tab is read.
+**No status strip.** Every app used to carry a band of figures across the top of every tab. It
+cost a row of screen on every surface to say things the surface below it already said, and the
+one figure that was not a repeat — what the board held — belonged to a tab that no longer
+exists. It is gone from every app.
 
 ## Tests — "six models landed, run everything again"
 
-- *Was wrong:* the run dead-ended on a note telling the user to go and load the board
+- *Was wrong:* the run dead-ended on a note telling the user to go and find the results
   themselves — the product's most important hand-off, written as homework.
-- *Changed:* a finished run offers **Open the board with these results** as its primary; the
-  Board tab presses its own load once, on arrival, because the user asked for that board the
-  moment they pressed Run (`LoadOnArrival`).
+- *Changed:* a finished run offers **Open results**, and the Manage tab re-reads on arrival, so
+  what it shows is the run that just finished.
 
 ## Manage — the results workbench (new)
 
@@ -57,17 +57,20 @@ verbs on the picked rows:
   statuses, comments, assignments and groups into the model's own clash data. Re-running a
   sync never doubles a comment: the adapter skips an author repeating themselves word for word.
 
-## Board — the decide tab
+## The Board — removed
 
-- *Was wrong, badly:* the loaded board **did not survive leaving the tab**. A glance at Rules
-  cost the whole triage view and a full reload. The board now hydrates from the last load's own
-  object on every return — no host read, no rules re-run.
-- *Was wrong:* Review — the one-finding-at-a-time palette — lost its ribbon button when the
-  suite went flat and became reachable only through search. It now launches from the board
-  (**Walk them in Review**), beside the undo.
-- *Held:* assignment was already roster-fed (a picker over the project's parties), statuses are
-  the five native values, and hand-grouping, manual issues, freeze-aware banners and undo all
-  survive.
+The board tab is gone. It was the app's oldest screen and the one that aged worst: a derived
+list of groups that could be filtered and assigned but not exported, whose real output — the
+issues somebody chases — had nowhere to live except inside it. What a coordinator works is now
+two surfaces that each own their job: **Manage**, the results the engine holds, and the
+**Issue Manager**, the register of everything raised on the job. The board itself survives as
+the derived thing underneath the report, BCF, Clash XML and the merge — each of those tabs
+builds it where it stands (**Load the board**, in place), so nobody navigates to fetch a
+prerequisite any more.
+
+Two things that lived on it moved rather than died: **Raise an issue** is now the Issue
+Manager's own **New issue**, working on any elements rather than only beside a clash; and
+**Review** — the one-finding-at-a-time palette — launches from the Manage tab's rail.
 
 ## Rules / Matrix
 

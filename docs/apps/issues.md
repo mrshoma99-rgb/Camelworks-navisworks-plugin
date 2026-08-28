@@ -1,3 +1,41 @@
+# Issue Manager — product audit
+
+**The app's job.** Every issue on the job, in one register, whatever raised it. A coordinator
+asks "what is still open on level three, and who owes me an answer" — and until now the honest
+answer was a spreadsheet beside the tool, because issues could only be raised beside a clash,
+only while the board was loaded, and only about clashes.
+
+**Four ways in, one record.** Written by hand (from whatever is selected in the host), made
+from picked clash results, made from picked clearance findings, or read out of somebody's BCF
+file. What raised it is a column, never a filing cabinet — and it is the one field nobody can
+edit afterwards, because it is a fact about the past.
+
+**The shape** is the issue list every common-data environment already taught people: a filter
+rail (status ticks, overdue, mine, assignee, type, source, search), a sortable register, and a
+detail panel that opens on the row you picked and edits in place — title, description, status,
+type, priority, assignee, due date, root cause, level, zone — with the comment trail under it
+and **Show** putting the model where the issue is.
+
+- **Bulk verbs** on picked rows: show, set status, assign, comment, delete (behind a second
+  press), copy. Deleting says out loud that closing is what somebody usually means.
+- **Right-click in the Clash Manager's results grid or the Clearance Check's**: *Create an issue
+  from N* (one issue over everything picked — eleven clashes are usually one conversation) or
+  *An issue for each of N*. The issue carries the elements, the clash keys and the point.
+- **Import** is a merge, not a load: the same BCF file arriving three times over a fortnight
+  updates what it already brought in and adds only the comments nobody said yet. The Issue
+  Link BCF tab's read now lands in the register too — a BCF file read anywhere in the product
+  ends up in one place.
+- **Export** writes one topic per issue with status, type, priority, assignee, due date,
+  description and every comment; the register's own number travels as a label so a reply can be
+  matched to the issue it answers.
+- **Excel** writes the register exactly as it is filtered, for the meeting.
+- **Statuses** are the six a construction issue actually moves through — Draft, Open, Answered,
+  Pending, In dispute, Closed. A status another tool spells its own way ("Resolved", "Done") is
+  read as Closed; one nobody here has a word for is kept as it was written rather than forced
+  into a bucket.
+
+---
+
 # Issue Link — product audit
 
 **The app's job.** The outbound half of the coordination week. The board gets decided in Clash
@@ -6,12 +44,10 @@ Clash XML for whoever answers in a tool, the worksheet for whoever answers in Ex
 the answers come back and land on the board. The persona is the coordinator on Thursday
 (publish), and the same coordinator the following Monday (read the replies).
 
-**The one fact every tab assumes** is a board loaded in another app. The status strip said so;
-the surfaces themselves mostly did not — each one discovered it at the press, in its own words,
-with no way over. That was the biggest single finding of this pass: every tab now opens by
-stating where the board stands (loaded and how many issues, or not loaded), and "not loaded"
-carries a button that opens Clash Manager's Board tab with load-on-arrival set, the same
-hand-off the Tests tab already used.
+**The one fact every tab assumes** is a board, and the board is no longer a tab anywhere. Each
+surface here opens by stating where it stands — loaded and how many issues, or not loaded — and
+"not loaded" now carries **Load the board** *on this tab*, which builds it in place. Nobody
+navigates to another app to fetch a prerequisite.
 
 ## Report (and Penetrations, which is the same screen locked to one template)
 

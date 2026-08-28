@@ -9,6 +9,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Measurement;
@@ -850,7 +851,9 @@ namespace CamelWorks.UI.Views
                     };
                 }
 
-                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray());
+                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray())
+                    .Menu(new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
+                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)));
 
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
@@ -1067,6 +1070,80 @@ namespace CamelWorks.UI.Views
                 {
                     say.Children.Add(Ui.Problem("Could not append the markers: " + Ui.Describe(e)));
                 }
+            }
+
+            /// <summary>
+            /// Make issues out of picked findings.
+            ///
+            /// The clearance check finds places, not conversations. What gets chased is "the
+            /// corridor on level three is 1.85 where it has to be 2.1", which is one issue over a
+            /// run of findings - so the default is one issue across everything picked, and one
+            /// each is there for when they really are separate.
+            /// </summary>
+            /// <param name="picked">The picked findings.</param>
+            /// <param name="each">One issue per finding, rather than one over all of them.</param>
+            private void RaiseIssue(IReadOnlyList<object> picked, bool each)
+            {
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                Issue? Make(string id, IReadOnlyList<Row> from)
+                {
+                    if (from.Count == 0) return null;
+
+                    var first = from[0];
+                    var worst = from.OrderBy(r => r.Clear).First();
+
+                    var title = from.Count == 1
+                        ? "Clear height " + Units.Length(first.Clear) + " under " + first.Over.Name
+                        : Ui.Count(from.Count, "place") + " under " + Units.Length(first.Minimum)
+                          + ", worst " + Units.Length(worst.Clear);
+
+                    var issue = new Issue(id, title, IssueOrigin.Clearance)
+                    {
+                        Type = "Clearance",
+                        Source = "Clearance Check",
+                        Description = "Asked for " + Units.Length(first.Minimum) + "."
+                            + Environment.NewLine
+                            + string.Join(Environment.NewLine, from.Take(20).Select(r =>
+                                Units.Length(r.Clear) + " under " + r.Over.Name
+                                + " over " + r.Floor.Name)),
+                        HasPoint = true,
+
+                        // The findings are already metres, and the point is the middle of the gap
+                        // - which is the space a person does not fit through.
+                        X = from.Average(r => r.Span.X),
+                        Y = from.Average(r => r.Span.Y),
+                        Z = from.Average(r => r.Floor.Box.MaxZ + r.Clear / 2),
+                    };
+
+                    foreach (var row in from)
+                    {
+                        if (!row.Floor.Key.IsEmpty && !issue.Elements.Contains(row.Floor.Key))
+                            issue.Elements.Add(row.Floor.Key);
+
+                        if (!row.Over.Key.IsEmpty && !issue.Elements.Contains(row.Over.Key))
+                            issue.Elements.Add(row.Over.Key);
+                    }
+
+                    return issue;
+                }
+
+                var at = 0;
+
+                var (made, problem) = IssueViews.Raise(_session,
+                    id => each ? Make(id, new[] { rows[at++] }) : Make(id, rows),
+                    each ? rows.Count : 1);
+
+                if (problem != null)
+                {
+                    Said(Ui.Problem(problem));
+                    return;
+                }
+
+                Said(Ui.Info(Ui.Count(made, "issue") + " raised from "
+                    + Ui.Count(rows.Count, "finding") + ".",
+                    "Open the register", () => IssueViews.Open(null)));
             }
 
             /// <summary>A verb's outcome, and the grid redrawn to show what it did.</summary>

@@ -2246,6 +2246,89 @@ namespace CamelWorks.UI.Views
             return picked;
         }
 
+        /// <summary>One entry on a table's right-click menu.</summary>
+        public sealed class OnMenu
+        {
+            /// <summary>Name it and say what it does.</summary>
+            /// <param name="caption">How it reads. <c>{n}</c> becomes the number of picked rows.</param>
+            /// <param name="act">What to do with the picked rows.</param>
+            public OnMenu(string caption, Action<IReadOnlyList<object>> act)
+            {
+                Caption = caption ?? throw new ArgumentNullException(nameof(caption));
+                Act = act ?? throw new ArgumentNullException(nameof(act));
+            }
+
+            internal string Caption { get; }
+
+            internal Action<IReadOnlyList<object>> Act { get; }
+        }
+
+        /// <summary>
+        /// A right-click menu on a table's rows.
+        ///
+        /// The verbs under a grid are the ones somebody uses every minute; the right-click is where
+        /// a person looks for the one they use when something occurs to them — which is exactly
+        /// when an issue gets raised. Right-clicking a row that is not in the current selection
+        /// picks it first, the way every list on the machine behaves: nobody expects a menu to act
+        /// on rows somewhere else on screen.
+        /// </summary>
+        /// <param name="table">The table.</param>
+        /// <param name="entries">The menu, in order.</param>
+        public static ListView Menu(this ListView table, params OnMenu[] entries)
+        {
+            if (table == null) throw new ArgumentNullException(nameof(table));
+            if (entries == null || entries.Length == 0) return table;
+
+            var menu = new ContextMenu();
+
+            table.PreviewMouseRightButtonDown += (s, e) =>
+            {
+                var row = Row(e.OriginalSource as DependencyObject);
+
+                if (row != null && !row.IsSelected)
+                {
+                    table.SelectedItems.Clear();
+                    row.IsSelected = true;
+                }
+            };
+
+            menu.Opened += (s, e) =>
+            {
+                var picked = table.PickedMany();
+
+                menu.Items.Clear();
+
+                foreach (var entry in entries)
+                {
+                    var here = entry;
+
+                    var item = new MenuItem
+                    {
+                        Header = here.Caption.Replace("{n}", picked.Count.ToString(
+                            System.Globalization.CultureInfo.InvariantCulture)),
+                        IsEnabled = picked.Count > 0,
+                    };
+
+                    item.Click += (a, b) => here.Act(table.PickedMany());
+
+                    menu.Items.Add(item);
+                }
+            };
+
+            table.ContextMenu = menu;
+
+            return table;
+        }
+
+        /// <summary>The row a click landed on, or null when it landed on the header or the gap.</summary>
+        private static ListViewItem? Row(DependencyObject? from)
+        {
+            while (from != null && !(from is ListViewItem))
+                from = VisualTreeHelper.GetParent(from);
+
+            return from as ListViewItem;
+        }
+
         /// <summary>
         /// The picked rows of a table, as tab separated lines.
         ///

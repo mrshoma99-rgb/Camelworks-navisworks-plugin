@@ -380,13 +380,8 @@ namespace CamelWorks.UI.Views
 
                 if (results.Count == 0)
                 {
-                    _kept.Children.Add(Ui.Info("The board is not loaded, and this writes what the "
-                        + "board holds. Load it in Clash Manager and everything here has "
-                        + "something to count.", "Load the board in Clash Manager", () =>
-                        {
-                            CoordinateViews.LoadOnArrival = true;
-                            Ui.Told(AppWindow.Show("clash", "triage"));
-                        }));
+                    _kept.Children.Add(CoordinateViews.LoadHere("The board is not loaded, and "
+                        + "this writes what the board holds."));
                     return;
                 }
 
@@ -403,13 +398,9 @@ namespace CamelWorks.UI.Views
 
                 if (results.Count == 0)
                 {
-                    into.Children.Add(Ui.Info("The board has not been built yet, and this writes "
-                        + "what the board holds — not what the host happens to have open.",
-                        "Load the board in Clash Manager", () =>
-                        {
-                            CoordinateViews.LoadOnArrival = true;
-                            Ui.Told(AppWindow.Show("clash", "triage"));
-                        }));
+                    into.Children.Add(CoordinateViews.LoadHere("The board has not been built "
+                        + "yet, and this writes what the board holds — not what the host happens "
+                        + "to have open."));
                     return 0;
                 }
 
@@ -555,12 +546,12 @@ namespace CamelWorks.UI.Views
 
                 // Read, not applied. Carrying a reviewer's statuses onto the board is the board's
                 // decision to make, on the board, where the before and after are both visible.
-                _back.Children.Add(Ui.Note("Nothing on the board has changed. This says what came "
-                    + "back; taking it on is a decision the board makes, where what it would change "
-                    + "is visible next to what it would change from."));
+                _back.Children.Add(Ui.Note("Nothing in the model has changed. This says what came "
+                    + "back; taking it on is done in Clash Results, where what it would change is "
+                    + "visible next to what it would change from."));
 
-                _back.Children.Add(Ui.Actions(Ui.Quiet("Open the Clash Board",
-                    () => Ui.Told(AppWindow.Show("clash", "triage")))));
+                _back.Children.Add(Ui.Actions(Ui.Quiet("Open results",
+                    () => Ui.Told(AppWindow.Show("clash", "manage")))));
             }
 
             private static string Counted(ClashXmlTest test, FindingStatus status) =>
