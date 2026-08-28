@@ -36,6 +36,11 @@ verbs on the picked rows:
 - Filters: status ticks, only-with-comments, test-name search, hide-empty-tests.
 - **Send the picked tests out as a file...** jumps to Issue Link's Clash XML leg with those
   tests already ticked.
+- **Beyond the engine**: a cross-test duplicate finder (the same conflict reported by two
+  tests, marked Approved with the keeper named), the grid written to a spreadsheet exactly as
+  filtered, a full-fidelity baseline saved from the manager itself, the engine's own composed
+  view and rendered snapshot per result, a sortable worst-distance column, and click-to-sort
+  on every column of every table in the product.
 - **The review round**, end to end: the tab has a second source — "A file" — where the same
   verbs mark up an exported baseline with no clash engine needed at all (the Simulate seat's
   whole job), "Save the markup" writes `markups\<reviewer>.xml` beside it, and on a Manage

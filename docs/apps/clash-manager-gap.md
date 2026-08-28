@@ -39,6 +39,22 @@ Three separate costs, all paid on the UI thread:
 | Load from the model or from an exported file | Model only (file went to a separate reader) | Both are the manager: a source switch on the Manage tab opens either, with the same grids, filters and verbs |
 | The offline review round: baseline out, reviewers mark up the file on seats with no clash engine, markups sync back | Nothing | The whole round (see below) — the file leg is the Manage tab's other source, and it needs no clash engine at all |
 | Matrix by hand or from a spreadsheet | Already there (Matrix tab reads the client's sheet and builds the tests) | Unchanged |
+| Per-result saved views and rendered snapshots | — | Focus on one result applies the engine's own composed view; Snapshot writes the host's rendered image (scene plus highlight) per picked result to `clash-snapshots` beside the project |
+| Sort any grid | — | Click a column header, on every table in the product; click again to turn it around |
+| Worst-distance column | Native shows it | Shown in honest units (mm/m), sortable |
+
+## Beyond what any of the benchmarks have
+
+- **Cross-test duplicate finder.** The same pipe through the same wall reported by two tests is
+  one conflict; no native window can see that. One press finds them (the board's own collapse
+  engine, run over the manager's rows) and, if asked, marks each duplicate Approved with a
+  comment naming the result that stays open — in the model or in a markup file alike.
+- **Full comment trails**, read in one pass and travelling in the baseline, so the file a
+  reviewer opens carries the whole conversation, not the last word of it.
+- **The grid to a spreadsheet**, exactly as filtered — the "just send me the list" answer
+  without a report template.
+- **A full-fidelity baseline from the manager itself** — statuses, assignments, comment
+  trails, groups and distances — from the picked tests or everything, one dialog.
 
 ## What deliberately stays ours
 
@@ -74,6 +90,6 @@ the same id across exports.
   writable there, because the review round is the Simulate seat's whole job.
 - New/Active/Resolved are the engine's own verdicts and are recomputed by the next run;
   Reviewed/Approved are human judgement and survive. Said on the tab, not discovered.
-- A baseline written from the board carries assignments; carrying each result's full native
-  comment trail into the baseline is the named next step (the sync direction already handles
-  comments completely).
+- A baseline can be written two ways: from the board (assignments travel) or, at full
+  fidelity, straight from the Manage tab - statuses, assignments, whole comment trails,
+  groups and distances.
