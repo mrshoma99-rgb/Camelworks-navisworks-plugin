@@ -202,6 +202,12 @@ namespace CamelWorks.UI.Views
             private string _newSide = BothSides;
             private string _chainAdd = string.Empty;
 
+            private readonly TextBox _filter;
+            private readonly StackPanel _filterScope = Ui.Stack();
+            private string _filterIn = AnyColumn;
+
+            private const string AnyColumn = "Any column";
+
             private const string FirstSide = "First item";
             private const string SecondSide = "Second item";
             private const string BothSides = "Both";
@@ -214,6 +220,8 @@ namespace CamelWorks.UI.Views
                 if (!session.Clash.IsAvailable) _source = FromFile;
 
                 _find = Ui.Text(string.Empty, null, 150);
+                _filter = Ui.Text(string.Empty, null, 150);
+                _filter.TextChanged += (s, e) => RedrawGroups();
                 _comment = Ui.Text(string.Empty, null, 170);
                 _group = Ui.Text(string.Empty, null, 170);
                 _renameTest = Ui.Text(string.Empty, null, 170);
@@ -444,13 +452,18 @@ namespace CamelWorks.UI.Views
 
                 var mark = Ui.Choice(Statuses, _mark, pick => _mark = pick, 150);
 
+                RedrawFilterScope();
+
                 panel.Children.Add(Bench.Group("Show results that are",
                     Ui.Stack(showing.ToArray()),
                     Ui.Check("Only ones with comments", _onlyCommented, on =>
                     {
                         _onlyCommented = on;
                         RedrawGroups();
-                    })));
+                    }),
+                    Ui.Field("Where", _filterScope),
+                    Ui.Field("contains", _filter,
+                             "matches as you type - any column, or just the one picked")));
 
                 RedrawColumnList();
                 RedrawChainList();
@@ -634,11 +647,77 @@ namespace CamelWorks.UI.Views
                     ? read
                     : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
 
-                return from
+                var rows = from
                     .SelectMany(e => e.Rows)
                     .Where(r => _show.Contains(r.Status))
-                    .Where(r => !_onlyCommented || r.Comments > 0)
-                    .ToList();
+                    .Where(r => !_onlyCommented || r.Comments > 0);
+
+                var wanted = _filter.Text.Trim();
+
+                if (wanted.Length > 0)
+                    rows = rows.Where(r => Matches(r, wanted));
+
+                return rows.ToList();
+            }
+
+            /// <summary>Whether a row's chosen column - or any of them - contains the text.</summary>
+            private bool Matches(Row row, string wanted)
+            {
+                bool Has(string? value) =>
+                    value != null && value.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (_filterIn != AnyColumn)
+                {
+                    foreach (var column in _columns)
+                        if (string.Equals(_filterIn, column.Title, StringComparison.Ordinal))
+                            return Has(row.Custom.TryGetValue(column.Id, out var v) ? v : null);
+
+                    return _filterIn switch
+                    {
+                        "Result" => Has(row.Info.Name),
+                        "Test" => Has(row.TestName),
+                        "Group" => Has(row.Group),
+                        "Status" => Has(row.Status),
+                        "Assigned" => Has(row.Assigned),
+                        "Comment" => Has(row.LastComment),
+                        "Item 1" => Has(row.Info.NameA),
+                        "Item 2" => Has(row.Info.NameB),
+                        _ => false,
+                    };
+                }
+
+                if (Has(row.Info.Name) || Has(row.TestName) || Has(row.Group) || Has(row.Status)
+                    || Has(row.Assigned) || Has(row.LastComment)
+                    || Has(row.Info.NameA) || Has(row.Info.NameB)
+                    || Has(row.Info.CategoryA) || Has(row.Info.CategoryB))
+                    return true;
+
+                foreach (var value in row.Custom.Values)
+                    if (Has(value)) return true;
+
+                return false;
+            }
+
+            /// <summary>The filter's column picker, rebuilt when the custom columns change.</summary>
+            private void RedrawFilterScope()
+            {
+                _filterScope.Children.Clear();
+
+                var options = new List<string>
+                {
+                    AnyColumn, "Result", "Test", "Group", "Status", "Assigned", "Comment",
+                    "Item 1", "Item 2",
+                };
+
+                foreach (var column in _columns) options.Add(column.Title);
+
+                if (!options.Contains(_filterIn)) _filterIn = AnyColumn;
+
+                _filterScope.Children.Add(Ui.Choice(options, _filterIn, pick =>
+                {
+                    _filterIn = pick;
+                    if (_filter.Text.Trim().Length > 0) RedrawGroups();
+                }, 150));
             }
 
             /// <summary>
@@ -1243,6 +1322,7 @@ namespace CamelWorks.UI.Views
 
                 RedrawColumnList();
                 RedrawChainList();
+                RedrawFilterScope();
                 RedrawGroups();
 
                 Said(Ui.Done("Added \"" + title + "\". Press \"Read the values\" to fill it."));
@@ -1264,6 +1344,7 @@ namespace CamelWorks.UI.Views
                             _chain.Remove("col:" + here.Id);
                             RedrawColumnList();
                             RedrawChainList();
+                            RedrawFilterScope();
                             RedrawGroups();
                         })));
                 }
@@ -1278,6 +1359,12 @@ namespace CamelWorks.UI.Views
                     ("status", "Status"),
                     ("assigned", "Assigned to"),
                     ("hostgroup", "Host group"),
+                    ("item1", "Item 1"),
+                    ("item2", "Item 2"),
+                    ("cat1", "Category (1)"),
+                    ("cat2", "Category (2)"),
+                    ("worst", "Worst band"),
+                    ("commented", "Commented or not"),
                 };
 
                 foreach (var column in _columns) options.Add(("col:" + column.Id, column.Title));
@@ -1355,7 +1442,7 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>One row's value for one link of the chain, with absence said honestly.</summary>
-            private static string GroupValue(Row row, string key)
+            private string GroupValue(Row row, string key)
             {
                 switch (key)
                 {
@@ -1363,6 +1450,12 @@ namespace CamelWorks.UI.Views
                     case "status": return row.Status;
                     case "assigned": return row.Assigned.Length == 0 ? "(unassigned)" : row.Assigned;
                     case "hostgroup": return row.Group.Length == 0 ? "(no group)" : row.Group;
+                    case "item1": return Blankless(row.Info.NameA, "(unnamed)");
+                    case "item2": return Blankless(row.Info.NameB, "(unnamed)");
+                    case "cat1": return Blankless(row.Info.CategoryA, "(no category)");
+                    case "cat2": return Blankless(row.Info.CategoryB, "(no category)");
+                    case "worst": return WorstBand(row);
+                    case "commented": return row.Comments > 0 ? "Commented" : "No comments";
                 }
 
                 if (key.StartsWith("col:", StringComparison.Ordinal))
@@ -1374,6 +1467,27 @@ namespace CamelWorks.UI.Views
                 }
 
                 return "(unknown)";
+            }
+
+            private static string Blankless(string? value, string absent) =>
+                string.IsNullOrWhiteSpace(value) ? absent : value!;
+
+            /// <summary>
+            /// The worst distance as a band a person argues in - grouping by the raw millimetre
+            /// would put every clash in a band of one.
+            /// </summary>
+            private string WorstBand(Row row)
+            {
+                if (!row.Info.Distance.HasValue) return "(no distance)";
+
+                var mm = Math.Abs(row.Info.Distance.Value)
+                         * (OnFile ? 1.0 : _session.MetresPerUnit) * 1000;
+
+                return mm < 10 ? "under 10 mm"
+                     : mm < 25 ? "10 - 25 mm"
+                     : mm < 50 ? "25 - 50 mm"
+                     : mm < 100 ? "50 - 100 mm"
+                     : "over 100 mm";
             }
 
             private string ChainKey(Row row) =>

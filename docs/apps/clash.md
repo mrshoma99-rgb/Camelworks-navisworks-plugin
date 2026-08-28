@@ -33,7 +33,9 @@ verbs on the picked rows:
 - **Mark / Assign / Comment / Group** — written back into the model's own clash data through
   the seam, so the native clash window, the exports and every report see the same thing.
 - **Run / Rename / Move / Delete** on the picked tests, with delete behind a second press.
-- Filters: status ticks, only-with-comments, test-name search, hide-empty-tests.
+- Filters: status ticks, only-with-comments, test-name search, hide-empty-tests, and a
+  contains-filter over any column - or one picked column, the property columns included -
+  matching as you type. Every column of every grid sorts on a header click.
 - **Send the picked tests out as a file...** jumps to Issue Link's Clash XML leg with those
   tests already ticked.
 - **Property columns + chained grouping**: any element property as a results column (model-fed
