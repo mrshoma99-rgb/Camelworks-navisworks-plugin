@@ -32,7 +32,10 @@ verbs on the picked rows:
   hidden, or a status-coloured marker ball dropped at each clash point as ordinary geometry.
 - **Mark / Assign / Comment / Group** — written back into the model's own clash data through
   the seam, so the native clash window, the exports and every report see the same thing.
-- **Run / Rename / Move / Delete** on the picked tests, with delete behind a second press.
+- **Run / Rename / Move / Compact / Delete** on the picked tests, with delete behind a second
+  press; Compact is the host's own drop-Resolved-from-storage, the only per-result delete any
+  clash tool honestly has. Picked results rename too (prefix1, prefix2, ...), and every column
+  keeps a manual drag - the auto-fit steps aside the moment a header gripper moves.
 - Filters: status ticks, only-with-comments, test-name search, hide-empty-tests, and a
   contains-filter over any column - or one picked column, the property columns included -
   matching as you type. Every column of every grid sorts on a header click.

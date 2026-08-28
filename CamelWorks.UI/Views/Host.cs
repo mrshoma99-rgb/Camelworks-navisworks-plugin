@@ -297,6 +297,11 @@ namespace CamelWorks.UI.Views
 
             public bool MoveTests(System.Collections.Generic.IReadOnlyList<string> testIds, string? folder) => false;
 
+            public bool RenamePicked(string testId,
+                System.Collections.Generic.IReadOnlyList<string> resultIds, string prefix) => false;
+
+            public bool CompactTests(System.Collections.Generic.IReadOnlyList<string> testIds) => false;
+
             public bool ApplyResultView(string testId, string resultId) => false;
 
             public byte[]? ResultSnapshot(string testId, string resultId, int width, int height) => null;

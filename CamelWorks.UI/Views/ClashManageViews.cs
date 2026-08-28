@@ -450,7 +450,14 @@ namespace CamelWorks.UI.Views
                         RedrawGroups();
                     })).ToList();
 
-                var mark = Ui.Choice(Statuses, _mark, pick => _mark = pick, 150);
+                var mark = Ui.Choice(Statuses, _mark, pick =>
+                {
+                    _mark = pick;
+
+                    // The button under the grid reads "Mark 12 Reviewed" - the caption is the
+                    // press about to happen, so it follows this choice the moment it changes.
+                    RedrawResults();
+                }, 150);
 
                 RedrawFilterScope();
 
@@ -630,6 +637,7 @@ namespace CamelWorks.UI.Views
                         new Ui.OnPicked("Rename {n}", RenameTests),
                         new Ui.OnPicked("Rename {n}'s results", RenameResults),
                         new Ui.OnPicked("Move {n}", MoveTests),
+                        new Ui.OnPicked("Compact {n}", CompactTests),
                         new Ui.OnPicked("Delete {n}", DeleteTests, danger: true),
                         new Ui.OnPicked("Copy {n}",
                             (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "test"))));
@@ -881,10 +889,11 @@ namespace CamelWorks.UI.Views
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
                     new Ui.OnPicked("Isolate {n}", Isolate),
-                    new Ui.OnPicked("Mark {n}", Mark),
+                    new Ui.OnPicked("Mark {n} " + _mark, Mark),
                     new Ui.OnPicked("Assign {n}", AssignPicked),
                     new Ui.OnPicked("Comment {n}", CommentPicked),
                     new Ui.OnPicked("Group {n}", GroupPicked),
+                    new Ui.OnPicked("Rename {n}", RenamePickedResults),
                     new Ui.OnPicked("Sphere {n}", Spheres),
                     new Ui.OnPicked("Snapshot {n}", Snapshots),
                     new Ui.OnPicked("Copy {n}",
@@ -1041,6 +1050,31 @@ namespace CamelWorks.UI.Views
                 }));
             }
 
+            /// <summary>
+            /// Drop the picked tests' Resolved results from storage - the host's own compact,
+            /// and the only per-result delete any clash tool honestly has: the engine owns its
+            /// results, and the next run recreates whatever still clashes.
+            /// </summary>
+            private void CompactTests(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var tests = Entries(picked);
+                if (tests.Count == 0) return;
+
+                if (!_session.Clash.CompactTests(tests.Select(t => t.Test.Id).ToList()))
+                {
+                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup,
+                                "compacted " + Ui.Count(tests.Count, "clash test")
+                                + ", dropping their Resolved results from storage");
+                Reread("Compacted " + Ui.Count(tests.Count, "test") + " - the Resolved results "
+                       + "are out of storage. The next run recreates whatever still clashes.", null);
+            }
+
             // -------------------------------------------------------------------------------
             // Result verbs
             // -------------------------------------------------------------------------------
@@ -1150,6 +1184,58 @@ namespace CamelWorks.UI.Views
                           row.LastComment = body;
                           row.Trail.Add(new ClashComment(author, DateTime.UtcNow.Ticks, body));
                       });
+            }
+
+            /// <summary>Rename just the picked results, prefix1, prefix2, ... in host order.</summary>
+            private void RenamePickedResults(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                if (OnFile)
+                {
+                    say.Children.Add(Ui.Problem("A markup regenerates its result names when it "
+                        + "saves, so renaming here would not survive the file. Rename in the "
+                        + "model, where the name is the result's own."));
+                    return;
+                }
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var prefix = _renameResults.Text.Trim();
+
+                if (prefix.Length == 0)
+                {
+                    say.Children.Add(Ui.Problem("Type the prefix in \"Results prefix\" first."));
+                    return;
+                }
+
+                var done = 0;
+                var problems = new List<string>();
+
+                foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
+                {
+                    var ids = byTest.Select(r => r.Info.Id).ToList();
+
+                    if (!_session.Clash.RenamePicked(byTest.Key, ids, prefix))
+                    {
+                        problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                        continue;
+                    }
+
+                    done += ids.Count;
+                }
+
+                if (done == 0)
+                {
+                    foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Regroup, "renamed " + Ui.Count(done, "picked result")
+                    + " to \"" + prefix + "...\"");
+                Reread("Renamed " + Ui.Count(done, "result") + " to \"" + prefix + "...\".",
+                       problems);
             }
 
             private void GroupPicked(IReadOnlyList<object> picked, Panel say)

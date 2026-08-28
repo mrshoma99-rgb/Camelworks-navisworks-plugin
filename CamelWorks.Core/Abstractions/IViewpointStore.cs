@@ -194,6 +194,15 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="prefix">What each name starts with.</param>
         bool RenameResults(string testId, string prefix);
 
+        /// <summary>
+        /// Rename just the given results of one test: prefix1, prefix2, ... in host order.
+        /// The rest of the test's results keep their names.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="prefix">What each name starts with.</param>
+        bool RenamePicked(string testId, IReadOnlyList<string> resultIds, string prefix);
+
         /// <summary>Rename one test.</summary>
         /// <param name="testId">Which test.</param>
         /// <param name="name">The new name.</param>
@@ -210,6 +219,14 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="testIds">Which tests.</param>
         /// <param name="folder">The folder name, or null for the root.</param>
         bool MoveTests(IReadOnlyList<string> testIds, string? folder);
+
+        /// <summary>
+        /// Drop the given tests' Resolved results from storage - the host's own compact, and
+        /// the only per-result delete any clash tool honestly has: the engine owns its
+        /// results, and the next run recreates whatever still clashes.
+        /// </summary>
+        /// <param name="testIds">Which tests.</param>
+        bool CompactTests(IReadOnlyList<string> testIds);
 
         /// <summary>
         /// Put the camera where the host's own saved view of one result stands — the view the

@@ -2036,8 +2036,15 @@ namespace CamelWorks.UI.Views
             // one. When the pane is narrower than the table wants, every column gives up width in
             // proportion, down to a floor that keeps a header readable; when it is wider they get
             // what they asked for and the flexible ones take the rest.
+            // Set true by the first header-gripper drag: from then on the columns are the
+            // user's, and the auto-fit that would snap them back on every window resize stays
+            // out of the way.
+            var userSized = false;
+
             void Fit()
             {
+                if (userSized) return;
+
                 // The room a vertical scrollbar and the two borders take. Guessed slightly high:
                 // a column two pixels short of the edge looks intentional, and one two pixels
                 // over brings the horizontal scrollbar back.
@@ -2073,6 +2080,10 @@ namespace CamelWorks.UI.Views
 
             table.SizeChanged += (s, e) => Fit();
             table.Loaded += (s, e) => Fit();
+
+            table.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
+                new System.Windows.Controls.Primitives.DragCompletedEventHandler(
+                    (s, e) => userSized = true));
 
             // Click a header to sort by that column; click it again to turn the sort around.
             // Every table in the product, one behaviour — a clash manager sorting eighteen

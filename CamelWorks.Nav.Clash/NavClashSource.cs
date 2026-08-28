@@ -461,6 +461,85 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <inheritdoc />
+        public bool RenamePicked(string testId, IReadOnlyList<string> resultIds, string prefix)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+            var stem = string.IsNullOrWhiteSpace(prefix) ? "Clash" : prefix.Trim();
+
+            try
+            {
+                var found = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Children, null, found);
+
+                var number = 1;
+                var touched = 0;
+
+                foreach (var (result, _) in found)
+                {
+                    if (!wanted.Contains(result.Guid.ToString())) continue;
+
+                    clash.TestsData.TestsEditDisplayName(result,
+                        stem + number++.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    touched++;
+                }
+
+                if (touched == 0)
+                {
+                    LastProblem = "None of those results are in the test any more. Re-read it.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the rename: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool CompactTests(IReadOnlyList<string> testIds)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            foreach (var id in testIds ?? Array.Empty<string>())
+            {
+                var test = FindTest(clash, id);
+                if (test == null) continue;
+
+                try
+                {
+                    clash.TestsData.TestsCompactTest(test);
+                }
+                catch (Exception e)
+                {
+                    LastProblem = "The host refused to compact \"" + test.DisplayName + "\": " + e.Message;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
         public bool RenameTest(string testId, string name)
         {
             LastProblem = null;
