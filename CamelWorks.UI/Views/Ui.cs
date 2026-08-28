@@ -2324,7 +2324,9 @@ namespace CamelWorks.UI.Views
 
             table.Multi();
 
-            var bar = new StackPanel { Orientation = Orientation.Horizontal };
+            // A wrap rather than a strip: the clash manager puts eight verbs on one table, and a
+            // bar that cannot wrap would push the last of them off the window edge silently.
+            var bar = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
 
             // Where an action says what it did. Below the bar, so a sentence about eleven rows sits
             // under the button that said eleven.
@@ -2350,7 +2352,7 @@ namespace CamelWorks.UI.Views
 
                 if (here.Danger) button.Wearing("DangerBtn");
 
-                button.Margin = new Thickness(Gap, 0, 0, 0);
+                button.Margin = new Thickness(Gap, 2, 0, 2);
                 button.Tag = here.Caption;
 
                 buttons.Add(button);

@@ -31,6 +31,14 @@ namespace CamelWorks.UI.Views
         /// <summary>What a profile file is called on disk.</summary>
         public const string Extension = ".cwexport";
 
+        /// <summary>
+        /// Test ids the clash manager asked to send, applied to the next editor once.
+        ///
+        /// The hand-off from the Manage tab: "export these three tests" should arrive with those
+        /// three ticked, not with a memory test about which three they were.
+        /// </summary>
+        internal static IReadOnlyList<string>? Preferred { get; set; }
+
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -278,6 +286,24 @@ namespace CamelWorks.UI.Views
                                  .ToList();
 
                 var match = _profile.Match(refs);
+
+                // The Manage tab's hand-off: arrive with its picked tests ticked, once.
+                if (Preferred != null && Preferred.Count > 0)
+                {
+                    var names = new HashSet<string>(
+                        refs.Where(r => r.Id != null && Preferred.Contains(r.Id!)).Select(r => r.Name),
+                        StringComparer.OrdinalIgnoreCase);
+
+                    if (names.Count > 0)
+                    {
+                        foreach (var test in _profile.Tests) test.Chosen = names.Contains(test.Name);
+
+                        _match.Children.Add(Ui.Info(Ui.Count(names.Count, "test")
+                            + " arrived ticked from the clash manager."));
+                    }
+
+                    Preferred = null;
+                }
 
                 _match.Children.Add(Ui.Line(match.Explain(), 1, true));
 

@@ -276,6 +276,26 @@ namespace CamelWorks.UI.Views
 
             public string? LastProblem =>
                 "There is no clash engine in this Navisworks edition, so tests cannot be made or run.";
+
+            public bool SetStatus(string testId,
+                System.Collections.Generic.IReadOnlyList<string> resultIds, string status) => false;
+
+            public bool Assign(string testId,
+                System.Collections.Generic.IReadOnlyList<string> resultIds, string assignee) => false;
+
+            public bool Comment(string testId,
+                System.Collections.Generic.IReadOnlyList<string> resultIds, string body, string author) => false;
+
+            public bool Regroup(string testId,
+                System.Collections.Generic.IReadOnlyList<string> resultIds, string groupName) => false;
+
+            public bool RenameResults(string testId, string prefix) => false;
+
+            public bool RenameTest(string testId, string name) => false;
+
+            public bool DeleteTests(System.Collections.Generic.IReadOnlyList<string> testIds) => false;
+
+            public bool MoveTests(System.Collections.Generic.IReadOnlyList<string> testIds, string? folder) => false;
         }
     }
 }

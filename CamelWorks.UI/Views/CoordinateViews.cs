@@ -115,24 +115,38 @@ namespace CamelWorks.UI.Views
             var items = new List<ClashItem>();
             var levels = Levels(session, job, scale);
 
+            // Model display names once, not once per result: eighteen thousand results times a
+            // linear scan over the model list is a pause somebody can feel.
+            var modelNames = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var model in session.Model.Models)
+                if (!modelNames.ContainsKey(model.Scope)) modelNames[model.Scope] = model.DisplayName;
+
             foreach (var test in session.Clash.Tests())
             {
-                if (!job.Step(items.Count, "results read")) return null;
-
                 foreach (var result in session.Clash.Results(test.Id))
                 {
+                    // Pumped per result, not per test: one test can hold four thousand results,
+                    // and a window that cannot repaint for the length of a test reads as hung.
+                    if (!job.Step(items.Count, "results read")) return null;
+
                     var item = new ClashItem(result.Key(), test.Name)
                     {
                         TestFolder = test.Folder,
                         X = result.PointX * scale,
                         Y = result.PointY * scale,
                         Z = result.PointZ * scale,
-                        ModelA = ModelOf(session, result.A),
-                        ModelB = ModelOf(session, result.B),
+                        ModelA = modelNames.TryGetValue(result.A.ModelScope, out var nameA) ? nameA : null,
+                        ModelB = modelNames.TryGetValue(result.B.ModelScope, out var nameB) ? nameB : null,
                         DisciplineA = session.Profile.DisciplineOf(result.A.ModelScope),
                         DisciplineB = session.Profile.DisciplineOf(result.B.ModelScope),
-                        CategoryA = CategoryOf(session, result.A),
-                        CategoryB = CategoryOf(session, result.B),
+
+                        // Carried on the result by the adapter, which read them while it was
+                        // holding the elements. Resolving the key back through the document
+                        // index here cost a full unpumped federation walk on the first result —
+                        // the freeze a real project hit at 18,844 results.
+                        CategoryA = result.CategoryA,
+                        CategoryB = result.CategoryB,
                         Level = levels.LevelAt(result.PointZ * scale),
                     };
 
@@ -301,8 +315,21 @@ namespace CamelWorks.UI.Views
             return board;
         }
 
+        private static LevelSet? _levels;
+        private static string? _levelsShape;
+
         private static LevelSet Levels(Session session, Job job, double scale)
         {
+            // Deriving levels reads the elevation of every element in the federation — the most
+            // expensive read the board makes, and one whose answer only changes when the
+            // federation does. Cached against its shape, so the second board of the day costs
+            // nothing and a reload after an append derives afresh.
+            var shape = string.Join("|", session.Model.Models.Select(m => m.Scope))
+                        + "@" + scale.ToString("R", CultureInfo.InvariantCulture);
+
+            if (_levels != null && string.Equals(_levelsShape, shape, StringComparison.Ordinal))
+                return _levels;
+
             job.Say("Working out levels...");
 
             var elevations = new List<double>();
@@ -316,7 +343,12 @@ namespace CamelWorks.UI.Views
                     return LevelSet.Empty;
             }
 
-            return LevelSet.Derive(elevations);
+            var derived = LevelSet.Derive(elevations);
+
+            _levels = derived;
+            _levelsShape = shape;
+
+            return derived;
         }
 
         private static string? ModelOf(Session session, ElementKey key) =>
@@ -2672,13 +2704,21 @@ namespace CamelWorks.UI.Views
                 {
                     session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "test"));
 
-                    // The run's whole point is the board, so the board is one press away and
-                    // loads itself on arrival — the week's find-to-decide hand-off.
-                    _runs.Children.Add(Ui.Primary("Open the board with these results", () =>
-                    {
-                        LoadOnArrival = true;
-                        Ui.Told(Shell.AppWindow.Show("clash", "triage"));
-                    }));
+                    // The run's whole point is what it found, so both ways of working it are one
+                    // press away: the derived board for triage, and the raw results for the
+                    // status-by-status pass. The manager re-reads on arrival, so the fresh run
+                    // is what it shows.
+                    _runs.Children.Add(Ui.Actions(
+                        Ui.Primary("Open the board with these results", () =>
+                        {
+                            LoadOnArrival = true;
+                            Ui.Told(Shell.AppWindow.Show("clash", "triage"));
+                        }),
+                        Ui.Quiet("Work the results one by one", () =>
+                        {
+                            ClashManageViews.Forget();
+                            Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                        })));
                 }
 
                 Redraw();
@@ -3361,7 +3401,15 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                recipe.MetresPerUnit = metres.Value;
+                // The board's coordinates were already scaled to metres when it was built, by the
+                // session's own factor. What remains is only the difference between that factor
+                // and the truth: on a document that declares its units the two agree and this is
+                // 1, and on one that declares nothing the session factor was 1 and the picker
+                // supplies the whole conversion. Multiplying by the full factor here a second
+                // time put every marker a thousandfold off on a millimetre model.
+                recipe.MetresPerUnit = session.MetresPerUnit > 0
+                    ? metres.Value / session.MetresPerUnit
+                    : metres.Value;
 
                 job.Say("Building the geometry...");
 

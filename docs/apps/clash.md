@@ -16,6 +16,27 @@ own answer to "where does my week stand", visible before any tab is read.
   Board tab presses its own load once, on arrival, because the user asked for that board the
   moment they pressed Run (`LoadOnArrival`).
 
+## Manage — the results workbench (new)
+
+The tab a coordinator coming from any other clash manager expects, measured against the ones
+they actually use — the full gap analysis is in
+[clash-manager-gap.md](clash-manager-gap.md). Tests on top with live per-status counts
+(total, new, active, reviewed, approved, resolved), the picked tests' results under them, and
+verbs on the picked rows:
+
+- **Read** pulls every test and result out of the document — pumped per result, after the
+  freeze the old board build hit at 18,844 results (fixed at the adapter: element names and
+  categories now travel on the result instead of being re-resolved through a full federation
+  index).
+- **Focus / Isolate / Sphere** — camera and selection to the picked clashes, everything else
+  hidden, or a status-coloured marker ball dropped at each clash point as ordinary geometry.
+- **Mark / Assign / Comment / Group** — written back into the model's own clash data through
+  the seam, so the native clash window, the exports and every report see the same thing.
+- **Run / Rename / Move / Delete** on the picked tests, with delete behind a second press.
+- Filters: status ticks, only-with-comments, test-name search, hide-empty-tests.
+- **Send the picked tests out as a file...** jumps to Issue Link's Clash XML leg with those
+  tests already ticked.
+
 ## Board — the decide tab
 
 - *Was wrong, badly:* the loaded board **did not survive leaving the tab**. A glance at Rules

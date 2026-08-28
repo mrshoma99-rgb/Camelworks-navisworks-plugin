@@ -154,6 +154,12 @@ namespace CamelWorks.UI.Shell
                "Say what gets tested against what, and how close is too close.",
                "Run them"),
 
+            Of("manage", "Clash Results", ToolShape.Window, Glyph.Tune,
+               "Work the results the way the engine holds them - status, assignee, comments and "
+               + "groups written back into the model, with the camera, isolation and marker "
+               + "spheres hanging off the same picked rows.",
+               "Read the results"),
+
             Of("matrix", "Clash Matrix", ToolShape.Wizard, Glyph.Table,
                "Build a whole test set at once from a grid of one discipline against another, "
                + "instead of naming forty tests by hand.",

@@ -73,6 +73,7 @@ namespace CamelWorks.UI.Shell
             new App("clash", "Clash Manager",
                 "Find what fights, and decide it.", "Coordinate",
                 new AppTab("Tests", "tests"),
+                new AppTab("Manage", "manage"),
                 new AppTab("Matrix", "matrix"),
                 new AppTab("Clearance", "headroom"),
                 new AppTab("Rules", "rules"),

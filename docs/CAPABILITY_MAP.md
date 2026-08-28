@@ -62,6 +62,7 @@ surfaces work, not things a coordinator opens.
 | `ClashPipeline`, `ClashPipelineOptions`, `ClashFunnel`, `ClashPredicates`, `GroupingRules`, `AssignRule`, `ClashRuleSet`, `FilterSpec`, `GroupingSpec`, `PredicateSpec`, `SpecInput` | Clash Rules |
 | `ClashPipelineResult` — *results no grouping rule could place* | Clash Board — a standing **Ungrouped (N)** row at the foot of the group list. Never hidden: a result nothing grouped is the one most likely to be somebody's problem. |
 | `ClashItem`, `ClashSnapshot`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
+| `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
 | `ManualIssue`, `ManualIssueList` | Clash Board — "Raise an issue" |
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
 | `Resolution`, `FindingStatus`, `FindingStatusLattice`, `Finding` | Clash Board detail + Review |

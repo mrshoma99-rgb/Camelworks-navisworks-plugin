@@ -30,6 +30,18 @@ namespace CamelWorks.Core.Abstractions
         void SetVisible(IReadOnlyList<ElementKey> keys, bool visible);
 
         /// <summary>
+        /// Hide everything except the given elements — the "look at just these two pipes" move
+        /// every clash reviewer makes. Undone by <see cref="ShowAll"/>, and by nothing subtler:
+        /// the host records hiding per element, so a selective undo would have to remember what
+        /// was already hidden before, which is a lie waiting to be told.
+        /// </summary>
+        /// <param name="keys">What stays visible.</param>
+        void Isolate(IReadOnlyList<ElementKey> keys);
+
+        /// <summary>Unhide everything, including what somebody else hid.</summary>
+        void ShowAll();
+
+        /// <summary>
         /// Clear CamelWorks overrides on the given elements. On the permanent layer this is
         /// per-element; on the temporary layer the host only offers a global reset, so an
         /// implementation must either clear everything or refuse — never pretend it was selective.

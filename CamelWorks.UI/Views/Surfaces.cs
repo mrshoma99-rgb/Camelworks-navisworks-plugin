@@ -38,6 +38,7 @@ namespace CamelWorks.UI.Views
                 // ---- Coordination ----
                 case "triage": return CoordinateViews.Triage();
                 case "tests": return CoordinateViews.Tests();
+                case "manage": return OnModel(ClashManageViews.Manage);
                 case "matrix": return OnModel(MatrixWindow.Surface);
                 case "headroom": return CoordinateViews.ClearHeight();
                 case "rules": return CoordinateViews.Rules();
