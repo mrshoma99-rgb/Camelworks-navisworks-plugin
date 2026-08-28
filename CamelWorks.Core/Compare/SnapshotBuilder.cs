@@ -90,13 +90,12 @@ namespace CamelWorks.Core.Compare
             var seen = 0;
             var stopped = false;
 
-            // Read into a list before anything is recorded, and never report progress while that
-            // is happening. Reporting progress means pumping the host's message loop, and pumping
-            // it part way through a walk of the host's own tree is how a plug-in gets blamed for
-            // Navisworks vanishing: the user clicks the model tree, the collection moves under a
-            // native iterator, and the process is gone somewhere no exception handler can reach.
-            // The expensive half - reading properties off each element - happens below, where no
-            // enumerator is open and pumping is safe.
+            // Read into a list before anything is recorded. The walk is the part that cannot be
+            // interrupted safely - reporting progress pumps the host's message loop, and a pump
+            // part way through a walk of the host's own tree is how a plug-in gets blamed for
+            // Navisworks vanishing. The seam's walk closes each host enumerator as it goes, and
+            // this list means the expensive half below - reading properties off each element -
+            // reports progress with nothing of the host's open at all.
             var items = document.Traverse(scope ?? TraversalScope.WholeDocument).ToList();
 
             foreach (var item in items)

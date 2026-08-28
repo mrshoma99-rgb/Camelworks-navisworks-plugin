@@ -238,7 +238,13 @@ namespace CamelWorks.UI.Views
 
             job.Say("Reading the baseline...");
 
-            var before = store.Load(entry);
+            // Said before the read, not after it. A baseline of a real federation is tens of
+            // seconds of parsing, and it used to happen between the press and the first status
+            // line - which is indistinguishable from the host having hung, and is what "it froze
+            // the moment I pressed Compare" actually was.
+            job.Say("Reading the baseline " + entry.Describe() + "...");
+
+            var before = store.Load(entry, read => job.Step(read, "recorded elements read"));
 
             if (before == null)
             {
@@ -247,9 +253,7 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
-            // Said before the walk, because the walk cannot repaint: progress reporting pumps the
-            // message loop, and pumping mid-walk is what takes the host down.
-            job.Say("Reading the model tree - the window will not repaint until this part is done...");
+            job.Say("Walking the model...");
 
             var after = SnapshotBuilder.Take(
                 session.Model, DateTimeOffset.UtcNow, "Now", Settings,
@@ -1107,9 +1111,7 @@ namespace CamelWorks.UI.Views
 
             var button = Ui.Runner("Take a baseline", results, primary: primary, work: job =>
             {
-                // Said before the walk, because the walk cannot repaint: progress reporting pumps the
-            // message loop, and pumping mid-walk is what takes the host down.
-            job.Say("Reading the model tree - the window will not repaint until this part is done...");
+                job.Say("Walking the model...");
 
                 var snapshot = SnapshotBuilder.Take(
                     session.Model, DateTimeOffset.UtcNow, label, Settings,

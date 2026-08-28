@@ -37,19 +37,26 @@ a native iterator, and the process is gone somewhere no `try`/`catch` can reach.
 about the compare path was already guarded: the runner catches managed exceptions, the button
 disables itself, the triangle read is off by default and wrapped.
 
+**Then it froze the instant Compare was pressed, with no triangles read** — which pointed at the
+half before the walk. Reading the baseline was `ReadAllText` followed by `Split('\n')`: a second
+copy of a hundred-megabyte file plus an array with an entry per element, in silence, between the
+press and the first status line. On a large baseline that is the freeze, and on a very large one
+it is the out-of-memory crash.
+
 **What changed.**
 
 1. `NavDocument` counts open enumerations, and the progress pump refuses to run while one is open.
    That closes the hole for all 23 places in the product that report progress inside a walk, not
    only this one.
-2. Snapshots are taken in two phases: the tree is read into a list with no pumping at all (the
-   window says so before it starts and does not repaint until it is done), then the expensive
-   half — reading properties off each element — reports progress normally, because by then no
-   enumerator is open.
-3. A second job cannot start on top of a running one. Any click that arrives while something is
+2. The walk itself is a stack instead of recursion, and each node's children are read into a list
+   so the host's own enumerator is finished with immediately. Nothing of the host's is open at the
+   moment a caller reports progress — so progress works during the walk, safely.
+3. Reading a baseline is parsed line by line off the one string, with no split and no second copy,
+   and reports as it goes. The screen names the baseline it is reading before it starts.
+4. A second job cannot start on top of a running one. Any click that arrives while something is
    pumping — another tab's run button, a verb under a grid — is refused with a sentence rather
    than interleaving two walks of the same document.
-4. An element the host will not answer for is counted and skipped rather than throwing: the
+5. An element the host will not answer for is counted and skipped rather than throwing: the
    comparison says how many, because a snapshot quietly missing four thousand elements compares
    as four thousand things removed.
 

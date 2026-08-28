@@ -253,19 +253,38 @@ namespace CamelWorks.Core.Compare
         /// comparison, and refusing it turns a bad line into a lost week.
         /// </summary>
         /// <param name="text">The file's contents.</param>
-        public static ModelSnapshot? Read(string? text)
+        /// <param name="onProgress">
+        /// Called every few thousand lines with how many elements have been read, so a screen can
+        /// say something during the read of a large baseline. Reading a baseline of a real
+        /// federation is tens of seconds of work, and it used to happen in silence between the
+        /// press and the first status line - which is indistinguishable from the host having hung.
+        /// </param>
+        public static ModelSnapshot? Read(string? text, Action<int>? onProgress = null)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
 
-            var lines = text!.Split('\n');
-            if (lines.Length == 0 || lines[0].TrimEnd('\r') != Header) return null;
+            var all = text!;
+
+            // Walked rather than Split. A baseline of a real federation is a hundred megabytes,
+            // and splitting it allocates a second copy of the whole file plus an array with an
+            // entry per element - which on the machines this runs on is where a compare stopped
+            // being slow and started being an out-of-memory crash.
+            var first = LineAt(all, 0, out var afterFirst);
+
+            if (first.TrimEnd('\r') != Header) return null;
 
             var snapshot = new ModelSnapshot();
             var models = new List<ModelRecord>();
+            var at = afterFirst;
+            var read = 0;
 
-            for (var i = 1; i < lines.Length; i++)
+            while (at < all.Length)
             {
-                var line = lines[i].TrimEnd('\r');
+                var line = LineAt(all, at, out var next).TrimEnd('\r');
+                at = next;
+
+                if (++read % ProgressEvery == 0) onProgress?.Invoke(snapshot._elements.Count);
+
                 if (line.Length == 0) continue;
 
                 var fields = line.Split('\t');
@@ -284,7 +303,27 @@ namespace CamelWorks.Core.Compare
             }
 
             snapshot.Models = models;
+            onProgress?.Invoke(snapshot._elements.Count);
+
             return snapshot;
+        }
+
+        /// <summary>How often <see cref="Read"/> reports, in lines.</summary>
+        private const int ProgressEvery = 20_000;
+
+        /// <summary>One line of the file, and where the next one starts.</summary>
+        private static string LineAt(string text, int from, out int next)
+        {
+            var end = text.IndexOf('\n', from);
+
+            if (end < 0)
+            {
+                next = text.Length;
+                return text.Substring(from);
+            }
+
+            next = end + 1;
+            return text.Substring(from, end - from);
         }
 
         private static void Head(ModelSnapshot snapshot, string line)
@@ -402,7 +441,7 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// One numeric field.
         ///
-        /// Named Real and not Read: <see cref="Read(string)"/> is the public entry point, and an
+        /// Named Real and not Read: <see cref="Read(string, System.Action{int})"/> is the public entry point, and an
         /// overload differing from it only in a nullable annotation is the same signature to the
         /// runtime — which the compiler says so plainly that it is worth never learning twice.
         /// </summary>

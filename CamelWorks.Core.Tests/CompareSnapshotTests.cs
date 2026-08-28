@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Compare;
@@ -303,6 +304,31 @@ namespace CamelWorks.Core.Tests
             Assert.StartsWith("20231114", name);
             Assert.EndsWith(ModelSnapshot.Extension, name);
             Assert.DoesNotContain("—", name);
+        }
+
+        [Fact]
+        public void Reading_a_baseline_reports_as_it_goes()
+        {
+            // The read of a real baseline is tens of seconds, and it used to happen in silence
+            // between the press and the first status line - which reads as the host having hung.
+            var snapshot = new ModelSnapshot { Label = "Rev C" };
+
+            for (var i = 0; i < 40; i++)
+                snapshot.Add(new ElementFingerprint(KeyRung.TreePath, "e" + i, "s/e" + i, "s")
+                {
+                    Name = "Element " + i,
+                });
+
+            var seen = new List<int>();
+
+            var read = ModelSnapshot.Read(snapshot.Write(), count => seen.Add(count));
+
+            Assert.Equal(40, read!.Count);
+
+            // At least the final call, whatever the reporting interval is: a caller that only
+            // hears once still hears that it finished.
+            Assert.NotEmpty(seen);
+            Assert.Equal(40, seen[seen.Count - 1]);
         }
     }
 }
