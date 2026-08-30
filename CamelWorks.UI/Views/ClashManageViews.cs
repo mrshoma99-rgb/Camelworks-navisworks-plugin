@@ -580,10 +580,54 @@ namespace CamelWorks.UI.Views
                 }
 
                 _read = entries;
+
+                var kept = Keep(entries, job);
+
                 Redraw();
 
                 _log.Children.Add(Ui.Line(Ui.Count(entries.Count, "test") + ", "
                     + Ui.Count(entries.Sum(e => e.Rows.Count), "result") + " read.", 1, true));
+
+                if (kept != null) _log.Children.Add(Ui.Line(kept, 0.75));
+            }
+
+            /// <summary>
+            /// Put what this read found into the findings register, and keep it.
+            ///
+            /// <b>Why a read writes anything.</b> The register is what survives the session, the
+            /// document being a published NWD, and the next run renumbering every result. A read
+            /// is the observation that keeps it current: a clash already known keeps the decision
+            /// somebody made and takes this run's fresh facts, and one this run no longer reports
+            /// is marked absent rather than deleted.
+            ///
+            /// Scoped to the tests that were actually read, so reading three of twelve never
+            /// closes the other nine.
+            /// </summary>
+            private string? Keep(IReadOnlyList<TestEntry> entries, Job job)
+            {
+                if (OnFile) return null;
+
+                var read = new HashSet<string>(entries.Select(e => e.Test.Name),
+                                               StringComparer.Ordinal);
+
+                var found = new List<Finding>();
+
+                foreach (var entry in entries)
+                    found.AddRange(ClashFindings.ForTest(entry.Test.Id, entry.Test.Name,
+                                                         entry.Rows.Select(r => r.Info)));
+
+                job.Say("Keeping what was found...");
+
+                var intake = _session.Findings.Findings.Observe(
+                    FindingSource.Clash, found, DateTime.UtcNow.Ticks,
+                    origin: _session.Store.Path,
+                    scope: f => read.Contains(f.Rule));
+
+                if (!_session.Findings.Save())
+                    return "These results are on the board but could not be kept: "
+                           + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.");
+
+                return intake.Explain();
             }
 
             private void ReadFile(Job job)

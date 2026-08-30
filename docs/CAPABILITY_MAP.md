@@ -68,7 +68,8 @@ surfaces work, not things a coordinator opens.
 | `IssueBcf`, `IssueImportResult` | **Issue Manager ▸ Import / Export** — BCF in as a merge, BCF out as one topic per issue |
 | `ManualIssue`, `ManualIssueList` | Board pipeline — issues raised in earlier versions still ride the board into reports and BCF |
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
-| `Finding`, `FindingComment`, `FindingJson`, `FindingRegister`, `FindingStore` | **The findings store** — the one record every check emits, kept in `.camelworks/<model>.findings.json` beside the project file. No producer writes to it yet; the tools move onto it one at a time. See [docs/findings-and-issues.md](findings-and-issues.md). |
+| `ClashFindings` | **Clash Manager ▸ Manage** — every read of the results also writes them into the findings register, so a decision survives the session, a published NWD, and the next run renumbering every result. Scoped to the tests that were read. |
+| `Finding`, `FindingComment`, `FindingJson`, `FindingRegister`, `FindingStore` | **The findings store** — the one record every check emits, kept in `.camelworks/<model>.findings.json` beside the project file. Clash writes to it; the other checks move onto it one at a time. See [docs/findings-and-issues.md](findings-and-issues.md). |
 | `Resolution`, `FindingStatus`, `FindingStatusLattice` | Clash Board detail + Review. The status lattice is what stops a re-run demoting a decision somebody made. |
 | `MatrixOptions`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix — by hand, from the model's tests, or from the client's spreadsheet |
 | `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
