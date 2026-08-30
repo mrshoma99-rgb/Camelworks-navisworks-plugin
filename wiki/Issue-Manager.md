@@ -14,7 +14,7 @@ spreadsheet beside the tool.
 | A person | **New issue**, on whatever is selected in the model |
 | Clash results | Right-click in Clash Manager ▸ Manage → *Create an issue from N*, or *Attach N to an issue…* to put them on one that already exists |
 | Clearance findings | Right-click in Clash Manager ▸ Clearance Check |
-| Somebody else's tool | A BCF file, read in through Import (or through Issue Link ▸ BCF) |
+| Somebody else's tool | A BCF file, read in through Import (or through [Clash Manager ▸ BCF](Clash-Manager#bcf)) |
 
 What raised an issue is a **column**, not a filing cabinet — one register holds all four. It is
 also the one field nobody can edit afterwards, because it is a fact about the past.
@@ -88,7 +88,7 @@ would lose what the other party meant.
 what it already brought in and adds only the comments nobody has said yet — it does not raise
 everything twice. Matching is on the BCF GUID; duplicate author-and-body comments are skipped.
 
-A BCF file read anywhere in the product — here, or in [Issue Link ▸ BCF](Issue-Link#bcf) — ends up
+A BCF file read anywhere in the product — here, or in [Clash Manager ▸ BCF](Clash-Manager#bcf) — ends up
 in this one register.
 
 ### A topic that answers a finding goes onto the finding

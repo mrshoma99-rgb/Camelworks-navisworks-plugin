@@ -10,7 +10,6 @@
 
 - [Clash Manager](Clash-Manager)
 - [Issue Manager](Issue-Manager)
-- [Issue Link](Issue-Link)
 - [Model Audit](Model-Audit)
 - [Compare Track](Compare-Track)
 - [Data Manager](Data-Manager)

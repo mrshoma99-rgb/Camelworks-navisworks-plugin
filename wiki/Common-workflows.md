@@ -30,7 +30,7 @@ Worth knowing before the meeting rather than during it.
    Right-click → **Create an issue from N** for anything that needs chasing.
 5. **[Clearance Check](Clash-Manager#clearance-check)** — the defects no clash test can find.
    Point it at the corridors by naming the corridor set.
-6. **[Issue Link ▸ Report](Issue-Link#report)** → *Write the report*, one file per party.
+6. **[Clash Manager ▸ Report](Clash-Manager#report)** → *Write the report*, one file per party.
    It then offers BCF for whoever answers in a tool.
 
 ---

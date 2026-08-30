@@ -36,14 +36,10 @@ namespace CamelWorks.UI
         ToolTip = "Coordination, data and delivery tools for Navisworks — bimcamel.com")]
     [RibbonLayout("CamelWorks.xaml")]
     [RibbonTab("ID_Tab_BIMCamel")]
-    [Command("ID_CW_Home", Icon = "Resources\\Home_16.png", LargeIcon = "Resources\\Home_32.png",
-        DisplayName = "CamelWorks", ToolTip = "The week, the search, and the way to every app")]
     [Command("ID_CW_AppClash", Icon = "Resources\\AppClash_16.png", LargeIcon = "Resources\\AppClash_32.png",
         DisplayName = "Clash Manager", ToolTip = "Find what fights, and decide it")]
     [Command("ID_CW_AppIssueManager", Icon = "Resources\\AppIssueManager_16.png", LargeIcon = "Resources\\AppIssueManager_32.png",
         DisplayName = "Issue Manager", ToolTip = "Everything raised on this job, in one register")]
-    [Command("ID_CW_AppIssues", Icon = "Resources\\AppIssues_16.png", LargeIcon = "Resources\\AppIssues_32.png",
-        DisplayName = "Issue Link", ToolTip = "Issues out to the world, and answers back in")]
     [Command("ID_CW_AppAudit", Icon = "Resources\\AppAudit_16.png", LargeIcon = "Resources\\AppAudit_32.png",
         DisplayName = "Model Audit", ToolTip = "Whether this federation is fit to coordinate against")]
     [Command("ID_CW_AppTrack", Icon = "Resources\\AppTrack_16.png", LargeIcon = "Resources\\AppTrack_32.png",
@@ -106,7 +102,10 @@ namespace CamelWorks.UI
                 }
                 else if (command.ToolId == null)
                 {
-                    said = HubWindow.Open();
+                    // A catalogue entry naming neither. There are none, and a button that does
+                    // nothing is the one failure a user cannot report, so it says so.
+                    said = command.Title + " does not name anything to open. This is a bug in "
+                           + "this build rather than anything you did.";
                 }
                 else if (command.Tool?.Shape == ToolShape.Act)
                 {
@@ -135,15 +134,13 @@ namespace CamelWorks.UI
         /// Nearly every one of these needs a model, so with nothing open they are shown but
         /// disabled — visible, so the tab does not look empty and the user can see what the
         /// product offers, and disabled, because a button that looks available and then says
-        /// "open a model first" has wasted the click and taught nothing. The hub and Help are the
-        /// two that stay live: the hub says what the product is, and Help must work when nothing
-        /// else does.
+        /// "open a model first" has wasted the click and taught nothing. Help is the one that
+        /// stays live, because it must work when nothing else does.
         /// </summary>
         /// <param name="commandId">The command being asked about.</param>
         public override CommandState CanExecuteCommand(string commandId)
         {
-            if (string.Equals(commandId, "ID_CW_Home", StringComparison.Ordinal)
-                || string.Equals(commandId, "ID_CW_Help", StringComparison.Ordinal))
+            if (string.Equals(commandId, "ID_CW_Help", StringComparison.Ordinal))
                 return new CommandState(true);
 
             var document = Autodesk.Navisworks.Api.Application.ActiveDocument;

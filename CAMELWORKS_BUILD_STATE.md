@@ -99,8 +99,8 @@ carry the clash `Tests` property the other three do.
 
 **Fifty-one tools, eleven apps, fourteen ribbon buttons.** The fourth design, recorded in
 `CAMELWORKS_DESIGN.md` and modelled on the plug-in collections the client named. The ribbon is
-one flat row: the hub, one button per app, the section-box act and Help. Each app is a
-self-contained window — Clash Manager, Issue Link, Model Audit, Compare Track, Data Manager,
+one flat row: one button per app, the section-box act and Help. Each app is a
+self-contained window — Clash Manager, Issue Manager, Model Audit, Compare Track, Data Manager,
 Quantify, Sets Manager, Scene Kit, Export Kit, Site Pack, Automate — with its modes as a flat
 tab strip across the top, never collapsible, and its accent carried from the ribbon to the tab
 strip. There are no dock panes: an app opens, does its job, and closes. Review keeps its

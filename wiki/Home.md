@@ -14,7 +14,7 @@ Coordination, data and delivery tools for **Navisworks 2024–2027**, Manage and
 CamelWorks adds one ribbon tab — **BIMCamel** — and it is shared: the
 [Dyncamelo](https://github.com/mrshoma99-rgb/Dyncamelo) visual-programming editor and the
 [BIMCamel IFC exporter](https://github.com/mrshoma99-rgb/bimcamel-ifc-exporter) install with it and
-sit on the same tab. One download, three tools, one place to find them. On it are twelve **apps**; each opens in its own window with its
+sit on the same tab. One download, three tools, one place to find them. On it are eleven **apps**; each opens in its own window with its
 modes as **tabs** across the top, and each tab has **one main action**. Nothing has to be configured
 before it will run: every screen reads what it needs from whatever is open, says what it worked out,
 and lets you correct it.
@@ -35,7 +35,6 @@ and lets you correct it.
 |---|---|
 | [Clash Manager](Clash-Manager) | Find what fights, and decide it |
 | [Issue Manager](Issue-Manager) | Everything raised on this job, in one register |
-| [Issue Link](Issue-Link) | Issues out to the world, and answers back in |
 | [Model Audit](Model-Audit) | Whether this federation is fit to coordinate against |
 | [Compare Track](Compare-Track) | What changed, against what, since when |
 | [Data Manager](Data-Manager) | What the elements carry, and the pen to fix it |

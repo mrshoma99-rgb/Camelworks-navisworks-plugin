@@ -65,11 +65,9 @@ FAMILY_INK = {
 # more. Each command names its family here instead - the same hues the app windows draw their
 # accents in - and this table wins over the panel scan.
 LOOSE = {
-    "Home":         "CamelWorks",
     "Help":         "CamelWorks",
     "AppClash":     "Coordinate",
     "AppIssueManager": "Coordinate",
-    "AppIssues":    "Coordinate",
     "AppAudit":     "Project",
     "AppTrack":     "Compare",
     "AppData":      "Data",
@@ -87,11 +85,9 @@ SIZES = (16, 32)
 # One icon per ribbon command. The command id is the file stem, so the [Command] attribute and the
 # file on disk cannot drift apart without the checker noticing.
 ICONS = {
-    "Home":         "home",
     "Help":         "help",
     "AppClash":     "hub",
     "AppIssueManager": "checklist",
-    "AppIssues":    "sync_alt",
     "AppAudit":     "troubleshoot",
     "AppTrack":     "compare",
     "AppData":      "table_chart",

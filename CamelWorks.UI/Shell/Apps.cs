@@ -54,7 +54,7 @@ namespace CamelWorks.UI.Shell
     }
 
     /// <summary>
-    /// The suite: twelve apps, flat, each a self-contained product.
+    /// The suite: eleven apps, flat, each a self-contained product.
     ///
     /// The fourth shape of the front end and the first one modelled on a collection the client
     /// named — the DiRoots plug-in suites, whose law is a flat row of named apps, each opening on
@@ -62,8 +62,15 @@ namespace CamelWorks.UI.Shell
     /// `CAMELWORKS_DESIGN.md` is the law this file implements.
     ///
     /// Tools keep their identity in <see cref="Tools"/>; an app decides where a tool appears,
-    /// never what it is. Review, Section Box, Help and the hub live outside the table: the
-    /// palette, the act, the lifeboat and the front door.
+    /// never what it is. Review, Section Box and Help live outside the table: the palette, the
+    /// act and the lifeboat.
+    ///
+    /// There was a twelfth app, Issue Link, holding the ways a board left the product and came
+    /// back: the report, BCF, the clash file, the merge and the penetration schedule. Every one
+    /// of them is a way of writing or reading the work of some other app, and an app whose whole
+    /// subject is other apps' files makes somebody leave the screen they are working on to save
+    /// it. Each now sits with the work it is about - the four board ones in the clash manager,
+    /// the schedule in Site Pack, where the rest of the paperwork is.
     /// </summary>
     public static class Apps
     {
@@ -75,21 +82,17 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Manage", "manage"),
                 new AppTab("Matrix", "matrix"),
                 new AppTab("Clearance Check", "headroom"),
-                new AppTab("Filter Clashes", "rules")),
+                new AppTab("Filter Clashes", "rules"),
+                new AppTab("Report", "clashreport"),
+                new AppTab("BCF", "bcf"),
+                new AppTab("Clash file", "clashxml"),
+                new AppTab("Merge", "merge")),
 
             new App("issuemgr", "Issue Manager",
                 "Everything raised on this job, in one register.", "Coordinate",
                 new AppTab("Issues", "issuelist"),
                 new AppTab("Import", "issuein"),
                 new AppTab("Export", "issueout")),
-
-            new App("issues", "Issue Link",
-                "Issues out to the world, and answers back in.", "Coordinate",
-                new AppTab("Report", "clashreport"),
-                new AppTab("BCF", "bcf"),
-                new AppTab("Clash file", "clashxml"),
-                new AppTab("Merge", "merge"),
-                new AppTab("Penetrations", "penetrations")),
 
             new App("audit", "Model Audit",
                 "Whether this federation is fit to coordinate against.", "Project",
@@ -149,6 +152,7 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Dimensions", "dimensions"),
                 new AppTab("Weight", "weight"),
                 new AppTab("Labels", "labels"),
+                new AppTab("Penetrations", "penetrations"),
                 new AppTab("Documents", "paperwork")),
 
             new App("automate", "Automate",
