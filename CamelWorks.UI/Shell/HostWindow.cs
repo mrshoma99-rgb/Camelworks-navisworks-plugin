@@ -92,6 +92,29 @@ namespace CamelWorks.UI.Shell
             }
         }
 
+        /// <summary>
+        /// The Navisworks frame as something a native dialog can be owned by, or null.
+        ///
+        /// For the message boxes that are shown on the way to a screen that never opened: they are
+        /// native modals, and a native modal with no owner disables the host's own frame and
+        /// re-enables it from an owner it does not have.
+        /// </summary>
+        public static System.Windows.Forms.IWin32Window? Frame()
+        {
+            var handle = Handle();
+
+            return handle == IntPtr.Zero ? null : new FrameHandle(handle);
+        }
+
+        /// <summary>The host frame, as WinForms wants to be handed a window.</summary>
+        private sealed class FrameHandle : System.Windows.Forms.IWin32Window
+        {
+            internal FrameHandle(IntPtr handle) => Handle = handle;
+
+            /// <inheritdoc />
+            public IntPtr Handle { get; }
+        }
+
         /// <summary>The Navisworks main frame's window handle, or zero.</summary>
         private static IntPtr Handle()
         {

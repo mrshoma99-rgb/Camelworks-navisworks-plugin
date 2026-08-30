@@ -50,12 +50,42 @@ namespace CamelWorks.UI.Views
         private static readonly List<PropColumn> _columns = new List<PropColumn>();
         private static readonly List<string> _chain = new List<string>();
 
+        /// <summary>Where the register of refused edits lives in the project file.</summary>
+        private const string HeldKey = "heldEdits";
+
+        /// <summary>
+        /// The edits this document would not take, kept so the week's work is not lost.
+        ///
+        /// Static and beside the read, because it belongs to the document rather than to one visit
+        /// to the tab: loaded from the project file on the first visit, written back on every
+        /// change so it survives closing Navisworks, and dropped when the document changes so it
+        /// can never be applied to a federation it says nothing about.
+        /// </summary>
+        private static HeldEdits? _heldEdits;
+
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Manage(Session session) => new Screen(session).Build();
 
-        /// <summary>Forget the cached model read, so the next visit reads afresh.</summary>
-        internal static void Forget() => _read = null;
+        static ClashManageViews() => Host.WhenDocumentChanges(Forget);
+
+        /// <summary>
+        /// Forget everything cached about the document, so the next visit reads afresh.
+        ///
+        /// Called when the document changes as well as by hand. Everything here describes one
+        /// federation - the results, the file being marked up, the bench somebody set up over it,
+        /// and the edits held for it - and every one of them would be a lie about the next.
+        /// </summary>
+        internal static void Forget()
+        {
+            _read = null;
+            _file = null;
+            _source = FromModel;
+            _heldEdits = null;
+
+            _columns.Clear();
+            _chain.Clear();
+        }
 
         // -----------------------------------------------------------------------------------
 
@@ -233,18 +263,6 @@ namespace CamelWorks.UI.Views
             private const string FirstSide = "First item";
             private const string SecondSide = "Second item";
             private const string BothSides = "Both";
-
-            /// <summary>Where the register of refused edits lives in the project file.</summary>
-            private const string HeldKey = "heldEdits";
-
-            /// <summary>
-            /// The edits this document would not take, kept so the week's work is not lost.
-            ///
-            /// Static, like the read, because it belongs to the document rather than to one visit
-            /// to the tab; loaded from the project file on the first visit and written back on
-            /// every change, so it also survives closing Navisworks.
-            /// </summary>
-            private static HeldEdits? _heldEdits;
 
             internal Screen(Session session)
             {

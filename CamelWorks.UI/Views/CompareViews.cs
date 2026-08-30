@@ -814,6 +814,7 @@ namespace CamelWorks.UI.Views
                     var folder = CompareClusters.Folder(_result);
                     var made = 0;
                     var framed = 0;
+                    var refused = 0;
 
                     for (var i = 0; i < clusters.Count; i++)
                     {
@@ -827,14 +828,22 @@ namespace CamelWorks.UI.Views
                         if (cluster.Keys.Count > 0) _session.View.ZoomTo(cluster.Keys, 1.5);
                         else { _session.View.FrameBox(cluster.Bounds); framed++; }
 
-                        _session.Viewpoints.SaveCurrent(
-                            CompareClusters.Name(cluster, i + 1, clusters.Count), folder);
+                        if (_session.Viewpoints.SaveCurrent(
+                                CompareClusters.Name(cluster, i + 1, clusters.Count), folder) == null)
+                        {
+                            refused++;
+                            continue;
+                        }
 
                         made++;
                     }
 
                     _output.Children.Add(Ui.Line("Made " + Ui.Count(made, "viewpoint")
                         + " in \"" + folder + "\".", 1, true));
+
+                    if (refused > 0)
+                        _output.Children.Add(Ui.Problem(_session.Viewpoints.LastProblem
+                            ?? "The document would not take " + Ui.Count(refused, "viewpoint") + "."));
 
                     if (framed > 0)
                         _output.Children.Add(Ui.Note(Ui.Count(framed, "viewpoint")

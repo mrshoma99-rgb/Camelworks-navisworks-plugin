@@ -152,7 +152,26 @@ namespace CamelWorks.UI
             return new CommandState(ready);
         }
 
-        private static void Warn(string message) =>
-            MessageBox.Show(message, "CamelWorks", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        /// <summary>
+        /// Say something on the way to a screen that never opened.
+        ///
+        /// Owned by the Navisworks frame. A modal with no owner disables every top-level window on
+        /// the thread and re-enables them from the owner it does not have, which is how a dialog
+        /// somebody closes takes the host down with it - the same fault that used to close
+        /// Navisworks when a settings window was shut.
+        /// </summary>
+        /// <param name="message">What to say.</param>
+        private static void Warn(string message)
+        {
+            var owner = Shell.HostWindow.Frame();
+
+            if (owner == null)
+            {
+                MessageBox.Show(message, "CamelWorks", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            MessageBox.Show(owner, message, "CamelWorks", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 }

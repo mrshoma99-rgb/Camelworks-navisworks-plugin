@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Autodesk.Navisworks.Api;
@@ -157,6 +158,8 @@ namespace CamelWorks.UI.Views
         private static string? _key;
         private static bool _resolverRegistered;
 
+        private static readonly List<Action> _onChange = new List<Action>();
+
         /// <summary>What to say when there is no model open.</summary>
         public const string NoModel = "Open a model first. Every screen in CamelWorks works on a raw "
                                       + "model with nothing configured, but it does need one.";
@@ -178,6 +181,8 @@ namespace CamelWorks.UI.Views
 
                 if (document == null || document.IsClear)
                 {
+                    if (_key != null) Changed();
+
                     _session = null;
                     _key = null;
                     return null;
@@ -186,6 +191,10 @@ namespace CamelWorks.UI.Views
                 var key = document.CurrentFileName + "|" + document.Models.Count + "|" + document.FileName;
 
                 if (_session != null && string.Equals(_key, key, StringComparison.Ordinal)) return _session;
+
+                // A different document, or models added or removed. Everything a screen cached
+                // about the last one describes a model that is no longer open.
+                if (_key != null) Changed();
 
                 var model = new NavDocument(document);
                 var saved = SavedPathOf(document);
@@ -210,8 +219,55 @@ namespace CamelWorks.UI.Views
         /// <summary>Drop the cached session, so the next access rebuilds it.</summary>
         public static void Forget()
         {
+            if (_key != null) Changed();
+
             _session = null;
             _key = null;
+        }
+
+        /// <summary>
+        /// Run this whenever the open document changes.
+        ///
+        /// <b>What this is for.</b> Several screens keep what they read in a static, on purpose:
+        /// re-reading eighteen thousand clash results because somebody glanced at another tab
+        /// would make the glance cost more than the work. But a static outlives the document it
+        /// describes, and nothing used to tell it so. Open a second federation and the clash board
+        /// still showed the first one's results, the clearance check still showed its findings,
+        /// and the pickers still offered its sets - all of it wrong, and none of it saying so.
+        ///
+        /// Registering here is what makes a cache safe to keep. The call goes in a static
+        /// constructor, so a screen nobody has opened has nothing to forget and never registers.
+        /// </summary>
+        /// <param name="forget">Throw away what was cached about the last document.</param>
+        public static void WhenDocumentChanges(Action forget)
+        {
+            if (forget == null) return;
+
+            lock (_onChange)
+            {
+                if (!_onChange.Contains(forget)) _onChange.Add(forget);
+            }
+        }
+
+        /// <summary>Tell every cache that what it holds is about a document nobody has open.</summary>
+        private static void Changed()
+        {
+            List<Action> forgetters;
+
+            lock (_onChange) forgetters = new List<Action>(_onChange);
+
+            foreach (var forget in forgetters)
+            {
+                try
+                {
+                    forget();
+                }
+                catch (Exception)
+                {
+                    // One screen's cache refusing to clear must not stop the others clearing, and
+                    // must not take down the document switch that triggered it.
+                }
+            }
         }
 
         /// <summary>Where CamelWorks keeps things for a document that has never been saved.</summary>

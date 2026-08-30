@@ -36,6 +36,23 @@ namespace CamelWorks.Nav
         /// <summary>Anything the user should know about how it ran.</summary>
         public IReadOnlyList<string> Notes { get; }
 
+        /// <summary>
+        /// Why the set was not written, or null when it was.
+        ///
+        /// A search that matched four thousand elements and a document that would not keep the
+        /// set are two different outcomes, and reporting the first while the second happened is
+        /// how somebody finds out next week.
+        /// </summary>
+        public string? Problem { get; private set; }
+
+        /// <summary>The same outcome, with the document's refusal on it.</summary>
+        /// <param name="problem">Why nothing was written.</param>
+        internal SearchOutcome Refused(string? problem)
+        {
+            Problem = problem ?? "The document would not take the set.";
+            return this;
+        }
+
         /// <summary>How many elements matched.</summary>
         public int Count => Keys.Count;
 
@@ -131,10 +148,7 @@ namespace CamelWorks.Nav
             var existing = _document.Sets()
                 .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
 
-            if (existing != null) _document.Document.SelectionSets.Remove(existing);
-
-            _document.Document.SelectionSets.AddCopy(set);
-            return outcome;
+            return Replace(null, set, existing) ? outcome : outcome.Refused(LastProblem);
         }
 
         /// <summary>
@@ -176,9 +190,7 @@ namespace CamelWorks.Nav
                 .OfType<SelectionSet>()
                 .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
 
-            if (existing != null) _document.Document.SelectionSets.Remove(parent, existing);
-
-            _document.Document.SelectionSets.AddCopy(parent, set);
+            if (!Replace(parent, set, existing)) return outcome.Refused(LastProblem);
 
             if (!string.IsNullOrWhiteSpace(comment))
             {
@@ -287,10 +299,72 @@ namespace CamelWorks.Nav
             var existing = _document.Sets()
                 .FirstOrDefault(s => string.Equals(s.DisplayName, name, StringComparison.OrdinalIgnoreCase));
 
-            if (existing != null) _document.Document.SelectionSets.Remove(existing);
+            return Replace(null, set, existing) ? items.Count : 0;
+        }
 
-            _document.Document.SelectionSets.AddCopy(set);
-            return items.Count;
+        /// <summary>
+        /// Put a set into the document, replacing one of the same name.
+        ///
+        /// <b>Added before the old one is taken out.</b> The other order is how a refused write
+        /// destroys somebody's set: the document takes the removal, refuses the copy, and the set
+        /// that was there is simply gone - which is exactly what a read-only document does, and
+        /// what a full disk does at the moment of the save. Adding first means the worst outcome
+        /// is two sets with one name, which somebody can see and fix.
+        /// </summary>
+        /// <param name="parent">The folder, or null for the top level.</param>
+        /// <param name="set">The set to put in.</param>
+        /// <param name="existing">The one it replaces, or null.</param>
+        private bool Replace(SavedItem? parent, SelectionSet set, SavedItem? existing)
+        {
+            _problem = null;
+
+            try
+            {
+                if (parent == null) _document.Document.SelectionSets.AddCopy(set);
+                else _document.Document.SelectionSets.AddCopy((GroupItem)parent, set);
+            }
+            catch (Exception error)
+            {
+                _problem = Explain(error);
+                return false;
+            }
+
+            if (existing == null) return true;
+
+            try
+            {
+                if (parent == null) _document.Document.SelectionSets.Remove(existing);
+                else _document.Document.SelectionSets.Remove((GroupItem)parent, existing);
+            }
+            catch (Exception)
+            {
+                // The new set is in. Failing to take the old one out leaves two of one name,
+                // which is untidy and visible - not the silent loss the other order produces.
+            }
+
+            return true;
+        }
+
+        private string? _problem;
+
+        /// <summary>
+        /// Why the document turned the last set away, or null when it took it.
+        ///
+        /// Selection sets live in the document, so a published NWD refuses every one. A tool that
+        /// reported "published 40 sets" into a file holding none of them is the failure this
+        /// exists to prevent.
+        /// </summary>
+        public string? LastProblem => _problem;
+
+        private string Explain(Exception error)
+        {
+            var said = (error.Message ?? string.Empty).Trim();
+
+            const string Head = "This document would not take the set. A published NWD is a "
+                                + "snapshot: selection sets live in the document, so they cannot "
+                                + "be written into one. Open the NWF the models were federated in.";
+
+            return said.Length == 0 ? Head : Head + " The host said: " + said;
         }
 
         private IEnumerable<ModelItem> RunClause(SearchClause clause, ICollection<string> notes)

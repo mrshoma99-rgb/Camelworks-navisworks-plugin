@@ -72,8 +72,22 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The open document.</param>
         public static UIElement Check(Session session) => new Screen(session).Build();
 
-        /// <summary>Forget the last check, so the next visit starts clean.</summary>
-        internal static void Forget() => _found = null;
+        static ClearanceViews() => Host.WhenDocumentChanges(Forget);
+
+        /// <summary>
+        /// Forget the last check, so the next visit starts clean.
+        ///
+        /// Called when the document changes as well as by hand: findings about the federation that
+        /// was open are not findings about the one that is.
+        /// </summary>
+        internal static void Forget()
+        {
+            _found = null;
+            _headline = string.Empty;
+
+            _columns.Clear();
+            _chain.Clear();
+        }
 
         /// <summary>
         /// Whether an element reads as something people walk on.

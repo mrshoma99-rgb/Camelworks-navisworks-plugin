@@ -17,14 +17,17 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Every saved viewpoint, in host order, flattened across folders.</summary>
         IReadOnlyList<SavedView> All();
 
-        /// <summary>Save the current camera and appearance under a name, returning the new view.</summary>
-        SavedView SaveCurrent(string name, string? folder = null);
+        /// <summary>
+        /// Save the current camera and appearance under a name, returning the new view - or null
+        /// when the document would not take it, with <see cref="LastProblem"/> saying why.
+        /// </summary>
+        SavedView? SaveCurrent(string name, string? folder = null);
 
         /// <summary>Apply a saved viewpoint. This restores its overrides too — see the type remarks.</summary>
-        void Apply(string viewId);
+        bool Apply(string viewId);
 
         /// <summary>Rename a saved viewpoint.</summary>
-        void Rename(string viewId, string newName);
+        bool Rename(string viewId, string newName);
 
         /// <summary>
         /// Move a saved viewpoint into a folder, making the folder if it is not there.
@@ -49,7 +52,16 @@ namespace CamelWorks.Core.Abstractions
         bool CopyOverrides(string fromViewId, string toViewId);
 
         /// <summary>Delete a saved viewpoint.</summary>
-        void Delete(string viewId);
+        bool Delete(string viewId);
+
+        /// <summary>
+        /// Why the document turned the last write away, or null when it took it.
+        ///
+        /// Saved viewpoints live in the document, so a published NWD refuses every one of them.
+        /// A batch that made forty viewpoints in a file that kept none of them, and said it made
+        /// forty, is worse than one that made none: the coordinator finds out next week.
+        /// </summary>
+        string? LastProblem { get; }
     }
 
     /// <summary>One saved viewpoint.</summary>

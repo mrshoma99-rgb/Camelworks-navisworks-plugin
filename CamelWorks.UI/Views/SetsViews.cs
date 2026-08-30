@@ -188,6 +188,12 @@ namespace CamelWorks.UI.Views
                     job.Say("Searching...");
                     var outcome = session.Search.Publish(title, DnfCompiler.Compile(Expression()));
 
+                    if (outcome.Problem != null)
+                    {
+                        _results.Children.Add(Ui.Problem(outcome.Problem));
+                        return;
+                    }
+
                     _results.Children.Add(Ui.Line(
                         "Published \"" + title + "\" — " + outcome, 1, true));
 
@@ -1385,7 +1391,15 @@ namespace CamelWorks.UI.Views
                     var view = session.Viewpoints.SaveCurrent(
                         "View " + (session.Viewpoints.All().Count + 1).ToString(CultureInfo.InvariantCulture));
 
-                    _results.Children.Add(Ui.Done("Saved \"" + view.Name + "\"."));
+                    if (view == null)
+                    {
+                        _results.Children.Add(Ui.Problem(session.Viewpoints.LastProblem
+                            ?? "The document would not take the viewpoint."));
+
+                        return;
+                    }
+
+                    _results.Children.Add(Ui.Done("Saved \"" + view.Value.Name + "\"."));
                     Redraw(session);
                 });
 
@@ -1584,6 +1598,7 @@ namespace CamelWorks.UI.Views
 
                 var made = 0;
                 var failed = 0;
+                var refused = 0;
 
                 using (session.View.BorrowCamera())
                 {
@@ -1602,8 +1617,12 @@ namespace CamelWorks.UI.Views
 
                         if (recipe.Section) session.View.SetSectionBox(item.Bounds, recipe.SectionOffset);
 
-                        session.Viewpoints.SaveCurrent(view.Name,
-                            string.IsNullOrWhiteSpace(recipe.Folder) ? null : recipe.Folder);
+                        if (session.Viewpoints.SaveCurrent(view.Name,
+                                string.IsNullOrWhiteSpace(recipe.Folder) ? null : recipe.Folder) == null)
+                        {
+                            refused++;
+                            continue;
+                        }
 
                         made++;
                     }
@@ -1612,6 +1631,10 @@ namespace CamelWorks.UI.Views
                 }
 
                 _results.Children.Add(Ui.Line("Made " + Ui.Count(made, "viewpoint") + ".", 1, true));
+
+                if (refused > 0)
+                    _results.Children.Add(Ui.Problem(session.Viewpoints.LastProblem
+                        ?? "The document would not take " + Ui.Count(refused, "viewpoint") + "."));
 
                 if (failed > 0)
                     _results.Children.Add(Ui.Note(Ui.Count(failed, "element")
@@ -1654,6 +1677,7 @@ namespace CamelWorks.UI.Views
                         n = 1;
 
                     var done = 0;
+                    var refused = 0;
 
                     foreach (var view in views)
                     {
@@ -1666,14 +1690,19 @@ namespace CamelWorks.UI.Views
 
                         if (!string.Equals(name, view.Name, StringComparison.Ordinal))
                         {
-                            session.Viewpoints.Rename(view.Id, name);
-                            done++;
+                            if (session.Viewpoints.Rename(view.Id, name)) done++;
+                            else refused++;
                         }
 
                         n++;
                     }
 
                     _say.Children.Add(Ui.Done("Renamed " + Ui.Count(done, "viewpoint") + "."));
+
+                    if (refused > 0)
+                        _say.Children.Add(Ui.Problem(session.Viewpoints.LastProblem
+                            ?? "The document would not take " + Ui.Count(refused, "viewpoint") + "."));
+
                     Redraw(session);
                 });
 
@@ -2005,10 +2034,7 @@ namespace CamelWorks.UI.Views
                         var gone = 0;
 
                         foreach (var view in doomed)
-                        {
-                            session.Viewpoints.Delete(view.Id);
-                            gone++;
-                        }
+                            if (session.Viewpoints.Delete(view.Id)) gone++;
 
                         status.Children.Add(Ui.Done("Deleted " + Ui.Count(gone, "viewpoint")
                             + ". Ctrl+Z will not bring them back; save the document only when you are sure."));
@@ -2054,6 +2080,7 @@ namespace CamelWorks.UI.Views
                     var into = folder.Text.Trim();
                     var made = 0;
                     var empty = 0;
+                    var refused = 0;
 
                     // The camera is borrowed once for the whole run and put back at the end. Doing
                     // it per group would leave the view visibly jumping for as long as this takes.
@@ -2078,7 +2105,12 @@ namespace CamelWorks.UI.Views
                                 .Replace("{who}", group.AssignedTo ?? "unassigned")
                                 .Replace("{count}", group.Items.Count.ToString(CultureInfo.InvariantCulture));
 
-                            session.Viewpoints.SaveCurrent(name, into.Length == 0 ? null : into);
+                            if (session.Viewpoints.SaveCurrent(name, into.Length == 0 ? null : into) == null)
+                            {
+                                refused++;
+                                n++;
+                                continue;
+                            }
 
                             made++;
                             n++;
@@ -2087,6 +2119,10 @@ namespace CamelWorks.UI.Views
 
                     _say.Children.Add(Ui.Done("Saved " + Ui.Count(made, "viewpoint")
                         + (into.Length == 0 ? "." : " into \"" + into + "\".")));
+
+                    if (refused > 0)
+                        _say.Children.Add(Ui.Problem(session.Viewpoints.LastProblem
+                            ?? "The document would not take " + Ui.Count(refused, "viewpoint") + "."));
 
                     if (empty > 0)
                         _say.Children.Add(Ui.Note(Ui.Count(empty, "group")

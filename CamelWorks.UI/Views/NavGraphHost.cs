@@ -316,7 +316,7 @@ namespace CamelWorks.UI.Views
 
                     _session.View.FrameBox(CoordinateViews.BoxOf(points));
 
-                    _session.Viewpoints.SaveCurrent(
+                    var made = _session.Viewpoints.SaveCurrent(
                         template
                             .Replace("{n}", n.ToString("00", CultureInfo.InvariantCulture))
                             .Replace("{group}", group.Name)
@@ -324,7 +324,8 @@ namespace CamelWorks.UI.Views
                             .Replace("{count}", group.Items.Count.ToString(CultureInfo.InvariantCulture)),
                         into.Length == 0 ? null : into);
 
-                    saved++;
+                    if (made != null) saved++;
+
                     n++;
                 }
             }

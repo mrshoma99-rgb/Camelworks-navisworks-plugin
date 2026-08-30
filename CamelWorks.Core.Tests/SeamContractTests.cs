@@ -291,6 +291,36 @@ namespace CamelWorks.Core.Tests
             Assert.False(view.SectionBoxEnabled);
             Assert.NotNull(view.SectionBox);
         }
+        [Fact]
+        public void ARefusedCommitSaysWhyRatherThanReportingAShortCount()
+        {
+            // What a published NWD does to every property write. A count of zero with no reason
+            // reads as a broken tool; the reason is the difference between a bug report and a
+            // coordinator opening the NWF instead.
+            var (doc, _, slab) = Setup();
+
+            using var tx = doc.BeginWrite("Status stamp");
+
+            ((FakeWriteTransaction)tx).Refuses = "This document is read-only.";
+
+            tx.SetProperty(slab.Key, "CamelWorks", "Status", "Approved");
+
+            Assert.Equal(0, tx.Commit());
+            Assert.Equal("This document is read-only.", tx.LastProblem);
+        }
+
+        [Fact]
+        public void ACommitThatLandsHasNothingToExplain()
+        {
+            var (doc, _, slab) = Setup();
+
+            using var tx = doc.BeginWrite("Status stamp");
+
+            tx.SetProperty(slab.Key, "CamelWorks", "Status", "Approved");
+
+            Assert.Equal(1, tx.Commit());
+            Assert.Null(tx.LastProblem);
+        }
     }
 
     public class BoundingBoxTests
@@ -359,5 +389,6 @@ namespace CamelWorks.Core.Tests
             Assert.True(Colour.TryParse(new Colour(1, 2, 3).ToString(), out var back));
             Assert.Equal(3, back.B);
         }
-    }
+    
+}
 }

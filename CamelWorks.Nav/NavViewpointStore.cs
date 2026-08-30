@@ -26,6 +26,50 @@ namespace CamelWorks.Nav
 
         private Document Host => _document.Document;
 
+        private string? _problem;
+
+        /// <inheritdoc />
+        public string? LastProblem => _problem;
+
+        /// <summary>
+        /// Do something to the document's saved viewpoints, and keep the reason when it will not.
+        ///
+        /// Every write here goes through this. Saved viewpoints live in the document, so on a
+        /// published NWD every one of them is refused - and the batches that make forty at a time
+        /// used to count forty successes they had never checked, or let a COM exception out into a
+        /// panel as a stack trace.
+        /// </summary>
+        /// <param name="act">The write.</param>
+        private bool Try(Action act)
+        {
+            _problem = null;
+
+            try
+            {
+                act();
+                return true;
+            }
+            catch (Exception error)
+            {
+                _problem = Explain(error);
+                return false;
+            }
+        }
+
+        /// <summary>A host refusal, in words a coordinator can act on.</summary>
+        private string Explain(Exception error)
+        {
+            var said = (error.Message ?? string.Empty).Trim();
+
+            var head = _document.Document.IsClear
+                ? "There is no document to save a viewpoint into."
+                : "This document would not take the viewpoint. A published NWD is a snapshot: "
+                  + "saved viewpoints live in the document, so they cannot be written into one. "
+                  + "Open the NWF the models were federated in.";
+
+            return said.Length == 0 ? head : head + " The host said: " + said;
+        }
+
         /// <inheritdoc />
         public IReadOnlyList<SavedView> All()
         {
@@ -44,45 +88,58 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
-        public SavedView SaveCurrent(string name, string? folder = null)
+        public SavedView? SaveCurrent(string name, string? folder = null)
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("a viewpoint needs a name", nameof(name));
 
-            // Document.CurrentViewpoint is a Viewpoint, not a SavedViewpoint — the two are
-            // unrelated types, and only SavedViewpoint can go into the collection. So the live
-            // camera is copied and then wrapped, rather than cast.
-            var copy = new SavedViewpoint(Host.CurrentViewpoint.CreateCopy())
+            var saved = Try(() =>
             {
-                DisplayName = name,
-            };
+                // Document.CurrentViewpoint is a Viewpoint, not a SavedViewpoint — the two are
+                // unrelated types, and only SavedViewpoint can go into the collection. So the live
+                // camera is copied and then wrapped, rather than cast.
+                var copy = new SavedViewpoint(Host.CurrentViewpoint.CreateCopy())
+                {
+                    DisplayName = name,
+                };
 
-            Host.SavedViewpoints.AddCopy(copy);
+                Host.SavedViewpoints.AddCopy(copy);
+            });
 
-            return new SavedView(PathOf(folder, name), name, folder, false, false);
+            return saved ? new SavedView(PathOf(folder, name), name, folder, false, false) : null;
         }
 
         /// <inheritdoc />
-        public void Apply(string viewId)
+        public bool Apply(string viewId)
         {
             var found = Find(viewId);
-            if (found == null) return;
 
-            Host.SavedViewpoints.CurrentSavedViewpoint = found;
+            if (found == null)
+            {
+                _problem = "There is no saved viewpoint at \"" + viewId + "\".";
+                return false;
+            }
+
+            return Try(() => Host.SavedViewpoints.CurrentSavedViewpoint = found);
         }
 
         /// <inheritdoc />
-        public void Rename(string viewId, string newName)
+        public bool Rename(string viewId, string newName)
         {
             if (string.IsNullOrWhiteSpace(newName)) throw new ArgumentException("a viewpoint needs a name", nameof(newName));
 
             var found = Find(viewId);
-            if (found == null) return;
+
+            if (found == null)
+            {
+                _problem = "There is no saved viewpoint at \"" + viewId + "\".";
+                return false;
+            }
 
             // EditDisplayName, not remove-then-add. The collection edits the item where it stands,
             // so a bulk rename of forty viewpoints leaves all forty in the order the coordinator
             // put them in — where remove-then-add moves each one to the end of its folder and
             // reverses the list as a side effect of doing its job.
-            Host.SavedViewpoints.EditDisplayName(found, newName);
+            return Try(() => Host.SavedViewpoints.EditDisplayName(found, newName));
         }
 
         /// <inheritdoc />
@@ -103,15 +160,21 @@ namespace CamelWorks.Nav
             if (string.Equals(here ?? string.Empty, there ?? string.Empty, StringComparison.OrdinalIgnoreCase))
                 return PathOf(there, name);
 
-            var wanted = Folder(there);
+            // Added first, then the original removed. The other order loses the viewpoint
+            // outright when the document takes the removal and refuses the copy - which is
+            // exactly what a read-only document does.
+            var moved = Try(() =>
+            {
+                var wanted = Folder(there);
 
-            var copy = (SavedViewpoint)found.CreateCopy();
-            copy.DisplayName = name;
+                var copy = (SavedViewpoint)found.CreateCopy();
+                copy.DisplayName = name;
 
-            Host.SavedViewpoints.Remove(Parent(found), found);
-            Host.SavedViewpoints.AddCopy(wanted, copy);
+                Host.SavedViewpoints.AddCopy(wanted, copy);
+                Host.SavedViewpoints.Remove(Parent(found), found);
+            });
 
-            return PathOf(there, name);
+            return moved ? PathOf(there, name) : null;
         }
 
         /// <inheritdoc />
@@ -225,12 +288,17 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
-        public void Delete(string viewId)
+        public bool Delete(string viewId)
         {
             var found = Find(viewId);
-            if (found == null) return;
 
-            Host.SavedViewpoints.Remove(found);
+            if (found == null)
+            {
+                _problem = "There is no saved viewpoint at \"" + viewId + "\".";
+                return false;
+            }
+
+            return Try(() => Host.SavedViewpoints.Remove(found));
         }
 
         private SavedViewpoint? Find(string viewId)
