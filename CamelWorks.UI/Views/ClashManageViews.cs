@@ -53,6 +53,19 @@ namespace CamelWorks.UI.Views
         /// <summary>Where the register of refused edits lives in the project file.</summary>
         private const string HeldKey = "heldEdits";
 
+        /// <summary>Where the properties the host has no field for live in the project file.</summary>
+        private const string AsideKey = "asides";
+
+        /// <summary>
+        /// What reviewers set that a Navisworks clash result cannot hold - priority, due date,
+        /// stage, their own tags.
+        ///
+        /// The host having no column is not a reason the board cannot show one. Kept beside the
+        /// read, dropped when the document changes, and written back into the project file on
+        /// every sync.
+        /// </summary>
+        private static ClashAsides? _asides;
+
         /// <summary>
         /// The edits this document would not take, kept so the week's work is not lost.
         ///
@@ -82,6 +95,7 @@ namespace CamelWorks.UI.Views
             _file = null;
             _source = FromModel;
             _heldEdits = null;
+            _asides = null;
 
             _columns.Clear();
             _chain.Clear();
@@ -182,6 +196,14 @@ namespace CamelWorks.UI.Views
             /// <summary>The authored comment trail, held in full only for file rows.</summary>
             internal List<ClashComment> Trail { get; } = new List<ClashComment>();
 
+            /// <summary>
+            /// What a reviewer set that the host has no field for, or null.
+            ///
+            /// Laid over the row from the project file rather than read from the document, which
+            /// is the only way a board can show a due date the host has nowhere to keep.
+            /// </summary>
+            internal ClashAside? Review { get; set; }
+
             /// <summary>Custom column values, by column id, once "Read the values" has run.</summary>
             internal Dictionary<string, string> Custom { get; } =
                 new Dictionary<string, string>(StringComparer.Ordinal);
@@ -270,6 +292,9 @@ namespace CamelWorks.UI.Views
 
                 _heldEdits ??= HeldEdits.FromJson(
                     session.Store.Section(ProjectStore.ClashSection)[HeldKey]);
+
+                _asides ??= ClashAsides.FromJson(
+                    session.Store.Section(ProjectStore.ClashSection)[AsideKey]);
 
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
@@ -906,6 +931,9 @@ namespace CamelWorks.UI.Views
                 bool Has(string? value) =>
                     value != null && value.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0;
 
+                if (Has(row.Review?.Describe()))
+                    return true;
+
                 if (Has(row.Info.Name) || Has(row.TestName) || Has(row.Status) || Has(row.Group)
                     || Has(row.Assigned) || Has(row.LastComment)
                     || Has(row.Info.NameA) || Has(row.Info.NameB)
@@ -1262,6 +1290,12 @@ namespace CamelWorks.UI.Views
 
                 foreach (var column in _columns) headers.Add((column.Title, 95));
 
+                // Only when somebody has actually set one. A permanently empty column is width
+                // taken from the names, which are the long part.
+                var reviewed = shown.Any(r => r.Review != null);
+
+                if (reviewed) headers.Add(("Reviewer set", 130));
+
                 headers.Add(("Assigned", 85));
                 headers.Add(("Comment", 130));
                 headers.Add(("Item 1", 110));
@@ -1279,6 +1313,8 @@ namespace CamelWorks.UI.Views
                             ? value
                             : string.Empty);
 
+                    if (reviewed) cells.Add(r.Review?.Describe() ?? string.Empty);
+
                     cells.Add(r.Assigned);
                     cells.Add(r.Comments == 0 ? string.Empty : r.LastComment);
                     cells.Add(r.Info.NameA ?? string.Empty);
@@ -1286,7 +1322,8 @@ namespace CamelWorks.UI.Views
 
                     return new TableRow(r, cells.ToArray())
                     {
-                        Tone = string.Equals(r.Status, "New", StringComparison.OrdinalIgnoreCase) ? Tone.Bad
+                        Tone = r.Review?.IsOverdue(DateTime.UtcNow.Ticks) == true ? Tone.Bad
+                             : string.Equals(r.Status, "New", StringComparison.OrdinalIgnoreCase) ? Tone.Bad
                              : string.Equals(r.Status, "Resolved", StringComparison.OrdinalIgnoreCase)
                                || string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase) ? Tone.Good
                              : Tone.Plain,
@@ -2453,6 +2490,10 @@ namespace CamelWorks.UI.Views
                         CategoryA = row.Info.CategoryA,
                         CategoryB = row.Info.CategoryB,
                         Distance = row.Info.Distance,
+
+                        // Back out as it came in, so a reviewer's priority is not reset by the
+                        // act of sending them the file again.
+                        Review = row.Review,
                     };
 
                     foreach (var comment in row.Trail) item.Comments.Add(comment);
@@ -2774,6 +2815,7 @@ namespace CamelWorks.UI.Views
                 var groups = 0;
                 var missing = 0;
                 var notes = 0;
+                var kept = 0;
                 var problems = new List<string>();
 
                 // The topics no clash in this model answers to. They are somebody's own findings,
@@ -2853,14 +2895,30 @@ namespace CamelWorks.UI.Views
                         foreach (var comment in result.Comments)
                             say.Add((found.TestId, found.ResultId, comment));
 
-                        if (_noteAsides)
-                        {
-                            var aside = ClashBcf.Aside(result, result.Name);
+                        // Kept whatever the tick says. The tick decides whether it is ALSO
+                        // written as a comment - which is about making it visible to the native
+                        // clash window and to the next tool down the line, not about storing it.
+                        // Losing what somebody set because a checkbox was off would be the same
+                        // failure this round trip exists to prevent.
+                        var review = ClashBcf.Review(result, result.Name,
+                                                     System.IO.Path.GetFileName(file),
+                                                     DateTime.UtcNow.Ticks);
 
-                            if (aside != null)
+                        if (review != null)
+                        {
+                            review.TestId = found.TestId;
+                            review.ResultId = found.ResultId;
+
+                            Asides.Put(review);
+
+                            kept++;
+
+                            if (_noteAsides)
                             {
                                 say.Add((found.TestId, found.ResultId,
-                                         new ClashComment("CamelWorks", DateTime.UtcNow.Ticks, aside)));
+                                         new ClashComment("CamelWorks", DateTime.UtcNow.Ticks,
+                                             "Set in the reviewer's tool, which this model has no "
+                                             + "field for: " + review.Explain() + ".")));
 
                                 notes++;
                             }
@@ -2906,6 +2964,8 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                if (kept > 0) KeepAsides();
+
                 var raisedNote = Raise(strangers, named);
 
                 _session.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
@@ -2917,9 +2977,12 @@ namespace CamelWorks.UI.Views
                     + Ui.Count(comments, "comment") + ", "
                     + Ui.Count(assigns, "assignment") + ", "
                     + Ui.Count(groups, "regrouped result") + "."
-                    + (notes > 0
-                        ? " " + Ui.Count(notes, "clash") + " carries a note of what the reviewer "
-                          + "set that this model has no field for."
+                    + (kept > 0
+                        ? " " + Ui.Count(kept, "clash") + " carries a priority, a due date or a "
+                          + "tag this model has no field for; the board shows "
+                          + (kept == 1 ? "it" : "them") + " and the next export sends "
+                          + (kept == 1 ? "it" : "them") + " back out"
+                          + (notes > 0 ? ", and each is noted on the clash too." : ".")
                         : string.Empty)
                     + (raisedNote ?? (missing > 0
                         ? " " + Ui.Count(missing, "topic") + " could not be placed on this model: "
@@ -3045,11 +3108,31 @@ namespace CamelWorks.UI.Views
 
                 Apply(Held.Find(row.TestId, row.Info.Id), row);
 
+                if (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty)
+                    row.Review = Asides.Find(ClashBcf.TopicGuidFor(row.Info.Key()));
+
                 return row;
             }
 
             /// <summary>The register of refused edits. Never null once a screen exists.</summary>
             private static HeldEdits Held => _heldEdits ??= new HeldEdits();
+
+            /// <summary>The register of what the host cannot hold. Never null once a screen exists.</summary>
+            private static ClashAsides Asides => _asides ??= new ClashAsides();
+
+            /// <summary>Write the reviewers' extra fields into the project file.</summary>
+            private void KeepAsides()
+            {
+                try
+                {
+                    _session.Store.Section(ProjectStore.ClashSection).Set(AsideKey, Asides.ToJson());
+                    _session.Store.Save();
+                }
+                catch (Exception)
+                {
+                    // Nowhere to write. They are still on the board for this session.
+                }
+            }
 
             /// <summary>Lay a held edit over a row, so the board reads the way the coordinator left it.</summary>
             private static void Apply(HeldEdit? edit, Row row)

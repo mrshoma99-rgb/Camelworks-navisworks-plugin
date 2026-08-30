@@ -137,14 +137,31 @@ wrote is the failure the round trip exists to prevent.
   [Issue Manager](Issue-Manager) instead of being counted and discarded. Importing is a merge, so
   the same reviewer sending the same file three times updates their issues rather than tripling
   them.
-- **Note what this model has no field for, on the clash.** BCF carries a priority, a due date, a
-  stage, a title and any tags the reviewer likes; a Navisworks clash result carries none of them.
-  Anything they set is written as a comment on the clash — the one field the host does have, and
-  one that travels back out on the next export. Nothing set means nothing written, so an ordinary
-  sync adds no noise.
+- **Note what this model has no field for, on the clash.** This one only controls the *comment*.
+  Whether it is ticked or not, what the reviewer set is **kept** — see below.
 
 Topics still not placed are counted and named: either raised in the reviewer's own tool with the
 tick off, or resolved and gone from a newer run.
+
+#### Priority, due dates and tags
+
+BCF carries a priority, a due date, a stage, a title and any tags a reviewer likes. A Navisworks
+clash result carries a status, an assignee, a group and comments, and that is all.
+
+The host not having a column is not a reason the board cannot show one. Everything a reviewer sets
+is kept in the project file and shown on the results grid as a **Reviewer set** column — "High ·
+due 15 Apr" — with **overdue rows toned red**, and the search box matches it like any other column.
+The column only appears when somebody has actually set something, so it costs no width on an
+ordinary board.
+
+It is kept **whether or not** the comment tick is on. That tick decides only whether the same thing
+is *also* written as a comment on the clash, which is about making it visible in the native clash
+window and to the next tool down the line — not about storing it.
+
+And it goes back out. The next export writes the priority and the due date onto the topic again, so
+a reviewer who set one in March still sees it in April's file. Without that, resending the file
+would quietly reset what they set — worse than never having carried it, because they saw it
+accepted.
 
 #### Where all this lives
 

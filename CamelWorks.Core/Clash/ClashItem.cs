@@ -124,6 +124,15 @@ namespace CamelWorks.Core.Clash
         public string? SystemB { get; set; }
 
         /// <summary>
+        /// What a reviewer set that the host has no field for - priority, due date, stage, tags.
+        ///
+        /// Carried on the item so it goes back out on the next export. Without it a reviewer's
+        /// priority is quietly reset every time the file makes a round trip, which is a worse
+        /// failure than never having carried it: they set it, saw it accepted, and it went.
+        /// </summary>
+        public ClashAside? Review { get; set; }
+
+        /// <summary>
         /// The BCF topic this came back as, when it was read from a file.
         ///
         /// Kept so a re-saved markup carries the same topic identity it arrived with, rather than

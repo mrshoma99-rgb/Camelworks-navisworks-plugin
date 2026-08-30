@@ -393,6 +393,20 @@ namespace CamelWorks.Core.Clash
                 Description = Describe(item),
             };
 
+            // What a reviewer set last time, put back. The host has no field for any of it, so
+            // without this the next export resets their priority and their due date to nothing.
+            if (item.Review != null)
+            {
+                topic.Priority = item.Review.Priority;
+                topic.Stage = item.Review.Stage;
+
+                if (item.Review.DueTicks > 0)
+                    topic.DueDate = new DateTimeOffset(item.Review.DueTicks, TimeSpan.Zero);
+
+                foreach (var label in item.Review.Labels)
+                    if (!string.IsNullOrWhiteSpace(label)) topic.Labels.Add(label);
+            }
+
             topic.Labels.Add(TestLabel + item.TestName);
 
             if (!string.IsNullOrWhiteSpace(item.TestFolder)) topic.Labels.Add(FolderLabel + item.TestFolder);
@@ -721,6 +735,8 @@ namespace CamelWorks.Core.Clash
                 Labels = topic.Labels.Where(l => !Ours(l)).ToList(),
             };
 
+            if (item != null) item.Review = Review(result);
+
             return result;
         }
 
@@ -876,6 +892,40 @@ namespace CamelWorks.Core.Clash
             if (lower.Contains("review") || lower.Contains("verif")) return FindingStatus.Reviewed;
 
             return FindingStatus.Active;
+        }
+
+        /// <summary>
+        /// The reviewer's own fields, as a record the project file can keep.
+        ///
+        /// Null when they set none, so an ordinary result carries nothing and the register stays
+        /// the size of what somebody actually wrote.
+        /// </summary>
+        /// <param name="result">The returned result.</param>
+        /// <param name="expectedName">What this export would have called it, so a real retitle can
+        /// be told from the generated name coming back unchanged.</param>
+        /// <param name="source">Which file it arrived in.</param>
+        /// <param name="whenTicks">When it arrived, as UTC ticks. Zero for now.</param>
+        public static ClashAside? Review(ClashXmlResult? result, string? expectedName = null,
+                                         string? source = null, long whenTicks = 0)
+        {
+            if (result?.FileGuid == null) return null;
+
+            var aside = new ClashAside(result.FileGuid)
+            {
+                Priority = result.Priority,
+                Stage = result.Stage,
+                DueTicks = result.DueTicks,
+                Source = source,
+                WhenTicks = whenTicks > 0 ? whenTicks : DateTime.UtcNow.Ticks,
+            };
+
+            if (result.Title != null
+                && !string.Equals(result.Title, expectedName ?? result.Name, StringComparison.Ordinal))
+                aside.Title = result.Title;
+
+            foreach (var label in result.Labels) aside.Labels.Add(label);
+
+            return aside.IsEmpty ? null : aside;
         }
 
         /// <summary>Whether a label is one this writer put there.</summary>
