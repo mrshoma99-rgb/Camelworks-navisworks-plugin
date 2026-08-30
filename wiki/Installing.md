@@ -1,5 +1,9 @@
 # Installing
 
+> **This is under development.** Nothing here has been run inside Navisworks from the build
+> environment. Install it on a machine you can afford to have a plug-in misbehave on, and work on
+> copies of your models. See [What it cannot do](What-it-cannot-do#the-limit-that-matters-most).
+
 ## The installer
 
 Download `CamelWorksSetup.exe` from the repository's **latest release** and run it.

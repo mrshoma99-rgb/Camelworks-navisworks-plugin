@@ -89,6 +89,15 @@ None of it has been run inside Navisworks from the build environment. Compiling 
 verifies the API surface and says nothing about behaviour. `CAMELWORKS_BUILD_STATE.md` is the state
 of the code against the spec, including everything known to be unverified.
 
+## Contributing
+
+The most useful contribution is not a patch. Every host adapter compiles against four Navisworks
+years and the engines are unit-tested, but **no screen has been driven against real geometry from
+the build environment** — so a bug report from a live federation is worth more here than code.
+
+[CONTRIBUTING.md](https://github.com/mrshoma99-rgb/Camelworks-navisworks-plugin/blob/main/CONTRIBUTING.md)
+says what makes a good report, and what to run before opening a pull request.
+
 ## Licence
 
 Apache 2.0 with the **Commons Clause**: free to use, including commercially; not free to sell.
