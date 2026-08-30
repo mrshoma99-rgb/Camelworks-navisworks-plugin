@@ -81,7 +81,7 @@ namespace CamelWorks.UI.Views
                 case "labels":
                 case "paperwork": return OnModel(s => SiteWindow.Surface(s, toolId!));
                 case "batch": return BatchViews.Jobs();
-                case "graph": return AutomateView.Build();
+                case "graph": return GraphViews.Build();
 
                 default:
                     return Ui.Stack(Ui.Problem(

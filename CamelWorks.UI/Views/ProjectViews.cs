@@ -1636,9 +1636,10 @@ namespace CamelWorks.UI.Views
             var status = Ui.Stack();
 
             status.Children.Add(Bench.Ready(
-                "Opens the BIMCamel IFC exporter, which docks as its own panel.",
-                "The mapping, the classification and the writing all live there, so the two "
-                + "settings forms can never disagree."));
+                "Opens the IFC exporter, which docks as its own panel.",
+                "It ships inside CamelWorks and is the same tool as the standalone BIMCamel "
+                + "exporter. The mapping, the classification and the writing all live in its panel, "
+                + "so the two settings forms can never disagree."));
 
             var open = Ui.Primary("Open the IFC exporter", () =>
             {
@@ -1648,11 +1649,17 @@ namespace CamelWorks.UI.Views
 
                 if (!(record is DockPanePluginRecord pane))
                 {
+                    // Since the exporter is part of this install, "not registered" almost never
+                    // means "not installed" - it means the year folder that loaded does not match
+                    // this Navisworks. A DLL built for the wrong year loads its ribbon button and
+                    // then silently fails to register its dock pane, which is exactly this symptom.
                     status.Children.Add(Ui.Problem(
-                        "The BIMCamel IFC exporter is not installed in this Navisworks. It is a separate "
-                        + "free plug-in from bimcamel.com with its own installer; CamelWorks opens it when "
-                        + "it is there and says this when it is not. Check too that its build matches this "
-                        + "Navisworks release."));
+                        "The IFC exporter panel is not registered with this Navisworks, although it "
+                        + "ships with CamelWorks. That almost always means the build that loaded was "
+                        + "made for a different release - 2024 is API v21, 2025 v22, 2026 v23 and "
+                        + "2027 v24 - or that the exporter's bundle was removed from "
+                        + "%APPDATA%\\Autodesk\\ApplicationPlugins. Reinstalling CamelWorks puts it back."));
+
                     return;
                 }
 
@@ -1665,7 +1672,22 @@ namespace CamelWorks.UI.Views
                 }
             });
 
-            return Bench.Surface(null, open, status);
+            // Somebody who came here for "get this model out to somebody else" and does not
+            // actually need IFC should not have to go back to the tab strip to find out what else
+            // this app writes. Each of these is a tab of the same app.
+            var elsewhere = Ui.Stack(
+                Ui.Rule(),
+                Ui.Eyebrow("Or write it as"),
+                Ui.Small("IFC is the one that carries properties. These do not."),
+                Ui.Actions(
+                    Ui.Quiet("GLB, for a browser or a phone...",
+                             () => Ui.Told(Shell.AppWindow.Show("exports", "exportglb"))),
+                    Ui.Quiet("DXF, for a CAD package...",
+                             () => Ui.Told(Shell.AppWindow.Show("exports", "exportdxf"))),
+                    Ui.Quiet("A spreadsheet of properties...",
+                             () => Ui.Told(Shell.AppWindow.Show("exports", "exportsheet")))));
+
+            return Bench.Surface(null, open, Ui.Stack(status, elsewhere));
         }
     }
 }

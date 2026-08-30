@@ -38,7 +38,18 @@
    %AppData%\Autodesk\ApplicationPlugins\
    ```
 
-3. Restart Navisworks — the **CamelWorks** ribbon tab appears.
+3. Restart Navisworks — the **BIMCamel** ribbon tab appears, with CamelWorks on it.
+
+## The other two plug-ins
+
+A release built by the workflow carries three bundles — `CamelWorks.bundle`, `Dyncamelo.bundle`
+and `BIMCamel.bundle` — and installs all three. Only the CamelWorks one is in this repository;
+the other two are downloaded from their own repositories' latest releases at release time.
+
+Building by hand gives you CamelWorks alone, which runs perfectly well: Automate ▸ Graphs and
+Export Kit ▸ IFC each say what is missing and where to get it. To have all three, take the
+release zip, or install Dyncamelo and the exporter from their own repositories — the bundles sit
+side by side in `ApplicationPlugins` and share one ribbon tab either way.
 
 ## Why one DLL per year
 

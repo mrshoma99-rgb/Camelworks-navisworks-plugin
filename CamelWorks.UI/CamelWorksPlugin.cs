@@ -7,7 +7,7 @@ using CamelWorks.UI.Views;
 namespace CamelWorks.UI
 {
     /// <summary>
-    /// The CamelWorks ribbon tab and its fourteen commands.
+    /// The CamelWorks buttons on the BIMCamel ribbon tab.
     ///
     /// One flat row: the hub, one button per app of the suite, the section-box act and Help. A
     /// button goes to one of three places, decided by the catalogue entry: the hub window, an
@@ -20,6 +20,12 @@ namespace CamelWorks.UI
     /// from — a check asserts the three lists agree, because a command present in one and missing
     /// from another is invisible in exactly one place.
     ///
+    /// <b>The tab is shared.</b> Dyncamelo and the BIMCamel IFC exporter declare the same tab id,
+    /// and <see cref="Shell.RibbonTabMerger"/> folds the separately-composed tabs into one - so a
+    /// machine with all three installed gets one BIMCamel tab with three panels on it rather than
+    /// three tabs of the same name. The merger is installed by CamelWorksStartup, and again here
+    /// as a fallback for the case where the startup plug-in did not load.
+    ///
     /// <b>Icons are Google Material Symbols</b>, Apache-2.0, rasterised into the Resources folder by
     /// <c>tools/icons.py</c> and committed. The tool is in the repository rather than the icons
     /// alone, because a folder of PNGs with no provenance is a folder nobody dares change: it says
@@ -29,7 +35,7 @@ namespace CamelWorks.UI
         DisplayName = "CamelWorks",
         ToolTip = "Coordination, data and delivery tools for Navisworks — bimcamel.com")]
     [RibbonLayout("CamelWorks.xaml")]
-    [RibbonTab("ID_Tab_CamelWorks")]
+    [RibbonTab("ID_Tab_BIMCamel")]
     [Command("ID_CW_Home", Icon = "Resources\\Home_16.png", LargeIcon = "Resources\\Home_32.png",
         DisplayName = "CamelWorks", ToolTip = "The week, the search, and the way to every app")]
     [Command("ID_CW_AppClash", Icon = "Resources\\AppClash_16.png", LargeIcon = "Resources\\AppClash_32.png",
@@ -73,6 +79,11 @@ namespace CamelWorks.UI
         /// <inheritdoc />
         public override int ExecuteCommand(string commandId, params string[] parameters)
         {
+            // Idempotent, and a fallback: CamelWorksStartup installs the merger the moment
+            // Navisworks loads, but a startup plug-in that failed to load would otherwise leave
+            // the duplicate tabs in place for the whole session.
+            Shell.RibbonTabMerger.Install();
+
             var command = CommandCatalogue.Find(commandId);
 
             if (command == null)

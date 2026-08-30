@@ -2,7 +2,19 @@
 
 Coordination, data and delivery tools for **Navisworks 2024–2027**, Manage and Simulate.
 
-CamelWorks adds one ribbon tab. On it are twelve **apps**; each opens in its own window with its
+> ### ⚠️ Under development — not ready for a live project
+>
+> No screen in this product has been run inside Navisworks from the build environment. It compiles
+> against all four supported releases and the engines are unit-tested, but behaviour in the host is
+> unproven. Work on a copy of your models, expect bugs, and please report what breaks — a report
+> from a real federation is the one thing this project cannot get for itself.
+>
+> Contributions are welcome, and **testing counts as one**.
+
+CamelWorks adds one ribbon tab — **BIMCamel** — and it is shared: the
+[Dyncamelo](https://github.com/mrshoma99-rgb/Dyncamelo) visual-programming editor and the
+[BIMCamel IFC exporter](https://github.com/mrshoma99-rgb/bimcamel-ifc-exporter) install with it and
+sit on the same tab. One download, three tools, one place to find them. On it are twelve **apps**; each opens in its own window with its
 modes as **tabs** across the top, and each tab has **one main action**. Nothing has to be configured
 before it will run: every screen reads what it needs from whatever is open, says what it worked out,
 and lets you correct it.
@@ -33,6 +45,10 @@ and lets you correct it.
 | [Export Kit](Export-Kit) | The model as a file somebody else opens |
 | [Site Pack](Site-Pack) | The model reaching the people building it |
 | [Automate](Automate) | Doing all of it again next Friday, in one press |
+
+On the same tab, from the same install: **Dyncamelo** — the node editor, whose graphs
+[Automate ▸ Graphs](Automate#graphs) runs without opening it — and the **IFC exporter**, which
+[Export Kit ▸ IFC](Export-Kit#ifc) opens.
 
 Outside the twelve: **Review** (walk findings one at a time over the geometry), **Section Box**
 (box the selection, or switch sectioning off), and **Help** (the guide, the limits, a sample

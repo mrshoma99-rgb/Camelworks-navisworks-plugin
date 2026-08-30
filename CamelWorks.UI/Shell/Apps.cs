@@ -154,7 +154,7 @@ namespace CamelWorks.UI.Shell
             new App("automate", "Automate",
                 "Doing all of it again next Friday, in one press.", "Automate",
                 new AppTab("Jobs", "batch"),
-                new AppTab("Canvas", "graph")),
+                new AppTab("Graphs", "graph")),
         };
 
         /// <summary>Find an app by id.</summary>
