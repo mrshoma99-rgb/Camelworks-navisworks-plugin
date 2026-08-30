@@ -46,16 +46,33 @@ It has tests. It is used by exactly one of the seven producers — `CompareIssue
 
 `Issue.Clashes` is `IList<ClashKey>`. An issue can hold clashes and nothing else.
 
-### Drift to absorb while we are here
+### The clash section is not a junk drawer — a correction
 
-The clash section of the project file has become a junk drawer of thirteen keys: `snapshot`,
-`rules`, `pinned`, `issues`, `issued`, `freeze`, `decisions`, `bcfTopics`, `bcfGroups`,
-`assignments`, `sheetIssues`, and the two added recently (`heldEdits`, `asides`). Eleven of them
-are written by `CoordinateViews` — the old Board, which was retired in favour of the Issue Manager.
-There is a `clash/issues` key *and* a separate `issues/register`: two issue stores.
+An earlier draft of this document said the clash section held thirteen keys, eleven of them written
+by "the Board, which was retired", and proposed deleting them. **That was wrong, and it is recorded
+here rather than quietly fixed, because a decision was taken on it.**
 
-Any migration should establish which of those are live and delete the rest, rather than carrying
-them forward.
+Two mistakes. `CoordinateViews` is not the retired surface: it backs five tabs that are live in the
+app registry today — **Filter Clashes, Report, BCF, Merge and Penetrations** — plus the review
+window. And the keys are written through a local variable (`section.Set("snapshot", …)`), so a
+search for `ClashSection).Set(` found almost none of the writers and made live keys look
+write-only.
+
+The real picture. Every one of these is written and read by live code:
+
+| Key | What it holds |
+|---|---|
+| `snapshot` | last run's results — what carry-over compares the next run against |
+| `previous`, `previousParties`, `previousTaken` | the run before that, for the change columns |
+| `parties`, `taken` | per-party open counts at the moment of the run, kept rather than re-derived |
+| `pinned` | groups made by hand, which must never be re-derived |
+| `decisions`, `issued`, `bcfGroups`, `sheetIssues` | grouping decisions, what has been issued, BCF and sheet state |
+| `rules`, `issues`, `freeze` | the rule set, hand-raised issues, the freeze record |
+
+**Nothing here is dead. No key is being deleted.** The lesson for the migration is the larger one:
+`ClashSnapshot` is not merely "where clash results are kept" — it is the input to carry-over, to
+the previous-run comparison and to the party history. Replacing it means findings taking on all
+four jobs, not one.
 
 ## The model
 
@@ -182,8 +199,9 @@ already exist.
   rewrite that.
 - **Status cascade asks at the moment of the edit**, naming the count, rather than being an
   automatic invariant. A finding can sit on two issues.
-- **The eleven Board-era keys in the clash section are deleted** during the migration, each
-  verified unreachable and listed first.
+- ~~**The eleven Board-era keys in the clash section are deleted** during the migration.~~
+  **Withdrawn.** The analysis behind this was wrong — see the correction above. Every key is live.
+  Nothing is deleted.
 
 ## Open questions
 
@@ -199,15 +217,19 @@ already exist.
 
 Each step ships working and verifiable on its own.
 
-1. **The store.** A findings section in the project file; `Finding` gains JSON; a register with
-   merge-by-id. No producer changes yet. Testable end to end without a host.
-2. **Clash onto findings.** The producer with the most at stake and an existing store to migrate
-   from, so the safety net is real. Fold in `HeldEdits` and `ClashAsides`. Delete the dead keys
-   from the clash section.
-3. **Issues attach findings.** `Issue.Clashes` becomes finding ids; the attach and raise verbs
-   land on the clash results grid; cascade with the prompt.
-4. **Clearance, IDS, health, set drift, compare.** One per step. Each is a producer emitting
-   findings and a window gaining the two verbs.
-5. **BCF for both.** Findings and issues out and back, with the relation between them.
+1. ~~**The store.**~~ **Done.** `Finding` gained JSON and the fields the fold-in needs; a register
+   that reconciles a run against what is held; a `.findings.json` file beside the project file. No
+   producer writes to it yet.
+2. **Clash emits findings, alongside the snapshot.** Every clash run also writes findings, and the
+   Manage board reads its triage state from them. The snapshot keeps doing its four jobs untouched,
+   so nothing that works today can break. This is where `HeldEdits` and `ClashAsides` fold in.
+3. **Issues attach findings.** `Issue.Clashes` becomes finding ids; the attach and raise verbs land
+   on the clash results grid; cascade with the prompt.
+4. **The snapshot's other jobs move across, one at a time** — carry-over, then the previous-run
+   comparison, then the party history. Only when the last one has moved does the snapshot stop
+   being written. Splitting this out is the correction: replacing it in one step was proposed on
+   the belief that it held results and nothing else.
+5. **Clearance, IDS, health, set drift, compare.** One per step.
+6. **BCF for both.** Findings and issues out and back, with the relation between them.
 
-Step 1 is the only one that must come first. After that the order is negotiable.
+Step 2 is next. Steps 4 and 5 are independent of each other.
