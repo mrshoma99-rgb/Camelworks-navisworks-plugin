@@ -11,10 +11,12 @@ namespace CamelWorks.Core.OpenBim
     public sealed class IdsWriteResult
     {
         internal IdsWriteResult(string text, int specifications, int facets,
-                               IReadOnlyList<string> warnings, string? problem)
+                               IReadOnlyList<string> warnings, string? problem,
+                               IReadOnlyList<IdsStayedBehind>? stayed = null)
         {
             Text = text; Specifications = specifications; Facets = facets;
             Warnings = warnings; Problem = problem;
+            Stayed = stayed ?? Array.Empty<IdsStayedBehind>();
         }
 
         /// <summary>The file.</summary>
@@ -32,6 +34,15 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>Why nothing was written, or null.</summary>
         public string? Problem { get; }
 
+        /// <summary>
+        /// The rules this file could not carry, each with its reason.
+        ///
+        /// Never a silent drop: a rule scoped to one of the model's own groupings has nowhere to
+        /// go in the published schema, and the person sending the file has to know which of their
+        /// requirements the client will not receive.
+        /// </summary>
+        public IReadOnlyList<IdsStayedBehind> Stayed { get; }
+
         /// <summary>True when there is a file.</summary>
         public bool IsUsable => Problem == null && Text.Length > 0;
 
@@ -40,7 +51,10 @@ namespace CamelWorks.Core.OpenBim
             Problem
             ?? Measure.Count(Specifications)
                + (Specifications == 1 ? " specification, " : " specifications, ")
-               + Measure.Count(Facets) + (Facets == 1 ? " facet." : " facets.");
+               + Measure.Count(Facets) + (Facets == 1 ? " facet." : " facets.")
+               + (Stayed.Count > 0
+                   ? " " + new IdsPortable(Array.Empty<IdsSpecification>(), Stayed).Explain()
+                   : string.Empty);
 
         /// <inheritdoc />
         public override string ToString() => Explain();
@@ -117,11 +131,30 @@ namespace CamelWorks.Core.OpenBim
                 return Refuse("An IDS with no specifications in it checks nothing. Add one - a set "
                     + "of elements it applies to, and what they must have.");
 
+            // What the published schema can carry, and what cannot go. Applicability is a closed
+            // sequence of six facet elements with no extension point, so a rule scoped to one of
+            // this model's own groupings has nowhere to be written. It stays here, and the caller
+            // is told which - the alternatives being a file no other tool can open, or a
+            // requirement that quietly never reaches the person meant to meet it.
+            var split = IdsScopeSpecification.Split(document);
+            var going = split.Portable;
+
+            if (going.Count == 0)
+                return Refuse("Every rule here applies to one of this model's own sets, and an IDS "
+                    + "file has no way to say that - its applicability is a fixed list of IFC "
+                    + "facets. " + (split.Explain() ?? string.Empty).Trim()
+                    + " Give at least one rule an IFC class to apply to, or keep the whole set here "
+                    + "and run it against this model.");
+
             var warnings = new List<string>();
 
-            for (var i = 0; i < document.Specifications.Count; i++)
+            foreach (var behind in split.Staying)
+                warnings.Add("\"" + behind.Specification.Name + "\" is not in the file: "
+                             + behind.Why + ".");
+
+            for (var i = 0; i < going.Count; i++)
             {
-                var spec = document.Specifications[i];
+                var spec = going[i];
                 var where = "\"" + spec.Name + "\"";
 
                 if (spec.Applicability.Count == 0)
@@ -192,13 +225,13 @@ namespace CamelWorks.Core.OpenBim
 
             var facets = 0;
 
-            foreach (var spec in document.Specifications) facets += Specification(s, spec, warnings);
+            foreach (var spec in going) facets += Specification(s, spec, warnings);
 
             s.Append("  </specifications>\n");
             s.Append("</ids>\n");
 
-            return new IdsWriteResult(s.ToString(), document.Specifications.Count, facets,
-                                      warnings, null);
+            return new IdsWriteResult(s.ToString(), going.Count, facets,
+                                      warnings, null, split.Staying);
         }
 
         // -------------------------------------------------------------------------------------

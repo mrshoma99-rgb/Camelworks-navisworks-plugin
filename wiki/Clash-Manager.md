@@ -79,8 +79,17 @@ it. The manager does not throw your work away when that happens.
 
 Every status, assignment, comment and regroup the document refuses is **held**: it shows on the
 board the way you left it, it survives pressing *Read the results* again, and it survives closing
-Navisworks, because it lives in the project file beside the document. A banner says how many are
-waiting, with **What is waiting** to list them and **Forget them** to throw them away on purpose.
+Navisworks, because it lives in the findings kept beside the document. A banner says how many are
+waiting, with **What is waiting** to list them and **Forget them** to stop offering them.
+
+What is held is remembered **field by field**, not as one lump. If the document takes the status
+and refuses the comment, only the comment is still waiting — so a sync never writes the status
+twice, and never sends a comment the document already has.
+
+Pressing *Read the results* on a published NWD does not undo any of it. The document keeps
+reporting the status it had before you touched it, and a read is not allowed to overwrite a field
+that is waiting. Everything else the read is still free to correct, so a test renamed or a clash
+that moved still updates.
 
 There are two ways out:
 
@@ -109,6 +118,67 @@ element's GlobalId out of the model on the way out. With it, the architect's too
 duct and the beam; without it they get the camera and an empty selection. The export says which
 you got — elements from IFC sources carry a GlobalId, and elements from Revit, DWG and native
 formats generally do not.
+
+#### The round trip, and what holds it together
+
+Send a clash file out, let the architect answer it in Solibri or Revizto, read it back with **Sync
+markups** — the edits land on the right results in your model.
+
+That works because of the **topic id**. Every clash is written as a BCF topic whose id is derived
+from the two clashing elements, so the same clash is the same topic in every export. The receiving
+side does not read that id out of the returned file and trust it — it *recomputes* it from the
+model it already has, and matches. The topic id is the one field BCF will not let a tool change:
+it names the topic folder and BCF's own merge model is built on it.
+
+So a file can come home with our sidecar gone, the element keys stripped and the viewpoints
+re-authored — everything another tool rewrites — and it still lands. The id is derived from the
+element pair and not from the clash point, so a conflict that shifts a few millimetres between runs
+is still the same topic.
+
+#### What comes back that a clash cannot hold
+
+Two ticks under **Bring it back**, both on by default, because silently dropping what somebody
+wrote is the failure the round trip exists to prevent.
+
+- **Raise topics I cannot place as issues.** A reviewer with your file open raises what they find,
+  and what they find is not always a clash you sent them — a missing handrail, a door that opens
+  the wrong way. Those topics answer to no clash in your model, and they now go to the
+  [Issue Manager](Issue-Manager) instead of being counted and discarded. Importing is a merge, so
+  the same reviewer sending the same file three times updates their issues rather than tripling
+  them.
+- **Note what this model has no field for, on the clash.** This one only controls the *comment*.
+  Whether it is ticked or not, what the reviewer set is **kept** — see below.
+
+Topics still not placed are counted and named: either raised in the reviewer's own tool with the
+tick off, or resolved and gone from a newer run.
+
+#### Priority, due dates and tags
+
+BCF carries a priority, a due date, a stage, a title and any tags a reviewer likes. A Navisworks
+clash result carries a status, an assignee, a group and comments, and that is all.
+
+The host not having a column is not a reason the board cannot show one. Everything a reviewer sets
+is kept on the finding beside the model and shown on the results grid as a **Reviewer set** column — "High ·
+due 15 Apr" — with **overdue rows toned red**, and the search box matches it like any other column.
+The column only appears when somebody has actually set something, so it costs no width on an
+ordinary board.
+
+It is kept **whether or not** the comment tick is on. That tick decides only whether the same thing
+is *also* written as a comment on the clash, which is about making it visible in the native clash
+window and to the next tool down the line — not about storing it.
+
+And it goes back out. The next export writes the priority and the due date onto the topic again, so
+a reviewer who set one in March still sees it in April's file. Without that, resending the file
+would quietly reset what they set — worse than never having carried it, because they saw it
+accepted.
+
+#### Where all this lives
+
+Beside the model, in `.camelworks\<model>.cwproj` — the project file. It holds the issue register,
+the clash edits a published NWD refused, the bench you set up, and every tool's remembered
+settings. It is a plain JSON file, so it diffs, and it travels with the job rather than with the
+machine. A document that has never been saved keeps the same thing under your user profile until
+it has a home.
 
 **Draw a picture of each clash** (under ⚙ *Beyond the engine*, and on the Clash file tab) writes a
 thumbnail into each topic. Every coordination tool shows its issue list as pictures, so a file
@@ -178,10 +248,17 @@ Focus / Isolate / Mark / Assign / Comment / Group / Sphere / Copy.
 
 One row per surface, positioned at the overlap rather than at the middle of a forty-metre duct.
 
-**The judgement survives a re-run.** No clash engine found these, so there is nothing in the
-model's clash data to write into — instead status, assignment, comments and groups carry over onto
-the same surface-and-obstruction pair. Re-checking after a model update does not reopen everything
-somebody closed.
+**The judgement survives a re-run — and closing Navisworks.** No clash engine found these, so there
+is nothing in the model's clash data to write into. Status, assignment, comments and groups live
+beside the model instead, on the same surface-and-obstruction pair and the same place. Re-checking
+after a model update does not reopen everything somebody closed, and neither does going home.
+
+**Raising the minimum does not lose what you decided.** Re-running at 2.4 m after running at 2.1 m
+finds the same low soffit, and it is the same finding: the number it fell short of is a fact about
+the run, shown as one, not part of what the finding *is*.
+
+Picked rows can also be **attached to an issue that already exists**, so a corridor that is too low
+for its whole length joins the conversation already about it rather than starting a fifteenth.
 
 ### Out of the tab
 

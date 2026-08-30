@@ -6,8 +6,10 @@ using System.Linq;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
 
 namespace CamelWorks.UI.Views
@@ -29,6 +31,64 @@ namespace CamelWorks.UI.Views
         /// <summary>Where the draft lives in the project file, as IDS itself.</summary>
         public const string Key = "idsDraft";
 
+        /// <summary>
+        /// This project's own rules, both halves, as one document to check against.
+        ///
+        /// <b>Why the check cannot just open a file.</b> A rule scoped to one of this model's own
+        /// sets has no place in an IDS file, so a rule set written here is only ever partly a
+        /// file. A check that read files and nothing else could never run the very rules this
+        /// window exists to write - the feature would be decorative. So the run reads the project,
+        /// where both halves are, and the file path stays for a client's IDS.
+        /// </summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="problem">Why there is no rule set, or null.</param>
+        public static IdsDocument? Draft(Session session, out string? problem)
+        {
+            problem = null;
+
+            if (session == null) { problem = "There is no open document."; return null; }
+
+            var section = session.Store.Section(ProjectStore.ProfileSection);
+            var document = new IdsDocument("This project's rules");
+
+            var stored = section[Key].AsString();
+
+            if (!string.IsNullOrWhiteSpace(stored))
+            {
+                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(stored!));
+
+                var read = IdsReader.Read(stream);
+
+                if (read.Document != null) document = read.Document;
+            }
+
+            foreach (var specification in IdsJson.ReadAll(section[ScopedKey]))
+                document.Specifications.Add(specification);
+
+            if (document.Specifications.Count == 0)
+            {
+                problem = "This project has no rules of its own yet. Write them in Model Audit's "
+                          + "IDS tab, or point this at a rule file somebody sent.";
+
+                return null;
+            }
+
+            return document;
+        }
+
+        /// <summary>
+        /// Where the rules an IDS file cannot hold live, beside the draft.
+        ///
+        /// <b>Two keys, and no rule in both.</b> The draft is kept as IDS because the format is
+        /// the point - what the project holds is already a file another tool can read - and a rule
+        /// scoped to one of this model's own sets has no place in that format. Writing only the
+        /// portable half would lose the rest the next time somebody opened the window, which is
+        /// silent data loss and the one outcome worth any amount of code to avoid. So the scoped
+        /// rules are kept here, in this window's own shape, and the two halves are read back
+        /// together.
+        /// </summary>
+        public const string ScopedKey = "idsScopedRules";
+
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -45,6 +105,12 @@ namespace CamelWorks.UI.Views
         private const string Classification = "Classification";
         private const string Material = "Material";
         private const string PartOf = "Part of";
+
+        /// <summary>Saying who a rule is about in this model's terms rather than IFC's.</summary>
+        private const string Scoped = "Set in this model";
+
+        /// <summary>What the set box offers for "whatever is picked when this runs".</summary>
+        private const string TheSelection = "What is selected when it runs";
 
         private const string Present = "just has to be there";
         private const string Exactly = "is exactly";
@@ -84,17 +150,21 @@ namespace CamelWorks.UI.Views
             /// <summary>Whether this kind of facet has a second name box.</summary>
             internal bool HasSecond => Kind == Property;
 
+            /// <summary>Whether this row says who the rule is about in the model's own terms.</summary>
+            internal bool IsScope => Kind == Scoped;
+
             /// <summary>
             /// Whether this kind of facet asks a separate question about a value.
             ///
             /// A material does not: the box is the material, so a value picker beside it would be
             /// asking the same thing twice.
             /// </summary>
-            internal bool HasValue => Kind != PartOf && Kind != Material;
+            internal bool HasValue => Kind != PartOf && Kind != Material && Kind != Scoped;
 
             /// <summary>What the first box is called, which is different for every kind.</summary>
             internal string FirstLabel => Kind switch
             {
+                Scoped => "Set",
                 Entity => "IFC class",
                 Property => "Property tab",
                 Attribute => "Attribute",
@@ -110,6 +180,27 @@ namespace CamelWorks.UI.Views
 
                 var first = First.Trim();
                 var second = Second.Trim();
+
+                if (Kind == Scoped)
+                {
+                    if (string.Equals(first, TheSelection, StringComparison.Ordinal))
+                    {
+                        problem = null;
+                        return new IdsScopeFacet(IdsScope.Selected);
+                    }
+
+                    var scope = IdsScope.Of(first);
+
+                    if (scope == null)
+                    {
+                        problem = "A set row does not say which set. Pick one, or pick \""
+                                  + TheSelection + "\".";
+
+                        return null;
+                    }
+
+                    return new IdsScopeFacet(scope);
+                }
 
                 if (first.Length == 0 && Kind != Material)
                 {
@@ -266,6 +357,44 @@ namespace CamelWorks.UI.Views
 
             internal IList<Row> Wants { get; } = new List<Row>();
 
+            /// <summary>
+            /// Turn this rule into a specification, or return null and say what stopped it.
+            /// </summary>
+            /// <param name="refused">Where the reasons go, one per row that would not build.</param>
+            internal IdsSpecification? Build(IList<string> refused)
+            {
+                var built = new IdsSpecification(string.IsNullOrWhiteSpace(Name) ? "Untitled" : Name)
+                {
+                    Identifier = Identifier.Trim().Length == 0 ? null : Identifier.Trim(),
+                    Description = Description.Trim().Length == 0 ? null : Description.Trim(),
+                    Instructions = Instructions.Trim().Length == 0 ? null : Instructions.Trim(),
+                    MinOccurs = MinOccurs,
+                    MaxOccurs = MaxOccurs,
+                };
+
+                foreach (var version in Versions) built.IfcVersions.Add(version);
+
+                foreach (var row in Applies)
+                {
+                    var facet = row.Build(requirement: false, out var why);
+
+                    if (facet == null) { refused.Add(why ?? "a row would not build"); return null; }
+
+                    built.Applicability.Add(facet);
+                }
+
+                foreach (var row in Wants)
+                {
+                    var facet = row.Build(requirement: true, out var why);
+
+                    if (facet == null) { refused.Add(why ?? "a row would not build"); return null; }
+
+                    built.Requirements.Add(facet);
+                }
+
+                return built.Applicability.Count == 0 ? null : built;
+            }
+
             /// <inheritdoc />
             public override string ToString() => Name;
         }
@@ -287,6 +416,9 @@ namespace CamelWorks.UI.Views
             private readonly TextBox _about = Ui.Text(string.Empty, "what it is for", null, 240);
 
             private Spec? _chosen;
+
+            /// <summary>What the two save buttons cost, said before either is pressed.</summary>
+            private readonly StackPanel _saveSays = Ui.Stack();
 
             internal Editor(Session session)
             {
@@ -312,7 +444,9 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Load()
             {
-                var stored = _session.Store.Section(ProjectStore.ProfileSection)[Key].AsString();
+                var section = _session.Store.Section(ProjectStore.ProfileSection);
+                var stored = section[Key].AsString();
+                var found = false;
 
                 if (!string.IsNullOrWhiteSpace(stored))
                 {
@@ -323,10 +457,26 @@ namespace CamelWorks.UI.Views
                         if (read.Document != null && read.Document.Specifications.Count > 0)
                         {
                             Adopt(read.Document);
-                            return;
+                            found = true;
                         }
                     }
                 }
+
+                // The other half: the rules no IDS file can hold. Read after the portable ones so
+                // they keep the order somebody put them in, and never instead of them.
+                var scoped = IdsJson.ReadAll(section[ScopedKey]);
+
+                if (scoped.Count > 0)
+                {
+                    var extra = new IdsDocument(_title.Text);
+
+                    foreach (var specification in scoped) extra.Specifications.Add(specification);
+
+                    Adopt(extra, keepTitle: true);
+                    found = true;
+                }
+
+                if (found) return;
 
                 var starter = new Spec { Name = "Walls carry a fire rating" };
 
@@ -346,12 +496,20 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Turn a document that was read back into rows somebody can edit.</summary>
-            private void Adopt(IdsDocument document)
+            /// <param name="document">What to turn into rows.</param>
+            /// <param name="keepTitle">
+            /// True when these rules are the second half of a draft, so the title and author the
+            /// first half carried are the document's and must not be overwritten by a container.
+            /// </param>
+            private void Adopt(IdsDocument document, bool keepTitle = false)
             {
-                _title.Text = document.Title;
-                _version.Text = document.Version ?? string.Empty;
-                _author.Text = document.Author ?? string.Empty;
-                _about.Text = document.Description ?? string.Empty;
+                if (!keepTitle)
+                {
+                    _title.Text = document.Title;
+                    _version.Text = document.Version ?? string.Empty;
+                    _author.Text = document.Author ?? string.Empty;
+                    _about.Text = document.Description ?? string.Empty;
+                }
 
                 foreach (var spec in document.Specifications)
                 {
@@ -398,6 +556,13 @@ namespace CamelWorks.UI.Views
 
                 switch (facet)
                 {
+                    case IdsScopeFacet scoped:
+                        row.Kind = Scoped;
+                        row.First = scoped.Scope.Kind == IdsScopeKind.Selection
+                            ? TheSelection
+                            : scoped.Scope.Name;
+                        break;
+
                     case IdsEntityFacet entity:
                         row.Kind = Entity;
                         row.First = entity.Name.Literal ?? entity.Name.Description;
@@ -499,9 +664,11 @@ namespace CamelWorks.UI.Views
                     _list,
                     Ui.Rule(),
                     Ui.Actions(
-                        Ui.Primary("Save IDS...", Save),
+                        Ui.Primary("Save IDS...", () => Save(everything: false)),
+                        Ui.Quiet("Save BIMCamel rules...", () => Save(everything: true)),
                         Ui.Icon(Glyphs.Save, "Keep the draft here", Keep),
                         Ui.Icon(Glyphs.Tune, "What this document is called", Details)),
+                    _saveSays,
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
                     _output));
@@ -685,10 +852,14 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Card(Row row, IList<Row> owner, bool requirement, Action redraw)
             {
+                // A scope is offered on applicability only. Written as a requirement it would
+                // assert "this element must be in that set", which grades a model on how somebody
+                // filed it rather than on the building - and the sets are usually made by the
+                // person being checked.
                 var kind = Ui.Choice(
                     requirement
                         ? new[] { Property, Attribute, Classification, Material, PartOf }
-                        : new[] { Entity, Property, Attribute, Classification, Material, PartOf },
+                        : new[] { Entity, Scoped, Property, Attribute, Classification, Material, PartOf },
                     row.Kind,
                     pick => { row.Kind = pick; redraw(); Look(); }, 160);
 
@@ -699,9 +870,13 @@ namespace CamelWorks.UI.Views
                 // from memory is how a specification fails a model that actually complies. Both
                 // stay editable — a name the federation does not carry yet is still a legitimate
                 // requirement to write down.
-                FrameworkElement first = row.Kind == Property
-                    ? Pickers.Tab(row.First, text => { row.First = text; Look(); }, 180)
-                    : (FrameworkElement)Ui.Text(row.First, text => { row.First = text; Look(); }, 180);
+                FrameworkElement first =
+                    row.Kind == Scoped
+                        ? Ui.Choice(SetChoices(), row.First,
+                                    pick => { row.First = pick; redraw(); Look(); }, 240)
+                    : row.Kind == Property
+                        ? Pickers.Tab(row.First, text => { row.First = text; Look(); }, 180)
+                        : (FrameworkElement)Ui.Text(row.First, text => { row.First = text; Look(); }, 180);
 
                 body.Add(row.HasSecond
                     ? Ui.Pair(Ui.Field(row.FirstLabel, first),
@@ -709,7 +884,23 @@ namespace CamelWorks.UI.Views
                                                        text => { row.Second = text; Look(); }, 180)))
                     : Ui.Field(row.FirstLabel, first));
 
-                if (row.Kind == PartOf)
+                if (row.IsScope)
+                {
+                    var counted = Ui.Stack();
+
+                    body.Add(Ui.Actions(Ui.Quiet("How many is that?", () => Count(row, counted))));
+                    body.Add(counted);
+
+                    body.Add(Ui.Small(
+                        string.Equals(row.First, TheSelection, StringComparison.Ordinal)
+                            ? "This means whatever is selected at the moment the check runs, so it "
+                              + "cannot mean the same thing twice. Good for a check you run now; "
+                              + "name a set for one the project keeps."
+                            : "Who this rule is about, in this model's own terms. It works on a "
+                              + "federation with no IFC in it - and it cannot go in a .ids file, "
+                              + "so the client's copy will not carry this rule."));
+                }
+                else if (row.Kind == PartOf)
                 {
                     body.Add(Ui.Field("Through", Ui.Choice(
                         new[] { string.Empty }.Concat(IdsWriter.Relations).ToList(),
@@ -847,8 +1038,108 @@ namespace CamelWorks.UI.Views
             /// The writer refuses a file nobody could load, and finding that out at the save dialog
             /// is finding it out after the sitting. Here it is the line under the boxes.
             /// </summary>
+            /// <summary>
+            /// The sets a rule can be pointed at, with the current selection first.
+            ///
+            /// Names only, and no counts: a count costs a traversal each and this list is built
+            /// every time a row is redrawn. "How many is that?" on the row answers when asked.
+            /// </summary>
+            private IReadOnlyList<string> SetChoices()
+            {
+                var choices = new List<string> { TheSelection };
+
+                try
+                {
+                    choices.AddRange(_session.Model.Sets()
+                        .Select(set => set.DisplayName)
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+                }
+                catch (Exception)
+                {
+                    // No document, or a host that will not list them. The box still takes a name,
+                    // because a rule about a set somebody has not made yet is worth writing down.
+                }
+
+                return choices;
+            }
+
+            /// <summary>
+            /// Say how many elements a scope row actually catches, when asked.
+            ///
+            /// The question somebody has before they trust a rule, and the one a rule set cannot
+            /// answer on its own: a set named correctly and holding nothing looks exactly like a
+            /// rule that works until the day it reports nothing.
+            /// </summary>
+            private void Count(Row row, Panel say)
+            {
+                say.Children.Clear();
+
+                var picked = string.Equals(row.First, TheSelection, StringComparison.Ordinal);
+
+                if (!picked && string.IsNullOrWhiteSpace(row.First))
+                {
+                    say.Children.Add(Ui.Problem("Pick a set first."));
+                    return;
+                }
+
+                var scope = picked ? TraversalScope.CurrentSelection : TraversalScope.Set(row.First);
+
+                int held;
+
+                try
+                {
+                    held = _session.Model.Traverse(scope).Count();
+                }
+                catch (Exception e)
+                {
+                    say.Children.Add(Ui.Problem("Could not read it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                say.Children.Add(held == 0
+                    ? (UIElement)Ui.Problem((picked ? "Nothing is selected" : "That set holds nothing")
+                        + " right now, so this rule would apply to nothing and the run would say so "
+                        + "rather than pass.")
+                    : Ui.Done(Ui.Count(held, "element") + " right now."));
+            }
+
+            /// <summary>
+            /// What each of the two save buttons would cost, said before either is pressed.
+            ///
+            /// The choice is only a real choice if somebody can see it. A line that appears after
+            /// the file is written tells them what they should have done.
+            /// </summary>
+            private void SaySave()
+            {
+                _saveSays.Children.Clear();
+
+                var scoped = _specs.Count(Scopes);
+
+                if (scoped == 0)
+                {
+                    _saveSays.Children.Add(Ui.Small(
+                        "Every rule here is an ordinary IDS rule, so both buttons carry all of "
+                        + "them. Save IDS is the one to send."));
+
+                    return;
+                }
+
+                _saveSays.Children.Add(scoped == _specs.Count
+                    ? Ui.Note("Every rule here is about a set in this model, and IDS has no way to "
+                        + "say that - so \"Save IDS\" has nothing to write. \"Save BIMCamel "
+                        + "rules\" carries them, and CamelWorks reads it.")
+                    : Ui.Note("\"Save IDS\" carries "
+                        + Ui.Count(_specs.Count - scoped, "rule") + " and leaves "
+                        + Ui.Count(scoped, "rule") + " behind, because they are about sets in this "
+                        + "model and IDS has no way to say that. \"Save BIMCamel rules\" carries "
+                        + "all " + _specs.Count + ", and only CamelWorks reads it."));
+            }
+
             private void Look()
             {
+                SaySave();
                 _preview.Children.Clear();
 
                 var problems = new List<string>();
@@ -858,11 +1149,22 @@ namespace CamelWorks.UI.Views
 
                 if (document == null) return;
 
+                var split = IdsScopeSpecification.Split(document);
                 var written = IdsWriter.Write(document, _session.NowTicks);
 
-                if (written.Problem != null)
+                if (written.Problem is string refused)
                 {
-                    _preview.Children.Add(Ui.Problem(written.Problem));
+                    // A rule set that is all scoped is not broken - it runs here perfectly well,
+                    // and only the file cannot hold it. Showing the writer's refusal as a fault
+                    // would tell somebody their rules are wrong when they are not.
+                    _preview.Children.Add(split.Portable.Count == 0 && split.Staying.Count > 0
+                        ? (UIElement)Ui.Note(
+                            Ui.Count(split.Staying.Count, "rule") + ", every one of them about a "
+                            + "set in this model. That runs here, and there is no .ids file in it: "
+                            + "IDS says who a rule is about with IFC facets and nothing else. Give "
+                            + "one rule an IFC class if the client needs a copy.")
+                        : Ui.Problem(refused));
+
                     return;
                 }
 
@@ -893,16 +1195,44 @@ namespace CamelWorks.UI.Views
 
                 var written = IdsWriter.Write(document, _session.NowTicks);
 
-                if (written.Problem == null) return written;
+                if (written.Problem == null)
+                {
+                    // Said before the file is written, not after: somebody about to send this to
+                    // a client has to know which of their requirements will not be in it.
+                    foreach (var behind in written.Stayed.Take(6))
+                        _output.Children.Add(Ui.Note("Not in the file: \""
+                            + behind.Specification.Name + "\" - " + behind.Why + "."));
 
-                _output.Children.Add(Ui.Problem(written.Problem));
+                    if (written.Stayed.Count > 6)
+                        _output.Children.Add(Ui.Note("And "
+                            + Ui.Count(written.Stayed.Count - 6, "other rule") + " like them."));
+
+                    return written;
+                }
+
+                _output.Children.Add(Ui.Problem(
+                    written.Problem ?? "The rules could not be written."));
+
                 return null;
             }
 
-            private void Save()
+            /// <summary>
+            /// Write the rules out, in one of the two kinds there are.
+            ///
+            /// <b>Why it is a choice and not a rule.</b> An IDS is worth writing because everybody
+            /// reads one, and a rule that says who it is about in this model's own terms cannot be
+            /// in one. So a project with both kinds of rule can send a file everyone opens without
+            /// those rules, or a file with all of them that only CamelWorks opens. Which is right
+            /// depends entirely on who it is going to, and that is not something this code knows.
+            /// </summary>
+            /// <param name="everything">
+            /// True for the BIMCamel rule set, which carries the scoped rules too.
+            /// </param>
+            private void Save(bool everything)
             {
-                var written = Ready();
-                if (written == null) return;
+                if (everything) { SaveOurs(); return; }
+
+                var written = Ready();                if (written == null) return;
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -938,18 +1268,140 @@ namespace CamelWorks.UI.Views
                     "wrote an IDS: " + written.Explain(), dialog.FileName);
             }
 
+            /// <summary>
+            /// Write everything, in the kind only CamelWorks reads.
+            ///
+            /// A zip with a real IDS inside it: somebody with none of this can rename it, unzip
+            /// it, and open the portable half. The degradation path is a file rather than a shrug.
+            /// </summary>
+            private void SaveOurs()
+            {
+                _output.Children.Clear();
+
+                var problems = new List<string>();
+                var document = Compose(problems);
+
+                if (problems.Count > 0 || document == null)
+                {
+                    foreach (var problem in problems.Take(6)) _output.Children.Add(Ui.Problem(problem));
+
+                    _output.Children.Add(Ui.Note("Nothing has been written. Fix those rows, or "
+                        + "remove them, and press it again."));
+
+                    return;
+                }
+
+                var packed = IdsFile.Write(document, _session.NowTicks);
+
+                if (!packed.IsUsable)
+                {
+                    _output.Children.Add(Ui.Problem(packed.Problem ?? "Nothing could be written."));
+                    return;
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the BIMCamel rules",
+                    Filter = "BIMCamel rules|*" + IdsFile.Extension + "|All files|*.*",
+                    FileName = _title.Text.Trim() + IdsFile.Extension,
+                    AddExtension = true,
+                    DefaultExt = IdsFile.Extension,
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    File.WriteAllBytes(dialog.FileName, packed.Bytes!);
+                }
+                catch (Exception e)
+                {
+                    _output.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _output.Children.Add(Ui.Done("Wrote " + packed.Explain() + " to " + dialog.FileName));
+
+                if (packed.Scoped > 0)
+                    _output.Children.Add(Ui.Note(
+                        "The " + Ui.Count(packed.Scoped, "scoped rule") + " in it name sets by "
+                        + "name, so on somebody else's model they apply to whatever their sets of "
+                        + "those names hold - and a run says plainly when a set is not there. "
+                        + "That is what makes one rule set runnable against several models."));
+
+                _output.Children.Add(Ui.Actions(Ui.Quiet("Check it",
+                    () => Ui.Told(AppWindow.Show("audit", "health")))));
+
+                foreach (var warning in packed.Warnings.Take(6)) _output.Children.Add(Ui.Note(warning));
+
+                _session.Record(ActivityKind.Exchange,
+                    "wrote a BIMCamel rule set: " + packed.Explain(), dialog.FileName);
+            }
+
             private void Keep()
             {
-                var written = Ready();
-                if (written == null) return;
+                // Every rule that cannot go in a file, in this window's own shape. Composed from
+                // the rows rather than from the written document, because the written document is
+                // exactly the half that leaves these out.
+                var scoped = _specs.Where(Scopes).ToList();
 
-                _session.Store.Section(ProjectStore.ProfileSection).Set(Key, written.Text);
+                var problems = new List<string>();
+                var document = Compose(problems);
 
-                _output.Children.Add(_session.Store.Save()
-                    ? Ui.Done("Kept in the project. It opens here next time, and it is already a "
-                              + "file another tool can read.")
-                    : Ui.Problem(_session.Store.LastSaveProblem ?? "Could not write the project file."));
+                _output.Children.Clear();
+
+                if (problems.Count > 0)
+                {
+                    foreach (var problem in problems.Take(6)) _output.Children.Add(Ui.Problem(problem));
+
+                    _output.Children.Add(Ui.Note("Nothing has been kept. Fix those rows, or "
+                        + "remove them, and press it again."));
+
+                    return;
+                }
+
+                var written = document == null ? null : IdsWriter.Write(document, _session.NowTicks);
+
+                // An all-scoped rule set has no portable half at all, and that is not a failure
+                // here: the project keeps the rules and the run uses them. Only the file cannot.
+                if (written?.Problem is string stopped && scoped.Count == 0)
+                {
+                    _output.Children.Add(Ui.Problem(stopped));
+                    return;
+                }
+
+                var section = _session.Store.Section(ProjectStore.ProfileSection);
+
+                section.Set(Key, written != null && written.Problem == null
+                    ? written.Text
+                    : string.Empty);
+
+                section.Set(ScopedKey, IdsJson.WriteAll(
+                    scoped.Select(spec => spec.Build(new List<string>()))
+                          .Where(built => built != null)
+                          .Select(built => built!)));
+
+                if (!_session.Store.Save())
+                {
+                    _output.Children.Add(Ui.Problem(
+                        _session.Store.LastSaveProblem ?? "Could not write the project file."));
+
+                    return;
+                }
+
+                _output.Children.Add(Ui.Done("Kept in the project. It opens here next time"
+                    + (written != null && written.Problem == null
+                        ? ", and the part an IDS file can hold is already a file another tool can read."
+                        : ".")
+                    + (scoped.Count > 0
+                        ? " " + Ui.Count(scoped.Count, "rule") + " about a set in this model "
+                          + (scoped.Count == 1 ? "is" : "are") + " kept beside it, where no IDS "
+                          + "file could carry " + (scoped.Count == 1 ? "it" : "them") + "."
+                        : string.Empty)));
             }
+
+            /// <summary>Whether a rule says who it is about in this model's own terms.</summary>
+            private static bool Scopes(Spec spec) => spec.Applies.Any(row => row.IsScope);
         }
     }
 }

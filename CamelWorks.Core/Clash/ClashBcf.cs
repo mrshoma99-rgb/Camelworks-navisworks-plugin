@@ -152,6 +152,47 @@ namespace CamelWorks.Core.Clash
         /// <summary>The topic type every clash is written as.</summary>
         public const string TopicType = "Clash";
 
+        /// <summary>
+        /// The topic a clash is always written as.
+        ///
+        /// <b>This is what keeps the round trip alive.</b> Everything else a returned file might
+        /// carry - our sidecar, the element keys in <c>AuthoringToolId</c> - is ours, and another
+        /// tool that re-authors the archive drops all of it. The topic GUID is the one field it
+        /// cannot drop: it is the topic's identity, it names the folder, and BCF's own merge model
+        /// is built on it. Because it is a plain function of the clash, the receiving side can
+        /// compute it again from the model, so a file that comes home stripped to nothing but its
+        /// topics still lands on the right results.
+        ///
+        /// <b>The whole key, including where the clash is.</b> This was briefly derived from the
+        /// element pair alone, on the reasoning that a conflict which shifts a few millimetres
+        /// between runs is the same conflict. That was wrong, and wrong in the worst direction: a
+        /// duct that crosses one beam twice is two results and would have been one topic - two
+        /// <c>markup.bcf</c> entries at one path, which is a malformed archive whose second topic
+        /// most readers silently drop. Coarsely decomposed models, where a whole system is one
+        /// item, make that common rather than exotic.
+        ///
+        /// Uniqueness has to win, so identity is exact. Tolerance for a clash that moved belongs
+        /// at match time instead, where the sync can look through the neighbouring cells for a
+        /// topic that matched nothing - and only for the few that did not.
+        ///
+        /// Both sides call this. Two copies of the rule that drifted apart would break the round
+        /// trip silently, which is the worst way for it to break.
+        /// </summary>
+        /// <param name="key">The clash.</param>
+        public static string TopicGuidFor(ClashKey key) => BcfGuid.For(key.ToString());
+
+        /// <summary>
+        /// The topic ids a clash could have been written as if it has moved since - itself first,
+        /// then the twenty-six cells around it.
+        ///
+        /// For the sync, and only for the topics that matched nothing exactly: a conflict whose
+        /// point drifted across a cell boundary between runs is still that conflict, and coming
+        /// home as a topic nobody can place would reset a status somebody had already set.
+        /// </summary>
+        /// <param name="key">The clash as the model holds it now.</param>
+        public static IEnumerable<string> NearbyTopicGuidsFor(ClashKey key) =>
+            key.NeighbourCells().Select(TopicGuidFor);
+
         /// <summary>What the sidecar's shape is called, so a future change can be told apart.</summary>
         public const int SidecarVersion = 1;
 
@@ -344,7 +385,7 @@ namespace CamelWorks.Core.Clash
                     + (strangers == 1 ? "It is" : "They are") + " read as far as BCF describes "
                     + (strangers == 1 ? "it." : "them."));
 
-            return new ClashXmlRead(tests, results, warnings, null);
+            return new ClashXmlRead(tests, results, warnings, null) { Topics = read.Topics };
         }
 
         // -------------------------------------------------------------------------------------
@@ -357,13 +398,31 @@ namespace CamelWorks.Core.Clash
             // Keyed on the pair rather than on anything the run invented, so the same physical
             // clash is the same topic in every export - which is what lets a reviewer's tool merge
             // this week's file into last week's instead of doubling every issue.
-            var topic = new BcfTopic(item.Key.PairId, name, when, how.Author)
+            // The identity it arrived with wins over a fresh derivation: a markup has to go home
+            // under the name it came out under, or the seat syncing it cannot place it.
+            var guid = item.TopicGuid ?? TopicGuidFor(item.Key);
+
+            var topic = new BcfTopic(guid, name, when, how.Author)
             {
                 TopicType = TopicType,
                 TopicStatus = item.Status.ToString(),
                 AssignedTo = string.IsNullOrWhiteSpace(item.AssignedTo) ? null : item.AssignedTo,
                 Description = Describe(item),
             };
+
+            // What a reviewer set last time, put back. The host has no field for any of it, so
+            // without this the next export resets their priority and their due date to nothing.
+            if (item.Review != null)
+            {
+                topic.Priority = item.Review.Priority;
+                topic.Stage = item.Review.Stage;
+
+                if (item.Review.DueTicks > 0)
+                    topic.DueDate = new DateTimeOffset(item.Review.DueTicks, TimeSpan.Zero);
+
+                foreach (var label in item.Review.Labels)
+                    if (!string.IsNullOrWhiteSpace(label)) topic.Labels.Add(label);
+            }
 
             topic.Labels.Add(TestLabel + item.TestName);
 
@@ -683,7 +742,17 @@ namespace CamelWorks.Core.Clash
                                 .Where(c => c != null && !string.IsNullOrWhiteSpace(c.Text))
                                 .Select(c => new ClashComment(c.Author, c.Date.UtcTicks, c.Text!))
                                 .ToList(),
+                Title = topic.Title,
+                Priority = string.IsNullOrWhiteSpace(topic.Priority) ? null : topic.Priority,
+                Stage = string.IsNullOrWhiteSpace(topic.Stage) ? null : topic.Stage,
+                DueTicks = topic.DueDate?.UtcTicks ?? 0,
+
+                // Only the reviewer's own tags. Ours came out of this writer and saying them back
+                // would be a note about nothing.
+                Labels = topic.Labels.Where(l => !Ours(l)).ToList(),
             };
+
+            if (item != null) item.Review = Review(result);
 
             return result;
         }
@@ -721,6 +790,7 @@ namespace CamelWorks.Core.Clash
 
             var item = new ClashItem(key, test)
             {
+                TopicGuid = topic.Guid,
                 Status = Status(topic),
                 AssignedTo = string.IsNullOrWhiteSpace(topic.AssignedTo) ? null : topic.AssignedTo,
                 CarriedGroup = record?["group"].AsString() ?? Label(topic, GroupLabel),
@@ -839,6 +909,91 @@ namespace CamelWorks.Core.Clash
             if (lower.Contains("review") || lower.Contains("verif")) return FindingStatus.Reviewed;
 
             return FindingStatus.Active;
+        }
+
+        /// <summary>
+        /// The reviewer's own fields, as a record the project file can keep.
+        ///
+        /// Null when they set none, so an ordinary result carries nothing and the register stays
+        /// the size of what somebody actually wrote.
+        /// </summary>
+        /// <param name="result">The returned result.</param>
+        /// <param name="expectedName">What this export would have called it, so a real retitle can
+        /// be told from the generated name coming back unchanged.</param>
+        /// <param name="source">Which file it arrived in.</param>
+        /// <param name="whenTicks">When it arrived, as UTC ticks. Zero for now.</param>
+        public static ClashAside? Review(ClashXmlResult? result, string? expectedName = null,
+                                         string? source = null, long whenTicks = 0)
+        {
+            if (result?.FileGuid == null) return null;
+
+            var aside = new ClashAside(result.FileGuid)
+            {
+                Priority = result.Priority,
+                Stage = result.Stage,
+                DueTicks = result.DueTicks,
+                Source = source,
+                WhenTicks = whenTicks > 0 ? whenTicks : DateTime.UtcNow.Ticks,
+            };
+
+            if (result.Title != null
+                && !string.Equals(result.Title, expectedName ?? result.Name, StringComparison.Ordinal))
+                aside.Title = result.Title;
+
+            foreach (var label in result.Labels) aside.Labels.Add(label);
+
+            return aside.IsEmpty ? null : aside;
+        }
+
+        /// <summary>Whether a label is one this writer put there.</summary>
+        private static bool Ours(string? label) =>
+            label != null
+            && (label.StartsWith(TestLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(FolderLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(GroupLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(LevelLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(GridLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(ZoneLabel, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// What the reviewer said that a Navisworks clash result has nowhere to keep.
+        ///
+        /// <b>Why this exists.</b> BCF carries a priority, a due date, a stage, a title and any
+        /// tags the reviewer likes. A clash result in Navisworks carries none of them. Dropping
+        /// them silently is the failure this whole round trip is meant to avoid: somebody set a
+        /// due date, it went nowhere, and they find out at the coordination meeting.
+        ///
+        /// So they are written as a comment on the clash instead, which is the one field the host
+        /// does have and which travels back out on the next export. Null when the reviewer changed
+        /// none of them, so an ordinary sync adds no noise.
+        /// </summary>
+        /// <param name="result">The returned result.</param>
+        /// <param name="expectedName">What this export would have called it, so a real retitle
+        /// can be told from the generated name coming back unchanged.</param>
+        public static string? Aside(ClashXmlResult? result, string? expectedName = null)
+        {
+            if (result == null) return null;
+
+            var said = new List<string>();
+
+            if (result.Priority != null) said.Add("priority " + result.Priority);
+            if (result.Stage != null) said.Add("stage " + result.Stage);
+
+            if (result.DueTicks > 0)
+                said.Add("due " + new DateTime(result.DueTicks, DateTimeKind.Utc)
+                    .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            if (result.Title != null
+                && !string.Equals(result.Title, expectedName ?? result.Name, StringComparison.Ordinal))
+                said.Add("titled \"" + result.Title + "\"");
+
+            if (result.Labels.Count > 0)
+                said.Add("tagged " + string.Join(", ", result.Labels));
+
+            return said.Count == 0
+                ? null
+                : "Set in the reviewer's tool, which this model has no field for: "
+                  + string.Join("; ", said) + ".";
         }
 
         /// <summary>One prefixed label's value, or null.</summary>

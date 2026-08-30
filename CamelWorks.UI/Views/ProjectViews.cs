@@ -9,6 +9,8 @@ using Autodesk.Navisworks.Api.Plugins;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Findings;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -114,6 +116,8 @@ namespace CamelWorks.UI.Views
 
             session.Record(ActivityKind.Reconcile, "swept the federation: " + review);
 
+            var kept = Keep(session, review);
+
             results.Children.Add(Answer(review));
             results.Children.Add(Ui.Small(reading.Explain(session)));
 
@@ -121,7 +125,10 @@ namespace CamelWorks.UI.Views
             // findings is a fix nobody connects to the one that said "put it back below".
             foreach (var finding in review.Findings)
             {
-                results.Children.Add(Found(session, finding));
+                results.Children.Add(Found(session, finding,
+                                           kept.TryGetValue(finding.Named, out var held)
+                                               ? held
+                                               : null));
 
                 if (finding.Check == Placed && actions.Children.Count > 0)
                 {
@@ -170,12 +177,43 @@ namespace CamelWorks.UI.Views
                     Ui.Figure(Measure.Count(review.Clean), "clean")));
         }
 
+        /// <summary>
+        /// Put what the sweep found into the findings register, and hand back what it kept.
+        ///
+        /// <b>Why a sweep writes anything.</b> Until now the review said what it found, offered to
+        /// select the elements, and forgot the whole thing the moment the tab was left. Nobody
+        /// could mark one as accepted, nothing could be assigned, and there was no way to raise an
+        /// issue from one. Keeping it is what makes all three possible.
+        ///
+        /// Keyed by the rule, so the caller can put each card's verbs on the finding behind it.
+        /// </summary>
+        private static Dictionary<string, Finding> Keep(Session session, FederationReview review)
+        {
+            var found = HealthFindings.For(review);
+            var register = session.Findings.Findings;
+
+            register.Observe(FindingSource.Health, found, DateTime.UtcNow.Ticks,
+                             origin: session.Store.Path);
+
+            session.Findings.Save();
+
+            var kept = new Dictionary<string, Finding>(StringComparer.Ordinal);
+
+            // What the register holds, not the copy this run made: a rule already known keeps the
+            // decision somebody took on it, and that is the record the card must act on.
+            foreach (var finding in found)
+                if (register.Find(finding.Id) is Finding held && finding.Discriminator != null)
+                    kept[finding.Discriminator] = held;
+
+            return kept;
+        }
+
         /// <summary>One finding, in the vocabulary's own shape.</summary>
-        private static UIElement Found(Session session, ReviewFinding finding) =>
+        private static UIElement Found(Session session, ReviewFinding finding, Finding? kept) =>
             Ui.Finding(finding.Grade == ReviewGrade.Fault, finding.Check, finding.Headline,
                        finding.Detail, finding.Fix,
                        finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples),
-                       Reach(session, finding));
+                       Reach(session, finding, kept));
 
         /// <summary>
         /// The way to the elements a finding is about, or nothing when it is not about elements.
@@ -188,9 +226,23 @@ namespace CamelWorks.UI.Views
         /// A finding about models rather than geometry (a missing file, a moved source) has nothing
         /// to select, so it gets no row at all rather than a button that would do nothing.
         /// </summary>
-        private static UIElement? Reach(Session session, ReviewFinding finding)
+        private static UIElement? Reach(Session session, ReviewFinding finding, Finding? kept)
         {
-            if (finding.Affected.Count == 0) return null;
+            var said = Ui.Stack();
+
+            // A finding about models rather than geometry still gets the judgement verbs: "this
+            // model was moved" is exactly the kind of thing somebody accepts once and does not
+            // want asked again next Monday. It is only the selection verbs it cannot have.
+            var judgement = kept == null ? null : Judge(session, kept, said);
+
+            if (finding.Affected.Count == 0)
+            {
+                if (judgement == null) return null;
+
+                var verbs = Ui.Stack(judgement, said);
+                verbs.Margin = new Thickness(0, 6, 0, 0);
+                return verbs;
+            }
 
             var keys = finding.Affected;
 
@@ -209,6 +261,90 @@ namespace CamelWorks.UI.Views
             });
 
             var row = Ui.Across(show, only);
+            row.Margin = new Thickness(0, 6, 0, 0);
+
+            if (judgement == null) return row;
+
+            var both = Ui.Stack(row, judgement, said);
+            both.Margin = new Thickness(0, 6, 0, 0);
+            return both;
+        }
+
+        /// <summary>
+        /// The verbs that make a review finding a thing somebody can deal with rather than only
+        /// look at: settle it, and put it on an issue.
+        ///
+        /// <b>Why "Settle it" and not a status picker.</b> A review finding has exactly one
+        /// decision anybody takes about it — yes, we know, and we have accepted it. Offering five
+        /// statuses would be offering four nobody uses. What it says depends on where the finding
+        /// already is, so the button is never a no-op.
+        /// </summary>
+        private static UIElement Judge(Session session, Finding kept, Panel said)
+        {
+            var settle = Ui.Quiet(
+                kept.Status == FindingStatus.Approved ? "Reopen it" : "Settle it",
+                () =>
+                {
+                    kept.Status = kept.Status == FindingStatus.Approved
+                        ? FindingStatus.Active
+                        : FindingStatus.Approved;
+
+                    said.Children.Clear();
+
+                    if (!session.Findings.Save())
+                    {
+                        said.Children.Add(Ui.Problem("That could not be kept: "
+                            + (session.Findings.LastSaveProblem
+                               ?? "there was nowhere to write.")));
+
+                        return;
+                    }
+
+                    said.Children.Add(Ui.Done(kept.Status == FindingStatus.Approved
+                        ? "Settled. The next sweep will still find it and will still say so, but "
+                          + "it will say you have accepted it."
+                        : "Open again."));
+                });
+
+            var raise = Ui.Quiet("Raise an issue", () =>
+            {
+                said.Children.Clear();
+
+                var (made, problem) = IssueViews.Raise(session, id =>
+                {
+                    var issue = new Issue(id, kept.Title)
+                    {
+                        Type = "Quality",
+                        Source = kept.Rule,
+                        Description = kept.Detail
+                            ?? (kept.Facts.TryGetValue(HealthFindings.Fix, out var fix)
+                                ? fix
+                                : null),
+                    };
+
+                    IssueFindings.Attach(issue, new[] { kept });
+
+                    foreach (var element in kept.AllElements())
+                        if (!issue.Elements.Contains(element)) issue.Elements.Add(element);
+
+                    return issue;
+                }, 1);
+
+                if (problem != null)
+                {
+                    said.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                said.Children.Add(Ui.Info(Ui.Count(made, "issue") + " raised.",
+                    "Open the register", () => IssueViews.Open(null)));
+            });
+
+            var status = Ui.Small(kept.Status == FindingStatus.Approved
+                ? "Settled"
+                : kept.IsPresent ? "Open" : "Not found by the latest sweep");
+
+            var row = Ui.Across(settle, raise, status);
             row.Margin = new Thickness(0, 6, 0, 0);
             return row;
         }
@@ -288,14 +424,14 @@ namespace CamelWorks.UI.Views
                     "A model whose source cannot be found still displays: Navisworks is showing its "
                     + "own cached copy, which is as old as the last time anybody opened this file.",
                     "Repoint it, or refresh from the folder it moved to, before coordinating.",
-                    missing);
+                    missing, "source-missing");
 
             if (stale.Count > 0)
                 review.Watch(Check, Ui.Count(stale.Count, "model") + " has changed since this file was saved",
                     "The federation is showing what was published when it was saved, not what is on "
                     + "disk now.",
                     "Refresh, then run this again.",
-                    stale);
+                    stale, "source-stale");
 
             if (rows.Count == 0)
                 return (Ui.Empty("Nothing is loaded.", "Append or merge a model to start."), false);
@@ -393,7 +529,7 @@ namespace CamelWorks.UI.Views
             foreach (var finding in report.Findings)
                 review.Add(new ReviewFinding(ModelHealth.GradeOf(finding), "Geometry",
                                              finding.Summary, null, finding.Fix, finding.Examples,
-                                             finding.Affected));
+                                             finding.Affected, finding.Rule));
         }
 
         /// <summary>
@@ -427,7 +563,7 @@ namespace CamelWorks.UI.Views
                     + " the last sweep saw is no longer in the federation",
                     "Either it was deliberately removed, or an append was lost when somebody saved.",
                     null,
-                    intake.Missing.Select(m => m.DisplayName).ToList());
+                    intake.Missing.Select(m => m.DisplayName).ToList(), "model-gone");
 
             var body = Ui.Stack(Ui.Line(intake.Explain(), 1, true), Ui.Line(manifest.Explain(), 0.8));
 
@@ -496,7 +632,7 @@ namespace CamelWorks.UI.Views
                     "Nobody is told when this happens, and every clash from that moment on is in "
                     + "the wrong place.",
                     "Run the clash tests again once it is back.",
-                    intake.Moved.Select(m => m.DisplayName).ToList());
+                    intake.Moved.Select(m => m.DisplayName).ToList(), "model-moved");
 
                 foreach (var model in intake.Moved)
                 {
@@ -533,7 +669,7 @@ namespace CamelWorks.UI.Views
                     + "grid - and it is worth knowing which ones, because a transform is also the "
                     + "thing nobody remembers applying.",
                     null,
-                    carried.Select(m => m.DisplayName).ToList());
+                    carried.Select(m => m.DisplayName).ToList(), "model-transformed");
         }
 
         /// <summary>
@@ -581,7 +717,7 @@ namespace CamelWorks.UI.Views
                     "Not one element in the federation has that property, so " + table.Name
                     + " has had nothing to check.",
                     "Check the property name under the button - it is written \"Category / Name\", "
-                    + "or a bare name to look in any category.");
+                    + "or a bare name to look in any category.", null, "code-absent");
 
                 return;
             }
@@ -593,7 +729,7 @@ namespace CamelWorks.UI.Views
                     + "agreed to, and the difference matters: one is a five-second edit and the "
                     + "other is a conversation.",
                     null,
-                    coverage.InvalidValues.Take(6).ToList());
+                    coverage.InvalidValues.Take(6).ToList(), "code-unlisted");
         }
 
         /// <summary>Which table and property the code check should use.</summary>
@@ -698,42 +834,117 @@ namespace CamelWorks.UI.Views
             var classSource = Pickers.Property(kept.Text("classFrom"),
                                                text => kept.Set("classFrom", text), 200);
 
-            var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
+            // What to check, as opposed to what each rule is about. Two different questions: this
+            // one narrows the traversal, so a rule set written for the whole job can be run over
+            // one level on a Tuesday without editing a rule.
+            // Where the rules come from. This project's own are not always a file and sometimes
+            // cannot be one: a rule scoped to a set in this model has no place in an IDS, so a
+            // check that read files and nothing else could never run the rules the IDS tab exists
+            // to write.
+            var from = kept.Text("from");
+
+            if (string.IsNullOrWhiteSpace(from)) from = FromFile;
+
+            var source = Ui.Choice(new[] { FromProject, FromFile }, from, pick =>
+            {
+                from = pick;
+                kept.Set("from", pick);
+            }, 200);
+
+            var over = kept.Text("over");
+
+            if (string.IsNullOrWhiteSpace(over)) over = Everything;
+
+            var scopePicker = Ui.Choice(RunScopes(live), over, pick =>
+            {
+                over = pick;
+                kept.Set("over", pick);
+            }, 200);
+
+            var run = Ui.Runner("Check the rules", results, primary: false, work: job =>
             {
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                var file = path.Text.Trim();
+                IdsDocument document;
+                string file;
 
-                if (file.Length == 0)
+                if (from == FromProject)
                 {
-                    results.Children.Add(Ui.Problem("Type the path of the .ids file your client sent."));
-                    return;
+                    var mine = IdsWindow.Draft(session, out var why);
+
+                    if (mine == null)
+                    {
+                        results.Children.Add(Ui.Problem(why ?? "This project has no rules yet."));
+                        return;
+                    }
+
+                    document = mine;
+                    file = "this project's rules";
+                }
+                else
+                {
+                    file = path.Text.Trim();
+
+                    if (file.Length == 0)
+                    {
+                        results.Children.Add(Ui.Problem(
+                            "Type the path of the rule file somebody sent - an .ids or a .bcids - "
+                            + "or switch \"Rules from\" to this project's own."));
+
+                        return;
+                    }
+
+                    if (!File.Exists(file))
+                    {
+                        results.Children.Add(Ui.Problem("There is no file at " + file + "."));
+                        return;
+                    }
+
+                    // Either kind, told apart by what the bytes are rather than by what the file
+                    // is called: a rule set somebody sent may be an IDS anyone reads or a
+                    // BIMCamel one carrying rules no IDS can hold, and a run should open both.
+                    IdsReadResult read;
+
+                    try
+                    {
+                        read = IdsFile.Read(File.ReadAllBytes(file));
+                    }
+                    catch (Exception e)
+                    {
+                        results.Children.Add(Ui.Problem("Could not read it: " + Ui.Describe(e)));
+                        return;
+                    }
+
+                    foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
+
+                    if (!read.IsUsable || read.Document == null)
+                    {
+                        results.Children.Add(Ui.Empty("Nothing to check.",
+                            "That file carried no rules CamelWorks could use."));
+                        return;
+                    }
+
+                    document = read.Document;
                 }
 
-                if (!File.Exists(file))
-                {
-                    results.Children.Add(Ui.Problem("There is no file at " + file + "."));
-                    return;
-                }
+                // The model's own groupings each rule names, resolved once. A traversal each, so
+                // only the ones actually named are walked.
+                var claimed = Claimed(session, document, job, out var missing);
 
-                IdsReadResult read;
-                using (var stream = File.OpenRead(file)) read = IdsReader.Read(stream);
+                if (claimed == null) return;   // stopped
 
-                foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
+                foreach (var absent in missing)
+                    results.Children.Add(Ui.Problem(
+                        "No set called \"" + absent + "\" is in this document, so every rule about "
+                        + "it applied to nothing. Rename the rule's set, or make the set."));
 
-                if (!read.IsUsable || read.Document == null)
-                {
-                    results.Children.Add(Ui.Empty("Nothing to check.",
-                        "That file read as IDS but carried no specifications CamelWorks could use."));
-                    return;
-                }
+                var projection = IdsProjection.For(document, PropertyAddress.Parse(classSource.Text),
+                                                   claimed);
 
-                var document = read.Document;
-                var projection = IdsProjection.For(document, PropertyAddress.Parse(classSource.Text));
                 var elements = new List<IdsElement>();
 
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                foreach (var item in session.Model.Traverse(Over(over)))
                 {
                     if (!job.Step(projection.Read, "elements read")) return;
 
@@ -776,8 +987,12 @@ namespace CamelWorks.UI.Views
                 // saying so. Two specifications that fail on the same wall are one conversation
                 // with the architect and not two, and the way to have it is to see both sets at
                 // once - so the reveal became an action on however many rows are picked.
+                var failures = Keep(session, report, System.IO.Path.GetFileName(file));
+
                 results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Select {n} in the model", Reveal),
+                    new Ui.OnPicked("Raise {n} as issues",
+                        (picked, say) => RaiseIds(session, picked, failures, say)),
                     new Ui.OnPicked("Copy {n}",
                         (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "specification"))));
 
@@ -808,15 +1023,116 @@ namespace CamelWorks.UI.Views
                 // property name. Next Tuesday's revision opens on both.
                 kept.Keep();
 
-                session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
+                session.Record(ActivityKind.Exchange,
+                               "checked against " + document.Title + ": " + report,
+                               file + (over == Everything ? string.Empty : " over " + over));
             });
 
-            return Bench.Group("The client's rules",
-                Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*"),
+            return Bench.Group("The rules",
+                Ui.Field("Rules from", source,
+                         "this project's own, or a file somebody sent"),
+                Ui.PathField("Rule file", path, PathKind.Open, IdsFile.Filter),
+                Ui.Field("Check over", scopePicker,
+                         "the whole federation, or one part of it"),
                 Ui.Field("IFC class from", classSource,
                          "leave it empty unless a run tells you to fill it in"),
                 run,
                 Author(results));
+        }
+
+        /// <summary>
+        /// Put what the check found into the findings register, and hand back what it kept.
+        ///
+        /// <b>Why an IDS run writes anything.</b> The tab could select the failures and write a
+        /// workbook and remember nothing. Run it on Monday, agree with the architect that the
+        /// forty doors without a fire rating are being scheduled separately, run it again on
+        /// Tuesday, and it said forty again with nowhere to have said so.
+        ///
+        /// Keyed by the specification, so a picked row can act on the finding behind it.
+        /// </summary>
+        private static Dictionary<string, Finding> Keep(Session session, IdsReport report,
+                                                        string? document)
+        {
+            var found = IdsFindings.For(report, document,
+                id => ElementKey.TryParse(id, out var key) ? key : default);
+
+            var register = session.Findings.Findings;
+
+            register.Observe(FindingSource.Ids, found, DateTime.UtcNow.Ticks,
+                             origin: session.Store.Path);
+
+            session.Findings.Save();
+
+            var kept = new Dictionary<string, Finding>(StringComparer.Ordinal);
+
+            foreach (var finding in found)
+                if (finding.Discriminator != null
+                    && register.Find(finding.Id) is Finding held)
+                    kept[finding.Discriminator] = held;
+
+            return kept;
+        }
+
+        /// <summary>
+        /// Raise an issue for each picked specification the model failed.
+        ///
+        /// One issue per specification rather than one over all of them: a specification is what
+        /// somebody argues about, and two requirements failing is two conversations even when the
+        /// same wall is in both.
+        /// </summary>
+        private static void RaiseIds(Session session, IReadOnlyList<object> picked,
+                                     IReadOnlyDictionary<string, Finding> kept, Panel say)
+        {
+            say.Children.Clear();
+
+            var findings = picked.OfType<IdsSpecificationResult>()
+                .Select(r => kept.TryGetValue(IdsFindings.Named(r.Specification), out var f)
+                    ? f
+                    : null)
+                .Where(f => f != null)
+                .Select(f => f!)
+                .ToList();
+
+            if (findings.Count == 0)
+            {
+                say.Children.Add(Ui.Problem("Nothing there to raise: the picked specifications "
+                    + "are the ones this model met."));
+
+                return;
+            }
+
+            var at = 0;
+
+            var (made, problem) = IssueViews.Raise(session, id =>
+            {
+                var finding = findings[at++];
+
+                var issue = new Issue(id, finding.Title)
+                {
+                    Type = "Quality",
+                    Source = finding.Facts.TryGetValue(IdsFindings.Document, out var from)
+                        ? from
+                        : "IDS",
+                    Description = finding.Detail
+                        ?? (finding.Facts.TryGetValue(IdsFindings.Why, out var why) ? why : null),
+                };
+
+                IssueFindings.Attach(issue, new[] { finding });
+
+                foreach (var element in finding.AllElements())
+                    if (!issue.Elements.Contains(element)) issue.Elements.Add(element);
+
+                return issue;
+            }, findings.Count);
+
+            if (problem != null)
+            {
+                say.Children.Add(Ui.Problem(problem));
+                return;
+            }
+
+            say.Children.Add(Ui.Info(Ui.Count(made, "issue") + " raised.",
+                "Open the register", () => IssueViews.Open(null)));
         }
 
         /// <summary>
@@ -913,17 +1229,132 @@ namespace CamelWorks.UI.Views
         private static UIElement Reach(IdsProjection projection) => Ui.Line(
             Ui.Count(projection.Read, "element") + " read · "
             + Ui.Count(projection.Kept, "element") + " carried something this IDS asks about · "
-            + Ui.Count(projection.Classed, "element") + " carried an IFC class", 0.7);
+            + Ui.Count(projection.Classed, "element") + " carried an IFC class"
+            + (projection.Scoped > 0
+                ? " · " + Ui.Count(projection.Scoped, "element") + " named by a set"
+                : string.Empty), 0.7);
+
+        /// <summary>Rules this project wrote for itself, including the ones no file can hold.</summary>
+        private const string FromProject = "This project's rules";
+
+        /// <summary>Rules somebody sent, as an IDS file.</summary>
+        private const string FromFile = "An IDS file";
+
+        /// <summary>Checking the whole federation.</summary>
+        private const string Everything = "Everything loaded";
+
+        /// <summary>Checking whatever is selected.</summary>
+        private const string Picked = "What is selected";
+
+        /// <summary>What the run can be pointed at: the whole job, the selection, or a saved set.</summary>
+        private static IReadOnlyList<string> RunScopes(Session session)
+        {
+            var choices = new List<string> { Everything, Picked };
+
+            choices.AddRange(SetNames(session));
+
+            return choices;
+        }
+
+        /// <summary>The saved sets this document holds, by name.</summary>
+        private static IReadOnlyList<string> SetNames(Session session)
+        {
+            try
+            {
+                return session.Model.Sets()
+                              .Select(set => set.DisplayName)
+                              .Where(name => !string.IsNullOrWhiteSpace(name))
+                              .Distinct(StringComparer.OrdinalIgnoreCase)
+                              .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                              .ToList();
+            }
+            catch (Exception)
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        /// <summary>What a run-level choice means to the traversal.</summary>
+        private static TraversalScope Over(string? choice) =>
+            choice == Picked ? TraversalScope.CurrentSelection
+            : choice == Everything || string.IsNullOrWhiteSpace(choice) ? TraversalScope.WholeDocument
+            : TraversalScope.Set(choice!);
+
+        /// <summary>
+        /// Which of the model's own groupings claimed each element, for the scopes this rule set
+        /// names. Null when the job was stopped.
+        ///
+        /// One traversal per named scope, and only the named ones: resolving every set a document
+        /// holds would cost a walk each for sets no rule mentions. A set the document does not
+        /// have is reported rather than silently matching nothing, because a rule about a
+        /// misspelled set otherwise passes as "not applicable".
+        /// </summary>
+        private static Dictionary<string, IReadOnlyList<string>>? Claimed(
+            Session session, IdsDocument document, Job job, out IReadOnlyList<string> missing)
+        {
+            var absent = new List<string>();
+
+            missing = absent;
+
+            var wanted = IdsProjection.ScopesWanted(document);
+
+            if (wanted.Count == 0) return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
+            var known = new HashSet<string>(SetNames(session), StringComparer.OrdinalIgnoreCase);
+            var claimed = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+            foreach (var scope in wanted)
+            {
+                if (scope.Kind == IdsScopeKind.Set && !known.Contains(scope.Name))
+                {
+                    absent.Add(scope.Name);
+                    continue;
+                }
+
+                job.Say("Reading " + scope.Describe() + "...");
+
+                var scopeOf = scope.Kind == IdsScopeKind.Selection
+                    ? TraversalScope.CurrentSelection
+                    : TraversalScope.Set(scope.Name);
+
+                var read = 0;
+
+                foreach (var item in session.Model.Traverse(scopeOf))
+                {
+                    if (!job.Step(read++, "elements read")) return null;
+
+                    var id = item.Key.ToString();
+
+                    if (!claimed.TryGetValue(id, out var tokens))
+                        claimed[id] = tokens = new List<string>();
+
+                    if (!tokens.Contains(scope.Token, StringComparer.OrdinalIgnoreCase))
+                        tokens.Add(scope.Token);
+                }
+            }
+
+            return claimed.ToDictionary(c => c.Key, c => (IReadOnlyList<string>)c.Value,
+                                        StringComparer.Ordinal);
+        }
 
         /// <summary>The things a reader has to know before believing the rows.</summary>
         private static IEnumerable<UIElement> Caveats(IdsDocument document, IdsProjection projection)
         {
-            if (projection.Classed == 0 && projection.Read > 0)
+            // How many rules actually needed a class. When every rule says who it is about in
+            // this model's own terms, no class is wanted and the absence of one is not a fault -
+            // saying it is would be crying wolf on the exact federation this was built for.
+            var needsClass = document.Specifications
+                .Count(spec => spec != null && !IdsScopeSpecification.IsScoped(spec));
+
+            if (projection.Classed == 0 && projection.Read > 0 && needsClass > 0)
             {
                 yield return Ui.Problem(
-                    "Nothing in this federation carried an IFC class, so every specification written "
-                    + "about an IFC entity matched nothing. That is a property-naming difference, not "
-                    + "an empty model.");
+                    "Nothing in this federation carried an IFC class, so "
+                    + (needsClass == document.Specifications.Count
+                        ? "every specification written about an IFC entity matched nothing"
+                        : Ui.Count(needsClass, "specification") + " written about an IFC entity "
+                          + "matched nothing")
+                    + ". That is a property-naming difference, not an empty model.");
 
                 var candidates = projection.Candidates;
 

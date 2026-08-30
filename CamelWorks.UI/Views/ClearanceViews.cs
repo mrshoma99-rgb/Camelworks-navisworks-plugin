@@ -161,10 +161,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// One place the clear height is not there — and everything a person then does to it.
         ///
-        /// The judgement half (status, assignment, comments, grouping) is the manager's own, kept
-        /// on the row: the host has no clash data to write it into, because no clash engine found
-        /// this. It travels into the spreadsheet and into the clash file, which is where the rest
-        /// of the round reads it.
+        /// The judgement half (status, assignment, comments, grouping) is the manager's own,
+        /// because the host has no clash data to write it into - no clash engine found this. It
+        /// is kept on the finding beside the model, so it survives a re-run and closing
+        /// Navisworks, and it travels into the spreadsheet and the clash file with the rest.
         /// </summary>
         private sealed class Row
         {
@@ -203,18 +203,13 @@ namespace CamelWorks.UI.Views
             internal string LastComment =>
                 Trail.Count == 0 ? string.Empty : Trail[Trail.Count - 1].Body;
 
-            /// <summary>What identifies this finding across two runs: the pair, not the numbers.</summary>
-            internal string Pair => Floor.Id + " | " + Over.Id;
-        }
-
-        /// <summary>What a previous run's judgement looked like, to carry over into the next.</summary>
-        private sealed class Carried
-        {
-            internal string Status = "New";
-            internal string Assigned = string.Empty;
-            internal string Group = string.Empty;
-            internal List<ClashComment> Trail = new List<ClashComment>();
-            internal Dictionary<string, string> Custom = new Dictionary<string, string>(StringComparer.Ordinal);
+            /// <summary>
+            /// The finding this row is a view of.
+            ///
+            /// Where the judgement actually lives. The row is what a table can draw; the finding
+            /// is what survives closing Navisworks, and what an issue attaches to.
+            /// </summary>
+            internal Finding? Found { get; set; }
         }
 
         // -----------------------------------------------------------------------------------
@@ -514,8 +509,6 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var carried = Harvest();
-
                 // Only the three whole-model answers pay for a full traversal. A named set walks
                 // its own members, which on a federation is the difference between a second and
                 // a minute.
@@ -579,9 +572,10 @@ namespace CamelWorks.UI.Views
                         Name = "Clearance " + (rows.Count + 1).ToString(CultureInfo.InvariantCulture),
                     };
 
-                    Restore(row, carried);
                     rows.Add(row);
                 }
+
+                Keep(rows, minimum, job);
 
                 _found = rows;
                 _headline = found.ToString();
@@ -666,48 +660,95 @@ namespace CamelWorks.UI.Views
                                  IsWalkable(item), box);
             }
 
-            /// <summary>The judgement on the last run's rows, by the pair it was about.</summary>
-            private static Dictionary<string, Carried> Harvest()
+            /// <summary>
+            /// Put what this run measured into the findings register, and lay back what is known.
+            ///
+            /// <b>Why a run writes anything.</b> The judgement used to live on the row and be
+            /// carried between runs in memory: close a breach on Tuesday, close Navisworks, and on
+            /// Wednesday it was open again. That is the behaviour that makes a check nobody
+            /// re-runs. It lives beside the model now.
+            ///
+            /// Every clear-height finding is in scope, because the check always measures the whole
+            /// of what it was pointed at: one this run did not report is one that is no longer too
+            /// low, and it is marked absent rather than deleted so the record of it having been
+            /// fixed survives.
+            /// </summary>
+            private void Keep(IReadOnlyList<Row> rows, double minimum, Job job)
             {
-                var carried = new Dictionary<string, Carried>(StringComparer.Ordinal);
+                var found = new List<Finding>();
 
-                if (_found == null) return carried;
-
-                foreach (var row in _found)
+                foreach (var row in rows)
                 {
-                    if (row.Status == "New" && row.Assigned.Length == 0 && row.Group.Length == 0
-                        && row.Comments == 0 && row.Custom.Count == 0)
-                        continue;
+                    var finding = ClearanceFindings.From(row.Span, row.Floor.Key, row.Over.Key,
+                                                         minimum, row.Name);
 
-                    carried[row.Pair] = new Carried
-                    {
-                        Status = row.Status,
-                        Assigned = row.Assigned,
-                        Group = row.Group,
-                        Trail = row.Trail.ToList(),
-                        Custom = new Dictionary<string, string>(row.Custom, StringComparer.Ordinal),
-                    };
+                    found.Add(finding);
+                    row.Found = finding;
                 }
 
-                return carried;
+                job.Say("Keeping what was found...");
+
+                var register = _session.Findings.Findings;
+
+                register.Observe(FindingSource.Headroom, found, DateTime.UtcNow.Ticks,
+                                 origin: _session.Store.Path);
+
+                // Observe merges a repeat into the record already held, so the row must be pointed
+                // at what the register kept rather than at the copy this run made of it.
+                foreach (var row in rows)
+                {
+                    row.Found = register.Find(row.Found?.Id) ?? row.Found;
+                    Lay(row);
+                }
+
+                if (!_session.Findings.Save())
+                    _log.Children.Add(Ui.Problem(
+                        "These findings are on the board but could not be kept: "
+                        + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.")));
             }
 
             /// <summary>
-            /// Put a previous run's judgement back on a row it is still about.
+            /// Lay the finding over the row, so the board reads the way somebody left it.
             ///
-            /// Without this, re-running after a model update reopens everything anybody had closed,
-            /// which is the one behaviour that makes a check nobody re-runs.
+            /// Without this, re-running after a model update reopens everything anybody had
+            /// closed, which is the one behaviour that makes a check nobody re-runs.
             /// </summary>
-            private static void Restore(Row row, IReadOnlyDictionary<string, Carried> carried)
+            private static void Lay(Row row)
             {
-                if (!carried.TryGetValue(row.Pair, out var was)) return;
+                var finding = row.Found;
 
-                row.Status = was.Status;
-                row.Assigned = was.Assigned;
-                row.Group = was.Group;
+                if (finding == null) return;
 
-                foreach (var comment in was.Trail) row.Trail.Add(comment);
-                foreach (var pair in was.Custom) row.Custom[pair.Key] = pair.Value;
+                row.Status = FindingStatusLattice.ToName(finding.Status);
+                row.Assigned = finding.AssignedTo ?? string.Empty;
+                row.Group = finding.Group ?? string.Empty;
+
+                row.Trail.Clear();
+
+                foreach (var comment in finding.Comments)
+                    row.Trail.Add(new ClashComment(comment.Author, comment.WhenTicks, comment.Body));
+
+                if (_custom.TryGetValue(finding.Id, out var values))
+                    foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
+            }
+
+            /// <summary>
+            /// The custom column values from the last run, by finding.
+            ///
+            /// Not on the finding: a column is somebody's bench, not a fact about the building,
+            /// and a property read costs a host round trip each. Carried in memory only, which is
+            /// all a bench needs.
+            /// </summary>
+            private static readonly Dictionary<string, Dictionary<string, string>> _custom =
+                new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+
+            /// <summary>Write the findings out. Nowhere to write is answered, never thrown.</summary>
+            private void KeepFindings(Panel? say = null)
+            {
+                if (_session.Findings.Save()) return;
+
+                say?.Children.Add(Ui.Problem("That is on the board but could not be kept: "
+                    + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.")));
             }
 
             // -------------------------------------------------------------------------------
@@ -944,7 +985,8 @@ namespace CamelWorks.UI.Views
 
                 var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray())
                     .Menu(new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
-                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)));
+                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)),
+                          new Ui.OnMenu("Attach {n} to an issue...", picked => AttachToIssue(picked)));
 
                 _results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Focus {n}", Focus, primary: true),
@@ -1033,8 +1075,15 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                foreach (var row in rows) row.Status = _mark;
+                foreach (var row in rows)
+                {
+                    row.Status = _mark;
 
+                    if (row.Found != null && FindingStatusLattice.TryParse(_mark, out var marked))
+                        row.Found.Status = marked;
+                }
+
+                KeepFindings(say);
                 Done(say, "Marked " + Ui.Count(rows.Count, "finding") + " as " + _mark + ".");
             }
 
@@ -1045,8 +1094,14 @@ namespace CamelWorks.UI.Views
 
                 var who = (_assign.Text ?? string.Empty).Trim();
 
-                foreach (var row in rows) row.Assigned = who;
+                foreach (var row in rows)
+                {
+                    row.Assigned = who;
 
+                    if (row.Found != null) row.Found.AssignedTo = who.Length == 0 ? null : who;
+                }
+
+                KeepFindings(say);
                 Done(say, who.Length == 0
                     ? "Cleared the assignment on " + Ui.Count(rows.Count, "finding") + "."
                     : "Assigned " + Ui.Count(rows.Count, "finding") + " to " + who + ".");
@@ -1069,8 +1124,13 @@ namespace CamelWorks.UI.Views
                 var author = Environment.UserName ?? "reviewer";
                 var when = DateTime.UtcNow.Ticks;
 
-                foreach (var row in rows) row.Trail.Add(new ClashComment(author, when, body));
+                foreach (var row in rows)
+                {
+                    row.Trail.Add(new ClashComment(author, when, body));
+                    row.Found?.Comments.Add(new FindingComment(author, when, body));
+                }
 
+                KeepFindings(say);
                 Done(say, "Commented on " + Ui.Count(rows.Count, "finding") + ".");
             }
 
@@ -1081,8 +1141,14 @@ namespace CamelWorks.UI.Views
 
                 var name = _group.Text.Trim();
 
-                foreach (var row in rows) row.Group = name;
+                foreach (var row in rows)
+                {
+                    row.Group = name;
 
+                    if (row.Found != null) row.Found.Group = name.Length == 0 ? null : name;
+                }
+
+                KeepFindings(say);
                 Done(say, name.Length == 0
                     ? "Took " + Ui.Count(rows.Count, "finding") + " out of any group."
                     : "Grouped " + Ui.Count(rows.Count, "finding") + " into \"" + name + "\".");
@@ -1164,6 +1230,100 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Put the picked findings onto an issue that already exists.
+            ///
+            /// The other half of raising one. A corridor that is too low for its whole length is
+            /// one conversation, and it is often the same conversation as the clashes in it - so
+            /// the findings join the issue that is already about it rather than starting a
+            /// fifteenth.
+            /// </summary>
+            /// <param name="picked">The picked findings.</param>
+            private void AttachToIssue(IReadOnlyList<object> picked)
+            {
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var findings = rows.Select(r => r.Found).Where(f => f != null).Select(f => f!)
+                                   .ToList();
+
+                if (findings.Count == 0)
+                {
+                    Said(Ui.Problem("This run kept no findings, so there is nothing to attach. "
+                        + "Run the check again and try once more."));
+
+                    return;
+                }
+
+                var register = IssueViews.Read(_session);
+
+                var open = register.Issues
+                    .OrderBy(i => string.Equals(i.Status, Issue.ClosedStatus,
+                                                StringComparison.OrdinalIgnoreCase))
+                    .ThenBy(i => i.Id, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (open.Count == 0)
+                {
+                    Said(Ui.Problem("There are no issues yet. \"Create an issue from N\" makes "
+                        + "one from what is picked."));
+
+                    return;
+                }
+
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Eyebrow("Attach " + Ui.Count(findings.Count, "finding")
+                                             + " to an issue"));
+
+                var table = Ui.Table(
+                    open.Select(i => new TableRow(i, i.Id, i.Title, i.Status,
+                                                  i.AssignedTo ?? string.Empty,
+                                                  Ui.Count(i.Findings.Count, "finding"))),
+                    ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
+                    ("Already on it", 0));
+
+                _log.Children.Add(table);
+
+                _log.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Attach to {n}", (chosen, told) =>
+                    {
+                        told.Children.Clear();
+
+                        var issues = chosen.OfType<Issue>().ToList();
+
+                        if (issues.Count == 0) return;
+
+                        var added = 0;
+                        var now = DateTime.UtcNow.Ticks;
+
+                        foreach (var issue in issues)
+                        {
+                            var joined = IssueFindings.Attach(issue, findings);
+
+                            if (joined == 0) continue;
+
+                            added += joined;
+                            issue.ModifiedTicks = now;
+                        }
+
+                        var problem = IssueViews.Write(_session, register);
+
+                        if (problem != null)
+                        {
+                            told.Children.Add(Ui.Problem(problem));
+                            return;
+                        }
+
+                        told.Children.Add(added == 0
+                            ? Ui.Done("Every one of them was already on "
+                                      + (issues.Count == 1 ? "that issue." : "those issues."))
+                            : Ui.Done(Ui.Count(added, "finding") + " attached to "
+                                      + (issues.Count == 1
+                                          ? issues[0].Id + "."
+                                          : Ui.Count(issues.Count, "issue") + ".")));
+                    })));
+            }
+
+            /// <summary>
             /// Make issues out of picked findings.
             ///
             /// The clearance check finds places, not conversations. What gets chased is "the
@@ -1207,6 +1367,9 @@ namespace CamelWorks.UI.Views
                         Y = from.Average(r => r.Span.Y),
                         Z = from.Average(r => r.Floor.Box.MaxZ + r.Clear / 2),
                     };
+
+                    IssueFindings.Attach(issue, from.Select(r => r.Found)
+                                                     .Where(f => f != null).Select(f => f!));
 
                     foreach (var row in from)
                     {
@@ -1483,6 +1646,18 @@ namespace CamelWorks.UI.Views
                             : column.Side == FromSurface ? fromA : fromB;
 
                         row.Custom[column.Id] = value ?? string.Empty;
+
+                        // Kept beside the run so a re-check does not pay for the same property
+                        // reads again. In memory only: a column is somebody's bench, not a fact
+                        // about the building.
+                        if (row.Found != null)
+                        {
+                            if (!_custom.TryGetValue(row.Found.Id, out var kept))
+                                _custom[row.Found.Id] = kept =
+                                    new Dictionary<string, string>(StringComparer.Ordinal);
+
+                            kept[column.Id] = value ?? string.Empty;
+                        }
 
                         if (value == null) blank++; else filled++;
                     }

@@ -47,6 +47,7 @@ surfaces work, not things a coordinator opens.
 | Engine | Surface |
 |---|---|
 | `ModelHealth`, `HealthFinding`, `HealthReport`, `FederationReview`, `ReviewFinding` | Health Check |
+| `HealthFindings` | **Health Check** — every sweep writes its findings beside the model, so a card gains **Settle it** and **Raise an issue** rather than only "show me them". One parent per rule carrying the decision, one child per element carrying the location; identity is the rule id, so a headline that reads "37 elements" and next week "41" is still the same finding with the same decision on it. |
 | `ProjectProfile`, `ProfileSetting`, `Disciplines`, `ProjectStore` | Project Settings — *This project* |
 | `CodeTable`, `CodeTables`, `TeamRoster`, `AssignmentBook` | Project Settings — *Team & outputs* |
 | `ModelManifest`, `ModelIntake`, `TestRecord` | **Models** (new) |
@@ -64,20 +65,26 @@ surfaces work, not things a coordinator opens.
 | `ClashItem`, `ClashSnapshot`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
 | `ClashTestSides` | Clash Matrix — "The model's tests" mode reads each test's sides back into categories |
 | `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
-| `Issue`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
+| `Issue`, `IssueOrigin`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
+| `FindingBcf` | **Issue Manager ▸ Export / Import** — "Send the findings each issue is about" writes each one as its own topic related to its issue both ways, so a file is the whole story rather than eleven clashes arriving as one line with no geometry. On the way back a topic answering a finding this project sent out goes onto that finding instead of arriving as a second row beside the one it answers; everything else is a stranger and becomes an issue, because a finding is only ever something a check produced. |
 | `IssueBcf`, `IssueImportResult` | **Issue Manager ▸ Import / Export** — BCF in as a merge, BCF out as one topic per issue |
+| `IssueFindings`, `Cascade` | **Issue Manager ▸ Issues** — the findings card on an issue's detail, "Take {n} off", and the offer to mark attached findings when a status change implies one. Reached from the other side by **Clash Manager ▸ Manage ▸ Attach to an issue**, and by the swap that turns an older issue's clash results into finding names on the next read. |
 | `ManualIssue`, `ManualIssueList` | Board pipeline — issues raised in earlier versions still ride the board into reports and BCF |
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
-| `Resolution`, `FindingStatus`, `FindingStatusLattice`, `Finding` | Clash Board detail + Review |
+| `ClashFindings` | **Clash Manager ▸ Manage** — every read of the results also writes them into the findings register, so a decision survives the session, a published NWD, and the next run renumbering every result. Scoped to the tests that were read. |
+| `ClashLegacy` | **Clash Manager ▸ Manage** — the two side registers the board kept before findings (refused edits, reviewer fields), read back onto the findings they belong to on every read. Idempotent, so the old keys stay on disk and an older build still finds them. |
+| `Finding`, `FindingField`, `FindingSource`, `FindingComment`, `FindingJson`, `FindingRegister`, `FindingStore` | **The findings store** — the one record every check emits, kept in `.camelworks/<model>.findings.json` beside the project file. Clash writes to it; the other checks move onto it one at a time. See [docs/findings-and-issues.md](findings-and-issues.md). |
+| `Resolution`, `FindingStatus`, `FindingStatusLattice` | Clash Board detail + Review. The status lattice is what stops a re-run demoting a decision somebody made. |
 | `MatrixOptions`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix — by hand, from the model's tests, or from the client's spreadsheet |
 | `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
+| `ClearanceFindings` | **Clearance Check** — every run writes its breaches into the findings register beside the model, so a decision survives closing Navisworks rather than being carried in memory until the session ends. The minimum somebody asked for is a fact about the run, not part of what a finding is, so raising it does not lose last week's judgement. |
 | `Freeze`, `ChangeNotice` | **Compare Track ▸ Freeze** and **▸ Change Notice** — sign-off scoped by set, selection, everything or the board |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
-| `HeldEdit`, `HeldEdits` | **Clash Manager ▸ Manage** — the decisions a published NWD refuses. Applied to the board, kept in the project file, offered back to the document with "Try writing them in now", and carried into the NWF by "Save the baseline". |
+| `ClashAside` | **Clash Manager ▸ Manage** — the clash properties Navisworks has no field for (priority, due date, stage, a retitle, the reviewer's tags), as one markup said them. Laid onto the finding, shown as the **Reviewer set** column with overdue rows toned, searchable, and read back off the finding onto the topic on the next export. |
 | `IfcIdentity`, `IfcGuid` | **Clash Manager ▸ Clash file / baseline** and **Clearance Check ▸ out** — reads each element's IFC GlobalId on the way out so the receiving tool can select the two clashing elements; the export says how many carry none. |
 | `ClashBcf`, `ClashBcfDocument`, `ClashBcfOptions`, `ClashFile` | **Clash Manager ▸ Clash file** — clash results as BCF, which every reviewing tool opens. What BCF has no field for (tolerances, distances, element keys) rides in a sidecar inside the same archive, so nothing the clash XML carried is lost. `ClashFile` still reads the older XML so earlier baselines keep opening. |
-| `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash file — the reader for baselines written before BCF |
+| `ClashXml`, `ClashXmlTest`, `ClashXmlRead`, `ExportProfile` | Clash file — the reader for baselines written before BCF, and the topics a returned BCF carries: the ones no clash answers to go to the **Issue Manager**, and what the model has no field for (priority, due date, stage, a retitle, the reviewer's tags) becomes a comment on the clash. |
 
 ### Issues out
 | Engine | Surface |
@@ -95,7 +102,7 @@ surfaces work, not things a coordinator opens.
 | `CompareLayers`, `ComparePalette`, `CompareView` | Compare — "Paint the changes" |
 | `CompareStamp` | Compare — "Write the changes onto the elements" (new) |
 | `CompareClusters` | Changes — "Group by: Cluster" (new) |
-| `CompareIssues` | Changes — "Raise on the board" |
+| `CompareIssues` | **Compare Track ▸ Changes** — "Raise them as issues" keeps the findings beside the model first and attaches them, so an issue points at a record that survives rather than one the button invented and dropped. |
 | `CompareReport` | Compare — "Report" |
 | `BaselineModel`, `BaselineModels` | Compare — loading the baseline so removals can be seen |
 
@@ -113,6 +120,9 @@ surfaces work, not things a coordinator opens.
 | `LevelSet` | Levels & Zones |
 | `Takeoff`, `TakeoffResult`, `TakeoffPivot`, `TakeoffPivotTable` | Takeoff |
 | `IdsChecker`, `IdsReader`, `IdsWriter`, `IdsDocument`, `IdsSpecification`, `IdsFacet`, `IdsEntityFacet`, `IdsValue`, `IdsElement`, `IdsReport`, `IdsProjection`, `IdsSheet` | IDS |
+| `IdsFile`, `IdsPackResult`, `IdsJson` | **Model Audit ▸ IDS** — two ways to save, chosen at the moment of saving because it is a question about who the file is for: **Save IDS** writes the open standard everyone reads and names the rules it left behind, **Save BIMCamel rules** writes a `.bcids` carrying all of them. The `.bcids` is a zip holding a real `rules.ids` plus the rest, so somebody with none of this can rename, unzip and open the portable half. One reader takes either, told apart by the bytes rather than the file name. |
+| `IdsScope`, `IdsScopeFacet`, `IdsScopeSpecification`, `IdsPortable`, `IdsStayedBehind` | **Model Audit ▸ IDS** — a rule can say who it is about in the model's own terms (a saved set, the current selection, a property) instead of by IFC class, which is what makes an IDS check a Revit or Civil 3D federation at all. The published schema's applicability is a closed sequence with no extension point, so a scoped rule stays here and **Save as .ids** names each one it could not carry and why. |
+| `IdsFindings` | **Model Audit ▸ IDS** — every check writes its failures beside the model and the grid gains **Raise {n} as issues**, so "these forty doors are being scheduled separately" can be said once instead of every Tuesday. One finding per specification, identified by the specification's own identifier so rewording it does not lose the agreement; a specification that matched nothing is reported as its own kind of failure rather than buried in a green tick. |
 
 ### Sets & Views
 | Engine | Surface |

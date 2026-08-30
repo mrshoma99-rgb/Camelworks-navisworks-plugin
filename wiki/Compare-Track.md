@@ -110,7 +110,10 @@ afterwards. Until then the red layer has nothing to colour, and the tab says so 
 pretending.
 
 Findings can be raised as real issues into the [Issue Manager](Issue-Manager), each carrying the
-elements it is about. The changes can also be written onto the elements as properties.
+elements it is about. They are kept beside the model first and attached to the issue, so the issue
+points at a record that survives rather than one the button invented and dropped — which means the
+next comparison knows what you decided about the last. The changes can also be written onto the
+elements as properties.
 
 ---
 

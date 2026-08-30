@@ -31,6 +31,23 @@ Each finding carries **its own fix** and a *show me* that selects the elements i
 
 Which property carries the code lives behind the ⚙ symbol on the action row.
 
+### The sweep remembers what you decided
+
+Every sweep writes its findings beside the model, so each card also carries:
+
+- **Settle it** — yes, we know, and we have accepted it. The next sweep still finds it and still
+  says so, but it says you have accepted it. Press it again to reopen.
+- **Raise an issue** — the card becomes a conversation in the [Issue Manager](Issue-Manager), with
+  the finding attached and the elements on it.
+
+A finding about *models* rather than geometry gets both too. "This model was moved" has nothing to
+select and is exactly the kind of thing somebody accepts once and does not want asked again next
+Monday.
+
+The count in a headline is not what identifies a finding — "37 elements sit on top of each other"
+and next week "41" are the same finding with the same decision on it. The rule is what identifies,
+so a sweep that finds one more never throws away what you said about the rest.
+
 ### The client's rules
 
 The rail carries a second run with a second file: **an IDS** the client sent. It is checked against
@@ -49,6 +66,63 @@ fixes the federation here, and the authoring model still needs the same fix.
 
 **Main action: Save as an .ids file.**
 
+### It works on models that never saw IFC
+
+IDS says who a rule is about with an IFC class — and a Navisworks federation is a pile of NWCs from
+Revit, Tekla and Civil 3D where most elements have no IFC class at all. On that model an ordinary
+IDS matches nothing and reports *"not applicable"* for everything, which is useless and reads as
+green.
+
+So **"It applies to"** offers a **set in this model** beside an IFC class. Point a rule at a search
+set or a selection set and everything else about IDS works unchanged — the requirements were never
+IFC-bound, only the question of who they were about.
+
+- **How many is that?** on the row says what the set holds *right now*. Worth pressing: a set named
+  correctly and holding nothing looks exactly like a rule that works, until the day it reports
+  nothing.
+- **What is selected when it runs** is offered too, and it means what it says — it cannot mean the
+  same thing twice. Good for a check you run now; name a set for one the project keeps.
+- Rules mixed freely: some by IFC class, some by set, one run, one report.
+
+### Two ways to save, and the choice is yours
+
+IDS's applicability is a fixed list of IFC facets with no room for anything else, so a rule scoped
+to one of your sets has nowhere to be written in one. That is a question about **who the file is
+for**, so it is asked at the moment of saving rather than decided for you. A line above the buttons
+says what each would cost *before* you press either.
+
+| | **Save IDS...** | **Save BIMCamel rules...** |
+|---|---|---|
+| Extension | `.ids` | `.bcids` |
+| Who reads it | Solibri, BIMcollab, anything | CamelWorks |
+| Scoped rules | left behind, **each named with its reason** | all carried |
+| Validates against the published schema | yes | the IDS inside it does |
+
+A `.bcids` is a **zip** holding `rules.ids` — a real IDS with every portable rule in it — and
+`camelworks-rules.json` with the rest. Somebody with none of this can rename it, unzip it, and open
+the IDS inside; the degradation path is a real file rather than a shrug. Nothing hides, and nothing
+pretends to be a standard it is not.
+
+**Save IDS** refuses outright when *every* rule is scoped — an IDS that opens and checks nothing
+reads as a delivered requirement, which is worse than not sending one.
+
+Either kind can be opened again by **Rules from ▸ An IDS file**, told apart by what the bytes are
+rather than what the file is called: a rule set renamed on the way through an email is still the
+rule set it was.
+
+### Sharing one rule set across several models
+
+This is what the `.bcids` is for. Send it to a colleague, or run it against three models yourself.
+
+The thing to know: **a scoped rule names a set by name.** On another model it applies to whatever
+*that* model's set of that name holds — which is usually exactly what you want, and is what lets
+one rule set follow a job across its models. If the set is not there, the run **says so** rather
+than reporting the rule as matching nothing, because a rule about a missing set otherwise passes as
+"not applicable" — the same silence this check exists to break.
+
+Nothing is lost locally either. **Keep the draft here** stores the portable half as IDS — still a
+file another tool can read — and the scoped rules beside it, with no rule in both.
+
 The specifications lead the screen. Each is two lists: which elements it is about, and what they
 must have. The verdict under the form is live as you type.
 
@@ -60,6 +134,35 @@ must have. The verdict under the form is live as you type.
 
 Saving offers **Check the federation against it**, which lands on Health with the path already
 filled in.
+
+### Running them
+
+**Rules from** chooses this project's own rules or an IDS file somebody sent. This project's own is
+the one that matters for scoped rules: they can never be in a file, so a check that read files only
+could never run the rules you just wrote.
+
+**Check over** narrows the run to a saved set or the selection — a different question from what
+each rule is about. A rule set written for the whole job can be run over one level on a Tuesday
+without editing a rule.
+
+A rule naming a set this document does not have is **reported**, not left to match nothing: a
+misspelled set otherwise passes as "not applicable", which is the same silence this check exists to
+break.
+
+### What a check remembers
+
+Each run writes its failures beside the model, and the results grid gains **Raise N as issues** —
+one issue per specification, because two requirements failing is two conversations even when the
+same wall is in both.
+
+That is what lets "these forty doors are being scheduled separately" be said **once** instead of
+every Tuesday. How many fail is this run's answer, not a different requirement; and the file's own
+identifier is what identifies a specification, so rewording one does not lose the agreement
+anybody reached about it.
+
+A specification that **matched nothing** keeps being reported as its own kind of failure rather
+than counted as met. A requirement that quietly stops being checked is worse than one that fails,
+and a green tick is exactly where it would go to hide.
 
 ---
 

@@ -502,6 +502,15 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>IFC classes of the things this belongs to.</summary>
         public IList<string> PartOf { get; } = new List<string>();
 
+        /// <summary>
+        /// Which of the model's own groupings claimed this element, as scope tokens.
+        ///
+        /// Resolved by the adapter before the check runs, so the rules stay pure functions over
+        /// values and the checker never has to ask a host what is in a set. Empty for an element
+        /// no scope names, which is the ordinary case on a check nobody scoped.
+        /// </summary>
+        public IList<string> Scopes { get; } = new List<string>();
+
         /// <inheritdoc />
         public override string ToString() => Id + (IfcType != null ? " (" + IfcType + ")" : string.Empty);
     }

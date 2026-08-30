@@ -131,6 +131,26 @@ namespace CamelWorks.Core.Clash
         public IReadOnlyList<ClashComment> Comments { get; internal set; } =
             Array.Empty<ClashComment>();
 
+        /// <summary>
+        /// The title the file gave it, when that is not the name we would have generated.
+        ///
+        /// A reviewer who retitles a topic has said something, and a clash result's name is not
+        /// the place to put it - renaming results on a synced model would fight the next run.
+        /// </summary>
+        public string? Title { get; internal set; }
+
+        /// <summary>The priority the file carried. Navisworks clash data has no such field.</summary>
+        public string? Priority { get; internal set; }
+
+        /// <summary>The stage the file carried. Navisworks clash data has no such field.</summary>
+        public string? Stage { get; internal set; }
+
+        /// <summary>When it is due, as UTC ticks. Zero when the file did not say.</summary>
+        public long DueTicks { get; internal set; }
+
+        /// <summary>Labels the file carried that are not ours - the reviewer's own tags.</summary>
+        public IReadOnlyList<string> Labels { get; internal set; } = Array.Empty<string>();
+
         /// <summary>What the file calls it.</summary>
         public string Name { get; }
 
@@ -182,6 +202,16 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Why nothing could be read, or null.</summary>
         public string? Problem { get; }
+
+        /// <summary>
+        /// The BCF topics behind these results, when the file was a BCF. Empty for clash XML.
+        ///
+        /// Kept so a caller can do something with the topics that are not clashes at all - the
+        /// ones a reviewer raised in their own tool, which belong in the issue register rather
+        /// than nowhere.
+        /// </summary>
+        public IReadOnlyList<OpenBim.BcfTopic> Topics { get; internal set; } =
+            Array.Empty<OpenBim.BcfTopic>();
 
         /// <summary>True when the file gave up something.</summary>
         public bool IsUsable => Problem == null && Results.Count > 0;

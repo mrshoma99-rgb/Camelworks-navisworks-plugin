@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
@@ -31,7 +32,17 @@ namespace CamelWorks.UI.Views
             View = new NavViewSession(model);
             Viewpoints = new NavViewpointStore(model);
             Search = new NavSearch(model);
+            Findings = FindingStore.Open(PhysicalFileSystem.Instance, store);
         }
+
+        /// <summary>
+        /// Every finding this project holds, whatever check produced it.
+        ///
+        /// Its own file beside the project file, opened with the document and saved by whoever
+        /// changes it. See <see cref="FindingStore"/> for why it is not a section of the project
+        /// file.
+        /// </summary>
+        public FindingStore Findings { get; }
 
         /// <summary>The host document.</summary>
         public Document Document { get; }

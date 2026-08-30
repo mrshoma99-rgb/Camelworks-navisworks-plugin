@@ -157,10 +157,13 @@ namespace CamelWorks.Core.OpenBim
         private readonly PropertyAddress? _typeSource;
         private readonly bool _wantsAttributes;
         private readonly bool _wantsMaterials;
+        private readonly IReadOnlyDictionary<string, IReadOnlyList<string>>? _scopes;
 
-        private IdsProjection(IdsDocument document, PropertyAddress? typeSource)
+        private IdsProjection(IdsDocument document, PropertyAddress? typeSource,
+                              IReadOnlyDictionary<string, IReadOnlyList<string>>? scopes)
         {
             _typeSource = typeSource;
+            _scopes = scopes != null && scopes.Count > 0 ? scopes : null;
 
             foreach (var facet in Facets(document))
             {
@@ -183,6 +186,9 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>How many of the kept elements carried an IFC class.</summary>
         public int Classed { get; private set; }
 
+        /// <summary>How many of the kept elements a scope claimed rather than their data.</summary>
+        public int Scoped { get; private set; }
+
         /// <summary>
         /// Properties whose values looked like IFC class names, most common first.
         ///
@@ -198,11 +204,37 @@ namespace CamelWorks.Core.OpenBim
         /// Where the IFC class lives, when the person running the check knows and CamelWorks does
         /// not. Taken at its word — no prefix test — because they can see their own data.
         /// </param>
-        public static IdsProjection For(IdsDocument document, PropertyAddress? typeSource = null)
+        /// <param name="scopes">
+        /// Which of the model's own groupings claimed each element, by element key, for the
+        /// scopes <see cref="ScopesWanted"/> named. Resolved by the caller because only the host
+        /// knows what is in a set; null when no rule is scoped, which is the ordinary case.
+        /// </param>
+        public static IdsProjection For(
+            IdsDocument document, PropertyAddress? typeSource = null,
+            IReadOnlyDictionary<string, IReadOnlyList<string>>? scopes = null)
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
 
-            return new IdsProjection(document, typeSource != null && typeSource.Value.IsEmpty ? null : typeSource);
+            return new IdsProjection(
+                document, typeSource != null && typeSource.Value.IsEmpty ? null : typeSource, scopes);
+        }
+
+        /// <summary>
+        /// The model's own groupings a rule set names, without duplicates.
+        ///
+        /// Resolving one costs a traversal, so the caller is told exactly which it needs rather
+        /// than walking every set the document holds.
+        /// </summary>
+        /// <param name="document">The rule set, or null.</param>
+        public static IReadOnlyList<IdsScope> ScopesWanted(IdsDocument? document)
+        {
+            var wanted = new List<IdsScope>();
+
+            foreach (var facet in Facets(document).OfType<IdsScopeFacet>())
+                if (!wanted.Contains(facet.Scope))
+                    wanted.Add(facet.Scope);
+
+            return wanted;
         }
 
         /// <summary>
@@ -236,9 +268,20 @@ namespace CamelWorks.Core.OpenBim
             // that a second pass over the same properties is a second pass over the whole job.
             var properties = item.Properties().ToList();
 
-            var element = new IdsElement(item.Key.ToString(), ClassOf(item, properties));
+            var id = item.Key.ToString();
+            var element = new IdsElement(id, ClassOf(item, properties));
 
             if (element.IfcType != null) Classed++;
+
+            // Before anything is read off the element, because it decides whether the element is
+            // kept at all. See the remarks on Carries.
+            if (_scopes != null && _scopes.TryGetValue(id, out var claimed))
+            {
+                foreach (var token in claimed)
+                    if (!string.IsNullOrWhiteSpace(token)) element.Scopes.Add(token);
+
+                if (element.Scopes.Count > 0) Scoped++;
+            }
 
             foreach (var property in properties)
             {
@@ -306,8 +349,8 @@ namespace CamelWorks.Core.OpenBim
             && value.StartsWith(IfcPrefix, StringComparison.OrdinalIgnoreCase)
             && value.All(c => (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
 
-        private static IEnumerable<IdsFacet> Facets(IdsDocument document) =>
-            document.Specifications
+        private static IEnumerable<IdsFacet> Facets(IdsDocument? document) =>
+            (document?.Specifications ?? Enumerable.Empty<IdsSpecification>())
                 .Where(s => s != null)
                 .SelectMany(s => s.Applicability.Concat(s.Requirements))
                 .Where(f => f != null);
@@ -315,8 +358,25 @@ namespace CamelWorks.Core.OpenBim
         private static string? Upper(string? value) =>
             string.IsNullOrWhiteSpace(value) ? null : value!.Trim().ToUpperInvariant();
 
+        /// <summary>
+        /// Whether this element is worth carrying across.
+        ///
+        /// <b>The drop, and the one case it must not make.</b> A federation has tens of millions
+        /// of property readings and an IDS names a handful, so an element carrying nothing the
+        /// rules mention is dropped rather than counted — keeping it would only inflate the total
+        /// the report divides by. On an entity-scoped check that is exactly right: a wall with no
+        /// fire rating still carries its class, so it survives and fails properly.
+        ///
+        /// A scope changes that. Forty ducts with no system name at all have no IFC class and no
+        /// matching property, and dropping them would discard the precise case the rule was
+        /// written for — the run would report "nothing applied" over a model that is forty
+        /// failures deep, and read as green. So a scope having claimed an element is itself reason
+        /// enough to keep it: the scope has already said it is in scope, and what it does or does
+        /// not carry is the checker's question, not this one's.
+        /// </summary>
         private bool Carries(IdsElement element) =>
-            element.IfcType != null
+            element.Scopes.Count > 0
+            || element.IfcType != null
             || element.Properties.Count > 0
             || element.Classifications.Count > 0
             || element.Materials.Count > 0

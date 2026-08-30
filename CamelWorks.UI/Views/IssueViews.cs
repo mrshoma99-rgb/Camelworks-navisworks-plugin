@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Issues;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -126,6 +127,9 @@ namespace CamelWorks.UI.Views
                 case IssueOrigin.Clash: return "Clash";
                 case IssueOrigin.Clearance: return "Clearance";
                 case IssueOrigin.Imported: return "Imported";
+                case IssueOrigin.Compare: return "Compare";
+                case IssueOrigin.Health: return "Health";
+                case IssueOrigin.Ids: return "IDS";
                 default: return "Raised";
             }
         }
@@ -501,6 +505,8 @@ namespace CamelWorks.UI.Views
                     Ui.Actions(
                         Ui.Primary("Save", () =>
                         {
+                            var was = issue.Status;
+
                             issue.Title = title.Text.Trim().Length == 0 ? issue.Title : title.Text.Trim();
                             issue.Description = description.Text.Trim();
                             issue.Status = status.Text;
@@ -520,7 +526,18 @@ namespace CamelWorks.UI.Views
                                 ? Ui.Done("Saved.")
                                 : Ui.Problem(problem));
 
-                            if (problem == null) Redraw();
+                            if (problem != null) return;
+
+                            // Asked, not done. Closing an issue usually means its clashes are
+                            // dealt with, and usually is not always: one closed because the RFI
+                            // was answered says nothing about whether the duct moved. An
+                            // automatic rule would mark eighteen thousand findings resolved off
+                            // one dropdown and turn the board green over a building that had not
+                            // changed. So the offer is made, with the count, and somebody says.
+                            if (!string.Equals(was, issue.Status, StringComparison.OrdinalIgnoreCase))
+                                Offer(issue, says);
+
+                            Redraw();
                         }),
                         Ui.Quiet("Show", () =>
                         {
@@ -530,6 +547,7 @@ namespace CamelWorks.UI.Views
                     says);
 
                 _detail.Children.Add(Ui.Card("The issue", Where(issue), facts));
+                _detail.Children.Add(Attached(issue));
 
                 // The conversation, oldest first, then the box to add to it. A trail that reads
                 // top-down is the one a person catches up on without scrolling backwards.
@@ -581,13 +599,122 @@ namespace CamelWorks.UI.Views
                     said));
             }
 
+            /// <summary>
+            /// Offer the cascade the new status implies, if it implies one.
+            ///
+            /// Nothing happens unless somebody presses it. See the remarks on
+            /// <see cref="IssueFindings"/> for why this is an offer rather than an invariant.
+            /// </summary>
+            private void Offer(Issue issue, Panel says)
+            {
+                var cascade = IssueFindings.Proposed(issue, _session.Findings.Findings);
+
+                if (cascade.IsEmpty) return;
+
+                says.Children.Add(Ui.Info(cascade.Ask(),
+                    "Mark " + (cascade.Findings.Count == 1 ? "it" : "them") + " too",
+                    () =>
+                    {
+                        var changed = cascade.Apply();
+
+                        says.Children.Clear();
+
+                        if (!_session.Findings.Save())
+                        {
+                            says.Children.Add(Ui.Problem(
+                                "They are marked here but could not be kept: "
+                                + (_session.Findings.LastSaveProblem
+                                   ?? "there was nowhere to write.")));
+
+                            return;
+                        }
+
+                        _session.Record(ActivityKind.Regroup,
+                            "marked " + Ui.Count(changed, "finding") + " "
+                            + FindingStatusLattice.ToName(cascade.To) + " with " + issue.Id);
+
+                        says.Children.Add(Ui.Done(Ui.Count(changed, "finding") + " marked "
+                            + FindingStatusLattice.ToName(cascade.To) + "."));
+                    }));
+            }
+
+            /// <summary>
+            /// The findings this issue is about, with the way to take one off.
+            ///
+            /// Shown as a card rather than a line, because "which clashes is this issue actually
+            /// about" is the question somebody opens an issue to answer.
+            /// </summary>
+            private UIElement Attached(Issue issue)
+            {
+                var findings = IssueFindings.Attached(issue, _session.Findings.Findings);
+
+                if (findings.Count == 0)
+                {
+                    var said = issue.Clashes.Count > 0
+                        ? Ui.Small(Ui.Count(issue.Clashes.Count, "clash result")
+                            + " raised before findings existed. Read the clash results in the "
+                            + "Clash Manager and they will join this issue by name.")
+                        : Ui.Small("Nothing attached. Pick results on any findings grid and "
+                                   + "\"Attach to an issue\".");
+
+                    return Ui.Card("Findings", null, said);
+                }
+
+                var table = Ui.Table(
+                    findings.Select(f => new TableRow(f, f.Rule, f.Title,
+                                                      FindingStatusLattice.ToName(f.Status),
+                                                      f.IsPresent ? string.Empty : "gone",
+                                                      f.Detail ?? string.Empty)),
+                    ("Check", 150), ("Finding", 220), ("Status", 90), ("Still there", 90),
+                    ("Detail", 0));
+
+                var told = Ui.Stack();
+
+                return Ui.Card("Findings",
+                    Ui.Count(findings.Count, "finding")
+                    + (findings.Any(f => !f.IsPresent)
+                        ? ", some no longer reported by the latest run"
+                        : string.Empty),
+                    table,
+                    Ui.Picking(table,
+                        new Ui.OnPicked("Take {n} off", (picked, say) =>
+                        {
+                            say.Children.Clear();
+
+                            var gone = IssueFindings.Detach(issue,
+                                picked.OfType<Finding>().Select(f => f.Id).ToList());
+
+                            if (gone == 0) return;
+
+                            issue.ModifiedTicks = Now;
+
+                            var problem = Write(_session, _register);
+
+                            if (problem != null)
+                            {
+                                say.Children.Add(Ui.Problem(problem));
+                                return;
+                            }
+
+                            say.Children.Add(Ui.Done(Ui.Count(gone, "finding")
+                                + " taken off this issue. The findings themselves are untouched."));
+
+                            Redraw();
+                        })),
+                    told);
+            }
+
             /// <summary>What the detail card's subtitle says about where an issue came from.</summary>
             private string Where(Issue issue)
             {
                 var from = Origin(issue.Origin) switch
                 {
-                    "Clash" => "Made from " + Ui.Count(issue.Clashes.Count, "clash result"),
+                    "Clash" => "Made from " + Ui.Count(issue.Findings.Count + issue.Clashes.Count,
+                                                       "clash result"),
                     "Clearance" => "Made from a clearance finding",
+                    "Compare" => "Made from what changed between two revisions",
+                    "Health" => "Made from a model review finding",
+                    "IDS" => "Made from a specification the model failed",
                     "Imported" => "Imported" + (issue.Source == null ? string.Empty : " from " + issue.Source),
                     _ => "Raised by hand",
                 };
@@ -981,7 +1108,13 @@ namespace CamelWorks.UI.Views
                         Ui.Small("Reading the same file again updates the issues it already "
                                  + "brought in and adds only what is new — statuses, replies and "
                                  + "due dates — so an exchange that runs for a fortnight stays "
-                                 + "one list.")));
+                                 + "one list.")),
+                    Bench.Group(string.Empty,
+                        Ui.Small("A topic answering a finding this project sent out goes back "
+                                 + "onto that finding rather than arriving as a new issue: it is "
+                                 + "the same clash, and the board should say what the reviewer "
+                                 + "said about it. Everything else becomes an issue, which is "
+                                 + "what it already was.")));
 
                 var stage = Ui.Stack(
                     Bench.Ready("Reads a BCF file into this project's issue register.",
@@ -1018,8 +1151,22 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Merging into the register...");
 
+                var named = System.IO.Path.GetFileName(path);
+
+                // The findings first. A topic this project sent out is an answer about a clash or
+                // a breach somebody here already knows about, and letting it in as a fresh issue
+                // would put a second row beside the one it answers - which is the failure the
+                // whole round trip exists to avoid.
+                var (answered, strangers) =
+                    FindingBcf.Merge(_session.Findings.Findings, read.Topics, named);
+
+                if (answered > 0 && !_session.Findings.Save())
+                    _log.Children.Add(Ui.Note("The answers are on the board but could not be "
+                        + "kept: " + (_session.Findings.LastSaveProblem
+                                      ?? "there was nowhere to write.")));
+
                 var register = IssueViews.Read(_session);
-                var result = IssueBcf.Merge(register, read.Topics, System.IO.Path.GetFileName(path));
+                var result = IssueBcf.Merge(register, strangers, named);
 
                 var problem = Write(_session, register);
 
@@ -1035,8 +1182,13 @@ namespace CamelWorks.UI.Views
                 foreach (var warning in read.Warnings) _log.Children.Add(Ui.Note(warning));
                 foreach (var note in result.Notes) _log.Children.Add(Ui.Note(note));
 
-                _log.Children.Add(Ui.Info(read.ToString() + " " + result.Explain(),
-                                          "Open the register", () => Open(null)));
+                _log.Children.Add(Ui.Info(read.ToString() + " " + result.Explain()
+                    + (answered > 0
+                        ? " " + Ui.Count(answered, "finding") + " this project sent out came back "
+                          + "answered, and " + (answered == 1 ? "it is" : "they are")
+                          + " on the board rather than in the register."
+                        : string.Empty),
+                    "Open the register", () => Open(null)));
             }
         }
 
@@ -1053,6 +1205,7 @@ namespace CamelWorks.UI.Views
             private readonly HashSet<string> _show;
 
             private bool _openOnly = true;
+            private bool _withFindings = true;
 
             internal ExportScreen(Session session)
             {
@@ -1073,6 +1226,16 @@ namespace CamelWorks.UI.Views
                     Bench.Group("What goes out",
                         Ui.Check("Only the ones that are still open", _openOnly, on => _openOnly = on),
                         Ui.Stack(ticks.ToArray())),
+                    Bench.Group("The findings behind them",
+                        Ui.Check("Send the findings each issue is about", _withFindings,
+                                 on => _withFindings = on),
+                        Ui.Small("An issue is the conversation and a finding is the thing it is "
+                                 + "about. Sending only the issues makes the file half a story: "
+                                 + "eleven clashes arrive as one line with no geometry, and the "
+                                 + "reader has nothing to look at. Each finding goes out as its "
+                                 + "own topic, related to its issue both ways round, which is "
+                                 + "what BCF's relation is for and what every tool that reads "
+                                 + "BCF understands.")),
                     Bench.Group(string.Empty,
                         Ui.Small("One topic per issue, carrying its status, type, priority, "
                                  + "assignee, due date, description and every comment. The "
@@ -1116,6 +1279,43 @@ namespace CamelWorks.UI.Views
                 job.Say("Building topics...");
 
                 var topics = going.Select(IssueBcf.ToTopic).ToList();
+                var findings = 0;
+
+                if (_withFindings)
+                {
+                    var register = _session.Findings.Findings;
+
+                    var attached = going
+                        .SelectMany(i => i.Findings)
+                        .Distinct(StringComparer.Ordinal)
+                        .Select(register.Find)
+                        .Where(f => f != null)
+                        .Select(f => f!)
+                        .ToList();
+
+                    var byGuid = topics.ToDictionary(t => t.Guid, t => t, StringComparer.Ordinal);
+
+                    var whose = going.ToDictionary(i => IssueBcf.ToTopic(i).Guid,
+                                                   i => (IEnumerable<string>)i.Findings,
+                                                   StringComparer.Ordinal);
+
+                    topics = FindingBcf.Together(attached, topics,
+                        topic => whose.TryGetValue(topic.Guid, out var ids)
+                            ? ids
+                            : Array.Empty<string>()).ToList();
+
+                    findings = attached.Count;
+
+                    // The findings are about to travel under the topic guids stamped on them, so
+                    // the register has to remember which - otherwise a file coming back names
+                    // topics nothing here answers to and every reply lands as a new issue.
+                    if (findings > 0 && !_session.Findings.Save())
+                        _log.Children.Add(Ui.Note("The findings went out, but which topics they "
+                            + "went out as could not be kept: "
+                            + (_session.Findings.LastSaveProblem
+                               ?? "there was nowhere to write.")
+                            + " A reply may come home as new issues rather than as answers."));
+                }
 
                 BcfWriteResult written;
 
@@ -1135,7 +1335,12 @@ namespace CamelWorks.UI.Views
 
                 foreach (var note in written.Notes) _log.Children.Add(Ui.Note(note));
 
-                _log.Children.Add(Ui.Done(written.ToString() + " Written to " + dialog.FileName + "."));
+                _log.Children.Add(Ui.Done(written.ToString()
+                    + (findings > 0
+                        ? " " + Ui.Count(findings, "finding") + " went with them, each related to "
+                          + "the issue it is about."
+                        : string.Empty)
+                    + " Written to " + dialog.FileName + "."));
             }
         }
     }

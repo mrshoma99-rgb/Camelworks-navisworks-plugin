@@ -471,6 +471,253 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void TheTopicGuidIsRecomputableFromTheModelAlone()
+        {
+            // The contract the whole round trip rests on. A markup that comes home stripped of
+            // everything of ours still names its result, because the receiving side derives the
+            // same GUID from the clash it already has.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key),
+                         BcfReader.Read(stream).Topics.Single().Guid);
+        }
+
+        [Fact]
+        public void TwoCrossingsOfOnePairAreTwoTopics()
+        {
+            // A duct that crosses one beam twice is two results, and coarsely decomposed models -
+            // a whole system as one item - make that ordinary. Keying the topic on the element
+            // pair alone put both at one path in the archive: two markup.bcf entries with one
+            // name, which is malformed, and whose second topic most readers silently drop.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+
+            var first = ClashKey.Create(a, b, 10, 20, 30);
+            var second = ClashKey.Create(a, b, 90, 20, 30);
+
+            Assert.NotEqual(ClashBcf.TopicGuidFor(first), ClashBcf.TopicGuidFor(second));
+        }
+
+        [Fact]
+        public void AnArchiveNeverHasTwoEntriesAtOnePath()
+        {
+            // The invariant behind it: whatever the board holds, the file stays a valid archive.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+
+            var written = ClashBcf.Write(new[]
+            {
+                new ClashItem(ClashKey.Create(a, b, 10, 20, 30), "T") { X = 10, Y = 20, Z = 30 },
+                new ClashItem(ClashKey.Create(a, b, 90, 20, 30), "T") { X = 90, Y = 20, Z = 30 },
+            });
+
+            Assert.Equal(2, written.Results);
+
+            using var stream = new MemoryStream(written.Bytes);
+            using var zip = new System.IO.Compression.ZipArchive(stream,
+                System.IO.Compression.ZipArchiveMode.Read);
+
+            var paths = zip.Entries.Select(e => e.FullName).ToList();
+
+            Assert.Equal(paths.Count, paths.Distinct(StringComparer.Ordinal).Count());
+            Assert.Equal(2, paths.Count(p => p.EndsWith("markup.bcf", StringComparison.Ordinal)));
+        }
+
+        [Fact]
+        public void AClashThatMovedIsStillFoundThroughItsNeighbours()
+        {
+            // Identity is exact so the archive stays valid; tolerance lives at match time. A
+            // conflict whose point drifted a cell still has to come home.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+
+            var sent = ClashKey.Create(a, b, 10.0, 20.0, 30.0);
+            var moved = ClashKey.Create(a, b, 10.3, 20.0, 30.0);
+
+            Assert.NotEqual(ClashBcf.TopicGuidFor(sent), ClashBcf.TopicGuidFor(moved));
+
+            // The model, holding the moved clash, still offers the id the file went out under.
+            Assert.Contains(ClashBcf.TopicGuidFor(sent), ClashBcf.NearbyTopicGuidsFor(moved));
+
+            // And it does not reach so far that a genuinely different crossing is swept in.
+            var elsewhere = ClashKey.Create(a, b, 90.0, 20.0, 30.0);
+
+            Assert.DoesNotContain(ClashBcf.TopicGuidFor(elsewhere),
+                                  ClashBcf.NearbyTopicGuidsFor(moved));
+        }
+
+        [Fact]
+        public void AMarkupGoesHomeUnderTheNameItCameOutUnder()
+        {
+            // Read a file and save it back: the topic keeps its identity rather than getting a
+            // freshly derived one, so the seat syncing it can still place it.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            var sent = ClashBcf.Write(new[] { item });
+
+            var back = RoundTrip(sent).Items.Single();
+
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key), back.TopicGuid);
+
+            using var again = new MemoryStream(ClashBcf.Write(new[] { back }).Bytes);
+
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key),
+                         BcfReader.Read(again).Topics.Single().Guid);
+        }
+
+        [Fact]
+        public void AForeignRoundTripKeepsTheTopicIdentityEvenWithNothingElseLeft()
+        {
+            // Solibri, BIMcollab or Revizto: the sidecar is gone and the components have been
+            // re-authored. The topic GUID is the one thing BCF will not let them change, and it
+            // is enough.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(mine).Topics.Single();
+
+            topic.TopicStatus = "Closed";
+            topic.AssignedTo = "Ada";
+            topic.Viewpoints.Clear();          // their tool re-authored the viewpoint away
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            var returned = ClashBcf.Read(theirs).Results.Single();
+
+            // Nothing of ours survived - and the topic still names the clash it came from.
+            Assert.Null(returned.Item);
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key), returned.FileGuid);
+            Assert.Equal(FindingStatus.Resolved, returned.Status);
+            Assert.Equal("Ada", returned.AssignedTo);
+        }
+
+        [Fact]
+        public void WhatTheModelCannotHoldComesBackAsANote()
+        {
+            // A reviewer sets a priority and a due date in their tool. A Navisworks clash result
+            // has neither field, and dropping them silently is what this round trip exists to
+            // avoid - so they become a comment on the clash.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(mine).Topics.Single();
+
+            topic.Priority = "High";
+            topic.Stage = "Construction";
+            topic.DueDate = new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero);
+            topic.Labels.Add("Site query");
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            var back = ClashBcf.Read(theirs).Results.Single();
+            var aside = ClashBcf.Aside(back, back.Name);
+
+            Assert.NotNull(aside);
+            Assert.Contains("priority High", aside!);
+            Assert.Contains("stage Construction", aside);
+            Assert.Contains("due 2026-04-15", aside);
+            Assert.Contains("Site query", aside);
+        }
+
+        [Fact]
+        public void AnOrdinarySyncAddsNoNote()
+        {
+            // Nothing set means nothing said. A note on every clash every week is noise nobody
+            // reads, which is how a useful note stops being read.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            var back = RoundTrip(item).Results.Single();
+
+            Assert.Null(ClashBcf.Aside(back, back.Name));
+        }
+
+        [Fact]
+        public void OurOwnLabelsAreNotReadBackAsTheReviewersTags()
+        {
+            // Test, folder, group, level, grid and zone went out of this writer. Saying them back
+            // as something the reviewer set would be a note about nothing.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            item.TestFolder = "Coordination";
+            item.CarriedGroup = "Level 3 ducts";
+            item.Level = "L03";
+            item.Grid = "C-4";
+            item.Zone = "Plant room";
+
+            var back = RoundTrip(item).Results.Single();
+
+            Assert.Empty(back.Labels);
+            Assert.Null(ClashBcf.Aside(back, back.Name));
+        }
+
+        [Fact]
+        public void TheTopicsComeBackSoTheOnesWithNoClashCanBeRaised()
+        {
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(mine).Topics.Single();
+
+            // What a reviewer raises in their own tool: a problem with no clash behind it.
+            var raised = new BcfTopic("their-own-finding", "Handrail missing on the east stair",
+                                      DateTimeOffset.UtcNow, "ada")
+            {
+                TopicType = "Issue",
+                TopicStatus = "Open",
+                Description = "No handrail shown between levels 2 and 3.",
+            };
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic, raised }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            var read = ClashBcf.Read(theirs);
+
+            Assert.Equal(2, read.Topics.Count);
+
+            // And it lands in the register through the path the Issue Manager already uses.
+            var register = new CamelWorks.Core.Issues.IssueRegister();
+
+            var merged = CamelWorks.Core.Issues.IssueBcf.Merge(
+                register,
+                read.Topics.Where(t => t.Guid == raised.Guid).ToList(),
+                "ada.bcfzip");
+
+            Assert.Equal(1, merged.Added);
+            Assert.Equal("Handrail missing on the east stair", register.Issues.Single().Title);
+        }
+
+        [Fact]
+        public void ClashXmlCarriesNoTopicsAndThatIsNotAFault()
+        {
+            // The older format has no topics. A caller asking for them gets an empty list rather
+            // than a null to guard.
+            var read = ClashXml.Read("<exchange><batchtest><clashtests></clashtests></batchtest></exchange>");
+
+            Assert.NotNull(read.Topics);
+            Assert.Empty(read.Topics);
+        }
+
+        [Fact]
         public void TheArchiveHasNoTopLevelFolderThatIsNotATopic()
         {
             // The invariant that keeps another tool's importer from meeting something new. A
