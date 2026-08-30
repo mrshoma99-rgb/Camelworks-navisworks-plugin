@@ -89,6 +89,23 @@ everything twice. Matching is on the BCF GUID; duplicate author-and-body comment
 A BCF file read anywhere in the product — here, or in [Issue Link ▸ BCF](Issue-Link#bcf) — ends up
 in this one register.
 
+### A topic that answers a finding goes onto the finding
+
+If a topic answers something this project sent out — a clash, a clearance breach, a specification
+the model failed — it lands **on that finding**, not in the register as a new issue. It is the same
+clash, and the board should say what the reviewer said about it; a second row beside the one it
+answers is the failure the whole round trip exists to avoid.
+
+Everything else is a stranger and becomes an issue, which is what it already was. A finding is only
+ever something a check produced, so nothing here invents one for a problem no machine found.
+
+Two things are deliberately careful on the way back:
+
+- **The status cannot go backwards.** A file that sat in somebody's inbox for a fortnight cannot
+  undo a decision taken since it left.
+- **Our own labels do not come back as your tags.** The export writes two labels saying which check
+  spoke and which rule; reading them back as somebody's own would grow the file a label a cycle.
+
 ---
 
 ## Export
@@ -98,5 +115,19 @@ in this one register.
 Writes one BCF topic per issue, carrying status, type, priority, assignee, due date, description
 and every comment. The register's own number travels as a label, so a reply can be matched back to
 the issue it answers.
+
+### Send the findings each issue is about
+
+On by default. An issue is the conversation and a finding is the thing it is about, so sending only
+the issues makes the file half a story: eleven clashes arrive as one line with no geometry and the
+reader has nothing to look at.
+
+Each finding goes out as its own topic, **related to its issue both ways round** — BCF's own
+relation, which every coordination tool understands. A reader who opened the clash first can get to
+the conversation, not only the other way about.
+
+Elements travel as **IFC GlobalIds** so the receiving tool can select them. An element with no
+GlobalId is left out of the viewpoint rather than named by its Navisworks instance GUID, which
+would point at a different element in their model.
 
 **Excel** writes the register exactly as it is filtered, for the meeting.

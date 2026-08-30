@@ -248,10 +248,17 @@ Focus / Isolate / Mark / Assign / Comment / Group / Sphere / Copy.
 
 One row per surface, positioned at the overlap rather than at the middle of a forty-metre duct.
 
-**The judgement survives a re-run.** No clash engine found these, so there is nothing in the
-model's clash data to write into — instead status, assignment, comments and groups carry over onto
-the same surface-and-obstruction pair. Re-checking after a model update does not reopen everything
-somebody closed.
+**The judgement survives a re-run — and closing Navisworks.** No clash engine found these, so there
+is nothing in the model's clash data to write into. Status, assignment, comments and groups live
+beside the model instead, on the same surface-and-obstruction pair and the same place. Re-checking
+after a model update does not reopen everything somebody closed, and neither does going home.
+
+**Raising the minimum does not lose what you decided.** Re-running at 2.4 m after running at 2.1 m
+finds the same low soffit, and it is the same finding: the number it fell short of is a fact about
+the run, shown as one, not part of what the finding *is*.
+
+Picked rows can also be **attached to an issue that already exists**, so a corridor that is too low
+for its whole length joins the conversation already about it rather than starting a fifteenth.
 
 ### Out of the tab
 

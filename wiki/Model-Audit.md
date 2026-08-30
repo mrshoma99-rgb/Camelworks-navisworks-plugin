@@ -31,6 +31,23 @@ Each finding carries **its own fix** and a *show me* that selects the elements i
 
 Which property carries the code lives behind the ⚙ symbol on the action row.
 
+### The sweep remembers what you decided
+
+Every sweep writes its findings beside the model, so each card also carries:
+
+- **Settle it** — yes, we know, and we have accepted it. The next sweep still finds it and still
+  says so, but it says you have accepted it. Press it again to reopen.
+- **Raise an issue** — the card becomes a conversation in the [Issue Manager](Issue-Manager), with
+  the finding attached and the elements on it.
+
+A finding about *models* rather than geometry gets both too. "This model was moved" has nothing to
+select and is exactly the kind of thing somebody accepts once and does not want asked again next
+Monday.
+
+The count in a headline is not what identifies a finding — "37 elements sit on top of each other"
+and next week "41" are the same finding with the same decision on it. The rule is what identifies,
+so a sweep that finds one more never throws away what you said about the rest.
+
 ### The client's rules
 
 The rail carries a second run with a second file: **an IDS** the client sent. It is checked against
@@ -60,6 +77,21 @@ must have. The verdict under the form is live as you type.
 
 Saving offers **Check the federation against it**, which lands on Health with the path already
 filled in.
+
+### What a check remembers
+
+Each run writes its failures beside the model, and the results grid gains **Raise N as issues** —
+one issue per specification, because two requirements failing is two conversations even when the
+same wall is in both.
+
+That is what lets "these forty doors are being scheduled separately" be said **once** instead of
+every Tuesday. How many fail is this run's answer, not a different requirement; and the file's own
+identifier is what identifies a specification, so rewording one does not lose the agreement
+anybody reached about it.
+
+A specification that **matched nothing** keeps being reported as its own kind of failure rather
+than counted as met. A requirement that quietly stops being checked is worse than one that fails,
+and a green tick is exactly where it would go to hide.
 
 ---
 
