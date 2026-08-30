@@ -1,0 +1,74 @@
+# Scene Kit
+
+> What is visible, and what colour it is.
+
+**Tabs:** [Appearance](#appearance) · [Viewpoints](#viewpoints)
+
+---
+
+## Appearance
+
+> Control what is visible and what colour it is, as layers that stack and can be taken back off.
+
+**Main action: Apply the stack.**
+
+Navisworks loses the answer to *why is this hidden* the instant you hide something. Appearance is a
+stack of **named layers** instead: each says what it covers, what it does, and can be switched off.
+That is what makes a federation handed over rather than abandoned.
+
+### A layer
+
+- **Covers** — the current selection, everything, one of the project's saved rules, or one of the
+  **document's own Navisworks sets**. A host set becomes a rule, so the layer follows the set:
+  republish the set with more elements and the layer covers them too.
+- **Does** — colour (`#rrggbb`, with the swatch showing the result), transparency, hide, show.
+
+The stack applies top-down and comes back off in one press.
+
+### What somebody else did
+
+A federation is nearly always already coloured or part-hidden by someone. **Scan the model** finds
+every appearance state CamelWorks did not author, as a table:
+
+- **Select** them — see what they are.
+- **Make them a layer** — adopt the state into the stack. The model looks exactly as it did; what
+  changed is that the stack now says *why*.
+- **Put them back** — clear the overrides and un-hide.
+
+All three work on however many rows you pick. **Overrides CamelWorks did not author are never
+cleared without being asked.**
+
+A model where thousands of elements each carry their own colour is a painted model, not a
+coordination problem — those are counted but not listed, and the screen says so.
+
+---
+
+## Viewpoints
+
+> Rename, renumber, re-folder and render viewpoints in bulk, instead of one at a time down the
+> tree.
+
+**Main action: Save this view.**
+
+The document's viewpoints as a table. Tick the ones to act on — with nothing ticked the batches act
+on all of them, **except deleting, which never does**.
+
+Behind the ⚙ symbols on the action row, each opening on its own page:
+
+| Symbol | Batch |
+|---|---|
+| ✎ | **Rename them** — a pattern with `{n}`, `{name}`, `{folder}`, and a starting number |
+| 📁 | **File them into a folder** |
+| 📷 | **Render them to images** — pre-filled with a folder beside the document |
+| 🎨 | **Copy overrides onto the rest** — with a warning where redlines are involved |
+| ⊕ | **A viewpoint per issue** — one per group on the clash board, named as an agenda |
+| 🗑 | **Delete them** — only what is ticked, never all |
+
+Each page reports what it did where you pressed the button.
+
+**Make one for each element** is on the stage: name pattern, numbering, where to look from, how
+much room to leave, an optional section cut, and a folder. It shows the names it would create
+before making anything.
+
+This is the tab that turns *forty minutes of framing and typing* into one press — which is why
+reviews are usually one person driving and everybody else watching.
