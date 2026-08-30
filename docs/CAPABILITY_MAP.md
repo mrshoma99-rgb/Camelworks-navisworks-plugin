@@ -75,6 +75,7 @@ surfaces work, not things a coordinator opens.
 | `Resolution`, `FindingStatus`, `FindingStatusLattice` | Clash Board detail + Review. The status lattice is what stops a re-run demoting a decision somebody made. |
 | `MatrixOptions`, `MatrixPlanner`, `MatrixCategory`, `MatrixGrid`, `MatrixSymbol`, `SheetMatrix`, `SheetMapping` | Clash Matrix — by hand, from the model's tests, or from the client's spreadsheet |
 | `Headroom`, `HeadroomElement`, `HeadroomSpan`, `HeadroomResult` | Clearance Check — the engine behind the findings grid |
+| `ClearanceFindings` | **Clearance Check** — every run writes its breaches into the findings register beside the model, so a decision survives closing Navisworks rather than being carried in memory until the session ends. The minimum somebody asked for is a fact about the run, not part of what a finding is, so raising it does not lose last week's judgement. |
 | `Freeze`, `ChangeNotice` | **Compare Track ▸ Freeze** and **▸ Change Notice** — sign-off scoped by set, selection, everything or the board |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
