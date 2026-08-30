@@ -79,6 +79,37 @@ namespace CamelWorks.UI.Views
         public string? SavedPath =>
             string.IsNullOrWhiteSpace(Document.CurrentFileName) ? null : Document.CurrentFileName;
 
+        /// <summary>
+        /// Whether this document is a published one - an NWD.
+        ///
+        /// The single most useful fact about an open document that nothing used to say. An NWD is
+        /// a snapshot: its clash results are read-only, its properties cannot be saved back into
+        /// it, and every write in this product lands somewhere the file will never carry. That is
+        /// not a fault - publishing is what an NWD is for - but a coordinator who spends an
+        /// afternoon marking one up and only finds out at the end has lost the afternoon.
+        ///
+        /// Read off the file name rather than asked of the host, because the host has no property
+        /// that says it and the extension is the thing that decides it.
+        /// </summary>
+        public bool IsPublished
+        {
+            get
+            {
+                try
+                {
+                    var path = SavedPath;
+
+                    return path != null && System.IO.Path.GetExtension(path)
+                        .Equals(".nwd", StringComparison.OrdinalIgnoreCase);
+                }
+                catch (Exception)
+                {
+                    // An unsaved or unnameable document is not a published one.
+                    return false;
+                }
+            }
+        }
+
         /// <summary>Now, as UTC ticks.</summary>
         public long NowTicks => DateTime.UtcNow.Ticks;
 

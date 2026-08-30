@@ -234,9 +234,24 @@ namespace CamelWorks.UI.Views
             private const string SecondSide = "Second item";
             private const string BothSides = "Both";
 
+            /// <summary>Where the register of refused edits lives in the project file.</summary>
+            private const string HeldKey = "heldEdits";
+
+            /// <summary>
+            /// The edits this document would not take, kept so the week's work is not lost.
+            ///
+            /// Static, like the read, because it belongs to the document rather than to one visit
+            /// to the tab; loaded from the project file on the first visit and written back on
+            /// every change, so it also survives closing Navisworks.
+            /// </summary>
+            private static HeldEdits? _heldEdits;
+
             internal Screen(Session session)
             {
                 _session = session;
+
+                _heldEdits ??= HeldEdits.FromJson(
+                    session.Store.Section(ProjectStore.ClashSection)[HeldKey]);
 
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
@@ -516,34 +531,6 @@ namespace CamelWorks.UI.Views
 
                 _log.Children.Add(Ui.Line(Ui.Count(entries.Count, "test") + ", "
                     + Ui.Count(entries.Sum(e => e.Rows.Count), "result") + " read.", 1, true));
-
-                Warm(job);
-            }
-
-            /// <summary>
-            /// Build the element index here, where there is a progress bar and a Stop.
-            ///
-            /// Every verb that touches the model - focus, isolate, marker spheres, snapshots -
-            /// resolves element keys, and the first one to do it pays for a walk of the whole
-            /// federation. Inside a button click that is Navisworks reporting Not Responding for
-            /// minutes with nothing on screen to explain it, which reads as the button having
-            /// hung. It belongs at the end of the read: the same press, one progress line, and
-            /// every row verb afterwards is instant.
-            ///
-            /// Stopping is safe. The index is left unbuilt rather than half built, so the next
-            /// thing that needs it pays properly instead of reporting two thirds of the federation
-            /// as elements this model does not have.
-            /// </summary>
-            private void Warm(Job job)
-            {
-                if (_session.Model is not CamelWorks.Nav.NavDocument document || document.IsIndexed)
-                    return;
-
-                job.Say("Indexing the federation, so the row verbs are instant...");
-
-                document.Index(
-                    seen => job.Step(seen, "elements indexed"),
-                    () => !job.IsCancelled);
             }
 
             private void ReadFile(Job job)
@@ -893,6 +880,21 @@ namespace CamelWorks.UI.Views
                     .ToList();
 
                 _headline.Children.Clear();
+
+                if (!OnFile && !Held.IsEmpty)
+                {
+                    _headline.Children.Add(Ui.Info(
+                        Ui.Count(Held.Count, "result") + " carries an edit this document would "
+                        + "not take. Published files hold their clash results read-only, so the "
+                        + "decisions are kept here: they show on the board, they survive a "
+                        + "re-read, and \"Save the baseline\" writes them out as clash XML to "
+                        + "sync into the NWF the results belong to."));
+
+                    _headline.Children.Add(Ui.Actions(
+                        Ui.Quiet("Try writing them in now", PushHeld),
+                        Ui.Quiet("What is waiting", ShowHeld),
+                        Ui.Quiet("Forget them", ForgetHeld)));
+                }
 
                 _testsSay.Text =
                     (OnFile && _file != null
@@ -1446,23 +1448,67 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Model.Select(keys);
-
                 // One result from the model gets the host's own composed view of it - the frame
                 // the engine saved when the test ran, which reads like the native clash window.
-                // More than one, or a file row, gets a fit around everything picked.
                 if (!OnFile && rows.Count == 1
                     && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
                 {
+                    _session.Model.Select(keys);
+
                     say.Children.Add(Ui.Done("Showing the engine's own view of \""
                         + (rows[0].Info.Name ?? "the result") + "\"."));
                     return;
                 }
 
-                _session.View.ZoomTo(keys, 1.0);
+                // The camera goes to the point the results already carry, before anything is
+                // resolved. A clash result knows where it happened; framing the elements means
+                // finding them first, and the coordinator is looking at a 3D view either way.
+                var point = Middle(rows);
+
+                if (point != null)
+                {
+                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
+                }
+
+                // Then the selection, which is what makes the view worth arriving at - and is now
+                // the only part that costs anything.
+                _session.Model.Select(keys);
+
+                if (point == null) _session.View.ZoomTo(keys, 1.0);
 
                 say.Children.Add(Ui.Done("Selected and framed "
                     + Ui.Count(keys.Count, "element") + "."));
+            }
+
+            /// <summary>
+            /// The middle of what was picked, in model units, or null when no row carries a point.
+            ///
+            /// Every clash result records where the two elements met, so a camera move needs no
+            /// elements at all. Averaging is right for a handful of picked rows in one area, which
+            /// is what a coordinator picks; a selection spread across the site gets a point in the
+            /// middle of nowhere, and the selection they can still see in the tree is the answer
+            /// to that.
+            /// </summary>
+            private static (double X, double Y, double Z)? Middle(IReadOnlyList<Row> rows)
+            {
+                double x = 0, y = 0, z = 0;
+                var counted = 0;
+
+                foreach (var row in rows)
+                {
+                    var info = row.Info;
+
+                    // A result with no geometry behind it records the origin, and averaging that
+                    // in drags the camera towards a corner of the site.
+                    if (info.PointX == 0 && info.PointY == 0 && info.PointZ == 0) continue;
+
+                    x += info.PointX;
+                    y += info.PointY;
+                    z += info.PointZ;
+                    counted++;
+                }
+
+                return counted == 0 ? null : ((double, double, double)?)(x / counted, y / counted, z / counted);
             }
 
             /// <summary>
@@ -1569,7 +1615,8 @@ namespace CamelWorks.UI.Views
             private void Mark(IReadOnlyList<object> picked, Panel say) =>
                 Write(picked, say, "Marked {0} as " + _mark + ".",
                       (testId, ids) => _session.Clash.SetStatus(testId, ids, _mark),
-                      row => row.Status = _mark);
+                      row => row.Status = _mark,
+                      edit => edit.Status = _mark);
 
             private void AssignPicked(IReadOnlyList<object> picked, Panel say)
             {
@@ -1578,7 +1625,8 @@ namespace CamelWorks.UI.Views
                 Write(picked, say,
                       who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
                       (testId, ids) => _session.Clash.Assign(testId, ids, who),
-                      row => row.Assigned = who);
+                      row => row.Assigned = who,
+                      edit => edit.Assigned = who);
             }
 
             private void CommentPicked(IReadOnlyList<object> picked, Panel say)
@@ -1594,14 +1642,17 @@ namespace CamelWorks.UI.Views
 
                 var author = Environment.UserName ?? "reviewer";
 
+                var when = DateTime.UtcNow.Ticks;
+
                 Write(picked, say, "Commented on {0}.",
                       (testId, ids) => _session.Clash.Comment(testId, ids, body, author),
                       row =>
                       {
                           row.Comments++;
                           row.LastComment = body;
-                          row.Trail.Add(new ClashComment(author, DateTime.UtcNow.Ticks, body));
-                      });
+                          row.Trail.Add(new ClashComment(author, when, body));
+                      },
+                      edit => edit.Comments.Add(new ClashComment(author, when, body)));
             }
 
             /// <summary>Rename just the picked results, prefix1, prefix2, ... in host order.</summary>
@@ -1663,7 +1714,8 @@ namespace CamelWorks.UI.Views
                 Write(picked, say,
                       group.Length == 0 ? "Moved {0} out of their groups." : "Grouped {0} into \"" + group + "\".",
                       (testId, ids) => _session.Clash.Regroup(testId, ids, group),
-                      row => row.Group = group);
+                      row => row.Group = group,
+                      edit => edit.Group = group);
             }
 
             /// <summary>
@@ -1674,7 +1726,8 @@ namespace CamelWorks.UI.Views
             /// save writes it out — that is what a markup is.
             /// </summary>
             private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
-                               Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply)
+                               Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply,
+                               Action<HeldEdit>? hold = null)
             {
                 say.Children.Clear();
 
@@ -1682,6 +1735,7 @@ namespace CamelWorks.UI.Views
                 if (rows.Count == 0) return;
 
                 var done = 0;
+                var held = 0;
                 var problems = new List<string>();
 
                 if (OnFile)
@@ -1697,32 +1751,69 @@ namespace CamelWorks.UI.Views
 
                         if (!write(byTest.Key, ids))
                         {
-                            problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                            if (hold == null)
+                            {
+                                problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                                continue;
+                            }
+
+                            // The document would not take it - a published NWD holds its results
+                            // read-only - so the edit is kept rather than lost. It shows on the
+                            // board, it survives a re-read and a re-open, and it travels out in
+                            // the baseline that syncs into the NWF the results belong to.
+                            foreach (var row in byTest)
+                            {
+                                hold(Held.For(row.TestId, row.Info.Id));
+                                apply(row);
+                                held++;
+                            }
+
                             continue;
                         }
 
-                        foreach (var row in byTest) apply(row);
+                        // Written for real: whatever was being kept for these results is now in
+                        // the document, and keeping it any longer would write it twice.
+                        foreach (var row in byTest)
+                        {
+                            Held.Release(row.TestId, row.Info.Id);
+                            apply(row);
+                        }
+
                         done += ids.Count;
                     }
                 }
 
-                if (done == 0)
+                if (done == 0 && held == 0)
                 {
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
                     return;
                 }
 
-                if (!OnFile)
-                    _session.Record(ActivityKind.Regroup,
-                                    string.Format(CultureInfo.InvariantCulture, didFormat,
-                                                  Ui.Count(done, "result")));
+                if (!OnFile) KeepHeld();
+
+                var what = string.Format(CultureInfo.InvariantCulture, didFormat,
+                                         Ui.Count(done + held, "result"));
+
+                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
                 RedrawTests();
-                Tell(string.Format(CultureInfo.InvariantCulture, didFormat,
-                                   Ui.Count(done, "result"))
-                     + (OnFile ? " Save the markup to keep it." : string.Empty), problems);
+                Tell(what + Trailer(held), problems);
+            }
+
+            /// <summary>What to say after a write that the document would not take all of.</summary>
+            /// <param name="held">How many results were kept here instead.</param>
+            private string Trailer(int held)
+            {
+                if (OnFile) return " Save the markup to keep it.";
+
+                if (held == 0) return string.Empty;
+
+                return " " + Ui.Count(held, "result") + " could not be written into this "
+                       + "document, so " + (held == 1 ? "it is" : "they are") + " kept here "
+                       + "instead - " + Ui.Count(Held.Count, "result") + " waiting in all. "
+                       + "Write the baseline to carry them into the NWF.";
             }
 
             private void Spheres(IReadOnlyList<object> picked, Panel say)
@@ -2770,15 +2861,205 @@ namespace CamelWorks.UI.Views
                 return kept;
             }
 
-            private static Row Restored(Row row,
-                                        Dictionary<string, Dictionary<string, string>> carried)
+            /// <summary>
+            /// A freshly read row, with what this bench knows and the document does not put back.
+            ///
+            /// Two things travel across a re-read: the custom column values, which cost a property
+            /// read each and would otherwise be re-fetched for no reason, and the held edits — the
+            /// decisions a read-only document refused. Without the second the board would forget
+            /// the afternoon's work the moment somebody pressed Read again.
+            /// </summary>
+            private Row Restored(Row row,
+                                 Dictionary<string, Dictionary<string, string>> carried)
             {
-                if (!carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
-                    return row;
+                if (carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
+                    foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
 
-                foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
+                Apply(Held.Find(row.TestId, row.Info.Id), row);
 
                 return row;
+            }
+
+            /// <summary>The register of refused edits. Never null once a screen exists.</summary>
+            private static HeldEdits Held => _heldEdits ??= new HeldEdits();
+
+            /// <summary>Lay a held edit over a row, so the board reads the way the coordinator left it.</summary>
+            private static void Apply(HeldEdit? edit, Row row)
+            {
+                if (edit == null) return;
+
+                if (edit.Status != null) row.Status = edit.Status;
+                if (edit.Assigned != null) row.Assigned = edit.Assigned;
+                if (edit.Group != null) row.Group = edit.Group;
+
+                foreach (var comment in edit.Comments)
+                {
+                    row.Trail.Add(comment);
+                    row.Comments++;
+                    row.LastComment = comment.Body;
+                }
+            }
+
+            /// <summary>
+            /// Offer the held edits to the document again, and keep only what it still refuses.
+            ///
+            /// The case this is for: the coordinator marked up the NWD on site, then opened the
+            /// NWF the results actually live in. One press moves the week's decisions across.
+            /// </summary>
+            private void PushHeld()
+            {
+                if (Held.IsEmpty) return;
+
+                var written = 0;
+                var refused = 0;
+                var problems = new List<string>();
+
+                foreach (var byTest in Held.All.ToList()
+                                           .GroupBy(e => e.TestId, StringComparer.OrdinalIgnoreCase))
+                {
+                    foreach (var edit in byTest)
+                    {
+                        var ids = new[] { edit.ResultId };
+                        var all = true;
+
+                        if (edit.Status != null)
+                            all &= Kept(_session.Clash.SetStatus(byTest.Key, ids, edit.Status), problems);
+
+                        if (edit.Assigned != null)
+                            all &= Kept(_session.Clash.Assign(byTest.Key, ids, edit.Assigned), problems);
+
+                        if (edit.Group != null)
+                            all &= Kept(_session.Clash.Regroup(byTest.Key, ids, edit.Group), problems);
+
+                        foreach (var comment in edit.Comments)
+                            all &= Kept(_session.Clash.Comment(byTest.Key, ids, comment.Body,
+                                                               comment.Author), problems);
+
+                        // Released only when every part landed: a half-written edit that stopped
+                        // being held would lose the half the document refused.
+                        if (all)
+                        {
+                            Held.Release(edit.TestId, edit.ResultId);
+                            written++;
+                        }
+                        else
+                        {
+                            refused++;
+                        }
+                    }
+                }
+
+                KeepHeld();
+                RedrawTests();
+
+                Tell(written == 0
+                        ? "This document still will not take them. They are still kept here."
+                        : Ui.Count(written, "held edit") + " written into the document"
+                          + (refused > 0
+                              ? "; " + Ui.Count(refused, "other") + " still refused and still kept."
+                              : ". Nothing is waiting now."),
+                     problems.Distinct().Take(3).ToList());
+            }
+
+            /// <summary>One host answer, with its complaint collected the first time it is heard.</summary>
+            private bool Kept(bool ok, List<string> problems)
+            {
+                if (!ok) problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+
+                return ok;
+            }
+
+            /// <summary>List what is waiting, so somebody can see it before deciding anything.</summary>
+            private void ShowHeld()
+            {
+                _log.Children.Clear();
+
+                if (Held.IsEmpty)
+                {
+                    _log.Children.Add(Ui.Line("Nothing is waiting.", 0.75));
+                    return;
+                }
+
+                var read = Current();
+
+                string Name(HeldEdit edit) =>
+                    read?.FirstOrDefault(e => string.Equals(e.Test.Id, edit.TestId,
+                                                            StringComparison.OrdinalIgnoreCase))
+                        ?.Test.Name ?? edit.TestId;
+
+                _log.Children.Add(Ui.Eyebrow("Waiting to be written"));
+
+                var table = Ui.Table(
+                    Held.All.OrderBy(e => Name(e), StringComparer.OrdinalIgnoreCase)
+                            .ThenBy(e => e.ResultId, StringComparer.OrdinalIgnoreCase)
+                            .Select(e => new TableRow(e, Name(e), e.ResultId, e.Describe())),
+                    ("Test", 200), ("Result", 140), ("What is held", 0));
+
+                _log.Children.Add(table);
+
+                _log.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "held edit")),
+                    new Ui.OnPicked("Forget {n}", (picked, say) =>
+                    {
+                        foreach (var edit in picked.OfType<HeldEdit>())
+                            Held.Release(edit.TestId, edit.ResultId);
+
+                        KeepHeld();
+                        say.Children.Add(Ui.Done("Forgotten. Press \"Read the results\" to see "
+                            + "the board the way the document holds it."));
+                    })));
+            }
+
+            /// <summary>Throw the held edits away, on purpose.</summary>
+            private void ForgetHeld()
+            {
+                // Two presses, because there is no undo: the first says what would be lost, the
+                // second does it. A confirmation dialog would be the same question in a window
+                // somebody has to close.
+                if (!_forgetArmed)
+                {
+                    _forgetArmed = true;
+
+                    Tell("Press \"Forget them\" again to throw away "
+                         + Ui.Count(Held.Count, "held edit")
+                         + ". They have not been written into any document, so once forgotten "
+                         + "they are gone - unless a baseline was saved while they were held.",
+                         null);
+
+                    return;
+                }
+
+                _forgetArmed = false;
+
+                Held.Clear();
+                KeepHeld();
+                RedrawTests();
+                Tell("Forgot the held edits. Press \"Read the results\" to see the board the "
+                     + "way the document holds it.", null);
+            }
+
+            /// <summary>Whether "Forget them" has been pressed once already.</summary>
+            private bool _forgetArmed;
+
+            /// <summary>
+            /// Write the register into the project file.
+            ///
+            /// Failing to save is an ordinary outcome — a document nobody has saved has no project
+            /// file — and never a reason to refuse the edit: it still applies on the board and
+            /// still travels out in the baseline.
+            /// </summary>
+            private void KeepHeld()
+            {
+                try
+                {
+                    _session.Store.Section(ProjectStore.ClashSection).Set(HeldKey, Held.ToJson());
+                    _session.Store.Save();
+                }
+                catch (Exception)
+                {
+                    // Nowhere to write. The edits are still on the board and still exportable.
+                }
             }
 
             private void Tell(string did, List<string>? problems)

@@ -189,6 +189,34 @@ namespace CamelWorks.Nav
         }
 
         /// <inheritdoc />
+        public void LookAt(double x, double y, double z, double backMetres)
+        {
+            try
+            {
+                var scale = NavUnits.UnitsPerMetre(_document.Document.Units);
+                var back = backMetres * scale;
+
+                var target = new Point3D(x, y, z);
+                var viewpoint = Host.CurrentViewpoint.CreateCopy();
+
+                // Stood back along -Y and up in Z, which is the three-quarter view a coordinator
+                // draws on a whiteboard when they say "look at this junction". Keeping the current
+                // viewpoint's other settings - the render mode, the lighting, whether it is
+                // orthographic - because this is a move of the camera, not a new view.
+                viewpoint.Position = new Point3D(target.X, target.Y - back, target.Z + back);
+                viewpoint.Rotation = new Rotation3D();
+                viewpoint.PointAt(target);
+
+                Host.CurrentViewpoint.CopyFrom(viewpoint);
+            }
+            catch (Exception)
+            {
+                // A host that will not take the viewpoint leaves the camera where it was. The
+                // caller has already selected the elements, so the press was not wasted.
+            }
+        }
+
+        /// <inheritdoc />
         public void FrameBox(CamelWorks.Core.Abstractions.BoundingBox box)
         {
             var scale = NavUnits.UnitsPerMetre(_document.Document.Units);

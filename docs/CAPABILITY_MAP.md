@@ -74,6 +74,7 @@ surfaces work, not things a coordinator opens.
 | `Freeze`, `ChangeNotice` | **Compare Track ▸ Freeze** and **▸ Change Notice** — sign-off scoped by set, selection, everything or the board |
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
+| `HeldEdit`, `HeldEdits` | **Clash Manager ▸ Manage** — the decisions a published NWD refuses. Applied to the board, kept in the project file, offered back to the document with "Try writing them in now", and carried into the NWF by "Save the baseline". |
 | `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash XML |
 
 ### Issues out

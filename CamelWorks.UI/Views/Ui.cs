@@ -149,6 +149,7 @@ namespace CamelWorks.UI.Views
         private readonly Dispatcher? _dispatcher;
         private readonly TextBlock? _status;
         private readonly ProgressBar? _bar;
+        private readonly Panel? _output;
         private readonly System.Diagnostics.Stopwatch _sincePump = System.Diagnostics.Stopwatch.StartNew();
         private readonly System.Diagnostics.Stopwatch _since = System.Diagnostics.Stopwatch.StartNew();
 
@@ -156,11 +157,13 @@ namespace CamelWorks.UI.Views
         private long _done;
         private string _what = string.Empty;
 
-        internal Job(Dispatcher? dispatcher, TextBlock? status, ProgressBar? bar)
+        internal Job(Dispatcher? dispatcher, TextBlock? status, ProgressBar? bar,
+                     Panel? output = null)
         {
             _dispatcher = dispatcher;
             _status = status;
             _bar = bar;
+            _output = output;
         }
 
         /// <summary>
@@ -170,7 +173,7 @@ namespace CamelWorks.UI.Views
         /// takes a job. The alternative is a second copy of every service that does not report
         /// progress, which is how two code paths start disagreeing.
         /// </summary>
-        internal static Job Silent() => new Job(null, null, null);
+        internal static Job Silent() => new Job(null, null, null, null);
 
         /// <summary>Set when the user has asked to stop.</summary>
         public bool IsCancelled { get; internal set; }
@@ -195,6 +198,21 @@ namespace CamelWorks.UI.Views
                 _total = value < 0 ? 0 : value;
                 Paint(force: true);
             }
+        }
+
+        /// <summary>
+        /// Report something that went wrong, where the job's own results are being written.
+        ///
+        /// The status line is a running commentary that the next line overwrites, so it is the
+        /// wrong place for a reason somebody has to read after the job has finished. This puts it
+        /// in the pane instead, where it stays.
+        /// </summary>
+        /// <param name="message">What went wrong, in words.</param>
+        public void Trouble(string? message)
+        {
+            if (_output == null || string.IsNullOrWhiteSpace(message)) return;
+
+            _output.Children.Add(Ui.Problem(message!));
         }
 
         /// <summary>Say what is happening. Repaints a few times a second, not on every call.</summary>
@@ -1899,6 +1917,40 @@ namespace CamelWorks.UI.Views
         public static UIElement Info(string message, string caption, Action onClick) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx", caption, onClick);
 
+        /// <summary>
+        /// Why a write did less than it promised, or nothing when it did what it said.
+        ///
+        /// Every tool that writes into the model ends the same way: a count, and then this. A
+        /// count on its own is the message a user cannot act on - "wrote 0 of 412" reads as a
+        /// broken tool, when almost always it means the document is read-only and the same press
+        /// on the NWF would have worked.
+        /// </summary>
+        /// <param name="write">The transaction that was just committed.</param>
+        public static UIElement? Refused(CamelWorks.Core.Abstractions.IModelWriteTransaction? write)
+        {
+            var problem = write?.LastProblem;
+
+            return string.IsNullOrWhiteSpace(problem) ? null : Problem(problem!);
+        }
+
+        /// <summary>Put a write's refusal on a panel, when there was one.</summary>
+        /// <param name="panel">Where the message goes.</param>
+        /// <param name="write">The transaction that was just committed.</param>
+        public static void Refused(Panel? panel,
+                                   CamelWorks.Core.Abstractions.IModelWriteTransaction? write)
+        {
+            var said = Refused(write);
+
+            if (panel != null && said != null) panel.Children.Add(said);
+        }
+
+        /// <summary>Say why a write did less than it promised, into a running job's pane.</summary>
+        /// <param name="job">The job doing the writing.</param>
+        /// <param name="write">The transaction that was just committed.</param>
+        public static void Refused(Job? job,
+                                   CamelWorks.Core.Abstractions.IModelWriteTransaction? write) =>
+            job?.Trouble(write?.LastProblem);
+
         private static UIElement Banner(string message, string glyph, string wash, string edge,
                                         string ink, string? caption = null, Action? onClick = null)
         {
@@ -2450,6 +2502,7 @@ namespace CamelWorks.UI.Views
             window.Content = root;
 
             Skin.Apply(window);
+            Shell.HostWindow.Own(window);
             ShowSection(0);
 
             if (onClosed != null) window.Closed += (s, e) => onClosed();
@@ -2529,6 +2582,7 @@ namespace CamelWorks.UI.Views
             window.Content = root;
 
             Skin.Apply(window);
+            Shell.HostWindow.Own(window);
 
             if (onClosed != null) window.Closed += (s, e) => onClosed();
 
@@ -3035,7 +3089,7 @@ namespace CamelWorks.UI.Views
             Mouse.OverrideCursor = Cursors.Wait;
             Began();
 
-            var job = new Job(output.Dispatcher, status, bar);
+            var job = new Job(output.Dispatcher, status, bar, output);
             output.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
 
             try
@@ -3146,7 +3200,7 @@ namespace CamelWorks.UI.Views
                 Mouse.OverrideCursor = Cursors.Wait;
                 Began();
 
-                var job = new Job(go.Dispatcher, status, bar);
+                var job = new Job(go.Dispatcher, status, bar, output);
                 running = job;
 
                 // Everything above this line has to be on the glass before anything below it runs.

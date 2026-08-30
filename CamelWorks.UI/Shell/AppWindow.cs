@@ -98,6 +98,7 @@ namespace CamelWorks.UI.Shell
             {
                 window = new AppWindow(app);
                 Open[app.Id] = window;
+                HostWindow.Own(window);
                 window.Show();
             }
             else

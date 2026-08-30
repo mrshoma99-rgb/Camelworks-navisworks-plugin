@@ -916,6 +916,8 @@ namespace CamelWorks.UI.Views
                         var preview = transaction.Preview();
                         var written = transaction.Commit();
 
+                        Ui.Refused(_output, transaction);
+
                         _output.Children.Add(Ui.Line(
                             "Stamped " + Ui.Count(written, "element") + " with "
                             + CompareStamp.Category + " / " + CompareStamp.ChangeName + ".", 1, true));
@@ -946,8 +948,11 @@ namespace CamelWorks.UI.Views
 
                     CompareStamp.Clear(transaction, keys);
 
-                    _output.Children.Add(Ui.Done("Cleared on " + Ui.Count(transaction.Commit(), "element")
-                                                 + "."));
+                    var cleared = transaction.Commit();
+
+                    Ui.Refused(_output, transaction);
+
+                    _output.Children.Add(Ui.Done("Cleared on " + Ui.Count(cleared, "element") + "."));
                 });
 
                 var raise = Ui.Button("Raise them as issues", () =>

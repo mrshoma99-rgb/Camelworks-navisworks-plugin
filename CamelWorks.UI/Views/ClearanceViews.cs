@@ -589,18 +589,6 @@ namespace CamelWorks.UI.Views
 
                 _session.Record(ActivityKind.Regroup, "checked clear height: " + found);
 
-                // The same warming the clash bench does, for the same reason: these findings carry
-                // focus, isolate, marker spheres and snapshots, every one of which resolves element
-                // keys, and the first to do it pays for a walk of the whole federation. Here, with
-                // a progress bar and a Stop - not inside a button click.
-                if (_session.Model is CamelWorks.Nav.NavDocument document && !document.IsIndexed)
-                {
-                    job.Say("Indexing the federation, so the row verbs are instant...");
-
-                    document.Index(
-                        seen => job.Step(seen, "elements indexed"),
-                        () => !job.IsCancelled);
-                }
             }
 
             private static bool NeedsWhole(string choice) =>

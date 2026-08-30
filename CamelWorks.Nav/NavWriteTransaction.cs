@@ -25,6 +25,7 @@ namespace CamelWorks.Nav
         private readonly Dictionary<string, List<Write>> _writes = new Dictionary<string, List<Write>>(StringComparer.Ordinal);
         private readonly Dictionary<string, ElementKey> _keys = new Dictionary<string, ElementKey>(StringComparer.Ordinal);
         private bool _finished;
+        private string? _problem;
 
         /// <summary>Begin a batch.</summary>
         /// <param name="document">The document to write to.</param>
@@ -46,6 +47,9 @@ namespace CamelWorks.Nav
 
         /// <inheritdoc />
         public string Description { get; }
+
+        /// <inheritdoc />
+        public string? LastProblem => _problem;
 
         /// <inheritdoc />
         public void SetProperty(ElementKey key, string category, string name, string? value)
@@ -99,20 +103,38 @@ namespace CamelWorks.Nav
             if (_finished) throw new InvalidOperationException("this transaction has already been finished");
 
             var written = 0;
+            var refused = 0;
 
-            using (var transaction = _document.Document.BeginTransaction(Description))
+            _problem = null;
+
+            try
             {
-                foreach (var pair in _writes)
+                using (var transaction = _document.Document.BeginTransaction(Description))
                 {
-                    var key = _keys[pair.Key];
-                    var item = _document.Resolve(key) as NavModelItem;
-                    if (item == null) continue;
+                    foreach (var pair in _writes)
+                    {
+                        var key = _keys[pair.Key];
+                        var item = _document.Resolve(key) as NavModelItem;
+                        if (item == null) continue;
 
-                    if (Apply(item.Item, pair.Value)) written++;
+                        if (Apply(item.Item, pair.Value)) written++;
+                        else refused++;
+                    }
+
+                    transaction.Commit();
                 }
-
-                transaction.Commit();
             }
+            catch (Exception error)
+            {
+                // The document would not even open a transaction. Read-only is the usual reason,
+                // and it has to reach the screen rather than look like a batch of zero.
+                _problem = Explain(error);
+                _finished = true;
+                return written;
+            }
+
+            if (refused > 0 && _problem == null)
+                _problem = Ended(refused) + " refused by the document, with no reason given.";
 
             _finished = true;
             return written;
@@ -164,7 +186,7 @@ namespace CamelWorks.Nav
         /// is simply an omission from the rebuilt tab, and the existing values have to be read back
         /// and re-sent alongside the new ones.
         /// </summary>
-        private static bool Apply(ModelItem item, List<Write> writes)
+        private bool Apply(ModelItem item, List<Write> writes)
         {
             try
             {
@@ -193,10 +215,13 @@ namespace CamelWorks.Nav
                 node.SetUserDefined(0, TabName, TabName, vector);
                 return true;
             }
-            catch (Exception)
+            catch (Exception error)
             {
                 // One element the bridge refuses must not take the batch with it. The count
-                // returned by Commit is what the caller reports, and it will be short by this one.
+                // returned by Commit is what the caller reports, and it will be short by this one
+                // - but the reason is kept, because a count that is short for no stated reason is
+                // the message nobody can act on.
+                _problem ??= Explain(error);
                 return false;
             }
         }
@@ -230,6 +255,46 @@ namespace CamelWorks.Nav
 
             return merged.Where(w => w.Value != null);
         }
+
+        /// <summary>
+        /// A host refusal, in words a coordinator can act on.
+        ///
+        /// The COM bridge throws the same kind of exception for a read-only document as for a
+        /// genuine fault, so the read-only case is recognised and named: it is the one the user
+        /// can do something about, and it is by far the commonest.
+        /// </summary>
+        private string Explain(Exception error)
+        {
+            var said = (error.Message ?? string.Empty).Trim();
+
+            if (ReadOnly())
+                return "This document is read-only, so nothing can be written into it. Published "
+                       + "files hold their data that way. Open the NWF the models were federated "
+                       + "in and the same write lands."
+                       + (said.Length == 0 ? string.Empty : " The host said: " + said);
+
+            return said.Length == 0 ? "The document refused the write." : said;
+        }
+
+        /// <summary>Whether the host says this document may not be written to.</summary>
+        private bool ReadOnly()
+        {
+            try
+            {
+                return _document.Document.IsClear == false && _document.Document.FileName != null
+                       && System.IO.File.Exists(_document.Document.FileName)
+                       && new System.IO.FileInfo(_document.Document.FileName).IsReadOnly;
+            }
+            catch (Exception)
+            {
+                // No file, no rights to look at it, or a host mid-change: none of them is worth
+                // a wrong claim about why the write failed.
+                return false;
+            }
+        }
+
+        private static string Ended(int count) =>
+            count == 1 ? "One element was" : count + " elements were";
 
         private readonly struct Write
         {

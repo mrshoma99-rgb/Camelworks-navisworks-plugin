@@ -239,6 +239,11 @@ namespace CamelWorks.Nav
         private readonly List<NavModelSource> _models = new List<NavModelSource>();
         private bool _indexed;
 
+        // What a key resolved to last time, including the keys that resolved to nothing. Cleared
+        // with the index when the document changes.
+        private readonly Dictionary<string, ModelItem?> _found =
+            new Dictionary<string, ModelItem?>(StringComparer.Ordinal);
+
         /// <summary>Wrap a host document.</summary>
         public NavDocument(Document document)
         {
@@ -270,20 +275,75 @@ namespace CamelWorks.Nav
             Generation++;
             _indexed = false;
             _index.Clear();
+            _found.Clear();
             Rescan();
         }
 
         /// <inheritdoc />
         public IModelItem? Resolve(ElementKey key)
         {
-            if (key.IsEmpty) return null;
+            var item = Item(key);
 
-            EnsureIndexed();
-
-            if (!_index.TryGetValue(key.ToString(), out var item)) return null;
+            if (item == null) return null;
 
             var model = ModelFor(item);
             return model == null ? null : new NavModelItem(this, item, model);
+        }
+
+        /// <summary>
+        /// The host item a key names, without walking the federation when it can be helped.
+        ///
+        /// <b>The index was the wrong first answer.</b> Resolving used to mean building a
+        /// dictionary of every geometry leaf in the document, keyed by asking each one for its
+        /// GUID, its tree path or its bounds - minutes of managed work on a real federation, paid
+        /// by whoever first pressed Focus. The host can already do this: a search by instance GUID
+        /// runs natively, lazily, and stops at the first match, and most elements that carry a
+        /// clash carry a GUID.
+        ///
+        /// So a GUID key is a native search; anything else falls back to the index, and only a
+        /// document whose elements have no GUIDs ever pays for one. Matches are remembered, so the
+        /// second verb on the same rows costs nothing at all.
+        /// </summary>
+        /// <param name="key">The key to resolve.</param>
+        private ModelItem? Item(ElementKey key)
+        {
+            if (key.IsEmpty) return null;
+
+            var text = key.ToString();
+
+            if (_found.TryGetValue(text, out var remembered)) return remembered;
+
+            // The index, when something has already built it: a dictionary hit beats any search.
+            if (_indexed) return _index.TryGetValue(text, out var known) ? known : null;
+
+            if (key.Rung == KeyRung.InstanceGuid && Guid.TryParse(key.UnscopedValue, out var guid)
+                && guid != Guid.Empty)
+            {
+                try
+                {
+                    foreach (var hit in Document.Models.RootItemDescendantsAndSelf.WhereInstanceGuid(guid))
+                    {
+                        _found[text] = hit;
+                        return hit;
+                    }
+
+                    // A GUID this document does not carry. Remembered as absent so a row of
+                    // stale results does not re-search for every one of them on every press.
+                    _found[text] = null;
+                    return null;
+                }
+                catch (Exception)
+                {
+                    // The host refused the search. Fall through to the index rather than
+                    // reporting an element this model does have as missing.
+                }
+            }
+
+            // A tree-path or geometry key. There is no native search for either, so this is where
+            // the index is genuinely earned - once, for documents whose elements have no GUIDs.
+            EnsureIndexed();
+
+            return _index.TryGetValue(text, out var item) ? item : null;
         }
 
         /// <summary>
@@ -354,11 +414,16 @@ namespace CamelWorks.Nav
             var collection = new ModelItemCollection();
             if (keys == null) return collection;
 
-            EnsureIndexed();
-
+            // One key at a time through the same resolver a single verb uses: a GUID is a native
+            // search and costs nothing, and only a key that is not a GUID makes anybody pay for
+            // the index. Ten picked clash results are twenty native searches, which is instant -
+            // where indexing first was a walk of the whole federation before the first of them.
             foreach (var key in keys)
-                if (!key.IsEmpty && _index.TryGetValue(key.ToString(), out var item))
-                    collection.Add(item);
+            {
+                var item = Item(key);
+
+                if (item != null) collection.Add(item);
+            }
 
             return collection;
         }
