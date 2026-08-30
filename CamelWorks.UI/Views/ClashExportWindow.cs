@@ -485,11 +485,19 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Writing the file...");
 
+                var named = ClashIdentity.Stamp(_session, picked.Items, job);
+
+                job.Say("Writing the file...");
+
                 var written = ClashBcf.Write(picked.Items, picked.Groups,
                                              _profile.BcfOptions(_session.SavedPath, _session.NowTicks,
                                                                  _session.MetresPerUnit));
 
                 foreach (var warning in written.Warnings) _output.Children.Add(Ui.Note(warning));
+
+                var about = ClashIdentity.Explain(picked.Items.Count, named);
+
+                if (about != null) _output.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                 try
                 {

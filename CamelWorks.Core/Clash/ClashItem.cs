@@ -123,6 +123,18 @@ namespace CamelWorks.Core.Clash
         /// <summary>System name of item B.</summary>
         public string? SystemB { get; set; }
 
+        /// <summary>
+        /// The first element's IFC GlobalId, when it has one.
+        ///
+        /// Carried on the item because it is the one thing a receiving tool needs in order to
+        /// select the element, and because finding it costs a property read the export would
+        /// otherwise pay again for every clash the same duct appears in.
+        /// </summary>
+        public string? IfcGuidA { get; set; }
+
+        /// <summary>The second element's IFC GlobalId, when it has one.</summary>
+        public string? IfcGuidB { get; set; }
+
         /// <summary>Category of item A.</summary>
         public string? CategoryA { get; set; }
 

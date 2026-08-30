@@ -1281,7 +1281,7 @@ namespace CamelWorks.UI.Views
         /// cursor is the cheapest honest signal, and it costs nothing on the ordinary press.
         /// </summary>
         /// <param name="act">What the verb does.</param>
-        private static void Busy(Action act)
+        public static void Busy(Action act)
         {
             var was = Mouse.OverrideCursor;
 

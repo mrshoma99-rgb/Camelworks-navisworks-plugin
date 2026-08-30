@@ -1646,6 +1646,10 @@ namespace CamelWorks.UI.Views
                     items.Add(item);
                 }
 
+                var named = 0;
+
+                Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
+
                 var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = _session.Model.Models.Count > 0
@@ -1682,6 +1686,10 @@ namespace CamelWorks.UI.Views
                                 written.Explain() + " to " + dialog.FileName);
 
                 foreach (var warning in written.Warnings) _log.Children.Add(Ui.Note(warning));
+
+                var about = ClashIdentity.Explain(items.Count, named);
+
+                if (about != null) _log.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                 Said(Ui.Info(written.Explain() + " Open it on Manage, under \"A file\", to mark it "
                              + "up the same way as a clash export.",

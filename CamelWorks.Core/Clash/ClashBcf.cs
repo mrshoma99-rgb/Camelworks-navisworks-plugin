@@ -388,8 +388,8 @@ namespace CamelWorks.Core.Clash
 
             view.Camera = BcfFraming.Around(new[] { point }).ToCamera();
 
-            var a = Component(item.Key.A);
-            var b = Component(item.Key.B);
+            var a = Component(item.Key.A, item.IfcGuidA);
+            var b = Component(item.Key.B, item.IfcGuidB);
 
             view.Selection.Add(a);
             view.Selection.Add(b);
@@ -410,11 +410,16 @@ namespace CamelWorks.Core.Clash
         /// provides for exactly this and it is what lands the edit back on the right element when
         /// the file comes home.
         /// </summary>
-        private static BcfComponent Component(ElementKey key)
+        private static BcfComponent Component(ElementKey key, string? ifcGuid)
         {
             var text = key.IsEmpty ? null : key.ToString();
 
-            return new BcfComponent(IfcGuid.OrNull(key.UnscopedValue), text, "CamelWorks");
+            // The GlobalId read off the element wins: it is the id the receiving model actually
+            // uses. Failing that, the key's own value is tried, which is a GlobalId exactly when
+            // the federation was built from IFC and the key was made from one.
+            var named = IfcGuid.From(ifcGuid) ?? IfcGuid.OrNull(key.UnscopedValue);
+
+            return new BcfComponent(named, text, "CamelWorks");
         }
 
         /// <summary>What the topic says in prose, for a reader who has only the topic.</summary>
@@ -475,6 +480,8 @@ namespace CamelWorks.Core.Clash
             Text("level", item.Level);
             Text("grid", item.Grid);
             Text("zone", item.Zone);
+            Text("ifcA", item.IfcGuidA);
+            Text("ifcB", item.IfcGuidB);
             Text("modelA", item.ModelA);
             Text("modelB", item.ModelB);
             Text("categoryA", item.CategoryA);
@@ -691,6 +698,8 @@ namespace CamelWorks.Core.Clash
 
             if (record != null)
             {
+                item.IfcGuidA = record["ifcA"].AsString();
+                item.IfcGuidB = record["ifcB"].AsString();
                 item.ModelA = record["modelA"].AsString();
                 item.ModelB = record["modelB"].AsString();
                 item.CategoryA = record["categoryA"].AsString();
@@ -719,6 +728,18 @@ namespace CamelWorks.Core.Clash
                 if (comment != null && !string.IsNullOrWhiteSpace(comment.Text))
                     item.Comments.Add(new ClashComment(comment.Author, comment.Date.UtcTicks,
                                                        comment.Text!));
+
+            // The GlobalIds the file names its components by, kept whether they came from our
+            // sidecar or from the topic itself - so a file that has been through another tool
+            // still goes back out able to select its elements.
+            var globalIds = topic.Viewpoints
+                                 .SelectMany(v => v.Selection)
+                                 .Where(c => c?.IfcGuid != null)
+                                 .Select(c => c.IfcGuid!)
+                                 .ToList();
+
+            if (globalIds.Count > 0) item.IfcGuidA ??= globalIds[0];
+            if (globalIds.Count > 1) item.IfcGuidB ??= globalIds[1];
 
             return item;
         }

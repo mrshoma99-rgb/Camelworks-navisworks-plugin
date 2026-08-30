@@ -2430,6 +2430,13 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // The GlobalIds are what let the receiving tool select the two clashing
+                // elements. Read before writing, under the wait cursor: on a first export of a
+                // large board this is the slow part, and it is not a press that looks slow.
+                var named = 0;
+
+                if (!OnFile) Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
+
                 var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = _session.Store.Path,
@@ -2465,6 +2472,13 @@ namespace CamelWorks.UI.Views
                 Said(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()
                     + " Statuses, assignments, comment trails and groups all travel in it. "
                     + "Reviewers open it on this tab and save their markups beside it."));
+
+                if (!OnFile)
+                {
+                    var about = ClashIdentity.Explain(items.Count, named);
+
+                    if (about != null) Said(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+                }
             }
 
             /// <summary>The results grid, exactly as filtered and shown, as a spreadsheet.</summary>

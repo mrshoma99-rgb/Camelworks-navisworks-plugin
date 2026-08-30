@@ -324,6 +324,85 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void TheIfcGlobalIdReachesTheComponentSoAToolCanSelectTheElement()
+        {
+            // The whole point of carrying it: without an IfcGuid a receiving tool gets the camera
+            // and an empty selection.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            item.IfcGuidA = "2O2Fr$t4X7Zf8NOew3FLOH";
+            item.IfcGuidB = "1kTvXnbbzCWw8lcMd1dR4o";
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var selection = BcfReader.Read(stream).Topics.Single().Viewpoints.Single().Selection;
+
+            Assert.Equal("2O2Fr$t4X7Zf8NOew3FLOH", selection[0].IfcGuid);
+            Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", selection[1].IfcGuid);
+
+            // And both are resolvable, which is what the writer counts and reports on.
+            Assert.All(selection, c => Assert.True(c.IsResolvable));
+        }
+
+        [Fact]
+        public void AFullGuidIsCompressedOnItsWayIntoTheComponent()
+        {
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            item.IfcGuidA = "3b0a0b0c-0d0e-0f10-1112-131415161718";
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var written = BcfReader.Read(stream).Topics.Single().Viewpoints.Single().Selection[0].IfcGuid;
+
+            Assert.Equal(CamelWorks.Core.OpenBim.IfcGuid.Compress(
+                             Guid.Parse("3b0a0b0c-0d0e-0f10-1112-131415161718")), written);
+        }
+
+        [Fact]
+        public void TheGlobalIdsSurviveOurOwnRoundTrip()
+        {
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            item.IfcGuidA = "2O2Fr$t4X7Zf8NOew3FLOH";
+            item.IfcGuidB = "1kTvXnbbzCWw8lcMd1dR4o";
+
+            var back = RoundTrip(item).Items.Single();
+
+            Assert.Equal("2O2Fr$t4X7Zf8NOew3FLOH", back.IfcGuidA);
+            Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", back.IfcGuidB);
+        }
+
+        [Fact]
+        public void AForeignFileGivesItsGlobalIdsBackEvenWithNoSidecar()
+        {
+            // A file that went through somebody else's tool keeps its components, so the ids come
+            // home off the topic and the next export can still select the elements.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            item.IfcGuidA = "2O2Fr$t4X7Zf8NOew3FLOH";
+            item.IfcGuidB = "1kTvXnbbzCWw8lcMd1dR4o";
+
+            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(mine).Topics.Single();
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            var back = ClashBcf.Read(theirs).Items.Single();
+
+            Assert.Equal("2O2Fr$t4X7Zf8NOew3FLOH", back.IfcGuidA);
+            Assert.Equal("1kTvXnbbzCWw8lcMd1dR4o", back.IfcGuidB);
+        }
+
+        [Fact]
         public void TheArchiveHasNoTopLevelFolderThatIsNotATopic()
         {
             // The invariant that keeps another tool's importer from meeting something new. A

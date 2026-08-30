@@ -276,7 +276,33 @@ namespace CamelWorks.Nav
             _indexed = false;
             _index.Clear();
             _found.Clear();
+            _ifc.Clear();
             Rescan();
+        }
+
+        private readonly Dictionary<string, string?> _ifc =
+            new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The IFC GlobalId an element carries, or null.
+        ///
+        /// Cached per element, because an export asks for the same duct once per clash it appears
+        /// in and the answer is a property enumeration each time. Cleared with everything else when
+        /// the document changes underneath.
+        /// </summary>
+        /// <param name="key">The element.</param>
+        public string? IfcGuidFor(ElementKey key)
+        {
+            if (key.IsEmpty) return null;
+
+            var text = key.ToString();
+
+            if (_ifc.TryGetValue(text, out var known)) return known;
+
+            var found = CamelWorks.Core.OpenBim.IfcIdentity.Of(Resolve(key));
+
+            _ifc[text] = found;
+            return found;
         }
 
         /// <inheritdoc />
