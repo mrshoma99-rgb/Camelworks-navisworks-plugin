@@ -80,13 +80,24 @@ findings each time it runs.
 | Compare | as `CompareIssues` already does | the changed element | the baseline it was compared against |
 | SetDrift | the set's name | none (a parent) | none |
 
-The clash row deserves its reasoning written down, because it contradicts the existing
-`ClashKey`. `ClashKey` includes a quantised cell — the clash *point* — so a conflict that shifts a
-few millimetres between runs keys differently. That is right for matching one run against another
-where position is evidence, and wrong for a finding's identity, where it would resurrect a
-conflict somebody already closed. The BCF topic id already made this choice (it derives from
-`PairId`, which excludes the cell) and the two should agree. **A clash finding's identity is the
-element pair and the test, and not where the clash is.**
+The clash row deserves its reasoning written down, because an earlier draft of this document got
+it wrong and the mistake is instructive.
+
+That draft argued for the element pair alone, excluding `ClashKey`'s quantised cell, so that a
+conflict shifting a few millimetres between runs would not resurrect as new. The BCF topic id was
+built that way — and it was a defect. A duct that crosses one beam twice is two Navisworks results
+and would have been **one** topic: two `markup.bcf` entries at one path, a malformed archive whose
+second topic most readers silently drop. Coarsely decomposed models, where a whole system is one
+item, make that ordinary rather than exotic.
+
+**Uniqueness wins. A clash finding's identity is the whole key, including where the clash is.**
+Tolerance for a conflict that moved belongs at match time instead: the sync looks through the
+twenty-six neighbouring cells for a topic that matched nothing exactly, and only for the few that
+did not. That index is twenty-seven times the size and is never built on an ordinary sync.
+
+The general rule this yields: **identity is exact and matching is tolerant.** Where a source has
+the same ambiguity — two headroom breaches under one slab, one element failing one IDS rule at two
+places — it resolves the same way.
 
 ### Issue
 
@@ -155,21 +166,32 @@ already exist.
   finding rather than being mashed into a comment. `ClashAsides` already does exactly this for
   clashes and is the shape to generalise.
 
+## Decisions taken
+
+- **Clash findings replace `ClashSnapshot`**, migrating existing data on first open: read the
+  snapshot once, write findings from it, stop writing the snapshot. One store, nothing to disagree.
+- **`HeldEdits` and `ClashAsides` fold onto `Finding`.** "What the host refused" and "what the host
+  has no field for" are things every source will want — a clearance finding on a published NWD has
+  the same problem — not clash quirks.
+- **Anything a person raises by hand is an issue, not a finding.** Findings are only ever produced
+  by a check. `FindingSource.Manual` stays unused. An issue raised by hand can still attach
+  machine findings, so "no access to this valve" can carry the clashes that explain it.
+- **Findings live in their own file**, `.camelworks/<model>.findings.json`, beside the project
+  file. Not inside it: the project file is rewritten every time any tool remembers a setting, and
+  an eighteen-thousand-clash job is about 3.6 MB of findings. Remembering a textbox should not
+  rewrite that.
+- **Status cascade asks at the moment of the edit**, naming the count, rather than being an
+  automatic invariant. A finding can sit on two issues.
+- **The eleven Board-era keys in the clash section are deleted** during the migration, each
+  verified unreachable and listed first.
+
 ## Open questions
 
-1. **Scale.** A unified store across every check on a large federation is real weight in JSON.
-   Parent/child absorbs most of it — one IDS rule is one parent and N children, not N findings —
-   and `ClashSnapshot` is precedent for tens of thousands of rows. It wants measuring before it is
-   assumed. If it does not hold, the fallback is one file per source under `.camelworks/` rather
-   than one section in the project file.
-2. **Do clash findings replace `ClashSnapshot`, or sit beside it?** Replacing is the point of the
-   exercise. Sitting beside it means two stores that can disagree, which is the failure this is
-   meant to end. The migration should read the existing snapshot once and write findings from it.
-3. **`HeldEdits` and `ClashAsides` are clash-shaped versions of things every source will want.**
-   Held edits are "what the host refused"; asides are "what the host has no field for". Both belong
-   on `Finding` once findings are the record. They should be folded in, not left as clash-only
-   registers.
-4. **Does a parent finding project to the host at all?** A health rule failing 400 elements has no
+1. **Scale.** Measured: about 209 bytes a finding, so 18,000 clashes is roughly 3.6 MB and
+   100,000 is 20 MB. Fine for a file of its own; the reason it is not in the project file is write
+   amplification rather than size. If a job ever outgrows one file, the fallback is one file per
+   source.
+2. **Does a parent finding project to the host at all?** A health rule failing 400 elements has no
    clash result to write to. Probably the projection is per-source and some sources project
    nothing, which is fine — but it should be stated per source rather than discovered.
 

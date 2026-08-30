@@ -486,15 +486,67 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void TheTopicGuidIgnoresWhereTheClashIs()
+        public void TwoCrossingsOfOnePairAreTwoTopics()
         {
-            // A conflict that shifts a few millimetres between runs is the same conflict. Keying
-            // the topic on the clash point would bring it home as a topic nobody could place.
+            // A duct that crosses one beam twice is two results, and coarsely decomposed models -
+            // a whole system as one item - make that ordinary. Keying the topic on the element
+            // pair alone put both at one path in the archive: two markup.bcf entries with one
+            // name, which is malformed, and whose second topic most readers silently drop.
             var a = Key("11111111-1111-1111-1111-111111111111");
             var b = Key("22222222-2222-2222-2222-222222222222");
 
-            Assert.Equal(ClashBcf.TopicGuidFor(ClashKey.Create(a, b, 10, 20, 30)),
-                         ClashBcf.TopicGuidFor(ClashKey.Create(a, b, 40, 55, 91)));
+            var first = ClashKey.Create(a, b, 10, 20, 30);
+            var second = ClashKey.Create(a, b, 90, 20, 30);
+
+            Assert.NotEqual(ClashBcf.TopicGuidFor(first), ClashBcf.TopicGuidFor(second));
+        }
+
+        [Fact]
+        public void AnArchiveNeverHasTwoEntriesAtOnePath()
+        {
+            // The invariant behind it: whatever the board holds, the file stays a valid archive.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+
+            var written = ClashBcf.Write(new[]
+            {
+                new ClashItem(ClashKey.Create(a, b, 10, 20, 30), "T") { X = 10, Y = 20, Z = 30 },
+                new ClashItem(ClashKey.Create(a, b, 90, 20, 30), "T") { X = 90, Y = 20, Z = 30 },
+            });
+
+            Assert.Equal(2, written.Results);
+
+            using var stream = new MemoryStream(written.Bytes);
+            using var zip = new System.IO.Compression.ZipArchive(stream,
+                System.IO.Compression.ZipArchiveMode.Read);
+
+            var paths = zip.Entries.Select(e => e.FullName).ToList();
+
+            Assert.Equal(paths.Count, paths.Distinct(StringComparer.Ordinal).Count());
+            Assert.Equal(2, paths.Count(p => p.EndsWith("markup.bcf", StringComparison.Ordinal)));
+        }
+
+        [Fact]
+        public void AClashThatMovedIsStillFoundThroughItsNeighbours()
+        {
+            // Identity is exact so the archive stays valid; tolerance lives at match time. A
+            // conflict whose point drifted a cell still has to come home.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+
+            var sent = ClashKey.Create(a, b, 10.0, 20.0, 30.0);
+            var moved = ClashKey.Create(a, b, 10.3, 20.0, 30.0);
+
+            Assert.NotEqual(ClashBcf.TopicGuidFor(sent), ClashBcf.TopicGuidFor(moved));
+
+            // The model, holding the moved clash, still offers the id the file went out under.
+            Assert.Contains(ClashBcf.TopicGuidFor(sent), ClashBcf.NearbyTopicGuidsFor(moved));
+
+            // And it does not reach so far that a genuinely different crossing is swept in.
+            var elsewhere = ClashKey.Create(a, b, 90.0, 20.0, 30.0);
+
+            Assert.DoesNotContain(ClashBcf.TopicGuidFor(elsewhere),
+                                  ClashBcf.NearbyTopicGuidsFor(moved));
         }
 
         [Fact]

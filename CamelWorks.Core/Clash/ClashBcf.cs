@@ -153,28 +153,45 @@ namespace CamelWorks.Core.Clash
         public const string TopicType = "Clash";
 
         /// <summary>
-        /// The topic a clash is always written as, derived from the two elements alone.
+        /// The topic a clash is always written as.
         ///
         /// <b>This is what keeps the round trip alive.</b> Everything else a returned file might
         /// carry - our sidecar, the element keys in <c>AuthoringToolId</c> - is ours, and another
         /// tool that re-authors the archive drops all of it. The topic GUID is the one field it
         /// cannot drop: it is the topic's identity, it names the folder, and BCF's own merge model
-        /// is built on it, so a tool that changed it would break every BCF workflow there is.
+        /// is built on it. Because it is a plain function of the clash, the receiving side can
+        /// compute it again from the model, so a file that comes home stripped to nothing but its
+        /// topics still lands on the right results.
         ///
-        /// Because it is a plain function of the element pair, the same clash is the same topic in
-        /// every export, and - the part that matters - the receiving side can compute it again
-        /// from the model. A file that comes home stripped to nothing but its topics still lands
-        /// on the right results.
+        /// <b>The whole key, including where the clash is.</b> This was briefly derived from the
+        /// element pair alone, on the reasoning that a conflict which shifts a few millimetres
+        /// between runs is the same conflict. That was wrong, and wrong in the worst direction: a
+        /// duct that crosses one beam twice is two results and would have been one topic - two
+        /// <c>markup.bcf</c> entries at one path, which is a malformed archive whose second topic
+        /// most readers silently drop. Coarsely decomposed models, where a whole system is one
+        /// item, make that common rather than exotic.
         ///
-        /// The pair, deliberately, and not the clash point: a conflict that shifts a few
-        /// millimetres between runs is the same conflict, and would otherwise come back as a
-        /// topic nobody could place.
+        /// Uniqueness has to win, so identity is exact. Tolerance for a clash that moved belongs
+        /// at match time instead, where the sync can look through the neighbouring cells for a
+        /// topic that matched nothing - and only for the few that did not.
         ///
         /// Both sides call this. Two copies of the rule that drifted apart would break the round
         /// trip silently, which is the worst way for it to break.
         /// </summary>
         /// <param name="key">The clash.</param>
-        public static string TopicGuidFor(ClashKey key) => BcfGuid.For(key.PairId);
+        public static string TopicGuidFor(ClashKey key) => BcfGuid.For(key.ToString());
+
+        /// <summary>
+        /// The topic ids a clash could have been written as if it has moved since - itself first,
+        /// then the twenty-six cells around it.
+        ///
+        /// For the sync, and only for the topics that matched nothing exactly: a conflict whose
+        /// point drifted across a cell boundary between runs is still that conflict, and coming
+        /// home as a topic nobody can place would reset a status somebody had already set.
+        /// </summary>
+        /// <param name="key">The clash as the model holds it now.</param>
+        public static IEnumerable<string> NearbyTopicGuidsFor(ClashKey key) =>
+            key.NeighbourCells().Select(TopicGuidFor);
 
         /// <summary>What the sidecar's shape is called, so a future change can be told apart.</summary>
         public const int SidecarVersion = 1;

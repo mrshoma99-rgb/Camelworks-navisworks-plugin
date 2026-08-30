@@ -2784,6 +2784,10 @@ namespace CamelWorks.UI.Views
                 var byTopic = new Dictionary<string, Live>(StringComparer.OrdinalIgnoreCase);
                 var byKey = new Dictionary<string, Live>(StringComparer.Ordinal);
 
+                // Built lazily, because it is twenty-seven times the size and an ordinary sync
+                // never needs it.
+                Dictionary<string, Live>? near = null;
+
                 var read = 0;
 
                 foreach (var test in _session.Clash.Tests())
@@ -2796,6 +2800,7 @@ namespace CamelWorks.UI.Views
 
                         var live = new Live
                         {
+                            Key = key,
                             TestId = test.Id,
                             ResultId = result.Id,
                             Status = result.HostStatus ?? "New",
@@ -2863,6 +2868,16 @@ namespace CamelWorks.UI.Views
 
                         if (found == null && result.Item != null)
                             byKey.TryGetValue(result.Item.Key.ToString(), out found);
+
+                        // A clash whose point drifted across a cell boundary between runs is
+                        // still that clash. The near index is built once, and only if something
+                        // failed to match exactly - on an ordinary sync it is never built at all.
+                        if (found == null && result.FileGuid != null)
+                        {
+                            near ??= Near(byKey.Values);
+
+                            near.TryGetValue(result.FileGuid, out found);
+                        }
 
                         if (found == null)
                         {
@@ -3461,9 +3476,33 @@ namespace CamelWorks.UI.Views
                 }
             }
 
+            /// <summary>
+            /// Every result indexed under the topic ids it would have had anywhere in its own cell
+            /// or the twenty-six around it.
+            ///
+            /// The last writer wins on a collision, which is right: two results close enough to
+            /// share a neighbouring cell are close enough that either is a defensible answer, and
+            /// the exact index has already had its say.
+            /// </summary>
+            /// <param name="live">The model's results.</param>
+            private static Dictionary<string, Live> Near(IEnumerable<Live> live)
+            {
+                var near = new Dictionary<string, Live>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var one in live)
+                {
+                    if (one.Key.IsEmpty) continue;
+
+                    foreach (var guid in ClashBcf.NearbyTopicGuidsFor(one.Key)) near[guid] = one;
+                }
+
+                return near;
+            }
+
             /// <summary>One of the model's results, as the sync tracks it while it works.</summary>
             private sealed class Live
             {
+                internal ClashKey Key;
                 internal string TestId = string.Empty;
                 internal string ResultId = string.Empty;
                 internal string Status = string.Empty;
