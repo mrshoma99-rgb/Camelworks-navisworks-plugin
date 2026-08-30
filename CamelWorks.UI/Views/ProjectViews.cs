@@ -912,8 +912,12 @@ namespace CamelWorks.UI.Views
                 // saying so. Two specifications that fail on the same wall are one conversation
                 // with the architect and not two, and the way to have it is to see both sets at
                 // once - so the reveal became an action on however many rows are picked.
+                var failures = Keep(session, report, System.IO.Path.GetFileName(file));
+
                 results.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Select {n} in the model", Reveal),
+                    new Ui.OnPicked("Raise {n} as issues",
+                        (picked, say) => RaiseIds(session, picked, failures, say)),
                     new Ui.OnPicked("Copy {n}",
                         (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "specification"))));
 
@@ -953,6 +957,101 @@ namespace CamelWorks.UI.Views
                          "leave it empty unless a run tells you to fill it in"),
                 run,
                 Author(results));
+        }
+
+        /// <summary>
+        /// Put what the check found into the findings register, and hand back what it kept.
+        ///
+        /// <b>Why an IDS run writes anything.</b> The tab could select the failures and write a
+        /// workbook and remember nothing. Run it on Monday, agree with the architect that the
+        /// forty doors without a fire rating are being scheduled separately, run it again on
+        /// Tuesday, and it said forty again with nowhere to have said so.
+        ///
+        /// Keyed by the specification, so a picked row can act on the finding behind it.
+        /// </summary>
+        private static Dictionary<string, Finding> Keep(Session session, IdsReport report,
+                                                        string? document)
+        {
+            var found = IdsFindings.For(report, document,
+                id => ElementKey.TryParse(id, out var key) ? key : default);
+
+            var register = session.Findings.Findings;
+
+            register.Observe(FindingSource.Ids, found, DateTime.UtcNow.Ticks,
+                             origin: session.Store.Path);
+
+            session.Findings.Save();
+
+            var kept = new Dictionary<string, Finding>(StringComparer.Ordinal);
+
+            foreach (var finding in found)
+                if (finding.Discriminator != null
+                    && register.Find(finding.Id) is Finding held)
+                    kept[finding.Discriminator] = held;
+
+            return kept;
+        }
+
+        /// <summary>
+        /// Raise an issue for each picked specification the model failed.
+        ///
+        /// One issue per specification rather than one over all of them: a specification is what
+        /// somebody argues about, and two requirements failing is two conversations even when the
+        /// same wall is in both.
+        /// </summary>
+        private static void RaiseIds(Session session, IReadOnlyList<object> picked,
+                                     IReadOnlyDictionary<string, Finding> kept, Panel say)
+        {
+            say.Children.Clear();
+
+            var findings = picked.OfType<IdsSpecificationResult>()
+                .Select(r => kept.TryGetValue(IdsFindings.Named(r.Specification), out var f)
+                    ? f
+                    : null)
+                .Where(f => f != null)
+                .Select(f => f!)
+                .ToList();
+
+            if (findings.Count == 0)
+            {
+                say.Children.Add(Ui.Problem("Nothing there to raise: the picked specifications "
+                    + "are the ones this model met."));
+
+                return;
+            }
+
+            var at = 0;
+
+            var (made, problem) = IssueViews.Raise(session, id =>
+            {
+                var finding = findings[at++];
+
+                var issue = new Issue(id, finding.Title)
+                {
+                    Type = "Quality",
+                    Source = finding.Facts.TryGetValue(IdsFindings.Document, out var from)
+                        ? from
+                        : "IDS",
+                    Description = finding.Detail
+                        ?? (finding.Facts.TryGetValue(IdsFindings.Why, out var why) ? why : null),
+                };
+
+                IssueFindings.Attach(issue, new[] { finding });
+
+                foreach (var element in finding.AllElements())
+                    if (!issue.Elements.Contains(element)) issue.Elements.Add(element);
+
+                return issue;
+            }, findings.Count);
+
+            if (problem != null)
+            {
+                say.Children.Add(Ui.Problem(problem));
+                return;
+            }
+
+            say.Children.Add(Ui.Info(Ui.Count(made, "issue") + " raised.",
+                "Open the register", () => IssueViews.Open(null)));
         }
 
         /// <summary>

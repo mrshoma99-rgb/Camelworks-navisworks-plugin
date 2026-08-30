@@ -119,6 +119,7 @@ surfaces work, not things a coordinator opens.
 | `LevelSet` | Levels & Zones |
 | `Takeoff`, `TakeoffResult`, `TakeoffPivot`, `TakeoffPivotTable` | Takeoff |
 | `IdsChecker`, `IdsReader`, `IdsWriter`, `IdsDocument`, `IdsSpecification`, `IdsFacet`, `IdsEntityFacet`, `IdsValue`, `IdsElement`, `IdsReport`, `IdsProjection`, `IdsSheet` | IDS |
+| `IdsFindings` | **Model Audit ▸ IDS** — every check writes its failures beside the model and the grid gains **Raise {n} as issues**, so "these forty doors are being scheduled separately" can be said once instead of every Tuesday. One finding per specification, identified by the specification's own identifier so rewording it does not lose the agreement; a specification that matched nothing is reported as its own kind of failure rather than buried in a green tick. |
 
 ### Sets & Views
 | Engine | Surface |
