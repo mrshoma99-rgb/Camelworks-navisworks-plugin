@@ -186,7 +186,16 @@ namespace CamelWorks.Studio
                 Ui.Finding(true, "Placement", "STR-Block-B sits 340 mm east of where it arrived",
                            "Ask structures whether the move was meant before anything is coordinated against it."),
                 Ui.Finding(false, "Codes", "412 elements carry a value Uniclass does not list",
-                           "Most are one system with a typo in its family; the table below names them."));
+                           "Most are one system with a typo in its family; the table below names them."),
+                Ui.Eyebrow("Sets"),
+                Ui.Finding(true, "Sets", "\"Level 3 Ductwork\" returns nothing. It held 412 elements "
+                           + "when it was last read.",
+                           "clash test \"MEP vs Structure\" and rule \"Ducts carry a system name\" "
+                           + "are pointed at this set, and now cover nothing. A check over nothing "
+                           + "does not fail — it passes.",
+                           "Open the set and see what it matches now. A set is a saved query, so "
+                           + "what changed is usually a property the model stopped carrying.",
+                           "clash test \"MEP vs Structure\"; rule \"Ducts carry a system name\""));
 
             return Deck("audit", "health",
                 Bench.Surface(setup, Ui.Runner("Check this federation", Ui.Stack(), _ => { }), stage));

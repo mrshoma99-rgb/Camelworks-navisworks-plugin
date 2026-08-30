@@ -129,6 +129,8 @@ surfaces work, not things a coordinator opens.
 |---|---|
 | `SetExpression`, `SetCondition`, `SetOperator`, `DnfCompiler`, `SearchPlan`, `SearchClause`, `SetExpressionJson` | Set Builder |
 | `Similarity` | Set Builder — "+ Elements like this one" (new) |
+| `SetDrift`, `SetReading`, `SetDriftResult`, `SetDriftKind`, `SetBaselineStore` | **Model Audit ▸ Health** — every federation sweep reads what each saved set returns and says which have stopped returning what they did. The two that disarm rather than narrow — a set that emptied, and one the document no longer has — are faults; ordinary movement on a live model is not, because a check that reports every change is a check nobody reads. What each set held is kept beside the project, like the findings. |
+| `SetDriftFindings`, `SetUse` | **Model Audit ▸ Health** — drift as findings under its own source, each naming the clash tests and scoped rules that were pointed at the set. That is the point of the check: a set going quiet is a curiosity until somebody knows what it disarmed. |
 | `SetTree`, `SetTreeOptions`, `SetTreePlan`, `SetFamily` | **Generate a set library** (new) |
 | `SetSchedule`, `SetRow`, `SheetSets`, `SetSheetMapping`, `SetSheetResult` | Sets from a spreadsheet |
 | `Restructure`, `RestructureRecipe`, `RestructureChange`, `RestructureSnapshot`, `LevelTally` | Organise Sets |

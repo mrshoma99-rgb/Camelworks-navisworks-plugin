@@ -14,6 +14,7 @@ using CamelWorks.Core.Issues;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Sets;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
 
@@ -150,6 +151,8 @@ namespace CamelWorks.UI.Views
                 }
             }
 
+            Drifted(session, results, job);
+
             foreach (var skipped in review.Missing) results.Children.Add(Ui.Small("Not checked: " + skipped));
 
             if (actions.Children.Count > 0) results.Children.Add(actions);
@@ -159,6 +162,217 @@ namespace CamelWorks.UI.Views
                                           + " in this federation"));
             results.Children.Add(loaded.Table);
             results.Children.Add(intake);
+        }
+
+        /// <summary>
+        /// What every saved set used to return, and what it returns now.
+        ///
+        /// <b>Why this rides on the federation sweep.</b> The sweep answers "is this fit to
+        /// coordinate against", and a set that has gone quiet is the sharpest way it can fail to
+        /// be: nothing errors, nothing turns red, and every check pointed at that set now runs
+        /// over what is left and passes. A green board over a building nobody checked is the one
+        /// outcome this product exists to prevent, and this is the side door it comes through.
+        ///
+        /// Its findings are their own, not the review's: drift has its own source, its own
+        /// identity and its own history, and folding it into the review's cards would put the
+        /// same problem in the register twice.
+        /// </summary>
+        private static void Drifted(Session session, Panel results, Job job)
+        {
+            job.Say("Reading the sets...");
+
+            var now = new List<SetReading>();
+            var names = SetNames(session);
+
+            foreach (var name in names)
+            {
+                var members = new List<ElementKey>();
+                var held = 0;
+                var whole = true;
+
+                try
+                {
+                    foreach (var item in session.Model.Traverse(TraversalScope.Set(name)))
+                    {
+                        held++;
+
+                        if (members.Count < SetDrift.DefaultCap) members.Add(item.Key);
+                        else whole = false;
+                    }
+                }
+                catch (Exception)
+                {
+                    // The host refused to resolve it. Skipped rather than recorded as empty: an
+                    // unreadable set and an emptied one look identical from here, and reporting a
+                    // read failure as a disarmed check would cry wolf on a set that is fine.
+                    continue;
+                }
+
+                now.Add(new SetReading(name, members, session.NowTicks, whole, held));
+            }
+
+            var baseline = session.Baselines;
+            var drifted = SetDrift.Across(baseline.All.ToList(), now);
+
+            // Which sets this document no longer has. Only the ones actually missing, not the ones
+            // that merely would not read a moment ago.
+            var known = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+
+            var uses = Uses(session);
+
+            var found = SetDriftFindings.For(
+                drifted.Where(d => d.Kind != SetDriftKind.Gone || !known.Contains(d.Name)).ToList(),
+                name => uses.TryGetValue(name, out var on) ? on : Array.Empty<SetUse>());
+
+            var register = session.Findings.Findings;
+
+            register.Observe(FindingSource.SetDrift, found, DateTime.UtcNow.Ticks,
+                             origin: session.Store.Path);
+
+            session.Findings.Save();
+
+            // This run becomes the baseline, so a drift is said once rather than every sweep from
+            // now on. The finding keeps the record of it having happened.
+            baseline.Keep(now);
+
+            foreach (var gone in drifted.Where(d => d.Kind == SetDriftKind.Gone))
+                baseline.Forget(gone.Name);
+
+            if (!baseline.Save() && baseline.LastSaveProblem != null)
+                results.Children.Add(Ui.Note("What the sets hold now could not be kept, so the "
+                    + "next sweep will compare against the same reading as this one: "
+                    + baseline.LastSaveProblem));
+
+            results.Children.Add(Ui.Eyebrow("Sets"));
+
+            if (baseline.Count == 0 && found.Count == 0)
+            {
+                results.Children.Add(Ui.Small(
+                    "No set has been read before, so there is nothing to compare against yet. "
+                    + "What they hold now has been kept; the next sweep says what moved."));
+
+                return;
+            }
+
+            if (found.Count == 0)
+            {
+                results.Children.Add(Ui.Small(
+                    Ui.Count(now.Count, "set") + " read, and every one still returns about what "
+                    + "it did."));
+
+                return;
+            }
+
+            foreach (var finding in found)
+                results.Children.Add(Ui.Finding(
+                    Fault(finding), "Sets", finding.Title, finding.Detail,
+                    "Open the set and see what it matches now. A set is a saved query, so what "
+                    + "changed is usually a property the model stopped carrying.",
+                    finding.Facts.TryGetValue(SetDriftFindings.Feeding, out var leaning)
+                        ? leaning
+                        : null,
+                    Reached(session, finding)));
+        }
+
+        /// <summary>
+        /// The way to the elements that left a set, and the verbs for deciding about it.
+        ///
+        /// The elements are the whole diagnosis: a set that lost its ductwork because somebody
+        /// deleted the mezzanine is a different morning from one that lost it because a property
+        /// was renamed, and only looking at them tells the two apart.
+        /// </summary>
+        private static UIElement? Reached(Session session, Finding finding)
+        {
+            var said = Ui.Stack();
+            var judgement = Judge(session, finding, said);
+            var keys = finding.AllElements();
+
+            if (keys.Count == 0)
+            {
+                var only = Ui.Stack(judgement, said);
+                only.Margin = new Thickness(0, 6, 0, 0);
+                return only;
+            }
+
+            var show = Ui.Quiet("Show me what left"
+                + (finding.Children.Count < Count(finding) ? " (the first " + keys.Count + ")" : string.Empty),
+                () =>
+                {
+                    session.Model.Select(keys);
+                    session.View.ZoomTo(keys, 2.0);
+                });
+
+            var row = Ui.Stack(Ui.Across(show), judgement, said);
+            row.Margin = new Thickness(0, 6, 0, 0);
+            return row;
+        }
+
+        /// <summary>How many left the set, as the finding recorded it.</summary>
+        private static int Count(Finding finding) =>
+            finding.Facts.TryGetValue(SetDriftFindings.Left, out var left)
+            && int.TryParse(left, out var many)
+                ? many
+                : finding.Children.Count;
+
+        /// <summary>Whether a drift is the kind that disarms rather than merely narrows.</summary>
+        private static bool Fault(Finding finding) =>
+            finding.Facts.TryGetValue(SetDriftFindings.Now, out var now)
+            && string.Equals(now, "0", StringComparison.Ordinal);
+
+        /// <summary>
+        /// What leans on each set, so a drift finding can say what it disarmed.
+        ///
+        /// Clash tests and scoped rules, because those are the two the product can read without
+        /// asking anybody: a test's sides come back from the host, and a rule set names its scopes.
+        /// The rest - a clearance input, an appearance layer - live in one tab's memory, and a
+        /// half-answer is better than a wrong one, so they are simply not claimed.
+        /// </summary>
+        private static Dictionary<string, List<SetUse>> Uses(Session session)
+        {
+            var uses = new Dictionary<string, List<SetUse>>(StringComparer.OrdinalIgnoreCase);
+
+            void On(string? name, string what, string named)
+            {
+                if (string.IsNullOrWhiteSpace(name)) return;
+
+                if (!uses.TryGetValue(name!, out var on)) uses[name!] = on = new List<SetUse>();
+
+                on.Add(new SetUse(what, named));
+            }
+
+            try
+            {
+                if (session.Clash.IsAvailable)
+                    foreach (var test in session.Clash.Tests())
+                    {
+                        var sides = session.Clash.Sides(test.Id);
+
+                        if (sides == null) continue;
+
+                        On(sides.SetA, "clash test", test.Name);
+                        On(sides.SetB, "clash test", test.Name);
+                    }
+            }
+            catch (Exception)
+            {
+                // No clash engine, or a host that would not answer. The findings are still worth
+                // having without the list of what they cost.
+            }
+
+            try
+            {
+                if (IdsWindow.Draft(session, out _) is IdsDocument rules)
+                    foreach (var specification in rules.Specifications)
+                        foreach (var scope in IdsScopeSpecification.ScopesOf(specification))
+                            if (scope.Kind == IdsScopeKind.Set)
+                                On(scope.Name, "rule", specification.Name);
+            }
+            catch (Exception)
+            {
+                // No rules of this project's own.
+            }
+
+            return uses;
         }
 
         /// <summary>The verdict, said once and in one line.</summary>
