@@ -401,7 +401,8 @@ namespace CamelWorks.UI.Views
                 row.Children.Add(read);
                 row.Children.Add(new Border { Width = 8 });
 
-                row.Children.Add(Middled(Ui.Quiet("Save the changes", SaveChanges)));
+                _saveButton = Ui.Quiet("Save the changes", SaveChanges);
+                row.Children.Add(Middled(_saveButton));
                 row.Children.Add(new Border { Width = 6 });
 
                 _syncButton = Ui.Quiet("Sync into the document", Sync);
@@ -422,7 +423,12 @@ namespace CamelWorks.UI.Views
                 Add(Glyphs.Person, "What the status, assign and group verbs write", "verbs");
                 Add(Glyphs.Sphere, "Markers and the view", "model");
                 Add(Glyphs.Round, "The review round", "round");
-                Add(Glyphs.More, "Duplicates, spreadsheets and baselines", "beyond");
+
+                // Review walks the board one clash at a time in its own window. A navigation, not
+                // a setting, so it is a symbol here rather than a text button inside a page.
+                row.Children.Add(Middled(Ui.Icon(Glyphs.Onward,
+                                                 "Walk the board, one clash at a time",
+                                                 () => Ui.Told(ReviewWindow.Show()))));
 
                 // The one that opens all of them, for somebody who does not know which symbol
                 // holds the thing they are after.
@@ -497,6 +503,16 @@ namespace CamelWorks.UI.Views
                 bar.Children.Add(Verb(Glyphs.Link, "Attach to an issue", AttachToIssue,
                                       _resultButtons));
                 bar.Children.Add(Verb(Glyphs.Copy, "Copy", CopyResults, _resultButtons));
+
+                // Two verbs over the whole grid rather than over what is picked, which is why
+                // they are plain symbols and not greyed with the rest. They were text buttons on
+                // a settings page behind a symbol, which is three presses and a wrong shape: a
+                // verb is a verb and belongs on the bar over the thing it acts on.
+                bar.Children.Add(Ui.Icon(Glyphs.Compact, "Find duplicates — the same conflict "
+                                         + "reported by two tests", Duplicates));
+
+                bar.Children.Add(Ui.Icon(Glyphs.Table, "The grid to a spreadsheet, exactly as it "
+                                         + "is filtered", Sheet));
 
                 return bar;
             }
@@ -898,7 +914,6 @@ namespace CamelWorks.UI.Views
                 new Section("verbs", new Ui.Page("Status and assignment", VerbsPage)),
                 new Section("model", new Ui.Page("In the model", ModelPage)),
                 new Section("round", new Ui.Page("The review round", RoundPage)),
-                new Section("beyond", new Ui.Page("Beyond the engine", BeyondPage)),
             };
 
             /// <summary>A section and the key the foot's symbol names it by.</summary>
@@ -1022,6 +1037,16 @@ namespace CamelWorks.UI.Views
                              + "markup\" on the Source page. A Manage seat reads it back."))
                 : Ui.Stack(
                     Bench.Group("Send it out",
+                        // What "Save the changes" writes, said where somebody deciding to send a
+                        // file is looking. It used to sit two levels down behind a symbol and a
+                        // text button, which is a strange place for a setting that changes what
+                        // the foot's own button produces.
+                        Ui.Check("Draw a picture of each clash into the baseline", _pictures,
+                                 v => _pictures = v),
+                        Ui.Small("Pictures are what every coordination tool shows its issue list "
+                                 + "as, so a baseline without them arrives as rows of grey boxes. "
+                                 + "They cost a view change and a render each, so a board of "
+                                 + "thousands is worth starting before a break."),
                         Ui.Actions(Ui.Quiet("Export...", () =>
                         {
                             ClashExportWindow.Preferred = _pickedTests.ToList();
@@ -1058,23 +1083,6 @@ namespace CamelWorks.UI.Views
             /// round trip exists to avoid.
             /// </summary>
             private static bool _noteAsides = true;
-
-            private UIElement BeyondPage() => Bench.Group("Beyond the engine",
-                Ui.Actions(
-                    Ui.Quiet("Find duplicates", Duplicates),
-                    Ui.Quiet("Excel...", Sheet),
-                    Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
-                Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
-                Ui.Check("Draw a picture of each clash into the baseline", _pictures,
-                         v => _pictures = v),
-                Ui.Small("Duplicates are the same conflict reported by two tests - marked "
-                         + "Approved with a comment naming the one that stays open. The "
-                         + "baseline carries statuses, assignments, comment trails and "
-                         + "groups, ready for reviewers."),
-                Ui.Small("Pictures are what every coordination tool shows its issue list as, so a "
-                         + "baseline without them arrives as rows of grey boxes. They are drawn "
-                         + "one at a time, which on a large board is the slow part of the export - "
-                         + "which is why it is asked rather than assumed."));
 
             /// <summary>
             /// Whether a baseline carries a picture per clash.
@@ -3576,6 +3584,16 @@ namespace CamelWorks.UI.Views
             private System.Windows.Controls.Button? _syncButton;
 
             /// <summary>
+            /// The Save button, kept because what it writes depends on which source is open.
+            ///
+            /// "Save the changes" is true and says nothing: from the model it writes the baseline
+            /// the whole review round is built on, and from a file it writes the markup a Manage
+            /// seat reads back. Both are the file somebody came here to produce, and a button
+            /// that will not name it is how the most useful thing on a screen goes unnoticed.
+            /// </summary>
+            private System.Windows.Controls.Button? _saveButton;
+
+            /// <summary>
             /// Why this document cannot take the changes, or null when it can.
             ///
             /// Four reasons, and each one is a different thing to do about it, so each says so
@@ -3606,6 +3624,19 @@ namespace CamelWorks.UI.Views
             /// <summary>Show the Sync button as available or not, and say which in a word.</summary>
             private void ArmSync()
             {
+                if (_saveButton != null)
+                {
+                    _saveButton.Content = OnFile
+                        ? "Save the markup"
+                        : "Save the baseline for reviewers";
+
+                    _saveButton.ToolTip = OnFile
+                        ? "Writes what is on this board into a markup beside the file it came "
+                          + "from, which a Manage seat reads back."
+                        : "Writes a clash file carrying every status, assignment, comment trail "
+                          + "and group, for a reviewer to open in their own tool and answer.";
+                }
+
                 if (_syncButton == null) return;
 
                 var why = WhySync();

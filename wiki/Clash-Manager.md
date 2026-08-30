@@ -55,7 +55,7 @@ All of them work on however many rows are picked, and all of them are on right-c
 | Status and assignment | What the status, assign and group verbs write |
 | In the model | Marker spheres, the camera and isolation |
 | The review round | The offline round trip — export as BCF, mark up, sync back |
-| Beyond the engine | The duplicate finder, the spreadsheet, the baseline |
+| Walk the board | The review window, one clash at a time |
 
 ### Save the changes, and sync them
 
@@ -180,7 +180,7 @@ settings. It is a plain JSON file, so it diffs, and it travels with the job rath
 machine. A document that has never been saved keeps the same thing under your user profile until
 it has a home.
 
-**Draw a picture of each clash** (under ⚙ *Beyond the engine*, and on the Clash file tab) writes a
+**Draw a picture of each clash** (under ⚙ *The review round*, and on the Clash file tab) writes a
 thumbnail into each topic. Every coordination tool shows its issue list as pictures, so a file
 without them arrives as rows of grey boxes. It is off by default because each one is drawn
 separately and on a large board that is the slow part of the export.
