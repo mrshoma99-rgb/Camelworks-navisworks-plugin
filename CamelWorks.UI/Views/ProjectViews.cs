@@ -834,6 +834,19 @@ namespace CamelWorks.UI.Views
             var classSource = Pickers.Property(kept.Text("classFrom"),
                                                text => kept.Set("classFrom", text), 200);
 
+            // What to check, as opposed to what each rule is about. Two different questions: this
+            // one narrows the traversal, so a rule set written for the whole job can be run over
+            // one level on a Tuesday without editing a rule.
+            var over = kept.Text("over");
+
+            if (string.IsNullOrWhiteSpace(over)) over = Everything;
+
+            var scopePicker = Ui.Choice(RunScopes(live), over, pick =>
+            {
+                over = pick;
+                kept.Set("over", pick);
+            }, 200);
+
             var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
             {
                 var session = Host.Current;
@@ -866,10 +879,24 @@ namespace CamelWorks.UI.Views
                 }
 
                 var document = read.Document;
-                var projection = IdsProjection.For(document, PropertyAddress.Parse(classSource.Text));
+
+                // The model's own groupings each rule names, resolved once. A traversal each, so
+                // only the ones actually named are walked.
+                var claimed = Claimed(session, document, job, out var missing);
+
+                if (claimed == null) return;   // stopped
+
+                foreach (var absent in missing)
+                    results.Children.Add(Ui.Problem(
+                        "No set called \"" + absent + "\" is in this document, so every rule about "
+                        + "it applied to nothing. Rename the rule's set, or make the set."));
+
+                var projection = IdsProjection.For(document, PropertyAddress.Parse(classSource.Text),
+                                                   claimed);
+
                 var elements = new List<IdsElement>();
 
-                foreach (var item in session.Model.Traverse(TraversalScope.WholeDocument))
+                foreach (var item in session.Model.Traverse(Over(over)))
                 {
                     if (!job.Step(projection.Read, "elements read")) return;
 
@@ -948,11 +975,15 @@ namespace CamelWorks.UI.Views
                 // property name. Next Tuesday's revision opens on both.
                 kept.Keep();
 
-                session.Record(ActivityKind.Exchange, "checked against " + document.Title + ": " + report, file);
+                session.Record(ActivityKind.Exchange,
+                               "checked against " + document.Title + ": " + report,
+                               file + (over == Everything ? string.Empty : " over " + over));
             });
 
             return Bench.Group("The client's rules",
                 Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*"),
+                Ui.Field("Check over", scopePicker,
+                         "the whole federation, or one part of it"),
                 Ui.Field("IFC class from", classSource,
                          "leave it empty unless a run tells you to fill it in"),
                 run,
@@ -1148,17 +1179,126 @@ namespace CamelWorks.UI.Views
         private static UIElement Reach(IdsProjection projection) => Ui.Line(
             Ui.Count(projection.Read, "element") + " read · "
             + Ui.Count(projection.Kept, "element") + " carried something this IDS asks about · "
-            + Ui.Count(projection.Classed, "element") + " carried an IFC class", 0.7);
+            + Ui.Count(projection.Classed, "element") + " carried an IFC class"
+            + (projection.Scoped > 0
+                ? " · " + Ui.Count(projection.Scoped, "element") + " named by a set"
+                : string.Empty), 0.7);
+
+        /// <summary>Checking the whole federation.</summary>
+        private const string Everything = "Everything loaded";
+
+        /// <summary>Checking whatever is selected.</summary>
+        private const string Picked = "What is selected";
+
+        /// <summary>What the run can be pointed at: the whole job, the selection, or a saved set.</summary>
+        private static IReadOnlyList<string> RunScopes(Session session)
+        {
+            var choices = new List<string> { Everything, Picked };
+
+            choices.AddRange(SetNames(session));
+
+            return choices;
+        }
+
+        /// <summary>The saved sets this document holds, by name.</summary>
+        private static IReadOnlyList<string> SetNames(Session session)
+        {
+            try
+            {
+                return session.Model.Sets()
+                              .Select(set => set.DisplayName)
+                              .Where(name => !string.IsNullOrWhiteSpace(name))
+                              .Distinct(StringComparer.OrdinalIgnoreCase)
+                              .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                              .ToList();
+            }
+            catch (Exception)
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        /// <summary>What a run-level choice means to the traversal.</summary>
+        private static TraversalScope Over(string? choice) =>
+            choice == Picked ? TraversalScope.CurrentSelection
+            : choice == Everything || string.IsNullOrWhiteSpace(choice) ? TraversalScope.WholeDocument
+            : TraversalScope.Set(choice!);
+
+        /// <summary>
+        /// Which of the model's own groupings claimed each element, for the scopes this rule set
+        /// names. Null when the job was stopped.
+        ///
+        /// One traversal per named scope, and only the named ones: resolving every set a document
+        /// holds would cost a walk each for sets no rule mentions. A set the document does not
+        /// have is reported rather than silently matching nothing, because a rule about a
+        /// misspelled set otherwise passes as "not applicable".
+        /// </summary>
+        private static Dictionary<string, IReadOnlyList<string>>? Claimed(
+            Session session, IdsDocument document, Job job, out IReadOnlyList<string> missing)
+        {
+            var absent = new List<string>();
+
+            missing = absent;
+
+            var wanted = IdsProjection.ScopesWanted(document);
+
+            if (wanted.Count == 0) return new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
+            var known = new HashSet<string>(SetNames(session), StringComparer.OrdinalIgnoreCase);
+            var claimed = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+            foreach (var scope in wanted)
+            {
+                if (scope.Kind == IdsScopeKind.Set && !known.Contains(scope.Name))
+                {
+                    absent.Add(scope.Name);
+                    continue;
+                }
+
+                job.Say("Reading " + scope.Describe() + "...");
+
+                var scopeOf = scope.Kind == IdsScopeKind.Selection
+                    ? TraversalScope.CurrentSelection
+                    : TraversalScope.Set(scope.Name);
+
+                var read = 0;
+
+                foreach (var item in session.Model.Traverse(scopeOf))
+                {
+                    if (!job.Step(read++, "elements read")) return null;
+
+                    var id = item.Key.ToString();
+
+                    if (!claimed.TryGetValue(id, out var tokens))
+                        claimed[id] = tokens = new List<string>();
+
+                    if (!tokens.Contains(scope.Token, StringComparer.OrdinalIgnoreCase))
+                        tokens.Add(scope.Token);
+                }
+            }
+
+            return claimed.ToDictionary(c => c.Key, c => (IReadOnlyList<string>)c.Value,
+                                        StringComparer.Ordinal);
+        }
 
         /// <summary>The things a reader has to know before believing the rows.</summary>
         private static IEnumerable<UIElement> Caveats(IdsDocument document, IdsProjection projection)
         {
-            if (projection.Classed == 0 && projection.Read > 0)
+            // How many rules actually needed a class. When every rule says who it is about in
+            // this model's own terms, no class is wanted and the absence of one is not a fault -
+            // saying it is would be crying wolf on the exact federation this was built for.
+            var needsClass = document.Specifications
+                .Count(spec => spec != null && !IdsScopeSpecification.IsScoped(spec));
+
+            if (projection.Classed == 0 && projection.Read > 0 && needsClass > 0)
             {
                 yield return Ui.Problem(
-                    "Nothing in this federation carried an IFC class, so every specification written "
-                    + "about an IFC entity matched nothing. That is a property-naming difference, not "
-                    + "an empty model.");
+                    "Nothing in this federation carried an IFC class, so "
+                    + (needsClass == document.Specifications.Count
+                        ? "every specification written about an IFC entity matched nothing"
+                        : Ui.Count(needsClass, "specification") + " written about an IFC entity "
+                          + "matched nothing")
+                    + ". That is a property-naming difference, not an empty model.");
 
                 var candidates = projection.Candidates;
 
