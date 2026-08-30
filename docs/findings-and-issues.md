@@ -307,11 +307,23 @@ Each step ships working and verifiable on its own.
    `xmllint`, on a real archive carrying an issue, its finding, the relation both ways and a
    viewpoint.
 
-7. **Set drift.** ~~One per step.~~ **Nothing to move.** `FindingSource.SetDrift` is a reserved slot
-   and nothing else: there is no drift engine, no result type and no surface anywhere in the
-   product. A set that stopped returning what it used to is a real check worth writing, but writing
-   it is building a feature, not moving one onto findings, so it is not part of this work. The
-   enum member stays where it is — numbered last but one, so the slot costs nothing.
+7. ~~**Set drift.** Nothing to move.~~ **Built.** The slot was reserved and empty; the check has
+   since been written, so `FindingSource.SetDrift` now has a producer like the other six.
+
+   It turned out to be the most valuable of them, because it is the one that catches the others
+   failing silently. A saved set is a query, and what it returns moves whenever the model does. When
+   it goes quiet nothing errors: the clash test whose side it is finds no clashes, the clearance
+   check over it finds nothing too low, the scoped rule reports "not applicable". Every one reads as
+   green, which is the failure this whole product exists to prevent arriving through the side door.
+
+   Graded rather than diffed — a live model changes daily, and a check that reported every change
+   would be a check nobody reads. A set that emptied, or that the document no longer has, is a
+   fault; a set that lost a quarter is a watch; growth and small losses are ordinary and silent.
+
+   Each finding names what was pointed at the set — clash tests and scoped rules, the two the
+   product can read for itself — because that is what turns "a set changed" into "these checks are
+   disarmed". Identity is the set's **name**, not its membership: a decision about a set has to
+   survive the thing that moves.
 6. **BCF for both.** Findings and issues out and back, with the relation between them.
 
 Step 2 is next. Steps 4 and 5 are independent of each other.

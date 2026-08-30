@@ -31,6 +31,47 @@ Each finding carries **its own fix** and a *show me* that selects the elements i
 
 Which property carries the code lives behind the ⚙ symbol on the action row.
 
+### Sets that have gone quiet
+
+Every sweep also reads what each saved set returns, and compares it with what it returned last
+time. This is the sharpest way a federation can stop being fit to coordinate against, and the
+easiest to miss.
+
+**Nothing errors when a set goes quiet.** A search set is a saved query, so what it returns moves
+whenever the model does — a discipline re-exports, a property is renamed, a parameter mapping
+shifts — while the definition still reads exactly as it did the day somebody wrote it. Then:
+
+- a clash test whose side is that set finds **no clashes**;
+- a clearance check over it finds **nothing too low**;
+- a scoped IDS rule reports **not applicable**.
+
+Every one of those reads as green. A board going green over a building nobody checked is the one
+outcome this product exists to prevent, and this is the side door it comes through.
+
+**Two things are faults**, because they disarm rather than merely narrow: a set that **returns
+nothing** when it used to return something, and one the **document no longer has**. A set that lost
+a quarter of itself is a watch. Growth, and losing a few, are ordinary on a live model and are not
+reported — a check that flagged every change would be a check nobody reads, and the two that matter
+would hide in it.
+
+**Each finding says what it disarmed.** "The Level 3 Ductwork set returns nothing" is a curiosity;
+*"…and clash test MEP vs Structure and rule Ducts carry a system name are pointed at it, and now
+cover nothing"* is a morning's work before anybody trusts another green board. Clash tests and
+scoped rules are named because CamelWorks can read them; a clearance input or an appearance layer
+lives in one tab's memory and is not claimed, because a half-answer beats a wrong one.
+
+**Show me what left** selects the elements that are no longer in the set — the whole diagnosis. A
+set that lost its ductwork because somebody deleted the mezzanine is a different morning from one
+that lost it because a property was renamed, and only looking at them tells the two apart.
+
+Two things worth knowing:
+
+- **The first sweep has nothing to compare against.** It reads every set, keeps what they hold, and
+  says so. Drift is measured from the sweep after it.
+- **A drift is said once.** Each sweep becomes the new baseline, so a set that emptied is reported
+  on the sweep that finds it and not on every one after. The finding keeps the record.
+- A set is addressed **by name**, so a set that was renamed reads the same as one that was deleted.
+
 ### The sweep remembers what you decided
 
 Every sweep writes its findings beside the model, so each card also carries:

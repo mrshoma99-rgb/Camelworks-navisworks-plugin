@@ -6,6 +6,7 @@ using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Sets;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
 
@@ -33,6 +34,7 @@ namespace CamelWorks.UI.Views
             Viewpoints = new NavViewpointStore(model);
             Search = new NavSearch(model);
             Findings = FindingStore.Open(PhysicalFileSystem.Instance, store);
+            Baselines = SetBaselineStore.Open(PhysicalFileSystem.Instance, store);
         }
 
         /// <summary>
@@ -43,6 +45,14 @@ namespace CamelWorks.UI.Views
         /// file.
         /// </summary>
         public FindingStore Findings { get; }
+
+        /// <summary>
+        /// What every saved set held the last time anybody looked.
+        ///
+        /// Beside the project like the findings, and for the same reason: membership is element
+        /// keys, and the project file is rewritten whenever any tool remembers a textbox.
+        /// </summary>
+        public SetBaselineStore Baselines { get; }
 
         /// <summary>The host document.</summary>
         public Document Document { get; }
