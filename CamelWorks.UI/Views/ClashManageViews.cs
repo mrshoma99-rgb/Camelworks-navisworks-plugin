@@ -852,10 +852,25 @@ namespace CamelWorks.UI.Views
                     Ui.Quiet("Excel...", Sheet),
                     Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
                 Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
+                Ui.Check("Draw a picture of each clash into the baseline", _pictures,
+                         v => _pictures = v),
                 Ui.Small("Duplicates are the same conflict reported by two tests - marked "
                          + "Approved with a comment naming the one that stays open. The "
                          + "baseline carries statuses, assignments, comment trails and "
-                         + "groups, ready for reviewers."));
+                         + "groups, ready for reviewers."),
+                Ui.Small("Pictures are what every coordination tool shows its issue list as, so a "
+                         + "baseline without them arrives as rows of grey boxes. They are drawn "
+                         + "one at a time, which on a large board is the slow part of the export - "
+                         + "which is why it is asked rather than assumed."));
+
+            /// <summary>
+            /// Whether a baseline carries a picture per clash.
+            ///
+            /// Off by default, and remembered with the bench: it is the right answer for the file
+            /// somebody sends out and the wrong one for the twenty exports they do while setting
+            /// the filters up.
+            /// </summary>
+            private static bool _pictures;
 
             /// <summary>Whoever the assign symbol would write, for the menu to say so.</summary>
             private string Who()
@@ -2437,8 +2452,22 @@ namespace CamelWorks.UI.Views
 
                 if (!OnFile) Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
 
+                // Which test and result each item came from, so the clash engine can draw it
+                // rather than the camera having to be moved.
+                var drawnFrom = new Dictionary<ClashKey, (string Test, string Result)>();
+
+                foreach (var row in from.SelectMany(e => e.Rows))
+                    if (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty)
+                        drawnFrom[row.Info.Key()] = (row.TestId, row.Info.Id);
+
                 var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
+                    Snapshot = _pictures && !OnFile
+                        ? ClashIdentity.Pictures(_session, 1280, 720,
+                              item => drawnFrom.TryGetValue(item.Key, out var at)
+                                  ? at
+                                  : ((string Test, string Result)?)null)
+                        : null,
                     SourceFile = _session.Store.Path,
                     ProjectName = _session.Profile.ProjectName,
                     Author = Environment.UserName ?? "CamelWorks",
@@ -2478,6 +2507,13 @@ namespace CamelWorks.UI.Views
                     var about = ClashIdentity.Explain(items.Count, named);
 
                     if (about != null) Said(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+
+                    if (_pictures)
+                        Said(written.Snapshots == 0
+                            ? Ui.Note("No picture could be drawn - this document cannot render "
+                                      + "off-screen. Everything else in the file is unaffected.")
+                            : Ui.Line(Ui.Count(written.Snapshots, "clash")
+                                      + " carries a picture.", 0.8));
                 }
             }
 

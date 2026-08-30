@@ -102,6 +102,19 @@ design, so nothing the old clash XML carried is lost.
 Baselines and markups written before this change are Navisworks clash XML. **They still open** —
 the reader recognises either by what is in the file rather than by its name.
 
+#### What the receiving tool can do with it
+
+BCF names elements by their **IFC GlobalId** and by nothing else, so the export reads each
+element's GlobalId out of the model on the way out. With it, the architect's tool highlights the
+duct and the beam; without it they get the camera and an empty selection. The export says which
+you got — elements from IFC sources carry a GlobalId, and elements from Revit, DWG and native
+formats generally do not.
+
+**Draw a picture of each clash** (under ⚙ *Beyond the engine*, and on the Clash file tab) writes a
+thumbnail into each topic. Every coordination tool shows its issue list as pictures, so a file
+without them arrives as rows of grey boxes. It is off by default because each one is drawn
+separately and on a large board that is the slow part of the export.
+
 ### What it will not do
 
 It will never show a smaller number than the engine found without saying so. Suppressed, collapsed

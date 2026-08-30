@@ -225,6 +225,9 @@ namespace CamelWorks.UI.Views
                     _note);
             }
 
+            /// <summary>Whether the written file carries a picture per clash. Off by default.</summary>
+            private static bool _pictures;
+
             private UIElement Shape()
             {
                 var units = Ui.Choice(new[] { "m", "mm", "cm", "ft", "in" }, _profile.Units,
@@ -235,6 +238,11 @@ namespace CamelWorks.UI.Views
                              on => _profile.KeepGroups = on),
                     Ui.Check("Write each result's two elements", _profile.IncludeObjects,
                              on => _profile.IncludeObjects = on),
+                    Ui.Check("Draw a picture of each clash", _pictures, on => _pictures = on),
+                    Ui.Small("Pictures are what every coordination tool shows its issue list as, "
+                             + "so a file without them arrives as rows of grey boxes. Each one is "
+                             + "drawn separately, which on a large export is the slow part - so it "
+                             + "is asked rather than assumed, and the Stop button works."),
                     Ui.Field("Model units", units,
                              "Declares what the numbers already are; converts nothing."));
             }
@@ -487,17 +495,32 @@ namespace CamelWorks.UI.Views
 
                 var named = ClashIdentity.Stamp(_session, picked.Items, job);
 
+                var how = _profile.BcfOptions(_session.SavedPath, _session.NowTicks,
+                                              _session.MetresPerUnit);
+
+                if (_pictures)
+                {
+                    job.Say("Drawing each clash...");
+                    job.Total = picked.Items.Count;
+
+                    how.Snapshot = ClashIdentity.Pictures(_session, 1280, 720, null, job);
+                }
+
                 job.Say("Writing the file...");
 
-                var written = ClashBcf.Write(picked.Items, picked.Groups,
-                                             _profile.BcfOptions(_session.SavedPath, _session.NowTicks,
-                                                                 _session.MetresPerUnit));
+                var written = ClashBcf.Write(picked.Items, picked.Groups, how);
 
                 foreach (var warning in written.Warnings) _output.Children.Add(Ui.Note(warning));
 
                 var about = ClashIdentity.Explain(picked.Items.Count, named);
 
                 if (about != null) _output.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+
+                if (_pictures)
+                    _output.Children.Add(written.Snapshots == 0
+                        ? Ui.Note("No picture could be drawn - this document cannot render "
+                                  + "off-screen. Everything else in the file is unaffected.")
+                        : Ui.Line(Ui.Count(written.Snapshots, "clash") + " carries a picture.", 0.8));
 
                 try
                 {

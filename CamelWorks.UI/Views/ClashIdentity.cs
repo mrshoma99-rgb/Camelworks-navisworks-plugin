@@ -66,6 +66,70 @@ namespace CamelWorks.UI.Views
             return found;
         }
 
+        /// <summary>
+        /// How a clash gets its picture, and what it costs.
+        ///
+        /// Two ways, in order of preference. The clash engine can render a result directly, which
+        /// is the good one: it frames the clash the way the native window does, and it never
+        /// touches the camera the coordinator is looking through. Where that is unavailable - a
+        /// file source, an edition with no clash engine, a result the engine will not draw - the
+        /// camera is moved to the clash point and the view captured, with the camera borrowed and
+        /// put back so the run leaves the screen where it found it.
+        ///
+        /// <b>It is slow, and it is opt-in for that reason.</b> A render is a render: on a large
+        /// board this is minutes, and it is the one part of an export worth being asked about
+        /// rather than surprised by.
+        /// </summary>
+        /// <param name="session">The open document.</param>
+        /// <param name="width">Pixels across.</param>
+        /// <param name="height">Pixels down.</param>
+        /// <param name="idOf">The test and result a clash came from, when they are known.</param>
+        /// <param name="job">Progress, and the way to stop.</param>
+        internal static Func<ClashItem, byte[]?> Pictures(
+            Session session, int width, int height,
+            Func<ClashItem, (string Test, string Result)?>? idOf = null,
+            Job? job = null)
+        {
+            var taken = 0;
+
+            return item =>
+            {
+                if (item == null) return null;
+
+                job?.Step(++taken, "clashes drawn");
+
+                var named = idOf?.Invoke(item);
+
+                if (named != null)
+                {
+                    try
+                    {
+                        var drawn = session.Clash.ResultSnapshot(named.Value.Test, named.Value.Result,
+                                                                 width, height);
+
+                        if (drawn != null && drawn.Length > 0) return drawn;
+                    }
+                    catch (Exception)
+                    {
+                        // The engine would not draw this one. The camera route still might.
+                    }
+                }
+
+                try
+                {
+                    // Four metres back is the framing Focus uses, so the picture matches what
+                    // pressing Focus on the same row would show.
+                    session.View.LookAt(item.X, item.Y, item.Z, 4.0);
+
+                    return session.View.Capture(width, height);
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            };
+        }
+
         /// <summary>What to say about it, or null when there is nothing worth saying.</summary>
         /// <param name="items">How many items were written.</param>
         /// <param name="found">What <see cref="Stamp"/> returned.</param>

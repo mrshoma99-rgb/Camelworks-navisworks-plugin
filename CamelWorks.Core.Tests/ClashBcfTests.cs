@@ -403,6 +403,74 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void APictureIsWrittenBesideTheTopicThatCarriesIt()
+        {
+            // Every coordination tool shows its issue list as thumbnails, so a file without these
+            // arrives as rows of grey boxes.
+            var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3 };
+
+            var written = ClashBcf.Write(new[]
+                {
+                    Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                },
+                null,
+                new ClashBcfOptions { Snapshot = _ => png });
+
+            Assert.Equal(1, written.Snapshots);
+
+            using var stream = new MemoryStream(written.Bytes);
+            using var zip = new System.IO.Compression.ZipArchive(stream,
+                System.IO.Compression.ZipArchiveMode.Read);
+
+            var image = zip.Entries.Single(e => e.FullName.EndsWith(".png", StringComparison.Ordinal));
+
+            using var got = image.Open();
+            using var buffer = new MemoryStream();
+
+            got.CopyTo(buffer);
+
+            Assert.Equal(png, buffer.ToArray());
+
+            // Beside its own topic, and named for its viewpoint, which is what makes a reader
+            // able to find it.
+            var topic = zip.Entries.Single(e => e.FullName.EndsWith("markup.bcf", StringComparison.Ordinal));
+
+            Assert.Equal(topic.FullName.Substring(0, topic.FullName.IndexOf('/')),
+                         image.FullName.Substring(0, image.FullName.IndexOf('/')));
+        }
+
+        [Fact]
+        public void AClashThatWillNotDrawIsWrittenWithoutAPicture()
+        {
+            // A document that cannot render off-screen, or one clash the engine refuses: the
+            // topic is written anyway. Never a failed export over a missing thumbnail.
+            var written = ClashBcf.Write(new[]
+                {
+                    Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                },
+                null,
+                new ClashBcfOptions { Snapshot = _ => null });
+
+            Assert.Equal(0, written.Snapshots);
+            Assert.Equal(1, written.Results);
+        }
+
+        [Fact]
+        public void APictureThatThrowsDoesNotTakeTheExportWithIt()
+        {
+            var written = ClashBcf.Write(new[]
+                {
+                    Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                },
+                null,
+                new ClashBcfOptions { Snapshot = _ => throw new InvalidOperationException("no GPU") });
+
+            Assert.Equal(0, written.Snapshots);
+            Assert.Equal(1, written.Results);
+            Assert.True(RoundTrip(written).IsUsable);
+        }
+
+        [Fact]
         public void TheArchiveHasNoTopLevelFolderThatIsNotATopic()
         {
             // The invariant that keeps another tool's importer from meeting something new. A

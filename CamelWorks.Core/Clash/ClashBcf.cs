@@ -44,16 +44,38 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Model units per metre, for the viewpoint cameras. BCF cameras are in metres.</summary>
         public double MetresPerUnit { get; set; } = 1.0;
+
+        /// <summary>
+        /// Renders one clash as a PNG, or returns null.
+        ///
+        /// <b>A callback rather than an image, because rendering needs the host.</b> This assembly
+        /// has no Navisworks in it and is tested on a machine with no graphics at all, so the
+        /// picture is asked for rather than taken here.
+        ///
+        /// <b>Why it is worth asking for.</b> Every coordination tool shows its issue list as
+        /// thumbnails. A BCF with no snapshots arrives as rows of grey boxes, and a reviewer has
+        /// to open each one to find out what it is - which on four hundred clashes is the
+        /// difference between a file that gets worked and a file that gets closed.
+        ///
+        /// Null is an ordinary answer: a document that cannot render off-screen, a file source
+        /// with no model behind it, or a reviewer who asked for no pictures. The topic is written
+        /// without one.
+        /// </summary>
+        public Func<ClashItem, byte[]?>? Snapshot { get; set; }
     }
 
     /// <summary>A written clash BCF, in memory.</summary>
     public sealed class ClashBcfDocument
     {
         internal ClashBcfDocument(byte[] bytes, IReadOnlyList<ClashXmlTest> tests, int results,
-                                  IReadOnlyList<string> warnings)
+                                  IReadOnlyList<string> warnings, int snapshots)
         {
             Bytes = bytes; Tests = tests; Results = results; Warnings = warnings;
+            Snapshots = snapshots;
         }
+
+        /// <summary>How many topics carry a picture.</summary>
+        public int Snapshots { get; }
 
         /// <summary>The .bcfzip.</summary>
         public byte[] Bytes { get; }
@@ -241,7 +263,7 @@ namespace CamelWorks.Core.Clash
 
             foreach (var note in written.Notes) warnings.Add(note);
 
-            return new ClashBcfDocument(bytes, tests, topics.Count, warnings);
+            return new ClashBcfDocument(bytes, tests, topics.Count, warnings, written.Snapshots);
         }
 
         /// <summary>
@@ -365,7 +387,22 @@ namespace CamelWorks.Core.Clash
                                                   at, comment.Author, comment.Body));
             }
 
-            topic.Viewpoints.Add(Viewpoint(item, topic.Guid, how));
+            var view = Viewpoint(item, topic.Guid, how);
+
+            if (how.Snapshot != null)
+            {
+                try
+                {
+                    view.Snapshot = how.Snapshot(item);
+                }
+                catch (Exception)
+                {
+                    // A picture that would not render is a topic without one, never a failed
+                    // export. The count of what was taken is reported either way.
+                }
+            }
+
+            topic.Viewpoints.Add(view);
 
             return topic;
         }
