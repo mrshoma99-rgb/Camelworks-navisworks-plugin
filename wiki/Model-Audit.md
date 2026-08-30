@@ -84,18 +84,44 @@ IFC-bound, only the question of who they were about.
   same thing twice. Good for a check you run now; name a set for one the project keeps.
 - Rules mixed freely: some by IFC class, some by set, one run, one report.
 
-### These rules cannot go in an .ids file
+### Two ways to save, and the choice is yours
 
 IDS's applicability is a fixed list of IFC facets with no room for anything else, so a rule scoped
-to one of your sets has nowhere to be written. Rather than emit a file no other tool can open, or
-drop the rule silently:
+to one of your sets has nowhere to be written in one. That is a question about **who the file is
+for**, so it is asked at the moment of saving rather than decided for you. A line above the buttons
+says what each would cost *before* you press either.
 
-- **Save as .ids** carries the portable rules and **names every rule it could not carry, and why**,
-  before it writes.
-- A rule set that is *entirely* scoped is not written at all — an IDS that opens and checks nothing
-  reads as a delivered requirement, which is the worst of the three outcomes.
-- Nothing is lost. **Keep the draft here** stores the portable half as IDS — still a file another
-  tool can read — and the scoped rules beside it, with no rule in both.
+| | **Save IDS...** | **Save BIMCamel rules...** |
+|---|---|---|
+| Extension | `.ids` | `.bcids` |
+| Who reads it | Solibri, BIMcollab, anything | CamelWorks |
+| Scoped rules | left behind, **each named with its reason** | all carried |
+| Validates against the published schema | yes | the IDS inside it does |
+
+A `.bcids` is a **zip** holding `rules.ids` — a real IDS with every portable rule in it — and
+`camelworks-rules.json` with the rest. Somebody with none of this can rename it, unzip it, and open
+the IDS inside; the degradation path is a real file rather than a shrug. Nothing hides, and nothing
+pretends to be a standard it is not.
+
+**Save IDS** refuses outright when *every* rule is scoped — an IDS that opens and checks nothing
+reads as a delivered requirement, which is worse than not sending one.
+
+Either kind can be opened again by **Rules from ▸ An IDS file**, told apart by what the bytes are
+rather than what the file is called: a rule set renamed on the way through an email is still the
+rule set it was.
+
+### Sharing one rule set across several models
+
+This is what the `.bcids` is for. Send it to a colleague, or run it against three models yourself.
+
+The thing to know: **a scoped rule names a set by name.** On another model it applies to whatever
+*that* model's set of that name holds — which is usually exactly what you want, and is what lets
+one rule set follow a job across its models. If the set is not there, the run **says so** rather
+than reporting the rule as matching nothing, because a rule about a missing set otherwise passes as
+"not applicable" — the same silence this check exists to break.
+
+Nothing is lost locally either. **Keep the draft here** stores the portable half as IDS — still a
+file another tool can read — and the scoped rules beside it, with no rule in both.
 
 The specifications lead the screen. Each is two lists: which elements it is about, and what they
 must have. The verdict under the form is live as you type.

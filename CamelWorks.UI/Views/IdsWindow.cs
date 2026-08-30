@@ -62,25 +62,13 @@ namespace CamelWorks.UI.Views
                 if (read.Document != null) document = read.Document;
             }
 
-            var refused = new List<string>();
-
-            foreach (var record in section[ScopedKey].Items)
-            {
-                var spec = Spec.FromJson(record);
-
-                if (spec == null) continue;
-
-                var built = spec.Build(refused);
-
-                if (built != null) document.Specifications.Add(built);
-            }
+            foreach (var specification in IdsJson.ReadAll(section[ScopedKey]))
+                document.Specifications.Add(specification);
 
             if (document.Specifications.Count == 0)
             {
-                problem = refused.Count > 0
-                    ? "This project's rules could not be read: " + refused[0]
-                    : "This project has no rules of its own yet. Write them in Model Audit's IDS "
-                      + "tab, or point this at an IDS file somebody sent.";
+                problem = "This project has no rules of its own yet. Write them in Model Audit's "
+                          + "IDS tab, or point this at a rule file somebody sent.";
 
                 return null;
             }
@@ -184,45 +172,6 @@ namespace CamelWorks.UI.Views
                 Material => "Material",
                 _ => "IFC class it is part of",
             };
-
-            /// <summary>Serialise.</summary>
-            internal JsonValue ToJson() =>
-                JsonValue.Object()
-                    .Set("kind", Kind)
-                    .Set("first", First)
-                    .Set("second", Second)
-                    .Set("test", Test)
-                    .Set("value", Value)
-                    .Set("upper", Upper)
-                    .Set("cardinality", Cardinality)
-                    .Set("dataType", DataType)
-                    .Set("relation", Relation)
-                    .Set("instructions", Instructions);
-
-            /// <summary>Read one back, or null when it names no kind.</summary>
-            /// <param name="json">One saved row.</param>
-            internal static Row? FromJson(JsonValue? json)
-            {
-                if (json == null || json.Kind != JsonKind.Object) return null;
-
-                var kind = json["kind"].AsString();
-
-                if (string.IsNullOrWhiteSpace(kind)) return null;
-
-                return new Row
-                {
-                    Kind = kind!,
-                    First = json["first"].AsString() ?? string.Empty,
-                    Second = json["second"].AsString() ?? string.Empty,
-                    Test = json["test"].AsString() ?? Present,
-                    Value = json["value"].AsString() ?? string.Empty,
-                    Upper = json["upper"].AsString() ?? string.Empty,
-                    Cardinality = json["cardinality"].AsString() ?? Required,
-                    DataType = json["dataType"].AsString() ?? string.Empty,
-                    Relation = json["relation"].AsString() ?? string.Empty,
-                    Instructions = json["instructions"].AsString() ?? string.Empty,
-                };
-            }
 
             /// <summary>Turn it into a facet, or say what is missing.</summary>
             internal IdsFacet? Build(bool requirement, out string? problem)
@@ -446,60 +395,6 @@ namespace CamelWorks.UI.Views
                 return built.Applicability.Count == 0 ? null : built;
             }
 
-            /// <summary>Serialise, for a rule no IDS file can hold.</summary>
-            internal JsonValue ToJson()
-            {
-                var json = JsonValue.Object()
-                    .Set("name", Name)
-                    .Set("identifier", Identifier)
-                    .Set("description", Description)
-                    .Set("instructions", Instructions)
-                    .Set("min", MinOccurs);
-
-                if (MaxOccurs != null) json.Set("max", MaxOccurs.Value);
-
-                json.Set("versions", JsonValue.Array(Versions.Select(JsonValue.String)));
-                json.Set("applies", JsonValue.Array(Applies.Select(r => r.ToJson())));
-                json.Set("wants", JsonValue.Array(Wants.Select(r => r.ToJson())));
-
-                return json;
-            }
-
-            /// <summary>Read one back, or null when the record says nothing.</summary>
-            /// <param name="json">One saved rule.</param>
-            internal static Spec? FromJson(JsonValue? json)
-            {
-                if (json == null || json.Kind != JsonKind.Object) return null;
-
-                var name = json["name"].AsString();
-
-                if (string.IsNullOrWhiteSpace(name)) return null;
-
-                var spec = new Spec
-                {
-                    Name = name!,
-                    Identifier = json["identifier"].AsString() ?? string.Empty,
-                    Description = json["description"].AsString() ?? string.Empty,
-                    Instructions = json["instructions"].AsString() ?? string.Empty,
-                    MinOccurs = (int)json["min"].AsLong(),
-                    MaxOccurs = json.Has("max") ? (int)json["max"].AsLong() : (int?)null,
-                };
-
-                spec.Versions.Clear();
-
-                foreach (var version in json["versions"].Items)
-                    if (version.AsString() is string named && named.Length > 0)
-                        spec.Versions.Add(named);
-
-                foreach (var row in json["applies"].Items)
-                    if (Row.FromJson(row) is Row read) spec.Applies.Add(read);
-
-                foreach (var row in json["wants"].Items)
-                    if (Row.FromJson(row) is Row read) spec.Wants.Add(read);
-
-                return spec;
-            }
-
             /// <inheritdoc />
             public override string ToString() => Name;
         }
@@ -521,6 +416,9 @@ namespace CamelWorks.UI.Views
             private readonly TextBox _about = Ui.Text(string.Empty, "what it is for", null, 240);
 
             private Spec? _chosen;
+
+            /// <summary>What the two save buttons cost, said before either is pressed.</summary>
+            private readonly StackPanel _saveSays = Ui.Stack();
 
             internal Editor(Session session)
             {
@@ -566,12 +464,17 @@ namespace CamelWorks.UI.Views
 
                 // The other half: the rules no IDS file can hold. Read after the portable ones so
                 // they keep the order somebody put them in, and never instead of them.
-                foreach (var record in section[ScopedKey].Items)
-                    if (Spec.FromJson(record) is Spec scoped)
-                    {
-                        _specs.Add(scoped);
-                        found = true;
-                    }
+                var scoped = IdsJson.ReadAll(section[ScopedKey]);
+
+                if (scoped.Count > 0)
+                {
+                    var extra = new IdsDocument(_title.Text);
+
+                    foreach (var specification in scoped) extra.Specifications.Add(specification);
+
+                    Adopt(extra, keepTitle: true);
+                    found = true;
+                }
 
                 if (found) return;
 
@@ -593,12 +496,20 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Turn a document that was read back into rows somebody can edit.</summary>
-            private void Adopt(IdsDocument document)
+            /// <param name="document">What to turn into rows.</param>
+            /// <param name="keepTitle">
+            /// True when these rules are the second half of a draft, so the title and author the
+            /// first half carried are the document's and must not be overwritten by a container.
+            /// </param>
+            private void Adopt(IdsDocument document, bool keepTitle = false)
             {
-                _title.Text = document.Title;
-                _version.Text = document.Version ?? string.Empty;
-                _author.Text = document.Author ?? string.Empty;
-                _about.Text = document.Description ?? string.Empty;
+                if (!keepTitle)
+                {
+                    _title.Text = document.Title;
+                    _version.Text = document.Version ?? string.Empty;
+                    _author.Text = document.Author ?? string.Empty;
+                    _about.Text = document.Description ?? string.Empty;
+                }
 
                 foreach (var spec in document.Specifications)
                 {
@@ -753,9 +664,11 @@ namespace CamelWorks.UI.Views
                     _list,
                     Ui.Rule(),
                     Ui.Actions(
-                        Ui.Primary("Save IDS...", Save),
+                        Ui.Primary("Save IDS...", () => Save(everything: false)),
+                        Ui.Quiet("Save BIMCamel rules...", () => Save(everything: true)),
                         Ui.Icon(Glyphs.Save, "Keep the draft here", Keep),
                         Ui.Icon(Glyphs.Tune, "What this document is called", Details)),
+                    _saveSays,
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
                     _output));
@@ -1192,8 +1105,41 @@ namespace CamelWorks.UI.Views
                     : Ui.Done(Ui.Count(held, "element") + " right now."));
             }
 
+            /// <summary>
+            /// What each of the two save buttons would cost, said before either is pressed.
+            ///
+            /// The choice is only a real choice if somebody can see it. A line that appears after
+            /// the file is written tells them what they should have done.
+            /// </summary>
+            private void SaySave()
+            {
+                _saveSays.Children.Clear();
+
+                var scoped = _specs.Count(Scopes);
+
+                if (scoped == 0)
+                {
+                    _saveSays.Children.Add(Ui.Small(
+                        "Every rule here is an ordinary IDS rule, so both buttons carry all of "
+                        + "them. Save IDS is the one to send."));
+
+                    return;
+                }
+
+                _saveSays.Children.Add(scoped == _specs.Count
+                    ? Ui.Note("Every rule here is about a set in this model, and IDS has no way to "
+                        + "say that - so \"Save IDS\" has nothing to write. \"Save BIMCamel "
+                        + "rules\" carries them, and CamelWorks reads it.")
+                    : Ui.Note("\"Save IDS\" carries "
+                        + Ui.Count(_specs.Count - scoped, "rule") + " and leaves "
+                        + Ui.Count(scoped, "rule") + " behind, because they are about sets in this "
+                        + "model and IDS has no way to say that. \"Save BIMCamel rules\" carries "
+                        + "all " + _specs.Count + ", and only CamelWorks reads it."));
+            }
+
             private void Look()
             {
+                SaySave();
                 _preview.Children.Clear();
 
                 var problems = new List<string>();
@@ -1270,10 +1216,23 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
-            private void Save()
+            /// <summary>
+            /// Write the rules out, in one of the two kinds there are.
+            ///
+            /// <b>Why it is a choice and not a rule.</b> An IDS is worth writing because everybody
+            /// reads one, and a rule that says who it is about in this model's own terms cannot be
+            /// in one. So a project with both kinds of rule can send a file everyone opens without
+            /// those rules, or a file with all of them that only CamelWorks opens. Which is right
+            /// depends entirely on who it is going to, and that is not something this code knows.
+            /// </summary>
+            /// <param name="everything">
+            /// True for the BIMCamel rule set, which carries the scoped rules too.
+            /// </param>
+            private void Save(bool everything)
             {
-                var written = Ready();
-                if (written == null) return;
+                if (everything) { SaveOurs(); return; }
+
+                var written = Ready();                if (written == null) return;
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -1307,6 +1266,76 @@ namespace CamelWorks.UI.Views
 
                 _session.Record(ActivityKind.Exchange,
                     "wrote an IDS: " + written.Explain(), dialog.FileName);
+            }
+
+            /// <summary>
+            /// Write everything, in the kind only CamelWorks reads.
+            ///
+            /// A zip with a real IDS inside it: somebody with none of this can rename it, unzip
+            /// it, and open the portable half. The degradation path is a file rather than a shrug.
+            /// </summary>
+            private void SaveOurs()
+            {
+                _output.Children.Clear();
+
+                var problems = new List<string>();
+                var document = Compose(problems);
+
+                if (problems.Count > 0 || document == null)
+                {
+                    foreach (var problem in problems.Take(6)) _output.Children.Add(Ui.Problem(problem));
+
+                    _output.Children.Add(Ui.Note("Nothing has been written. Fix those rows, or "
+                        + "remove them, and press it again."));
+
+                    return;
+                }
+
+                var packed = IdsFile.Write(document, _session.NowTicks);
+
+                if (!packed.IsUsable)
+                {
+                    _output.Children.Add(Ui.Problem(packed.Problem ?? "Nothing could be written."));
+                    return;
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the BIMCamel rules",
+                    Filter = "BIMCamel rules|*" + IdsFile.Extension + "|All files|*.*",
+                    FileName = _title.Text.Trim() + IdsFile.Extension,
+                    AddExtension = true,
+                    DefaultExt = IdsFile.Extension,
+                };
+
+                if (dialog.ShowDialog() != true) return;
+
+                try
+                {
+                    File.WriteAllBytes(dialog.FileName, packed.Bytes!);
+                }
+                catch (Exception e)
+                {
+                    _output.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _output.Children.Add(Ui.Done("Wrote " + packed.Explain() + " to " + dialog.FileName));
+
+                if (packed.Scoped > 0)
+                    _output.Children.Add(Ui.Note(
+                        "The " + Ui.Count(packed.Scoped, "scoped rule") + " in it name sets by "
+                        + "name, so on somebody else's model they apply to whatever their sets of "
+                        + "those names hold - and a run says plainly when a set is not there. "
+                        + "That is what makes one rule set runnable against several models."));
+
+                _output.Children.Add(Ui.Actions(Ui.Quiet("Check it",
+                    () => Ui.Told(AppWindow.Show("audit", "health")))));
+
+                foreach (var warning in packed.Warnings.Take(6)) _output.Children.Add(Ui.Note(warning));
+
+                _session.Record(ActivityKind.Exchange,
+                    "wrote a BIMCamel rule set: " + packed.Explain(), dialog.FileName);
             }
 
             private void Keep()
@@ -1347,7 +1376,10 @@ namespace CamelWorks.UI.Views
                     ? written.Text
                     : string.Empty);
 
-                section.Set(ScopedKey, JsonValue.Array(scoped.Select(spec => spec.ToJson())));
+                section.Set(ScopedKey, IdsJson.WriteAll(
+                    scoped.Select(spec => spec.Build(new List<string>()))
+                          .Where(built => built != null)
+                          .Select(built => built!)));
 
                 if (!_session.Store.Save())
                 {

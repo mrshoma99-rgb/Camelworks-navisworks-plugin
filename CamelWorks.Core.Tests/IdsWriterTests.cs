@@ -523,7 +523,29 @@ namespace CamelWorks.Core.Tests
                 written++;
             }
 
-            Assert.Equal(4, written);
+            // And the portable half out of a BIMCamel rule set, which is the claim that matters
+            // for somebody who has none of this: rename, unzip, open. If what is inside is not a
+            // real IDS then the degradation path is a shrug, and only the schema can say.
+            var packed = IdsFile.Write(mixed, 637_000_000_000_000_000L);
+
+            Assert.True(packed.IsUsable);
+
+            using (var buffer = new MemoryStream(packed.Bytes!))
+            using (var zip = new System.IO.Compression.ZipArchive(
+                       buffer, System.IO.Compression.ZipArchiveMode.Read))
+            {
+                var entry = zip.GetEntry(IdsFile.RulesEntry);
+
+                Assert.NotNull(entry);
+
+                using var stream = entry!.Open();
+                using var file = File.Create(Path.Combine(root, "unzipped-from-bcids.ids"));
+
+                stream.CopyTo(file);
+                written++;
+            }
+
+            Assert.Equal(5, written);
         }
 
         [Fact]

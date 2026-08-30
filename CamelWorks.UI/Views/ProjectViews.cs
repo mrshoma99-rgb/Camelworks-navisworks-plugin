@@ -889,8 +889,8 @@ namespace CamelWorks.UI.Views
                     if (file.Length == 0)
                     {
                         results.Children.Add(Ui.Problem(
-                            "Type the path of the .ids file your client sent, or switch \"Rules "
-                            + "from\" to this project's own."));
+                            "Type the path of the rule file somebody sent - an .ids or a .bcids - "
+                            + "or switch \"Rules from\" to this project's own."));
 
                         return;
                     }
@@ -901,15 +901,27 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
+                    // Either kind, told apart by what the bytes are rather than by what the file
+                    // is called: a rule set somebody sent may be an IDS anyone reads or a
+                    // BIMCamel one carrying rules no IDS can hold, and a run should open both.
                     IdsReadResult read;
-                    using (var stream = File.OpenRead(file)) read = IdsReader.Read(stream);
+
+                    try
+                    {
+                        read = IdsFile.Read(File.ReadAllBytes(file));
+                    }
+                    catch (Exception e)
+                    {
+                        results.Children.Add(Ui.Problem("Could not read it: " + Ui.Describe(e)));
+                        return;
+                    }
 
                     foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
 
                     if (!read.IsUsable || read.Document == null)
                     {
                         results.Children.Add(Ui.Empty("Nothing to check.",
-                            "That file read as IDS but carried no specifications CamelWorks could use."));
+                            "That file carried no rules CamelWorks could use."));
                         return;
                     }
 
@@ -1019,7 +1031,7 @@ namespace CamelWorks.UI.Views
             return Bench.Group("The rules",
                 Ui.Field("Rules from", source,
                          "this project's own, or a file somebody sent"),
-                Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*"),
+                Ui.PathField("Rule file", path, PathKind.Open, IdsFile.Filter),
                 Ui.Field("Check over", scopePicker,
                          "the whole federation, or one part of it"),
                 Ui.Field("IFC class from", classSource,
