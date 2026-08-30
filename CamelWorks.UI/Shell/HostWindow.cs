@@ -36,6 +36,18 @@ namespace CamelWorks.UI.Shell
     public static class HostWindow
     {
         private static bool _pinned;
+        private static Window? _last;
+
+        /// <summary>
+        /// The last window this product showed, for a dialog that needs a WPF owner.
+        ///
+        /// A file dialog is a native modal, and one with no owner disables every top-level window
+        /// on the thread and re-enables them from the owner it does not have — which is the same
+        /// bug this class was written for, arriving through a different door. Held weakly so a
+        /// closed window is not kept alive by having been the most recent one.
+        /// </summary>
+        public static Window? Active =>
+            _last != null && _last.IsLoaded ? _last : null;
 
         /// <summary>
         /// Give a window the Navisworks frame as its owner, and pin the shutdown mode.
@@ -48,6 +60,29 @@ namespace CamelWorks.UI.Shell
             if (window == null) return;
 
             Pin();
+
+            _last = window;
+            window.Closed += (s, e) => { if (ReferenceEquals(_last, window)) _last = null; };
+
+            // Two defensive lines about the pointer, both cheap and neither able to make anything
+            // worse. A host runs a plug-in command with a wait cursor up, and a window opened
+            // during one can be left showing it: the override is application-wide and static, so a
+            // stale one follows the pointer onto every window afterwards. And a window with no
+            // cursor of its own resolves whatever the chain above it says, which inside a native
+            // frame is not ours to predict. Children that ask for their own - a hand over a link -
+            // still win, because this is the window's cursor and not a forced one.
+            try
+            {
+                if (System.Windows.Input.Mouse.OverrideCursor != null)
+                    System.Windows.Input.Mouse.OverrideCursor = null;
+
+                window.Cursor = System.Windows.Input.Cursors.Arrow;
+            }
+            catch (Exception)
+            {
+                // A pointer that will not be set is worth one odd-looking cursor, not an
+                // exception on the way to a screen.
+            }
 
             try
             {

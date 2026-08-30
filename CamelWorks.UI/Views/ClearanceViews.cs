@@ -1754,7 +1754,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".xlsx",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -1845,7 +1845,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ClashFile.Extension,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {

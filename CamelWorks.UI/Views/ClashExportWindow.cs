@@ -734,7 +734,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = Extension,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -758,7 +758,7 @@ namespace CamelWorks.UI.Views
                     CheckFileExists = true,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {

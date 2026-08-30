@@ -1483,7 +1483,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".obj",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 var obj = dialog.FileName;
                 var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");

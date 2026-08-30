@@ -493,6 +493,23 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 3, 0, 0),
             }.Wearing("Hint");
 
+        /// <summary>
+        /// The count beside a table's verbs — "none picked", "3 picked".
+        ///
+        /// Its own shape rather than <see cref="Small"/>, because it sits on a line of 26-pixel
+        /// symbols and a hint carries a three-pixel top margin meant for prose under a field. On
+        /// that line it rode above the buttons and above the title, which is what somebody sees
+        /// when they say the header does not line up.
+        /// </summary>
+        /// <param name="text">What it says.</param>
+        public static TextBlock Tally(string text) =>
+            new TextBlock
+            {
+                Text = text,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, Gap, 0),
+            }.Wearing("Hint");
+
         /// <summary>An identifier, a path or a hash — anything that must not be read as prose.</summary>
         /// <param name="text">The text.</param>
         public static TextBlock Code(string text) =>
@@ -1082,6 +1099,80 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Ask for a path to write to, or null when the person changed their mind.
+        ///
+        /// <b>Every file dialog in this product goes through here or its twin.</b> A file dialog
+        /// is a native modal, and one shown with no owner disables every top-level window on the
+        /// thread and then re-enables them from the owner it does not have. What somebody sees is
+        /// a dialog they closed and a Navisworks that never comes back — the same bug
+        /// <see cref="Shell.HostWindow"/> was written for, arriving through a different door.
+        ///
+        /// Owning it at each of twenty call sites is a rule that holds until the twenty-first is
+        /// written, so there is one door and a repository check that keeps it the only one.
+        /// </summary>
+        /// <param name="title">What the dialog is called.</param>
+        /// <param name="filter">The file-type filter.</param>
+        /// <param name="suggested">The name to offer, or null.</param>
+        /// <param name="extension">The extension to add when somebody types none.</param>
+        public static string? AskToSave(string title, string filter, string? suggested = null,
+                                        string? extension = null)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                FileName = suggested ?? string.Empty,
+                AddExtension = true,
+            };
+
+            if (!string.IsNullOrWhiteSpace(extension)) dialog.DefaultExt = extension;
+
+            return Asked(dialog) ? dialog.FileName : null;
+        }
+
+        /// <summary>Ask for a path to read, or null when the person changed their mind.</summary>
+        /// <param name="title">What the dialog is called.</param>
+        /// <param name="filter">The file-type filter.</param>
+        /// <param name="suggested">The name to offer, or null.</param>
+        public static string? AskToOpen(string title, string filter, string? suggested = null)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                FileName = suggested ?? string.Empty,
+                CheckFileExists = true,
+                CheckPathExists = true,
+            };
+
+            return Asked(dialog) ? dialog.FileName : null;
+        }
+
+        /// <summary>
+        /// Show a file dialog owned by the window it was asked for from.
+        ///
+        /// The owner is what stops the host being disabled and left that way; see
+        /// <see cref="AskToSave"/>. With no window of ours on screen there is nothing to own it
+        /// to, and an unowned dialog is still better than no dialog — so it is shown, and that is
+        /// the one path where the old behaviour remains.
+        /// </summary>
+        /// <param name="dialog">The dialog.</param>
+        internal static bool Asked(Microsoft.Win32.CommonDialog dialog)
+        {
+            try
+            {
+                var owner = Shell.HostWindow.Active;
+
+                return (owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog()) == true;
+            }
+            catch (Exception)
+            {
+                // A dialog that will not open is not a reason to take the pane down with it.
+                return false;
+            }
+        }
+
+        /// <summary>
         /// The dialog itself.
         ///
         /// Nothing is written here and nothing is read: it puts a path in a box, and the button
@@ -1106,7 +1197,7 @@ namespace CamelWorks.UI.Views
 
                     Start(save, typed);
 
-                    if (save.ShowDialog() == true) box.Text = save.FileName;
+                    if (Asked(save)) box.Text = save.FileName;
                     return;
                 }
 
@@ -1129,7 +1220,7 @@ namespace CamelWorks.UI.Views
 
                 Start(open, typed);
 
-                if (open.ShowDialog() != true) return;
+                if (!Asked(open)) return;
 
                 box.Text = folder
                     ? System.IO.Path.GetDirectoryName(open.FileName) ?? typed
@@ -3168,7 +3259,7 @@ namespace CamelWorks.UI.Views
             progress.Children.Add(bar);
             progress.Children.Add(status);
 
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, 0) };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
             buttons.Children.Add(go);
             buttons.Children.Add(new Border { Width = 8 });
             buttons.Children.Add(stop);
@@ -3239,7 +3330,16 @@ namespace CamelWorks.UI.Views
                 }
             };
 
-            return Stack(buttons, progress);
+            // The gap above belongs to the runner as a whole, not to its button row. It used to
+            // sit on the row, which meant a runner placed beside ordinary buttons stood eight
+            // pixels lower than them - and it was reachable from nowhere to correct, because the
+            // row is inside what this returns. On the outside a caller can zero it, and every
+            // stacked runner looks exactly as it did.
+            var whole = Stack(buttons, progress);
+
+            whole.Margin = new Thickness(0, Gap, 0, 0);
+
+            return whole;
         }
 
         private static string Seconds(TimeSpan span) =>

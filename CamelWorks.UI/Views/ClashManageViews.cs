@@ -247,8 +247,8 @@ namespace CamelWorks.UI.Views
             // The bench: two panes, each with its own live line and its own row of symbols.
             private readonly TextBlock _testsSay = Ui.Small(string.Empty);
             private readonly TextBlock _resultsSay = Ui.Small(string.Empty);
-            private readonly TextBlock _testsPicked = Ui.Small("none picked");
-            private readonly TextBlock _resultsPicked = Ui.Small("none picked");
+            private readonly TextBlock _testsPicked = Ui.Tally("none picked");
+            private readonly TextBlock _resultsPicked = Ui.Tally("none picked");
             private readonly WrapPanel _testVerbs = new WrapPanel();
             private readonly WrapPanel _resultVerbs = new WrapPanel();
             private readonly List<System.Windows.Controls.Button> _testButtons =
@@ -388,14 +388,24 @@ namespace CamelWorks.UI.Views
             {
                 var row = new WrapPanel();
 
+                // The three sit on one line, so they sit on one line properly: the runner's own
+                // gap above is for a runner stacked under a form and would drop it below its
+                // neighbours here, and their two button styles are different heights, so centres
+                // are what they are aligned on rather than tops.
+                if (read is FrameworkElement placed)
+                {
+                    placed.Margin = new Thickness(0);
+                    placed.VerticalAlignment = VerticalAlignment.Center;
+                }
+
                 row.Children.Add(read);
                 row.Children.Add(new Border { Width = 8 });
 
-                row.Children.Add(Ui.Quiet("Save the changes", SaveChanges));
+                row.Children.Add(Middled(Ui.Quiet("Save the changes", SaveChanges)));
                 row.Children.Add(new Border { Width = 6 });
 
                 _syncButton = Ui.Quiet("Sync into the document", Sync);
-                row.Children.Add(_syncButton);
+                row.Children.Add(Middled(_syncButton));
 
                 ArmSync();
 
@@ -403,7 +413,7 @@ namespace CamelWorks.UI.Views
 
                 void Add(string glyph, string tip, string section)
                 {
-                    row.Children.Add(Ui.Icon(glyph, tip, () => Configure(section)));
+                    row.Children.Add(Middled(Ui.Icon(glyph, tip, () => Configure(section))));
                 }
 
                 Add(Glyphs.Read, "Source — the model, or a file to mark up", "source");
@@ -416,12 +426,21 @@ namespace CamelWorks.UI.Views
 
                 // The one that opens all of them, for somebody who does not know which symbol
                 // holds the thing they are after.
-                row.Children.Add(Ui.Icon(Glyphs.Tune, "All of the above, in one window", Everything));
+                row.Children.Add(Middled(Ui.Icon(Glyphs.Tune, "All of the above, in one window",
+                                                 Everything)));
 
                 row.Children.Add(new Border { Width = 14 });
                 row.Children.Add(_log);
 
                 return row;
+            }
+
+            /// <summary>On the line's middle, which is where a row of unequal heights agrees.</summary>
+            /// <param name="element">What to place.</param>
+            private static T Middled<T>(T element) where T : FrameworkElement
+            {
+                element.VerticalAlignment = VerticalAlignment.Center;
+                return element;
             }
 
             /// <summary>The verbs under the tests table.</summary>
@@ -2827,7 +2846,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ClashFile.Extension,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -2917,7 +2936,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".xlsx",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {

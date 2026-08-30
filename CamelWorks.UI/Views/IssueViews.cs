@@ -1059,7 +1059,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".xlsx",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 _log.Children.Clear();
 
@@ -1274,7 +1274,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".bcf",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 job.Say("Building topics...");
 

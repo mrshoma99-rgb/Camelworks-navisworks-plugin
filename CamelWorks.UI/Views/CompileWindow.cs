@@ -195,7 +195,7 @@ namespace CamelWorks.UI.Views
                     CheckFileExists = true,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 Took(dialog.FileNames);
             }
@@ -210,7 +210,7 @@ namespace CamelWorks.UI.Views
                     CheckFileExists = true,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 var folder = Path.GetDirectoryName(dialog.FileName);
 

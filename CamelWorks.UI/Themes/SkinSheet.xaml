@@ -340,9 +340,14 @@
             <Trigger Property="IsPressed" Value="True">
               <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentPress}"/>
             </Trigger>
+            <!-- Off, not pressed. A solid plate behind the symbol is what this style draws for
+                 hover and for a press, so using a stronger one for disabled said the opposite of
+                 what it meant: a row of unavailable verbs read as a row of held-down buttons. The
+                 plate stays out of it and the symbol fades, which is what off looks like. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Background" Value="{DynamicResource Track}"/>
-              <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="Opacity" Value="0.4"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
