@@ -1,5 +1,20 @@
 # Sets Manager — product pass
 
+## The redesign pass
+
+- **Viewpoints** had six batches down the setup column — rename, refile, render, copy overrides,
+  one per issue, delete — on a tab whose subject is a list of viewpoints. Each is a symbol at the
+  foot now, opening the configuration window on its own page, and each page hands the batch a
+  panel to report into, so a rename says how many it renamed where the button was pressed rather
+  than on a stage the window is covering. Making one viewpoint per element moved onto the stage,
+  beside the names it proposes.
+- **Builder**'s saved sets were rows you could only load; being rid of one meant editing the
+  project file. They carry verbs now, and clicking a row still opens it in the builder.
+- **Appearance** said "pick a row, then choose what to do with it" under a table, beside three
+  buttons that did not say what they were aimed at and none of which worked on more than one
+  state. Select, adopt and put back are row verbs acting on everything picked.
+
+
 The client's checklist, walked tab by tab as the person who actually opens this app: the
 coordinator who builds the selections every other tool consumes. The set is the suite's common
 currency — Appearance colours by it, Takeoff measures it, Extract cuts it — so every dead end

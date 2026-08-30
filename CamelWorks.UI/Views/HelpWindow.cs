@@ -304,7 +304,7 @@ namespace CamelWorks.UI.Views
             var path = Ui.Text(Suggested(SampleProject.FileName), null, 360);
             var status = Ui.Stack();
 
-            var write = Ui.Button("Write the sample project", () =>
+            var write = Ui.Button("Sample project", () =>
             {
                 status.Children.Clear();
 

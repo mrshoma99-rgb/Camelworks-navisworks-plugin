@@ -59,12 +59,22 @@ namespace CamelWorks.UI.Views
                 + " in one pass: placement, geometry, what has arrived, and what it is coded as.",
                 "The verdict lands here, worst first, with the fix under the finding that asks for it."));
 
-            var foot = Ui.Runner("Check this federation", results, job => Sweep(results, codes, job));
+            // The rail carries the run somebody came here for; which property holds the code is
+            // set once on the first Tuesday of a project and read never after, so it sits behind a
+            // symbol rather than above the button it has nothing to do with.
+            var foot = new WrapPanel();
+
+            foot.Children.Add(Ui.Runner("Check this federation", results,
+                                        job => Sweep(results, codes, job)));
+
+            foot.Children.Add(new Border { Width = 14 });
+
+            foot.Children.Add(Ui.Icon(Glyphs.Tune, "Which property carries the code", () =>
+                Ui.Configure("How the codes are read", null,
+                    new Ui.Page("Which property carries the code", () => codes.Fields ?? Ui.Stack()))));
 
             return Bench.Surface(
-                Ui.Stack(
-                    codes.Fields,
-                    IdsGroup(live, idsResults)),
+                Ui.Stack(IdsGroup(live, idsResults)),
                 foot,
                 Ui.Stack(results, idsResults));
         }
@@ -191,7 +201,7 @@ namespace CamelWorks.UI.Views
                     session.View.ZoomTo(keys, 2.0);
                 });
 
-            var only = Ui.Quiet("Leave only these on screen", () =>
+            var only = Ui.Quiet("Isolate them", () =>
             {
                 session.Model.Select(keys);
                 session.View.ZoomTo(keys, 2.0);
@@ -773,7 +783,7 @@ namespace CamelWorks.UI.Views
 
                 // The panel answers "are we ready to issue". The workbook answers "what do I fix",
                 // and it is asked by somebody who is not sitting in Navisworks.
-                results.Children.Add(Ui.Actions(Ui.Primary("Save it as a workbook...",
+                results.Children.Add(Ui.Actions(Ui.Primary("Excel...",
                     () => Workbook(results, document, report, session.NowTicks))));
 
                 // Property failures have a pen in this suite — Data Manager's Write tab can put
@@ -865,7 +875,7 @@ namespace CamelWorks.UI.Views
         /// and comes back with the next revision.
         /// </summary>
         private static UIElement Author(Panel results) =>
-            Ui.Quiet("Write an IDS of our own...", () =>
+            Ui.Quiet("Write IDS...", () =>
             {
                 var problem = ToolViews.Open("ids");
                 if (problem != null) results.Children.Add(Ui.Problem(problem));
@@ -1015,18 +1025,37 @@ namespace CamelWorks.UI.Views
             var status = Ui.Stack();
             var rows = Ui.Stack();
 
+            // The register runs to thirty-odd rows and somebody arriving is nearly always after
+            // one of them by name. A search at the top of the list, not a scroll.
+            var find = Ui.Text(string.Empty, "search the register", null, 220);
+
             void Fill()
             {
                 rows.Children.Clear();
-                foreach (var setting in profile.Settings) rows.Children.Add(Row(setting));
+
+                var wanted = find.Text.Trim();
+
+                foreach (var setting in profile.Settings)
+                {
+                    if (wanted.Length > 0 && !Matches(setting, wanted)) continue;
+
+                    rows.Children.Add(Row(setting));
+                }
+
+                if (rows.Children.Count == 0)
+                    rows.Children.Add(Ui.Empty("Nothing matches \"" + wanted + "\".",
+                        "The register holds what CamelWorks worked out from the models - units, "
+                        + "tolerances, the names it found."));
             }
+
+            find.TextChanged += (s, e) => Fill();
 
             Fill();
 
             // The way out of a decision somebody regrets. Every row here is an override of
             // something CamelWorks worked out for itself, and a register that can only be
             // overridden is one people are afraid to touch.
-            var reset = Ui.Quiet("Reset them all to derived", () =>
+            var reset = Ui.Quiet("Reset all", () =>
             {
                 status.Children.Clear();
 
@@ -1075,15 +1104,34 @@ namespace CamelWorks.UI.Views
             if (session.Store.ConcurrencyNote.Length > 0)
                 broken.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
 
+            // Parties, code tables and the roster are reference data somebody sets up once and
+            // then forgets; laid out beside the register they tripled the height of a screen whose
+            // subject is the register. Each is behind its own symbol at the foot, live-applying,
+            // where the rest of the product keeps its setup.
+            var foot = new WrapPanel();
+
+            foot.Children.Add(save);
+            foot.Children.Add(new Border { Width = 14 });
+
+            foot.Children.Add(Ui.Icon(Glyphs.Person, "Who a clash can be given to", () =>
+                Ui.Configure("Parties and priorities", null,
+                    new Ui.Page("Who a clash can be given to", () => Parties(session)))));
+
+            foot.Children.Add(Ui.Icon(Glyphs.Table, "Code tables", () =>
+                Ui.Configure("Code tables", null,
+                    new Ui.Page("Code tables", () => Codes(session)))));
+
+            foot.Children.Add(Ui.Icon(Glyphs.Group, "Who is on the job", () =>
+                Ui.Configure("The roster", null,
+                    new Ui.Page("Who is on the job", () => People(session)))));
+
             return Bench.Surface(
-                Ui.Stack(
-                    Parties(session),
-                    Codes(session),
-                    People(session)),
-                save,
+                null,
+                foot,
                 Ui.Stack(
                     broken,
                     Ui.Eyebrow("What CamelWorks worked out"),
+                    Ui.Field("Find", find),
                     rows,
                     Ui.Actions(reset),
                     status,
@@ -1105,7 +1153,7 @@ namespace CamelWorks.UI.Views
             var parties = Ui.Text(string.Join(", ", session.Profile.Parties), null, 200);
             var priorities = Ui.Text(string.Join(", ", session.Profile.Priorities), null, 200);
 
-            var save = Ui.Button("Save", () =>
+            var save = Ui.Icon(Glyphs.Save, "Save these", () =>
             {
                 status.Children.Clear();
 
@@ -1164,12 +1212,12 @@ namespace CamelWorks.UI.Views
 
                     list.Children.Add(Ui.Across(
                         Ui.Pill(table.ToString()),
-                        Ui.Button("Load", () =>
+                        Ui.Icon(Glyphs.MoveIn, "Load this table", () =>
                         {
                             name.Text = mine;
                             body.Text = table.ToText();
                         }),
-                        Ui.Danger("Remove", () =>
+                        Ui.Icon(Glyphs.Bin, "Remove this table", () =>
                         {
                             tables.Remove(mine);
                             Store(session, tables, status);
@@ -1416,7 +1464,7 @@ namespace CamelWorks.UI.Views
 
             Fill();
 
-            var add = Ui.Button("Add", () =>
+            var add = Ui.Icon(Glyphs.Add, "Add this person", () =>
             {
                 status.Children.Clear();
 
@@ -1449,6 +1497,15 @@ namespace CamelWorks.UI.Views
                 Ui.Small("Unticking somebody keeps them on the roster and out of every list. Their "
                          + "work does not leave when they do, and the board says so."),
                 status);
+        }
+
+        /// <summary>Whether a register row answers to what somebody typed in the search box.</summary>
+        private static bool Matches(ProfileSetting setting, string wanted)
+        {
+            bool Has(string? text) =>
+                text != null && text.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0;
+
+            return Has(setting.Title) || Has(setting.Value) || Has(setting.Because) || Has(setting.Derived);
         }
 
         private static UIElement Row(ProfileSetting setting)

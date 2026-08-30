@@ -11,9 +11,10 @@ today and fails when a file grows another one. The number can go down and never 
 that reaches zero is struck off, so the debt is visible, finite, and cannot quietly grow back
 while the screens around it are rewritten.
 
-What counts as bare is deliberately crude - tables in the file, minus Ui.Picking calls in the
-file. A ratchet does not need to know which table is which; it needs to be impossible to satisfy
-by accident. Wrapping one more table in a bar is the only way to move a number down.
+What counts as bare is deliberately crude - tables in the file, minus the calls that give a table
+its verbs: Ui.Picking, which draws the bar under it, and Ui.Menu, which hangs the same verbs off
+right-click. A ratchet does not need to know which table is which; it needs to be impossible to
+satisfy by accident. Giving one more table its verbs is the only way to move a number down.
 
     python3 checks/validate-table-picking.py            # check
     python3 checks/validate-table-picking.py --record   # take the baseline down to what is true
@@ -28,7 +29,10 @@ UI = ROOT / "CamelWorks.UI"
 BASELINE = pathlib.Path(__file__).resolve().parent / "tables-without-picking.txt"
 
 TABLE = re.compile(r"\bUi\.Table\(")
-PICKING = re.compile(r"\bUi\.Picking\(")
+
+# Two ways a table gets its verbs. The bar came first; the right-click menu arrived with the
+# clash bench, where twelve verbs under two tables would have been two walls of buttons.
+PICKING = re.compile(r"\bUi\.Picking\(|\.Menu\(")
 
 
 def bare():

@@ -73,7 +73,14 @@ namespace CamelWorks.UI.Views
             var results = new StackPanel();
             var listed = new StackPanel();
 
-            Redraw(store, listed, results);
+            var against = Ui.Line(string.Empty, 0.85);
+
+            void Chosen() =>
+                against.Text = _pickedBaseline == null
+                    ? "Pick a baseline above and the comparison runs against it."
+                    : "Comparing against " + _pickedBaseline + ".";
+
+            Redraw(store, listed, results, Chosen);
 
             var holding = BaselineModels.Of(LastBaseline, session.Model.Models, PhysicalFileSystem.Instance);
 
@@ -92,16 +99,12 @@ namespace CamelWorks.UI.Views
             if (baselines.Count > 0 && (_pickedBaseline == null || !labels.Contains(_pickedBaseline)))
                 _pickedBaseline = labels[0];
 
+            // What counts as a change is eight controls somebody sets once on a project and then
+            // argues with twice a year. Off the rail, behind a symbol at the foot, where the rest
+            // of the product keeps its terms - the rail keeps the one act this tab is for.
             var setup = Ui.Stack(
-                baselines.Count > 0
-                    ? Bench.Group("",
-                        Ui.Field("Compare against",
-                            Ui.Choice(labels, _pickedBaseline!, pick => _pickedBaseline = pick, 320),
-                            "the most recent is picked for you"))
-                    : null,
-                Terms(),
                 Bench.Group("Record a new baseline",
-                    Take(session, store, results, () => Redraw(store, listed, results),
+                    Take(session, store, results, () => Redraw(store, listed, results, Chosen),
                          primary: false)));
 
             // The first-run story stays one button: with nothing recorded, the stage says so and
@@ -124,6 +127,8 @@ namespace CamelWorks.UI.Views
             // points the week is measured against, with the comparison's answer under it once
             // there is one. A tab that opened on empty space over a buried register made the
             // first question — "what can I even compare against?" — a scroll.
+            Chosen();
+
             var stage = Ui.Stack(
                 warning,
                 Ui.Eyebrow("Baselines kept"),
@@ -131,9 +136,19 @@ namespace CamelWorks.UI.Views
                 keeping,
                 Ui.Rule(),
                 ready,
+                against,
                 results);
 
-            var foot = Ui.Runner("Run the comparison", results, job => Go(session, store, results, job));
+            var foot = new WrapPanel();
+
+            foot.Children.Add(Ui.Runner("Run the comparison", results,
+                                        job => Go(session, store, results, job)));
+
+            foot.Children.Add(new Border { Width = 14 });
+
+            foot.Children.Add(Ui.Icon(Glyphs.Tune, "What counts as a change", () =>
+                Ui.Configure("What counts as a change", null,
+                    new Ui.Page("What counts as a change", Terms))));
 
             return Bench.Surface(setup, foot, stage);
         }
@@ -403,25 +418,33 @@ namespace CamelWorks.UI.Views
 
                 var view = CompareLayers.Build(_result);
 
-                // The setup column holds the filters over the list and the way back from the
-                // paint; the one action at its foot is the paint itself, and everything the list,
-                // the walk, the stamp and the raise produce lands on the stage.
-                var setup = Ui.Stack(
-                    Bench.Group("Filter",
-                        Ui.Field("Show", Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); })),
-                        Ui.Field("Find", Ui.Text(_search, text => { _search = text ?? string.Empty; Redraw(); }, 200))),
-                    Bench.Group("Paint",
-                        Clear(),
-                        Ui.Button("Show everything", () =>
-                        {
-                            _output.Children.Clear();
-                            _session.View.ShowAll();
-                            _output.Children.Add(Ui.Done("Everything is visible again."));
-                        })));
+                // The bench law: what is changed while working - the bucket filter and the search
+                // - sits above the list; the paint's undo and the way back to a whole model are
+                // symbols on the action row, next to the paint itself.
+                var strip = new WrapPanel();
 
-                var foot = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
+                strip.Children.Add(Ui.Icon(Glyphs.Find, "Search the changes", () => { }));
+                strip.Children.Add(Ui.Text(_search, "element, type or what changed",
+                                           text => { _search = text ?? string.Empty; Redraw(); }, 240));
+                strip.Children.Add(new Border { Width = 10 });
+                strip.Children.Add(Ui.Choice(Buckets(), _filter, pick => { _filter = pick; Redraw(); }, 180));
+
+                var paint = Ui.Runner("Paint it onto the model", _output, job => ApplyView(job, view));
+
+                var foot = new WrapPanel();
+
+                foot.Children.Add(paint);
+                foot.Children.Add(new Border { Width = 14 });
+                foot.Children.Add(Ui.Icon(Glyphs.Compact, "Take the colours off", TakeColoursOff));
+                foot.Children.Add(Ui.Icon(Glyphs.EyeOff, "Show everything again", () =>
+                {
+                    _output.Children.Clear();
+                    _session.View.ShowAll();
+                    _output.Children.Add(Ui.Done("Everything is visible again."));
+                }));
 
                 var stage = Ui.Stack(
+                    strip,
                     Ui.Eyebrow(_result.Between()),
                     Counts(),
                     _list,
@@ -430,7 +453,7 @@ namespace CamelWorks.UI.Views
                     Keep(),
                     _output);
 
-                return Bench.Surface(setup, foot, stage);
+                return Bench.Surface(null, foot, stage);
             }
 
             /// <summary>
@@ -618,29 +641,34 @@ namespace CamelWorks.UI.Views
             /// The figures on the stage are already the legend - added green, removed red, moved
             /// amber - so painting needs no card of its own.
             /// </summary>
-            private UIElement Clear() =>
-                Ui.Button("Take the colours off", () =>
-                {
-                    _output.Children.Clear();
+            /// <summary>
+            /// The way back from the paint, beside the press that put it on.
+            ///
+            /// The figures on the stage are already the legend - added green, removed red, moved
+            /// amber - so the undo needs no card of its own.
+            /// </summary>
+            private void TakeColoursOff()
+            {
+                _output.Children.Clear();
 
-                    // Every element the comparison touched, including the unchanged ones that
-                    // carry the fade. This is the exact inverse of what Paint wrote, which is why
-                    // the fade names its elements rather than covering the whole model: nothing
-                    // outside the comparison has been written to, so nothing outside it is undone.
-                    var keys = new List<ElementKey>();
+                // Every element the comparison touched, including the unchanged ones that carry
+                // the fade. This is the exact inverse of what Paint wrote, which is why the fade
+                // names its elements rather than covering the whole model: nothing outside the
+                // comparison has been written to, so nothing outside it is undone.
+                var keys = new List<ElementKey>();
 
-                    foreach (var bucket in new[]
-                             {
-                                 ChangeBucket.Added, ChangeBucket.Removed, ChangeBucket.Moved,
-                                 ChangeBucket.Changed, ChangeBucket.Unchanged,
-                             })
-                        keys.AddRange(_result.KeysIn(bucket));
+                foreach (var bucket in new[]
+                         {
+                             ChangeBucket.Added, ChangeBucket.Removed, ChangeBucket.Moved,
+                             ChangeBucket.Changed, ChangeBucket.Unchanged,
+                         })
+                    keys.AddRange(_result.KeysIn(bucket));
 
-                    _session.View.ClearOverrides(keys);
+                _session.View.ClearOverrides(keys);
 
-                    _output.Children.Add(Ui.Done("Cleared the comparison's colour and fade on "
-                        + Ui.Count(keys.Count, "element") + ". Nothing else was touched."));
-                });
+                _output.Children.Add(Ui.Done("Cleared the comparison's colour and fade on "
+                    + Ui.Count(keys.Count, "element") + ". Nothing else was touched."));
+            }
 
             private void ApplyView(Job job, CompareView view)
             {
@@ -1036,7 +1064,15 @@ namespace CamelWorks.UI.Views
         // act it exists around, "Take a baseline", was already on Compare, so the two of them were
         // one tool the whole time and the tab was where its history went to be looked at separately.
 
-        private static void Redraw(SnapshotStore store, StackPanel listed, StackPanel results)
+        /// <summary>
+        /// The baselines kept beside this document, as the table the comparison is aimed with.
+        ///
+        /// The row is the choice: picking one here is what the comparison runs against, rather
+        /// than a dropdown in the setup column saying the same thing in different words. Two
+        /// controls for one decision is how somebody ends up comparing against last month.
+        /// </summary>
+        private static void Redraw(SnapshotStore store, StackPanel listed, StackPanel results,
+                                   Action? onPicked = null)
         {
             listed.Children.Clear();
 
@@ -1051,8 +1087,6 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
-            BaselineEntry? picked = null;
-
             var table = Ui.Table(baselines.Select(b => new TableRow(b,
                     b.Label.Length > 0 ? b.Label : "(unlabelled)",
                     b.TakenUtc.HasValue
@@ -1063,39 +1097,47 @@ namespace CamelWorks.UI.Views
                     ComparePolicy.Count(b.Models),
                     Show(b.Watch))),
                 ("Baseline", 200), ("Taken", 150), ("Elements", 80), ("Models", 70), ("Properties", 0))
-                .OnPick(item => picked = item as BaselineEntry);
+                .OnPick(item =>
+                {
+                    if (!(item is BaselineEntry entry)) return;
+
+                    _pickedBaseline = entry.Describe();
+                    onPicked?.Invoke();
+                });
 
             listed.Children.Add(Ui.Eyebrow("Recorded"));
-            listed.Children.Add(Ui.Small(store.Folder ?? "nowhere — this document is unsaved"));
+            listed.Children.Add(Ui.Small(store.Folder ?? "nowhere - this document is unsaved"));
+            listed.Children.Add(table);
 
-            listed.Children.Add(Ui.Stack(
-                table,
+            listed.Children.Add(Ui.Picking(table,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "baseline")),
+
                 // Named and asked twice. A red button whose only description of its target is
                 // "the selected one" is a button that deletes something you cannot check first,
                 // and a baseline is a week of history nothing else in the product can rebuild.
-                Ui.Danger("Delete the selected one", () =>
+                new Ui.OnPicked("Delete {n}", (picked, say) =>
                 {
-                    results.Children.Clear();
+                    say.Children.Clear();
 
-                    if (picked == null)
+                    var going = picked.OfType<BaselineEntry>().ToList();
+
+                    if (going.Count == 0) return;
+
+                    say.Children.Add(Ui.Danger("Yes, delete " + (going.Count == 1
+                        ? going[0].Describe()
+                        : Ui.Count(going.Count, "baseline")), () =>
                     {
-                        results.Children.Add(Ui.Note("Pick one in the list first."));
-                        return;
-                    }
+                        say.Children.Clear();
 
-                    var gone = picked;
+                        foreach (var gone in going)
+                            say.Children.Add(store.Delete(gone)
+                                ? Ui.Done("Deleted " + gone.Describe() + ".")
+                                : Ui.Problem(store.LastProblem ?? "It could not be deleted."));
 
-                    results.Children.Add(Ui.Danger("Yes, delete " + gone.Describe(), () =>
-                    {
-                        results.Children.Clear();
-
-                        results.Children.Add(store.Delete(gone)
-                            ? Ui.Done("Deleted " + gone.Describe() + ".")
-                            : Ui.Problem(store.LastProblem ?? "It could not be deleted."));
-
-                        Redraw(store, listed, results);
+                        Redraw(store, listed, results, onPicked);
                     }));
-                })));
+                }, danger: true)));
         }
 
         // -------------------------------------------------------------------------------------

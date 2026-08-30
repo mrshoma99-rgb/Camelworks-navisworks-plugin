@@ -207,6 +207,27 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _filterScope = Ui.Stack();
             private string _filterIn = AnyColumn;
 
+            // The bench: two panes, each with its own live line and its own row of symbols.
+            private readonly TextBlock _testsSay = Ui.Small(string.Empty);
+            private readonly TextBlock _resultsSay = Ui.Small(string.Empty);
+            private readonly TextBlock _testsPicked = Ui.Small("none picked");
+            private readonly TextBlock _resultsPicked = Ui.Small("none picked");
+            private readonly WrapPanel _testVerbs = new WrapPanel();
+            private readonly WrapPanel _resultVerbs = new WrapPanel();
+            private readonly List<System.Windows.Controls.Button> _testButtons =
+                new List<System.Windows.Controls.Button>();
+            private readonly List<System.Windows.Controls.Button> _resultButtons =
+                new List<System.Windows.Controls.Button>();
+
+            private ListView? _testsTable;
+            private ListView? _resultsTable;
+
+            private string _searchIn = Both;
+
+            private const string Both = "Both";
+            private const string JustTests = "Tests";
+            private const string JustResults = "Results";
+
             private const string AnyColumn = "Any column";
 
             private const string FirstSide = "First item";
@@ -220,7 +241,7 @@ namespace CamelWorks.UI.Views
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
 
-                _find = Ui.Text(string.Empty, null, 150);
+                _find = Ui.Text(string.Empty, "test, result, item, assignee or comment", null, 260);
                 _filter = Ui.Text(string.Empty, null, 150);
                 _filter.TextChanged += (s, e) => RedrawGroups();
                 _comment = Ui.Text(string.Empty, null, 170);
@@ -231,7 +252,7 @@ namespace CamelWorks.UI.Views
                 _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
                 _markups = Ui.Text(string.Empty, null, 190);
                 _assign = Suggesting(Assignees());
-                _find.TextChanged += (s, e) => RedrawTests();
+                _find.TextChanged += (s, e) => Redraw();
             }
 
             private bool OnFile => _source == FromFile;
@@ -239,29 +260,19 @@ namespace CamelWorks.UI.Views
             internal UIElement Build()
             {
                 // One caption for both sources: the results are what gets read either way, and
-                // the registry promises this exact action.
+                // the tool registry promises this exact action.
                 var read = Ui.Runner("Read the results", _log, Read);
-
-                // The log sits above the tables: a verb's outcome must land where the eye already
-                // is, not below two thousand rows of what it just acted on.
-                var stage = Ui.Stack(
-                    _headline,
-                    _log,
-                    _tests,
-                    Ui.Rule(),
-                    _groups,
-                    _results);
 
                 if (Current() == null)
                 {
                     _headline.Children.Add(Bench.Ready(
                         OnFile
-                            ? "Reading opens an exported clash file for markup: every verb below "
+                            ? "Reading opens an exported clash file for markup: every verb here "
                               + "works on the file's own results, and the markup saves beside it "
                               + "for whoever runs the sync."
                             : "Reading pulls every test and every result out of the document, with "
-                              + "status, assignee, comments and grouping — then the whole board of "
-                              + "verbs works on whatever you pick.",
+                              + "status, assignee, comments and grouping — tests on the left, "
+                              + "their results on the right.",
                         OnFile
                             ? "This is the review round: the file came from a Manage seat, and "
                               + "your saved markup goes back into the model when they sync."
@@ -279,7 +290,190 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 }
 
-                return Bench.Surface(Setup(), read, stage);
+                var left = Bench.Pane("Tests", _testsSay,
+                                      Ui.Stack(_headline, _tests),
+                                      TestTools());
+
+                var right = Bench.Pane("Results", _resultsSay,
+                                       Ui.Stack(_groups, _results),
+                                       ResultTools());
+
+                return Bench.Split(Strip(), left, right, Foot(read));
+            }
+
+            // -------------------------------------------------------------------------------
+            // The strip: what somebody touches every minute
+            // -------------------------------------------------------------------------------
+
+            /// <summary>
+            /// One search over both tables, what it covers, and the status ticks.
+            ///
+            /// The old search matched a test's name and nothing else, which is why typing a result
+            /// number or an element name found nothing and the box read as broken. This one runs
+            /// over both tables and says which it is running over.
+            /// </summary>
+            private UIElement Strip()
+            {
+                var scope = Ui.Segmented(new[] { Both, JustTests, JustResults }, _searchIn, pick =>
+                {
+                    _searchIn = pick;
+                    Redraw();
+                });
+
+                var ticks = new WrapPanel();
+
+                foreach (var status in Statuses)
+                {
+                    var here = status;
+
+                    ticks.Children.Add(new Border { Width = 10 });
+                    ticks.Children.Add(Ui.Check(here, _show.Contains(here), on =>
+                    {
+                        if (on) _show.Add(here); else _show.Remove(here);
+                        RedrawGroups();
+                    }));
+                }
+
+                var row = new WrapPanel();
+
+                row.Children.Add(Ui.Icon(Glyphs.Find, "Search both tables", () => _find.Focus()));
+                row.Children.Add(_find);
+                row.Children.Add(new Border { Width = 8 });
+                row.Children.Add(scope);
+                row.Children.Add(new Border { Width = 16 });
+                row.Children.Add(ticks);
+
+                return row;
+            }
+
+            /// <summary>The action row: read, then the windows where everything else lives.</summary>
+            private UIElement Foot(UIElement read)
+            {
+                var row = new WrapPanel();
+
+                row.Children.Add(read);
+                row.Children.Add(new Border { Width = 14 });
+
+                void Add(string glyph, string tip, string section)
+                {
+                    row.Children.Add(Ui.Icon(glyph, tip, () => Configure(section)));
+                }
+
+                Add(Glyphs.Read, "Source — the model, or a file to mark up", "source");
+                Add(Glyphs.Filter, "Filters", "filters");
+                Add(Glyphs.Columns, "Columns and grouping", "columns");
+                Add(Glyphs.Person, "What the status, assign and group verbs write", "verbs");
+                Add(Glyphs.Sphere, "Markers and the view", "model");
+                Add(Glyphs.Round, "The review round", "round");
+                Add(Glyphs.More, "Duplicates, spreadsheets and baselines", "beyond");
+
+                row.Children.Add(new Border { Width = 14 });
+                row.Children.Add(_log);
+
+                return row;
+            }
+
+            /// <summary>The verbs under the tests table.</summary>
+            private UIElement TestTools()
+            {
+                _testVerbs.Children.Clear();
+
+                var bar = _testVerbs;
+
+                bar.Children.Add(_testsPicked);
+
+                if (!OnFile)
+                {
+                    bar.Children.Add(Verb(Glyphs.Play, "Run", RunTests, _testButtons));
+                    bar.Children.Add(Verb(Glyphs.Pencil, "Rename", RenameTests, _testButtons));
+                    bar.Children.Add(Verb(Glyphs.Number, "Renumber the results", RenameResults, _testButtons));
+                    bar.Children.Add(Verb(Glyphs.MoveIn, "Move to a folder", MoveTests, _testButtons));
+                    bar.Children.Add(Verb(Glyphs.Compact, "Compact — drop resolved from storage",
+                                          CompactTests, _testButtons));
+                    bar.Children.Add(Verb(Glyphs.Bin, "Delete", DeleteTests, _testButtons));
+                }
+
+                bar.Children.Add(Verb(Glyphs.Copy, "Copy", CopyTests, _testButtons));
+
+                return bar;
+            }
+
+            /// <summary>The verbs under the results table.</summary>
+            private UIElement ResultTools()
+            {
+                _resultVerbs.Children.Clear();
+
+                var bar = _resultVerbs;
+
+                bar.Children.Add(_resultsPicked);
+
+                bar.Children.Add(Verb(Glyphs.Focus, "Focus", Focus, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Eye, "Isolate", Isolate, _resultButtons));
+                bar.Children.Add(Ui.Icon(Glyphs.EyeOff, "Show everything again", () =>
+                {
+                    _session.View.ShowAll();
+                    Said(Ui.Done("Everything is visible again."));
+                }));
+
+                bar.Children.Add(Verb(Glyphs.Tick, "Set the status", Mark, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Person, "Assign", AssignPicked, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Comment, "Comment", CommentPicked, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Group, "Group", GroupPicked, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Number, "Rename", RenamePickedResults, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Sphere, "Marker sphere", Spheres, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Camera, "Snapshot", Snapshots, _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Issue, "Create an issue",
+                                      (picked, say) => RaiseIssue(picked, false), _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Copy, "Copy", CopyResults, _resultButtons));
+
+                return bar;
+            }
+
+            /// <summary>
+            /// One verb, as a symbol.
+            ///
+            /// Held in a list so the whole row can grey itself out the moment nothing is picked:
+            /// a verb that reads as available and then says "nothing to work on" is a press
+            /// wasted, and there are twelve of them under one table.
+            /// </summary>
+            private UIElement Verb(string glyph, string tip, Action<IReadOnlyList<object>, Panel> act,
+                                   List<System.Windows.Controls.Button> into)
+            {
+                var button = Ui.Icon(glyph, tip, () => act(Picked(into), _log));
+
+                button.IsEnabled = false;
+                into.Add(button);
+
+                return button;
+            }
+
+            /// <summary>What the row verbs act on, by which table's row the button belongs to.</summary>
+            private IReadOnlyList<object> Picked(List<System.Windows.Controls.Button> which) =>
+                ReferenceEquals(which, _testButtons)
+                    ? (_testsTable?.PickedMany() ?? Array.Empty<object>())
+                    : (_resultsTable?.PickedMany() ?? Array.Empty<object>());
+
+            private void CopyTests(IReadOnlyList<object> picked, Panel say)
+            {
+                if (_testsTable != null) Ui.Copy(Ui.Lines(_testsTable, picked), say, "test");
+            }
+
+            private void CopyResults(IReadOnlyList<object> picked, Panel say)
+            {
+                if (_resultsTable != null) Ui.Copy(Ui.Lines(_resultsTable, picked), say, "result");
+            }
+
+            /// <summary>Grey every verb of a table that has nothing picked.</summary>
+            private void Arm()
+            {
+                var tests = _testsTable?.PickedMany().Count ?? 0;
+                var results = _resultsTable?.PickedMany().Count ?? 0;
+
+                foreach (var button in _testButtons) button.IsEnabled = tests > 0;
+                foreach (var button in _resultButtons) button.IsEnabled = results > 0;
+
+                _testsPicked.Text = tests == 0 ? "none picked" : tests + " picked";
+                _resultsPicked.Text = results == 0 ? "none picked" : results + " picked";
             }
 
             private List<TestEntry>? Current() => OnFile ? _file?.Entries : _read;
@@ -421,133 +615,157 @@ namespace CamelWorks.UI.Views
             // The options panel
             // -------------------------------------------------------------------------------
 
-            private UIElement Setup()
+            /// <summary>
+            /// Everything that is set up once, in a window of its own.
+            ///
+            /// This used to be a column down the right of the screen: every field of every verb,
+            /// every property column, the whole review round, laid out beside the two tables it
+            /// was meant to serve. Nobody could find anything in it and the tables had half the
+            /// window. The filters somebody touches every minute are on the strip; the rest is
+            /// here, one section at a time, opened from the symbol that names it.
+            /// </summary>
+            /// <param name="section">Which section to open on.</param>
+            private void Configure(string section)
             {
-                var panel = Ui.Stack();
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("Source", SourcePage),
+                    new Ui.Page("Filters", FiltersPage),
+                    new Ui.Page("Columns and grouping", ColumnsPage),
+                    new Ui.Page("Status and assignment", VerbsPage),
+                    new Ui.Page("In the model", ModelPage),
+                    new Ui.Page("The review round", RoundPage),
+                    new Ui.Page("Beyond the engine", BeyondPage),
+                };
 
-                // The source, first: everything under it reads differently for a file.
-                if (_session.Clash.IsAvailable)
-                    panel.Children.Add(Bench.Group(string.Empty,
+                var order = new[] { "source", "filters", "columns", "verbs", "model", "round", "beyond" };
+                var at = Math.Max(0, Array.IndexOf(order, section));
+
+                // Opened on the section the symbol names: the list is in one order and the row of
+                // symbols is in the same one, so the first page is the one that was pressed.
+                if (at > 0)
+                {
+                    var wanted = pages[at];
+                    pages.RemoveAt(at);
+                    pages.Insert(0, wanted);
+                }
+
+                Ui.Configure("Clash results", Redraw, pages.ToArray());
+            }
+
+            private UIElement SourcePage() => Ui.Stack(
+                _session.Clash.IsAvailable
+                    ? Bench.Group("Where the results come from",
                         Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
                         {
                             _source = pick;
                             Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                        })));
-
-                if (OnFile)
-                    panel.Children.Add(Bench.Group("The file",
+                        }),
+                        Ui.Small("From the model, every edit writes into the model's own clash "
+                                 + "data. From a file, the same verbs mark up an exported "
+                                 + "baseline — which is what a seat with no clash engine does."))
+                    : Ui.Info("This Navisworks edition has no clash engine, so there is one "
+                              + "source: a file. " + (_session.ClashProblem ?? string.Empty)),
+                OnFile
+                    ? Bench.Group("The file",
                         Ui.PathField("Open", _path, PathKind.Open,
                                      "Clash XML|*.xml|All files|*.*",
                                      "the baseline a Manage seat exported, or a saved markup"),
                         Ui.Actions(Ui.Primary("Save markup", SaveMarkup)),
                         Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
                                  + "after you — it never touches the baseline or anyone else's "
-                                 + "markup.")));
+                                 + "markup."))
+                    : null);
 
-                var showing = Statuses.Select(status => (UIElement)Ui.Check(status,
-                    _show.Contains(status), on =>
-                    {
-                        if (on) _show.Add(status); else _show.Remove(status);
-                        RedrawGroups();
-                    })).ToList();
-
-                var mark = Ui.Choice(Statuses, _mark, pick =>
-                {
-                    _mark = pick;
-
-                    // The button under the grid reads "Mark 12 Reviewed" - the caption is the
-                    // press about to happen, so it follows this choice the moment it changes.
-                    RedrawResults();
-                }, 150);
-
+            private UIElement FiltersPage()
+            {
                 RedrawFilterScope();
 
-                panel.Children.Add(Bench.Group("Show results that are",
-                    Ui.Stack(showing.ToArray()),
-                    Ui.Check("Only ones with comments", _onlyCommented, on =>
-                    {
-                        _onlyCommented = on;
-                        RedrawGroups();
-                    }),
-                    Ui.Field("Where", _filterScope),
-                    Ui.Field("contains", _filter,
-                             "matches as you type - any column, or just the one picked")));
+                return Ui.Stack(
+                    Bench.Group("Narrow the results",
+                        Ui.Check("Only ones with comments", _onlyCommented, on =>
+                        {
+                            _onlyCommented = on;
+                            RedrawGroups();
+                        }),
+                        Ui.Check("Hide tests with no results", _hideEmpty, on =>
+                        {
+                            _hideEmpty = on;
+                            RedrawTests();
+                        }),
+                        Ui.Field("Where", _filterScope),
+                        Ui.Field("contains", _filter,
+                                 "one column, or any of them - the search at the top of the "
+                                 + "bench is the quick version of this")),
+                    Bench.Group(string.Empty,
+                        Ui.Small("The status ticks are on the strip above the tables, not here: "
+                                 + "they are the one filter somebody changes every few minutes.")));
+            }
 
+            private UIElement ColumnsPage()
+            {
                 RedrawColumnList();
                 RedrawChainList();
 
-                panel.Children.Add(Bench.Group("Property columns",
-                    Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
-                    Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
-                    Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
-                                                    _newSide, pick => _newSide = pick, 150)),
-                    Ui.Actions(Ui.Quiet("Add", AddColumn)),
-                    _columnList,
-                    Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
-                    _fill,
-                    Ui.Small("Each column reads that property off the clashing elements "
-                             + "themselves - the results table carries whatever the model "
-                             + "carries, and the grouping below can chain over it.")));
+                return Ui.Stack(
+                    Bench.Group("Property columns",
+                        Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
+                        Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
+                        Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
+                                                        _newSide, pick => _newSide = pick, 150)),
+                        Ui.Actions(Ui.Icon(Glyphs.Add, "Add the column", AddColumn)),
+                        _columnList,
+                        Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
+                        _fill,
+                        Ui.Small("Each column reads that property off the clashing elements "
+                                 + "themselves - the results table carries whatever the model "
+                                 + "carries, and the grouping below can chain over it.")),
+                    Bench.Group("Group by, in order",
+                        _chainList,
+                        Ui.Small("Chained: the first entry makes the bands, the next splits each "
+                                 + "band, and so on. Pick group rows to work just those results.")));
+            }
 
-                panel.Children.Add(Bench.Group("Group by, in order",
-                    _chainList,
-                    Ui.Small("Chained: the first entry makes the bands, the next splits each "
-                             + "band, and so on - Level, then System, then anything a property "
-                             + "column carries. Pick group rows to work just those results.")));
-
-                var tests = Bench.Group("Tests",
-                    Ui.Field("Find", _find, "matches the test's name"),
-                    Ui.Check("Hide tests with no results", _hideEmpty, on =>
+            private UIElement VerbsPage() => Ui.Stack(
+                Bench.Group("What the symbols under the results write",
+                    Ui.Field("Set the status to", Ui.Choice(Statuses, _mark, pick =>
                     {
-                        _hideEmpty = on;
-                        RedrawTests();
-                    }),
-                    OnFile ? null : Ui.Field("Rename to", _renameTest, "for one picked test"),
-                    OnFile ? null : Ui.Field("Move into", _folder, "a clash folder; blank is the root"),
-                    OnFile ? null : Ui.Field("Results prefix", _renameResults,
-                                             "renames a test's results prefix1, prefix2, ..."));
-
-                panel.Children.Add(tests);
-
-                panel.Children.Add(Bench.Group("On the picked results",
-                    Ui.Field("Mark as", mark),
+                        _mark = pick;
+                        RedrawResults();
+                    }, 150)),
                     Ui.Field("Assign to", _assign, "the project's parties, or type a name"),
                     Ui.Field("Comment", _comment),
-                    Ui.Field("Group into", _group, "blank moves them out of any group")));
+                    Ui.Field("Group into", _group, "blank moves them out of any group")),
+                OnFile ? null : Bench.Group("On the tests",
+                    Ui.Field("Rename to", _renameTest, "for one picked test"),
+                    Ui.Field("Move into", _folder, "a clash folder; blank is the root"),
+                    Ui.Field("Results prefix", _renameResults,
+                             "renames a test's results prefix1, prefix2, ...")));
 
-                panel.Children.Add(Bench.Group("In the model",
-                    Ui.Field("Marker size", Ui.Text(
-                        _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
-                        {
-                            if (double.TryParse(text, NumberStyles.Float,
-                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
-                                _markerAcross = mm;
-                        }, 90), "millimetres across"),
-                    Ui.Actions(Ui.Quiet("Show all", () =>
+            private UIElement ModelPage() => Bench.Group("Markers and the view",
+                Ui.Field("Marker size", Ui.Text(
+                    _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
                     {
-                        _session.View.ShowAll();
-                        Said(Ui.Done("Everything is visible again."));
-                    }))));
+                        if (double.TryParse(text, NumberStyles.Float,
+                                CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                            _markerAcross = mm;
+                    }, 90), "millimetres across"),
+                Ui.Small("Spheres are ordinary geometry, coloured by status, appended as their own "
+                         + "file so they come out again from the host's file list. \"Show "
+                         + "everything again\" is the eye symbol under the results."));
 
-                panel.Children.Add(Bench.Group("Beyond the engine",
-                    Ui.Actions(
-                        Ui.Quiet("Find duplicates", Duplicates),
-                        Ui.Quiet("Excel...", Sheet),
-                        Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
-                    Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
-                    Ui.Small("Duplicates are the same conflict reported by two tests - marked "
-                             + "Approved with a comment naming the one that stays open. The "
-                             + "baseline carries statuses, assignments, comment trails and "
-                             + "groups, ready for reviewers.")));
-
-                if (!OnFile)
-                {
-                    panel.Children.Add(Bench.Group("The review round",
+            private UIElement RoundPage() => OnFile
+                ? Bench.Group("The review round",
+                    Ui.Small("You are on the file leg: mark the results up and press \"Save "
+                             + "markup\" on the Source page. A Manage seat reads it back."))
+                : Ui.Stack(
+                    Bench.Group("Send it out",
                         Ui.Actions(Ui.Quiet("Export...", () =>
                         {
                             ClashExportWindow.Preferred = _pickedTests.ToList();
                             Ui.Told(Shell.AppWindow.Show("issues", "clashxml"));
-                        })),
+                        }))),
+                    Bench.Group("Bring it back",
                         Ui.PathField("Markups", _markups, PathKind.Open,
                                      "Clash XML|*.xml|All files|*.*",
                                      "a markup file, or the baseline — every markup beside it is read"),
@@ -557,10 +775,43 @@ namespace CamelWorks.UI.Views
                                  + "it up, and save. This reads their markups back and writes the "
                                  + "statuses, comments and assignments into the model's own clash "
                                  + "data.")));
-                }
 
-                return panel;
+            private UIElement BeyondPage() => Bench.Group("Beyond the engine",
+                Ui.Actions(
+                    Ui.Quiet("Find duplicates", Duplicates),
+                    Ui.Quiet("Excel...", Sheet),
+                    Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
+                Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
+                Ui.Small("Duplicates are the same conflict reported by two tests - marked "
+                         + "Approved with a comment naming the one that stays open. The "
+                         + "baseline carries statuses, assignments, comment trails and "
+                         + "groups, ready for reviewers."));
+
+            /// <summary>Whoever the assign symbol would write, for the menu to say so.</summary>
+            private string Who()
+            {
+                var name = (_assign.Text ?? string.Empty).Trim();
+                return name.Length == 0 ? "nobody" : name;
             }
+
+            /// <summary>Whether a result answers the bench's own search box.</summary>
+            private bool Hits(Row row, string find)
+            {
+                bool Has(string? value) =>
+                    value != null && value.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (Has(row.Info.Name) || Has(row.TestName) || Has(row.Status) || Has(row.Group)
+                    || Has(row.Assigned) || Has(row.LastComment)
+                    || Has(row.Info.NameA) || Has(row.Info.NameB)
+                    || Has(row.Info.CategoryA) || Has(row.Info.CategoryB))
+                    return true;
+
+                foreach (var value in row.Custom.Values)
+                    if (Has(value)) return true;
+
+                return false;
+            }
+
 
             // -------------------------------------------------------------------------------
             // Drawing
@@ -574,46 +825,56 @@ namespace CamelWorks.UI.Views
             private void RedrawTests()
             {
                 _tests.Children.Clear();
+                _testsTable = null;
 
                 var read = Current();
-                if (read == null) return;
+                if (read == null) { Arm(); return; }
 
                 var find = _find.Text.Trim();
+                var searching = find.Length > 0 && _searchIn != JustResults;
 
                 var wanted = read
-                    .Where(e => find.Length == 0
-                                || e.Test.Name.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .Where(e => !searching
+                                || e.Test.Name.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0
+                                || e.Rows.Any(r => Hits(r, find)))
                     .Where(e => !_hideEmpty || e.Rows.Count > 0)
                     .ToList();
 
                 _headline.Children.Clear();
-                _headline.Children.Add(Bench.Verdict(
+
+                _testsSay.Text =
                     (OnFile && _file != null
                         ? System.IO.Path.GetFileName(_file.Path) + " — "
                         : string.Empty)
-                    + Ui.Count(read.Count, "test") + ", "
-                    + Ui.Count(read.Sum(e => e.Rows.Count), "result") + " — "
-                    + Ui.Count(read.Sum(e => e.Of("New")), "new") + ", "
-                    + read.Sum(e => e.Of("Active")).ToString("N0", CultureInfo.InvariantCulture) + " active, "
-                    + read.Sum(e => e.Of("Resolved")).ToString("N0", CultureInfo.InvariantCulture)
-                    + " resolved."));
+                    + (wanted.Count == read.Count
+                        ? Ui.Count(read.Count, "test")
+                        : wanted.Count + " of " + Ui.Count(read.Count, "test"))
+                    + ", " + Ui.Count(read.Sum(e => e.Rows.Count), "result");
 
+                if (wanted.Count == 0)
+                {
+                    _tests.Children.Add(Ui.Empty("No test matches.",
+                        "Clear the search at the top, or widen what it covers."));
+                    Arm();
+                    RedrawGroups();
+                    return;
+                }
+
+                // Five status columns were five numbers to read per row. One band says the same
+                // thing at a glance and leaves the width for the name, which is the long part.
                 var rows = wanted.Select(e => new TableRow(e,
                     e.Test.Name,
                     e.Test.Folder ?? string.Empty,
                     Skin.Num(e.Rows.Count),
-                    Skin.Num(e.Of("New")),
-                    Skin.Num(e.Of("Active")),
-                    Skin.Num(e.Of("Reviewed")),
-                    Skin.Num(e.Of("Approved")),
-                    Skin.Num(e.Of("Resolved")))
+                    Band(e))
                 {
                     Tone = e.Of("New") > 0 ? Tone.Warn : Tone.Plain,
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("Test", 220), ("Folder", 90), ("Results", 70), ("New", 55), ("Active", 55),
-                    ("Reviewed", 70), ("Approved", 70), ("Resolved", 0));
+                    ("Test", 200), ("Folder", 80), ("Results", 65), ("New · active · closed", 0));
+
+                _testsTable = table;
 
                 table.SelectionChanged += (s, e) =>
                 {
@@ -622,28 +883,40 @@ namespace CamelWorks.UI.Views
                     foreach (var picked in table.PickedMany())
                         if (picked is TestEntry entry) _pickedTests.Add(entry.Test.Id);
 
+                    Arm();
                     RedrawGroups();
                 };
 
-                _tests.Children.Add(Ui.Eyebrow("The tests"));
-
                 // A file is a record of a run: tests cannot be run, renamed, moved or deleted in
-                // one, and verbs that would say otherwise are not shown rather than shown grey.
-                _tests.Children.Add(OnFile
-                    ? Ui.Picking(table,
-                        new Ui.OnPicked("Copy {n}",
-                            (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "test")))
-                    : Ui.Picking(table,
-                        new Ui.OnPicked("Run {n}", RunTests, primary: true),
-                        new Ui.OnPicked("Rename {n}", RenameTests),
-                        new Ui.OnPicked("Renumber {n}", RenameResults),
-                        new Ui.OnPicked("Move {n}", MoveTests),
-                        new Ui.OnPicked("Compact {n}", CompactTests),
-                        new Ui.OnPicked("Delete {n}", DeleteTests, danger: true),
-                        new Ui.OnPicked("Copy {n}",
-                            (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "test"))));
+                // one, so those verbs are not on a file's menu rather than shown grey.
+                table.Menu(OnFile
+                    ? new[] { new Ui.OnMenu("Copy {n}", picked => CopyTests(picked, _log)) }
+                    : new[]
+                    {
+                        new Ui.OnMenu("Run {n}", picked => RunTests(picked, _log)),
+                        new Ui.OnMenu("Rename...", picked => RenameTests(picked, _log)),
+                        new Ui.OnMenu("Renumber the results of {n}", picked => RenameResults(picked, _log)),
+                        new Ui.OnMenu("Move {n} to a folder", picked => MoveTests(picked, _log)),
+                        new Ui.OnMenu("Compact {n}", picked => CompactTests(picked, _log)),
+                        new Ui.OnMenu("Delete {n}", picked => DeleteTests(picked, _log)),
+                        new Ui.OnMenu("Copy {n}", picked => CopyTests(picked, _log)),
+                    });
 
+                _tests.Children.Add(table);
+
+                Arm();
                 RedrawGroups();
+            }
+
+            /// <summary>A test's results as one band: how many are new, working, and closed.</summary>
+            private static string Band(TestEntry entry)
+            {
+                if (entry.Rows.Count == 0) return "—";
+
+                var closed = entry.Of("Approved") + entry.Of("Resolved");
+                var active = entry.Of("Active") + entry.Of("Reviewed");
+
+                return Skin.Num(entry.Of("New")) + " · " + Skin.Num(active) + " · " + Skin.Num(closed);
             }
 
             /// <summary>The rows the filters allow, before any group pick narrows them.</summary>
@@ -660,6 +933,13 @@ namespace CamelWorks.UI.Views
                     .SelectMany(e => e.Rows)
                     .Where(r => _show.Contains(r.Status))
                     .Where(r => !_onlyCommented || r.Comments > 0);
+
+                // The bench's own search, which covers both tables. The column filter below is
+                // the same idea aimed at one column, and lives in the configuration window.
+                var find = _find.Text.Trim();
+
+                if (find.Length > 0 && _searchIn != JustTests)
+                    rows = rows.Where(r => Hits(r, find));
 
                 var wanted = _filter.Text.Trim();
 
@@ -813,27 +1093,31 @@ namespace CamelWorks.UI.Views
             private void RedrawResults()
             {
                 _results.Children.Clear();
+                _resultsTable = null;
 
-                if (Current() == null) return;
+                if (Current() == null) { Arm(); return; }
 
                 var rows = Filtered();
 
                 if (_chain.Count > 0 && _pickedGroups.Count > 0)
                     rows = rows.Where(r => _pickedGroups.Contains(ChainKey(r))).ToList();
 
-                _results.Children.Add(Ui.Eyebrow(
-                    _chain.Count > 0 && _pickedGroups.Count > 0
-                        ? "Results of " + Ui.Count(_pickedGroups.Count, "picked group")
+                _resultsSay.Text =
+                    (_chain.Count > 0 && _pickedGroups.Count > 0
+                        ? "of " + Ui.Count(_pickedGroups.Count, "picked group")
                         : _pickedTests.Count == 0
-                            ? "Every result"
-                            : "Results of " + Ui.Count(_pickedTests.Count, "picked test")));
+                            ? "every test"
+                            : "of " + Ui.Count(_pickedTests.Count, "picked test"))
+                    + " — " + Ui.Count(rows.Count, "shown");
 
                 if (rows.Count == 0)
                 {
                     _results.Children.Add(Ui.Empty("Nothing matches.",
                         "Every result of "
                         + (_pickedTests.Count == 0 ? "every test" : "the picked tests")
-                        + " is filtered out. Untick a status on the right, or pick other tests."));
+                        + " is filtered out. Untick a status on the strip above, clear the search, "
+                        + "or pick other tests."));
+                    Arm();
                     return;
                 }
 
@@ -886,21 +1170,24 @@ namespace CamelWorks.UI.Views
                 }
 
                 var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray())
-                    .Menu(new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
-                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)));
+                    .Menu(new Ui.OnMenu("Focus {n}", picked => Focus(picked, _log)),
+                          new Ui.OnMenu("Isolate {n}", picked => Isolate(picked, _log)),
+                          new Ui.OnMenu("Mark {n} " + _mark, picked => Mark(picked, _log)),
+                          new Ui.OnMenu("Assign {n} to " + Who(), picked => AssignPicked(picked, _log)),
+                          new Ui.OnMenu("Comment on {n}", picked => CommentPicked(picked, _log)),
+                          new Ui.OnMenu("Group {n}", picked => GroupPicked(picked, _log)),
+                          new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
+                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)),
+                          new Ui.OnMenu("Marker sphere on {n}", picked => Spheres(picked, _log)),
+                          new Ui.OnMenu("Copy {n}", picked => CopyResults(picked, _log)));
 
-                _results.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Focus {n}", Focus, primary: true),
-                    new Ui.OnPicked("Isolate {n}", Isolate),
-                    new Ui.OnPicked("Mark {n} " + _mark, Mark),
-                    new Ui.OnPicked("Assign {n}", AssignPicked),
-                    new Ui.OnPicked("Comment {n}", CommentPicked),
-                    new Ui.OnPicked("Group {n}", GroupPicked),
-                    new Ui.OnPicked("Rename {n}", RenamePickedResults),
-                    new Ui.OnPicked("Sphere {n}", Spheres),
-                    new Ui.OnPicked("Snapshot {n}", Snapshots),
-                    new Ui.OnPicked("Copy {n}",
-                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "result"))));
+                _resultsTable = table;
+
+                table.SelectionChanged += (s, e) => Arm();
+
+                _results.Children.Add(table);
+
+                Arm();
 
                 if (rows.Count > most)
                     _results.Children.Add(Ui.Note(Ui.Count(rows.Count, "result") + " match, and the "

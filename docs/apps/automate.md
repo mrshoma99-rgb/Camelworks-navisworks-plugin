@@ -1,5 +1,12 @@
 # Automate — product audit
 
+## The redesign pass
+
+The saved jobs were rows with a single Delete beneath them that acted on whatever had last been
+clicked. They carry verbs now — copy, and delete everything picked, still naming what it is about
+to destroy. On the canvas, saving, loading, adding a node and emptying the canvas are symbols.
+
+
 Doing all of it again next Friday, in one press. Tabs: Jobs · Canvas. Walked as the person who
 does the same five exports every week: Monday morning, open the federation, run "Weekly
 coordination", check nothing stopped.

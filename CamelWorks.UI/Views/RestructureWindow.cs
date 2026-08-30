@@ -160,7 +160,7 @@ namespace CamelWorks.UI.Views
                 // Both are secondary: the press that matters in this window is "Read the model",
                 // and a row that styles "Add a level" as the primary action points at the wrong one.
                 UIElement? add = _recipe.Levels.Count < RestructureRecipe.MaxDepth
-                    ? Ui.Quiet("Add a level", () =>
+                    ? Ui.Icon(Glyphs.Add, "Add a level", () =>
                     {
                         _recipe.Add("Element", string.Empty);
                         DrawLevels();
@@ -168,7 +168,7 @@ namespace CamelWorks.UI.Views
                     : null;
 
                 UIElement? drop = _recipe.Levels.Count > 1
-                    ? Ui.Danger("Remove the last", () =>
+                    ? Ui.Icon(Glyphs.Bin, "Remove the last level", () =>
                     {
                         _recipe.Levels.RemoveAt(_recipe.Levels.Count - 1);
                         DrawLevels();
@@ -247,7 +247,7 @@ namespace CamelWorks.UI.Views
 
                 return Ui.Stack(
                     Ui.Field("Called", name, "Kept, the next revision is one press."),
-                    Ui.Actions(Ui.Quiet("Keep this recipe in the project", Store)));
+                    Ui.Actions(Ui.Quiet("Keep the recipe", Store)));
             }
 
             private void Store()

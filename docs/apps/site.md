@@ -1,5 +1,13 @@
 # Site Pack — product audit
 
+## The redesign pass
+
+Where the files go was a card on every tool's rail — typed once on the first morning of a job and
+read never — and the site grid was four more fields between the selection and the button. Both
+are symbols at the foot now. What is attached became a table with verbs: copy the picked rows or
+open them, with clicking a row still opening that one.
+
+
 The model reaching the people building it. Tabs: Setting Out · Dimensions · Weight · Labels ·
 Documents. Walked as the coordinator with the site engineer's requests on the desk: points for
 the total station, a dimension schedule instead of on-screen measuring, where the hook goes on

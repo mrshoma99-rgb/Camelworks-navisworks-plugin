@@ -9,53 +9,42 @@ cost a row of screen on every surface to say things the surface below it already
 one figure that was not a repeat — what the board held — belonged to a tab that no longer
 exists. It is gone from every app.
 
-## Tests — "six models landed, run everything again"
+## Manage — the bench, redrawn
 
-- *Was wrong:* the run dead-ended on a note telling the user to go and find the results
-  themselves — the product's most important hand-off, written as homework.
-- *Changed:* a finished run offers **Open results**, and the Manage tab re-reads on arrival, so
-  what it shows is the run that just finished.
+The tab a coordinator lives in, measured against the clash managers they actually use — the full
+gap analysis is in [clash-manager-gap.md](clash-manager-gap.md). It was rebuilt twice: first for
+what it could do, then for how it read.
 
-## Manage — the results workbench (new)
+- *Was wrong:* one table stacked on another, twelve one-word buttons under each, and a column
+  down the right holding every option of every verb — the two tables the tab exists for had half
+  the window between them, and nothing on the options column was findable.
+- *Changed, to a prototype the user approved before a line was written:*
+  **tests on the left, their results on the right**, a draggable split between them
+  (`Bench.Split` / `Bench.Pane`, the product's second anatomy);
+  **one search at the top over both tables** — it matched only a test's name before, which is why
+  typing a result number or an element name found nothing and the box read as broken — with
+  *Both / Tests / Results* saying what it covers;
+  **the status ticks beside it**, because that is the one filter somebody changes every few
+  minutes; **the verbs as symbols under the table they act on**, greyed until something is picked
+  and tooltipped, plus the same verbs on **right-click**; and
+  **every other option in a configuration window** (`Ui.Configure`) opened from the symbol that
+  names it: Source, Filters, Columns and grouping, Status and assignment, In the model, The
+  review round, Beyond the engine.
+- The tests table's five status columns became one band — *new · active · closed* — which says
+  the same thing at a glance and leaves the width for the name, which is the long part.
 
-The tab a coordinator coming from any other clash manager expects, measured against the ones
-they actually use — the full gap analysis is in
-[clash-manager-gap.md](clash-manager-gap.md). Tests on top with live per-status counts
-(total, new, active, reviewed, approved, resolved), the picked tests' results under them, and
-verbs on the picked rows:
+What the bench does has not shrunk: read from the model or from a file; run, rename, renumber,
+move, compact, delete and copy tests; focus, isolate, mark, assign, comment, group, rename,
+sphere, snapshot, raise an issue and copy results; property columns and chained grouping; the
+duplicate finder, the spreadsheet, the baseline and the whole review round.
 
-- **Read** pulls every test and result out of the document — pumped per result, after the
-  freeze the old board build hit at 18,844 results (fixed at the adapter: element names and
-  categories now travel on the result instead of being re-resolved through a full federation
-  index).
-- **Focus / Isolate / Sphere** — camera and selection to the picked clashes, everything else
-  hidden, or a status-coloured marker ball dropped at each clash point as ordinary geometry.
-- **Mark / Assign / Comment / Group** — written back into the model's own clash data through
-  the seam, so the native clash window, the exports and every report see the same thing.
-- **Run / Rename / Move / Compact / Delete** on the picked tests, with delete behind a second
-  press; Compact is the host's own drop-Resolved-from-storage, the only per-result delete any
-  clash tool honestly has. Picked results rename too (prefix1, prefix2, ...), and every column
-  keeps a manual drag - the auto-fit steps aside the moment a header gripper moves.
-- Filters: status ticks, only-with-comments, test-name search, hide-empty-tests, and a
-  contains-filter over any column - or one picked column, the property columns included -
-  matching as you type. Every column of every grid sorts on a header click.
-- **Send the picked tests out as a file...** jumps to Issue Link's Clash XML leg with those
-  tests already ticked.
-- **Property columns + chained grouping**: any element property as a results column (model-fed
-  pickers, first/second/both items), and an ordered grouping chain over Test, Status, Assigned,
-  host group and any property column — a group-summary band table with counts and bulk verbs
-  that narrows the grid, all of it travelling into the spreadsheet.
-- **Beyond the engine**: a cross-test duplicate finder (the same conflict reported by two
-  tests, marked Approved with the keeper named), the grid written to a spreadsheet exactly as
-  filtered, a full-fidelity baseline saved from the manager itself, the engine's own composed
-  view and rendered snapshot per result, a sortable worst-distance column, and click-to-sort
-  on every column of every table in the product.
-- **The review round**, end to end: the tab has a second source — "A file" — where the same
-  verbs mark up an exported baseline with no clash engine needed at all (the Simulate seat's
-  whole job), "Save the markup" writes `markups\<reviewer>.xml` beside it, and on a Manage
-  seat "Bring the markups into the model" reads everyone's markups back and writes their
-  statuses, comments, assignments and groups into the model's own clash data. Re-running a
-  sync never doubles a comment: the adapter skips an author repeating themselves word for word.
+## Tests — removed
+
+The tab listed the engine's tests and carried a matrix builder. The Matrix tab has been the place
+to build a matrix since it was rebuilt, and the list of tests is the left half of Manage — so the
+tab was two things somewhere else, and it is gone. `ClashMatrix`, the first matrix engine behind
+it, went with it: `MatrixGrid` and `MatrixPlanner` superseded it, with a legend, three ways in
+and an Excel round trip.
 
 ## The Board — removed
 

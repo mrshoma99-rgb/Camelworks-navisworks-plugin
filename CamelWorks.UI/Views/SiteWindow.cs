@@ -191,9 +191,6 @@ namespace CamelWorks.UI.Views
                     Ui.Runner("Read the selection", _read, Gather, primary: false),
                     _read);
 
-                var files = Bench.Group("Files",
-                    Ui.PathField("Folder", _folder, PathKind.Folder));
-
                 switch (_tool)
                 {
                     case "dimensions":
@@ -208,8 +205,7 @@ namespace CamelWorks.UI.Views
                                 Ui.Check("Each to the nearest other one", _shape.Neighbours,
                                     on => { _shape.Neighbours = on; _kept.Set("dim.neighbours", on); }),
                                 Ui.Check("The step from each to the next along a run", _shape.Spacing,
-                                    on => { _shape.Spacing = on; _kept.Set("dim.spacing", on); })),
-                            files);
+                                    on => { _shape.Spacing = on; _kept.Set("dim.spacing", on); })));
 
                     case "setout":
                         return Ui.Stack(read,
@@ -217,8 +213,55 @@ namespace CamelWorks.UI.Views
                                 Ui.Field("Point numbers start with",
                                     Ui.Text(_recipe.Prefix, text => _recipe.Prefix =
                                         string.IsNullOrWhiteSpace(text) ? "SO" : text.Trim(), 100)),
-                                Ui.Field("Take", PointKinds())),
-                            Bench.Group("Where the site grid is",
+                                Ui.Field("Take", PointKinds())));
+
+                    case "paperwork":
+                        return Ui.Stack(read,
+                            Bench.Group("Where the paperwork is named",
+                                _options,
+                                Ui.Field("Relative paths come from", _root,
+                                    "so a job that moves between machines does not lose every link")));
+
+                    case "labels":
+                        return Ui.Stack(read,
+                            Bench.Group("What goes on them", _options));
+
+                    default:
+                        // No folder symbol at the foot: the centre of gravity is copied or boxed,
+                        // never written to a folder, and a path field that feeds nothing is clutter.
+                        return Ui.Stack(read,
+                            Bench.Group("How it is weighed", _options));
+                }
+            }
+
+            /// <summary>
+            /// This tool's one action, whose answer lands on the stage, and the settings beside it.
+            ///
+            /// Where the files go is typed once on the first morning of a job and read never; the
+            /// site grid is surveyed once and then argued about twice a year. Neither belongs
+            /// between the selection and the button, so both are symbols here.
+            /// </summary>
+            private UIElement Foot()
+            {
+                var row = new WrapPanel();
+
+                switch (_tool)
+                {
+                    case "dimensions": row.Children.Add(Ui.Runner("Measure it", _sizes, Measure)); break;
+                    case "setout": row.Children.Add(Ui.Runner("Take the points", _points, Points)); break;
+                    case "paperwork": row.Children.Add(Ui.Runner("Find what is attached", _paper, Paper)); break;
+                    case "labels": row.Children.Add(Ui.Runner("Make the labels", _tags, Tag)); break;
+                    default: row.Children.Add(Ui.Runner("Work out where it sits", _weight, Weigh)); break;
+                }
+
+                if (_tool == "weight") return row;
+
+                row.Children.Add(new Border { Width = 14 });
+
+                if (_tool == "setout")
+                    row.Children.Add(Ui.Icon(Glyphs.Ruler, "Where the site grid is", () =>
+                        Ui.Configure("The site grid", null,
+                            new Ui.Page("Where the site grid is", () => Ui.Stack(
                                 Ui.Field("Model origin is at northing",
                                     Number(_recipe.NorthAtOrigin, v => _recipe.NorthAtOrigin = v),
                                     "wrong, and every point is out by the same amount"),
@@ -228,41 +271,14 @@ namespace CamelWorks.UI.Views
                                     Number(_recipe.LevelAtOrigin, v => _recipe.LevelAtOrigin = v)),
                                 Ui.Field("Project angle, clockwise",
                                     Number(_recipe.RotationDegrees, v => _recipe.RotationDegrees = v),
-                                    "degrees from grid north, the way it is written on the drawings")),
-                            files);
+                                    "degrees from grid north, the way it is written on the drawings"))))));
 
-                    case "paperwork":
-                        return Ui.Stack(read,
-                            Bench.Group("Where the paperwork is named",
-                                _options,
-                                Ui.Field("Relative paths come from", _root,
-                                    "so a job that moves between machines does not lose every link")),
-                            files);
+                row.Children.Add(Ui.Icon(Glyphs.Folder, "Where the files go", () =>
+                    Ui.Configure("Files", null,
+                        new Ui.Page("Where the files go", () =>
+                            Ui.Stack(Ui.PathField("Folder", _folder, PathKind.Folder))))));
 
-                    case "labels":
-                        return Ui.Stack(read,
-                            Bench.Group("What goes on them", _options),
-                            files);
-
-                    default:
-                        // No files group: the centre of gravity is copied or boxed, never written
-                        // to a folder, and a path field that feeds nothing is clutter.
-                        return Ui.Stack(read,
-                            Bench.Group("How it is weighed", _options));
-                }
-            }
-
-            /// <summary>This tool's one action, whose answer lands on the stage.</summary>
-            private UIElement Foot()
-            {
-                switch (_tool)
-                {
-                    case "dimensions": return Ui.Runner("Measure it", _sizes, Measure);
-                    case "setout": return Ui.Runner("Take the points", _points, Points);
-                    case "paperwork": return Ui.Runner("Find what is attached", _paper, Paper);
-                    case "labels": return Ui.Runner("Make the labels", _tags, Tag);
-                    default: return Ui.Runner("Work out where it sits", _weight, Weigh);
-                }
+                return row;
             }
 
             /// <summary>The stage panel this tool's answer lands in.</summary>
@@ -589,7 +605,7 @@ namespace CamelWorks.UI.Views
                         result.X.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Y.ToString("0.###", CultureInfo.InvariantCulture) + ", "
                         + result.Z.ToString("0.###", CultureInfo.InvariantCulture))),
-                    Ui.Quiet("Put a section box round it", () => Box(result))));
+                    Ui.Quiet("Section box", () => Box(result))));
 
                 if (silent > 0)
                     _weight.Children.Add(Ui.Note(Ui.Count(silent, "element")
@@ -1135,6 +1151,28 @@ namespace CamelWorks.UI.Views
                 });
 
                 _paper.Children.Add(table);
+
+                // Clicking a row still opens the file. The verbs are for the rest of it - a list
+                // of what is attached is most often on its way into somebody else's email.
+                _paper.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(picked.OfType<Attachment>()
+                                                     .Select(a => a.Name + "\t" + a.Kind + "\t" + a.Where),
+                                                 say, "attachment")),
+                    new Ui.OnPicked("Open {n}", (picked, say) =>
+                    {
+                        var opened = 0;
+
+                        foreach (var attachment in picked.OfType<Attachment>().Take(12))
+                        {
+                            Open(attachment.Where);
+                            opened++;
+                        }
+
+                        say.Children.Add(Ui.Line("Opened " + Ui.Count(opened, "file")
+                            + (picked.Count > opened ? ", the first twelve of them." : "."), 0.8));
+                    })));
+
                 _paper.Children.Add(Ui.Small("Click a row to open it."));
                 _paper.Children.Add(Ui.Tally(Math.Min(Shown, report.Found.Count),
                                              report.Found.Count, "thing"));

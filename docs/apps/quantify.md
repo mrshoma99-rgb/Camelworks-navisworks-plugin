@@ -1,5 +1,14 @@
 # Quantify — product audit
 
+## The redesign pass
+
+Takeoff's value-tidying — the pattern to take a number out of a string, and what to read a
+unitless value as — moved off the rail into the configuration window, leaving the scope, the
+measure and the two axes where the eye needs them. Report Builder's property catalogue no longer
+carries an "Add the chosen ones" button next to a table that could not tell you how many were
+chosen: the verb is on the rows and says the count.
+
+
 **The app's job.** Numbers out of the model the way a bill wants them, without asking anybody
 to map anything first. The QS asks "how much ductwork per floor"; the planner asks "what does
 level 3 weigh in concrete"; the client asks for a door schedule. Takeoff answers the quantity

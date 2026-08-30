@@ -798,367 +798,6 @@ namespace CamelWorks.UI.Views
         }
 
         // ===================================================================================
-        // Tests
-        // ===================================================================================
-
-        /// <summary>What the clash engine holds, and when each test last ran.</summary>
-        public static UIElement Tests() => new TestsScreen().Build();
-
-        /// <summary>
-        /// The engine's tests, and a way to stop making them by hand.
-        ///
-        /// Building a discipline matrix in Clash Detective is an afternoon: Add Test, pick two
-        /// selections, set a tolerance, name it, thirty-six times. It is not difficult and that is
-        /// exactly the problem — it is long enough to be done once and then never redone when a
-        /// model is added, which is how a matrix quietly stops covering the federation it was
-        /// drawn for.
-        /// </summary>
-        private sealed class TestsScreen
-        {
-            private const string ByDiscipline = "Discipline";
-            private const string ByModel = "Model";
-
-            private readonly StackPanel _list = Ui.Stack();
-            private readonly StackPanel _grid = Ui.Stack();
-            private readonly StackPanel _results = Ui.Stack();
-
-            /// <summary>
-            /// Where a run reports, kept apart from where creating reports.
-            ///
-            /// Not tidiness: a Runner clears its own output panel when pressed, so a "Run them"
-            /// button living in the panel it writes to would delete itself on the way in.
-            /// </summary>
-            private readonly StackPanel _runs = Ui.Stack();
-
-            private readonly TextBox _pattern = Ui.Text("{a} vs {b}", null, 200);
-            private readonly TextBox _tolerance = Ui.Text("0.010", null, 80);
-            private readonly TextBox _folder = Ui.Text(string.Empty, null, 150);
-
-            private string _rows = ByDiscipline;
-            private string _columns = ByDiscipline;
-            private bool _selfPairs;
-
-            private Session? _session;
-            private MatrixPlan? _plan;
-
-            internal UIElement Build()
-            {
-                _session = Host.Current;
-
-                if (_session == null)
-                    return Bench.Surface(null, null, Ui.Stack(Ui.Empty("No model is open.", Host.NoModel)));
-
-                if (!_session.Clash.IsAvailable)
-                    return Bench.Surface(null, null, Ui.Stack(Ui.Note(
-                        _session.ClashProblem ?? "There is no clash engine in this Navisworks edition.")));
-
-                Redraw();
-
-                // The one action is the Monday one: six models landed, run everything again. The
-                // setup column holds the matrix builder - the way tests get made without an
-                // afternoon in Add Test - and the stage holds the tests as they stand, with
-                // everything a run or a build produces landing under them.
-                var canEdit = _session.Clash.CanEdit;
-
-                var foot = canEdit
-                    ? Ui.Runner("Run them", _runs, job => Run(_session!.Clash.Tests(), job))
-                    : null;
-
-                return Bench.Surface(Setup(canEdit), foot, Ui.Stack(
-                    _list,
-                    _runs,
-                    _grid,
-                    _results));
-            }
-
-            /// <summary>
-            /// The setup column: the matrix builder, its naming, and the spreadsheet way in.
-            /// </summary>
-            private UIElement Setup(bool canEdit)
-            {
-                var axes = new[] { ByDiscipline, ByModel };
-
-                var rows = Ui.Choice(axes, _rows, pick => _rows = pick);
-                var columns = Ui.Choice(axes, _columns, pick => _columns = pick);
-                var diagonal = Ui.Check("Include each side against itself", _selfPairs, v => _selfPairs = v);
-
-                var grid = Ui.Runner("Show me the grid", _grid, primary: false, work: job => Plan());
-
-                var sheet = Ui.Quiet("Read their spreadsheet...", () =>
-                {
-                    var problem = ToolViews.Open("matrix");
-                    if (problem != null) _grid.Children.Add(Ui.Problem(problem));
-                });
-
-                return Ui.Stack(
-                    Bench.Group("Build a matrix",
-                        Ui.Field("Rows", rows),
-                        Ui.Field("Columns", columns),
-                        diagonal,
-                        canEdit ? grid : null),
-                    Bench.Group("How the tests are made",
-                        Ui.Field("Name pattern", _pattern),
-                        Ui.Field("Tolerance (m)", _tolerance),
-                        Ui.Field("Put them in folder", _folder,
-                                 "Empty keeps them beside the existing tests.")),
-                    Bench.Group("Already drawn by the client?",
-                        Ui.Small("A matrix that arrives as a spreadsheet, with its own symbols "
-                                 + "and a different tolerance per cell, opens in its own reader."),
-                        sheet));
-            }
-
-            /// <summary>Work out the grid the axes imply, onto the stage.</summary>
-            private void Plan()
-            {
-                _plan = null;
-
-                var session = _session;
-                if (session == null) return;
-
-                var a = Sides(session, _rows);
-                var b = Sides(session, _columns);
-
-                if (a.Count == 0 || b.Count == 0)
-                {
-                    _grid.Children.Add(Ui.Empty("Nothing to pair up.",
-                        "No models are loaded, so there is nothing on either axis."));
-                    return;
-                }
-
-                var plan = ClashMatrix.Build(a, b, new MatrixOptions
-                {
-                    Tolerance = Metres(_tolerance.Text),
-                    SelfPairs = _selfPairs,
-                    NamePattern = _pattern.Text,
-                    Existing = session.Clash.Tests().Select(t => t.Name).ToList(),
-                });
-
-                _plan = plan;
-                Show(plan);
-            }
-
-            /// <summary>The tests as they stand, and the one action worth having beside them.</summary>
-            private void Redraw()
-            {
-                _list.Children.Clear();
-
-                var session = _session;
-                if (session == null) return;
-
-                var tests = session.Clash.Tests();
-
-                if (tests.Count == 0)
-                {
-                    _list.Children.Add(Ui.Empty("No clash tests in this document.",
-                        "Build a matrix below, or set them up in Clash Detective. CamelWorks reads the "
-                        + "results and turns them into work; it does not replace the engine that "
-                        + "produces them."));
-                    return;
-                }
-
-                var rows = tests.Select(t => new TableRow(t,
-                    t.Name,
-                    t.Folder ?? string.Empty,
-                    t.ResultCount.ToString("N0", CultureInfo.InvariantCulture),
-                    t.LastRunTicks > 0
-                        ? new DateTime(t.LastRunTicks).ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture)
-                        : "never run")
-                {
-                    Tone = t.LastRunTicks > 0 ? Tone.Plain : Tone.Warn,
-                }).ToList();
-
-                var stale = tests.Where(t => t.LastRunTicks <= 0).ToList();
-
-                _list.Children.Add(Ui.Across(
-                    Ui.Pill(Ui.Count(tests.Count, "test")),
-                    Ui.Pill(Ui.Count(tests.Sum(t => t.ResultCount), "result")),
-                    stale.Count > 0 ? Ui.Pill(stale.Count + " never run", Tone.Warn) : null));
-
-                var tested = Ui.Table(rows,
-                    ("Test", 200), ("Folder", 120), ("Results", 90), ("Last run", 150));
-
-                _list.Children.Add(Ui.Picking(tested,
-                    new Ui.OnPicked("Copy {n}",
-                        (picked, say) => Ui.Copy(Ui.Lines(tested, picked), say, "test"))));
-
-                if (session.Clash.CanEdit && stale.Count > 0)
-                    _list.Children.Add(Ui.Runner("Run only the " + stale.Count + " that never have",
-                        _runs, primary: false, work: job => Run(stale, job)));
-            }
-
-            /// <summary>The grid, with a tick on every row that is going to be made.</summary>
-            private void Show(MatrixPlan plan)
-            {
-                _grid.Children.Add(Ui.Line(plan.Explain(), 1, true));
-
-                foreach (var test in plan.Tests)
-                {
-                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
-                    var proposed = test;
-
-                    row.Children.Add(Ui.Check(string.Empty, test.IsSelected, v => proposed.IsSelected = v));
-                    row.Children.Add(Ui.Line(test.Name, 1, true));
-                    row.Children.Add(Ui.Line(test.A + "  x  " + test.B, 0.7));
-
-                    if (test.Note != null) row.Children.Add(Ui.Pill(test.Note, Tone.Warn));
-
-                    foreach (var child in row.Children.OfType<FrameworkElement>())
-                        child.Margin = new Thickness(0, 0, 8, 0);
-
-                    _grid.Children.Add(row);
-                }
-
-                var session = _session;
-
-                if (session != null && !session.Clash.CanEdit)
-                {
-                    _grid.Children.Add(Ui.Problem(
-                        "This document will not take new clash tests — it is open read-only, or the host "
-                        + "is holding its clash data. The grid above is still the right answer; it just "
-                        + "cannot be created from here."));
-                    return;
-                }
-
-                _grid.Children.Add(Ui.Runner("Create the ticked ones", _results, Create));
-            }
-
-            private void Create(Job job)
-            {
-                var session = _session;
-                var plan = _plan;
-
-                if (session == null || plan == null) return;
-
-                var wanted = plan.Tests.Where(t => t.IsSelected).ToList();
-
-                if (wanted.Count == 0)
-                {
-                    _results.Children.Add(Ui.Empty("Nothing is ticked.",
-                        "Every row was either already in the document or has an empty side. Tick the ones "
-                        + "you want anyway, or change the axes."));
-                    return;
-                }
-
-                var folder = _folder.Text.Trim();
-                var made = new List<ClashTestInfo>();
-                var refused = new List<string>();
-
-                foreach (var test in wanted)
-                {
-                    if (!job.Step(made.Count, wanted.Count, "tests made")) break;
-
-                    var created = session.Clash.Create(test.ToSpec(folder.Length == 0 ? null : folder));
-
-                    if (created != null) made.Add(created.Value);
-                    else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
-                }
-
-                _results.Children.Add(Ui.Line("Made " + Ui.Count(made.Count, "test") + ".", 1, true));
-
-                // Named individually rather than counted. A matrix where four of thirty-six failed is
-                // a matrix with four holes in it, and a count does not say which four.
-                foreach (var problem in refused) _results.Children.Add(Ui.Problem(problem));
-
-                if (made.Count > 0)
-                {
-                    session.Record(ActivityKind.Regroup,
-                        "built a clash matrix: " + Ui.Count(made.Count, "test"));
-
-                    _results.Children.Add(Ui.Runner("Run them", _runs, inner => Run(made, inner)));
-                }
-
-                Redraw();
-            }
-
-            /// <summary>
-            /// Run tests one at a time, reporting as it goes.
-            ///
-            /// One at a time rather than the host's run-everything, because running everything also
-            /// re-runs the tests somebody else is halfway through triaging, and a matrix build is
-            /// not a reason to throw away their afternoon.
-            /// </summary>
-            private void Run(IReadOnlyList<ClashTestInfo> tests, Job job)
-            {
-                var session = _session;
-                if (session == null) return;
-
-                var ran = 0;
-                var refused = new List<string>();
-
-                foreach (var test in tests)
-                {
-                    job.Say("Running " + test.Name + "...");
-                    if (!job.Step(ran, tests.Count, "tests run")) break;
-
-                    if (session.Clash.Run(test.Id)) ran++;
-                    else refused.Add(test.Name + " — " + (session.Clash.LastProblem ?? "the host refused it"));
-                }
-
-                _runs.Children.Add(Ui.Line("Ran " + Ui.Count(ran, "test") + ".", 1, true));
-
-                foreach (var problem in refused) _runs.Children.Add(Ui.Problem(problem));
-
-                if (ran > 0)
-                {
-                    session.Record(ActivityKind.Regroup, "ran " + Ui.Count(ran, "test"));
-
-                    // The run's whole point is what it found, so what it found is one press
-                    // away. The manager re-reads on arrival, so the fresh run is what it shows.
-                    _runs.Children.Add(Ui.Actions(
-                        Ui.Primary("Open results", () =>
-                        {
-                            ClashManageViews.Forget();
-                            Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                        })));
-                }
-
-                Redraw();
-            }
-
-            /// <summary>
-            /// One axis, worked out from what is already known rather than from a form.
-            ///
-            /// The discipline of a model is something the profile already derived from its filename
-            /// on the day it was loaded, so a discipline matrix needs nothing configured — which is
-            /// the whole difference between a builder somebody uses and one they mean to set up
-            /// properly one day.
-            /// </summary>
-            private static IReadOnlyList<MatrixSide> Sides(Session session, string axis)
-            {
-                var models = session.Model.Models;
-
-                if (axis == ByModel)
-                    return models
-                        .Select(m => new MatrixSide(m.DisplayName, ClashSide.Model(m.Scope)))
-                        .ToList();
-
-                var byDiscipline = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var model in models)
-                {
-                    var discipline = session.Profile.DisciplineOf(model.Scope) ?? "Unassigned";
-
-                    if (!byDiscipline.TryGetValue(discipline, out var scopes))
-                        byDiscipline[discipline] = scopes = new List<string>();
-
-                    scopes.Add(model.Scope);
-                }
-
-                return byDiscipline
-                    .OrderBy(d => d.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(d => new MatrixSide(d.Key, ClashSide.Models(d.Value)))
-                    .ToList();
-            }
-
-            /// <summary>Read the tolerance box, falling back rather than refusing.</summary>
-            private static double Metres(string? text) =>
-                double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-                && value >= 0
-                    ? value
-                    : MatrixOptions.DefaultTolerance;
-        }
-
-        // ===================================================================================
         // Rules
         // ===================================================================================
 
@@ -1317,7 +956,7 @@ namespace CamelWorks.UI.Views
                 var suppress = Ui.Choice(new[] { "suppress", "flag" }, "suppress", null, 100);
                 var editor = new SpecEditor(PredicateSpec.Kinds);
 
-                var add = Ui.Button("Add", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
                 {
                     var spec = editor.Spec();
                     if (spec == null) return;
@@ -1337,7 +976,7 @@ namespace CamelWorks.UI.Views
             {
                 var editor = new SpecEditor(GroupingSpec.Kinds);
 
-                var add = Ui.Button("Add", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
                 {
                     var kind = editor.Kind();
                     if (kind == null) return;
@@ -1363,7 +1002,7 @@ namespace CamelWorks.UI.Views
                 var picker = Ui.Choice(parties, party, p => party = p);
                 var editor = new SpecEditor(PredicateSpec.Kinds);
 
-                var add = Ui.Button("Add", () =>
+                var add = Ui.Icon(Glyphs.Add, "Add this rule", () =>
                 {
                     var spec = editor.Spec();
                     if (spec == null) return;
@@ -1667,6 +1306,20 @@ namespace CamelWorks.UI.Views
                     "Each issue takes the next revision letter, and its cover says which one it "
                     + "supersedes."));
 
+                // The rail keeps what is chosen per report; where it lands, what the markers
+                // look like and the way over to a file are decided once for the job and live in
+                // the window behind the symbols beside the press.
+                var foot = new WrapPanel();
+
+                foot.Children.Add(write);
+                foot.Children.Add(new Border { Width = 14 });
+                foot.Children.Add(Ui.Icon(Glyphs.Folder, "Where it goes and what it is called",
+                                          () => Configure("where")));
+                foot.Children.Add(Ui.Icon(Glyphs.Sphere, "Markers in the model",
+                                          () => Configure("markers")));
+                foot.Children.Add(Ui.Icon(Glyphs.Onward, "Send it as a file somebody works in",
+                                          () => Configure("file")));
+
                 return Bench.Surface(
                     Ui.Stack(
                         Bench.Group("",
@@ -1674,11 +1327,6 @@ namespace CamelWorks.UI.Views
                             what,
                             Ui.Field("For", audience),
                             Ui.Field("Format", format)),
-                        Bench.Group("Where it goes",
-                            Ui.PathField("Write to", _path, PathKind.Folder,
-                                         hint: "blank writes it beside the document"),
-                            Ui.Field("Name it", _template,
-                                     "carries " + string.Join(", ", Deliverable.Tokens))),
                         Bench.Group("What else is in it",
                             changed,
                             plan,
@@ -1686,13 +1334,39 @@ namespace CamelWorks.UI.Views
                             pictures,
                             Ui.Small("A picture moves your view while it runs and puts it back "
                                      + "afterwards. On a board of two hundred groups that is two "
-                                     + "hundred renders, so it is off until you ask for it.")),
-                        Markers(),
-                        Exchange()),
-                    write,
+                                     + "hundred renders, so it is off until you ask for it."))),
+                    foot,
                     Ui.Stack(
                         _results,
                         _markers));
+            }
+
+            /// <summary>What is set once for the job, in a window of its own.</summary>
+            /// <param name="section">Which section to open on.</param>
+            private void Configure(string section)
+            {
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("Where it goes", () => Bench.Group("Where it goes",
+                        Ui.PathField("Write to", _path, PathKind.Folder,
+                                     hint: "blank writes it beside the document"),
+                        Ui.Field("Name it", _template,
+                                 "carries " + string.Join(", ", Deliverable.Tokens)))),
+                    new Ui.Page("Markers", Markers),
+                    new Ui.Page("A file somebody works in", Exchange),
+                };
+
+                var order = new[] { "where", "markers", "file" };
+                var at = Math.Max(0, Array.IndexOf(order, section));
+
+                if (at > 0)
+                {
+                    var wanted = pages[at];
+                    pages.RemoveAt(at);
+                    pages.Insert(0, wanted);
+                }
+
+                Ui.Configure("Report", null, pages.ToArray());
             }
 
             /// <summary>
@@ -1833,7 +1507,7 @@ namespace CamelWorks.UI.Views
 
                 _markers.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " to " + obj));
 
-                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them into this model", () =>
+                _markers.Children.Add(Ui.Actions(Ui.Primary("Bring them in", () =>
                 {
                     try
                     {
@@ -1864,7 +1538,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Exchange()
             {
-                var open = Ui.Quiet("Send the board as a clash file...", () =>
+                var open = Ui.Quiet("Clash file...", () =>
                 {
                     var problem = ToolViews.Open("clashxml");
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
@@ -3047,24 +2721,36 @@ namespace CamelWorks.UI.Views
             // Merging several returned packs is its own tool - Merge Markups - so the send and
             // the read-back are the two acts here: the send at the foot, the read on the stage's
             // own leg via the setup group it belongs to.
-            return Bench.Surface(
-                Ui.Stack(
-                    Bench.Group("",
-                        Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
-                                                    pick => asSheet = pick == "Spreadsheet")),
-                        Ui.Field("For", forWhom, "one party's rows, on the spreadsheet")),
+            // The two legs are both acts, so both are on the stage: the send at the foot with
+            // the choices that change per send beside it, and the read-back as its own band under
+            // the results. How the file is written is decided once for the job, so it is a window.
+            var back = Ui.Stack(
+                Ui.Rule(),
+                Ui.Eyebrow("When it comes back"),
+                Ui.PathField("File", inFile, PathKind.Open,
+                             "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*",
+                             hint: "shows what it would do first"),
+                read);
+
+            var foot = new WrapPanel();
+
+            foot.Children.Add(send);
+            foot.Children.Add(new Border { Width = 14 });
+            foot.Children.Add(Ui.Icon(Glyphs.Tune, "How it is written", () =>
+                Ui.Configure("BCF", null, new Ui.Page("How it is written", () =>
                     Bench.Group("How it is written",
                         Ui.Field("Version", picker),
                         Ui.Field("Snapshots", snapshotBox),
                         Ui.PathField("Write to", outFile, PathKind.Save,
-                                     "BCF|*.bcf|Excel|*.xlsx|All files|*.*")),
-                    Bench.Group("Read the answers back",
-                        Ui.PathField("File", inFile, PathKind.Open,
-                                     "BCF or the sheet you sent|*.bcf;*.xlsx|All files|*.*",
-                                     hint: "shows what it would do first"),
-                        read)),
-                send,
-                Ui.Stack(results));
+                                     "BCF|*.bcf|Excel|*.xlsx|All files|*.*"))))));
+
+            return Bench.Surface(
+                Bench.Group("",
+                    Ui.Field("As", Ui.Segmented(new[] { "BCF", "Spreadsheet" }, "BCF",
+                                                pick => asSheet = pick == "Spreadsheet")),
+                    Ui.Field("For", forWhom, "one party's rows, on the spreadsheet")),
+                foot,
+                Ui.Stack(results, back));
         }
 
         private static void WriteSheet(Panel results, TextBox path, string party, Job job)

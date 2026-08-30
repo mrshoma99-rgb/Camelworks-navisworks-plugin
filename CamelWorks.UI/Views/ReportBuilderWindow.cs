@@ -314,9 +314,16 @@ namespace CamelWorks.UI.Views
                 _offered = table;
 
                 _catalogue.Children.Add(table);
-                _catalogue.Children.Add(Ui.Actions(
-                    Ui.Button("Add the chosen ones", AddChosen),
-                    Ui.Quiet("Propose a report from all of it", Suggest)));
+
+                // The verbs on the rows, with the count in the tooltip: the button used to say
+                // "the chosen ones" without saying how many, next to a table that could not tell
+                // you either.
+                _catalogue.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Add {n} as columns", (picked, say) => AddChosen(), primary: true),
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "property"))));
+
+                _catalogue.Children.Add(Ui.Actions(Ui.Quiet("Propose one", Suggest)));
             }
 
             private void DrawColumns()
@@ -377,7 +384,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _columns.Children.Add(Ui.Actions(
-                    Ui.Quiet("Add the selection tree", () => AddBuilt(ReportField.Path)),
+                    Ui.Quiet("Add the tree", () => AddBuilt(ReportField.Path)),
                     Ui.Quiet("Add a tree level", () => AddBuilt(ReportField.PathLevel)),
                     Ui.Quiet("Add the model name", () => AddBuilt(ReportField.Model))));
             }

@@ -217,6 +217,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _chainList = Ui.Stack();
             private readonly StackPanel _fill = Ui.Stack();
             private readonly StackPanel _filterScope = Ui.Stack();
+            private readonly StackPanel _strip = Ui.Stack();
 
             private readonly TextBox _minimum;
             private readonly TextBox _filter;
@@ -264,7 +265,7 @@ namespace CamelWorks.UI.Views
             {
                 var run = Ui.Runner("Check", _log, Run);
 
-                var stage = Ui.Stack(_intro, _log, _groups, _results);
+                var stage = Ui.Stack(_strip, _intro, _log, _groups, _results);
 
                 if (_found == null)
                 {
@@ -280,17 +281,102 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 }
 
-                return Bench.Surface(Setup(), run, stage);
+                RedrawStrip();
+
+                return Bench.Surface(null, Foot(run), stage);
+            }
+
+            /// <summary>
+            /// The filters somebody changes every few minutes, above the findings.
+            ///
+            /// The same law as the clash bench: what is touched constantly stays on the surface,
+            /// and everything decided once for the job is a window away. A column of every option
+            /// beside the table it serves is a column nobody reads and a table with half a window.
+            /// </summary>
+            private void RedrawStrip()
+            {
+                _strip.Children.Clear();
+
+                var row = new WrapPanel();
+
+                row.Children.Add(Ui.Icon(Glyphs.Find, "Search the findings", () => _filter.Focus()));
+                row.Children.Add(_filter);
+                row.Children.Add(new Border { Width = 8 });
+                row.Children.Add(_filterScope);
+                row.Children.Add(new Border { Width = 14 });
+
+                foreach (var status in Statuses)
+                {
+                    var here = status;
+
+                    row.Children.Add(new Border { Width = 10 });
+                    row.Children.Add(Ui.Check(here, _show.Contains(here), on =>
+                    {
+                        if (on) _show.Add(here); else _show.Remove(here);
+                        RedrawGroups();
+                    }));
+                }
+
+                RedrawFilterScope();
+
+                _strip.Children.Add(row);
+            }
+
+            /// <summary>The action row: check, then the windows the rest of it lives in.</summary>
+            private UIElement Foot(UIElement run)
+            {
+                var row = new WrapPanel();
+
+                row.Children.Add(run);
+                row.Children.Add(new Border { Width = 14 });
+
+                row.Children.Add(Ui.Icon(Glyphs.Ruler, "What to measure", () => Configure("measure")));
+                row.Children.Add(Ui.Icon(Glyphs.Filter, "Filters", () => Configure("filters")));
+                row.Children.Add(Ui.Icon(Glyphs.Columns, "Columns and grouping", () => Configure("columns")));
+                row.Children.Add(Ui.Icon(Glyphs.Person, "Status and assignment", () => Configure("verbs")));
+                row.Children.Add(Ui.Icon(Glyphs.Sphere, "Markers and the view", () => Configure("model")));
+                row.Children.Add(Ui.Icon(Glyphs.Onward, "Excel and the clash file", () => Configure("out")));
+
+                return row;
             }
 
             // -------------------------------------------------------------------------------
             // The options panel
             // -------------------------------------------------------------------------------
 
-            private UIElement Setup()
+            /// <summary>Everything that is set up once, in a window of its own.</summary>
+            /// <param name="section">Which section to open on.</param>
+            private void Configure(string section)
             {
-                var panel = Ui.Stack();
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("What to measure", MeasurePage),
+                    new Ui.Page("Filters", FiltersPage),
+                    new Ui.Page("Columns and grouping", ColumnsPage),
+                    new Ui.Page("Status and assignment", VerbsPage),
+                    new Ui.Page("In the model", ModelPage),
+                    new Ui.Page("Out of the tab", OutPage),
+                };
 
+                var order = new[] { "measure", "filters", "columns", "verbs", "model", "out" };
+                var at = Math.Max(0, Array.IndexOf(order, section));
+
+                if (at > 0)
+                {
+                    var wanted = pages[at];
+                    pages.RemoveAt(at);
+                    pages.Insert(0, wanted);
+                }
+
+                Ui.Configure("Clearance check", () =>
+                {
+                    RedrawStrip();
+                    Redraw();
+                }, pages.ToArray());
+            }
+
+            private UIElement MeasurePage()
+            {
                 var sets = Sets();
 
                 var from = new List<string> { Guessed, Selected, Loaded };
@@ -302,7 +388,7 @@ namespace CamelWorks.UI.Views
                 if (!from.Contains(_surfaces, StringComparer.OrdinalIgnoreCase)) from.Add(_surfaces);
                 if (!to.Contains(_targets, StringComparer.OrdinalIgnoreCase)) to.Add(_targets);
 
-                panel.Children.Add(Bench.Group("What to measure",
+                return Bench.Group("What to measure",
                     Ui.Field("Clear height", _minimum, "the minimum, in " + Units.LengthUnit),
                     Ui.Field("Measure up from", Ui.Choice(from, _surfaces, pick => _surfaces = pick, 210),
                              "the walking surface"),
@@ -315,83 +401,73 @@ namespace CamelWorks.UI.Views
                     sets.Count == 0
                         ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
                                   + "and it appears in both lists.")
-                        : null));
+                        : null);
+            }
 
-                var showing = Statuses.Select(status => (UIElement)Ui.Check(status,
-                    _show.Contains(status), on =>
-                    {
-                        if (on) _show.Add(status); else _show.Remove(status);
-                        RedrawGroups();
-                    })).ToList();
+            private UIElement FiltersPage() => Bench.Group("Narrow the findings",
+                Ui.Check("Only ones with comments", _onlyCommented, on =>
+                {
+                    _onlyCommented = on;
+                    RedrawGroups();
+                }),
+                Ui.Small("The status ticks and the search are on the strip above the findings, "
+                         + "not here: they are what somebody changes every few minutes."));
 
-                RedrawFilterScope();
-
-                panel.Children.Add(Bench.Group("Show findings that are",
-                    Ui.Stack(showing.ToArray()),
-                    Ui.Check("Only ones with comments", _onlyCommented, on =>
-                    {
-                        _onlyCommented = on;
-                        RedrawGroups();
-                    }),
-                    Ui.Field("Where", _filterScope),
-                    Ui.Field("contains", _filter,
-                             "matches as you type - any column, or just the one picked")));
-
+            private UIElement ColumnsPage()
+            {
                 RedrawColumnList();
                 RedrawChainList();
 
-                panel.Children.Add(Bench.Group("Property columns",
-                    Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
-                    Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
-                    Ui.Field("Read from", Ui.Choice(new[] { BothSides, FromSurface, FromOver },
-                                                    _newSide, pick => _newSide = pick, 150)),
-                    Ui.Actions(Ui.Quiet("Add", AddColumn)),
-                    _columnList,
-                    Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
-                    _fill,
-                    Ui.Small("Each column reads that property off the elements themselves - the "
-                             + "level, the system, the room - and the grouping below chains "
-                             + "over it.")));
-
-                panel.Children.Add(Bench.Group("Group by, in order",
-                    _chainList,
-                    Ui.Small("Chained: the first entry makes the bands, the next splits each "
-                             + "band, and so on. Pick group rows to work just those findings.")));
-
-                panel.Children.Add(Bench.Group("On the picked findings",
-                    Ui.Field("Mark as", Ui.Choice(Statuses, _mark, pick =>
-                    {
-                        _mark = pick;
-                        RedrawResults();
-                    }, 150)),
-                    Ui.Field("Assign to", _assign, "the project's parties, or type a name"),
-                    Ui.Field("Comment", _comment),
-                    Ui.Field("Group into", _group, "blank moves them out of any group")));
-
-                panel.Children.Add(Bench.Group("In the model",
-                    Ui.Field("Marker size", Ui.Text(
-                        _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
-                        {
-                            if (double.TryParse(text, NumberStyles.Float,
-                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
-                                _markerAcross = mm;
-                        }, 90), "millimetres across"),
-                    Ui.Actions(Ui.Quiet("Show all", () =>
-                    {
-                        _session.View.ShowAll();
-                        Said(Ui.Done("Everything is visible again."));
-                    }))));
-
-                panel.Children.Add(Bench.Group("Take it further",
-                    Ui.Actions(
-                        Ui.Quiet("Excel...", Sheet),
-                        Ui.Quiet("Clash file...", SaveFile)),
-                    Ui.Small("The clash file carries every finding with its status, assignment, "
-                             + "comments and group - open it on the Manage tab's file source and "
-                             + "it works the same review round as a clash export.")));
-
-                return panel;
+                return Ui.Stack(
+                    Bench.Group("Property columns",
+                        Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
+                        Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
+                        Ui.Field("Read from", Ui.Choice(new[] { BothSides, FromSurface, FromOver },
+                                                        _newSide, pick => _newSide = pick, 150)),
+                        Ui.Actions(Ui.Icon(Glyphs.Add, "Add the column", AddColumn)),
+                        _columnList,
+                        Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
+                        _fill,
+                        Ui.Small("Each column reads that property off the elements themselves - the "
+                                 + "level, the system, the room - and the grouping below chains "
+                                 + "over it.")),
+                    Bench.Group("Group by, in order",
+                        _chainList,
+                        Ui.Small("Chained: the first entry makes the bands, the next splits each "
+                                 + "band, and so on. Pick group rows to work just those findings.")));
             }
+
+            private UIElement VerbsPage() => Bench.Group("What the symbols under the findings write",
+                Ui.Field("Mark as", Ui.Choice(Statuses, _mark, pick =>
+                {
+                    _mark = pick;
+                    RedrawResults();
+                }, 150)),
+                Ui.Field("Assign to", _assign, "the project's parties, or type a name"),
+                Ui.Field("Comment", _comment),
+                Ui.Field("Group into", _group, "blank moves them out of any group"));
+
+            private UIElement ModelPage() => Bench.Group("Markers and the view",
+                Ui.Field("Marker size", Ui.Text(
+                    _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
+                    {
+                        if (double.TryParse(text, NumberStyles.Float,
+                                CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                            _markerAcross = mm;
+                    }, 90), "millimetres across"),
+                Ui.Actions(Ui.Quiet("Show all", () =>
+                {
+                    _session.View.ShowAll();
+                    Said(Ui.Done("Everything is visible again."));
+                })));
+
+            private UIElement OutPage() => Bench.Group("Out of the tab",
+                Ui.Actions(
+                    Ui.Quiet("Excel...", Sheet),
+                    Ui.Quiet("Clash file...", SaveFile)),
+                Ui.Small("The clash file carries every finding with its status, assignment, "
+                         + "comments and group - open it on the Manage tab's file source and "
+                         + "it works the same review round as a clash export."));
 
             /// <summary>Every saved set this document holds, named once.</summary>
             private List<string> Sets()

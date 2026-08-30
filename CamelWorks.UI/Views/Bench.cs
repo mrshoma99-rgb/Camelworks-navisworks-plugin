@@ -114,6 +114,168 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// The other anatomy: a strip, two tables side by side, and one action row.
+        ///
+        /// <b>Why a second shape exists at all.</b> The setup-column surface is right for a tool
+        /// that is configured and then run once. It is wrong for a bench somebody works in for an
+        /// afternoon: the options column becomes a wall of every field the tool has, and the two
+        /// tables it exists to serve get half the window between them. Here the tables have the
+        /// window, the filters that are touched every minute sit in a strip above them, and
+        /// everything set up once lives behind a button on the action row.
+        ///
+        /// The panes are draggable: a coordinator reading long test names wants a wide left, and
+        /// one working results wants it narrow.
+        /// </summary>
+        /// <param name="strip">The always-on filters, above both panes.</param>
+        /// <param name="left">The master pane, usually built with <see cref="Pane"/>.</param>
+        /// <param name="right">The detail pane.</param>
+        /// <param name="foot">The action row, laid out left to right rather than right-aligned.</param>
+        /// <param name="leftWidth">How wide the master pane starts.</param>
+        public static UIElement Split(UIElement? strip, UIElement left, UIElement right,
+                                      UIElement? foot, double leftWidth = 380)
+        {
+            if (left == null) throw new ArgumentNullException(nameof(left));
+            if (right == null) throw new ArgumentNullException(nameof(right));
+
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            if (strip != null)
+            {
+                var band = new Border
+                {
+                    Padding = new Thickness(14, 8, 14, 8),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = strip,
+                };
+
+                band.Tint(Border.BackgroundProperty, "Card");
+                band.Tint(Border.BorderBrushProperty, "Bd");
+                root.Children.Add(band);
+            }
+
+            var body = new Grid();
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(leftWidth), MinWidth = 220 });
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 320 });
+
+            body.Children.Add(left);
+
+            var grip = new GridSplitter
+            {
+                Width = 4,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+            };
+
+            grip.Tint(GridSplitter.BackgroundProperty, "Bd");
+            Grid.SetColumn(grip, 1);
+            body.Children.Add(grip);
+
+            Grid.SetColumn(right, 2);
+            body.Children.Add(right);
+
+            Grid.SetRow(body, 1);
+            root.Children.Add(body);
+
+            if (foot != null)
+            {
+                var footer = new Border
+                {
+                    Padding = new Thickness(14, 9, 14, 10),
+                    BorderThickness = new Thickness(0, 1, 0, 0),
+                    Child = foot,
+                };
+
+                footer.Tint(Border.BackgroundProperty, "Pane");
+                footer.Tint(Border.BorderBrushProperty, "Bd");
+
+                Grid.SetRow(footer, 2);
+                root.Children.Add(footer);
+            }
+
+            var ground = new Border { Child = root };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            return ground;
+        }
+
+        /// <summary>
+        /// One pane of a <see cref="Split"/>: a label, the table, and the table's own verbs.
+        ///
+        /// The verbs belong under the rows they act on. A single bar of verbs serving two tables
+        /// is a bar where half the buttons are wrong for whatever was last clicked.
+        /// </summary>
+        /// <param name="label">Small-caps pane label.</param>
+        /// <param name="say">A live line beside the label — what is picked, how many are shown.</param>
+        /// <param name="body">The table, scrolled by the pane.</param>
+        /// <param name="tools">The icon row under it.</param>
+        public static UIElement Pane(string label, UIElement? say, UIElement body, UIElement? tools)
+        {
+            if (body == null) throw new ArgumentNullException(nameof(body));
+
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var head = new StackPanel { Orientation = Orientation.Horizontal };
+            head.Children.Add(Ui.Eyebrow(label));
+
+            if (say != null)
+            {
+                head.Children.Add(new Border { Width = 10 });
+                head.Children.Add(say);
+            }
+
+            var header = new Border
+            {
+                Padding = new Thickness(12, 7, 12, 5),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = head,
+            };
+
+            header.Tint(Border.BackgroundProperty, "Card2");
+            header.Tint(Border.BorderBrushProperty, "Bd");
+            grid.Children.Add(header);
+
+            var scroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = body,
+                Padding = new Thickness(10, 8, 10, 8),
+            };
+
+            Grid.SetRow(scroll, 1);
+            grid.Children.Add(scroll);
+
+            if (tools != null)
+            {
+                var bar = new Border
+                {
+                    Padding = new Thickness(8, 4, 8, 4),
+                    BorderThickness = new Thickness(0, 1, 0, 0),
+                    Child = tools,
+                };
+
+                bar.Tint(Border.BackgroundProperty, "Card2");
+                bar.Tint(Border.BorderBrushProperty, "Bd");
+
+                Grid.SetRow(bar, 2);
+                grid.Children.Add(bar);
+            }
+
+            var pane = new Border { Child = grid };
+            pane.Tint(Border.BackgroundProperty, "Card");
+
+            return pane;
+        }
+
+        /// <summary>
         /// A group of options under a small-caps label.
         ///
         /// The label carries the meaning a card's chrome used to pretend to; the fields are always

@@ -491,25 +491,20 @@ namespace CamelWorks.UI.Views
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-                // The specifications lead and the main action is under them. What the document is
-                // called and who wrote it is set once and read never, and it used to be the first
-                // thing on the screen.
+                // The specifications lead, and nothing else competes with them. What the document
+                // is called and who wrote it is set once and read never, so it is behind a symbol
+                // rather than laid out under the list somebody is actually working in.
                 var left = Ui.Scroll(Ui.Stack(
                     Ui.Eyebrow("Specifications"),
                     _list,
                     Ui.Rule(),
                     Ui.Actions(
-                        Ui.Primary("Save as an .ids file...", Save),
-                        Ui.Quiet("Keep the draft here", Keep)),
+                        Ui.Primary("Save IDS...", Save),
+                        Ui.Icon(Glyphs.Save, "Keep the draft here", Keep),
+                        Ui.Icon(Glyphs.Tune, "What this document is called", Details)),
                     Ui.Small("The draft is kept as IDS itself, so what the project holds is already "
                              + "a file another tool can read."),
-                    _output,
-                    Ui.Rule(),
-                    Ui.Eyebrow("This document"),
-                    Ui.Field("Called", _title),
-                    Ui.Pair(Ui.Field("Version", _version),
-                            Ui.Field("Author", _author, "an email address, or left out")),
-                    Ui.Field("About", _about)));
+                    _output));
 
                 Grid.SetColumn(left, 0);
                 columns.Children.Add(left);
@@ -525,6 +520,17 @@ namespace CamelWorks.UI.Views
 
                 return columns;
             }
+
+            /// <summary>What the document is called, in a window of its own.</summary>
+            private void Details() =>
+                Ui.Configure("This document", null,
+                    new Ui.Page("What it is called", () => Ui.Stack(
+                        Ui.Field("Called", _title),
+                        Ui.Pair(Ui.Field("Version", _version),
+                                Ui.Field("Author", _author, "an email address, or left out")),
+                        Ui.Field("About", _about),
+                        Ui.Small("These go into the IDS file's header, where the tool that reads it "
+                                 + "says who asked for what."))));
 
             private void DrawList()
             {
@@ -557,7 +563,7 @@ namespace CamelWorks.UI.Views
                     _list.Children.Add(row);
                 }
 
-                _list.Children.Add(Ui.Actions(Ui.Quiet("Add a specification", () =>
+                _list.Children.Add(Ui.Actions(Ui.Icon(Glyphs.Add, "Add a specification", () =>
                 {
                     var fresh = new Spec();
                     fresh.Applies.Add(new Row { Kind = Entity, Test = Present });
@@ -923,7 +929,7 @@ namespace CamelWorks.UI.Views
 
                 // The file's whole point is being run: the check lives on the Health tab, where
                 // "IDS file" is a box waiting for the path that was just written.
-                _output.Children.Add(Ui.Actions(Ui.Quiet("Check the federation against it",
+                _output.Children.Add(Ui.Actions(Ui.Quiet("Check it",
                     () => Ui.Told(AppWindow.Show("audit", "health")))));
 
                 foreach (var warning in written.Warnings.Take(6)) _output.Children.Add(Ui.Note(warning));

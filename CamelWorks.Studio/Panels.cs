@@ -27,7 +27,7 @@ namespace CamelWorks.Studio
         /// <summary>Every app page, in ribbon order.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            Page("app-clash-tests", "Clash Manager · Tests", 780, Coordination),
+            Page("app-clash-manage", "Clash Manager · Manage", 980, Coordination),
             Page("app-issue-register", "Issue Manager · Issues", 780, Issues),
             Page("app-audit", "Model Audit · Health", 780, Federation),
             Page("app-data", "Data Manager · Properties", 780, Data),
@@ -167,7 +167,7 @@ namespace CamelWorks.Studio
                     Ui.PathField("An .ids file", Ui.Text(string.Empty, "none — built-in rules only",
                                                          null, 200), PathKind.Open),
                     Ui.Runner("Check against an IDS", Ui.Stack(), _ => { }, primary: false),
-                    Ui.Quiet("Write an IDS of our own...", () => { })));
+                    Ui.Quiet("Write IDS...", () => { })));
 
             var stage = Ui.Stack(
                 Bench.Verdict("Watch — two models disagree about where the site is", Tone.Warn),
@@ -186,39 +186,82 @@ namespace CamelWorks.Studio
         }
 
         // -----------------------------------------------------------------------------------
-        // Coordination — Clash Tests on the bench
+        // Coordination — the clash results bench
         // -----------------------------------------------------------------------------------
 
         private static UIElement Coordination()
         {
-            var setup = Ui.Stack(
-                Bench.Group("Build a matrix",
-                    Ui.Field("Rows", Ui.Choice(new[] { "Discipline", "Model" }, "Discipline", null)),
-                    Ui.Field("Columns", Ui.Choice(new[] { "Discipline", "Model" }, "Discipline", null)),
-                    Ui.Check("Include each side against itself", false, null),
-                    Ui.Runner("Show me the grid", Ui.Stack(), _ => { }, primary: false)),
-                Bench.Group("How the tests are made",
-                    Ui.Field("Name pattern", Ui.Text("{a} vs {b}", null, 180)),
-                    Ui.Field("Tolerance (m)", Ui.Text("0.010", null, 80)),
-                    Ui.Field("Put them in folder", Ui.Text("Week 33", null, 160),
-                             "Empty keeps them beside the existing tests.")),
-                Bench.Group("Already drawn by the client?",
-                    Ui.Small("A matrix that arrives as a spreadsheet opens in its own reader."),
-                    Ui.Quiet("Read their spreadsheet...", () => { })));
+            var strip = new WrapPanel();
 
-            var stage = Ui.Stack(
-                Ui.Across(
-                    Ui.Pill("4 tests"),
-                    Ui.Pill("1,284 results"),
-                    Ui.Pill("1 never run", Tone.Warn)),
-                Ui.Table(TestRows(), ("Test", 220), ("Folder", 110), ("Results", 90), ("Last run", 150)),
-                Ui.Runner("Run only the 1 that never have", Ui.Stack(), _ => { }, primary: false),
-                Ui.Rule(),
-                Ui.Line("36 pairings, 30 to make — 6 are already in the document and left alone.", 1, true),
-                Ui.Runner("Create the ticked ones", Ui.Stack(), _ => { }));
+            strip.Children.Add(Ui.Icon(Glyphs.Find, "Search both tables", () => { }));
+            strip.Children.Add(Ui.Text(string.Empty, "test, result, item, assignee or comment", null, 260));
+            strip.Children.Add(new Border { Width = 8 });
+            strip.Children.Add(Ui.Segmented(new[] { "Both", "Tests", "Results" }, "Both", null));
+            strip.Children.Add(new Border { Width = 16 });
 
-            return Deck("clash", "tests",
-                Bench.Surface(setup, Ui.Runner("Run them", Ui.Stack(), _ => { }), stage));
+            foreach (var status in new[] { "New", "Active", "Reviewed", "Approved", "Resolved" })
+            {
+                strip.Children.Add(new Border { Width = 10 });
+                strip.Children.Add(Ui.Check(status, status != "Resolved", null));
+            }
+
+            var testTools = new WrapPanel();
+            testTools.Children.Add(Ui.Small("1 picked"));
+
+            foreach (var (glyph, tip) in new[]
+                     {
+                         (Glyphs.Play, "Run"), (Glyphs.Pencil, "Rename"),
+                         (Glyphs.Number, "Renumber the results"), (Glyphs.MoveIn, "Move to a folder"),
+                         (Glyphs.Compact, "Compact"), (Glyphs.Bin, "Delete"), (Glyphs.Copy, "Copy"),
+                     })
+                testTools.Children.Add(Ui.Icon(glyph, tip, () => { }));
+
+            var resultTools = new WrapPanel();
+            resultTools.Children.Add(Ui.Small("3 picked"));
+
+            foreach (var (glyph, tip) in new[]
+                     {
+                         (Glyphs.Focus, "Focus"), (Glyphs.Eye, "Isolate"),
+                         (Glyphs.EyeOff, "Show everything again"), (Glyphs.Tick, "Set the status"),
+                         (Glyphs.Person, "Assign"), (Glyphs.Comment, "Comment"),
+                         (Glyphs.Group, "Group"), (Glyphs.Sphere, "Marker sphere"),
+                         (Glyphs.Camera, "Snapshot"), (Glyphs.Issue, "Create an issue"),
+                         (Glyphs.Copy, "Copy"),
+                     })
+                resultTools.Children.Add(Ui.Icon(glyph, tip, () => { }));
+
+            var left = Bench.Pane("Tests", Ui.Small("160 tests, 18,844 results"),
+                Ui.Table(TestRows(), ("Test", 200), ("Folder", 80), ("Results", 65),
+                         ("New · active · closed", 0)),
+                testTools);
+
+            var right = Bench.Pane("Results", Ui.Small("of 1 picked test — 218 shown"),
+                Ui.Table(ResultRows(), ("Result", 110), ("Status", 70), ("Worst", 65),
+                         ("Assigned", 85), ("Item 1", 110), ("Item 2", 0)),
+                resultTools);
+
+            var foot = new WrapPanel();
+            foot.Children.Add(Ui.Runner("Read the results", Ui.Stack(), _ => { }));
+            foot.Children.Add(new Border { Width = 14 });
+
+            foreach (var (glyph, tip) in new[]
+                     {
+                         (Glyphs.Read, "Source"), (Glyphs.Filter, "Filters"),
+                         (Glyphs.Columns, "Columns and grouping"),
+                         (Glyphs.Person, "Status and assignment"), (Glyphs.Sphere, "Markers"),
+                         (Glyphs.Round, "The review round"), (Glyphs.More, "Beyond the engine"),
+                     })
+                foot.Children.Add(Ui.Icon(glyph, tip, () => { }));
+
+            return Deck("clash", "manage", Bench.Split(strip, left, right, foot));
+        }
+
+        private static IEnumerable<TableRow> ResultRows()
+        {
+            yield return new TableRow(null, "Clash119", "Active", "315 mm", "Mechanical", "Basic Wall", "BOX 300x200x8") { Tone = Tone.Warn };
+            yield return new TableRow(null, "Clash120", "New", "300 mm", "—", "Basic Wall", "BOX 200x200x8") { Tone = Tone.Bad };
+            yield return new TableRow(null, "Clash121", "Reviewed", "250 mm", "Structures", "HANDRAIL", "UB 305x165");
+            yield return new TableRow(null, "Clash122", "Approved", "222 mm", "Structures", "Concrete-Rectangular-Beam", "Duct 600x400") { Tone = Tone.Good };
         }
 
         private static IEnumerable<TableRow> TestRows()
@@ -306,11 +349,11 @@ namespace CamelWorks.Studio
                     Ui.Line("STR-Riverside-Block-B-r4.nwc", 0.6),
                     Ui.Field("Call it", Ui.Text("Weekly coordination", null, 200),
                              "The Monday morning job, from what is open."),
-                    Ui.Across(Ui.Button("Make a job from what is open", () => { }))));
+                    Ui.Across(Ui.Button("Job from this...", () => { }))));
 
             var stage = Ui.Stack(
                 Ui.Table(JobRows(), ("Job", 170), ("Size", 90), ("What it does", 0)),
-                Ui.Danger("Delete the selected job", () => { }),
+                Ui.Danger("Delete", () => { }),
                 Ui.Small("A job runs on the model that is open now, using whatever is selected now."),
                 Ui.Rule(),
                 Ui.Eyebrow("What has run"),

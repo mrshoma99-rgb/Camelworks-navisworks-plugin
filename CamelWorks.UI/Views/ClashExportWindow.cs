@@ -119,30 +119,34 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Build()
             {
-                var writeSetup = Ui.Stack(
-                    Bench.Group(string.Empty,
-                        Ui.Segmented(new[] { WriteOne, ReadOne }, WriteOne, Leg)),
-                    Bench.Group("The tests", _match, _tests),
-                    Bench.Group("What goes in", _filters),
-                    Bench.Group("How it is written", Shape()),
-                    Bench.Group("This profile", Profiles()),
-                    Bench.Group("The file",
-                        Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
-                                     "The format Navisworks and every reviewing tool reads.")));
+                // The tests are the work, so they are the surface; what is decided once for the
+                // job - which statuses go in, how the file is written, which profile, where it
+                // lands - is a window away, on the symbols beside the press.
+                var writeStrip = Ui.Stack(
+                    Ui.Segmented(new[] { WriteOne, ReadOne }, WriteOne, Leg),
+                    Ui.Field("Find", _match, "matches a test's name"));
 
                 var writeStage = Ui.Stack(
+                    writeStrip,
+                    Ui.Eyebrow("The tests"),
+                    _tests,
                     _kept,
                     Ui.Commit("Show me what would go in", "Write", "result", Rehearse, Publish),
                     _output);
 
-                _write = Bench.Surface(writeSetup, null, writeStage);
+                var writeFoot = new WrapPanel();
 
-                var readSetup = Ui.Stack(
-                    Bench.Group(string.Empty,
-                        Ui.Segmented(new[] { WriteOne, ReadOne }, ReadOne, Leg)),
-                    Bench.Group("The file",
-                        Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml",
-                                     "A reviewer's file, returned.")));
+                writeFoot.Children.Add(Ui.Icon(Glyphs.Filter, "What goes in", () => Configure("in")));
+                writeFoot.Children.Add(Ui.Icon(Glyphs.Tune, "How it is written", () => Configure("how")));
+                writeFoot.Children.Add(Ui.Icon(Glyphs.Save, "This profile", () => Configure("profile")));
+                writeFoot.Children.Add(Ui.Icon(Glyphs.Onward, "Where the file goes", () => Configure("file")));
+
+                _write = Bench.Surface(null, writeFoot, writeStage);
+
+                var readStrip = Ui.Stack(
+                    Ui.Segmented(new[] { WriteOne, ReadOne }, ReadOne, Leg),
+                    Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml",
+                                 "A reviewer's file, returned."));
 
                 // The Runner clears its own panel on the way in, so the idle sentence seeded here
                 // lasts exactly until the first read lands where it stood.
@@ -151,15 +155,42 @@ namespace CamelWorks.UI.Views
                     "Results carrying a CamelWorks key land on the elements they left from; "
                     + "nothing on the board changes."));
 
-                _read = Bench.Surface(readSetup,
+                _read = Bench.Surface(null,
                                       Ui.Runner("Read it", _back, Receive),
-                                      Ui.Stack(_back));
+                                      Ui.Stack(readStrip, _back));
 
                 DrawFilters();
                 DrawTests();
 
                 _half.Content = _write;
                 return _half;
+            }
+
+            /// <summary>What is decided once for the job, in a window of its own.</summary>
+            /// <param name="section">Which section to open on.</param>
+            private void Configure(string section)
+            {
+                var pages = new List<Ui.Page>
+                {
+                    new Ui.Page("What goes in", () => Bench.Group("What goes in", _filters)),
+                    new Ui.Page("How it is written", () => Bench.Group("How it is written", Shape())),
+                    new Ui.Page("This profile", () => Bench.Group("This profile", Profiles())),
+                    new Ui.Page("The file", () => Bench.Group("The file",
+                        Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
+                                     "The format Navisworks and every reviewing tool reads."))),
+                };
+
+                var order = new[] { "in", "how", "profile", "file" };
+                var at = Math.Max(0, Array.IndexOf(order, section));
+
+                if (at > 0)
+                {
+                    var wanted = pages[at];
+                    pages.RemoveAt(at);
+                    pages.Insert(0, wanted);
+                }
+
+                Ui.Configure("Clash XML", () => { DrawFilters(); DrawTests(); }, pages.ToArray());
             }
 
             private UIElement? _write;
@@ -188,8 +219,8 @@ namespace CamelWorks.UI.Views
                     Ui.Across(
                         Ui.Quiet("Keep", Keep),
                         Ui.Danger("Forget", Forget),
-                        Ui.Quiet("Save the profile to a file...", ToFile),
-                        Ui.Quiet("Load a profile from a file...", FromFile)),
+                        Ui.Quiet("Save...", ToFile),
+                        Ui.Quiet("Load...", FromFile)),
                     _note);
             }
 

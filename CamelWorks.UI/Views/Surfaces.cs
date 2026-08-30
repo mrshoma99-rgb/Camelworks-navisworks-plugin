@@ -37,7 +37,6 @@ namespace CamelWorks.UI.Views
                 case "project": return ProjectViews.Settings();
 
                 // ---- Coordination ----
-                case "tests": return CoordinateViews.Tests();
                 case "manage": return OnModel(ClashManageViews.Manage);
                 case "issuelist": return OnModel(IssueViews.Register);
                 case "issuein": return OnModel(IssueViews.Import);

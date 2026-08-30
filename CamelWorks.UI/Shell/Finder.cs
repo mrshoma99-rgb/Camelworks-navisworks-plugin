@@ -58,9 +58,11 @@ namespace CamelWorks.UI.Shell
             ["review"] = (new[] { "walk the clashes", "go through results", "sign off" },
                 new[] { "I need to go through these one at a time" }),
 
-            ["tests"] = (new[] { "run clashes", "test setup", "batch clash", "tolerance" },
+            ["manage"] = (new[] { "clash results", "run clashes", "test setup", "batch clash",
+                                  "status", "assign", "comment", "tolerance" },
                 new[] { "setting up clash tests takes all morning",
-                        "which tests have I already run" }),
+                        "which tests have I already run",
+                        "who owns this clash", "mark these reviewed" }),
 
             ["matrix"] = (new[] { "clash matrix", "discipline grid", "test matrix" },
                 new[] { "they sent me their clash matrix", "forty tests by hand" }),

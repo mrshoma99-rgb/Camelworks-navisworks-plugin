@@ -827,7 +827,7 @@ namespace CamelWorks.UI.Views
                         Ui.Quiet("Run them", () =>
                         {
                             ClashManageViews.Forget();
-                            Ui.Told(Shell.AppWindow.Show("clash", "tests"));
+                            Ui.Told(Shell.AppWindow.Show("clash", "manage"));
                         }),
                         Ui.Quiet("Manage them", () =>
                         {
