@@ -39,7 +39,9 @@ MEMBER = re.compile(
     r"^\s*(?:public|internal|protected)\s+"
     r"(?:(?:static|const|readonly|sealed|abstract|partial|new|extern|unsafe|override|virtual|async)\s+)*"
     r"(?:(?:class|struct|interface|enum|delegate|record)\s+)?"
-    r"[\w.<>?\[\](),\s]*?\b(\w+)\s*(?:\(|\{|=>|=|;)", re.M)
+    # The name may carry its own type parameters - Loose<T>(...) - and without this the lazy
+    # prefix above swallows the name and reports the type parameter as the member.
+    r"[\w.<>?\[\](),\s]*?\b(\w+)\s*(?:<[\w,\s]+>)?\s*(?:\(|\{|=>|=|;)", re.M)
 
 ENUM_MEMBER = re.compile(r"^\s*(\w+)\s*(?:=[^,\n]*)?\s*,?\s*$", re.M)
 

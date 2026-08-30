@@ -374,7 +374,7 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel();
 
                 row.Children.Add(Ui.Icon(Glyphs.Find, "Search both tables", () => _find.Focus()));
-                row.Children.Add(_find);
+                row.Children.Add(Ui.Loose(_find));
                 row.Children.Add(new Border { Width = 8 });
                 row.Children.Add(scope);
                 row.Children.Add(new Border { Width = 16 });

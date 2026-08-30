@@ -17,6 +17,11 @@ So this is the mechanism. A ShowDialog anywhere in the UI must either go through
 door for file dialogs, which owns them - or sit in a method that has already called HostWindow.Own
 on the window it is about to show.
 
+A message box is the same family and was missed the first time round: MessageBox.Show with no owner
+disables the host's frame in exactly the same way, and the boxes that say why a tool would not open
+are shown precisely when there is no screen up to own them. They go through Ui.Told, which owns
+them, or they name their owner in the call.
+
     python3 checks/validate-owned-dialogs.py
 """
 
@@ -31,7 +36,15 @@ UI = ROOT / "CamelWorks.UI"
 DOOR = "Asked"
 DOOR_FILE = "Ui.cs"
 
-CALL = re.compile(r"\.ShowDialog\s*\(")
+CALL = re.compile(r"\.ShowDialog\s*\(|(?<![.\w])MessageBox\.Show\s*\(")
+
+# A message box that names an owner as its first argument is owned, whatever else it does. Both
+# families: a WPF Window and a WinForms IWin32Window.
+NAMES_OWNER = re.compile(r"MessageBox\.Show\s*\(\s*(?:owner|frame|this|HostWindow\.|Shell\.HostWindow\.)")
+
+# The one door for a message box, and the method that is allowed to show an unowned one because it
+# is the fallback for a host that will not say where its frame is.
+BOXES = ("Told", "Warn")
 OWNED = re.compile(r"HostWindow\.Own\s*\(")
 METHOD = re.compile(r"^\s*(?:(?:public|private|internal|protected|static|sealed|override|async)\s+)+[\w<>\[\],?\s]+\s+(\w+)\s*\(")
 
@@ -87,6 +100,15 @@ def check(path):
         if OWNED.search(scope):
             continue
 
+        if NAMES_OWNER.search(line):
+            continue
+
+        # The last-resort boxes themselves: each tries an owner first and falls back only when
+        # the host will not name its frame at all.
+        header = lines[start] if start < len(lines) else ""
+        if any(re.search(r"\b" + name + r"\s*\(", header) for name in BOXES):
+            continue
+
         found.append((i + 1, line.strip()))
 
     return found
@@ -111,7 +133,8 @@ def main():
 
     print("\nAn unowned modal disables the host's frame and re-enables it from an owner it does")
     print("not have, so closing it leaves Navisworks dead. Use Ui.AskToSave / Ui.AskToOpen for a")
-    print("file dialog, or call HostWindow.Own(window) before showing a window of your own.")
+    print("file dialog, Ui.Told for a message, or call HostWindow.Own(window) before showing a")
+    print("window of your own.")
 
     return 1
 

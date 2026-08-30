@@ -1341,32 +1341,38 @@ namespace CamelWorks.UI.Views
                         _markers));
             }
 
-            /// <summary>What is set once for the job, in a window of its own.</summary>
-            /// <param name="section">Which section to open on.</param>
+            /// <summary>
+            /// What one symbol beside the press is for, in a window of its own.
+            ///
+            /// Titled with the section the symbol named. All three used to open the same
+            /// three-section window called "Report", so nothing about the window said which of
+            /// them had been pressed.
+            /// </summary>
+            /// <param name="section">Which section the symbol names.</param>
             private void Configure(string section)
             {
-                var pages = new List<Ui.Page>
-                {
-                    new Ui.Page("Where it goes", () => Bench.Group("Where it goes",
-                        Ui.PathField("Write to", _path, PathKind.Folder,
-                                     hint: "blank writes it beside the document"),
-                        Ui.Field("Name it", _template,
-                                 "carries " + string.Join(", ", Deliverable.Tokens)))),
-                    new Ui.Page("Markers", Markers),
-                    new Ui.Page("A file somebody works in", Exchange),
-                };
+                Ui.Page page;
 
-                var order = new[] { "where", "markers", "file" };
-                var at = Math.Max(0, Array.IndexOf(order, section));
-
-                if (at > 0)
+                switch (section)
                 {
-                    var wanted = pages[at];
-                    pages.RemoveAt(at);
-                    pages.Insert(0, wanted);
+                    case "markers":
+                        page = new Ui.Page("Markers", Markers);
+                        break;
+
+                    case "file":
+                        page = new Ui.Page("A file somebody works in", Exchange);
+                        break;
+
+                    default:
+                        page = new Ui.Page("Where it goes", () => Bench.Group("Where it goes",
+                            Ui.PathField("Write to", _path, PathKind.Folder,
+                                         hint: "blank writes it beside the document"),
+                            Ui.Field("Name it", _template,
+                                     "carries " + string.Join(", ", Deliverable.Tokens))));
+                        break;
                 }
 
-                Ui.Configure("Report", null, pages.ToArray());
+                Ui.Configure(page.Name, null, page);
             }
 
             /// <summary>

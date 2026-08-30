@@ -56,14 +56,16 @@ they offer nothing.
 The register, with the filters at the top, and a detail panel that opens on the row you pick and
 edits in place.
 
-**On the strip:** search, the status ticks, *only mine*, *overdue*, and the open / overdue / closed
-figures. Type, assignee and source live behind the ⚙ symbol, with what the bulk verbs write.
+**On the strip:** search, the status ticks, *only mine*, *overdue*, then *assigned to*, *type* and
+*raised by* on the row under them, and the open / overdue / closed figures. Every filter the
+register has is on the screen; none of them is behind a symbol.
 
 **In the detail panel:** title, description, status, type, priority, assignee, due date, root
 cause, level, zone — the comment trail underneath, and **Show**, which puts the model where the
 issue is.
 
-**Bulk verbs on the picked rows:** show, set status, assign, comment, delete, copy.
+**Bulk verbs on the picked rows:** show, set status, assign, comment, delete, copy. The status the
+*set status* verb writes is chosen on the same row, immediately before the button that spends it.
 
 Deleting says out loud that closing is usually what somebody means, and asks twice.
 

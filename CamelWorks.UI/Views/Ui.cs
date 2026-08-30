@@ -1379,7 +1379,7 @@ namespace CamelWorks.UI.Views
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
-                act();
+                Safely(act);
             }
             finally
             {
@@ -1394,7 +1394,7 @@ namespace CamelWorks.UI.Views
             if (style != null) button.Wearing(style);
             else button.MinWidth = 88;
 
-            if (onClick != null) button.Click += (s, e) => onClick();
+            if (onClick != null) button.Click += (s, e) => Safely(onClick);
             return button;
         }
 
@@ -1828,7 +1828,89 @@ namespace CamelWorks.UI.Views
         {
             if (string.IsNullOrWhiteSpace(message)) return;
 
+            // Owned, like every other modal here. A native box with no owner disables every
+            // top-level window on the thread - the host's own frame included - and re-enables
+            // them from the owner it does not have, so the one line explaining why a tool did
+            // not open would otherwise be the thing that killed Navisworks.
+            var owner = Shell.HostWindow.Active;
+
+            if (owner != null)
+            {
+                MessageBox.Show(owner, message, "CamelWorks", MessageBoxButton.OK,
+                                MessageBoxImage.Information);
+                return;
+            }
+
+            var frame = Shell.HostWindow.Frame();
+
+            if (frame != null)
+            {
+                System.Windows.Forms.MessageBox.Show(frame, message, "CamelWorks",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                return;
+            }
+
             MessageBox.Show(message, "CamelWorks", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// Run something that a user press or a window closing set off, and survive it throwing.
+        ///
+        /// <b>Why this exists.</b> A WPF handler that throws does not fail politely: the exception
+        /// leaves the handler, reaches the dispatcher, and takes the whole Navisworks process with
+        /// it. The ribbon entry point has been guarded since the beginning, but everything reached
+        /// after the first screen is up - a symbol under a table, a redraw run from a window's
+        /// Closed event - had no guard at all, so one re-parented text box in one screen's redraw
+        /// was enough to close the host. A fault in one screen is worth a sentence, not the
+        /// user's session.
+        /// </summary>
+        /// <param name="act">What to run.</param>
+        public static void Safely(Action? act)
+        {
+            if (act == null) return;
+
+            try
+            {
+                act();
+            }
+            catch (Exception e)
+            {
+                Told("Something went wrong: " + Describe(e));
+            }
+        }
+
+        /// <summary>
+        /// Take an element off whatever is holding it, so it can be put somewhere else.
+        ///
+        /// A screen that keeps a control in a field - a search box that must not lose what was
+        /// typed in it, or the focus - and rebuilds the row around it hits
+        /// "Specified element is already the logical child of another element" the second time it
+        /// draws: clearing the panel's children detaches the row, not the row's contents. That
+        /// throw used to arrive from inside a window's Closed handler, which is to say it closed
+        /// Navisworks. Pass the kept control through here on the way back in.
+        /// </summary>
+        /// <param name="element">The element to free.</param>
+        /// <returns>The same element, with no parent.</returns>
+        public static T Loose<T>(T element) where T : UIElement
+        {
+            switch (LogicalTreeHelper.GetParent(element))
+            {
+                case Panel panel:
+                    panel.Children.Remove(element);
+                    break;
+                case Decorator decorator when ReferenceEquals(decorator.Child, element):
+                    decorator.Child = null;
+                    break;
+                case ContentControl holder when ReferenceEquals(holder.Content, element):
+                    holder.Content = null;
+                    break;
+                case ItemsControl items:
+                    items.Items.Remove(element);
+                    break;
+            }
+
+            return element;
         }
 
         /// <summary>
@@ -2596,7 +2678,7 @@ namespace CamelWorks.UI.Views
             Shell.HostWindow.Own(window);
             ShowSection(0);
 
-            if (onClosed != null) window.Closed += (s, e) => onClosed();
+            if (onClosed != null) window.Closed += (s, e) => Safely(onClosed);
 
             window.ShowDialog();
         }
@@ -2675,7 +2757,7 @@ namespace CamelWorks.UI.Views
             Skin.Apply(window);
             Shell.HostWindow.Own(window);
 
-            if (onClosed != null) window.Closed += (s, e) => onClosed();
+            if (onClosed != null) window.Closed += (s, e) => Safely(onClosed);
 
             window.ShowDialog();
         }
@@ -2906,7 +2988,22 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="table">The table. It is switched to multi-select here.</param>
         /// <param name="actions">What can be done to the picked rows.</param>
-        public static UIElement Picking(ListView table, params OnPicked[] actions)
+        public static UIElement Picking(ListView table, params OnPicked[] actions) =>
+            Picking(table, null, actions);
+
+        /// <summary>
+        /// The verb bar, with something one of the verbs needs answered standing next to it.
+        ///
+        /// A verb that writes a value - set the picked issues to a status, tag them with a party -
+        /// has to get that value from somewhere, and the somewhere used to be a window opened by a
+        /// symbol somewhere else on the screen. That put the question a whole press away from the
+        /// answer and left two symbols opening the same window. The chooser belongs beside the
+        /// button that spends it.
+        /// </summary>
+        /// <param name="table">The table being picked from.</param>
+        /// <param name="aside">A control a verb reads, shown before the verbs, or null.</param>
+        /// <param name="actions">The verbs.</param>
+        public static UIElement Picking(ListView table, UIElement? aside, params OnPicked[] actions)
         {
             if (table == null) throw new ArgumentNullException(nameof(table));
 
@@ -2934,6 +3031,12 @@ namespace CamelWorks.UI.Views
             var buttons = new List<System.Windows.Controls.Button>();
 
             bar.Children.Add(tally);
+
+            if (aside != null)
+            {
+                bar.Children.Add(aside);
+                bar.Children.Add(new Border { Width = Gap });
+            }
 
             foreach (var action in verbs)
             {

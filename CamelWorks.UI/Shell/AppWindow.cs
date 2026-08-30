@@ -97,9 +97,15 @@ namespace CamelWorks.UI.Shell
             if (!Open.TryGetValue(app.Id, out var window) || window == null)
             {
                 window = new AppWindow(app);
-                Open[app.Id] = window;
                 HostWindow.Own(window);
                 window.Show();
+
+                // Remembered only once it is up. Written before the Show, a window that failed
+                // on the way to the screen stayed in this list for the rest of the session: its
+                // Closed never fires, so it is never removed, and every later press takes the
+                // Activate branch below on a window nobody can see. The app then genuinely
+                // cannot be opened again until Navisworks restarts.
+                Open[app.Id] = window;
             }
             else
             {
