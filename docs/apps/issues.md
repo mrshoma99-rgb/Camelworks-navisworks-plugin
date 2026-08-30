@@ -20,7 +20,15 @@ and **Show** putting the model where the issue is.
   press), copy. Deleting says out loud that closing is what somebody usually means.
 - **Right-click in the Clash Manager's results grid or the Clearance Check's**: *Create an issue
   from N* (one issue over everything picked — eleven clashes are usually one conversation) or
-  *An issue for each of N*. The issue carries the elements, the clash keys and the point.
+  *An issue for each of N*. The issue carries the elements, the findings and the point.
+- **Attach to an issue** puts picked results onto one that already exists — the verb that stops a
+  register filling with forty issues about the same duct run. An issue holds findings of any
+  source, so one conversation can cover a clash, a clearance breach and a health failure together.
+- **The findings card** on an issue's detail says what it is about, each one's status, and whether
+  the latest run still reports it; *Take N off* detaches without touching the findings themselves.
+- **The cascade is offered, never applied.** Saving a status change that implies something — closed
+  means resolved, answered means reviewed — puts up one line naming the count. Ignore it and
+  nothing happens. Draft, pending and in dispute imply nothing: they are about the conversation.
 - **Import** is a merge, not a load: the same BCF file arriving three times over a fortnight
   updates what it already brought in and adds only the comments nobody said yet. The Issue
   Link BCF tab's read now lands in the register too — a BCF file read anywhere in the product

@@ -12,7 +12,7 @@ spreadsheet beside the tool.
 | Raised by | How |
 |---|---|
 | A person | **New issue**, on whatever is selected in the model |
-| Clash results | Right-click in Clash Manager ▸ Manage → *Create an issue from N* |
+| Clash results | Right-click in Clash Manager ▸ Manage → *Create an issue from N*, or *Attach N to an issue…* to put them on one that already exists |
 | Clearance findings | Right-click in Clash Manager ▸ Clearance Check |
 | Somebody else's tool | A BCF file, read in through Import (or through Issue Link ▸ BCF) |
 
@@ -21,7 +21,31 @@ also the one field nobody can edit afterwards, because it is a fact about the pa
 
 Raising from clash or clearance offers two shapes: **one issue over everything picked** (eleven
 clashes are usually one conversation) or **an issue for each**. Either way the issue carries the
-elements, the clash keys and the point in space.
+elements, the findings and the point in space.
+
+**Attach to an issue** is the other half, and the one that stops a register filling with forty
+issues about the same duct run: pick the results, pick the issue, and they join it. An issue can
+hold findings from any check — clashes, clearance, whatever moves onto findings next — so one
+conversation can cover the whole of a problem rather than one flavour of it.
+
+### The findings on an issue
+
+An issue's detail carries a **Findings** card: what it is about, each one's status, and whether
+the latest run still reports it. A finding the newest run no longer mentions is marked *gone*
+rather than removed — it is the record of the thing having been fixed. **Take N off** detaches
+them from the issue; the findings themselves are untouched.
+
+### Marking the findings when you mark the issue
+
+Closing an issue usually means its findings are dealt with, and *usually* is not *always* — an
+issue closed because the RFI was answered says nothing about whether the duct moved. So it is
+**offered, not done**: change the status, press Save, and if it implies something you get one line
+naming the count — *"This issue is now closed. Mark 11 attached findings as Resolved too?"* — with
+a button. Ignore it and nothing happens.
+
+Only the two ends of the run mean anything for the model: **Closed** → Resolved, **Answered** →
+Reviewed. Draft, pending and in dispute are about the conversation, not about the building, so
+they offer nothing.
 
 ---
 

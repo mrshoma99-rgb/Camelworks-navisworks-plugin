@@ -79,8 +79,17 @@ it. The manager does not throw your work away when that happens.
 
 Every status, assignment, comment and regroup the document refuses is **held**: it shows on the
 board the way you left it, it survives pressing *Read the results* again, and it survives closing
-Navisworks, because it lives in the project file beside the document. A banner says how many are
-waiting, with **What is waiting** to list them and **Forget them** to throw them away on purpose.
+Navisworks, because it lives in the findings kept beside the document. A banner says how many are
+waiting, with **What is waiting** to list them and **Forget them** to stop offering them.
+
+What is held is remembered **field by field**, not as one lump. If the document takes the status
+and refuses the comment, only the comment is still waiting — so a sync never writes the status
+twice, and never sends a comment the document already has.
+
+Pressing *Read the results* on a published NWD does not undo any of it. The document keeps
+reporting the status it had before you touched it, and a read is not allowed to overwrite a field
+that is waiting. Everything else the read is still free to correct, so a test renamed or a clash
+that moved still updates.
 
 There are two ways out:
 
@@ -149,7 +158,7 @@ BCF carries a priority, a due date, a stage, a title and any tags a reviewer lik
 clash result carries a status, an assignee, a group and comments, and that is all.
 
 The host not having a column is not a reason the board cannot show one. Everything a reviewer sets
-is kept in the project file and shown on the results grid as a **Reviewer set** column — "High ·
+is kept on the finding beside the model and shown on the results grid as a **Reviewer set** column — "High ·
 due 15 Apr" — with **overdue rows toned red**, and the search box matches it like any other column.
 The column only appears when somebody has actually set something, so it costs no width on an
 ordinary board.
