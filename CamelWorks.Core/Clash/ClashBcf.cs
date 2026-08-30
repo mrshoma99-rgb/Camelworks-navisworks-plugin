@@ -152,6 +152,30 @@ namespace CamelWorks.Core.Clash
         /// <summary>The topic type every clash is written as.</summary>
         public const string TopicType = "Clash";
 
+        /// <summary>
+        /// The topic a clash is always written as, derived from the two elements alone.
+        ///
+        /// <b>This is what keeps the round trip alive.</b> Everything else a returned file might
+        /// carry - our sidecar, the element keys in <c>AuthoringToolId</c> - is ours, and another
+        /// tool that re-authors the archive drops all of it. The topic GUID is the one field it
+        /// cannot drop: it is the topic's identity, it names the folder, and BCF's own merge model
+        /// is built on it, so a tool that changed it would break every BCF workflow there is.
+        ///
+        /// Because it is a plain function of the element pair, the same clash is the same topic in
+        /// every export, and - the part that matters - the receiving side can compute it again
+        /// from the model. A file that comes home stripped to nothing but its topics still lands
+        /// on the right results.
+        ///
+        /// The pair, deliberately, and not the clash point: a conflict that shifts a few
+        /// millimetres between runs is the same conflict, and would otherwise come back as a
+        /// topic nobody could place.
+        ///
+        /// Both sides call this. Two copies of the rule that drifted apart would break the round
+        /// trip silently, which is the worst way for it to break.
+        /// </summary>
+        /// <param name="key">The clash.</param>
+        public static string TopicGuidFor(ClashKey key) => BcfGuid.For(key.PairId);
+
         /// <summary>What the sidecar's shape is called, so a future change can be told apart.</summary>
         public const int SidecarVersion = 1;
 
@@ -357,7 +381,11 @@ namespace CamelWorks.Core.Clash
             // Keyed on the pair rather than on anything the run invented, so the same physical
             // clash is the same topic in every export - which is what lets a reviewer's tool merge
             // this week's file into last week's instead of doubling every issue.
-            var topic = new BcfTopic(item.Key.PairId, name, when, how.Author)
+            // The identity it arrived with wins over a fresh derivation: a markup has to go home
+            // under the name it came out under, or the seat syncing it cannot place it.
+            var guid = item.TopicGuid ?? TopicGuidFor(item.Key);
+
+            var topic = new BcfTopic(guid, name, when, how.Author)
             {
                 TopicType = TopicType,
                 TopicStatus = item.Status.ToString(),
@@ -721,6 +749,7 @@ namespace CamelWorks.Core.Clash
 
             var item = new ClashItem(key, test)
             {
+                TopicGuid = topic.Guid,
                 Status = Status(topic),
                 AssignedTo = string.IsNullOrWhiteSpace(topic.AssignedTo) ? null : topic.AssignedTo,
                 CarriedGroup = record?["group"].AsString() ?? Label(topic, GroupLabel),

@@ -471,6 +471,84 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void TheTopicGuidIsRecomputableFromTheModelAlone()
+        {
+            // The contract the whole round trip rests on. A markup that comes home stripped of
+            // everything of ours still names its result, because the receiving side derives the
+            // same GUID from the clash it already has.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var stream = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key),
+                         BcfReader.Read(stream).Topics.Single().Guid);
+        }
+
+        [Fact]
+        public void TheTopicGuidIgnoresWhereTheClashIs()
+        {
+            // A conflict that shifts a few millimetres between runs is the same conflict. Keying
+            // the topic on the clash point would bring it home as a topic nobody could place.
+            var a = Key("11111111-1111-1111-1111-111111111111");
+            var b = Key("22222222-2222-2222-2222-222222222222");
+
+            Assert.Equal(ClashBcf.TopicGuidFor(ClashKey.Create(a, b, 10, 20, 30)),
+                         ClashBcf.TopicGuidFor(ClashKey.Create(a, b, 40, 55, 91)));
+        }
+
+        [Fact]
+        public void AMarkupGoesHomeUnderTheNameItCameOutUnder()
+        {
+            // Read a file and save it back: the topic keeps its identity rather than getting a
+            // freshly derived one, so the seat syncing it can still place it.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            var sent = ClashBcf.Write(new[] { item });
+
+            var back = RoundTrip(sent).Items.Single();
+
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key), back.TopicGuid);
+
+            using var again = new MemoryStream(ClashBcf.Write(new[] { back }).Bytes);
+
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key),
+                         BcfReader.Read(again).Topics.Single().Guid);
+        }
+
+        [Fact]
+        public void AForeignRoundTripKeepsTheTopicIdentityEvenWithNothingElseLeft()
+        {
+            // Solibri, BIMcollab or Revizto: the sidecar is gone and the components have been
+            // re-authored. The topic GUID is the one thing BCF will not let them change, and it
+            // is enough.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+
+            using var mine = new MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var topic = BcfReader.Read(mine).Topics.Single();
+
+            topic.TopicStatus = "Closed";
+            topic.AssignedTo = "Ada";
+            topic.Viewpoints.Clear();          // their tool re-authored the viewpoint away
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+            theirs.Position = 0;
+
+            var returned = ClashBcf.Read(theirs).Results.Single();
+
+            // Nothing of ours survived - and the topic still names the clash it came from.
+            Assert.Null(returned.Item);
+            Assert.Equal(ClashBcf.TopicGuidFor(item.Key), returned.FileGuid);
+            Assert.Equal(FindingStatus.Resolved, returned.Status);
+            Assert.Equal("Ada", returned.AssignedTo);
+        }
+
+        [Fact]
         public void TheArchiveHasNoTopLevelFolderThatIsNotATopic()
         {
             // The invariant that keeps another tool's importer from meeting something new. A

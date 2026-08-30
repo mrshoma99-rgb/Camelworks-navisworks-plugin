@@ -110,6 +110,25 @@ duct and the beam; without it they get the camera and an empty selection. The ex
 you got — elements from IFC sources carry a GlobalId, and elements from Revit, DWG and native
 formats generally do not.
 
+#### The round trip, and what holds it together
+
+Send a clash file out, let the architect answer it in Solibri or Revizto, read it back with **Sync
+markups** — the edits land on the right results in your model.
+
+That works because of the **topic id**. Every clash is written as a BCF topic whose id is derived
+from the two clashing elements, so the same clash is the same topic in every export. The receiving
+side does not read that id out of the returned file and trust it — it *recomputes* it from the
+model it already has, and matches. The topic id is the one field BCF will not let a tool change:
+it names the topic folder and BCF's own merge model is built on it.
+
+So a file can come home with our sidecar gone, the element keys stripped and the viewpoints
+re-authored — everything another tool rewrites — and it still lands. The id is derived from the
+element pair and not from the clash point, so a conflict that shifts a few millimetres between runs
+is still the same topic.
+
+Topics the sync cannot place are counted and named: either raised in the reviewer's own tool, or
+resolved and gone from a newer run.
+
 **Draw a picture of each clash** (under ⚙ *Beyond the engine*, and on the Clash file tab) writes a
 thumbnail into each topic. Every coordination tool shows its issue list as pictures, so a file
 without them arrives as rows of grey boxes. It is off by default because each one is drawn

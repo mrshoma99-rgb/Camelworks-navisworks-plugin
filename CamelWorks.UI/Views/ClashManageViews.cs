@@ -2711,9 +2711,16 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Reading the model...");
 
-                // The model's results, keyed the same way the files are: the stable clash key.
-                var at = new Dictionary<string, (string TestId, string ResultId, string Status,
-                                                 string Assigned, string Group)>(StringComparer.Ordinal);
+                // The model's results, indexed two ways, both pointing at the same record so a
+                // second file sees what the first one asked for.
+                //
+                // By topic GUID first, because that is the index that survives somebody else's
+                // tool: it is recomputed here from the model rather than read out of the file, so
+                // a markup returned from Solibri or Revizto - stripped of our sidecar and of the
+                // element keys we wrote - still lands on the right results. By clash key second,
+                // for a file that still carries ours.
+                var byTopic = new Dictionary<string, Live>(StringComparer.OrdinalIgnoreCase);
+                var byKey = new Dictionary<string, Live>(StringComparer.Ordinal);
 
                 var read = 0;
 
@@ -2723,10 +2730,20 @@ namespace CamelWorks.UI.Views
                     {
                         if (!job.Step(++read, "results read")) return;
 
-                        at[result.Key().ToString()] = (test.Id, result.Id,
-                                                       result.HostStatus ?? "New",
-                                                       result.HostAssignedTo ?? string.Empty,
-                                                       result.GroupName ?? string.Empty);
+                        var key = result.Key();
+
+                        var live = new Live
+                        {
+                            TestId = test.Id,
+                            ResultId = result.Id,
+                            Status = result.HostStatus ?? "New",
+                            Assigned = result.HostAssignedTo ?? string.Empty,
+                            Group = result.GroupName ?? string.Empty,
+                        };
+
+                        byKey[key.ToString()] = live;
+
+                        if (!key.IsEmpty) byTopic[ClashBcf.TopicGuidFor(key)] = live;
                     }
                 }
 
@@ -2769,9 +2786,16 @@ namespace CamelWorks.UI.Views
 
                     foreach (var result in markup.Results)
                     {
-                        if (result.Item == null) continue;
+                        Live? found = null;
 
-                        if (!at.TryGetValue(result.Item.Key.ToString(), out var found))
+                        // The topic's own GUID first. A file that has been through another tool
+                        // has nothing else left that names our model.
+                        if (result.FileGuid != null) byTopic.TryGetValue(result.FileGuid, out found);
+
+                        if (found == null && result.Item != null)
+                            byKey.TryGetValue(result.Item.Key.ToString(), out found);
+
+                        if (found == null)
                         {
                             missing++;
                             continue;
@@ -2788,7 +2812,7 @@ namespace CamelWorks.UI.Views
                             && !string.Equals(who, found.Assigned, StringComparison.Ordinal))
                             Bucket(setAssign, (found.TestId, who), found.ResultId);
 
-                        var band = result.Item.CarriedGroup ?? result.Group ?? string.Empty;
+                        var band = result.Item?.CarriedGroup ?? result.Group ?? string.Empty;
 
                         if (!string.Equals(band, found.Group, StringComparison.Ordinal))
                             Bucket(setGroup, (found.TestId, band), found.ResultId);
@@ -2796,10 +2820,11 @@ namespace CamelWorks.UI.Views
                         foreach (var comment in result.Comments)
                             say.Add((found.TestId, found.ResultId, comment));
 
-                        // Later files see the state this one just asked for.
-                        at[result.Item.Key.ToString()] =
-                            (found.TestId, found.ResultId, status,
-                             who.Length > 0 ? who : found.Assigned, band);
+                        // Later files see the state this one just asked for. The record is shared
+                        // by both indexes, so it does not matter which one found it.
+                        found.Status = status;
+                        found.Assigned = who.Length > 0 ? who : found.Assigned;
+                        found.Group = band;
                     }
 
                     foreach (var batch in setStatus)
@@ -2845,8 +2870,9 @@ namespace CamelWorks.UI.Views
                     + Ui.Count(assigns, "assignment") + ", "
                     + Ui.Count(groups, "regrouped result") + "."
                     + (missing > 0
-                        ? " " + Ui.Count(missing, "result") + " in the markups are not in the "
-                          + "model any more — usually resolved and gone from a newer run."
+                        ? " " + Ui.Count(missing, "topic") + " could not be placed on this model: "
+                          + "either raised in the reviewer's own tool, or resolved and gone from a "
+                          + "newer run."
                         : string.Empty), problems);
             }
 
@@ -3253,6 +3279,16 @@ namespace CamelWorks.UI.Views
                 return extension.Equals(ClashFile.Extension, StringComparison.OrdinalIgnoreCase)
                     || extension.Equals(".bcf", StringComparison.OrdinalIgnoreCase)
                     || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
+            }
+
+            /// <summary>One of the model's results, as the sync tracks it while it works.</summary>
+            private sealed class Live
+            {
+                internal string TestId = string.Empty;
+                internal string ResultId = string.Empty;
+                internal string Status = string.Empty;
+                internal string Assigned = string.Empty;
+                internal string Group = string.Empty;
             }
 
             private void Tell(string did, List<string>? problems)
