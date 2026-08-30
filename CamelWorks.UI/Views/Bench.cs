@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 
 namespace CamelWorks.UI.Views
 {
@@ -220,20 +221,46 @@ namespace CamelWorks.UI.Views
             var grid = new Grid();
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var head = new StackPanel { Orientation = Orientation.Horizontal };
-            head.Children.Add(Ui.Eyebrow(label));
+            // The label and the verbs share one row: the label on the left, the verbs hard right.
+            //
+            // They used to sit in a bar under the table, which put the two panes' verb rows at the
+            // bottom of a tall window - a long way from the rows they act on, and below whatever
+            // empty space the table left. At the top they are beside the count of what is picked
+            // and directly over the rows, which is where the hand already is.
+            var head = new DockPanel { LastChildFill = true };
+
+            if (tools != null)
+            {
+                if (tools is FrameworkElement bar)
+                {
+                    bar.VerticalAlignment = VerticalAlignment.Center;
+                    bar.HorizontalAlignment = HorizontalAlignment.Right;
+                }
+
+                DockPanel.SetDock(tools, Dock.Right);
+                head.Children.Add(tools);
+            }
+
+            var named = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            named.Children.Add(Ui.Eyebrow(label));
 
             if (say != null)
             {
-                head.Children.Add(new Border { Width = 10 });
-                head.Children.Add(say);
+                named.Children.Add(new Border { Width = 10 });
+                named.Children.Add(say);
             }
+
+            head.Children.Add(named);
 
             var header = new Border
             {
-                Padding = new Thickness(12, 7, 12, 5),
+                Padding = new Thickness(12, 4, 8, 4),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Child = head,
             };
@@ -247,32 +274,49 @@ namespace CamelWorks.UI.Views
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = body,
-                Padding = new Thickness(10, 8, 10, 8),
+                Padding = new Thickness(10, 4, 10, 8),
             };
 
             Grid.SetRow(scroll, 1);
             grid.Children.Add(scroll);
 
-            if (tools != null)
-            {
-                var bar = new Border
-                {
-                    Padding = new Thickness(8, 4, 8, 4),
-                    BorderThickness = new Thickness(0, 1, 0, 0),
-                    Child = tools,
-                };
-
-                bar.Tint(Border.BackgroundProperty, "Card2");
-                bar.Tint(Border.BorderBrushProperty, "Bd");
-
-                Grid.SetRow(bar, 2);
-                grid.Children.Add(bar);
-            }
+            // A table on a bench fills its pane. Everywhere else a table is capped at two thirds
+            // of the surface it is one part of, which is right when a stage stacks several things
+            // - and wrong here, where the table is the whole pane and the cap left a third of it
+            // white with the rows still scrolling.
+            Fill(body);
 
             var pane = new Border { Child = grid };
             pane.Tint(Border.BackgroundProperty, "Card");
 
             return pane;
+        }
+
+        /// <summary>
+        /// Let every table in a subtree grow to the height it is given.
+        ///
+        /// Walks the logical tree rather than the visual one, because a pane is built before it is
+        /// ever rendered and the visual tree does not exist yet. Clearing the binding is enough:
+        /// with no MaxHeight the ListView takes what the row allocates and scrolls inside it.
+        /// </summary>
+        /// <param name="element">The pane's body.</param>
+        private static void Fill(object? element)
+        {
+            if (element is System.Windows.Controls.ListView table)
+            {
+                BindingOperations.ClearBinding(table, FrameworkElement.MaxHeightProperty);
+                table.MaxHeight = double.PositiveInfinity;
+                table.VerticalAlignment = VerticalAlignment.Stretch;
+
+                return;
+            }
+
+            if (!(element is DependencyObject node)) return;
+
+            foreach (var child in LogicalTreeHelper.GetChildren(node))
+            {
+                Fill(child);
+            }
         }
 
         /// <summary>

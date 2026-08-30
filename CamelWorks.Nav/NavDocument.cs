@@ -493,22 +493,71 @@ namespace CamelWorks.Nav
                 _models.Add(new NavModelSource(model));
         }
 
-        private void EnsureIndexed()
+        /// <summary>
+        /// Whether the element index has been built for the federation as it stands.
+        ///
+        /// Worth asking before a verb that resolves keys: the first one to ask pays for the whole
+        /// walk, and a screen that knows can pay for it somewhere the user is watching a progress
+        /// bar instead of inside a button click.
+        /// </summary>
+        public bool IsIndexed => _indexed;
+
+        /// <summary>
+        /// Build the element index, reporting as it goes.
+        ///
+        /// <b>Why this is public.</b> Resolving an element key means looking it up in an index of
+        /// every geometry leaf in the federation, and building that index is a full walk that keys
+        /// each item. Left to happen lazily, the whole cost landed on whoever first pressed Focus
+        /// - synchronously, inside a click handler, with no progress and no way to stop: on a real
+        /// federation that is Navisworks saying Not Responding for minutes, and the honest reading
+        /// of it is that the button hung.
+        ///
+        /// So the long operations that are about to need it - reading a clash board, running a
+        /// check - build it inside their own job, where there is a progress bar and a Stop, and
+        /// every row verb afterwards is instant.
+        /// </summary>
+        /// <param name="onProgress">Called with the running count, for a progress line.</param>
+        /// <param name="keepGoing">Asked between items; false stops and leaves the index unbuilt.</param>
+        public void Index(Action<int>? onProgress = null, Func<bool>? keepGoing = null)
         {
             if (_indexed) return;
 
             _index.Clear();
 
-            // Indexed once and kept: keying an item is not free, and resolving a thousand-row clash
-            // board one key at a time against an unindexed tree is the difference between a board
-            // that opens and one that does not.
+            var seen = 0;
+
             foreach (var item in Leaves(Document.Models.RootItems))
             {
                 var key = NavKeys.Of(item).ToString();
                 if (key.Length > 0 && !_index.ContainsKey(key)) _index[key] = item;
+
+                seen++;
+
+                // Every few thousand: the callback usually pumps, and asking on every element of a
+                // half-million-element federation costs more than the keying does.
+                if (seen % 2000 != 0) continue;
+
+                onProgress?.Invoke(seen);
+
+                if (keepGoing != null && !keepGoing())
+                {
+                    // Stopped half way. Left unmarked so the next caller builds it properly rather
+                    // than resolving against a third of a federation and reporting the rest as
+                    // elements this model does not have.
+                    _index.Clear();
+                    return;
+                }
             }
 
             _indexed = true;
+        }
+
+        private void EnsureIndexed()
+        {
+            // Indexed once and kept: keying an item is not free, and resolving a thousand-row clash
+            // board one key at a time against an unindexed tree is the difference between a board
+            // that opens and one that does not.
+            if (!_indexed) Index();
         }
 
         private static void Collect(SavedItemCollection items, List<SelectionSet> result)

@@ -44,18 +44,19 @@ register — uses a second layout instead:
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  🔍 search over both tables · what it covers · status ticks  │
-├───────────────────────┬──────────────────────────────────────┤
-│  Tests, sets, files   │  What the picked rows hold           │
-│                       │                                      │
-├───────────────────────┼──────────────────────────────────────┤
-│  ▶ ✎ # ⇢ ⇕ 🗑 ⧉        │  ⊙ 👁 ✓ 👤 💬 ⬚ ● 📷 ⊕ ⧉             │  ← verbs
-├───────────────────────┴──────────────────────────────────────┤
+├──────────────────────────┬───────────────────────────────────┤
+│ TESTS  1 picked ▶✎#⇢⇕🗑⧉ │ RESULTS 1 picked ⊙👁✓👤💬⬚●📷⊕⧉  │ ← verbs
+├──────────────────────────┼───────────────────────────────────┤
+│  Tests, sets, files      │  What the picked rows hold        │
+│                          │                                   │
+├──────────────────────────┴───────────────────────────────────┤
 │  [ PRIMARY ]   ⚙ filters  ⚙ columns  ⚙ the round  …          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Two tables side by side with a draggable split, one search across both at the top, and the verbs
-under the table they act on.
+Two tables side by side with a draggable split, one search across both at the top, and each pane's
+verbs in its own header row — on the right, beside the count of what is picked, directly over the
+rows they act on.
 
 ## Tables
 
@@ -66,8 +67,9 @@ Every table in CamelWorks behaves the same way.
   under the table.
 - The tally under a table reads **"3 of 218 rows picked"**, so you always know what a verb is
   about to act on.
-- **The verbs sit under the rows they act on**, as symbols. Hover for the caption and the live
-  count — *Assign 40…*, not *Assign…*. A verb with no natural shape keeps its words.
+- **The verbs sit with the table they act on**, as symbols — in the pane's header row on a bench,
+  under the table elsewhere. Hover for the caption and the live count — *Assign 40…*, not
+  *Assign…*. A verb with no natural shape keeps its words.
 - **Right-click a row** and the same verbs appear as a menu. Right-clicking a row that is not
   picked picks it first.
 - Verbs are greyed until something is picked.
@@ -81,8 +83,11 @@ Anything decided once for a job — how a report is written, what counts as a ch
 carries the code — is not laid out beside the work. It is behind a **⚙ symbol on the action row**
 that names it.
 
-The window it opens has its own list of sections down the left. Edits apply live; closing it
-redraws what is behind it. It opens on the section whose symbol you pressed.
+**One symbol, one section, one window**, titled with that section's name. Where a screen has many
+of them, a final **⋯ / ⚙ All** symbol opens every section together with a list down the left, for
+when you do not know which one holds what you are after.
+
+Edits apply live; closing redraws what is behind it.
 
 ## Two-step writes
 

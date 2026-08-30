@@ -367,6 +367,10 @@ namespace CamelWorks.UI.Views
                 Add(Glyphs.Round, "The review round", "round");
                 Add(Glyphs.More, "Duplicates, spreadsheets and baselines", "beyond");
 
+                // The one that opens all of them, for somebody who does not know which symbol
+                // holds the thing they are after.
+                row.Children.Add(Ui.Icon(Glyphs.Tune, "All of the above, in one window", Everything));
+
                 row.Children.Add(new Border { Width = 14 });
                 row.Children.Add(_log);
 
@@ -512,6 +516,34 @@ namespace CamelWorks.UI.Views
 
                 _log.Children.Add(Ui.Line(Ui.Count(entries.Count, "test") + ", "
                     + Ui.Count(entries.Sum(e => e.Rows.Count), "result") + " read.", 1, true));
+
+                Warm(job);
+            }
+
+            /// <summary>
+            /// Build the element index here, where there is a progress bar and a Stop.
+            ///
+            /// Every verb that touches the model - focus, isolate, marker spheres, snapshots -
+            /// resolves element keys, and the first one to do it pays for a walk of the whole
+            /// federation. Inside a button click that is Navisworks reporting Not Responding for
+            /// minutes with nothing on screen to explain it, which reads as the button having
+            /// hung. It belongs at the end of the read: the same press, one progress line, and
+            /// every row verb afterwards is instant.
+            ///
+            /// Stopping is safe. The index is left unbuilt rather than half built, so the next
+            /// thing that needs it pays properly instead of reporting two thirds of the federation
+            /// as elements this model does not have.
+            /// </summary>
+            private void Warm(Job job)
+            {
+                if (_session.Model is not CamelWorks.Nav.NavDocument document || document.IsIndexed)
+                    return;
+
+                job.Say("Indexing the federation, so the row verbs are instant...");
+
+                document.Index(
+                    seen => job.Step(seen, "elements indexed"),
+                    () => !job.IsCancelled);
             }
 
             private void ReadFile(Job job)
@@ -625,32 +657,52 @@ namespace CamelWorks.UI.Views
             /// here, one section at a time, opened from the symbol that names it.
             /// </summary>
             /// <param name="section">Which section to open on.</param>
+            /// <summary>
+            /// Open one section, in a window of its own.
+            ///
+            /// One symbol, one section, one window titled with the section's name. It opened the
+            /// whole seven-section window on every symbol before, which meant seven buttons that
+            /// all did the same visible thing and nothing on screen saying which had been pressed.
+            /// </summary>
+            /// <param name="section">The section's key, as the foot's symbols name it.</param>
             private void Configure(string section)
             {
-                var pages = new List<Ui.Page>
-                {
-                    new Ui.Page("Source", SourcePage),
-                    new Ui.Page("Filters", FiltersPage),
-                    new Ui.Page("Columns and grouping", ColumnsPage),
-                    new Ui.Page("Status and assignment", VerbsPage),
-                    new Ui.Page("In the model", ModelPage),
-                    new Ui.Page("The review round", RoundPage),
-                    new Ui.Page("Beyond the engine", BeyondPage),
-                };
+                var page = Pages().FirstOrDefault(
+                    p => string.Equals(p.Key, section, StringComparison.Ordinal));
 
-                var order = new[] { "source", "filters", "columns", "verbs", "model", "round", "beyond" };
-                var at = Math.Max(0, Array.IndexOf(order, section));
+                if (page == null) { Everything(); return; }
 
-                // Opened on the section the symbol names: the list is in one order and the row of
-                // symbols is in the same one, so the first page is the one that was pressed.
-                if (at > 0)
+                Ui.Configure(page.Page.Name, Redraw, page.Page);
+            }
+
+            /// <summary>Every section at once, behind the More symbol, for a look around.</summary>
+            private void Everything() =>
+                Ui.Configure("Clash results", Redraw, Pages().Select(p => p.Page).ToArray());
+
+            /// <summary>The sections, in the order the foot's symbols read.</summary>
+            private IReadOnlyList<Section> Pages() => new[]
+            {
+                new Section("source", new Ui.Page("Source", SourcePage)),
+                new Section("filters", new Ui.Page("Filters", FiltersPage)),
+                new Section("columns", new Ui.Page("Columns and grouping", ColumnsPage)),
+                new Section("verbs", new Ui.Page("Status and assignment", VerbsPage)),
+                new Section("model", new Ui.Page("In the model", ModelPage)),
+                new Section("round", new Ui.Page("The review round", RoundPage)),
+                new Section("beyond", new Ui.Page("Beyond the engine", BeyondPage)),
+            };
+
+            /// <summary>A section and the key the foot's symbol names it by.</summary>
+            private sealed class Section
+            {
+                internal Section(string key, Ui.Page page)
                 {
-                    var wanted = pages[at];
-                    pages.RemoveAt(at);
-                    pages.Insert(0, wanted);
+                    Key = key;
+                    Page = page;
                 }
 
-                Ui.Configure("Clash results", Redraw, pages.ToArray());
+                internal string Key { get; }
+
+                internal Ui.Page Page { get; }
             }
 
             private UIElement SourcePage() => Ui.Stack(

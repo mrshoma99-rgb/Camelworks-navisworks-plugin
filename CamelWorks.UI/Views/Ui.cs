@@ -1243,8 +1243,39 @@ namespace CamelWorks.UI.Views
             };
 
             button.Wearing("RowBtn");
-            if (onClick != null) button.Click += (s, e) => onClick();
+
+            // Room between symbols. A row of twelve icons with a pixel between them reads as one
+            // striped object rather than twelve buttons, and the wrong one gets pressed - which is
+            // worse for a row where two of the twelve delete things.
+            button.Margin = new Thickness(3, 2, 3, 2);
+
+            if (onClick != null) button.Click += (s, e) => Busy(onClick);
             return button;
+        }
+
+        /// <summary>
+        /// Run a row verb with the wait cursor up.
+        ///
+        /// A symbol under a table does its work on the UI thread — that is the right shape for
+        /// something that is usually instant, and the wrong one on the day it is not: the first
+        /// verb after a model change pays for a walk of the federation, and a window that stops
+        /// repainting with an ordinary arrow over it reads as a plug-in that has crashed. The
+        /// cursor is the cheapest honest signal, and it costs nothing on the ordinary press.
+        /// </summary>
+        /// <param name="act">What the verb does.</param>
+        private static void Busy(Action act)
+        {
+            var was = Mouse.OverrideCursor;
+
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+                act();
+            }
+            finally
+            {
+                Mouse.OverrideCursor = was;
+            }
         }
 
         private static System.Windows.Controls.Button Press(string caption, Action onClick, string? style)
@@ -2303,6 +2334,17 @@ namespace CamelWorks.UI.Views
 
             var panel = new ContentControl();
 
+            // One section, no list. Seven symbols on the action row that each open the same window
+            // showing the same seven-item list read as one button drawn seven times: the thing the
+            // symbol named was on the screen, but so was everything else, and nothing about the
+            // window said which press had opened it. A symbol that names a section now opens that
+            // section and only it, titled with its own name.
+            if (sections.Length == 1)
+            {
+                Section(sections[0].Name, sections[0], onClosed);
+                return;
+            }
+
             var list = new StackPanel { Margin = new Thickness(6, 8, 6, 8) };
             var buttons = new List<System.Windows.Controls.Button>();
 
@@ -2409,6 +2451,84 @@ namespace CamelWorks.UI.Views
 
             Skin.Apply(window);
             ShowSection(0);
+
+            if (onClosed != null) window.Closed += (s, e) => onClosed();
+
+            window.ShowDialog();
+        }
+
+        /// <summary>
+        /// One section, in a window of its own — what a symbol on the action row opens.
+        /// </summary>
+        /// <param name="title">The section's name, which is the window's title.</param>
+        /// <param name="section">The section to show.</param>
+        /// <param name="onClosed">Called when it closes, for the screen to redraw itself.</param>
+        private static void Section(string title, Page section, Action? onClosed)
+        {
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            UIElement built;
+
+            try
+            {
+                built = section.Build();
+            }
+            catch (Exception e)
+            {
+                built = Problem("This section could not be opened: " + Describe(e));
+            }
+
+            var stage = new Border
+            {
+                Child = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = built,
+                    Padding = new Thickness(18, 16, 18, 16),
+                },
+            };
+
+            stage.Tint(Border.BackgroundProperty, "Card");
+            root.Children.Add(stage);
+
+            var window = new Window
+            {
+                Title = "CamelWorks - " + title,
+                Width = 560,
+                // Sized to the section rather than to the largest of seven. A window that opens
+                // three quarters empty reads as a screen that failed to load its content.
+                SizeToContent = SizeToContent.Height,
+                MaxHeight = 640,
+                MinWidth = 420,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var done = Primary("Done", () => window.Close());
+            done.MinWidth = 92;
+
+            var foot = new Border
+            {
+                Padding = new Thickness(14, 9, 14, 10),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Child = new ContentControl
+                {
+                    Content = done,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                },
+            };
+
+            foot.Tint(Border.BackgroundProperty, "Pane");
+            foot.Tint(Border.BorderBrushProperty, "Bd");
+            Grid.SetRow(foot, 1);
+            root.Children.Add(foot);
+
+            window.Content = root;
+
+            Skin.Apply(window);
 
             if (onClosed != null) window.Closed += (s, e) => onClosed();
 
@@ -2687,7 +2807,9 @@ namespace CamelWorks.UI.Views
 
                 if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
-                button.Margin = new Thickness(glyph == null ? Gap : 1, 2, 0, 2);
+                // A worded button carries its own padding; a symbol needs the room put around it,
+                // for the same reason Icon does.
+                button.Margin = new Thickness(glyph == null ? Gap : 3, 2, glyph == null ? 0 : 3, 2);
                 button.Tag = here.Caption;
 
                 buttons.Add(button);
