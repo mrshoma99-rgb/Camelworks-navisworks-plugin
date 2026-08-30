@@ -51,6 +51,7 @@ namespace CamelWorks.Core.Findings
             Text("group", finding.Group);
             Text("origin", finding.Origin);
             Text("hostProblem", finding.HostProblem);
+            Text("topic", finding.TopicGuid);
 
             if (finding.DueDayNumber != null) json.Set("due", finding.DueDayNumber.Value);
             if (finding.LastSeenTicks > 0) json.Set("seen", finding.LastSeenTicks);
@@ -65,6 +66,9 @@ namespace CamelWorks.Core.Findings
                 json.Set("elements", JsonValue.Array(
                     finding.Elements.Select(e => JsonValue.String(e.ToString()))));
 
+            if (finding.Pending.Count > 0)
+                json.Set("pending", JsonValue.Array(finding.Pending.Select(JsonValue.String)));
+
             if (finding.Labels.Count > 0)
                 json.Set("labels", JsonValue.Array(finding.Labels.Select(JsonValue.String)));
 
@@ -73,7 +77,8 @@ namespace CamelWorks.Core.Findings
                     JsonValue.Object()
                         .Set("author", c.Author)
                         .Set("when", c.WhenTicks)
-                        .Set("body", c.Body))));
+                        .Set("body", c.Body)
+                        .Set("inHost", c.InHost))));
 
             if (finding.Facts.Count > 0)
             {
@@ -139,6 +144,7 @@ namespace CamelWorks.Core.Findings
             finding.Group = json["group"].AsString();
             finding.Origin = json["origin"].AsString();
             finding.HostProblem = json["hostProblem"].AsString();
+            finding.TopicGuid = json["topic"].AsString();
             finding.LastSeenTicks = json["seen"].AsLong();
             finding.IsPresent = !json["gone"].AsBool();
             finding.HostHasIt = json["inHost"].AsBool();
@@ -152,10 +158,17 @@ namespace CamelWorks.Core.Findings
                 if (label.AsString() is string named && named.Length > 0)
                     finding.Labels.Add(named);
 
+            foreach (var field in json["pending"].Items)
+                if (field.AsString() is string waiting && waiting.Length > 0)
+                    finding.Pending.Add(waiting);
+
             foreach (var comment in json["comments"].Items)
                 if (comment["body"].AsString() is string body)
                     finding.Comments.Add(new FindingComment(comment["author"].AsString(),
-                                                            comment["when"].AsLong(), body));
+                                                            comment["when"].AsLong(), body)
+                    {
+                        InHost = comment["inHost"].AsBool(),
+                    });
 
             var facts = json["facts"];
 

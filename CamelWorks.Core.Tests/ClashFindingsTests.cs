@@ -172,5 +172,32 @@ namespace CamelWorks.Core.Tests
             Assert.Empty(finding.Elements);
             Assert.Equal("Clash9", finding.Title);
         }
+
+        [Fact]
+        public void ItCarriesTheTopicItWillExportAs()
+        {
+            // How a file coming back from somebody else's tool finds its way home: the markup
+            // carries the topic, not the elements this model knows.
+            var result = Result("7", 12.5, 40.25, 7.8);
+            var finding = ClashFindings.From("MEP vs Structure", result);
+
+            Assert.Equal(ClashBcf.TopicGuidFor(result.Key()), finding.TopicGuid);
+        }
+
+        [Fact]
+        public void WhatWasReadOutOfTheDocumentIsNotWaitingToGoBackIn()
+        {
+            // Otherwise the first sync after a read would write every comment in the model back
+            // into the model, and every conversation would double.
+            var result = Result("7", 12.5, 40.25, 7.8);
+
+            result.Comments = new[] { new ClashComment("ada", 1, "The beam cannot move.") };
+
+            var finding = ClashFindings.From("MEP vs Structure", result);
+
+            Assert.True(finding.HostHasIt);
+            Assert.False(finding.IsHeld);
+            Assert.True(finding.Comments.Single().InHost);
+        }
     }
 }

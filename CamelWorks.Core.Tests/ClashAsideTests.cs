@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Store;
@@ -12,12 +13,28 @@ namespace CamelWorks.Core.Tests
     /// <summary>
     /// The clash properties Navisworks has nowhere to keep.
     ///
-    /// The point of the register is that the board can show a due date the host has no column for,
-    /// and that the next export sends it back out. Both directions are tested, because carrying it
-    /// one way only is how a reviewer's priority gets quietly reset every cycle.
+    /// The point is that the board can show a due date the host has no column for, and that the
+    /// next export sends it back out. Both directions are tested, because carrying it one way
+    /// only is how a reviewer's priority gets quietly reset every cycle.
+    ///
+    /// These live on the finding now. What a markup said is read into a record, laid onto the
+    /// finding it belongs to, and read back off it when the file goes out again - so the cycle
+    /// tests go through a finding rather than through a register of their own.
     /// </summary>
-    public class ClashAsidesTests
+    public class ClashAsideTests
     {
+        /// <summary>A clash finding for an item, the way a read of the model would make one.</summary>
+        private static Finding Made(ClashItem item)
+        {
+            var finding = Core.Findings.Finding.Create(
+                FindingSource.Clash, "MEP vs Structure", item.TestName,
+                new[] { item.Key.A, item.Key.B }, ClashFindings.CellOf(item.Key));
+
+            finding.TopicGuid = ClashBcf.TopicGuidFor(item.Key);
+
+            return finding;
+        }
+
         private static ClashItem Item()
         {
             var scope = ElementKey.ScopeOf("MEP.ifc");
@@ -30,9 +47,7 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void EveryFieldSurvivesTheProjectFile()
         {
-            var register = new ClashAsides();
-
-            var aside = register.For("topic-1");
+            var aside = new ClashAside("topic-1");
             aside.TestId = "T1";
             aside.ResultId = "R1";
             aside.Priority = "High";
@@ -43,8 +58,7 @@ namespace CamelWorks.Core.Tests
             aside.WhenTicks = 123456789L;
             aside.Labels.Add("Site query");
 
-            var back = ClashAsides.FromJson(JsonReader.Parse(register.ToJson().ToJson()));
-            var read = back.Find("topic-1");
+            var read = ClashAside.FromJson(JsonReader.Parse(aside.ToJson().ToJson()));
 
             Assert.NotNull(read);
             Assert.Equal("T1", read!.TestId);
@@ -59,55 +73,61 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void ALaterMarkupReplacesAnEarlierOneOutright()
+        public void WhatTheMarkupSaidLandsOnTheFinding()
         {
-            // A reviewer who cleared a due date has said something. A merge that kept the old one
-            // would refuse to hear it.
-            var register = new ClashAsides();
+            var finding = Made(Item());
 
-            register.Put(new ClashAside("topic-1")
+            new ClashAside("topic-1")
             {
                 Priority = "High",
+                Stage = "Construction",
+                Title = "Duct through transfer beam",
                 DueTicks = new DateTime(2026, 4, 15, 0, 0, 0, DateTimeKind.Utc).Ticks,
-            });
+                Source = "ada.bcfzip",
+            }.ApplyTo(finding);
 
-            register.Put(new ClashAside("topic-1") { Priority = "Low" });
-
-            var read = register.Find("topic-1");
-
-            Assert.Equal("Low", read!.Priority);
-            Assert.Equal(0, read.DueTicks);
+            Assert.Equal("High", finding.Priority);
+            Assert.Equal("Construction", finding.Stage);
+            Assert.Equal("Duct through transfer beam", finding.Title);
+            Assert.Equal(new DateTime(2026, 4, 15), finding.Due);
+            Assert.Equal("ada.bcfzip", finding.Origin);
+            Assert.Equal("topic-1", finding.TopicGuid);
         }
 
         [Fact]
-        public void ARecordHoldingNothingRemovesTheEntry()
+        public void AToolThatSaysNothingClearsNothing()
         {
-            var register = new ClashAsides();
+            // A reviewer's tool with no stage picker sends no stage. Reading that as "clear the
+            // stage" would let the least capable tool in the round trip erase what the rest set.
+            var finding = Made(Item());
 
-            register.Put(new ClashAside("topic-1") { Priority = "High" });
-            Assert.Equal(1, register.Count);
+            new ClashAside("topic-1") { Priority = "High", Stage = "Construction" }.ApplyTo(finding);
+            new ClashAside("topic-1") { Priority = "Low" }.ApplyTo(finding);
 
-            register.Put(new ClashAside("topic-1"));
-            Assert.True(register.IsEmpty);
+            Assert.Equal("Low", finding.Priority);
+            Assert.Equal("Construction", finding.Stage);
         }
 
         [Fact]
-        public void OverdueIsCounted()
+        public void AFindingNobodySetAnythingOnSendsNothingBack()
         {
-            var now = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
-            var register = new ClashAsides();
+            // Otherwise every export would carry a record per clash, holding nothing.
+            Assert.Null(ClashAside.Of(Made(Item())));
+        }
 
-            register.Put(new ClashAside("late")
-                { DueTicks = new DateTime(2026, 4, 15, 0, 0, 0, DateTimeKind.Utc).Ticks });
+        [Fact]
+        public void OverdueIsToldFromTheFinding()
+        {
+            var finding = Made(Item());
 
-            register.Put(new ClashAside("soon")
-                { DueTicks = new DateTime(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc).Ticks });
+            new ClashAside("topic-1")
+                { DueTicks = new DateTime(2026, 4, 15, 0, 0, 0, DateTimeKind.Utc).Ticks }
+                .ApplyTo(finding);
 
-            register.Put(new ClashAside("undated") { Priority = "Low" });
-
-            Assert.Equal(1, register.Overdue(now));
-            Assert.True(register.Find("late")!.IsOverdue(now));
-            Assert.False(register.Find("undated")!.IsOverdue(now));
+            Assert.True(finding.IsOverdue(Finding.DayNumberFor(new DateTime(2026, 5, 1))));
+            Assert.False(finding.IsOverdue(Finding.DayNumberFor(new DateTime(2026, 4, 1))));
+            Assert.False(Made(Item()).IsOverdue(
+                Finding.DayNumberFor(new DateTime(2026, 5, 1))));
         }
 
         [Fact]
@@ -209,12 +229,12 @@ namespace CamelWorks.Core.Tests
 
             var home = ClashBcf.Read(answered).Results.Single();
 
-            var register = new ClashAsides();
-            register.Put(ClashBcf.Review(home, home.Name, "ada.bcfzip"));
+            var finding = Made(Item());
+            ClashBcf.Review(home, home.Name, "ada.bcfzip")!.ApplyTo(finding);
 
-            // Next week's export, built from the model plus the register.
+            // Next week's export, built from the model plus what the finding kept.
             var again = Item();
-            again.Review = register.Find(ClashBcf.TopicGuidFor(again.Key));
+            again.Review = ClashAside.Of(finding);
 
             using var second = new MemoryStream(ClashBcf.Write(new[] { again }).Bytes);
 

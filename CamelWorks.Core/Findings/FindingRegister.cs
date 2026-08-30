@@ -155,7 +155,9 @@ namespace CamelWorks.Core.Findings
                 // cannot undo somebody having approved it.
                 held.MergeFrom(fresh, otherIsNewer: true);
 
-                held.Title = fresh.Title;
+                // A title somebody set and the host would not take is not the run's to reword.
+                if (!held.Pending.Contains(FindingField.Title)) held.Title = fresh.Title;
+
                 held.Detail = fresh.Detail;
                 held.X = fresh.X;
                 held.Y = fresh.Y;

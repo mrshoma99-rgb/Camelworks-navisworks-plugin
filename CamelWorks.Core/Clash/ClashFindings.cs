@@ -66,6 +66,14 @@ namespace CamelWorks.Core.Clash
             var finding = Finding.Create(FindingSource.Clash, rule,
                                          result.Name ?? "Clash", elements, where);
 
+            // The topic this exports as, derived here so a markup coming back from somebody
+            // else's tool finds its way home without re-deriving the key.
+            if (elements.Count == 2) finding.TopicGuid = ClashBcf.TopicGuidFor(result.Key(cell));
+
+            // Read out of the host, so the host has it. Anything set on the board afterwards
+            // that the host refuses will say so for itself.
+            finding.HostHasIt = true;
+
             finding.Group = string.IsNullOrWhiteSpace(result.GroupName) ? null : result.GroupName;
             finding.X = result.PointX;
             finding.Y = result.PointY;
@@ -96,7 +104,7 @@ namespace CamelWorks.Core.Clash
             foreach (var comment in result.Comments)
                 if (comment != null && !string.IsNullOrWhiteSpace(comment.Body))
                     finding.Comments.Add(new FindingComment(comment.Author, comment.WhenTicks,
-                                                            comment.Body));
+                                                            comment.Body) { InHost = true });
 
             return finding;
         }

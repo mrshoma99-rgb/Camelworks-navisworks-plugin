@@ -2,11 +2,26 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Clash
 {
-    /// <summary>What a reviewer set on one clash that the host has no field for.</summary>
+    /// <summary>
+    /// What a reviewer set on one clash that the host has no field for.
+    ///
+    /// <b>A message, not a store.</b> This is what one markup said, read out of it and handed
+    /// straight to the finding it belongs to. Nothing keeps a register of these any more: the
+    /// finding is the record, and a priority read out of a returned file lives on the finding
+    /// beside the status and the trail rather than in a second file keyed a second way.
+    ///
+    /// BCF carries a priority, a due date, a stage, a title and whatever tags a reviewer likes.
+    /// A Navisworks clash result carries a status, an assignee, a group and comments, and that is
+    /// all - so when a returned file says "high priority, due the fifteenth", the host has no
+    /// field to put it in. Dropping it loses what somebody wrote; mashing it into a comment keeps
+    /// the words but not the fact, so the board could not show a due date or say what is overdue.
+    /// It goes onto the finding, which has room for it.
+    /// </summary>
     public sealed class ClashAside
     {
         /// <summary>Name the topic this belongs to.</summary>
@@ -88,6 +103,58 @@ namespace CamelWorks.Core.Clash
             return said.Count == 0 ? "nothing" : string.Join("; ", said);
         }
 
+        /// <summary>
+        /// Lay what the markup said onto the finding it belongs to.
+        ///
+        /// Field by field, and only where the markup said something: a reviewer's tool that has
+        /// no stage picker sends no stage, and reading that as "clear the stage" would let the
+        /// least capable tool in the round trip erase what the others set. A cleared due date is
+        /// the one exception people do mean, so a markup that carries a topic and no date at all
+        /// leaves the date alone rather than guessing - clearing one is done on the board.
+        /// </summary>
+        /// <param name="finding">The finding. Null is ignored, so callers need no guard.</param>
+        public void ApplyTo(Finding? finding)
+        {
+            if (finding == null) return;
+
+            if (Priority != null) finding.Priority = Priority;
+            if (Stage != null) finding.Stage = Stage;
+            if (Title != null) finding.Title = Title;
+            if (DueTicks > 0) finding.DueDayNumber = Finding.DayNumberFor(Due!.Value);
+
+            foreach (var label in Labels)
+                if (!finding.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))
+                    finding.Labels.Add(label);
+
+            if (!string.IsNullOrWhiteSpace(Source)) finding.Origin = Source;
+            if (TopicGuid.Length > 0) finding.TopicGuid = TopicGuid;
+        }
+
+        /// <summary>
+        /// What a finding would say if it were written back out as a markup, or null when it
+        /// carries nothing the host had no field for.
+        ///
+        /// The other direction of <see cref="ApplyTo"/>, so an export sends a reviewer's priority
+        /// back out rather than quietly resetting it on every round trip.
+        /// </summary>
+        /// <param name="finding">The finding.</param>
+        public static ClashAside? Of(Finding? finding)
+        {
+            if (finding == null || string.IsNullOrEmpty(finding.TopicGuid)) return null;
+
+            var aside = new ClashAside(finding.TopicGuid!)
+            {
+                Priority = finding.Priority,
+                Stage = finding.Stage,
+                DueTicks = finding.Due?.Ticks ?? 0,
+                Source = finding.Origin,
+            };
+
+            foreach (var label in finding.Labels) aside.Labels.Add(label);
+
+            return aside.IsEmpty ? null : aside;
+        }
+
         /// <summary>Serialise.</summary>
         public JsonValue ToJson()
         {
@@ -141,128 +208,6 @@ namespace CamelWorks.Core.Clash
                     aside.Labels.Add(named);
 
             return aside;
-        }
-    }
-
-    /// <summary>
-    /// The clash properties Navisworks has nowhere to keep, kept here instead.
-    ///
-    /// <b>Why this exists.</b> BCF carries a priority, a due date, a stage, a title and whatever
-    /// tags a reviewer likes. A Navisworks clash result carries a status, an assignee, a group and
-    /// comments, and that is all. So when a returned file says "high priority, due the fifteenth",
-    /// the host has no field to put it in - and the choice was between dropping it and mashing it
-    /// into a comment as prose.
-    ///
-    /// Neither is right. Dropping it loses what somebody wrote; a comment keeps the words but not
-    /// the fact, so the board cannot show a due date, sort by priority, or say what is overdue.
-    /// The board should be able to, and the host not having a column is not a reason it cannot:
-    /// this is what the project file is for.
-    ///
-    /// <b>Keyed on the BCF topic id</b>, which is a function of the two clashing elements. It
-    /// survives a re-run, it is what a returned file brings back, and it is what the sync already
-    /// matches on - so a record made from last week's markup still finds its clash today.
-    ///
-    /// <b>They go back out.</b> The next export writes them onto the topic again, so a reviewer's
-    /// priority is not quietly reset every time the file makes a round trip.
-    /// </summary>
-    public sealed class ClashAsides
-    {
-        private readonly Dictionary<string, ClashAside> _asides =
-            new Dictionary<string, ClashAside>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>How many clashes carry one.</summary>
-        public int Count => _asides.Count;
-
-        /// <summary>Whether anything is held.</summary>
-        public bool IsEmpty => _asides.Count == 0;
-
-        /// <summary>Every record, in no particular order.</summary>
-        public IReadOnlyCollection<ClashAside> All => _asides.Values;
-
-        /// <summary>How many are past their due date.</summary>
-        /// <param name="nowTicks">Now, as UTC ticks.</param>
-        public int Overdue(long nowTicks) => _asides.Values.Count(a => a.IsOverdue(nowTicks));
-
-        /// <summary>The record for a topic, creating it on first use.</summary>
-        /// <param name="topicGuid">The topic.</param>
-        public ClashAside For(string topicGuid)
-        {
-            var key = topicGuid ?? string.Empty;
-
-            if (!_asides.TryGetValue(key, out var aside))
-            {
-                aside = new ClashAside(key);
-                _asides[key] = aside;
-            }
-
-            return aside;
-        }
-
-        /// <summary>
-        /// Put a record in, replacing whatever was there for that topic.
-        ///
-        /// The later markup wins outright rather than merging field by field: a reviewer who
-        /// cleared a due date has said something, and a merge that kept the old one would refuse
-        /// to hear it.
-        /// </summary>
-        /// <param name="aside">The record. One holding nothing removes the topic's entry.</param>
-        public void Put(ClashAside? aside)
-        {
-            if (aside == null || aside.TopicGuid.Length == 0) return;
-
-            if (aside.IsEmpty) _asides.Remove(aside.TopicGuid);
-            else _asides[aside.TopicGuid] = aside;
-        }
-
-        /// <summary>The record for a topic, or null.</summary>
-        /// <param name="topicGuid">The topic.</param>
-        public ClashAside? Find(string? topicGuid) =>
-            topicGuid != null && _asides.TryGetValue(topicGuid, out var aside) ? aside : null;
-
-        /// <summary>Forget one.</summary>
-        /// <param name="topicGuid">The topic.</param>
-        public bool Release(string? topicGuid) =>
-            topicGuid != null && _asides.Remove(topicGuid);
-
-        /// <summary>Forget everything.</summary>
-        public void Clear() => _asides.Clear();
-
-        /// <summary>Drop the records that ended up holding nothing.</summary>
-        public void Tidy()
-        {
-            foreach (var empty in _asides.Where(a => a.Value.IsEmpty).Select(a => a.Key).ToList())
-                _asides.Remove(empty);
-        }
-
-        /// <summary>Serialise.</summary>
-        public JsonValue ToJson()
-        {
-            Tidy();
-
-            return JsonValue.Object()
-                .Set("asides", JsonValue.Array(
-                    _asides.Values.OrderBy(a => a.TopicGuid, StringComparer.Ordinal)
-                                  .Select(a => a.ToJson())));
-        }
-
-        /// <summary>Read a register back. Never null: nothing held is the ordinary state.</summary>
-        /// <param name="json">What was saved, or null.</param>
-        public static ClashAsides FromJson(JsonValue? json)
-        {
-            var held = new ClashAsides();
-
-            if (json == null || json.Kind != JsonKind.Object) return held;
-
-            foreach (var record in json["asides"].Items)
-            {
-                var aside = ClashAside.FromJson(record);
-
-                if (aside == null || aside.IsEmpty) continue;
-
-                held._asides[aside.TopicGuid] = aside;
-            }
-
-            return held;
         }
     }
 }

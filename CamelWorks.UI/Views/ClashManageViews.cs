@@ -11,6 +11,7 @@ using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
+using CamelWorks.Core.Store;
 using CamelWorks.Nav;
 
 namespace CamelWorks.UI.Views
@@ -50,31 +51,16 @@ namespace CamelWorks.UI.Views
         private static readonly List<PropColumn> _columns = new List<PropColumn>();
         private static readonly List<string> _chain = new List<string>();
 
-        /// <summary>Where the register of refused edits lives in the project file.</summary>
-        private const string HeldKey = "heldEdits";
-
-        /// <summary>Where the properties the host has no field for live in the project file.</summary>
-        private const string AsideKey = "asides";
-
         /// <summary>
-        /// What reviewers set that a Navisworks clash result cannot hold - priority, due date,
-        /// stage, their own tags.
+        /// The finding behind each row that was read from the model, by test and result id.
         ///
-        /// The host having no column is not a reason the board cannot show one. Kept beside the
-        /// read, dropped when the document changes, and written back into the project file on
-        /// every sync.
+        /// <b>An index, not a store.</b> The findings themselves live beside the project and are
+        /// the record of what somebody decided - the status a published NWD refused, the priority
+        /// a reviewer's tool set that the host has no field for, the trail. This is only the way
+        /// back from a row on screen to the finding it is a view of, rebuilt on every read because
+        /// the host reissues its result ids whenever it feels like it.
         /// </summary>
-        private static ClashAsides? _asides;
-
-        /// <summary>
-        /// The edits this document would not take, kept so the week's work is not lost.
-        ///
-        /// Static and beside the read, because it belongs to the document rather than to one visit
-        /// to the tab: loaded from the project file on the first visit, written back on every
-        /// change so it survives closing Navisworks, and dropped when the document changes so it
-        /// can never be applied to a federation it says nothing about.
-        /// </summary>
-        private static HeldEdits? _heldEdits;
+        private static Dictionary<string, Finding>? _byHost;
 
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
@@ -94,8 +80,7 @@ namespace CamelWorks.UI.Views
             _read = null;
             _file = null;
             _source = FromModel;
-            _heldEdits = null;
-            _asides = null;
+            _byHost = null;
 
             _columns.Clear();
             _chain.Clear();
@@ -289,12 +274,6 @@ namespace CamelWorks.UI.Views
             internal Screen(Session session)
             {
                 _session = session;
-
-                _heldEdits ??= HeldEdits.FromJson(
-                    session.Store.Section(ProjectStore.ClashSection)[HeldKey]);
-
-                _asides ??= ClashAsides.FromJson(
-                    session.Store.Section(ProjectStore.ClashSection)[AsideKey]);
 
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
@@ -618,17 +597,98 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Keeping what was found...");
 
-                var intake = _session.Findings.Findings.Observe(
+                var register = _session.Findings.Findings;
+
+                var intake = register.Observe(
                     FindingSource.Clash, found, DateTime.UtcNow.Ticks,
                     origin: _session.Store.Path,
                     scope: f => read.Contains(f.Rule));
+
+                Index(register);
+
+                var carried = Carried(register);
+
+                if (carried > 0) Index(register);
+
+                foreach (var entry in entries)
+                    foreach (var row in entry.Rows)
+                        Apply(Found(row), row);
 
                 if (!_session.Findings.Save())
                     return "These results are on the board but could not be kept: "
                            + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.");
 
-                return intake.Explain();
+                return intake.Explain()
+                       + (carried > 0
+                           ? " " + Ui.Count(carried, "clash") + " took back what an earlier "
+                             + "version of this tool was keeping in the project file."
+                           : string.Empty);
             }
+
+            /// <summary>
+            /// Build the way back from a row to its finding.
+            ///
+            /// Only findings this run reported: one marked absent points at a result the host no
+            /// longer has, and an index entry for it would hand a row to the wrong clash the next
+            /// time the engine reused the id.
+            /// </summary>
+            private static void Index(FindingRegister register)
+            {
+                var index = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var finding in register.From(FindingSource.Clash))
+                {
+                    if (!finding.IsPresent) continue;
+
+                    if (finding.Facts.TryGetValue(ClashFindings.HostTest, out var test)
+                        && finding.Facts.TryGetValue(ClashFindings.HostId, out var result)
+                        && test != null && result != null)
+                        index[Where(test, result)] = finding;
+                }
+
+                _byHost = index;
+            }
+
+            /// <summary>
+            /// Take back what the two old side registers were holding, once each run.
+            ///
+            /// Somebody who marked up a published NWD before findings existed has that work in
+            /// the project file under keys nothing reads any more. Folding is idempotent, so this
+            /// runs on every read and neither doubles anything nor deletes the old keys.
+            /// </summary>
+            private int Carried(FindingRegister register)
+            {
+                var section = _session.Store.Section(ProjectStore.ClashSection);
+
+                var held = section[ClashLegacy.HeldKey];
+                var asides = section[ClashLegacy.AsideKey];
+
+                if (held.Kind != JsonKind.Object && asides.Kind != JsonKind.Object) return 0;
+
+                return ClashLegacy.Fold(held, asides,
+                                        register.From(FindingSource.Clash).Where(f => f.IsPresent));
+            }
+
+            /// <summary>The finding a row is a view of, or null when this read kept none.</summary>
+            private static Finding? Found(Row row) => Found(row.TestId, row.Info.Id);
+
+            /// <summary>The finding behind one of the host's results, or null.</summary>
+            private static Finding? Found(string? testId, string? resultId) =>
+                _byHost != null && testId != null && resultId != null
+                && _byHost.TryGetValue(Where(testId, resultId), out var finding)
+                    ? finding
+                    : null;
+
+            // A unit separator: it cannot appear in a host id, so no pair of ids can collide with
+            // another pair by running into each other.
+            private static string Where(string test, string result) => test + (char)31 + result;
+
+            /// <summary>Every clash finding the host has not taken everything from.</summary>
+            private IEnumerable<Finding> Waiting =>
+                _session.Findings.Findings.From(FindingSource.Clash).Where(f => f.IsHeld);
+
+            /// <summary>How many clashes are waiting for the document.</summary>
+            private int WaitingCount => Waiting.Count();
 
             private void ReadFile(Job job)
             {
@@ -1024,10 +1084,10 @@ namespace CamelWorks.UI.Views
 
                 _headline.Children.Clear();
 
-                if (!OnFile && !Held.IsEmpty)
+                if (!OnFile && WaitingCount > 0)
                 {
                     _headline.Children.Add(Ui.Info(
-                        Ui.Count(Held.Count, "result") + " carries an edit this document would "
+                        Ui.Count(WaitingCount, "result") + " carries an edit this document would "
                         + "not take. Published files hold their clash results read-only, so the "
                         + "decisions are kept here: they show on the board, they survive a "
                         + "re-read, and \"Save the baseline\" writes them out as clash XML to "
@@ -1767,7 +1827,12 @@ namespace CamelWorks.UI.Views
                 Write(picked, say, "Marked {0} as " + _mark + ".",
                       (testId, ids) => _session.Clash.SetStatus(testId, ids, _mark),
                       row => row.Status = _mark,
-                      edit => edit.Status = _mark);
+                      finding =>
+                      {
+                          if (FindingStatusLattice.TryParse(_mark, out var marked))
+                              finding.Status = marked;
+                      },
+                      FindingField.Status);
 
             private void AssignPicked(IReadOnlyList<object> picked, Panel say)
             {
@@ -1777,7 +1842,8 @@ namespace CamelWorks.UI.Views
                       who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
                       (testId, ids) => _session.Clash.Assign(testId, ids, who),
                       row => row.Assigned = who,
-                      edit => edit.Assigned = who);
+                      finding => finding.AssignedTo = who.Length == 0 ? null : who,
+                      FindingField.AssignedTo);
             }
 
             private void CommentPicked(IReadOnlyList<object> picked, Panel say)
@@ -1803,7 +1869,8 @@ namespace CamelWorks.UI.Views
                           row.LastComment = body;
                           row.Trail.Add(new ClashComment(author, when, body));
                       },
-                      edit => edit.Comments.Add(new ClashComment(author, when, body)));
+                      finding => finding.Comments.Add(new FindingComment(author, when, body)),
+                      FindingField.Comments);
             }
 
             /// <summary>Rename just the picked results, prefix1, prefix2, ... in host order.</summary>
@@ -1866,7 +1933,8 @@ namespace CamelWorks.UI.Views
                       group.Length == 0 ? "Moved {0} out of their groups." : "Grouped {0} into \"" + group + "\".",
                       (testId, ids) => _session.Clash.Regroup(testId, ids, group),
                       row => row.Group = group,
-                      edit => edit.Group = group);
+                      finding => finding.Group = group.Length == 0 ? null : group,
+                      FindingField.Group);
             }
 
             /// <summary>
@@ -1878,7 +1946,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
                                Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply,
-                               Action<HeldEdit>? hold = null)
+                               Action<Finding>? record = null, string? field = null)
             {
                 say.Children.Clear();
 
@@ -1900,37 +1968,45 @@ namespace CamelWorks.UI.Views
                     {
                         var ids = byTest.Select(r => r.Info.Id).ToList();
 
-                        if (!write(byTest.Key, ids))
+                        var took = write(byTest.Key, ids);
+
+                        if (!took && record == null)
                         {
-                            if (hold == null)
-                            {
-                                problems.Add(_session.Clash.LastProblem ?? "The host refused.");
-                                continue;
-                            }
-
-                            // The document would not take it - a published NWD holds its results
-                            // read-only - so the edit is kept rather than lost. It shows on the
-                            // board, it survives a re-read and a re-open, and it travels out in
-                            // the baseline that syncs into the NWF the results belong to.
-                            foreach (var row in byTest)
-                            {
-                                hold(Held.For(row.TestId, row.Info.Id));
-                                apply(row);
-                                held++;
-                            }
-
+                            problems.Add(_session.Clash.LastProblem ?? "The host refused.");
                             continue;
                         }
 
-                        // Written for real: whatever was being kept for these results is now in
-                        // the document, and keeping it any longer would write it twice.
+                        var refused = took ? null : _session.Clash.LastProblem ?? "The host refused.";
+
                         foreach (var row in byTest)
                         {
-                            Held.Release(row.TestId, row.Info.Id);
+                            // The finding takes the edit either way: the database is the record
+                            // and the document is a projection of it. What changes when the
+                            // document refuses - a published NWD holds its results read-only - is
+                            // only that the field says it is still waiting, so the sync knows
+                            // what to offer and never writes the same comment twice.
+                            var finding = Found(row);
+
+                            if (finding != null && record != null)
+                            {
+                                record(finding);
+
+                                if (took)
+                                {
+                                    finding.Landed(field);
+                                }
+                                else
+                                {
+                                    finding.Hold(field ?? FindingField.Status);
+                                    finding.HostProblem = refused;
+                                }
+                            }
+
                             apply(row);
                         }
 
-                        done += ids.Count;
+                        if (took) done += ids.Count;
+                        else held += ids.Count;
                     }
                 }
 
@@ -1940,7 +2016,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                if (!OnFile) { KeepHeld(); ArmSync(); }
+                if (!OnFile) { KeepFindings(); ArmSync(); }
 
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));
@@ -1963,7 +2039,7 @@ namespace CamelWorks.UI.Views
 
                 return " " + Ui.Count(held, "result") + " could not be written into this "
                        + "document, so " + (held == 1 ? "it is" : "they are") + " kept here "
-                       + "instead - " + Ui.Count(Held.Count, "result") + " waiting in all. "
+                       + "instead - " + Ui.Count(WaitingCount, "result") + " waiting in all. "
                        + "Write the baseline to carry them into the NWF.";
             }
 
@@ -2968,7 +3044,10 @@ namespace CamelWorks.UI.Views
                             review.TestId = found.TestId;
                             review.ResultId = found.ResultId;
 
-                            Asides.Put(review);
+                            // Onto the finding, which is the record. The board reads it from
+                            // there, the next export writes it back out, and it survives the
+                            // document being one the host will not write into.
+                            review.ApplyTo(Found(found.TestId, found.ResultId));
 
                             kept++;
 
@@ -3023,7 +3102,7 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                if (kept > 0) KeepAsides();
+                if (kept > 0) KeepFindings();
 
                 var raisedNote = Raise(strangers, named);
 
@@ -3154,10 +3233,10 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// A freshly read row, with what this bench knows and the document does not put back.
             ///
-            /// Two things travel across a re-read: the custom column values, which cost a property
-            /// read each and would otherwise be re-fetched for no reason, and the held edits — the
-            /// decisions a read-only document refused. Without the second the board would forget
-            /// the afternoon's work the moment somebody pressed Read again.
+            /// The custom column values travel across a re-read because they cost a property read
+            /// each and would otherwise be re-fetched for no reason. Everything a coordinator
+            /// decided travels differently — it is on the finding, and laid over the row once the
+            /// read has been taken into the register, which is <see cref="Apply"/>.
             /// </summary>
             private Row Restored(Row row,
                                  Dictionary<string, Dictionary<string, string>> carried)
@@ -3165,49 +3244,45 @@ namespace CamelWorks.UI.Views
                 if (carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
                     foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
 
-                Apply(Held.Find(row.TestId, row.Info.Id), row);
-
-                if (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty)
-                    row.Review = Asides.Find(ClashBcf.TopicGuidFor(row.Info.Key()));
-
                 return row;
             }
 
-            /// <summary>The register of refused edits. Never null once a screen exists.</summary>
-            private static HeldEdits Held => _heldEdits ??= new HeldEdits();
-
-            /// <summary>The register of what the host cannot hold. Never null once a screen exists.</summary>
-            private static ClashAsides Asides => _asides ??= new ClashAsides();
-
-            /// <summary>Write the reviewers' extra fields into the project file.</summary>
-            private void KeepAsides()
+            /// <summary>Write the findings out, so a decision survives closing Navisworks.</summary>
+            private void KeepFindings()
             {
-                try
-                {
-                    _session.Store.Section(ProjectStore.ClashSection).Set(AsideKey, Asides.ToJson());
-                    _session.Store.Save();
-                }
-                catch (Exception)
-                {
-                    // Nowhere to write. They are still on the board for this session.
-                }
+                // Failing to save is an ordinary outcome — a document nobody has saved has no
+                // project file — and never a reason to refuse the edit: it still applies on the
+                // board and still travels out in the baseline.
+                _session.Findings.Save();
             }
 
-            /// <summary>Lay a held edit over a row, so the board reads the way the coordinator left it.</summary>
-            private static void Apply(HeldEdit? edit, Row row)
+            /// <summary>
+            /// Lay a finding over the row it belongs to, so the board reads the way the
+            /// coordinator left it rather than the way a read-only document insists it is.
+            /// </summary>
+            private static void Apply(Finding? finding, Row row)
             {
-                if (edit == null) return;
+                if (finding == null) return;
 
-                if (edit.Status != null) row.Status = edit.Status;
-                if (edit.Assigned != null) row.Assigned = edit.Assigned;
-                if (edit.Group != null) row.Group = edit.Group;
+                row.Status = FindingStatusLattice.ToName(finding.Status);
 
-                foreach (var comment in edit.Comments)
+                if (finding.AssignedTo != null) row.Assigned = finding.AssignedTo;
+                if (finding.Group != null) row.Group = finding.Group;
+
+                // Only the remarks the host has not got: the rest are already on the row, read
+                // out of the document a moment ago.
+                foreach (var comment in finding.Comments)
                 {
-                    row.Trail.Add(comment);
+                    if (comment.InHost) continue;
+
+                    row.Trail.Add(new ClashComment(comment.Author, comment.WhenTicks, comment.Body));
                     row.Comments++;
                     row.LastComment = comment.Body;
                 }
+
+                // What the host has no field for at all — priority, due date, stage, a reviewer's
+                // own tags — so the board can show a column the document cannot.
+                row.Review = ClashAside.Of(finding);
             }
 
             /// <summary>
@@ -3218,48 +3293,63 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void PushHeld()
             {
-                if (Held.IsEmpty) return;
+                var waiting = Waiting.ToList();
+
+                if (waiting.Count == 0) return;
 
                 var written = 0;
                 var refused = 0;
                 var problems = new List<string>();
 
-                foreach (var byTest in Held.All.ToList()
-                                           .GroupBy(e => e.TestId, StringComparer.OrdinalIgnoreCase))
+                foreach (var finding in waiting)
                 {
-                    foreach (var edit in byTest)
+                    if (!finding.Facts.TryGetValue(ClashFindings.HostTest, out var test)
+                        || !finding.Facts.TryGetValue(ClashFindings.HostId, out var result)
+                        || test == null || result == null)
                     {
-                        var ids = new[] { edit.ResultId };
-                        var all = true;
-
-                        if (edit.Status != null)
-                            all &= Kept(_session.Clash.SetStatus(byTest.Key, ids, edit.Status), problems);
-
-                        if (edit.Assigned != null)
-                            all &= Kept(_session.Clash.Assign(byTest.Key, ids, edit.Assigned), problems);
-
-                        if (edit.Group != null)
-                            all &= Kept(_session.Clash.Regroup(byTest.Key, ids, edit.Group), problems);
-
-                        foreach (var comment in edit.Comments)
-                            all &= Kept(_session.Clash.Comment(byTest.Key, ids, comment.Body,
-                                                               comment.Author), problems);
-
-                        // Released only when every part landed: a half-written edit that stopped
-                        // being held would lose the half the document refused.
-                        if (all)
-                        {
-                            Held.Release(edit.TestId, edit.ResultId);
-                            written++;
-                        }
-                        else
-                        {
-                            refused++;
-                        }
+                        // Nothing to write into: this finding's result is not in the document
+                        // that is open. It stays waiting, which is the honest answer.
+                        refused++;
+                        continue;
                     }
+
+                    var ids = new[] { result };
+                    var landed = new List<string>();
+
+                    foreach (var field in finding.Pending.ToList())
+                    {
+                        var ok = field switch
+                        {
+                            FindingField.Status =>
+                                Kept(_session.Clash.SetStatus(
+                                    test, ids, FindingStatusLattice.ToName(finding.Status)), problems),
+
+                            FindingField.AssignedTo =>
+                                Kept(_session.Clash.Assign(
+                                    test, ids, finding.AssignedTo ?? string.Empty), problems),
+
+                            FindingField.Group =>
+                                Kept(_session.Clash.Regroup(
+                                    test, ids, finding.Group ?? string.Empty), problems),
+
+                            FindingField.Title =>
+                                Kept(_session.Clash.RenamePicked(test, ids, finding.Title), problems),
+
+                            FindingField.Comments => Say(test, ids, finding, problems),
+
+                            _ => true,
+                        };
+
+                        if (ok) landed.Add(field);
+                    }
+
+                    foreach (var field in landed) finding.Landed(field);
+
+                    if (finding.IsHeld) refused++;
+                    else written++;
                 }
 
-                KeepHeld();
+                KeepFindings();
                 ArmSync();
                 RedrawTests();
 
@@ -3270,6 +3360,28 @@ namespace CamelWorks.UI.Views
                               ? "; " + Ui.Count(refused, "other") + " still refused and still kept."
                               : ". Nothing is waiting now."),
                      problems.Distinct().Take(3).ToList());
+            }
+
+            /// <summary>
+            /// Offer the remarks the document has not got, and say whether it took all of them.
+            ///
+            /// The adapter skips a comment the result already carries word for word, so a partial
+            /// failure here is a real refusal rather than a double.
+            /// </summary>
+            private bool Say(string test, IReadOnlyList<string> ids, Finding finding,
+                             List<string> problems)
+            {
+                var all = true;
+
+                foreach (var comment in finding.Comments)
+                {
+                    if (comment.InHost) continue;
+
+                    all &= Kept(_session.Clash.Comment(test, ids, comment.Body, comment.Author),
+                                problems);
+                }
+
+                return all;
             }
 
             /// <summary>One host answer, with its complaint collected the first time it is heard.</summary>
@@ -3326,9 +3438,11 @@ namespace CamelWorks.UI.Views
 
                 // Kept visible rather than hidden when it cannot run: a button that disappears
                 // teaches nobody that the sync exists, and it is the thing somebody came for.
-                _syncButton.Content = Held.IsEmpty
+                var waiting = WaitingCount;
+
+                _syncButton.Content = waiting == 0
                     ? "Sync into the document"
-                    : "Sync " + Ui.Count(Held.Count, "change") + " into the document";
+                    : "Sync " + Ui.Count(waiting, "change") + " into the document";
             }
 
             /// <summary>
@@ -3355,7 +3469,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                if (Held.IsEmpty)
+                if (WaitingCount == 0)
                 {
                     Tell("Nothing is waiting to be written - every change on this board is "
                          + "already in the document.", null);
@@ -3370,25 +3484,21 @@ namespace CamelWorks.UI.Views
             {
                 _log.Children.Clear();
 
-                if (Held.IsEmpty)
+                var waiting = Waiting
+                    .OrderBy(f => f.Rule, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(f => f.Title, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (waiting.Count == 0)
                 {
                     _log.Children.Add(Ui.Line("Nothing is waiting.", 0.75));
                     return;
                 }
 
-                var read = Current();
-
-                string Name(HeldEdit edit) =>
-                    read?.FirstOrDefault(e => string.Equals(e.Test.Id, edit.TestId,
-                                                            StringComparison.OrdinalIgnoreCase))
-                        ?.Test.Name ?? edit.TestId;
-
                 _log.Children.Add(Ui.Eyebrow("Waiting to be written"));
 
                 var table = Ui.Table(
-                    Held.All.OrderBy(e => Name(e), StringComparer.OrdinalIgnoreCase)
-                            .ThenBy(e => e.ResultId, StringComparer.OrdinalIgnoreCase)
-                            .Select(e => new TableRow(e, Name(e), e.ResultId, e.Describe())),
+                    waiting.Select(f => new TableRow(f, f.Rule, f.Title, f.Describe())),
                     ("Test", 200), ("Result", 140), ("What is held", 0));
 
                 _log.Children.Add(table);
@@ -3398,10 +3508,13 @@ namespace CamelWorks.UI.Views
                         (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "held edit")),
                     new Ui.OnPicked("Forget {n}", (picked, say) =>
                     {
-                        foreach (var edit in picked.OfType<HeldEdit>())
-                            Held.Release(edit.TestId, edit.ResultId);
+                        // Forgetting is only about the wait, never about the record: the finding
+                        // keeps what somebody decided, and stops offering it to a document that
+                        // will not have it.
+                        foreach (var finding in picked.OfType<Finding>()) finding.Released();
 
-                        KeepHeld();
+                        KeepFindings();
+                        ArmSync();
                         say.Children.Add(Ui.Done("Forgotten. Press \"Read the results\" to see "
                             + "the board the way the document holds it."));
                     })));
@@ -3418,7 +3531,7 @@ namespace CamelWorks.UI.Views
                     _forgetArmed = true;
 
                     Tell("Press \"Forget them\" again to throw away "
-                         + Ui.Count(Held.Count, "held edit")
+                         + Ui.Count(WaitingCount, "held edit")
                          + ". They have not been written into any document, so once forgotten "
                          + "they are gone - unless a baseline was saved while they were held.",
                          null);
@@ -3428,8 +3541,9 @@ namespace CamelWorks.UI.Views
 
                 _forgetArmed = false;
 
-                Held.Clear();
-                KeepHeld();
+                foreach (var finding in Waiting.ToList()) finding.Released();
+
+                KeepFindings();
                 ArmSync();
                 RedrawTests();
                 Tell("Forgot the held edits. Press \"Read the results\" to see the board the "
@@ -3438,26 +3552,6 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Whether "Forget them" has been pressed once already.</summary>
             private bool _forgetArmed;
-
-            /// <summary>
-            /// Write the register into the project file.
-            ///
-            /// Failing to save is an ordinary outcome — a document nobody has saved has no project
-            /// file — and never a reason to refuse the edit: it still applies on the board and
-            /// still travels out in the baseline.
-            /// </summary>
-            private void KeepHeld()
-            {
-                try
-                {
-                    _session.Store.Section(ProjectStore.ClashSection).Set(HeldKey, Held.ToJson());
-                    _session.Store.Save();
-                }
-                catch (Exception)
-                {
-                    // Nowhere to write. The edits are still on the board and still exportable.
-                }
-            }
 
             /// <summary>
             /// Whether a file in the markups folder is one a reviewer saved.

@@ -180,16 +180,20 @@ already exist.
 - On import, a topic that matches a known finding by topic id merges into it. A topic that matches
   nothing becomes an issue, which is what already happens today.
 - What BCF carries that the host cannot hold — priority, due date, stage, tags — is stored on the
-  finding rather than being mashed into a comment. `ClashAsides` already does exactly this for
-  clashes and is the shape to generalise.
+  finding rather than being mashed into a comment. `ClashAside` is the shape this generalises from
+  — now a message read out of one markup and laid onto a finding, rather than a register of its own.
 
 ## Decisions taken
 
 - **Clash findings replace `ClashSnapshot`**, migrating existing data on first open: read the
   snapshot once, write findings from it, stop writing the snapshot. One store, nothing to disagree.
-- **`HeldEdits` and `ClashAsides` fold onto `Finding`.** "What the host refused" and "what the host
-  has no field for" are things every source will want — a clearance finding on a published NWD has
-  the same problem — not clash quirks.
+- **`HeldEdits` and `ClashAsides` fold onto `Finding`.** ✅ **Done.** "What the host refused" and
+  "what the host has no field for" are things every source will want — a clearance finding on a
+  published NWD has the same problem — not clash quirks. Both registers are gone. The refusal is
+  now `Finding.Pending`, a set of field names rather than a flag, so a sync offers exactly the
+  fields that are waiting and never writes the same comment twice; the reviewer's fields are
+  ordinary `Finding` properties. What was in the old keys is read back by `ClashLegacy` on every
+  read, which is idempotent, so nothing is thrown away and the old keys stay on disk.
 - **Anything a person raises by hand is an issue, not a finding.** Findings are only ever produced
   by a check. `FindingSource.Manual` stays unused. An issue raised by hand can still attach
   machine findings, so "no access to this valve" can carry the clashes that explain it.
@@ -220,9 +224,17 @@ Each step ships working and verifiable on its own.
 1. ~~**The store.**~~ **Done.** `Finding` gained JSON and the fields the fold-in needs; a register
    that reconciles a run against what is held; a `.findings.json` file beside the project file. No
    producer writes to it yet.
-2. **Clash emits findings, alongside the snapshot.** Every clash run also writes findings, and the
-   Manage board reads its triage state from them. The snapshot keeps doing its four jobs untouched,
-   so nothing that works today can break. This is where `HeldEdits` and `ClashAsides` fold in.
+2. ~~**Clash emits findings, alongside the snapshot.**~~ **Done.** Every clash run writes findings,
+   and the Manage board reads its triage state from them: `Restored` carries only the custom column
+   values now, and everything a coordinator decided is laid over the row from the finding after the
+   read has been taken into the register. `HeldEdits` and `ClashAsides` folded in. The snapshot
+   keeps doing its four jobs untouched, so nothing that works today broke.
+
+   One rule fell out of the fold and is worth stating: **a run may not overwrite a field that is
+   waiting.** A published NWD keeps reporting the status it had before anybody touched it, so a
+   read that was allowed to win would revert the afternoon's work on every press of "Read the
+   results" — the exact failure the hold exists to prevent. `MergeFrom` and `Observe` skip a field
+   in `Pending`; everything else the run is still free to correct.
 3. **Issues attach findings.** `Issue.Clashes` becomes finding ids; the attach and raise verbs land
    on the clash results grid; cascade with the prompt.
 4. **The snapshot's other jobs move across, one at a time** — carry-over, then the previous-run
