@@ -86,6 +86,46 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void ARerunShowsThisRunsElementsRatherThanLastRuns()
+        {
+            // Children are locations, not decisions. A rule that failed 400 elements last week and
+            // 401 today must show today's 401, or "show me all of them" points at a set that has
+            // moved on and misses the one that is new. Nothing anybody decided is lost by the
+            // swap, because triage lives on the parent.
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Health, new[] { HealthFindings.From(Said(2)) }, 1);
+
+            var held = register.All.Single();
+            held.Status = FindingStatus.Approved;
+
+            register.Observe(FindingSource.Health, new[] { HealthFindings.From(Said(5)) }, 2);
+
+            var after = register.All.Single();
+
+            Assert.Equal(5, after.Children.Count);
+            Assert.Equal(5, after.AllElements().Count);
+            Assert.Equal(FindingStatus.Approved, after.Status);
+        }
+
+        [Fact]
+        public void ARuleThatStopsNamingElementsStopsShowingThem()
+        {
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Health, new[] { HealthFindings.From(Said(3)) }, 1);
+
+            var review = new FederationReview();
+
+            review.Fault("Geometry", "1 element sits at the origin", null, "Put it back.",
+                         Array.Empty<string>(), "origin-stack");
+
+            register.Observe(FindingSource.Health, HealthFindings.For(review), 2);
+
+            Assert.Empty(register.All.Single().Children);
+        }
+
+        [Fact]
         public void APathologicalRuleCannotWriteAFileNobodyAskedFor()
         {
             // Ninety thousand rows is one decision and a hundred megabytes. The parent still says

@@ -165,6 +165,61 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void AScopedRuleKeepsItsAgreementLikeAnyOther()
+        {
+            // A rule that says who it is about in the model's own terms is a finding like any
+            // other: the specification identifies it, so an agreement reached about it survives
+            // the set growing, which is the whole point of scoping by a search set.
+            var specification = new IdsSpecification("Ducts carry a system name")
+            {
+                Identifier = "S-01",
+            };
+
+            specification.Applicability.Add(new IdsScopeFacet(IdsScope.Of("Level 3 Ductwork")!));
+
+            specification.Requirements.Add(new IdsPropertyFacet(
+                IdsValue.Simple("Element"), IdsValue.Simple("System Name")));
+
+            IdsReport Run(int failing)
+            {
+                var ducts = Enumerable.Range(1, failing)
+                    .Select(n => Scoped(Id(n)))
+                    .ToList();
+
+                return IdsChecker.Check(IdsFixture.Document(specification), ducts);
+            }
+
+            var register = new FindingRegister();
+
+            var first = IdsFindings.For(Run(3), "this project's rules", KeyOf).Single();
+
+            register.Observe(FindingSource.Ids, new[] { first }, 1);
+
+            var held = register.All.Single();
+            held.Status = FindingStatus.Approved;
+
+            var later = IdsFindings.For(Run(9), "this project's rules", KeyOf).Single();
+
+            register.Observe(FindingSource.Ids, new[] { later }, 2);
+
+            var after = register.All.Single();
+
+            Assert.Equal(FindingStatus.Approved, after.Status);
+            Assert.Equal("9", after.Facts[IdsFindings.Failed]);
+            Assert.Equal(9, after.Children.Count);
+        }
+
+        /// <summary>An element the Level 3 Ductwork set claimed, carrying nothing else.</summary>
+        private static IdsElement Scoped(string id)
+        {
+            var element = new IdsElement(id);
+
+            element.Scopes.Add(IdsScope.Of("Level 3 Ductwork")!.Token);
+
+            return element;
+        }
+
+        [Fact]
         public void NothingToReportIsNotAFailure()
         {
             Assert.Empty(IdsFindings.For(null));

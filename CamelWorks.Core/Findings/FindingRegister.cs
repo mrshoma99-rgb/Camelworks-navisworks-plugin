@@ -168,6 +168,11 @@ namespace CamelWorks.Core.Findings
 
                 foreach (var fact in fresh.Facts) held.Facts[fact.Key] = fact.Value;
 
+                // This run's locations in place of the last run's. Children carry no decision, so
+                // nothing anybody said is lost; keeping them would leave "show me all of them"
+                // pointing at a set that has moved on.
+                if (fresh.IsParent || held.IsParent) held.ReplaceChildren(fresh.Children);
+
                 foreach (var comment in fresh.Comments)
                     if (!held.Comments.Any(c => c.Repeats(comment)))
                         held.Comments.Add(comment);

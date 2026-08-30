@@ -456,6 +456,25 @@ namespace CamelWorks.Core.Findings
         }
 
         /// <summary>
+        /// Take this run's locations in place of the last run's.
+        ///
+        /// <b>Why replacing is safe, and keeping is not.</b> A child carries no decision of its
+        /// own — triage lives on the parent, which is the unit of decision — so nothing anybody
+        /// said is lost by swapping them. What is lost by keeping them is worse: a rule that
+        /// failed four hundred elements last week and four hundred and one today would still show
+        /// last week's four hundred, so "show me all of them" would quietly point at a stale set
+        /// and miss the one that is new.
+        /// </summary>
+        /// <param name="children">This run's children. Null or empty leaves a leaf.</param>
+        public void ReplaceChildren(IEnumerable<Finding>? children)
+        {
+            _children.Clear();
+
+            foreach (var child in children ?? Array.Empty<Finding>())
+                if (child != null) AddChild(child);
+        }
+
+        /// <summary>
         /// Every element this finding covers, itself and its children, without duplicates.
         /// What the section box, the isolate and the report image are all built from.
         /// </summary>

@@ -66,6 +66,37 @@ fixes the federation here, and the authoring model still needs the same fix.
 
 **Main action: Save as an .ids file.**
 
+### It works on models that never saw IFC
+
+IDS says who a rule is about with an IFC class — and a Navisworks federation is a pile of NWCs from
+Revit, Tekla and Civil 3D where most elements have no IFC class at all. On that model an ordinary
+IDS matches nothing and reports *"not applicable"* for everything, which is useless and reads as
+green.
+
+So **"It applies to"** offers a **set in this model** beside an IFC class. Point a rule at a search
+set or a selection set and everything else about IDS works unchanged — the requirements were never
+IFC-bound, only the question of who they were about.
+
+- **How many is that?** on the row says what the set holds *right now*. Worth pressing: a set named
+  correctly and holding nothing looks exactly like a rule that works, until the day it reports
+  nothing.
+- **What is selected when it runs** is offered too, and it means what it says — it cannot mean the
+  same thing twice. Good for a check you run now; name a set for one the project keeps.
+- Rules mixed freely: some by IFC class, some by set, one run, one report.
+
+### These rules cannot go in an .ids file
+
+IDS's applicability is a fixed list of IFC facets with no room for anything else, so a rule scoped
+to one of your sets has nowhere to be written. Rather than emit a file no other tool can open, or
+drop the rule silently:
+
+- **Save as .ids** carries the portable rules and **names every rule it could not carry, and why**,
+  before it writes.
+- A rule set that is *entirely* scoped is not written at all — an IDS that opens and checks nothing
+  reads as a delivered requirement, which is the worst of the three outcomes.
+- Nothing is lost. **Keep the draft here** stores the portable half as IDS — still a file another
+  tool can read — and the scoped rules beside it, with no rule in both.
+
 The specifications lead the screen. Each is two lists: which elements it is about, and what they
 must have. The verdict under the form is live as you type.
 
@@ -77,6 +108,20 @@ must have. The verdict under the form is live as you type.
 
 Saving offers **Check the federation against it**, which lands on Health with the path already
 filled in.
+
+### Running them
+
+**Rules from** chooses this project's own rules or an IDS file somebody sent. This project's own is
+the one that matters for scoped rules: they can never be in a file, so a check that read files only
+could never run the rules you just wrote.
+
+**Check over** narrows the run to a saved set or the selection — a different question from what
+each rule is about. A rule set written for the whole job can be run over one level on a Tuesday
+without editing a rule.
+
+A rule naming a set this document does not have is **reported**, not left to match nothing: a
+misspelled set otherwise passes as "not applicable", which is the same silence this check exists to
+break.
 
 ### What a check remembers
 
