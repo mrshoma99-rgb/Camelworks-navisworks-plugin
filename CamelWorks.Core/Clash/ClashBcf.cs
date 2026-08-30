@@ -109,8 +109,23 @@ namespace CamelWorks.Core.Clash
     /// </summary>
     public static class ClashBcf
     {
-        /// <summary>Where the facts BCF has no field for ride, inside the archive.</summary>
-        public const string Sidecar = "camelworks/clash.json";
+        /// <summary>
+        /// Where the facts BCF has no field for ride, inside the archive.
+        ///
+        /// <b>A file at the root, deliberately not a folder.</b> A .bcfzip's top-level directories
+        /// are its topics - importers routinely enumerate them and read a <c>markup.bcf</c> out of
+        /// each - so an extra directory that is not a topic is a shape some importer will meet for
+        /// the first time in our file, and a folder whose name will not parse as a GUID is the
+        /// kind of thing that throws rather than skips.
+        ///
+        /// A root-level file is a shape every importer already handles, because the format puts
+        /// three of them there: <c>bcf.version</c>, <c>project.bcfp</c> and <c>extensions.xsd</c>.
+        /// This sits beside those and looks like nothing new.
+        /// </summary>
+        public const string Sidecar = "camelworks-clash.json";
+
+        /// <summary>Where it used to ride, still read so an early file keeps working.</summary>
+        private const string OldSidecar = "camelworks/clash.json";
 
         /// <summary>The topic type every clash is written as.</summary>
         public const string TopicType = "Clash";
@@ -547,7 +562,9 @@ namespace CamelWorks.Core.Clash
         {
             var sheet = new SidecarSheet();
 
-            if (!read.Extras.TryGetValue(Sidecar, out var text) || string.IsNullOrWhiteSpace(text))
+            if ((!read.Extras.TryGetValue(Sidecar, out var text)
+                 && !read.Extras.TryGetValue(OldSidecar, out text))
+                || string.IsNullOrWhiteSpace(text))
                 return sheet;
 
             if (!JsonReader.TryParse(text, out var json) || json.Kind != JsonKind.Object)

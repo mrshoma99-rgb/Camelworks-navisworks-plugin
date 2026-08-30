@@ -324,6 +324,86 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void TheArchiveHasNoTopLevelFolderThatIsNotATopic()
+        {
+            // The invariant that keeps another tool's importer from meeting something new. A
+            // .bcfzip's top-level directories are its topics: importers enumerate them and read a
+            // markup.bcf out of each, so a directory that is not a topic - and whose name will not
+            // parse as a GUID - is the shape most likely to throw rather than be skipped. Our
+            // extra data is a file at the root instead, beside bcf.version and project.bcfp,
+            // which is a shape every importer already handles.
+            var written = ClashBcf.Write(new[]
+            {
+                Item("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"),
+                Item("33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444"),
+            });
+
+            using var stream = new MemoryStream(written.Bytes);
+            using var zip = new System.IO.Compression.ZipArchive(stream,
+                System.IO.Compression.ZipArchiveMode.Read);
+
+            var topics = new System.Collections.Generic.HashSet<string>(
+                zip.Entries.Where(e => e.FullName.EndsWith("markup.bcf", StringComparison.Ordinal))
+                           .Select(e => e.FullName.Substring(0, e.FullName.IndexOf('/'))),
+                StringComparer.Ordinal);
+
+            Assert.Equal(2, topics.Count);
+
+            foreach (var entry in zip.Entries)
+            {
+                var slash = entry.FullName.IndexOf('/');
+
+                if (slash < 0) continue;   // a root-level file, which the format already has
+
+                Assert.Contains(entry.FullName.Substring(0, slash), topics);
+            }
+
+            Assert.Contains(ClashBcf.Sidecar, zip.Entries.Select(e => e.FullName));
+            Assert.DoesNotContain('/', ClashBcf.Sidecar);
+        }
+
+        [Fact]
+        public void AFileWrittenBeforeTheSidecarMovedStillReads()
+        {
+            // The sidecar used to sit in a folder. Anything written then has to keep opening.
+            var item = Item("11111111-1111-1111-1111-111111111111",
+                            "22222222-2222-2222-2222-222222222222");
+            item.Distance = 0.045;
+
+            var written = ClashBcf.Write(new[] { item });
+
+            byte[] moved;
+
+            using (var source = new MemoryStream(written.Bytes))
+            using (var zip = new System.IO.Compression.ZipArchive(source,
+                       System.IO.Compression.ZipArchiveMode.Read))
+            using (var target = new MemoryStream())
+            {
+                using (var rebuilt = new System.IO.Compression.ZipArchive(target,
+                           System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    foreach (var entry in zip.Entries)
+                    {
+                        var name = entry.FullName == ClashBcf.Sidecar
+                            ? "camelworks/clash.json"
+                            : entry.FullName;
+
+                        using var from = entry.Open();
+                        using var to = rebuilt.CreateEntry(name).Open();
+
+                        from.CopyTo(to);
+                    }
+                }
+
+                moved = target.ToArray();
+            }
+
+            using var stream = new MemoryStream(moved);
+
+            Assert.Equal(0.045, ClashBcf.Read(stream).Items.Single().Distance);
+        }
+
+        [Fact]
         public void TheSidecarCannotDisplaceTheSchemasOwnFiles()
         {
             using var output = new MemoryStream();
