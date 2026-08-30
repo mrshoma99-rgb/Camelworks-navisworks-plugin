@@ -235,8 +235,25 @@ Each step ships working and verifiable on its own.
    read that was allowed to win would revert the afternoon's work on every press of "Read the
    results" — the exact failure the hold exists to prevent. `MergeFrom` and `Observe` skip a field
    in `Pending`; everything else the run is still free to correct.
-3. **Issues attach findings.** `Issue.Clashes` becomes finding ids; the attach and raise verbs land
-   on the clash results grid; cascade with the prompt.
+3. ~~**Issues attach findings.**~~ **Done.** `Issue.Findings` holds finding ids of any source — a
+   clash, a clearance breach and a health failure can sit on one issue. `Issue.Clashes` is kept and
+   still read, because a clash key names two elements and a place but not the test that found them,
+   so nothing can turn one into a finding id on its own: the swap happens on the next read of the
+   results, where both are in hand at once, and is idempotent so a key this run did not report
+   waits for a wider one rather than being dropped.
+
+   Raising an issue from the grid attaches findings; **Attach to an issue** puts picked results
+   onto one that already exists, which is what stops a coordinator ending up with forty issues
+   about one duct run. The issue's detail carries a findings card with **Take {n} off**, and a
+   status change that implies something — closed means resolved, answered means reviewed — *offers*
+   the cascade with its count. The middle states (draft, pending, in dispute) map to nothing: they
+   are about the conversation, and mapping them would invent a claim about the building out of a
+   note about a meeting.
+
+   One finding may sit on two issues; one clash may not sit on two issues. The asymmetry is
+   deliberate — the same duct through the same beam can be both a coordination issue and an RFI,
+   but two issues each claiming one *conflict* is two people each believing the other is dealing
+   with it.
 4. **The snapshot's other jobs move across, one at a time** — carry-over, then the previous-run
    comparison, then the party history. Only when the last one has moved does the snapshot stop
    being written. Splitting this out is the correction: replacing it in one step was proposed on

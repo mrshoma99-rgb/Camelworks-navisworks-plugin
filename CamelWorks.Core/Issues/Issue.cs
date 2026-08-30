@@ -186,8 +186,27 @@ namespace CamelWorks.Core.Issues
         /// <summary>The elements it is about.</summary>
         public IList<ElementKey> Elements { get; } = new List<ElementKey>();
 
-        /// <summary>The clash results it covers, when it was raised from any.</summary>
+        /// <summary>
+        /// The clash results it covers, when it was raised from any.
+        ///
+        /// <b>Superseded by <see cref="Findings"/>, and kept only to be read.</b> An issue used to
+        /// be able to hold clash results and nothing else, so this is what older projects have.
+        /// A clash key names two elements and a place but not the test that found them, so nothing
+        /// can turn one into a finding id on its own - the swap happens on the next read of the
+        /// results, where both are in hand at once. Until then the issue still says which clashes
+        /// it is about, which is the point of not deleting it.
+        /// </summary>
         public IList<ClashKey> Clashes { get; } = new List<ClashKey>();
+
+        /// <summary>
+        /// The findings it covers, by id — one clash, a whole test's worth, a clearance breach, a
+        /// health rule's failures. Any check's, and any mixture.
+        ///
+        /// <b>Ids rather than the findings themselves.</b> A finding's id is derived from what
+        /// makes it that finding, so it survives a re-run that renumbers everything the host
+        /// issued. An issue holding the record itself would be holding last month's copy of it.
+        /// </summary>
+        public IList<string> Findings { get; } = new List<string>();
 
         /// <summary>Labels, free text, as BCF carries them.</summary>
         public IList<string> Labels { get; } = new List<string>();
@@ -263,6 +282,9 @@ namespace CamelWorks.Core.Issues
             if (Clashes.Count > 0)
                 json.Set("clashes", JsonValue.Array(Clashes.Select(k => JsonValue.String(k.ToString()))));
 
+            if (Findings.Count > 0)
+                json.Set("findings", JsonValue.Array(Findings.Select(JsonValue.String)));
+
             if (Labels.Count > 0)
                 json.Set("labels", JsonValue.Array(Labels.Select(JsonValue.String)));
 
@@ -315,6 +337,11 @@ namespace CamelWorks.Core.Issues
             // would be the record punishing the reader for a bug in the writer.
             foreach (var clash in json["clashes"].Items)
                 if (ClashKey.TryParse(clash.AsString(), out var key)) issue.Clashes.Add(key);
+
+            foreach (var finding in json["findings"].Items)
+                if (finding.AsString() is string attached && attached.Length > 0
+                    && !issue.Findings.Contains(attached))
+                    issue.Findings.Add(attached);
 
             foreach (var label in json["labels"].Items)
             {
@@ -403,6 +430,21 @@ namespace CamelWorks.Core.Issues
         /// <param name="key">The clash result.</param>
         public Issue? Holding(ClashKey key) =>
             key.IsEmpty ? null : _issues.FirstOrDefault(i => i.Clashes.Contains(key));
+
+        /// <summary>
+        /// The issues covering a finding, in register order.
+        ///
+        /// A list, unlike <see cref="Holding(ClashKey)"/>: a clash may sit on at most one issue,
+        /// because two issues claiming one conflict is two people each believing the other is
+        /// dealing with it. A finding is not so lucky - the same duct through the same beam can
+        /// be both a coordination issue and an RFI, and refusing the second would be refusing to
+        /// describe the job.
+        /// </summary>
+        /// <param name="findingId">The finding's id.</param>
+        public IReadOnlyList<Issue> Holding(string? findingId) =>
+            findingId == null
+                ? Array.Empty<Issue>()
+                : _issues.Where(i => i.Findings.Contains(findingId, StringComparer.Ordinal)).ToList();
 
         /// <summary>The next free id, numbered from one.</summary>
         public string NextId()

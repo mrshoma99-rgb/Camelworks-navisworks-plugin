@@ -66,6 +66,7 @@ surfaces work, not things a coordinator opens.
 | `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
 | `Issue`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
 | `IssueBcf`, `IssueImportResult` | **Issue Manager ▸ Import / Export** — BCF in as a merge, BCF out as one topic per issue |
+| `IssueFindings`, `Cascade` | **Issue Manager ▸ Issues** — the findings card on an issue's detail, "Take {n} off", and the offer to mark attached findings when a status change implies one. Reached from the other side by **Clash Manager ▸ Manage ▸ Attach to an issue**, and by the swap that turns an older issue's clash results into finding names on the next read. |
 | `ManualIssue`, `ManualIssueList` | Board pipeline — issues raised in earlier versions still ride the board into reports and BCF |
 | `ClashMarkers`, `MarkerMesh` | Clash Board — "Show the clash points" (new) |
 | `ClashFindings` | **Clash Manager ▸ Manage** — every read of the results also writes them into the findings register, so a decision survives the session, a published NWD, and the next run renumbering every result. Scoped to the tests that were read. |

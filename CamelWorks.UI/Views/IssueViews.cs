@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Issues;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -501,6 +502,8 @@ namespace CamelWorks.UI.Views
                     Ui.Actions(
                         Ui.Primary("Save", () =>
                         {
+                            var was = issue.Status;
+
                             issue.Title = title.Text.Trim().Length == 0 ? issue.Title : title.Text.Trim();
                             issue.Description = description.Text.Trim();
                             issue.Status = status.Text;
@@ -520,7 +523,18 @@ namespace CamelWorks.UI.Views
                                 ? Ui.Done("Saved.")
                                 : Ui.Problem(problem));
 
-                            if (problem == null) Redraw();
+                            if (problem != null) return;
+
+                            // Asked, not done. Closing an issue usually means its clashes are
+                            // dealt with, and usually is not always: one closed because the RFI
+                            // was answered says nothing about whether the duct moved. An
+                            // automatic rule would mark eighteen thousand findings resolved off
+                            // one dropdown and turn the board green over a building that had not
+                            // changed. So the offer is made, with the count, and somebody says.
+                            if (!string.Equals(was, issue.Status, StringComparison.OrdinalIgnoreCase))
+                                Offer(issue, says);
+
+                            Redraw();
                         }),
                         Ui.Quiet("Show", () =>
                         {
@@ -530,6 +544,7 @@ namespace CamelWorks.UI.Views
                     says);
 
                 _detail.Children.Add(Ui.Card("The issue", Where(issue), facts));
+                _detail.Children.Add(Attached(issue));
 
                 // The conversation, oldest first, then the box to add to it. A trail that reads
                 // top-down is the one a person catches up on without scrolling backwards.
@@ -581,12 +596,118 @@ namespace CamelWorks.UI.Views
                     said));
             }
 
+            /// <summary>
+            /// Offer the cascade the new status implies, if it implies one.
+            ///
+            /// Nothing happens unless somebody presses it. See the remarks on
+            /// <see cref="IssueFindings"/> for why this is an offer rather than an invariant.
+            /// </summary>
+            private void Offer(Issue issue, Panel says)
+            {
+                var cascade = IssueFindings.Proposed(issue, _session.Findings.Findings);
+
+                if (cascade.IsEmpty) return;
+
+                says.Children.Add(Ui.Info(cascade.Ask(),
+                    "Mark " + (cascade.Findings.Count == 1 ? "it" : "them") + " too",
+                    () =>
+                    {
+                        var changed = cascade.Apply();
+
+                        says.Children.Clear();
+
+                        if (!_session.Findings.Save())
+                        {
+                            says.Children.Add(Ui.Problem(
+                                "They are marked here but could not be kept: "
+                                + (_session.Findings.LastSaveProblem
+                                   ?? "there was nowhere to write.")));
+
+                            return;
+                        }
+
+                        _session.Record(ActivityKind.Regroup,
+                            "marked " + Ui.Count(changed, "finding") + " "
+                            + FindingStatusLattice.ToName(cascade.To) + " with " + issue.Id);
+
+                        says.Children.Add(Ui.Done(Ui.Count(changed, "finding") + " marked "
+                            + FindingStatusLattice.ToName(cascade.To) + "."));
+                    }));
+            }
+
+            /// <summary>
+            /// The findings this issue is about, with the way to take one off.
+            ///
+            /// Shown as a card rather than a line, because "which clashes is this issue actually
+            /// about" is the question somebody opens an issue to answer.
+            /// </summary>
+            private UIElement Attached(Issue issue)
+            {
+                var findings = IssueFindings.Attached(issue, _session.Findings.Findings);
+
+                if (findings.Count == 0)
+                {
+                    var said = issue.Clashes.Count > 0
+                        ? Ui.Small(Ui.Count(issue.Clashes.Count, "clash result")
+                            + " raised before findings existed. Read the clash results in the "
+                            + "Clash Manager and they will join this issue by name.")
+                        : Ui.Small("Nothing attached. Pick results on any findings grid and "
+                                   + "\"Attach to an issue\".");
+
+                    return Ui.Card("Findings", null, said);
+                }
+
+                var table = Ui.Table(
+                    findings.Select(f => new TableRow(f, f.Rule, f.Title,
+                                                      FindingStatusLattice.ToName(f.Status),
+                                                      f.IsPresent ? string.Empty : "gone",
+                                                      f.Detail ?? string.Empty)),
+                    ("Check", 150), ("Finding", 220), ("Status", 90), ("Still there", 90),
+                    ("Detail", 0));
+
+                var told = Ui.Stack();
+
+                return Ui.Card("Findings",
+                    Ui.Count(findings.Count, "finding")
+                    + (findings.Any(f => !f.IsPresent)
+                        ? ", some no longer reported by the latest run"
+                        : string.Empty),
+                    table,
+                    Ui.Picking(table,
+                        new Ui.OnPicked("Take {n} off", (picked, say) =>
+                        {
+                            say.Children.Clear();
+
+                            var gone = IssueFindings.Detach(issue,
+                                picked.OfType<Finding>().Select(f => f.Id).ToList());
+
+                            if (gone == 0) return;
+
+                            issue.ModifiedTicks = Now;
+
+                            var problem = Write(_session, _register);
+
+                            if (problem != null)
+                            {
+                                say.Children.Add(Ui.Problem(problem));
+                                return;
+                            }
+
+                            say.Children.Add(Ui.Done(Ui.Count(gone, "finding")
+                                + " taken off this issue. The findings themselves are untouched."));
+
+                            Redraw();
+                        })),
+                    told);
+            }
+
             /// <summary>What the detail card's subtitle says about where an issue came from.</summary>
             private string Where(Issue issue)
             {
                 var from = Origin(issue.Origin) switch
                 {
-                    "Clash" => "Made from " + Ui.Count(issue.Clashes.Count, "clash result"),
+                    "Clash" => "Made from " + Ui.Count(issue.Findings.Count + issue.Clashes.Count,
+                                                       "clash result"),
                     "Clearance" => "Made from a clearance finding",
                     "Imported" => "Imported" + (issue.Source == null ? string.Empty : " from " + issue.Source),
                     _ => "Raised by hand",

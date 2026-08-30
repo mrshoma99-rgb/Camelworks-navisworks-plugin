@@ -475,6 +475,8 @@ namespace CamelWorks.UI.Views
                 bar.Children.Add(Verb(Glyphs.Camera, "Snapshot", Snapshots, _resultButtons));
                 bar.Children.Add(Verb(Glyphs.Issue, "Create an issue",
                                       (picked, say) => RaiseIssue(picked, false), _resultButtons));
+                bar.Children.Add(Verb(Glyphs.Link, "Attach to an issue", AttachToIssue,
+                                      _resultButtons));
                 bar.Children.Add(Verb(Glyphs.Copy, "Copy", CopyResults, _resultButtons));
 
                 return bar;
@@ -614,11 +616,17 @@ namespace CamelWorks.UI.Views
                     foreach (var row in entry.Rows)
                         Apply(Found(row), row);
 
+                var rejoined = Rejoin(entries);
+
                 if (!_session.Findings.Save())
                     return "These results are on the board but could not be kept: "
                            + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.");
 
                 return intake.Explain()
+                       + (rejoined > 0
+                           ? " " + Ui.Count(rejoined, "issue") + " raised before findings existed "
+                             + "now names its findings rather than its clash results."
+                           : string.Empty)
                        + (carried > 0
                            ? " " + Ui.Count(carried, "clash") + " took back what an earlier "
                              + "version of this tool was keeping in the project file."
@@ -667,6 +675,42 @@ namespace CamelWorks.UI.Views
 
                 return ClashLegacy.Fold(held, asides,
                                         register.From(FindingSource.Clash).Where(f => f.IsPresent));
+            }
+
+            /// <summary>
+            /// Swap an older issue's clash keys for the finding ids this read just made.
+            ///
+            /// A clash key names two elements and a place but not the test that found them, so
+            /// nothing can turn one into a finding id on its own - it takes a read, where both are
+            /// in hand at once. Idempotent, so it runs on every read; an issue whose clash this
+            /// run did not report keeps its key and waits for a wider one.
+            /// </summary>
+            private int Rejoin(IReadOnlyList<TestEntry> entries)
+            {
+                var byKey = new Dictionary<string, Finding>(StringComparer.Ordinal);
+
+                foreach (var entry in entries)
+                    foreach (var row in entry.Rows)
+                    {
+                        if (row.Info.A.IsEmpty || row.Info.B.IsEmpty) continue;
+
+                        var finding = Found(row);
+
+                        if (finding != null) byKey[row.Info.Key().ToString()] = finding;
+                    }
+
+                if (byKey.Count == 0) return 0;
+
+                var register = IssueViews.Read(_session);
+
+                var moved = IssueFindings.Carry(register,
+                    key => byKey.TryGetValue(key.ToString(), out var finding) ? finding : null);
+
+                // Not saving is not a failure worth stopping a read for: the issue still says
+                // which clash it is about, and the next read will offer the swap again.
+                if (moved > 0) IssueViews.Write(_session, register);
+
+                return moved;
             }
 
             /// <summary>The finding a row is a view of, or null when this read kept none.</summary>
@@ -1443,6 +1487,7 @@ namespace CamelWorks.UI.Views
                           new Ui.OnMenu("Group {n}", picked => GroupPicked(picked, _log)),
                           new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
                           new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)),
+                          new Ui.OnMenu("Attach {n} to an issue...", picked => AttachToIssue(picked, _log)),
                           new Ui.OnMenu("Marker sphere on {n}", picked => Spheres(picked, _log)),
                           new Ui.OnMenu("Copy {n}", picked => CopyResults(picked, _log)));
 
@@ -1723,6 +1768,115 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Put the picked results onto an issue that already exists.
+            ///
+            /// <b>The verb the board was missing.</b> "Create an issue" makes a new one every
+            /// time, so a coordinator working through a test that is all one problem ends up with
+            /// forty issues about the same duct run. This is the other half: pick the results,
+            /// pick the issue, and they join it.
+            ///
+            /// Findings rather than clash keys, so the same issue can carry a clearance breach
+            /// and a health failure beside its clashes once those move across.
+            /// </summary>
+            /// <param name="picked">The picked results.</param>
+            /// <param name="say">Where to answer.</param>
+            private void AttachToIssue(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                var findings = rows.Select(Found).Where(f => f != null).Select(f => f!).ToList();
+
+                if (findings.Count == 0)
+                {
+                    say.Children.Add(Ui.Problem(OnFile
+                        ? "A file's results are not kept as findings, so there is nothing to "
+                          + "attach. Open the model and read its results first."
+                        : "This read kept no findings, so there is nothing to attach. Press "
+                          + "\"Read the results\" and try again."));
+
+                    return;
+                }
+
+                var register = IssueViews.Read(_session);
+
+                var open = register.Issues
+                    .OrderBy(i => string.Equals(i.Status, Issue.ClosedStatus,
+                                                StringComparison.OrdinalIgnoreCase))
+                    .ThenBy(i => i.Id, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (open.Count == 0)
+                {
+                    say.Children.Add(Ui.Problem("There are no issues yet. \"Create an issue\" "
+                        + "makes one from what is picked."));
+
+                    return;
+                }
+
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Eyebrow("Attach " + Ui.Count(findings.Count, "result")
+                                             + " to an issue"));
+
+                var table = Ui.Table(
+                    open.Select(i => new TableRow(i, i.Id, i.Title, i.Status,
+                                                  i.AssignedTo ?? string.Empty,
+                                                  Ui.Count(i.Findings.Count, "finding"))),
+                    ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
+                    ("Already on it", 0));
+
+                _log.Children.Add(table);
+
+                _log.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Attach to {n}", (chosen, told) =>
+                    {
+                        told.Children.Clear();
+
+                        var issues = chosen.OfType<Issue>().ToList();
+
+                        if (issues.Count == 0) return;
+
+                        var added = 0;
+                        var now = DateTime.UtcNow.Ticks;
+
+                        foreach (var issue in issues)
+                        {
+                            var joined = IssueFindings.Attach(issue, findings);
+
+                            if (joined == 0) continue;
+
+                            added += joined;
+                            issue.ModifiedTicks = now;
+                        }
+
+                        var problem = IssueViews.Write(_session, register);
+
+                        if (problem != null)
+                        {
+                            told.Children.Add(Ui.Problem(problem));
+                            return;
+                        }
+
+                        _session.Record(ActivityKind.Regroup,
+                            "attached " + Ui.Count(added, "finding") + " to "
+                            + Ui.Count(issues.Count, "issue"));
+
+                        told.Children.Add(added == 0
+                            ? Ui.Done("Every one of them was already on "
+                                      + (issues.Count == 1 ? "that issue." : "those issues."))
+                            : Ui.Done(Ui.Count(added, "result") + " attached to "
+                                      + (issues.Count == 1
+                                          ? issues[0].Id + "."
+                                          : Ui.Count(issues.Count, "issue") + ".")));
+                    })));
+
+                say.Children.Add(Ui.Info("Pick the issue below the results.",
+                    "Open the register", () => IssueViews.Open(null)));
+            }
+
+            /// <summary>
             /// Make issues out of picked results.
             ///
             /// The move the native window has no answer for: eleven results are one conversation
@@ -1770,7 +1924,14 @@ namespace CamelWorks.UI.Views
 
                     foreach (var row in from)
                     {
-                        issue.Clashes.Add(row.Info.Key());
+                        // The finding, when this read kept one - which is what the issue is
+                        // really about, and what lets it hold a clearance breach or a health
+                        // failure alongside. The clash key stays for a read that kept none, so
+                        // an issue raised off a file still says which conflict it is about.
+                        var finding = Found(row);
+
+                        if (finding != null) IssueFindings.Attach(issue, new[] { finding });
+                        else issue.Clashes.Add(row.Info.Key());
 
                         if (!row.Info.A.IsEmpty && !issue.Elements.Contains(row.Info.A))
                             issue.Elements.Add(row.Info.A);

@@ -3448,6 +3448,9 @@ namespace CamelWorks.UI.Views
         /// <summary>A page with a plus: raise an issue about it.</summary>
         public const string Issue = "M5,4 L16,4 L19,7 L19,20 L5,20 Z M9,12 L15,12 M12,9 L12,15";
 
+        /// <summary>Attach to something that already exists — two links of a chain.</summary>
+        public const string Link = "M10,14 A4,4 0 0 1 10,8.4 L13,5.4 A4,4 0 0 1 18.6,11 L17.2,12.4 M14,10 A4,4 0 0 1 14,15.6 L11,18.6 A4,4 0 0 1 5.4,13 L6.8,11.6";
+
         /// <summary>Two columns: what the table shows.</summary>
         public const string Columns = "M3,4 L21,4 L21,20 L3,20 Z M9,4 L9,20 M15,4 L15,20";
 
