@@ -36,10 +36,15 @@ namespace CamelWorks.Core.Project
         /// <param name="fix">What to do about it, if there is something to do.</param>
         /// <param name="examples">A handful of the elements or models concerned.</param>
         /// <param name="affected">Every element concerned, for anything that needs to go there.</param>
+        /// <param name="rule">
+        /// A stable id for the rule that produced this, if the check has more than one.
+        /// See <see cref="Rule"/> for why a headline will not do.
+        /// </param>
         public ReviewFinding(ReviewGrade grade, string check, string headline,
                              string? detail = null, string? fix = null,
                              IReadOnlyList<string>? examples = null,
-                             IReadOnlyList<ElementKey>? affected = null)
+                             IReadOnlyList<ElementKey>? affected = null,
+                             string? rule = null)
         {
             if (string.IsNullOrWhiteSpace(check)) throw new ArgumentException("check", nameof(check));
             if (string.IsNullOrWhiteSpace(headline)) throw new ArgumentException("headline", nameof(headline));
@@ -51,6 +56,7 @@ namespace CamelWorks.Core.Project
             Fix = fix;
             Examples = examples ?? Array.Empty<string>();
             Affected = affected ?? Array.Empty<ElementKey>();
+            Rule = string.IsNullOrWhiteSpace(rule) ? null : rule!.Trim();
         }
 
         /// <summary>How badly it came out.</summary>
@@ -79,6 +85,21 @@ namespace CamelWorks.Core.Project
         /// not empty, which is what decides whether the panel offers to.
         /// </summary>
         public IReadOnlyList<ElementKey> Affected { get; }
+
+        /// <summary>
+        /// A stable id for the rule that produced this, or null when the check has only one.
+        ///
+        /// <b>Why the headline will not do.</b> A finding is identified so that a decision
+        /// somebody takes on it survives the next run. Headlines here read "37 elements sit on
+        /// top of each other" — the count is in the words, so a headline changes whenever the
+        /// model does, and identifying off one would hand every re-run a fresh finding and throw
+        /// away every decision anybody had made. A rule id says which rule spoke, and does not
+        /// move when the answer does.
+        /// </summary>
+        public string? Rule { get; }
+
+        /// <summary>The rule id when there is one, and the check's name when there is not.</summary>
+        public string Named => Rule ?? Check;
 
         /// <inheritdoc/>
         public override string ToString() => Check + ": " + Headline;
@@ -129,14 +150,30 @@ namespace CamelWorks.Core.Project
         }
 
         /// <summary>Record a finding that stops coordination.</summary>
+        /// <param name="check">Which check spoke.</param>
+        /// <param name="headline">What it found, in one line.</param>
+        /// <param name="detail">Why it matters, or null.</param>
+        /// <param name="fix">What to do about it, or null.</param>
+        /// <param name="examples">A few of them, by name, or null.</param>
+        /// <param name="rule">A stable id for the rule. See <see cref="ReviewFinding.Rule"/>.</param>
         public FederationReview Fault(string check, string headline, string? detail = null,
-                                      string? fix = null, IReadOnlyList<string>? examples = null) =>
-            Add(new ReviewFinding(ReviewGrade.Fault, check, headline, detail, fix, examples));
+                                      string? fix = null, IReadOnlyList<string>? examples = null,
+                                      string? rule = null) =>
+            Add(new ReviewFinding(ReviewGrade.Fault, check, headline, detail, fix, examples,
+                                  null, rule));
 
         /// <summary>Record a finding worth knowing that does not stop coordination.</summary>
+        /// <param name="check">Which check spoke.</param>
+        /// <param name="headline">What it found, in one line.</param>
+        /// <param name="detail">Why it matters, or null.</param>
+        /// <param name="fix">What to do about it, or null.</param>
+        /// <param name="examples">A few of them, by name, or null.</param>
+        /// <param name="rule">A stable id for the rule. See <see cref="ReviewFinding.Rule"/>.</param>
         public FederationReview Watch(string check, string headline, string? detail = null,
-                                      string? fix = null, IReadOnlyList<string>? examples = null) =>
-            Add(new ReviewFinding(ReviewGrade.Watch, check, headline, detail, fix, examples));
+                                      string? fix = null, IReadOnlyList<string>? examples = null,
+                                      string? rule = null) =>
+            Add(new ReviewFinding(ReviewGrade.Watch, check, headline, detail, fix, examples,
+                                  null, rule));
 
         /// <summary>The findings, worst first, in the order each check reported them.</summary>
         public IReadOnlyList<ReviewFinding> Findings =>

@@ -47,6 +47,7 @@ surfaces work, not things a coordinator opens.
 | Engine | Surface |
 |---|---|
 | `ModelHealth`, `HealthFinding`, `HealthReport`, `FederationReview`, `ReviewFinding` | Health Check |
+| `HealthFindings` | **Health Check** — every sweep writes its findings beside the model, so a card gains **Settle it** and **Raise an issue** rather than only "show me them". One parent per rule carrying the decision, one child per element carrying the location; identity is the rule id, so a headline that reads "37 elements" and next week "41" is still the same finding with the same decision on it. |
 | `ProjectProfile`, `ProfileSetting`, `Disciplines`, `ProjectStore` | Project Settings — *This project* |
 | `CodeTable`, `CodeTables`, `TeamRoster`, `AssignmentBook` | Project Settings — *Team & outputs* |
 | `ModelManifest`, `ModelIntake`, `TestRecord` | **Models** (new) |

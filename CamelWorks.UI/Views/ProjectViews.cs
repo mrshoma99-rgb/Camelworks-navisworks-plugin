@@ -9,6 +9,8 @@ using Autodesk.Navisworks.Api.Plugins;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Identity;
+using CamelWorks.Core.Findings;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
@@ -114,6 +116,8 @@ namespace CamelWorks.UI.Views
 
             session.Record(ActivityKind.Reconcile, "swept the federation: " + review);
 
+            var kept = Keep(session, review);
+
             results.Children.Add(Answer(review));
             results.Children.Add(Ui.Small(reading.Explain(session)));
 
@@ -121,7 +125,10 @@ namespace CamelWorks.UI.Views
             // findings is a fix nobody connects to the one that said "put it back below".
             foreach (var finding in review.Findings)
             {
-                results.Children.Add(Found(session, finding));
+                results.Children.Add(Found(session, finding,
+                                           kept.TryGetValue(finding.Named, out var held)
+                                               ? held
+                                               : null));
 
                 if (finding.Check == Placed && actions.Children.Count > 0)
                 {
@@ -170,12 +177,43 @@ namespace CamelWorks.UI.Views
                     Ui.Figure(Measure.Count(review.Clean), "clean")));
         }
 
+        /// <summary>
+        /// Put what the sweep found into the findings register, and hand back what it kept.
+        ///
+        /// <b>Why a sweep writes anything.</b> Until now the review said what it found, offered to
+        /// select the elements, and forgot the whole thing the moment the tab was left. Nobody
+        /// could mark one as accepted, nothing could be assigned, and there was no way to raise an
+        /// issue from one. Keeping it is what makes all three possible.
+        ///
+        /// Keyed by the rule, so the caller can put each card's verbs on the finding behind it.
+        /// </summary>
+        private static Dictionary<string, Finding> Keep(Session session, FederationReview review)
+        {
+            var found = HealthFindings.For(review);
+            var register = session.Findings.Findings;
+
+            register.Observe(FindingSource.Health, found, DateTime.UtcNow.Ticks,
+                             origin: session.Store.Path);
+
+            session.Findings.Save();
+
+            var kept = new Dictionary<string, Finding>(StringComparer.Ordinal);
+
+            // What the register holds, not the copy this run made: a rule already known keeps the
+            // decision somebody took on it, and that is the record the card must act on.
+            foreach (var finding in found)
+                if (register.Find(finding.Id) is Finding held && finding.Discriminator != null)
+                    kept[finding.Discriminator] = held;
+
+            return kept;
+        }
+
         /// <summary>One finding, in the vocabulary's own shape.</summary>
-        private static UIElement Found(Session session, ReviewFinding finding) =>
+        private static UIElement Found(Session session, ReviewFinding finding, Finding? kept) =>
             Ui.Finding(finding.Grade == ReviewGrade.Fault, finding.Check, finding.Headline,
                        finding.Detail, finding.Fix,
                        finding.Examples.Count == 0 ? null : string.Join(", ", finding.Examples),
-                       Reach(session, finding));
+                       Reach(session, finding, kept));
 
         /// <summary>
         /// The way to the elements a finding is about, or nothing when it is not about elements.
@@ -188,9 +226,23 @@ namespace CamelWorks.UI.Views
         /// A finding about models rather than geometry (a missing file, a moved source) has nothing
         /// to select, so it gets no row at all rather than a button that would do nothing.
         /// </summary>
-        private static UIElement? Reach(Session session, ReviewFinding finding)
+        private static UIElement? Reach(Session session, ReviewFinding finding, Finding? kept)
         {
-            if (finding.Affected.Count == 0) return null;
+            var said = Ui.Stack();
+
+            // A finding about models rather than geometry still gets the judgement verbs: "this
+            // model was moved" is exactly the kind of thing somebody accepts once and does not
+            // want asked again next Monday. It is only the selection verbs it cannot have.
+            var judgement = kept == null ? null : Judge(session, kept, said);
+
+            if (finding.Affected.Count == 0)
+            {
+                if (judgement == null) return null;
+
+                var verbs = Ui.Stack(judgement, said);
+                verbs.Margin = new Thickness(0, 6, 0, 0);
+                return verbs;
+            }
 
             var keys = finding.Affected;
 
@@ -209,6 +261,90 @@ namespace CamelWorks.UI.Views
             });
 
             var row = Ui.Across(show, only);
+            row.Margin = new Thickness(0, 6, 0, 0);
+
+            if (judgement == null) return row;
+
+            var both = Ui.Stack(row, judgement, said);
+            both.Margin = new Thickness(0, 6, 0, 0);
+            return both;
+        }
+
+        /// <summary>
+        /// The verbs that make a review finding a thing somebody can deal with rather than only
+        /// look at: settle it, and put it on an issue.
+        ///
+        /// <b>Why "Settle it" and not a status picker.</b> A review finding has exactly one
+        /// decision anybody takes about it — yes, we know, and we have accepted it. Offering five
+        /// statuses would be offering four nobody uses. What it says depends on where the finding
+        /// already is, so the button is never a no-op.
+        /// </summary>
+        private static UIElement Judge(Session session, Finding kept, Panel said)
+        {
+            var settle = Ui.Quiet(
+                kept.Status == FindingStatus.Approved ? "Reopen it" : "Settle it",
+                () =>
+                {
+                    kept.Status = kept.Status == FindingStatus.Approved
+                        ? FindingStatus.Active
+                        : FindingStatus.Approved;
+
+                    said.Children.Clear();
+
+                    if (!session.Findings.Save())
+                    {
+                        said.Children.Add(Ui.Problem("That could not be kept: "
+                            + (session.Findings.LastSaveProblem
+                               ?? "there was nowhere to write.")));
+
+                        return;
+                    }
+
+                    said.Children.Add(Ui.Done(kept.Status == FindingStatus.Approved
+                        ? "Settled. The next sweep will still find it and will still say so, but "
+                          + "it will say you have accepted it."
+                        : "Open again."));
+                });
+
+            var raise = Ui.Quiet("Raise an issue", () =>
+            {
+                said.Children.Clear();
+
+                var (made, problem) = IssueViews.Raise(session, id =>
+                {
+                    var issue = new Issue(id, kept.Title)
+                    {
+                        Type = "Quality",
+                        Source = kept.Rule,
+                        Description = kept.Detail
+                            ?? (kept.Facts.TryGetValue(HealthFindings.Fix, out var fix)
+                                ? fix
+                                : null),
+                    };
+
+                    IssueFindings.Attach(issue, new[] { kept });
+
+                    foreach (var element in kept.AllElements())
+                        if (!issue.Elements.Contains(element)) issue.Elements.Add(element);
+
+                    return issue;
+                }, 1);
+
+                if (problem != null)
+                {
+                    said.Children.Add(Ui.Problem(problem));
+                    return;
+                }
+
+                said.Children.Add(Ui.Info(Ui.Count(made, "issue") + " raised.",
+                    "Open the register", () => IssueViews.Open(null)));
+            });
+
+            var status = Ui.Small(kept.Status == FindingStatus.Approved
+                ? "Settled"
+                : kept.IsPresent ? "Open" : "Not found by the latest sweep");
+
+            var row = Ui.Across(settle, raise, status);
             row.Margin = new Thickness(0, 6, 0, 0);
             return row;
         }
@@ -288,14 +424,14 @@ namespace CamelWorks.UI.Views
                     "A model whose source cannot be found still displays: Navisworks is showing its "
                     + "own cached copy, which is as old as the last time anybody opened this file.",
                     "Repoint it, or refresh from the folder it moved to, before coordinating.",
-                    missing);
+                    missing, "source-missing");
 
             if (stale.Count > 0)
                 review.Watch(Check, Ui.Count(stale.Count, "model") + " has changed since this file was saved",
                     "The federation is showing what was published when it was saved, not what is on "
                     + "disk now.",
                     "Refresh, then run this again.",
-                    stale);
+                    stale, "source-stale");
 
             if (rows.Count == 0)
                 return (Ui.Empty("Nothing is loaded.", "Append or merge a model to start."), false);
@@ -393,7 +529,7 @@ namespace CamelWorks.UI.Views
             foreach (var finding in report.Findings)
                 review.Add(new ReviewFinding(ModelHealth.GradeOf(finding), "Geometry",
                                              finding.Summary, null, finding.Fix, finding.Examples,
-                                             finding.Affected));
+                                             finding.Affected, finding.Rule));
         }
 
         /// <summary>
@@ -427,7 +563,7 @@ namespace CamelWorks.UI.Views
                     + " the last sweep saw is no longer in the federation",
                     "Either it was deliberately removed, or an append was lost when somebody saved.",
                     null,
-                    intake.Missing.Select(m => m.DisplayName).ToList());
+                    intake.Missing.Select(m => m.DisplayName).ToList(), "model-gone");
 
             var body = Ui.Stack(Ui.Line(intake.Explain(), 1, true), Ui.Line(manifest.Explain(), 0.8));
 
@@ -496,7 +632,7 @@ namespace CamelWorks.UI.Views
                     "Nobody is told when this happens, and every clash from that moment on is in "
                     + "the wrong place.",
                     "Run the clash tests again once it is back.",
-                    intake.Moved.Select(m => m.DisplayName).ToList());
+                    intake.Moved.Select(m => m.DisplayName).ToList(), "model-moved");
 
                 foreach (var model in intake.Moved)
                 {
@@ -533,7 +669,7 @@ namespace CamelWorks.UI.Views
                     + "grid - and it is worth knowing which ones, because a transform is also the "
                     + "thing nobody remembers applying.",
                     null,
-                    carried.Select(m => m.DisplayName).ToList());
+                    carried.Select(m => m.DisplayName).ToList(), "model-transformed");
         }
 
         /// <summary>
@@ -581,7 +717,7 @@ namespace CamelWorks.UI.Views
                     "Not one element in the federation has that property, so " + table.Name
                     + " has had nothing to check.",
                     "Check the property name under the button - it is written \"Category / Name\", "
-                    + "or a bare name to look in any category.");
+                    + "or a bare name to look in any category.", null, "code-absent");
 
                 return;
             }
@@ -593,7 +729,7 @@ namespace CamelWorks.UI.Views
                     + "agreed to, and the difference matters: one is a five-second edit and the "
                     + "other is a conversation.",
                     null,
-                    coverage.InvalidValues.Take(6).ToList());
+                    coverage.InvalidValues.Take(6).ToList(), "code-unlisted");
         }
 
         /// <summary>Which table and property the code check should use.</summary>
