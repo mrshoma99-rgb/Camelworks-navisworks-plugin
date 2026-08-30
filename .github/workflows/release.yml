@@ -121,11 +121,91 @@ jobs:
           Copy-Item "LICENSE"        -Destination $staging
           Copy-Item "NOTICE"         -Destination $staging
 
+      # CamelWorks, Dyncamelo and the IFC exporter are one product on one ribbon tab, so one
+      # installer carries all three. They come in as the zips those repositories published, not as
+      # source: what ships here is then exactly what was released and tested there, and a new
+      # release of either flows into the next CamelWorks release without a line changing here.
+      #
+      # Each stays its own .bundle folder. Merging three PackageContents.xml files into one would
+      # mean hand-writing ProductCodes and per-year module entries, and a manifest Navisworks
+      # dislikes is ignored in silence.
+      #
+      # A companion that cannot be downloaded is a smaller release, never a failed one: the job
+      # says so loudly and carries on, because a CamelWorks release blocked by somebody else's
+      # outage helps nobody.
+      - name: Fold in Dyncamelo and the IFC exporter
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $staging = "staging"
+          $notes = @()
+
+          $companions = @(
+            @{ Name = 'Dyncamelo'; Repo = 'mrshoma99-rgb/dyncamelo'; Asset = 'Dyncamelo-navisworks.zip'; Bundle = 'Dyncamelo.bundle' },
+            @{ Name = 'BIMCamel IFC exporter'; Repo = 'mrshoma99-rgb/bimcamel-ifc-exporter'; Asset = 'BIMCamel-ifc-exporter-navisworks.zip'; Bundle = 'BIMCamel.bundle' }
+          )
+
+          foreach ($companion in $companions) {
+            $name = $companion.Name
+            Write-Host "=== $name ==="
+
+            $work = Join-Path (Get-Location) ("companion-" + $companion.Bundle)
+            New-Item -ItemType Directory -Force -Path $work | Out-Null
+            $zip = Join-Path $work $companion.Asset
+
+            try {
+              # The releases/latest/download/<name> form always resolves to the newest release,
+              # which is what makes this dynamic. The sha256 beside it is published by the same
+              # workflow that published the zip.
+              $base = "https://github.com/$($companion.Repo)/releases/latest/download"
+              Invoke-WebRequest -Uri "$base/$($companion.Asset)" -OutFile $zip -UseBasicParsing
+              Invoke-WebRequest -Uri "$base/$($companion.Asset).sha256" -OutFile "$zip.sha256" -UseBasicParsing
+
+              $want = ((Get-Content "$zip.sha256" -Raw) -split '\s+')[0]
+              $got  = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+
+              if ($want -and $want.ToLowerInvariant() -ne $got) {
+                throw "checksum mismatch: published $want, downloaded $got"
+              }
+
+              Expand-Archive -Path $zip -DestinationPath $work -Force
+
+              $found = Get-ChildItem -Path $work -Recurse -Directory `
+                | Where-Object { $_.Name -eq $companion.Bundle } | Select-Object -First 1
+
+              if (-not $found) { throw "no $($companion.Bundle) folder inside $($companion.Asset)" }
+              if (-not (Test-Path (Join-Path $found.FullName 'PackageContents.xml'))) {
+                throw "$($companion.Bundle) carries no PackageContents.xml"
+              }
+
+              Copy-Item $found.FullName -Destination $staging -Recurse -Force
+
+              [xml]$manifest = Get-Content (Join-Path $found.FullName 'PackageContents.xml') -Raw
+              $shipped = $manifest.ApplicationPackage.Version
+              $years = ($manifest.ApplicationPackage.Components.RuntimeRequirements.SeriesMin `
+                        | Sort-Object -Unique) -join ', '
+
+              Write-Host "$name $shipped folded in (series $years)"
+              $notes += "- **$name** $shipped"
+            }
+            catch {
+              # Named in the release notes rather than swallowed: a release that quietly ships two
+              # of three plug-ins is one nobody can tell apart from a working one.
+              Write-Host "::warning::$name could not be included: $($_.Exception.Message)"
+              $notes += "- **$name** — not included in this release ($($_.Exception.Message))"
+            }
+          }
+
+          Set-Content -Path "companions.md" -Value ($notes -join "`n") -NoNewline
+          Write-Host "--- what went in ---"
+          Get-Content "companions.md"
+
       - name: Build the graphical installer (CamelWorksSetup.exe)
         run: |
           $ErrorActionPreference = 'Stop'
           $numeric = $env:VERSION.TrimStart('v')
-          Compress-Archive -Path "staging/CamelWorks.bundle" -DestinationPath "payload.zip"
+          # Every bundle staged, not just this one: the installer installs whatever the payload
+          # carries, so a release built while a companion download was unavailable still works.
+          Compress-Archive -Path "staging/*.bundle" -DestinationPath "payload.zip"
 
           # --no-incremental is load-bearing: MSBuild's up-to-date check does not treat the added
           # EmbeddedResource as a change, and an incremental build here ships a payload-less exe.
@@ -157,6 +237,11 @@ jobs:
 
           $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           $exeHash = (Get-FileHash "CamelWorksSetup.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          # Which companion versions actually went in, written by the fold-in step. Empty only if
+          # that step never ran, in which case the notes say so rather than showing a blank list.
+          $companions = if (Test-Path "companions.md") { Get-Content "companions.md" -Raw }
+                        else { "- (companion plug-ins were not folded into this release)" }
 
           $notes = @"
           CamelWorks for Autodesk Navisworks 2024-2027 - coordination, data and delivery.
@@ -193,10 +278,20 @@ jobs:
           1. Download ``CamelWorksSetup.exe`` and run it - it installs per user into
              ``%APPDATA%\Autodesk\ApplicationPlugins``, no admin rights needed.
           2. If Windows SmartScreen appears (unsigned download), click **More info -> Run anyway**.
-          3. Start Navisworks - the **CamelWorks** ribbon tab appears.
+          3. Start Navisworks - the **BIMCamel** ribbon tab appears, with CamelWorks on it.
 
           Uninstall from **Settings -> Apps -> CamelWorks for Navisworks**, or rerun the setup.
           Silent modes: ``CamelWorksSetup.exe /silent`` and ``CamelWorksSetup.exe /uninstall /silent``.
+
+          ## What is in this release
+
+          One installer, three plug-ins, one ribbon tab:
+
+          $companions
+
+          Installing CamelWorks replaces any Dyncamelo or IFC exporter bundle already in
+          ``%APPDATA%\Autodesk\ApplicationPlugins`` with the version above, and leaves their own
+          Add/Remove Programs entries alone.
 
           ## Licence
 

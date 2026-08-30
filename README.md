@@ -104,7 +104,19 @@ like code; [docs/wiki-publishing.md](docs/wiki-publishing.md) says how they are 
 | [CAMELWORKS_SCOPE_DECISION.md](CAMELWORKS_SCOPE_DECISION.md) | The record of what was added, declined and cut |
 | [HARVEST_PROTOCOL.md](HARVEST_PROTOCOL.md) | The gate for code brought in from other repositories |
 
-## Related
+## What ships with it
 
-The **BIMCamel IFC exporter** is a separate plug-in in its own repository, installed separately, and
-appears on its own ribbon tab. More at [bimcamel.com](https://bimcamel.com).
+One installer, three plug-ins, one **BIMCamel** ribbon tab:
+
+| | |
+|---|---|
+| **CamelWorks** | This repository — the twelve apps above |
+| **[Dyncamelo](https://github.com/mrshoma99-rgb/Dyncamelo)** | Visual programming for Navisworks: a node canvas and 300-odd nodes. Automate ▸ Graphs runs its `.dyc` graphs without opening the editor |
+| **[BIMCamel IFC exporter](https://github.com/mrshoma99-rgb/bimcamel-ifc-exporter)** | Navisworks → IFC (IFC4 / IFC2x3). Export Kit ▸ IFC opens its panel |
+
+Each stays its own repository and its own Autodesk bundle. A CamelWorks release folds in whichever
+version of the other two was published at the time — the release notes name them — so a new
+Dyncamelo or exporter release reaches users through the next CamelWorks release without a line
+changing here.
+
+More free BIM tools at [bimcamel.com](https://bimcamel.com).

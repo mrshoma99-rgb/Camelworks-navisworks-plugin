@@ -16,11 +16,12 @@ chosen once for the app rather than re-chosen on each tab.
 
 **Main action: Open the IFC exporter.**
 
-This tab is deliberately a **door** to the BIMCamel IFC exporter, which is a separate plug-in with
-its own ribbon tab, installed separately. Duplicating its mapping form here would guarantee the two
-disagree one day.
+This tab is deliberately a **door** to the IFC exporter, which ships inside CamelWorks and docks as
+its own panel. Duplicating its mapping form here would guarantee the two disagree one day.
 
-If the exporter is not installed, the tab says so and where to get it.
+Under the button are the other three ways out of this app — GLB, DXF and a spreadsheet — because
+somebody who came here for *get this model to somebody else* and does not actually need IFC should
+not have to go back to the tab strip to find out what else it writes.
 
 ---
 

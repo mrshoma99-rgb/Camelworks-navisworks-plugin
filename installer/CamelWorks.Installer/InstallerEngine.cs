@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -11,9 +12,21 @@ namespace CamelWorks.Installer;
 
 /// <summary>
 /// All installer mechanics, free of any UI dependency (unit- and
-/// scratch-compile-testable). Installs the Autodesk application bundle to the
+/// scratch-compile-testable). Installs the Autodesk application bundles to the
 /// per-user ApplicationPlugins folder — no admin rights involved anywhere.
-/// Same engine as the Dyncamelo installer, rebranded for the IFC exporter.
+///
+/// <b>Three bundles, one install.</b> CamelWorks ships the Dyncamelo and IFC exporter bundles
+/// beside its own, because the three are one product on one ribbon tab. They stay separate
+/// bundles rather than being merged into one: each carries its own PackageContents.xml with its
+/// own ProductCode and its own per-year module entries, and merging those by hand is a way to
+/// produce a manifest Navisworks ignores without saying why. So the payload holds every
+/// <c>*.bundle</c> folder and each is installed and removed whole.
+///
+/// <b>What that means for somebody who already has one.</b> Installing CamelWorks replaces the
+/// Dyncamelo or exporter bundle already in ApplicationPlugins with the version CamelWorks ships.
+/// Their own Add/Remove Programs entries are left exactly alone — this installer does not touch
+/// another product's registry keys, so uninstalling CamelWorks removes the bundles it put there
+/// and leaves the neighbour's bookkeeping to the neighbour.
 /// </summary>
 public static class InstallerEngine
 {
@@ -22,9 +35,14 @@ public static class InstallerEngine
     private const string UninstallKeyPath =
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\CamelWorks";
 
-    // CamelWorks has no earlier installer to upgrade from, and deliberately touches nothing that
-    // belongs to another product. The sibling BIMCamel bundle installs and uninstalls on its own;
-    // an installer that tidied up its neighbour's registry keys would be a very unwelcome surprise.
+    // The bundles this installer owns: its own, plus the two it ships. Every one of them is
+    // replaced on install and removed on uninstall. Registry keys belonging to the other two
+    // products are never touched - an installer that tidied up its neighbour's bookkeeping would
+    // be a very unwelcome surprise.
+    private static readonly string[] Bundles =
+    {
+        BundleFolderName, "Dyncamelo.bundle", "BIMCamel.bundle",
+    };
 
     /// <summary>Reports installer progress: 0-100 plus a status line.</summary>
     public delegate void ProgressHandler(int percent, string status);
@@ -37,9 +55,16 @@ public static class InstallerEngine
     private static string _selfPath = Assembly.GetExecutingAssembly().Location;
 
     /// <summary>The per-user bundle install directory.</summary>
-    public static string BundleDir => Path.Combine(
+    public static string BundleDir => BundleDirFor(BundleFolderName);
+
+    /// <summary>Where a named bundle goes.</summary>
+    /// <param name="bundle">The bundle folder's name, e.g. "Dyncamelo.bundle".</param>
+    public static string BundleDirFor(string bundle) => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Autodesk", "ApplicationPlugins", BundleFolderName);
+        "Autodesk", "ApplicationPlugins", bundle);
+
+    /// <summary>The bundles this installer ships, in the order they are installed.</summary>
+    public static IReadOnlyList<string> ShippedBundles => Bundles;
 
     /// <summary>Whether a CamelWorks bundle is currently installed.</summary>
     public static bool IsInstalled =>
@@ -158,7 +183,15 @@ public static class InstallerEngine
                 ExtractPayload(payload, temp, progress);
             }
 
-            if (!File.Exists(Path.Combine(temp, BundleFolderName, "PackageContents.xml")))
+            // Every folder the payload actually carries, not every folder it might: a release
+            // built when one of the companion downloads was unavailable ships fewer bundles, and
+            // that is a smaller product rather than a broken install.
+            var staged = Directory.GetDirectories(temp)
+                .Where(d => File.Exists(Path.Combine(d, "PackageContents.xml")))
+                .ToList();
+
+            if (!staged.Any(d => string.Equals(Path.GetFileName(d), BundleFolderName,
+                                               StringComparison.OrdinalIgnoreCase)))
             {
                 throw new InvalidDataException(
                     "The installer payload is missing PackageContents.xml — this download looks corrupted. " +
@@ -167,10 +200,18 @@ public static class InstallerEngine
 
             progress(85, "Removing previous version…");
             EvacuateSelfFromBundle();
-            DeleteBundleDir();
+
+            foreach (var bundle in Bundles)
+            {
+                DeleteBundleDir(BundleDirFor(bundle));
+            }
 
             progress(90, "Moving files into place…");
-            Directory.Move(Path.Combine(temp, BundleFolderName), BundleDir);
+
+            foreach (var source in staged)
+            {
+                Directory.Move(source, BundleDirFor(Path.GetFileName(source)));
+            }
 
             progress(95, "Registering uninstaller…");
             CopySelfIntoBundle();
@@ -197,13 +238,12 @@ public static class InstallerEngine
             key?.DeleteSubKeyTree("CamelWorks", throwOnMissingSubKey: false);
         }
 
-        if (!Directory.Exists(BundleDir))
-        {
-            return;
-        }
-
         EvacuateSelfFromBundle();
-        DeleteBundleDir();
+
+        foreach (var bundle in Bundles)
+        {
+            DeleteBundleDir(BundleDirFor(bundle));
+        }
     }
 
     // ------------------------------------------------------------- payload
@@ -324,16 +364,16 @@ public static class InstallerEngine
         }
     }
 
-    private static void DeleteBundleDir()
+    private static void DeleteBundleDir(string where)
     {
         // Retry a few times: Explorer / indexing can hold short-lived locks.
         for (var attempt = 0; ; attempt++)
         {
             try
             {
-                if (Directory.Exists(BundleDir))
+                if (Directory.Exists(where))
                 {
-                    Directory.Delete(BundleDir, recursive: true);
+                    Directory.Delete(where, recursive: true);
                 }
 
                 return;

@@ -372,8 +372,9 @@ namespace CamelWorks.UI.Shell
                "Run a saved sequence of steps over the document that is open, in one press.",
                "Run the selected job"),
 
-            Of("graph", "Graph Editor", ToolShape.Window, Glyph.Play,
-               "Build that sequence as a graph, when a list of steps is not enough.",
+            Of("graph", "Graphs", ToolShape.Window, Glyph.Play,
+               "Run a Dyncamelo graph against the document that is open, without opening the "
+               + "editor - and open the editor when one needs changing.",
                "Run the graph"),
 
             // ---- Everywhere -----------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 > Doing all of it again next Friday, in one press.
 
-**Tabs:** [Jobs](#jobs) · [Canvas](#canvas)
+**Tabs:** [Jobs](#jobs) · [Graphs](#graphs)
 
 **One honest sentence up front:** a job runs on the model that is open now, using whatever is
 selected now. **Nothing here is scheduled or unattended** — Navisworks has to be running, and so do
@@ -32,22 +32,29 @@ report — turned into a job in one press.
 
 ---
 
-## Canvas
+## Graphs
 
-> Build that sequence as a graph, when a list of steps is not enough.
+> Run a Dyncamelo graph against the document that is open, without opening the editor.
 
 **Main action: Run the graph.**
 
-Nodes wired together. A new canvas is **seeded with three wired nodes**, which teaches the tool
-faster than any help text: everything → filter → colour.
+This tab used to be a node canvas of its own — a smaller, weaker one than
+[Dyncamelo](https://github.com/mrshoma99-rgb/Dyncamelo) already is, maintained twice and teaching
+two vocabularies for one idea. Dyncamelo ships in the same install now, so the editing belongs
+there and this tab does the half an editor is a bad place for: **pick a graph off the shelf and
+run it.**
 
-- **Ports are typed** and refuse a mismatched wire with a sentence saying why.
-- Clicking an input on its own unwires it; the hint bar narrates the gesture.
-- **Saved on this project** is a picker of the jobs the project holds, with Load beside it — you
-  never retype a name the project file already knows. Saving adds the new job to the picker.
-- The **Name** box is what the job will be saved as.
+- **The shelf** is a folder of `.dyc` files, remembered with the project so whoever opens the job
+  next has the same one. It is behind the folder symbol on the action row.
+- **The run** works on whatever is open and whatever is selected now, in this Navisworks, through
+  Dyncamelo's own engine and its own node registry — the same two the editor runs on, so a graph
+  cannot behave differently depending on which window started it.
+- **Every node reports**: what ran, what warned, what failed and what it said. The rows can be
+  copied.
+- **The pencil** opens the real editor, and a run with errors offers the same jump.
 
-Symbols on the rail: save the job, load the picked one, add a node, empty the canvas.
+Runs are recorded in the project's activity log the way every other write is, so they show up in
+[Automate ▸ Jobs](#jobs)'s history and its *Last ran* column.
 
-Canvas runs are recorded the same way as Jobs runs, so they appear in the same history and the same
-*Last ran* column.
+If Dyncamelo is not there, the tab says which of the two things is wrong — not installed at all,
+or installed without a build for this Navisworks year — because those have different fixes.

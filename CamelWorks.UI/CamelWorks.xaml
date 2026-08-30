@@ -18,6 +18,11 @@
 
   Every button is a real AdWindows item, so right-click -> Add to Quick Access Toolbar works on
   all of them. That is the whole personalisation story on purpose.
+
+  ONE TAB FOR THE WHOLE TOOLSET. The tab id is ID_Tab_BIMCamel, which Dyncamelo and the BIMCamel
+  IFC exporter also declare. Navisworks does not merge tabs that share an id - it composes each
+  plug-in's layout separately, so three installed tools would give three tabs all called BIMCamel.
+  Shell/RibbonTabMerger.cs folds them into one at startup; all three plug-ins carry a copy of it.
 -->
 <RibbonControl
     x:Uid="CamelWorks"
@@ -25,7 +30,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:Autodesk.Navisworks.Gui.Roamer.AIRLook;assembly=navisworks.gui.roamer">
 
-  <RibbonTab Id="ID_Tab_CamelWorks" Title="CamelWorks" KeyTip="CW">
+  <RibbonTab Id="ID_Tab_BIMCamel" Title="BIMCamel" KeyTip="BC">
 
     <RibbonPanel x:Uid="RibbonPanel_CW_Suite">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Suite" Title="CamelWorks">

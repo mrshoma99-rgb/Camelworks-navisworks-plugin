@@ -10,7 +10,25 @@ Download `CamelWorksSetup.exe` from the repository's **latest release** and run 
 - Strips the "downloaded from the internet" mark off the files, which is the usual cause of a
   plug-in loading but showing no ribbon tab.
 
-Start Navisworks and the **CamelWorks** tab appears.
+Start Navisworks and the **BIMCamel** tab appears, with CamelWorks on it.
+
+### Three plug-ins, one installer
+
+The installer carries three Autodesk bundles and installs all of them:
+
+| Bundle | What it is |
+|---|---|
+| `CamelWorks.bundle` | The twelve apps in this guide |
+| `Dyncamelo.bundle` | The Dyncamelo node editor and its engine |
+| `BIMCamel.bundle` | The IFC exporter |
+
+They stay separate bundles — each has its own manifest — and share one ribbon tab, which
+CamelWorks merges at startup. Each CamelWorks release folds in whatever Dyncamelo and the exporter
+had published at the time; the release notes say which versions went in.
+
+**If you already have one of them installed**, CamelWorks replaces that bundle with the version it
+ships and leaves its Add/Remove Programs entry alone. Uninstalling CamelWorks removes all three
+bundles.
 
 ## What it runs in
 
