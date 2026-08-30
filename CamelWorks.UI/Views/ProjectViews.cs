@@ -837,6 +837,20 @@ namespace CamelWorks.UI.Views
             // What to check, as opposed to what each rule is about. Two different questions: this
             // one narrows the traversal, so a rule set written for the whole job can be run over
             // one level on a Tuesday without editing a rule.
+            // Where the rules come from. This project's own are not always a file and sometimes
+            // cannot be one: a rule scoped to a set in this model has no place in an IDS, so a
+            // check that read files and nothing else could never run the rules the IDS tab exists
+            // to write.
+            var from = kept.Text("from");
+
+            if (string.IsNullOrWhiteSpace(from)) from = FromFile;
+
+            var source = Ui.Choice(new[] { FromProject, FromFile }, from, pick =>
+            {
+                from = pick;
+                kept.Set("from", pick);
+            }, 200);
+
             var over = kept.Text("over");
 
             if (string.IsNullOrWhiteSpace(over)) over = Everything;
@@ -847,38 +861,60 @@ namespace CamelWorks.UI.Views
                 kept.Set("over", pick);
             }, 200);
 
-            var run = Ui.Runner("Check against an IDS", results, primary: false, work: job =>
+            var run = Ui.Runner("Check the rules", results, primary: false, work: job =>
             {
                 var session = Host.Current;
                 if (session == null) { results.Children.Add(Ui.Line(Host.NoModel)); return; }
 
-                var file = path.Text.Trim();
+                IdsDocument document;
+                string file;
 
-                if (file.Length == 0)
+                if (from == FromProject)
                 {
-                    results.Children.Add(Ui.Problem("Type the path of the .ids file your client sent."));
-                    return;
-                }
+                    var mine = IdsWindow.Draft(session, out var why);
 
-                if (!File.Exists(file))
+                    if (mine == null)
+                    {
+                        results.Children.Add(Ui.Problem(why ?? "This project has no rules yet."));
+                        return;
+                    }
+
+                    document = mine;
+                    file = "this project's rules";
+                }
+                else
                 {
-                    results.Children.Add(Ui.Problem("There is no file at " + file + "."));
-                    return;
+                    file = path.Text.Trim();
+
+                    if (file.Length == 0)
+                    {
+                        results.Children.Add(Ui.Problem(
+                            "Type the path of the .ids file your client sent, or switch \"Rules "
+                            + "from\" to this project's own."));
+
+                        return;
+                    }
+
+                    if (!File.Exists(file))
+                    {
+                        results.Children.Add(Ui.Problem("There is no file at " + file + "."));
+                        return;
+                    }
+
+                    IdsReadResult read;
+                    using (var stream = File.OpenRead(file)) read = IdsReader.Read(stream);
+
+                    foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
+
+                    if (!read.IsUsable || read.Document == null)
+                    {
+                        results.Children.Add(Ui.Empty("Nothing to check.",
+                            "That file read as IDS but carried no specifications CamelWorks could use."));
+                        return;
+                    }
+
+                    document = read.Document;
                 }
-
-                IdsReadResult read;
-                using (var stream = File.OpenRead(file)) read = IdsReader.Read(stream);
-
-                foreach (var warning in read.Warnings) results.Children.Add(Ui.Note(warning));
-
-                if (!read.IsUsable || read.Document == null)
-                {
-                    results.Children.Add(Ui.Empty("Nothing to check.",
-                        "That file read as IDS but carried no specifications CamelWorks could use."));
-                    return;
-                }
-
-                var document = read.Document;
 
                 // The model's own groupings each rule names, resolved once. A traversal each, so
                 // only the ones actually named are walked.
@@ -980,7 +1016,9 @@ namespace CamelWorks.UI.Views
                                file + (over == Everything ? string.Empty : " over " + over));
             });
 
-            return Bench.Group("The client's rules",
+            return Bench.Group("The rules",
+                Ui.Field("Rules from", source,
+                         "this project's own, or a file somebody sent"),
                 Ui.PathField("IDS file", path, PathKind.Open, "IDS|*.ids|All files|*.*"),
                 Ui.Field("Check over", scopePicker,
                          "the whole federation, or one part of it"),
@@ -1183,6 +1221,12 @@ namespace CamelWorks.UI.Views
             + (projection.Scoped > 0
                 ? " · " + Ui.Count(projection.Scoped, "element") + " named by a set"
                 : string.Empty), 0.7);
+
+        /// <summary>Rules this project wrote for itself, including the ones no file can hold.</summary>
+        private const string FromProject = "This project's rules";
+
+        /// <summary>Rules somebody sent, as an IDS file.</summary>
+        private const string FromFile = "An IDS file";
 
         /// <summary>Checking the whole federation.</summary>
         private const string Everything = "Everything loaded";

@@ -163,10 +163,17 @@ namespace CamelWorks.Studio
         private static UIElement Federation()
         {
             var setup = Ui.Stack(
-                Bench.Group("The client's rules",
+                Bench.Group("The rules",
+                    Ui.Field("Rules from", Ui.Choice(
+                        new[] { "This project's rules", "An IDS file" }, "An IDS file", null, 200),
+                        "this project's own, or a file somebody sent"),
                     Ui.PathField("An .ids file", Ui.Text(string.Empty, "none — built-in rules only",
                                                          null, 200), PathKind.Open),
-                    Ui.Runner("Check against an IDS", Ui.Stack(), _ => { }, primary: false),
+                    Ui.Field("Check over", Ui.Choice(
+                        new[] { "Everything loaded", "What is selected", "Level 3 Ductwork" },
+                        "Everything loaded", null, 200),
+                        "the whole federation, or one part of it"),
+                    Ui.Runner("Check the rules", Ui.Stack(), _ => { }, primary: false),
                     Ui.Quiet("Write IDS...", () => { })));
 
             var stage = Ui.Stack(
