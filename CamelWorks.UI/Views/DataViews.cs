@@ -576,6 +576,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     written = write.Commit();
+                    Ui.Refused(_status, write);
                 }
 
                 _status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element")
@@ -990,6 +991,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     written = write.Commit();
+                    Ui.Refused(_status, write);
                 }
 
                 _status.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
@@ -1137,6 +1139,7 @@ namespace CamelWorks.UI.Views
 
                         job.Say("Writing...");
                         var written = write.Commit();
+                        Ui.Refused(job, write);
 
                         session.Record(ActivityKind.Write,
                             "corrected " + rule.Name + " on " + Ui.Count(written, "element"));
@@ -1558,6 +1561,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     written = write.Commit();
+                    Ui.Refused(_applyRow, write);
                 }
 
                 _applyRow.Children.Add(Ui.Line("Wrote " + Ui.Count(written, "element") + ".", 1, true));
@@ -1806,6 +1810,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     moved = write.Commit();
+                    Ui.Refused(_actions, write);
                 }
 
                 _actions.Children.Add(Ui.Line("Renamed on " + Ui.Count(moved, "element")
@@ -1831,6 +1836,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     removed = write.Commit();
+                    Ui.Refused(_actions, write);
                 }
 
                 _actions.Children.Add(Ui.Done("Removed from " + Ui.Count(removed, "element")
@@ -2131,6 +2137,7 @@ namespace CamelWorks.UI.Views
 
                         job.Say("Writing...");
                         var written = write.Commit();
+                        Ui.Refused(job, write);
 
                         session.Record(ActivityKind.Write,
                             "stamped grid references onto " + Ui.Count(written, "element"));
@@ -2261,6 +2268,7 @@ namespace CamelWorks.UI.Views
 
                         job.Say("Writing...");
                         var written = write.Commit();
+                        Ui.Refused(job, write);
 
                         session.Record(ActivityKind.Write,
                             "wrote the breakdown onto " + Ui.Count(written, "element"));
@@ -2331,6 +2339,7 @@ namespace CamelWorks.UI.Views
 
                         job.Say("Writing...");
                         var written = write.Commit();
+                        Ui.Refused(job, write);
 
                         session.Record(ActivityKind.Write, "stamped levels onto " + Ui.Count(written, "element"));
                     }

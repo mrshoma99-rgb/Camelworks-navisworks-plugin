@@ -72,8 +72,22 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The open document.</param>
         public static UIElement Check(Session session) => new Screen(session).Build();
 
-        /// <summary>Forget the last check, so the next visit starts clean.</summary>
-        internal static void Forget() => _found = null;
+        static ClearanceViews() => Host.WhenDocumentChanges(Forget);
+
+        /// <summary>
+        /// Forget the last check, so the next visit starts clean.
+        ///
+        /// Called when the document changes as well as by hand: findings about the federation that
+        /// was open are not findings about the one that is.
+        /// </summary>
+        internal static void Forget()
+        {
+            _found = null;
+            _headline = string.Empty;
+
+            _columns.Clear();
+            _chain.Clear();
+        }
 
         /// <summary>
         /// Whether an element reads as something people walk on.
@@ -588,6 +602,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _session.Record(ActivityKind.Regroup, "checked clear height: " + found);
+
             }
 
             private static bool NeedsWhole(string choice) =>
@@ -1631,28 +1646,35 @@ namespace CamelWorks.UI.Views
                     items.Add(item);
                 }
 
-                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                var named = 0;
+
+                Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
+
+                var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = _session.Model.Models.Count > 0
                         ? _session.Model.Models[0].DisplayName
                         : null,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "CamelWorks",
+                    MetresPerUnit = _session.MetresPerUnit,
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
                     Title = "Write the findings as a clash file",
-                    Filter = "Clash XML|*.xml",
-                    FileName = "clearance.xml",
+                    Filter = ClashFile.Filter,
+                    FileName = "clearance" + ClashFile.Extension,
                     AddExtension = true,
-                    DefaultExt = ".xml",
+                    DefaultExt = ClashFile.Extension,
                 };
 
                 if (dialog.ShowDialog() != true) return;
 
                 try
                 {
-                    System.IO.File.WriteAllText(dialog.FileName, written.Text);
+                    System.IO.File.WriteAllBytes(dialog.FileName, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -1664,6 +1686,10 @@ namespace CamelWorks.UI.Views
                                 written.Explain() + " to " + dialog.FileName);
 
                 foreach (var warning in written.Warnings) _log.Children.Add(Ui.Note(warning));
+
+                var about = ClashIdentity.Explain(items.Count, named);
+
+                if (about != null) _log.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                 Said(Ui.Info(written.Explain() + " Open it on Manage, under \"A file\", to mark it "
                              + "up the same way as a clash export.",

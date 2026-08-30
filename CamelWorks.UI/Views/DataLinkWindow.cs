@@ -633,6 +633,7 @@ namespace CamelWorks.UI.Views
 
                     job.Say("Writing...");
                     written = transaction.Commit();
+                    Ui.Refused(_written, transaction);
                 }
 
                 _session.Record(ActivityKind.Write,

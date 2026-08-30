@@ -87,6 +87,7 @@ namespace CamelWorks.UI.Shell
             if (_open == null)
             {
                 _open = new HubWindow();
+                HostWindow.Own(_open);
                 _open.Show();
                 return null;
             }

@@ -149,6 +149,7 @@ namespace CamelWorks.UI.Views
         private readonly Dispatcher? _dispatcher;
         private readonly TextBlock? _status;
         private readonly ProgressBar? _bar;
+        private readonly Panel? _output;
         private readonly System.Diagnostics.Stopwatch _sincePump = System.Diagnostics.Stopwatch.StartNew();
         private readonly System.Diagnostics.Stopwatch _since = System.Diagnostics.Stopwatch.StartNew();
 
@@ -156,11 +157,13 @@ namespace CamelWorks.UI.Views
         private long _done;
         private string _what = string.Empty;
 
-        internal Job(Dispatcher? dispatcher, TextBlock? status, ProgressBar? bar)
+        internal Job(Dispatcher? dispatcher, TextBlock? status, ProgressBar? bar,
+                     Panel? output = null)
         {
             _dispatcher = dispatcher;
             _status = status;
             _bar = bar;
+            _output = output;
         }
 
         /// <summary>
@@ -170,7 +173,7 @@ namespace CamelWorks.UI.Views
         /// takes a job. The alternative is a second copy of every service that does not report
         /// progress, which is how two code paths start disagreeing.
         /// </summary>
-        internal static Job Silent() => new Job(null, null, null);
+        internal static Job Silent() => new Job(null, null, null, null);
 
         /// <summary>Set when the user has asked to stop.</summary>
         public bool IsCancelled { get; internal set; }
@@ -195,6 +198,21 @@ namespace CamelWorks.UI.Views
                 _total = value < 0 ? 0 : value;
                 Paint(force: true);
             }
+        }
+
+        /// <summary>
+        /// Report something that went wrong, where the job's own results are being written.
+        ///
+        /// The status line is a running commentary that the next line overwrites, so it is the
+        /// wrong place for a reason somebody has to read after the job has finished. This puts it
+        /// in the pane instead, where it stays.
+        /// </summary>
+        /// <param name="message">What went wrong, in words.</param>
+        public void Trouble(string? message)
+        {
+            if (_output == null || string.IsNullOrWhiteSpace(message)) return;
+
+            _output.Children.Add(Ui.Problem(message!));
         }
 
         /// <summary>Say what is happening. Repaints a few times a second, not on every call.</summary>
@@ -1243,8 +1261,39 @@ namespace CamelWorks.UI.Views
             };
 
             button.Wearing("RowBtn");
-            if (onClick != null) button.Click += (s, e) => onClick();
+
+            // Room between symbols. A row of twelve icons with a pixel between them reads as one
+            // striped object rather than twelve buttons, and the wrong one gets pressed - which is
+            // worse for a row where two of the twelve delete things.
+            button.Margin = new Thickness(3, 2, 3, 2);
+
+            if (onClick != null) button.Click += (s, e) => Busy(onClick);
             return button;
+        }
+
+        /// <summary>
+        /// Run a row verb with the wait cursor up.
+        ///
+        /// A symbol under a table does its work on the UI thread — that is the right shape for
+        /// something that is usually instant, and the wrong one on the day it is not: the first
+        /// verb after a model change pays for a walk of the federation, and a window that stops
+        /// repainting with an ordinary arrow over it reads as a plug-in that has crashed. The
+        /// cursor is the cheapest honest signal, and it costs nothing on the ordinary press.
+        /// </summary>
+        /// <param name="act">What the verb does.</param>
+        public static void Busy(Action act)
+        {
+            var was = Mouse.OverrideCursor;
+
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+                act();
+            }
+            finally
+            {
+                Mouse.OverrideCursor = was;
+            }
         }
 
         private static System.Windows.Controls.Button Press(string caption, Action onClick, string? style)
@@ -1868,6 +1917,40 @@ namespace CamelWorks.UI.Views
         public static UIElement Info(string message, string caption, Action onClick) =>
             Banner(message, Glyphs.Info, "BlueBg", "BlueBd", "BlueTx", caption, onClick);
 
+        /// <summary>
+        /// Why a write did less than it promised, or nothing when it did what it said.
+        ///
+        /// Every tool that writes into the model ends the same way: a count, and then this. A
+        /// count on its own is the message a user cannot act on - "wrote 0 of 412" reads as a
+        /// broken tool, when almost always it means the document is read-only and the same press
+        /// on the NWF would have worked.
+        /// </summary>
+        /// <param name="write">The transaction that was just committed.</param>
+        public static UIElement? Refused(CamelWorks.Core.Abstractions.IModelWriteTransaction? write)
+        {
+            var problem = write?.LastProblem;
+
+            return string.IsNullOrWhiteSpace(problem) ? null : Problem(problem!);
+        }
+
+        /// <summary>Put a write's refusal on a panel, when there was one.</summary>
+        /// <param name="panel">Where the message goes.</param>
+        /// <param name="write">The transaction that was just committed.</param>
+        public static void Refused(Panel? panel,
+                                   CamelWorks.Core.Abstractions.IModelWriteTransaction? write)
+        {
+            var said = Refused(write);
+
+            if (panel != null && said != null) panel.Children.Add(said);
+        }
+
+        /// <summary>Say why a write did less than it promised, into a running job's pane.</summary>
+        /// <param name="job">The job doing the writing.</param>
+        /// <param name="write">The transaction that was just committed.</param>
+        public static void Refused(Job? job,
+                                   CamelWorks.Core.Abstractions.IModelWriteTransaction? write) =>
+            job?.Trouble(write?.LastProblem);
+
         private static UIElement Banner(string message, string glyph, string wash, string edge,
                                         string ink, string? caption = null, Action? onClick = null)
         {
@@ -2303,6 +2386,17 @@ namespace CamelWorks.UI.Views
 
             var panel = new ContentControl();
 
+            // One section, no list. Seven symbols on the action row that each open the same window
+            // showing the same seven-item list read as one button drawn seven times: the thing the
+            // symbol named was on the screen, but so was everything else, and nothing about the
+            // window said which press had opened it. A symbol that names a section now opens that
+            // section and only it, titled with its own name.
+            if (sections.Length == 1)
+            {
+                Section(sections[0].Name, sections[0], onClosed);
+                return;
+            }
+
             var list = new StackPanel { Margin = new Thickness(6, 8, 6, 8) };
             var buttons = new List<System.Windows.Controls.Button>();
 
@@ -2408,7 +2502,87 @@ namespace CamelWorks.UI.Views
             window.Content = root;
 
             Skin.Apply(window);
+            Shell.HostWindow.Own(window);
             ShowSection(0);
+
+            if (onClosed != null) window.Closed += (s, e) => onClosed();
+
+            window.ShowDialog();
+        }
+
+        /// <summary>
+        /// One section, in a window of its own — what a symbol on the action row opens.
+        /// </summary>
+        /// <param name="title">The section's name, which is the window's title.</param>
+        /// <param name="section">The section to show.</param>
+        /// <param name="onClosed">Called when it closes, for the screen to redraw itself.</param>
+        private static void Section(string title, Page section, Action? onClosed)
+        {
+            var root = new Grid();
+            root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            UIElement built;
+
+            try
+            {
+                built = section.Build();
+            }
+            catch (Exception e)
+            {
+                built = Problem("This section could not be opened: " + Describe(e));
+            }
+
+            var stage = new Border
+            {
+                Child = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = built,
+                    Padding = new Thickness(18, 16, 18, 16),
+                },
+            };
+
+            stage.Tint(Border.BackgroundProperty, "Card");
+            root.Children.Add(stage);
+
+            var window = new Window
+            {
+                Title = "CamelWorks - " + title,
+                Width = 560,
+                // Sized to the section rather than to the largest of seven. A window that opens
+                // three quarters empty reads as a screen that failed to load its content.
+                SizeToContent = SizeToContent.Height,
+                MaxHeight = 640,
+                MinWidth = 420,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var done = Primary("Done", () => window.Close());
+            done.MinWidth = 92;
+
+            var foot = new Border
+            {
+                Padding = new Thickness(14, 9, 14, 10),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Child = new ContentControl
+                {
+                    Content = done,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                },
+            };
+
+            foot.Tint(Border.BackgroundProperty, "Pane");
+            foot.Tint(Border.BorderBrushProperty, "Bd");
+            Grid.SetRow(foot, 1);
+            root.Children.Add(foot);
+
+            window.Content = root;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
 
             if (onClosed != null) window.Closed += (s, e) => onClosed();
 
@@ -2687,7 +2861,9 @@ namespace CamelWorks.UI.Views
 
                 if (here.Danger && glyph == null) button.Wearing("DangerBtn");
 
-                button.Margin = new Thickness(glyph == null ? Gap : 1, 2, 0, 2);
+                // A worded button carries its own padding; a symbol needs the room put around it,
+                // for the same reason Icon does.
+                button.Margin = new Thickness(glyph == null ? Gap : 3, 2, glyph == null ? 0 : 3, 2);
                 button.Tag = here.Caption;
 
                 buttons.Add(button);
@@ -2913,7 +3089,7 @@ namespace CamelWorks.UI.Views
             Mouse.OverrideCursor = Cursors.Wait;
             Began();
 
-            var job = new Job(output.Dispatcher, status, bar);
+            var job = new Job(output.Dispatcher, status, bar, output);
             output.Dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
 
             try
@@ -3024,7 +3200,7 @@ namespace CamelWorks.UI.Views
                 Mouse.OverrideCursor = Cursors.Wait;
                 Began();
 
-                var job = new Job(go.Dispatcher, status, bar);
+                var job = new Job(go.Dispatcher, status, bar, output);
                 running = job;
 
                 // Everything above this line has to be on the glass before anything below it runs.

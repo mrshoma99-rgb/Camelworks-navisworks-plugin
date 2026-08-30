@@ -145,7 +145,7 @@ namespace CamelWorks.UI.Views
 
                 var readStrip = Ui.Stack(
                     Ui.Segmented(new[] { WriteOne, ReadOne }, ReadOne, Leg),
-                    Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml",
+                    Ui.PathField("File", _incoming, PathKind.Open, ClashFile.Filter,
                                  "A reviewer's file, returned."));
 
                 // The Runner clears its own panel on the way in, so the idle sentence seeded here
@@ -176,8 +176,9 @@ namespace CamelWorks.UI.Views
                     new Ui.Page("How it is written", () => Bench.Group("How it is written", Shape())),
                     new Ui.Page("This profile", () => Bench.Group("This profile", Profiles())),
                     new Ui.Page("The file", () => Bench.Group("The file",
-                        Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
-                                     "The format Navisworks and every reviewing tool reads."))),
+                        Ui.PathField("File", _file, PathKind.Save, ClashFile.Filter,
+                                     "BCF - what Solibri, BIMcollab, Revizto and every "
+                                     + "other reviewing tool opens."))),
                 };
 
                 var order = new[] { "in", "how", "profile", "file" };
@@ -190,7 +191,7 @@ namespace CamelWorks.UI.Views
                     pages.Insert(0, wanted);
                 }
 
-                Ui.Configure("Clash XML", () => { DrawFilters(); DrawTests(); }, pages.ToArray());
+                Ui.Configure("Clash file", () => { DrawFilters(); DrawTests(); }, pages.ToArray());
             }
 
             private UIElement? _write;
@@ -224,6 +225,9 @@ namespace CamelWorks.UI.Views
                     _note);
             }
 
+            /// <summary>Whether the written file carries a picture per clash. Off by default.</summary>
+            private static bool _pictures;
+
             private UIElement Shape()
             {
                 var units = Ui.Choice(new[] { "m", "mm", "cm", "ft", "in" }, _profile.Units,
@@ -234,6 +238,11 @@ namespace CamelWorks.UI.Views
                              on => _profile.KeepGroups = on),
                     Ui.Check("Write each result's two elements", _profile.IncludeObjects,
                              on => _profile.IncludeObjects = on),
+                    Ui.Check("Draw a picture of each clash", _pictures, on => _pictures = on),
+                    Ui.Small("Pictures are what every coordination tool shows its issue list as, "
+                             + "so a file without them arrives as rows of grey boxes. Each one is "
+                             + "drawn separately, which on a large export is the slow part - so it "
+                             + "is asked rather than assumed, and the Stop button works."),
                     Ui.Field("Model units", units,
                              "Declares what the numbers already are; converts nothing."));
             }
@@ -443,7 +452,8 @@ namespace CamelWorks.UI.Views
 
                 if (!picked.IsUsable) return 0;
 
-                var written = ClashXml.Write(picked.Items, picked.Groups, _profile.Options());
+                var written = ClashBcf.Write(picked.Items, picked.Groups,
+                                             _profile.BcfOptions(metresPerUnit: _session.MetresPerUnit));
 
                 foreach (var warning in written.Warnings) into.Children.Add(Ui.Note(warning));
 
@@ -483,12 +493,38 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Writing the file...");
 
-                var written = ClashXml.Write(picked.Items, picked.Groups,
-                                             _profile.Options(_session.SavedPath, _session.NowTicks));
+                var named = ClashIdentity.Stamp(_session, picked.Items, job);
+
+                var how = _profile.BcfOptions(_session.SavedPath, _session.NowTicks,
+                                              _session.MetresPerUnit);
+
+                if (_pictures)
+                {
+                    job.Say("Drawing each clash...");
+                    job.Total = picked.Items.Count;
+
+                    how.Snapshot = ClashIdentity.Pictures(_session, 1280, 720, null, job);
+                }
+
+                job.Say("Writing the file...");
+
+                var written = ClashBcf.Write(picked.Items, picked.Groups, how);
+
+                foreach (var warning in written.Warnings) _output.Children.Add(Ui.Note(warning));
+
+                var about = ClashIdentity.Explain(picked.Items.Count, named);
+
+                if (about != null) _output.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+
+                if (_pictures)
+                    _output.Children.Add(written.Snapshots == 0
+                        ? Ui.Note("No picture could be drawn - this document cannot render "
+                                  + "off-screen. Everything else in the file is unaffected.")
+                        : Ui.Line(Ui.Count(written.Snapshots, "clash") + " carries a picture.", 0.8));
 
                 try
                 {
-                    File.WriteAllText(path, written.Text);
+                    File.WriteAllBytes(path, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -538,11 +574,11 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Reading the file...");
 
-                string text;
+                byte[] bytes;
 
                 try
                 {
-                    text = File.ReadAllText(path);
+                    bytes = File.ReadAllBytes(path);
                 }
                 catch (Exception e)
                 {
@@ -550,7 +586,9 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var read = ClashXml.Read(text);
+                // Either format: a reviewer may be returning a file this version wrote as BCF, or
+                // one an earlier version wrote as clash XML.
+                var read = ClashFile.Read(bytes);
 
                 if (read.Problem != null)
                 {

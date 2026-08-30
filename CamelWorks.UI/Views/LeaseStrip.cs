@@ -48,17 +48,49 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
-            if (session == null || lease == null || lease.Outcome != LeaseOutcome.HeldByAnother)
+            if (session == null) return null;
+
+            if (lease != null && lease.Outcome == LeaseOutcome.HeldByAnother)
+            {
+                var strip = new Border();
+
+                strip.Child = Ui.Info(
+                    lease.Reason ?? "Somebody else is editing project settings.",
+                    "Take it over",
+                    () => Take(strip, session, lease.Holder));
+
+                return strip;
+            }
+
+            return Published(session);
+        }
+
+        /// <summary>
+        /// The strip that says this document is a snapshot, before anybody works an afternoon
+        /// into one.
+        ///
+        /// Everything in this product still runs on an NWD - reading, checking, reporting and
+        /// exporting are most of what it does, and none of them needs a writable file. What
+        /// changes is where an edit ends up: the clash manager keeps the decisions it cannot
+        /// write and sends them out as XML, and every property write says so rather than
+        /// reporting a count of nothing. This is that fact said once, up front, instead of
+        /// fourteen tools each discovering it separately.
+        /// </summary>
+        private static UIElement? Published(Session session)
+        {
+            try
+            {
+                if (!session.IsPublished) return null;
+            }
+            catch (Exception)
+            {
                 return null;
+            }
 
-            var strip = new Border();
-
-            strip.Child = Ui.Info(
-                lease.Reason ?? "Somebody else is editing project settings.",
-                "Take it over",
-                () => Take(strip, session, lease.Holder));
-
-            return strip;
+            return Ui.Info("This is a published NWD, so it is a snapshot: nothing written here "
+                + "can be saved back into it. Reading, checking, reporting and exporting all work "
+                + "as normal. Clash decisions are kept and travel out as clash XML; open the NWF "
+                + "the models were federated in when you need a write to land in the file.");
         }
 
         /// <summary>Put a strip above a screen, or hand the screen back untouched.</summary>

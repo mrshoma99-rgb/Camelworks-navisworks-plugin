@@ -34,6 +34,15 @@ namespace CamelWorks.Core.Testing
         public string Description { get; }
 
         /// <inheritdoc />
+        public string? LastProblem { get; private set; }
+
+        /// <summary>
+        /// Make this transaction behave like a read-only document: it takes the queue, changes
+        /// nothing, and says why. What a published NWD does, so the tests can have one.
+        /// </summary>
+        public string? Refuses { get; set; }
+
+        /// <inheritdoc />
         public WritePreview Preview()
         {
             var unresolved = new List<ElementKey>();
@@ -77,6 +86,16 @@ namespace CamelWorks.Core.Testing
         public int Commit()
         {
             GuardOpen();
+
+            LastProblem = null;
+
+            if (Refuses != null)
+            {
+                LastProblem = Refuses;
+                _committed = true;
+                _document.Record("write.refused " + Description);
+                return 0;
+            }
 
             var changed = new HashSet<ElementKey>();
             foreach (var q in _queue)
@@ -176,6 +195,16 @@ namespace CamelWorks.Core.Testing
         {
             Framed = box;
             _document.Record("view.frameBox");
+        }
+
+        /// <summary>Where the camera was last pointed, or null.</summary>
+        public (double X, double Y, double Z, double Back)? LookedAt { get; private set; }
+
+        /// <inheritdoc />
+        public void LookAt(double x, double y, double z, double backMetres)
+        {
+            LookedAt = (x, y, z, backMetres);
+            _document.Record("view.lookAt");
         }
 
         /// <summary>Whether the host will accept a plan view. Settable, so a test can refuse one.</summary>

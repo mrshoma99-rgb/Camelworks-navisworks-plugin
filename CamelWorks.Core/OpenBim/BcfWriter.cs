@@ -98,8 +98,25 @@ namespace CamelWorks.Core.OpenBim
         /// <param name="topics">The topics.</param>
         /// <param name="version">Which schema.</param>
         /// <param name="project">Project details, written to project.bcfp when given.</param>
+        /// <param name="extras">
+        /// Extra text files to put in the archive, by path.
+        ///
+        /// <b>What this is for.</b> BCF has no field for a great deal that a clash actually is -
+        /// the tolerance its test ran at, the distance between the two elements, the host's own id
+        /// for the result, the keys that let an edit land back on the right element. A format that
+        /// dropped those would be a format we could not run a review round on. The BCF spec says a
+        /// reader must ignore archive entries it does not know, so those facts ride here, in a file
+        /// of our own, inside the same zip: every other tool reads the topics and ignores this,
+        /// and we read both and lose nothing.
+        ///
+        /// Paths must not collide with the schema's own - no <c>bcf.version</c>, no
+        /// <c>project.bcfp</c>, nothing ending in <c>markup.bcf</c>, <c>.bcfv</c> or <c>.png</c>.
+        /// Colliding entries are refused rather than written, because a malformed archive is worse
+        /// than a missing field.
+        /// </param>
         public static BcfWriteResult Write(Stream output, IReadOnlyList<BcfTopic> topics,
-                                           BcfVersion version, BcfProject? project = null)
+                                           BcfVersion version, BcfProject? project = null,
+                                           IReadOnlyDictionary<string, string>? extras = null)
         {
             if (output == null) throw new ArgumentNullException(nameof(output));
             if (topics == null) throw new ArgumentNullException(nameof(topics));
@@ -148,6 +165,20 @@ namespace CamelWorks.Core.OpenBim
                         }
                     }
                 }
+
+                foreach (var extra in extras ?? Empty)
+                {
+                    if (Reserved(extra.Key))
+                    {
+                        notes.Add("\"" + extra.Key + "\" was not written: that path belongs to the "
+                                  + "BCF schema, and an archive with two files claiming it is one "
+                                  + "no reader can be trusted with.");
+
+                        continue;
+                    }
+
+                    Add(zip, extra.Key, extra.Value ?? string.Empty);
+                }
             }
 
             if (clamped > 0)
@@ -170,6 +201,23 @@ namespace CamelWorks.Core.OpenBim
 
             return new BcfWriteResult(version, topics.Count(t => t != null), comments, viewpoints,
                                       snapshots, unresolvable, notes);
+        }
+
+        private static readonly IReadOnlyDictionary<string, string> Empty =
+            new Dictionary<string, string>(0);
+
+        /// <summary>Whether a path is one the BCF schema itself owns.</summary>
+        private static bool Reserved(string? path)
+        {
+            var name = (path ?? string.Empty).Trim();
+
+            if (name.Length == 0) return true;
+
+            return name.Equals("bcf.version", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("project.bcfp", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith("markup.bcf", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith(".bcfv", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith(".png", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool OutsideRange(double fieldOfView) =>

@@ -596,6 +596,12 @@ namespace CamelWorks.UI.Views
                 {
                     var made = _session.Search.PublishKeys(_recipe.Name, plan.Keys);
 
+                    if (made == 0 && _session.Search.LastProblem != null)
+                    {
+                        _note.Children.Add(Ui.Problem(_session.Search.LastProblem!));
+                        return;
+                    }
+
                     _note.Children.Add(Ui.Done("Made the set \"" + _recipe.Name + "\" with "
                         + Ui.Count(made, "element") + " in it. It is in the Sets window, and "
                         + "Navisworks' own File ▸ Export works from there."));

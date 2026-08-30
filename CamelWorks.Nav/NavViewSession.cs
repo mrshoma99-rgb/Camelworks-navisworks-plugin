@@ -63,46 +63,42 @@ namespace CamelWorks.Nav
             Host.Models.SetHidden(items, !visible);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Show these elements and nothing else.
+        ///
+        /// <b>The host does the walking.</b> This used to recurse the whole federation in managed
+        /// code, deciding branch by branch what to hide - which is a walk of every element in the
+        /// document on the UI thread, paid every time somebody pressed Isolate, and a recursion
+        /// deep enough to be a risk of its own on a tall assembly tree.
+        ///
+        /// The host can do the whole thing in three calls: hide everything, then bring back what
+        /// was asked for. <c>RootItemDescendantsAndSelf</c> is a lazy native collection and
+        /// <c>SetHidden</c> takes it whole, so nothing is enumerated into managed memory and the
+        /// cost stops depending on the size of the federation.
+        ///
+        /// Ancestors and descendants come back with the elements themselves, because hidden state
+        /// is per item: an element inside a hidden parent is not drawn, and an assembly whose
+        /// children are all hidden is an empty box.
+        /// </summary>
+        /// <param name="keys">What to leave visible.</param>
         public void Isolate(IReadOnlyList<ElementKey> keys)
         {
             var items = _document.ItemsFor(keys);
             if (items.Count == 0) return;
 
-            // Hide everything that is not a target and not on the path to one. An ancestor of a
-            // target must stay visible (hiding a parent hides its subtree), so the walk descends
-            // through ancestors and hides every other branch whole - which also keeps the hidden
-            // list short on a deep tree.
-            var keep = new HashSet<ModelItem>();
-            var open = new HashSet<ModelItem>();
+            var keep = new ModelItemCollection();
 
             foreach (ModelItem item in items)
             {
                 keep.Add(item);
-                foreach (var ancestor in item.Ancestors) open.Add(ancestor);
+
+                foreach (var ancestor in item.Ancestors) keep.Add(ancestor);
+                foreach (var descendant in item.Descendants) keep.Add(descendant);
             }
-
-            var hide = new List<ModelItem>();
-
-            foreach (Model model in Host.Models)
-                CollectToHide(model.RootItem, keep, open, hide);
 
             Host.Models.ResetAllHidden();
-            if (hide.Count > 0) Host.Models.SetHidden(hide, true);
-        }
-
-        private static void CollectToHide(ModelItem item, HashSet<ModelItem> keep,
-                                          HashSet<ModelItem> open, List<ModelItem> hide)
-        {
-            if (keep.Contains(item)) return;
-
-            if (open.Contains(item))
-            {
-                foreach (var child in item.Children) CollectToHide(child, keep, open, hide);
-                return;
-            }
-
-            hide.Add(item);
+            Host.Models.SetHidden(Host.Models.RootItemDescendantsAndSelf, true);
+            Host.Models.SetHidden(keep, false);
         }
 
         /// <inheritdoc />
@@ -185,6 +181,34 @@ namespace CamelWorks.Nav
             finally
             {
                 Host.CurrentSelection.CopyFrom(restore);
+            }
+        }
+
+        /// <inheritdoc />
+        public void LookAt(double x, double y, double z, double backMetres)
+        {
+            try
+            {
+                var scale = NavUnits.UnitsPerMetre(_document.Document.Units);
+                var back = backMetres * scale;
+
+                var target = new Point3D(x, y, z);
+                var viewpoint = Host.CurrentViewpoint.CreateCopy();
+
+                // Stood back along -Y and up in Z, which is the three-quarter view a coordinator
+                // draws on a whiteboard when they say "look at this junction". Keeping the current
+                // viewpoint's other settings - the render mode, the lighting, whether it is
+                // orthographic - because this is a move of the camera, not a new view.
+                viewpoint.Position = new Point3D(target.X, target.Y - back, target.Z + back);
+                viewpoint.Rotation = new Rotation3D();
+                viewpoint.PointAt(target);
+
+                Host.CurrentViewpoint.CopyFrom(viewpoint);
+            }
+            catch (Exception)
+            {
+                // A host that will not take the viewpoint leaves the camera where it was. The
+                // caller has already selected the elements, so the press was not wasted.
             }
         }
 

@@ -93,27 +93,37 @@ issue register — renders to `Bench.Split` and `Bench.Pane` instead:
 ```
 ┌───────────────────────────────────────────────────────────┐
 │  🔍 search · what it covers · the ticks touched constantly │
-├──────────────────────┬────────────────────────────────────┤
-│  THE MASTER          │  THE DETAIL                        │
-│  tests, sets, files  │  what the picked master rows hold  │
-│                      │                                    │
-├──────────────────────┼────────────────────────────────────┤
-│ ▶ ✎ # ⇢ ⇕ 🗑 ⧉        │ ⊙ 👁 ✓ 👤 💬 ⬚ ● 📷 ⊕ ⧉            │
-├──────────────────────┴────────────────────────────────────┤
+├──────────────────────────┬────────────────────────────────┤
+│ TESTS  1 picked ▶✎#⇢⇕🗑⧉ │ RESULTS 1 picked ⊙👁✓👤💬⬚●📷⊕⧉ │
+├──────────────────────────┼────────────────────────────────┤
+│  THE MASTER              │  THE DETAIL                    │
+│  tests, sets, files      │  what the picked rows hold     │
+│  (fills its pane)        │  (fills its pane)              │
+├──────────────────────────┴────────────────────────────────┤
 │  [ PRIMARY ]   ⚙ filters  ⚙ columns  ⚙ the round  …       │
 └───────────────────────────────────────────────────────────┘
 ```
 
 1. **The tables get the window.** Two related tables sit side by side with a draggable split, not
-   stacked with an options column beside them.
+   stacked with an options column beside them — and each **fills its pane**. The two-thirds cap a
+   table carries everywhere else is right on a stage that holds several things and wrong here,
+   where it left a third of each pane white with the rows still scrolling.
 2. **What is touched every few minutes is on the surface**: one search over both tables, what it
    covers, and the status ticks. Nothing else.
-3. **Verbs are symbols under the table they act on** — greyed until something is picked, the
+3. **Verbs are symbols in the pane's header row**, on the right, beside the count of what is
+   picked — not in a bar under the table, which put them at the bottom of a tall window, below
+   whatever empty space the rows left, a long way from the rows they act on. They act on the
+   table below them — greyed until something is picked, the
    caption and the count in the tooltip — and the same verbs are on right-click. `Ui.Picking`
    does both for every table in the product; a verb with no shape keeps its words rather than
    being given one that has to be learned.
 4. **Everything decided once for the job lives in a configuration window** (`Ui.Configure`),
-   opened from the symbol on the action row that names it. Edits apply live; closing redraws.
+   opened from the symbol on the action row that names it — **one symbol, one section, one window
+   titled with that section's name**. Seven symbols that each opened the same seven-section window
+   read as one button drawn seven times: what the symbol named was on screen, and so was
+   everything else, and nothing said which press had opened it. A single `More` symbol opens all
+   the sections together for somebody who does not know which one holds what they are after.
+   Edits apply live; closing redraws.
 5. **The action row reads left to right**: the primary press, then the windows. Not right-aligned,
    because it carries more than one thing.
 

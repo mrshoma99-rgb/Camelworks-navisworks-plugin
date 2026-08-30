@@ -55,6 +55,16 @@ you. [Side by Side](Compare-Track#side-by-side) never reads triangles.
 [Scene Kit ▸ Appearance](Scene-Kit#appearance) → **Scan the model**. It finds every appearance state
 CamelWorks did not author and lets you select it, adopt it into the stack, or put it back.
 
+## A row verb takes a long time the first time
+
+Focus, Isolate, marker spheres and snapshots all resolve element keys, and resolving one means
+looking it up in an index of every geometry element in the federation. Building that index is a
+full walk, and on a large model it takes a while.
+
+It is built at the end of **Read the results** and of the clearance **Check** — inside the run,
+where there is a progress line and a Stop — so the verbs are instant afterwards. If the model
+changes, the index is dropped and the next verb rebuilds it, with the wait cursor up.
+
 ## A run seems to hang
 
 Every long run reports progress and has a **Stop** button, which takes effect at the end of the

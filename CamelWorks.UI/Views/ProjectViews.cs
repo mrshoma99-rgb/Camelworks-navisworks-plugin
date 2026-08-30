@@ -1368,6 +1368,7 @@ namespace CamelWorks.UI.Views
                         write.RemoveProperty(key, NavWriteTransaction.TabName, property);
 
                 written = write.Commit();
+                Ui.Refused(status, write);
             }
 
             status.Children.Add(Ui.Done("Removed " + Ui.Count(names.Count, "property") + " from "

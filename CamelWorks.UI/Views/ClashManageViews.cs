@@ -50,12 +50,42 @@ namespace CamelWorks.UI.Views
         private static readonly List<PropColumn> _columns = new List<PropColumn>();
         private static readonly List<string> _chain = new List<string>();
 
+        /// <summary>Where the register of refused edits lives in the project file.</summary>
+        private const string HeldKey = "heldEdits";
+
+        /// <summary>
+        /// The edits this document would not take, kept so the week's work is not lost.
+        ///
+        /// Static and beside the read, because it belongs to the document rather than to one visit
+        /// to the tab: loaded from the project file on the first visit, written back on every
+        /// change so it survives closing Navisworks, and dropped when the document changes so it
+        /// can never be applied to a federation it says nothing about.
+        /// </summary>
+        private static HeldEdits? _heldEdits;
+
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Manage(Session session) => new Screen(session).Build();
 
-        /// <summary>Forget the cached model read, so the next visit reads afresh.</summary>
-        internal static void Forget() => _read = null;
+        static ClashManageViews() => Host.WhenDocumentChanges(Forget);
+
+        /// <summary>
+        /// Forget everything cached about the document, so the next visit reads afresh.
+        ///
+        /// Called when the document changes as well as by hand. Everything here describes one
+        /// federation - the results, the file being marked up, the bench somebody set up over it,
+        /// and the edits held for it - and every one of them would be a lie about the next.
+        /// </summary>
+        internal static void Forget()
+        {
+            _read = null;
+            _file = null;
+            _source = FromModel;
+            _heldEdits = null;
+
+            _columns.Clear();
+            _chain.Clear();
+        }
 
         // -----------------------------------------------------------------------------------
 
@@ -238,6 +268,9 @@ namespace CamelWorks.UI.Views
             {
                 _session = session;
 
+                _heldEdits ??= HeldEdits.FromJson(
+                    session.Store.Section(ProjectStore.ClashSection)[HeldKey]);
+
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
 
@@ -352,6 +385,16 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel();
 
                 row.Children.Add(read);
+                row.Children.Add(new Border { Width = 8 });
+
+                row.Children.Add(Ui.Quiet("Save the changes", SaveChanges));
+                row.Children.Add(new Border { Width = 6 });
+
+                _syncButton = Ui.Quiet("Sync into the document", Sync);
+                row.Children.Add(_syncButton);
+
+                ArmSync();
+
                 row.Children.Add(new Border { Width = 14 });
 
                 void Add(string glyph, string tip, string section)
@@ -366,6 +409,10 @@ namespace CamelWorks.UI.Views
                 Add(Glyphs.Sphere, "Markers and the view", "model");
                 Add(Glyphs.Round, "The review round", "round");
                 Add(Glyphs.More, "Duplicates, spreadsheets and baselines", "beyond");
+
+                // The one that opens all of them, for somebody who does not know which symbol
+                // holds the thing they are after.
+                row.Children.Add(Ui.Icon(Glyphs.Tune, "All of the above, in one window", Everything));
 
                 row.Children.Add(new Border { Width = 14 });
                 row.Children.Add(_log);
@@ -524,11 +571,11 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                string text;
+                byte[] bytes;
 
                 try
                 {
-                    text = System.IO.File.ReadAllText(path);
+                    bytes = System.IO.File.ReadAllBytes(path);
                 }
                 catch (Exception e)
                 {
@@ -536,7 +583,10 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var read = ClashXml.Read(text);
+                // Either format. A baseline written by this version is BCF; one written before
+                // the change is Navisworks clash XML, and last month's review round has to still
+                // open.
+                var read = ClashFile.Read(bytes);
 
                 if (!read.IsUsable)
                 {
@@ -625,32 +675,52 @@ namespace CamelWorks.UI.Views
             /// here, one section at a time, opened from the symbol that names it.
             /// </summary>
             /// <param name="section">Which section to open on.</param>
+            /// <summary>
+            /// Open one section, in a window of its own.
+            ///
+            /// One symbol, one section, one window titled with the section's name. It opened the
+            /// whole seven-section window on every symbol before, which meant seven buttons that
+            /// all did the same visible thing and nothing on screen saying which had been pressed.
+            /// </summary>
+            /// <param name="section">The section's key, as the foot's symbols name it.</param>
             private void Configure(string section)
             {
-                var pages = new List<Ui.Page>
-                {
-                    new Ui.Page("Source", SourcePage),
-                    new Ui.Page("Filters", FiltersPage),
-                    new Ui.Page("Columns and grouping", ColumnsPage),
-                    new Ui.Page("Status and assignment", VerbsPage),
-                    new Ui.Page("In the model", ModelPage),
-                    new Ui.Page("The review round", RoundPage),
-                    new Ui.Page("Beyond the engine", BeyondPage),
-                };
+                var page = Pages().FirstOrDefault(
+                    p => string.Equals(p.Key, section, StringComparison.Ordinal));
 
-                var order = new[] { "source", "filters", "columns", "verbs", "model", "round", "beyond" };
-                var at = Math.Max(0, Array.IndexOf(order, section));
+                if (page == null) { Everything(); return; }
 
-                // Opened on the section the symbol names: the list is in one order and the row of
-                // symbols is in the same one, so the first page is the one that was pressed.
-                if (at > 0)
+                Ui.Configure(page.Page.Name, Redraw, page.Page);
+            }
+
+            /// <summary>Every section at once, behind the More symbol, for a look around.</summary>
+            private void Everything() =>
+                Ui.Configure("Clash results", Redraw, Pages().Select(p => p.Page).ToArray());
+
+            /// <summary>The sections, in the order the foot's symbols read.</summary>
+            private IReadOnlyList<Section> Pages() => new[]
+            {
+                new Section("source", new Ui.Page("Source", SourcePage)),
+                new Section("filters", new Ui.Page("Filters", FiltersPage)),
+                new Section("columns", new Ui.Page("Columns and grouping", ColumnsPage)),
+                new Section("verbs", new Ui.Page("Status and assignment", VerbsPage)),
+                new Section("model", new Ui.Page("In the model", ModelPage)),
+                new Section("round", new Ui.Page("The review round", RoundPage)),
+                new Section("beyond", new Ui.Page("Beyond the engine", BeyondPage)),
+            };
+
+            /// <summary>A section and the key the foot's symbol names it by.</summary>
+            private sealed class Section
+            {
+                internal Section(string key, Ui.Page page)
                 {
-                    var wanted = pages[at];
-                    pages.RemoveAt(at);
-                    pages.Insert(0, wanted);
+                    Key = key;
+                    Page = page;
                 }
 
-                Ui.Configure("Clash results", Redraw, pages.ToArray());
+                internal string Key { get; }
+
+                internal Ui.Page Page { get; }
             }
 
             private UIElement SourcePage() => Ui.Stack(
@@ -669,7 +739,7 @@ namespace CamelWorks.UI.Views
                 OnFile
                     ? Bench.Group("The file",
                         Ui.PathField("Open", _path, PathKind.Open,
-                                     "Clash XML|*.xml|All files|*.*",
+                                     ClashFile.Filter,
                                      "the baseline a Manage seat exported, or a saved markup"),
                         Ui.Actions(Ui.Primary("Save markup", SaveMarkup)),
                         Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
@@ -767,7 +837,7 @@ namespace CamelWorks.UI.Views
                         }))),
                     Bench.Group("Bring it back",
                         Ui.PathField("Markups", _markups, PathKind.Open,
-                                     "Clash XML|*.xml|All files|*.*",
+                                     ClashFile.Filter,
                                      "a markup file, or the baseline — every markup beside it is read"),
                         Ui.Runner("Sync markups", _sync, primary: false, work: Sync),
                         _sync,
@@ -782,10 +852,25 @@ namespace CamelWorks.UI.Views
                     Ui.Quiet("Excel...", Sheet),
                     Ui.Quiet("Review...", () => Ui.Told(ReviewWindow.Show()))),
                 Ui.Actions(Ui.Quiet("Baseline...", SaveBaseline)),
+                Ui.Check("Draw a picture of each clash into the baseline", _pictures,
+                         v => _pictures = v),
                 Ui.Small("Duplicates are the same conflict reported by two tests - marked "
                          + "Approved with a comment naming the one that stays open. The "
                          + "baseline carries statuses, assignments, comment trails and "
-                         + "groups, ready for reviewers."));
+                         + "groups, ready for reviewers."),
+                Ui.Small("Pictures are what every coordination tool shows its issue list as, so a "
+                         + "baseline without them arrives as rows of grey boxes. They are drawn "
+                         + "one at a time, which on a large board is the slow part of the export - "
+                         + "which is why it is asked rather than assumed."));
+
+            /// <summary>
+            /// Whether a baseline carries a picture per clash.
+            ///
+            /// Off by default, and remembered with the bench: it is the right answer for the file
+            /// somebody sends out and the wrong one for the twenty exports they do while setting
+            /// the filters up.
+            /// </summary>
+            private static bool _pictures;
 
             /// <summary>Whoever the assign symbol would write, for the menu to say so.</summary>
             private string Who()
@@ -827,6 +912,10 @@ namespace CamelWorks.UI.Views
                 _tests.Children.Clear();
                 _testsTable = null;
 
+                // The source can have changed since the foot was built, and with it whether the
+                // document will take a sync at all.
+                ArmSync();
+
                 var read = Current();
                 if (read == null) { Arm(); return; }
 
@@ -841,6 +930,20 @@ namespace CamelWorks.UI.Views
                     .ToList();
 
                 _headline.Children.Clear();
+
+                if (!OnFile && !Held.IsEmpty)
+                {
+                    _headline.Children.Add(Ui.Info(
+                        Ui.Count(Held.Count, "result") + " carries an edit this document would "
+                        + "not take. Published files hold their clash results read-only, so the "
+                        + "decisions are kept here: they show on the board, they survive a "
+                        + "re-read, and \"Save the baseline\" writes them out as clash XML to "
+                        + "sync into the NWF the results belong to."));
+
+                    _headline.Children.Add(Ui.Actions(
+                        Ui.Quiet("What is waiting", ShowHeld),
+                        Ui.Quiet("Forget them", ForgetHeld)));
+                }
 
                 _testsSay.Text =
                     (OnFile && _file != null
@@ -1394,23 +1497,67 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.Model.Select(keys);
-
                 // One result from the model gets the host's own composed view of it - the frame
                 // the engine saved when the test ran, which reads like the native clash window.
-                // More than one, or a file row, gets a fit around everything picked.
                 if (!OnFile && rows.Count == 1
                     && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
                 {
+                    _session.Model.Select(keys);
+
                     say.Children.Add(Ui.Done("Showing the engine's own view of \""
                         + (rows[0].Info.Name ?? "the result") + "\"."));
                     return;
                 }
 
-                _session.View.ZoomTo(keys, 1.0);
+                // The camera goes to the point the results already carry, before anything is
+                // resolved. A clash result knows where it happened; framing the elements means
+                // finding them first, and the coordinator is looking at a 3D view either way.
+                var point = Middle(rows);
+
+                if (point != null)
+                {
+                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
+                }
+
+                // Then the selection, which is what makes the view worth arriving at - and is now
+                // the only part that costs anything.
+                _session.Model.Select(keys);
+
+                if (point == null) _session.View.ZoomTo(keys, 1.0);
 
                 say.Children.Add(Ui.Done("Selected and framed "
                     + Ui.Count(keys.Count, "element") + "."));
+            }
+
+            /// <summary>
+            /// The middle of what was picked, in model units, or null when no row carries a point.
+            ///
+            /// Every clash result records where the two elements met, so a camera move needs no
+            /// elements at all. Averaging is right for a handful of picked rows in one area, which
+            /// is what a coordinator picks; a selection spread across the site gets a point in the
+            /// middle of nowhere, and the selection they can still see in the tree is the answer
+            /// to that.
+            /// </summary>
+            private static (double X, double Y, double Z)? Middle(IReadOnlyList<Row> rows)
+            {
+                double x = 0, y = 0, z = 0;
+                var counted = 0;
+
+                foreach (var row in rows)
+                {
+                    var info = row.Info;
+
+                    // A result with no geometry behind it records the origin, and averaging that
+                    // in drags the camera towards a corner of the site.
+                    if (info.PointX == 0 && info.PointY == 0 && info.PointZ == 0) continue;
+
+                    x += info.PointX;
+                    y += info.PointY;
+                    z += info.PointZ;
+                    counted++;
+                }
+
+                return counted == 0 ? null : ((double, double, double)?)(x / counted, y / counted, z / counted);
             }
 
             /// <summary>
@@ -1517,7 +1664,8 @@ namespace CamelWorks.UI.Views
             private void Mark(IReadOnlyList<object> picked, Panel say) =>
                 Write(picked, say, "Marked {0} as " + _mark + ".",
                       (testId, ids) => _session.Clash.SetStatus(testId, ids, _mark),
-                      row => row.Status = _mark);
+                      row => row.Status = _mark,
+                      edit => edit.Status = _mark);
 
             private void AssignPicked(IReadOnlyList<object> picked, Panel say)
             {
@@ -1526,7 +1674,8 @@ namespace CamelWorks.UI.Views
                 Write(picked, say,
                       who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
                       (testId, ids) => _session.Clash.Assign(testId, ids, who),
-                      row => row.Assigned = who);
+                      row => row.Assigned = who,
+                      edit => edit.Assigned = who);
             }
 
             private void CommentPicked(IReadOnlyList<object> picked, Panel say)
@@ -1542,14 +1691,17 @@ namespace CamelWorks.UI.Views
 
                 var author = Environment.UserName ?? "reviewer";
 
+                var when = DateTime.UtcNow.Ticks;
+
                 Write(picked, say, "Commented on {0}.",
                       (testId, ids) => _session.Clash.Comment(testId, ids, body, author),
                       row =>
                       {
                           row.Comments++;
                           row.LastComment = body;
-                          row.Trail.Add(new ClashComment(author, DateTime.UtcNow.Ticks, body));
-                      });
+                          row.Trail.Add(new ClashComment(author, when, body));
+                      },
+                      edit => edit.Comments.Add(new ClashComment(author, when, body)));
             }
 
             /// <summary>Rename just the picked results, prefix1, prefix2, ... in host order.</summary>
@@ -1611,7 +1763,8 @@ namespace CamelWorks.UI.Views
                 Write(picked, say,
                       group.Length == 0 ? "Moved {0} out of their groups." : "Grouped {0} into \"" + group + "\".",
                       (testId, ids) => _session.Clash.Regroup(testId, ids, group),
-                      row => row.Group = group);
+                      row => row.Group = group,
+                      edit => edit.Group = group);
             }
 
             /// <summary>
@@ -1622,7 +1775,8 @@ namespace CamelWorks.UI.Views
             /// save writes it out — that is what a markup is.
             /// </summary>
             private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
-                               Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply)
+                               Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply,
+                               Action<HeldEdit>? hold = null)
             {
                 say.Children.Clear();
 
@@ -1630,6 +1784,7 @@ namespace CamelWorks.UI.Views
                 if (rows.Count == 0) return;
 
                 var done = 0;
+                var held = 0;
                 var problems = new List<string>();
 
                 if (OnFile)
@@ -1645,32 +1800,69 @@ namespace CamelWorks.UI.Views
 
                         if (!write(byTest.Key, ids))
                         {
-                            problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                            if (hold == null)
+                            {
+                                problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+                                continue;
+                            }
+
+                            // The document would not take it - a published NWD holds its results
+                            // read-only - so the edit is kept rather than lost. It shows on the
+                            // board, it survives a re-read and a re-open, and it travels out in
+                            // the baseline that syncs into the NWF the results belong to.
+                            foreach (var row in byTest)
+                            {
+                                hold(Held.For(row.TestId, row.Info.Id));
+                                apply(row);
+                                held++;
+                            }
+
                             continue;
                         }
 
-                        foreach (var row in byTest) apply(row);
+                        // Written for real: whatever was being kept for these results is now in
+                        // the document, and keeping it any longer would write it twice.
+                        foreach (var row in byTest)
+                        {
+                            Held.Release(row.TestId, row.Info.Id);
+                            apply(row);
+                        }
+
                         done += ids.Count;
                     }
                 }
 
-                if (done == 0)
+                if (done == 0 && held == 0)
                 {
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
                     return;
                 }
 
-                if (!OnFile)
-                    _session.Record(ActivityKind.Regroup,
-                                    string.Format(CultureInfo.InvariantCulture, didFormat,
-                                                  Ui.Count(done, "result")));
+                if (!OnFile) { KeepHeld(); ArmSync(); }
+
+                var what = string.Format(CultureInfo.InvariantCulture, didFormat,
+                                         Ui.Count(done + held, "result"));
+
+                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
                 RedrawTests();
-                Tell(string.Format(CultureInfo.InvariantCulture, didFormat,
-                                   Ui.Count(done, "result"))
-                     + (OnFile ? " Save the markup to keep it." : string.Empty), problems);
+                Tell(what + Trailer(held), problems);
+            }
+
+            /// <summary>What to say after a write that the document would not take all of.</summary>
+            /// <param name="held">How many results were kept here instead.</param>
+            private string Trailer(int held)
+            {
+                if (OnFile) return " Save the markup to keep it.";
+
+                if (held == 0) return string.Empty;
+
+                return " " + Ui.Count(held, "result") + " could not be written into this "
+                       + "document, so " + (held == 1 ? "it is" : "they are") + " kept here "
+                       + "instead - " + Ui.Count(Held.Count, "result") + " waiting in all. "
+                       + "Write the baseline to carry them into the NWF.";
             }
 
             private void Spheres(IReadOnlyList<object> picked, Panel say)
@@ -2253,26 +2445,50 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                // The GlobalIds are what let the receiving tool select the two clashing
+                // elements. Read before writing, under the wait cursor: on a first export of a
+                // large board this is the slow part, and it is not a press that looks slow.
+                var named = 0;
+
+                if (!OnFile) Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
+
+                // Which test and result each item came from, so the clash engine can draw it
+                // rather than the camera having to be moved.
+                var drawnFrom = new Dictionary<ClashKey, (string Test, string Result)>();
+
+                foreach (var row in from.SelectMany(e => e.Rows))
+                    if (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty)
+                        drawnFrom[row.Info.Key()] = (row.TestId, row.Info.Id);
+
+                var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
+                    Snapshot = _pictures && !OnFile
+                        ? ClashIdentity.Pictures(_session, 1280, 720,
+                              item => drawnFrom.TryGetValue(item.Key, out var at)
+                                  ? at
+                                  : ((string Test, string Result)?)null)
+                        : null,
                     SourceFile = _session.Store.Path,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "CamelWorks",
+                    MetresPerUnit = OnFile ? 1.0 : _session.MetresPerUnit,
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
                     Title = "Save the baseline",
-                    Filter = "Clash XML|*.xml",
-                    FileName = "clash-baseline.xml",
+                    Filter = ClashFile.Filter,
+                    FileName = "clash-baseline" + ClashFile.Extension,
                     AddExtension = true,
-                    DefaultExt = ".xml",
+                    DefaultExt = ClashFile.Extension,
                 };
 
                 if (dialog.ShowDialog() != true) return;
 
                 try
                 {
-                    System.IO.File.WriteAllText(dialog.FileName, written.Text);
+                    System.IO.File.WriteAllBytes(dialog.FileName, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -2285,6 +2501,20 @@ namespace CamelWorks.UI.Views
                 Said(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()
                     + " Statuses, assignments, comment trails and groups all travel in it. "
                     + "Reviewers open it on this tab and save their markups beside it."));
+
+                if (!OnFile)
+                {
+                    var about = ClashIdentity.Explain(items.Count, named);
+
+                    if (about != null) Said(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+
+                    if (_pictures)
+                        Said(written.Snapshots == 0
+                            ? Ui.Note("No picture could be drawn - this document cannot render "
+                                      + "off-screen. Everything else in the file is unaffected.")
+                            : Ui.Line(Ui.Count(written.Snapshots, "clash")
+                                      + " carries a picture.", 0.8));
+                }
             }
 
             /// <summary>The results grid, exactly as filtered and shown, as a spreadsheet.</summary>
@@ -2419,21 +2649,23 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = round.Path,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "reviewer",
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
                 var reviewer = Safe(Environment.UserName ?? "reviewer");
                 var beside = System.IO.Path.GetDirectoryName(round.Path) ?? string.Empty;
                 var folder = System.IO.Path.Combine(beside, "markups");
-                var path = System.IO.Path.Combine(folder, reviewer + ".xml");
+                var path = System.IO.Path.Combine(folder, reviewer + ClashFile.Extension);
 
                 try
                 {
                     System.IO.Directory.CreateDirectory(folder);
-                    System.IO.File.WriteAllText(path, written.Text);
+                    System.IO.File.WriteAllBytes(path, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -2509,11 +2741,11 @@ namespace CamelWorks.UI.Views
                 {
                     job.Say("Reading " + System.IO.Path.GetFileName(file) + "...");
 
-                    string text;
+                    byte[] bytes;
 
                     try
                     {
-                        text = System.IO.File.ReadAllText(file);
+                        bytes = System.IO.File.ReadAllBytes(file);
                     }
                     catch (Exception e)
                     {
@@ -2521,7 +2753,7 @@ namespace CamelWorks.UI.Views
                         continue;
                     }
 
-                    var markup = ClashXml.Read(text);
+                    var markup = ClashFile.Read(bytes);
 
                     if (!markup.IsUsable)
                     {
@@ -2638,7 +2870,8 @@ namespace CamelWorks.UI.Views
                         : System.IO.Path.Combine(beside, "markups");
 
                     if (System.IO.Directory.Exists(folder))
-                        files.AddRange(System.IO.Directory.GetFiles(folder, "*.xml")
+                        files.AddRange(System.IO.Directory.GetFiles(folder)
+                            .Where(f => Markup(f))
                             .OrderBy(System.IO.File.GetLastWriteTimeUtc));
 
                     if (files.Count == 0 && System.IO.File.Exists(named)) files.Add(named);
@@ -2718,15 +2951,308 @@ namespace CamelWorks.UI.Views
                 return kept;
             }
 
-            private static Row Restored(Row row,
-                                        Dictionary<string, Dictionary<string, string>> carried)
+            /// <summary>
+            /// A freshly read row, with what this bench knows and the document does not put back.
+            ///
+            /// Two things travel across a re-read: the custom column values, which cost a property
+            /// read each and would otherwise be re-fetched for no reason, and the held edits — the
+            /// decisions a read-only document refused. Without the second the board would forget
+            /// the afternoon's work the moment somebody pressed Read again.
+            /// </summary>
+            private Row Restored(Row row,
+                                 Dictionary<string, Dictionary<string, string>> carried)
             {
-                if (!carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
-                    return row;
+                if (carried.TryGetValue(row.TestId + "\u001f" + row.Info.Id, out var values))
+                    foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
 
-                foreach (var pair in values) row.Custom[pair.Key] = pair.Value;
+                Apply(Held.Find(row.TestId, row.Info.Id), row);
 
                 return row;
+            }
+
+            /// <summary>The register of refused edits. Never null once a screen exists.</summary>
+            private static HeldEdits Held => _heldEdits ??= new HeldEdits();
+
+            /// <summary>Lay a held edit over a row, so the board reads the way the coordinator left it.</summary>
+            private static void Apply(HeldEdit? edit, Row row)
+            {
+                if (edit == null) return;
+
+                if (edit.Status != null) row.Status = edit.Status;
+                if (edit.Assigned != null) row.Assigned = edit.Assigned;
+                if (edit.Group != null) row.Group = edit.Group;
+
+                foreach (var comment in edit.Comments)
+                {
+                    row.Trail.Add(comment);
+                    row.Comments++;
+                    row.LastComment = comment.Body;
+                }
+            }
+
+            /// <summary>
+            /// Offer the held edits to the document again, and keep only what it still refuses.
+            ///
+            /// The case this is for: the coordinator marked up the NWD on site, then opened the
+            /// NWF the results actually live in. One press moves the week's decisions across.
+            /// </summary>
+            private void PushHeld()
+            {
+                if (Held.IsEmpty) return;
+
+                var written = 0;
+                var refused = 0;
+                var problems = new List<string>();
+
+                foreach (var byTest in Held.All.ToList()
+                                           .GroupBy(e => e.TestId, StringComparer.OrdinalIgnoreCase))
+                {
+                    foreach (var edit in byTest)
+                    {
+                        var ids = new[] { edit.ResultId };
+                        var all = true;
+
+                        if (edit.Status != null)
+                            all &= Kept(_session.Clash.SetStatus(byTest.Key, ids, edit.Status), problems);
+
+                        if (edit.Assigned != null)
+                            all &= Kept(_session.Clash.Assign(byTest.Key, ids, edit.Assigned), problems);
+
+                        if (edit.Group != null)
+                            all &= Kept(_session.Clash.Regroup(byTest.Key, ids, edit.Group), problems);
+
+                        foreach (var comment in edit.Comments)
+                            all &= Kept(_session.Clash.Comment(byTest.Key, ids, comment.Body,
+                                                               comment.Author), problems);
+
+                        // Released only when every part landed: a half-written edit that stopped
+                        // being held would lose the half the document refused.
+                        if (all)
+                        {
+                            Held.Release(edit.TestId, edit.ResultId);
+                            written++;
+                        }
+                        else
+                        {
+                            refused++;
+                        }
+                    }
+                }
+
+                KeepHeld();
+                ArmSync();
+                RedrawTests();
+
+                Tell(written == 0
+                        ? "This document still will not take them. They are still kept here."
+                        : Ui.Count(written, "held edit") + " written into the document"
+                          + (refused > 0
+                              ? "; " + Ui.Count(refused, "other") + " still refused and still kept."
+                              : ". Nothing is waiting now."),
+                     problems.Distinct().Take(3).ToList());
+            }
+
+            /// <summary>One host answer, with its complaint collected the first time it is heard.</summary>
+            private bool Kept(bool ok, List<string> problems)
+            {
+                if (!ok) problems.Add(_session.Clash.LastProblem ?? "The host refused.");
+
+                return ok;
+            }
+
+            /// <summary>The Sync button, kept so its state can be refreshed as the source changes.</summary>
+            private System.Windows.Controls.Button? _syncButton;
+
+            /// <summary>
+            /// Why this document cannot take the changes, or null when it can.
+            ///
+            /// Four reasons, and each one is a different thing to do about it, so each says so
+            /// rather than all four sharing a grey button and a shrug.
+            /// </summary>
+            private string? WhySync()
+            {
+                if (OnFile)
+                    return "A file is open for markup, not the model. Save the markup and run the "
+                           + "sync from the seat that has the model open.";
+
+                if (!_session.Clash.IsAvailable)
+                    return "This Navisworks edition has no clash engine, so there is nothing to "
+                           + "write into. " + (_session.ClashProblem ?? string.Empty).Trim();
+
+                if (_session.IsPublished)
+                    return "This is a published NWD: its clash results are read-only and a "
+                           + "published file cannot be saved back into. Open the NWF the models "
+                           + "were federated in and this button writes the same changes into it.";
+
+                if (!_session.Clash.CanEdit)
+                    return "This document's clash results will not take an edit. Open the NWF the "
+                           + "models were federated in.";
+
+                return null;
+            }
+
+            /// <summary>Show the Sync button as available or not, and say which in a word.</summary>
+            private void ArmSync()
+            {
+                if (_syncButton == null) return;
+
+                var why = WhySync();
+
+                _syncButton.IsEnabled = why == null;
+
+                _syncButton.ToolTip = why
+                    ?? "Writes every held decision into the document's own clash results, where "
+                       + "the native clash window and every export can see them.";
+
+                // Kept visible rather than hidden when it cannot run: a button that disappears
+                // teaches nobody that the sync exists, and it is the thing somebody came for.
+                _syncButton.Content = Held.IsEmpty
+                    ? "Sync into the document"
+                    : "Sync " + Ui.Count(Held.Count, "change") + " into the document";
+            }
+
+            /// <summary>
+            /// Save the changes where this source keeps them.
+            ///
+            /// One button, two files, because it is one act: a file being marked up saves a
+            /// markup, and the model saves a baseline. Both carry statuses, assignments, comment
+            /// trails and groups, and both are what the other seat reads.
+            /// </summary>
+            private void SaveChanges()
+            {
+                if (OnFile) SaveMarkup();
+                else SaveBaseline();
+            }
+
+            /// <summary>Write the held decisions into the document, when it will have them.</summary>
+            private void Sync()
+            {
+                var why = WhySync();
+
+                if (why != null)
+                {
+                    Tell("Nothing was written.", new List<string> { why });
+                    return;
+                }
+
+                if (Held.IsEmpty)
+                {
+                    Tell("Nothing is waiting to be written - every change on this board is "
+                         + "already in the document.", null);
+                    return;
+                }
+
+                PushHeld();
+            }
+
+            /// <summary>List what is waiting, so somebody can see it before deciding anything.</summary>
+            private void ShowHeld()
+            {
+                _log.Children.Clear();
+
+                if (Held.IsEmpty)
+                {
+                    _log.Children.Add(Ui.Line("Nothing is waiting.", 0.75));
+                    return;
+                }
+
+                var read = Current();
+
+                string Name(HeldEdit edit) =>
+                    read?.FirstOrDefault(e => string.Equals(e.Test.Id, edit.TestId,
+                                                            StringComparison.OrdinalIgnoreCase))
+                        ?.Test.Name ?? edit.TestId;
+
+                _log.Children.Add(Ui.Eyebrow("Waiting to be written"));
+
+                var table = Ui.Table(
+                    Held.All.OrderBy(e => Name(e), StringComparer.OrdinalIgnoreCase)
+                            .ThenBy(e => e.ResultId, StringComparer.OrdinalIgnoreCase)
+                            .Select(e => new TableRow(e, Name(e), e.ResultId, e.Describe())),
+                    ("Test", 200), ("Result", 140), ("What is held", 0));
+
+                _log.Children.Add(table);
+
+                _log.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Copy {n}",
+                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "held edit")),
+                    new Ui.OnPicked("Forget {n}", (picked, say) =>
+                    {
+                        foreach (var edit in picked.OfType<HeldEdit>())
+                            Held.Release(edit.TestId, edit.ResultId);
+
+                        KeepHeld();
+                        say.Children.Add(Ui.Done("Forgotten. Press \"Read the results\" to see "
+                            + "the board the way the document holds it."));
+                    })));
+            }
+
+            /// <summary>Throw the held edits away, on purpose.</summary>
+            private void ForgetHeld()
+            {
+                // Two presses, because there is no undo: the first says what would be lost, the
+                // second does it. A confirmation dialog would be the same question in a window
+                // somebody has to close.
+                if (!_forgetArmed)
+                {
+                    _forgetArmed = true;
+
+                    Tell("Press \"Forget them\" again to throw away "
+                         + Ui.Count(Held.Count, "held edit")
+                         + ". They have not been written into any document, so once forgotten "
+                         + "they are gone - unless a baseline was saved while they were held.",
+                         null);
+
+                    return;
+                }
+
+                _forgetArmed = false;
+
+                Held.Clear();
+                KeepHeld();
+                ArmSync();
+                RedrawTests();
+                Tell("Forgot the held edits. Press \"Read the results\" to see the board the "
+                     + "way the document holds it.", null);
+            }
+
+            /// <summary>Whether "Forget them" has been pressed once already.</summary>
+            private bool _forgetArmed;
+
+            /// <summary>
+            /// Write the register into the project file.
+            ///
+            /// Failing to save is an ordinary outcome — a document nobody has saved has no project
+            /// file — and never a reason to refuse the edit: it still applies on the board and
+            /// still travels out in the baseline.
+            /// </summary>
+            private void KeepHeld()
+            {
+                try
+                {
+                    _session.Store.Section(ProjectStore.ClashSection).Set(HeldKey, Held.ToJson());
+                    _session.Store.Save();
+                }
+                catch (Exception)
+                {
+                    // Nowhere to write. The edits are still on the board and still exportable.
+                }
+            }
+
+            /// <summary>
+            /// Whether a file in the markups folder is one a reviewer saved.
+            ///
+            /// By extension here rather than by content, because this is a listing of a folder
+            /// rather than a read of one file: opening every file in it to find out costs a read
+            /// per file, and a reviewer's markup is one of two things by name.
+            /// </summary>
+            private static bool Markup(string path)
+            {
+                var extension = System.IO.Path.GetExtension(path);
+
+                return extension.Equals(ClashFile.Extension, StringComparison.OrdinalIgnoreCase)
+                    || extension.Equals(".bcf", StringComparison.OrdinalIgnoreCase)
+                    || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
             }
 
             private void Tell(string did, List<string>? problems)

@@ -42,6 +42,16 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>Abandon everything queued. Also what <see cref="IDisposable.Dispose"/> does if
         /// <see cref="Commit"/> was never called, so a failed operation cannot half-apply.</summary>
         void Rollback();
+
+        /// <summary>
+        /// Why the document turned an element away, or null when nothing was turned away.
+        ///
+        /// A commit that changes fewer elements than the preview promised has to be able to say
+        /// why. The commonest reason by far is that the document is read-only - a published NWD,
+        /// or a file opened from a share somebody has no rights on - and "wrote 0 of 412" with no
+        /// reason is the message a user cannot act on and cannot report.
+        /// </summary>
+        string? LastProblem { get; }
     }
 
     /// <summary>What a transaction would do if committed.</summary>

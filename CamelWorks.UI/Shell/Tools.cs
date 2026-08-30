@@ -195,7 +195,7 @@ namespace CamelWorks.UI.Shell
                + "disagree rather than letting the last one win.",
                "Bring them together"),
 
-            Of("clashxml", "Clash XML", ToolShape.Window, Glyph.Clash,
+            Of("clashxml", "Clash file", ToolShape.Window, Glyph.Clash,
                "Read a board out of the format other coordination tools speak, or write one back "
                + "into it, against a saved profile.",
                "Show me what would go in"),

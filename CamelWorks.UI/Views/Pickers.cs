@@ -72,7 +72,15 @@ namespace CamelWorks.UI.Views
                               .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
             });
 
-        /// <summary>Throw the cache away, for a screen that knows the model just changed.</summary>
+        static Pickers() => Host.WhenDocumentChanges(Forget);
+
+        /// <summary>
+        /// Throw the cache away.
+        ///
+        /// Called when the document changes as well as by a screen that knows the model just
+        /// changed - a picker offering the last federation's sets and levels is a picker that
+        /// fills a box with a name nothing in this model carries.
+        /// </summary>
         public static void Forget()
         {
             lock (Lock) _found = null;

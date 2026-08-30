@@ -68,6 +68,21 @@ namespace CamelWorks.Core.Abstractions
         void FrameBox(BoundingBox box);
 
         /// <summary>
+        /// Look at a point in model space, from a step back.
+        ///
+        /// The camera move that needs no elements at all. Framing a clash result means resolving
+        /// two elements and asking the host to focus on them; a clash result already carries the
+        /// point where the two meet, and moving the camera there is instant however large the
+        /// federation is. The elements are still selected, for the coordinator who wants to see
+        /// what was hit - but the view no longer waits on them.
+        /// </summary>
+        /// <param name="x">Model X.</param>
+        /// <param name="y">Model Y.</param>
+        /// <param name="z">Model Z.</param>
+        /// <param name="backMetres">How far back to stand, in metres.</param>
+        void LookAt(double x, double y, double z, double backMetres);
+
+        /// <summary>
         /// Look straight down at a box, orthographic, so a render of it is a plan.
         ///
         /// Orthographic because a perspective plan is not a plan: markers near the edges land where
