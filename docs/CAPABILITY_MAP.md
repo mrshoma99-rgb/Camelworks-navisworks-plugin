@@ -120,6 +120,7 @@ surfaces work, not things a coordinator opens.
 | `LevelSet` | Levels & Zones |
 | `Takeoff`, `TakeoffResult`, `TakeoffPivot`, `TakeoffPivotTable` | Takeoff |
 | `IdsChecker`, `IdsReader`, `IdsWriter`, `IdsDocument`, `IdsSpecification`, `IdsFacet`, `IdsEntityFacet`, `IdsValue`, `IdsElement`, `IdsReport`, `IdsProjection`, `IdsSheet` | IDS |
+| `IdsScope`, `IdsScopeFacet`, `IdsScopeSpecification`, `IdsPortable`, `IdsStayedBehind` | **Model Audit ▸ IDS** — a rule can say who it is about in the model's own terms (a saved set, the current selection, a property) instead of by IFC class, which is what makes an IDS check a Revit or Civil 3D federation at all. The published schema's applicability is a closed sequence with no extension point, so a scoped rule stays here and **Save as .ids** names each one it could not carry and why. |
 | `IdsFindings` | **Model Audit ▸ IDS** — every check writes its failures beside the model and the grid gains **Raise {n} as issues**, so "these forty doors are being scheduled separately" can be said once instead of every Tuesday. One finding per specification, identified by the specification's own identifier so rewording it does not lose the agreement; a specification that matched nothing is reported as its own kind of failure rather than buried in a green tick. |
 
 ### Sets & Views

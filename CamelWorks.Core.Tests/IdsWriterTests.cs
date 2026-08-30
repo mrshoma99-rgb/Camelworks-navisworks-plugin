@@ -486,6 +486,26 @@ namespace CamelWorks.Core.Tests
             var minimal = new IdsDocument("Minimal");
             minimal.Specifications.Add(bare);
 
+            // And a rule set that is half portable: one rule scoped to a set this model holds,
+            // which has no place in the schema, beside one that travels. The file must carry the
+            // second and still validate - a scope leaking into the applicability sequence is
+            // exactly the failure the split exists to make impossible, and only the schema can
+            // prove it did not.
+            var mixed = new IdsDocument("Half of it travels");
+
+            var scoped = new IdsSpecification("Ducts carry a system name") { Identifier = "CW-900" };
+            scoped.Applicability.Add(new IdsScopeFacet(IdsScope.Of("Level 3 Ductwork")!));
+            scoped.Requirements.Add(new IdsPropertyFacet(
+                IdsValue.Simple("Element"), IdsValue.Simple("System Name")));
+
+            var travels = new IdsSpecification("Walls carry a fire rating") { Identifier = "CW-901" };
+            travels.Applicability.Add(new IdsEntityFacet(IdsValue.Simple("IFCWALL")));
+            travels.Requirements.Add(new IdsPropertyFacet(
+                IdsValue.Simple("Pset_WallCommon"), IdsValue.Simple("FireRating")));
+
+            mixed.Specifications.Add(scoped);
+            mixed.Specifications.Add(travels);
+
             var written = 0;
 
             foreach (var pair in new[]
@@ -493,6 +513,7 @@ namespace CamelWorks.Core.Tests
                 ("everything.ids", IdsWriter.Write(everything, 637_000_000_000_000_000L)),
                 ("minimal.ids", IdsWriter.Write(minimal)),
                 ("fire-rating.ids", IdsWriter.Write(FireRating(), 637_000_000_000_000_000L)),
+                ("half-portable.ids", IdsWriter.Write(mixed, 637_000_000_000_000_000L)),
             })
             {
                 Assert.Null(pair.Item2.Problem);
@@ -502,7 +523,7 @@ namespace CamelWorks.Core.Tests
                 written++;
             }
 
-            Assert.Equal(3, written);
+            Assert.Equal(4, written);
         }
 
         [Fact]
