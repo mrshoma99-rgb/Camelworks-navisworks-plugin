@@ -145,7 +145,7 @@ namespace CamelWorks.UI.Views
 
                 var readStrip = Ui.Stack(
                     Ui.Segmented(new[] { WriteOne, ReadOne }, ReadOne, Leg),
-                    Ui.PathField("File", _incoming, PathKind.Open, "Clash XML|*.xml",
+                    Ui.PathField("File", _incoming, PathKind.Open, ClashFile.Filter,
                                  "A reviewer's file, returned."));
 
                 // The Runner clears its own panel on the way in, so the idle sentence seeded here
@@ -176,8 +176,9 @@ namespace CamelWorks.UI.Views
                     new Ui.Page("How it is written", () => Bench.Group("How it is written", Shape())),
                     new Ui.Page("This profile", () => Bench.Group("This profile", Profiles())),
                     new Ui.Page("The file", () => Bench.Group("The file",
-                        Ui.PathField("File", _file, PathKind.Save, "Clash XML|*.xml",
-                                     "The format Navisworks and every reviewing tool reads."))),
+                        Ui.PathField("File", _file, PathKind.Save, ClashFile.Filter,
+                                     "BCF - what Solibri, BIMcollab, Revizto and every "
+                                     + "other reviewing tool opens."))),
                 };
 
                 var order = new[] { "in", "how", "profile", "file" };
@@ -190,7 +191,7 @@ namespace CamelWorks.UI.Views
                     pages.Insert(0, wanted);
                 }
 
-                Ui.Configure("Clash XML", () => { DrawFilters(); DrawTests(); }, pages.ToArray());
+                Ui.Configure("Clash file", () => { DrawFilters(); DrawTests(); }, pages.ToArray());
             }
 
             private UIElement? _write;
@@ -443,7 +444,8 @@ namespace CamelWorks.UI.Views
 
                 if (!picked.IsUsable) return 0;
 
-                var written = ClashXml.Write(picked.Items, picked.Groups, _profile.Options());
+                var written = ClashBcf.Write(picked.Items, picked.Groups,
+                                             _profile.BcfOptions(metresPerUnit: _session.MetresPerUnit));
 
                 foreach (var warning in written.Warnings) into.Children.Add(Ui.Note(warning));
 
@@ -483,12 +485,15 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Writing the file...");
 
-                var written = ClashXml.Write(picked.Items, picked.Groups,
-                                             _profile.Options(_session.SavedPath, _session.NowTicks));
+                var written = ClashBcf.Write(picked.Items, picked.Groups,
+                                             _profile.BcfOptions(_session.SavedPath, _session.NowTicks,
+                                                                 _session.MetresPerUnit));
+
+                foreach (var warning in written.Warnings) _output.Children.Add(Ui.Note(warning));
 
                 try
                 {
-                    File.WriteAllText(path, written.Text);
+                    File.WriteAllBytes(path, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -538,11 +543,11 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Reading the file...");
 
-                string text;
+                byte[] bytes;
 
                 try
                 {
-                    text = File.ReadAllText(path);
+                    bytes = File.ReadAllBytes(path);
                 }
                 catch (Exception e)
                 {
@@ -550,7 +555,9 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var read = ClashXml.Read(text);
+                // Either format: a reviewer may be returning a file this version wrote as BCF, or
+                // one an earlier version wrote as clash XML.
+                var read = ClashFile.Read(bytes);
 
                 if (read.Problem != null)
                 {

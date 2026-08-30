@@ -54,8 +54,53 @@ All of them work on however many rows are picked, and all of them are on right-c
 | Columns and grouping | Property columns off either element, and a chained grouping order |
 | Status and assignment | What the status, assign and group verbs write |
 | In the model | Marker spheres, the camera and isolation |
-| The review round | The offline round trip — export, mark up, sync back |
+| The review round | The offline round trip — export as BCF, mark up, sync back |
 | Beyond the engine | The duplicate finder, the spreadsheet, the baseline |
+
+### Save the changes, and sync them
+
+Two buttons sit beside **Read the results**, and they do different jobs.
+
+- **Save the changes** writes what is on the board to a file. From the model that is a *baseline*;
+  from a file it is your *markup*, saved into `markups\` beside the file you opened. Either way it
+  carries statuses, assignments, whole comment trails and groups.
+- **Sync into the document** writes the changes into the model's own clash results, where the
+  native clash window and every export can see them.
+
+**Sync is greyed out when this document cannot take it**, and hovering it says which of the four
+reasons applies: you are marking up a file rather than the model; this Navisworks edition has no
+clash engine; the document's results will not take an edit; or — the usual one — **it is a
+published NWD**.
+
+### Working on a published NWD
+
+A published NWD is a snapshot: its clash results are read-only and nothing can be saved back into
+it. The manager does not throw your work away when that happens.
+
+Every status, assignment, comment and regroup the document refuses is **held**: it shows on the
+board the way you left it, it survives pressing *Read the results* again, and it survives closing
+Navisworks, because it lives in the project file beside the document. A banner says how many are
+waiting, with **What is waiting** to list them and **Forget them** to throw them away on purpose.
+
+There are two ways out:
+
+- **Save the changes** puts them in the clash file, which is what carries them into the NWF.
+- Open the **NWF** the models were federated in and press **Sync into the document**. Everything
+  held goes in at once, and the count on the button tells you how much is waiting.
+
+### The clash file
+
+Clash files are **BCF** (`.bcfzip`) — the format Solibri, BIMcollab, Revizto, BIM Track and every
+other coordination tool reads and writes. A file you export here opens in the architect's own tool,
+they answer in it, and their file comes back and lands on the elements it left from.
+
+BCF has no field for a good deal of what a clash is — the tolerance its test ran at, the distance
+between the two elements, the level and grid reference, the keys that put an edit back on the right
+element. Those travel in a CamelWorks file **inside the same archive**, which other tools ignore by
+design, so nothing the old clash XML carried is lost.
+
+Baselines and markups written before this change are Navisworks clash XML. **They still open** —
+the reader recognises either by what is in the file rather than by its name.
 
 ### What it will not do
 
@@ -128,7 +173,7 @@ somebody closed.
 ### Out of the tab
 
 - The grid to a spreadsheet, exactly as filtered.
-- Every shown finding as a **clash XML** file — which the Manage tab's *A file* source opens, so a
+- Every shown finding as a **clash file** (BCF) — which the Manage tab's *A file* source opens, so a
   clearance list runs the same offline review round as a clash export.
 - Right-click → **raise an issue**, into the [Issue Manager](Issue-Manager).
 

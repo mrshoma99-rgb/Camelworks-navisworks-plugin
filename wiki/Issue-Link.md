@@ -6,7 +6,7 @@ The outbound half of the coordination week. The board gets decided in
 [Clash Manager](Clash-Manager); Issue Link is where it leaves the building — and where the answers
 come back and land.
 
-**Tabs:** [Report](#report) · [BCF](#bcf) · [Clash XML](#clash-xml) · [Merge](#merge) ·
+**Tabs:** [Report](#report) · [BCF](#bcf) · [Clash file](#clash-file) · [Merge](#merge) ·
 [Penetrations](#penetrations)
 
 ## The board, on every tab
@@ -37,7 +37,7 @@ Behind the ⚙ symbols: where the file goes and what it is called, markers in th
 it onward as a file somebody works in.
 
 When it has written, it offers the two jumps that actually follow — the same board as **BCF** or as
-**Clash XML** — and says where a reply will land when it returns.
+**Clash file** — and says where a reply will land when it returns.
 
 ---
 
@@ -61,7 +61,7 @@ Behind the ⚙ symbol: how the file is written. On the stage: **Read the answers
 
 ---
 
-## Clash XML
+## Clash file
 
 > Read a board out of the format other coordination tools speak, or write one back into it.
 

@@ -367,6 +367,16 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel();
 
                 row.Children.Add(read);
+                row.Children.Add(new Border { Width = 8 });
+
+                row.Children.Add(Ui.Quiet("Save the changes", SaveChanges));
+                row.Children.Add(new Border { Width = 6 });
+
+                _syncButton = Ui.Quiet("Sync into the document", Sync);
+                row.Children.Add(_syncButton);
+
+                ArmSync();
+
                 row.Children.Add(new Border { Width = 14 });
 
                 void Add(string glyph, string tip, string section)
@@ -543,11 +553,11 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                string text;
+                byte[] bytes;
 
                 try
                 {
-                    text = System.IO.File.ReadAllText(path);
+                    bytes = System.IO.File.ReadAllBytes(path);
                 }
                 catch (Exception e)
                 {
@@ -555,7 +565,10 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var read = ClashXml.Read(text);
+                // Either format. A baseline written by this version is BCF; one written before
+                // the change is Navisworks clash XML, and last month's review round has to still
+                // open.
+                var read = ClashFile.Read(bytes);
 
                 if (!read.IsUsable)
                 {
@@ -708,7 +721,7 @@ namespace CamelWorks.UI.Views
                 OnFile
                     ? Bench.Group("The file",
                         Ui.PathField("Open", _path, PathKind.Open,
-                                     "Clash XML|*.xml|All files|*.*",
+                                     ClashFile.Filter,
                                      "the baseline a Manage seat exported, or a saved markup"),
                         Ui.Actions(Ui.Primary("Save markup", SaveMarkup)),
                         Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
@@ -806,7 +819,7 @@ namespace CamelWorks.UI.Views
                         }))),
                     Bench.Group("Bring it back",
                         Ui.PathField("Markups", _markups, PathKind.Open,
-                                     "Clash XML|*.xml|All files|*.*",
+                                     ClashFile.Filter,
                                      "a markup file, or the baseline — every markup beside it is read"),
                         Ui.Runner("Sync markups", _sync, primary: false, work: Sync),
                         _sync,
@@ -866,6 +879,10 @@ namespace CamelWorks.UI.Views
                 _tests.Children.Clear();
                 _testsTable = null;
 
+                // The source can have changed since the foot was built, and with it whether the
+                // document will take a sync at all.
+                ArmSync();
+
                 var read = Current();
                 if (read == null) { Arm(); return; }
 
@@ -891,7 +908,6 @@ namespace CamelWorks.UI.Views
                         + "sync into the NWF the results belong to."));
 
                     _headline.Children.Add(Ui.Actions(
-                        Ui.Quiet("Try writing them in now", PushHeld),
                         Ui.Quiet("What is waiting", ShowHeld),
                         Ui.Quiet("Forget them", ForgetHeld)));
                 }
@@ -1789,7 +1805,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                if (!OnFile) KeepHeld();
+                if (!OnFile) { KeepHeld(); ArmSync(); }
 
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));
@@ -2396,26 +2412,29 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = _session.Store.Path,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "CamelWorks",
+                    MetresPerUnit = OnFile ? 1.0 : _session.MetresPerUnit,
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
                     Title = "Save the baseline",
-                    Filter = "Clash XML|*.xml",
-                    FileName = "clash-baseline.xml",
+                    Filter = ClashFile.Filter,
+                    FileName = "clash-baseline" + ClashFile.Extension,
                     AddExtension = true,
-                    DefaultExt = ".xml",
+                    DefaultExt = ClashFile.Extension,
                 };
 
                 if (dialog.ShowDialog() != true) return;
 
                 try
                 {
-                    System.IO.File.WriteAllText(dialog.FileName, written.Text);
+                    System.IO.File.WriteAllBytes(dialog.FileName, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -2562,21 +2581,23 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = round.Path,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "reviewer",
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
                 var reviewer = Safe(Environment.UserName ?? "reviewer");
                 var beside = System.IO.Path.GetDirectoryName(round.Path) ?? string.Empty;
                 var folder = System.IO.Path.Combine(beside, "markups");
-                var path = System.IO.Path.Combine(folder, reviewer + ".xml");
+                var path = System.IO.Path.Combine(folder, reviewer + ClashFile.Extension);
 
                 try
                 {
                     System.IO.Directory.CreateDirectory(folder);
-                    System.IO.File.WriteAllText(path, written.Text);
+                    System.IO.File.WriteAllBytes(path, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -2652,11 +2673,11 @@ namespace CamelWorks.UI.Views
                 {
                     job.Say("Reading " + System.IO.Path.GetFileName(file) + "...");
 
-                    string text;
+                    byte[] bytes;
 
                     try
                     {
-                        text = System.IO.File.ReadAllText(file);
+                        bytes = System.IO.File.ReadAllBytes(file);
                     }
                     catch (Exception e)
                     {
@@ -2664,7 +2685,7 @@ namespace CamelWorks.UI.Views
                         continue;
                     }
 
-                    var markup = ClashXml.Read(text);
+                    var markup = ClashFile.Read(bytes);
 
                     if (!markup.IsUsable)
                     {
@@ -2781,7 +2802,8 @@ namespace CamelWorks.UI.Views
                         : System.IO.Path.Combine(beside, "markups");
 
                     if (System.IO.Directory.Exists(folder))
-                        files.AddRange(System.IO.Directory.GetFiles(folder, "*.xml")
+                        files.AddRange(System.IO.Directory.GetFiles(folder)
+                            .Where(f => Markup(f))
                             .OrderBy(System.IO.File.GetLastWriteTimeUtc));
 
                     if (files.Count == 0 && System.IO.File.Exists(named)) files.Add(named);
@@ -2950,6 +2972,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 KeepHeld();
+                ArmSync();
                 RedrawTests();
 
                 Tell(written == 0
@@ -2967,6 +2990,91 @@ namespace CamelWorks.UI.Views
                 if (!ok) problems.Add(_session.Clash.LastProblem ?? "The host refused.");
 
                 return ok;
+            }
+
+            /// <summary>The Sync button, kept so its state can be refreshed as the source changes.</summary>
+            private System.Windows.Controls.Button? _syncButton;
+
+            /// <summary>
+            /// Why this document cannot take the changes, or null when it can.
+            ///
+            /// Four reasons, and each one is a different thing to do about it, so each says so
+            /// rather than all four sharing a grey button and a shrug.
+            /// </summary>
+            private string? WhySync()
+            {
+                if (OnFile)
+                    return "A file is open for markup, not the model. Save the markup and run the "
+                           + "sync from the seat that has the model open.";
+
+                if (!_session.Clash.IsAvailable)
+                    return "This Navisworks edition has no clash engine, so there is nothing to "
+                           + "write into. " + (_session.ClashProblem ?? string.Empty).Trim();
+
+                if (_session.IsPublished)
+                    return "This is a published NWD: its clash results are read-only and a "
+                           + "published file cannot be saved back into. Open the NWF the models "
+                           + "were federated in and this button writes the same changes into it.";
+
+                if (!_session.Clash.CanEdit)
+                    return "This document's clash results will not take an edit. Open the NWF the "
+                           + "models were federated in.";
+
+                return null;
+            }
+
+            /// <summary>Show the Sync button as available or not, and say which in a word.</summary>
+            private void ArmSync()
+            {
+                if (_syncButton == null) return;
+
+                var why = WhySync();
+
+                _syncButton.IsEnabled = why == null;
+
+                _syncButton.ToolTip = why
+                    ?? "Writes every held decision into the document's own clash results, where "
+                       + "the native clash window and every export can see them.";
+
+                // Kept visible rather than hidden when it cannot run: a button that disappears
+                // teaches nobody that the sync exists, and it is the thing somebody came for.
+                _syncButton.Content = Held.IsEmpty
+                    ? "Sync into the document"
+                    : "Sync " + Ui.Count(Held.Count, "change") + " into the document";
+            }
+
+            /// <summary>
+            /// Save the changes where this source keeps them.
+            ///
+            /// One button, two files, because it is one act: a file being marked up saves a
+            /// markup, and the model saves a baseline. Both carry statuses, assignments, comment
+            /// trails and groups, and both are what the other seat reads.
+            /// </summary>
+            private void SaveChanges()
+            {
+                if (OnFile) SaveMarkup();
+                else SaveBaseline();
+            }
+
+            /// <summary>Write the held decisions into the document, when it will have them.</summary>
+            private void Sync()
+            {
+                var why = WhySync();
+
+                if (why != null)
+                {
+                    Tell("Nothing was written.", new List<string> { why });
+                    return;
+                }
+
+                if (Held.IsEmpty)
+                {
+                    Tell("Nothing is waiting to be written - every change on this board is "
+                         + "already in the document.", null);
+                    return;
+                }
+
+                PushHeld();
             }
 
             /// <summary>List what is waiting, so somebody can see it before deciding anything.</summary>
@@ -3034,6 +3142,7 @@ namespace CamelWorks.UI.Views
 
                 Held.Clear();
                 KeepHeld();
+                ArmSync();
                 RedrawTests();
                 Tell("Forgot the held edits. Press \"Read the results\" to see the board the "
                      + "way the document holds it.", null);
@@ -3060,6 +3169,22 @@ namespace CamelWorks.UI.Views
                 {
                     // Nowhere to write. The edits are still on the board and still exportable.
                 }
+            }
+
+            /// <summary>
+            /// Whether a file in the markups folder is one a reviewer saved.
+            ///
+            /// By extension here rather than by content, because this is a listing of a folder
+            /// rather than a read of one file: opening every file in it to find out costs a read
+            /// per file, and a reviewer's markup is one of two things by name.
+            /// </summary>
+            private static bool Markup(string path)
+            {
+                var extension = System.IO.Path.GetExtension(path);
+
+                return extension.Equals(ClashFile.Extension, StringComparison.OrdinalIgnoreCase)
+                    || extension.Equals(".bcf", StringComparison.OrdinalIgnoreCase)
+                    || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
             }
 
             private void Tell(string did, List<string>? problems)

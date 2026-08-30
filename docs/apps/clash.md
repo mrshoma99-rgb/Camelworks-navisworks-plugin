@@ -53,7 +53,7 @@ list of groups that could be filtered and assigned but not exported, whose real 
 issues somebody chases — had nowhere to live except inside it. What a coordinator works is now
 two surfaces that each own their job: **Manage**, the results the engine holds, and the
 **Issue Manager**, the register of everything raised on the job. The board itself survives as
-the derived thing underneath the report, BCF, Clash XML and the merge — each of those tabs
+the derived thing underneath the report, BCF, the clash file and the merge — each of those tabs
 builds it where it stands (**Load the board**, in place), so nobody navigates to fetch a
 prerequisite any more.
 
@@ -108,7 +108,7 @@ answer, and printed a table nobody could do anything with.
   status, assignment, comments and groups carry over onto the same surface-and-obstruction pair,
   so re-checking after a model update does not reopen everything somebody closed.
 - **Out of the tab:** the grid to a spreadsheet exactly as filtered, and every shown finding as a
-  clash XML file — which the Manage tab's "A file" source opens, so a clearance list runs the same
+  clash file — which the Manage tab's "A file" source opens, so a clearance list runs the same
   offline review round as a clash export.
 
 ## Freeze — moved out

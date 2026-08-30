@@ -1544,11 +1544,12 @@ namespace CamelWorks.UI.Views
                     if (problem != null) _results.Children.Add(Ui.Problem(problem));
                 });
 
-                // Clash XML has its own tool; this is the way over to it, at the end of setup.
+                // The clash file has its own tool; this is the way over to it, at the end of setup.
                 return Bench.Group("A file somebody can work in",
                     open,
-                    Ui.Small("Clash XML, which every reviewing tool reads. A file that comes back "
-                             + "lands on the elements it left from."));
+                    Ui.Small("BCF, which Solibri, BIMcollab, Revizto and every other reviewing "
+                             + "tool opens. A file that comes back lands on the elements it left "
+                             + "from."));
             }
 
             /// <summary>What the chosen template actually produces, in the reader's terms.</summary>

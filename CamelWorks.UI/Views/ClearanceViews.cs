@@ -1632,28 +1632,31 @@ namespace CamelWorks.UI.Views
                     items.Add(item);
                 }
 
-                var written = ClashXml.Write(items, null, new ClashXmlOptions
+                var written = ClashBcf.Write(items, null, new ClashBcfOptions
                 {
                     SourceFile = _session.Model.Models.Count > 0
                         ? _session.Model.Models[0].DisplayName
                         : null,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "CamelWorks",
+                    MetresPerUnit = _session.MetresPerUnit,
                     WhenTicks = DateTime.UtcNow.Ticks,
                 });
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
                     Title = "Write the findings as a clash file",
-                    Filter = "Clash XML|*.xml",
-                    FileName = "clearance.xml",
+                    Filter = ClashFile.Filter,
+                    FileName = "clearance" + ClashFile.Extension,
                     AddExtension = true,
-                    DefaultExt = ".xml",
+                    DefaultExt = ClashFile.Extension,
                 };
 
                 if (dialog.ShowDialog() != true) return;
 
                 try
                 {
-                    System.IO.File.WriteAllText(dialog.FileName, written.Text);
+                    System.IO.File.WriteAllBytes(dialog.FileName, written.Bytes);
                 }
                 catch (Exception e)
                 {

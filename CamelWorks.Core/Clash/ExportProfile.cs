@@ -411,6 +411,28 @@ namespace CamelWorks.Core.Clash
             };
 
         /// <summary>
+        /// The same profile, for the BCF writer.
+        ///
+        /// Two option types rather than one because the formats differ in what they can be told:
+        /// BCF has no units declaration (its cameras are metres by definition) and no flag for
+        /// whether each result carries its elements' properties (its components carry ids, not
+        /// properties). What both share - which groups travel, where the file came from, when -
+        /// is what a profile is actually about, and it is carried across unchanged.
+        /// </summary>
+        /// <param name="sourceFile">The document this came from.</param>
+        /// <param name="whenTicks">When the file is being written.</param>
+        /// <param name="metresPerUnit">Model units to metres, for the viewpoint cameras.</param>
+        public ClashBcfOptions BcfOptions(string? sourceFile = null, long whenTicks = 0,
+                                          double metresPerUnit = 1.0) =>
+            new ClashBcfOptions
+            {
+                KeepGroups = KeepGroups,
+                SourceFile = sourceFile,
+                WhenTicks = whenTicks,
+                MetresPerUnit = metresPerUnit <= 0 ? 1.0 : metresPerUnit,
+            };
+
+        /// <summary>
         /// Record that these tests have just been written into a file.
         ///
         /// The column that turns a list of tests into a work list: a coordinator opening this on a

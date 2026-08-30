@@ -87,7 +87,7 @@ namespace CamelWorks.UI.Shell
                 "Issues out to the world, and answers back in.", "Coordinate",
                 new AppTab("Report", "clashreport"),
                 new AppTab("BCF", "bcf"),
-                new AppTab("Clash XML", "clashxml"),
+                new AppTab("Clash file", "clashxml"),
                 new AppTab("Merge", "merge"),
                 new AppTab("Penetrations", "penetrations")),
 

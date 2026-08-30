@@ -31,7 +31,7 @@ Worth knowing before the meeting rather than during it.
 5. **[Clearance Check](Clash-Manager#clearance-check)** — the defects no clash test can find.
    Point it at the corridors by naming the corridor set.
 6. **[Issue Link ▸ Report](Issue-Link#report)** → *Write the report*, one file per party.
-   It then offers BCF or Clash XML for whoever answers in a tool.
+   It then offers BCF for whoever answers in a tool.
 
 ---
 

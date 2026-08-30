@@ -40,7 +40,7 @@ and **Show** putting the model where the issue is.
 
 **The app's job.** The outbound half of the coordination week. The board gets decided in Clash
 Manager; Issue Link is where it leaves the building — the report for the meeting, the BCF or
-Clash XML for whoever answers in a tool, the worksheet for whoever answers in Excel — and where
+the clash file for whoever answers in a tool, the worksheet for whoever answers in Excel — and where
 the answers come back and land on the board. The persona is the coordinator on Thursday
 (publish), and the same coordinator the following Monday (read the replies).
 
@@ -59,7 +59,7 @@ navigates to another app to fetch a prerequisite.
   silently rebuilds from the saved rules). Now the landing data leads with the board state and
   the warning that writing without loading reports the rebuilt board, not the triaged one.
 - *Was wrong:* after "Wrote revision C", the screen stopped. The real Thursday continues — the
-  same board goes out as BCF or Clash XML to whoever answers in a tool. A successful write now
+  same board goes out as BCF to whoever answers in a tool. A successful write now
   offers both jumps and says where the reply will land when it returns. Suppressed for the
   penetration schedule: nobody answers a pour list through a BCF tool, and a button pretending
   otherwise would be noise.
@@ -83,7 +83,7 @@ navigates to another app to fetch a prerequisite.
 - *Held:* the two-path in/out boxes, GUID de-duplication, the promote-only status lattice, the
   nothing-applied-until-the-button contract, the reply table's copy-for-the-email picking.
 
-## Clash XML
+## Clash file
 
 - *The job:* the baseline file a reviewer opens in their own tool, against a saved per-test
   profile with a last-sent date per test.

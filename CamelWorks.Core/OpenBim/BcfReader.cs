@@ -31,6 +31,18 @@ namespace CamelWorks.Core.OpenBim
         /// </summary>
         public IReadOnlyList<string> Warnings { get; }
 
+        /// <summary>
+        /// Text files in the archive that the BCF schema knows nothing about, by path.
+        ///
+        /// A tool is free to put its own files in a .bcfzip, and this is how ours gets its back:
+        /// the facts BCF has no field for - a clash's tolerance, its distance, the keys that land
+        /// an edit on the right element - travel in one, and a round trip through somebody else's
+        /// tool simply drops it, which reads here as an archive with no extras and a review round
+        /// that still works on everything BCF does carry.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> Extras { get; internal set; } =
+            new Dictionary<string, string>(0);
+
         /// <summary>The one-line readout.</summary>
         public override string ToString() =>
             "BCF " + (Version == BcfVersion.V21 ? "2.1" : "3.0") + " · "
@@ -60,6 +72,7 @@ namespace CamelWorks.Core.OpenBim
             var warnings = new List<string>();
             var topics = new List<BcfTopic>();
             var version = BcfVersion.V21;
+            var extras = (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(0);
 
             using (var zip = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: true))
             {
@@ -91,12 +104,72 @@ namespace CamelWorks.Core.OpenBim
                     var root = Parse(entry, warnings);
                     if (root == null) continue;
 
-                    var topic = ReadTopic(root, entry.FullName, warnings);
+                    var topic = ReadTopic(root, entry.FullName, warnings, zip);
                     if (topic != null) topics.Add(topic);
+                }
+
+                extras = Extra(zip, warnings);
+            }
+
+            return new BcfReadResult(version, topics, warnings) { Extras = extras };
+        }
+
+        /// <summary>
+        /// The archive's non-BCF text files, by path.
+        ///
+        /// Capped, and text only. An imported .bcfzip is untrusted input: it can be any size and
+        /// contain anything, and a reader that pulls every entry it does not recognise into memory
+        /// is a reader somebody can hand a decompression bomb.
+        /// </summary>
+        private static IReadOnlyDictionary<string, string> Extra(ZipArchive zip,
+                                                                 List<string> warnings)
+        {
+            const long MostPerFile = 32L * 1024 * 1024;
+            const int MostFiles = 32;
+
+            var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var skipped = 0;
+
+            foreach (var entry in zip.Entries.OrderBy(e => e.FullName, StringComparer.Ordinal))
+            {
+                if (found.Count >= MostFiles) { skipped++; continue; }
+
+                var path = entry.FullName;
+
+                if (path.Length == 0 || path.EndsWith("/", StringComparison.Ordinal)) continue;
+
+                if (path.Equals("bcf.version", StringComparison.OrdinalIgnoreCase)
+                    || path.Equals("project.bcfp", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith("markup.bcf", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(".bcfv", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (entry.Length > MostPerFile) { skipped++; continue; }
+
+                try
+                {
+                    using (var stream = entry.Open())
+                    using (var reader = new StreamReader(stream))
+                    {
+                        found[path] = reader.ReadToEnd();
+                    }
+                }
+                catch (Exception)
+                {
+                    // Not text, or not readable. Neither is worth failing an import for: the
+                    // topics are the file, and this is the part a tool may not even have written.
+                    skipped++;
                 }
             }
 
-            return new BcfReadResult(version, topics, warnings);
+            if (skipped > 0)
+                warnings.Add(skipped.ToString(CultureInfo.InvariantCulture)
+                    + " extra file(s) in the archive were too large, too many or not text, and "
+                    + "were left unread. The topics themselves are unaffected.");
+
+            return found;
         }
 
         private static XElement? Parse(ZipArchiveEntry entry, List<string> warnings)
@@ -131,7 +204,8 @@ namespace CamelWorks.Core.OpenBim
             }
         }
 
-        private static BcfTopic? ReadTopic(XElement markup, string path, List<string> warnings)
+        private static BcfTopic? ReadTopic(XElement markup, string path, List<string> warnings,
+                                           ZipArchive zip)
         {
             var element = markup.Element("Topic");
             if (element == null)
@@ -193,8 +267,18 @@ namespace CamelWorks.Core.OpenBim
             foreach (var comment in Comments(markup).Concat(Comments(element)))
                 topic.Comments.Add(comment);
 
+            var folder = path.LastIndexOf('/') < 0 ? string.Empty : path.Substring(0, path.LastIndexOf('/') + 1);
+
             foreach (var viewpoint in Viewpoints(markup).Concat(Viewpoints(element)))
+            {
+                // The markup names the viewpoint; the camera, the selection and the colouring are
+                // in the .bcfv beside it. Reading only the name was reading only half a viewpoint:
+                // an imported issue arrived with nothing to look at and no elements selected,
+                // which is most of what a viewpoint is for.
+                Visualisation(zip, folder, viewpoint, warnings);
+
                 topic.Viewpoints.Add(viewpoint);
+            }
 
             return topic;
         }
@@ -219,6 +303,127 @@ namespace CamelWorks.Core.OpenBim
                 };
             }
         }
+
+        /// <summary>Fill a viewpoint in from its .bcfv, when the archive carries one.</summary>
+        private static void Visualisation(ZipArchive zip, string folder, BcfViewpoint viewpoint,
+                                          List<string> warnings)
+        {
+            var wanted = folder + viewpoint.Guid + ".bcfv";
+
+            var entry = zip.Entries.FirstOrDefault(
+                            e => string.Equals(e.FullName, wanted, StringComparison.OrdinalIgnoreCase))
+                        ?? zip.Entries.FirstOrDefault(
+                            e => e.FullName.StartsWith(folder, StringComparison.OrdinalIgnoreCase)
+                                 && e.FullName.EndsWith(viewpoint.Guid + ".bcfv", StringComparison.OrdinalIgnoreCase));
+
+            if (entry == null) return;
+
+            var root = Parse(entry, warnings);
+
+            if (root == null) return;
+
+            viewpoint.Camera = Camera(root);
+
+            var components = root.Element("Components");
+
+            if (components == null) return;
+
+            // 2.1 lists the selection directly under Components; both versions wrap it in
+            // Selection, and files in the wild do both.
+            foreach (var element in Elements(components, "Selection", "Component"))
+                viewpoint.Selection.Add(Component(element));
+
+            var visibility = components.Element("Visibility");
+
+            if (visibility != null)
+            {
+                viewpoint.DefaultVisibility =
+                    !string.Equals(visibility.Attribute("DefaultVisibility")?.Value, "false",
+                                   StringComparison.OrdinalIgnoreCase);
+
+                foreach (var element in Elements(visibility, "Exceptions", "Component"))
+                    viewpoint.VisibilityExceptions.Add(Component(element));
+            }
+
+            var colouring = components.Element("Coloring") ?? components.Element("Colouring");
+
+            if (colouring == null) return;
+
+            foreach (var colour in colouring.Elements("Color"))
+            {
+                var named = colour.Attribute("Color")?.Value;
+
+                if (string.IsNullOrWhiteSpace(named)) continue;
+
+                // 3.0 wraps a colour's components; 2.1 lists them directly.
+                var members = colour.Elements("Component")
+                    .Concat(colour.Element("Components")?.Elements("Component")
+                            ?? Enumerable.Empty<XElement>())
+                    .Select(Component)
+                    .ToList();
+
+                if (members.Count > 0) viewpoint.Colouring.Add(new BcfColouring(named!, members));
+            }
+        }
+
+        /// <summary>The named children of a wrapper, or of the parent when there is no wrapper.</summary>
+        private static IEnumerable<XElement> Elements(XElement parent, string wrapper, string name)
+        {
+            var inside = parent.Element(wrapper);
+
+            return inside == null ? Enumerable.Empty<XElement>() : inside.Elements(name);
+        }
+
+        private static BcfComponent Component(XElement element) =>
+            new BcfComponent(element.Attribute("IfcGuid")?.Value,
+                             Text(element, "AuthoringToolId"),
+                             Text(element, "OriginatingSystem"));
+
+        /// <summary>The camera, whichever of the two kinds the file carries.</summary>
+        private static BcfCamera? Camera(XElement root)
+        {
+            var perspective = root.Element("PerspectiveCamera");
+
+            if (perspective != null)
+            {
+                var (x, y, z) = Vector(perspective, "CameraViewPoint");
+                var (dx, dy, dz) = Vector(perspective, "CameraDirection");
+                var (ux, uy, uz) = Vector(perspective, "CameraUpVector");
+
+                return BcfCamera.Perspective(x, y, z, dx, dy, dz, ux, uy, uz,
+                                             Number(perspective, "FieldOfView", 60),
+                                             Number(perspective, "AspectRatio",
+                                                    BcfCamera.DefaultAspectRatio));
+            }
+
+            var orthographic = root.Element("OrthogonalCamera");
+
+            if (orthographic == null) return null;
+
+            var (ox, oy, oz) = Vector(orthographic, "CameraViewPoint");
+            var (odx, ody, odz) = Vector(orthographic, "CameraDirection");
+            var (oux, ouy, ouz) = Vector(orthographic, "CameraUpVector");
+
+            return BcfCamera.Orthographic(ox, oy, oz, odx, ody, odz, oux, ouy, ouz,
+                                          Number(orthographic, "ViewToWorldScale", 1),
+                                          Number(orthographic, "AspectRatio",
+                                                 BcfCamera.DefaultAspectRatio));
+        }
+
+        private static (double X, double Y, double Z) Vector(XElement parent, string name)
+        {
+            var element = parent.Element(name);
+
+            return element == null
+                ? (0, 0, 0)
+                : (Number(element, "X", 0), Number(element, "Y", 0), Number(element, "Z", 0));
+        }
+
+        private static double Number(XElement parent, string name, double fallback) =>
+            double.TryParse(Text(parent, name), System.Globalization.NumberStyles.Float,
+                            CultureInfo.InvariantCulture, out var value)
+                ? value
+                : fallback;
 
         private static IEnumerable<BcfViewpoint> Viewpoints(XElement parent)
         {

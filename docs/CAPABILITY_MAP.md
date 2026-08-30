@@ -75,7 +75,8 @@ surfaces work, not things a coordinator opens.
 | `Penetrations`, `PenetrationSchedule` | **Penetrations** (new) |
 | `PartyLedger` | Clash Report — per-party split |
 | `HeldEdit`, `HeldEdits` | **Clash Manager ▸ Manage** — the decisions a published NWD refuses. Applied to the board, kept in the project file, offered back to the document with "Try writing them in now", and carried into the NWF by "Save the baseline". |
-| `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash XML |
+| `ClashBcf`, `ClashBcfDocument`, `ClashBcfOptions`, `ClashFile` | **Clash Manager ▸ Clash file** — clash results as BCF, which every reviewing tool opens. What BCF has no field for (tolerances, distances, element keys) rides in a sidecar inside the same archive, so nothing the clash XML carried is lost. `ClashFile` still reads the older XML so earlier baselines keep opening. |
+| `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash file — the reader for baselines written before BCF |
 
 ### Issues out
 | Engine | Surface |
