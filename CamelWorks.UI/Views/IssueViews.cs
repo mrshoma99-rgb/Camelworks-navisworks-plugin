@@ -1108,7 +1108,13 @@ namespace CamelWorks.UI.Views
                         Ui.Small("Reading the same file again updates the issues it already "
                                  + "brought in and adds only what is new — statuses, replies and "
                                  + "due dates — so an exchange that runs for a fortnight stays "
-                                 + "one list.")));
+                                 + "one list.")),
+                    Bench.Group(string.Empty,
+                        Ui.Small("A topic answering a finding this project sent out goes back "
+                                 + "onto that finding rather than arriving as a new issue: it is "
+                                 + "the same clash, and the board should say what the reviewer "
+                                 + "said about it. Everything else becomes an issue, which is "
+                                 + "what it already was.")));
 
                 var stage = Ui.Stack(
                     Bench.Ready("Reads a BCF file into this project's issue register.",
@@ -1145,8 +1151,22 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Merging into the register...");
 
+                var named = System.IO.Path.GetFileName(path);
+
+                // The findings first. A topic this project sent out is an answer about a clash or
+                // a breach somebody here already knows about, and letting it in as a fresh issue
+                // would put a second row beside the one it answers - which is the failure the
+                // whole round trip exists to avoid.
+                var (answered, strangers) =
+                    FindingBcf.Merge(_session.Findings.Findings, read.Topics, named);
+
+                if (answered > 0 && !_session.Findings.Save())
+                    _log.Children.Add(Ui.Note("The answers are on the board but could not be "
+                        + "kept: " + (_session.Findings.LastSaveProblem
+                                      ?? "there was nowhere to write.")));
+
                 var register = IssueViews.Read(_session);
-                var result = IssueBcf.Merge(register, read.Topics, System.IO.Path.GetFileName(path));
+                var result = IssueBcf.Merge(register, strangers, named);
 
                 var problem = Write(_session, register);
 
@@ -1162,8 +1182,13 @@ namespace CamelWorks.UI.Views
                 foreach (var warning in read.Warnings) _log.Children.Add(Ui.Note(warning));
                 foreach (var note in result.Notes) _log.Children.Add(Ui.Note(note));
 
-                _log.Children.Add(Ui.Info(read.ToString() + " " + result.Explain(),
-                                          "Open the register", () => Open(null)));
+                _log.Children.Add(Ui.Info(read.ToString() + " " + result.Explain()
+                    + (answered > 0
+                        ? " " + Ui.Count(answered, "finding") + " this project sent out came back "
+                          + "answered, and " + (answered == 1 ? "it is" : "they are")
+                          + " on the board rather than in the register."
+                        : string.Empty),
+                    "Open the register", () => Open(null)));
             }
         }
 
@@ -1180,6 +1205,7 @@ namespace CamelWorks.UI.Views
             private readonly HashSet<string> _show;
 
             private bool _openOnly = true;
+            private bool _withFindings = true;
 
             internal ExportScreen(Session session)
             {
@@ -1200,6 +1226,16 @@ namespace CamelWorks.UI.Views
                     Bench.Group("What goes out",
                         Ui.Check("Only the ones that are still open", _openOnly, on => _openOnly = on),
                         Ui.Stack(ticks.ToArray())),
+                    Bench.Group("The findings behind them",
+                        Ui.Check("Send the findings each issue is about", _withFindings,
+                                 on => _withFindings = on),
+                        Ui.Small("An issue is the conversation and a finding is the thing it is "
+                                 + "about. Sending only the issues makes the file half a story: "
+                                 + "eleven clashes arrive as one line with no geometry, and the "
+                                 + "reader has nothing to look at. Each finding goes out as its "
+                                 + "own topic, related to its issue both ways round, which is "
+                                 + "what BCF's relation is for and what every tool that reads "
+                                 + "BCF understands.")),
                     Bench.Group(string.Empty,
                         Ui.Small("One topic per issue, carrying its status, type, priority, "
                                  + "assignee, due date, description and every comment. The "
@@ -1243,6 +1279,43 @@ namespace CamelWorks.UI.Views
                 job.Say("Building topics...");
 
                 var topics = going.Select(IssueBcf.ToTopic).ToList();
+                var findings = 0;
+
+                if (_withFindings)
+                {
+                    var register = _session.Findings.Findings;
+
+                    var attached = going
+                        .SelectMany(i => i.Findings)
+                        .Distinct(StringComparer.Ordinal)
+                        .Select(register.Find)
+                        .Where(f => f != null)
+                        .Select(f => f!)
+                        .ToList();
+
+                    var byGuid = topics.ToDictionary(t => t.Guid, t => t, StringComparer.Ordinal);
+
+                    var whose = going.ToDictionary(i => IssueBcf.ToTopic(i).Guid,
+                                                   i => (IEnumerable<string>)i.Findings,
+                                                   StringComparer.Ordinal);
+
+                    topics = FindingBcf.Together(attached, topics,
+                        topic => whose.TryGetValue(topic.Guid, out var ids)
+                            ? ids
+                            : Array.Empty<string>()).ToList();
+
+                    findings = attached.Count;
+
+                    // The findings are about to travel under the topic guids stamped on them, so
+                    // the register has to remember which - otherwise a file coming back names
+                    // topics nothing here answers to and every reply lands as a new issue.
+                    if (findings > 0 && !_session.Findings.Save())
+                        _log.Children.Add(Ui.Note("The findings went out, but which topics they "
+                            + "went out as could not be kept: "
+                            + (_session.Findings.LastSaveProblem
+                               ?? "there was nowhere to write.")
+                            + " A reply may come home as new issues rather than as answers."));
+                }
 
                 BcfWriteResult written;
 
@@ -1262,7 +1335,12 @@ namespace CamelWorks.UI.Views
 
                 foreach (var note in written.Notes) _log.Children.Add(Ui.Note(note));
 
-                _log.Children.Add(Ui.Done(written.ToString() + " Written to " + dialog.FileName + "."));
+                _log.Children.Add(Ui.Done(written.ToString()
+                    + (findings > 0
+                        ? " " + Ui.Count(findings, "finding") + " went with them, each related to "
+                          + "the issue it is about."
+                        : string.Empty)
+                    + " Written to " + dialog.FileName + "."));
             }
         }
     }

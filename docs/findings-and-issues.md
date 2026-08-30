@@ -176,9 +176,9 @@ Both findings and issues go out as BCF and come back as BCF, through the reader 
 already exist.
 
 - A finding exports as a topic; an issue with attached findings exports as a topic per finding
-  plus the issue's own, related by BCF's `RelatedTopic`.
+  plus the issue's own, related by BCF's `RelatedTopic`. ✅ **Done.**
 - On import, a topic that matches a known finding by topic id merges into it. A topic that matches
-  nothing becomes an issue, which is what already happens today.
+  nothing becomes an issue, which is what already happens today. ✅ **Done.**
 - What BCF carries that the host cannot hold — priority, due date, stage, tags — is stored on the
   finding rather than being mashed into a comment. `ClashAside` is the shape this generalises from
   — now a message read out of one markup and laid onto a finding, rather than a register of its own.
@@ -284,7 +284,30 @@ Each step ships working and verifiable on its own.
    `IssueOrigin` gained `Compare`, `Health` and `Ids`. It is written and read by name, so appending
    leaves every issue anybody has already raised reading exactly as it did.
 
-6. **Set drift.** ~~One per step.~~ **Nothing to move.** `FindingSource.SetDrift` is a reserved slot
+6. ~~**Findings and issues as BCF.**~~ **Done.** Export gained "Send the findings each issue is
+   about": each goes out as its own topic, related to its issue *both ways round* so a reader who
+   opened the clash first can get to the conversation and not only the other way about. Without it
+   a file is half a story — eleven clashes arriving as one line with no geometry to look at.
+
+   The return leg matches on the topic guid, which is a function of the finding's identity and is
+   the only thing that survives somebody else's tool: a markup carries a guid, a status and a
+   conversation, and none of the source, rule, elements or discriminator the identity is derived
+   from. So the guid is stamped onto the finding when it goes out and kept, because a file that
+   went out under a name the register does not know is a file that cannot come home.
+
+   A topic nothing here answers to stays a stranger and becomes an issue. Inventing a machine
+   finding for a thing no machine found would put a row on a board that no re-run can ever confirm
+   or clear.
+
+   The status comes home through the lattice, so a file that sat in somebody's inbox for a
+   fortnight cannot undo a decision taken since it left. This writer's own two labels are not read
+   back as a reviewer's tags, or the file would grow a label a cycle for ever.
+
+   Verified against the vendored `markup21`, `markup30`, `visinfo21` and `visinfo30` schemas with
+   `xmllint`, on a real archive carrying an issue, its finding, the relation both ways and a
+   viewpoint.
+
+7. **Set drift.** ~~One per step.~~ **Nothing to move.** `FindingSource.SetDrift` is a reserved slot
    and nothing else: there is no drift engine, no result type and no surface anywhere in the
    product. A set that stopped returning what it used to is a real check worth writing, but writing
    it is building a feature, not moving one onto findings, so it is not part of this work. The
