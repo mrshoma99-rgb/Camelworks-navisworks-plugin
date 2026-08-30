@@ -6,6 +6,40 @@ using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Findings
 {
+    /// <summary>One authored remark on a finding.</summary>
+    public sealed class FindingComment
+    {
+        /// <summary>Write one.</summary>
+        /// <param name="author">Who wrote it.</param>
+        /// <param name="whenTicks">When, as UTC ticks. Zero when the source did not say.</param>
+        /// <param name="body">What they wrote.</param>
+        public FindingComment(string? author, long whenTicks, string body)
+        {
+            Author = string.IsNullOrWhiteSpace(author) ? "(unknown)" : author!.Trim();
+            WhenTicks = whenTicks;
+            Body = body ?? string.Empty;
+        }
+
+        /// <summary>Who wrote it.</summary>
+        public string Author { get; }
+
+        /// <summary>When, as UTC ticks.</summary>
+        public long WhenTicks { get; }
+
+        /// <summary>What they wrote.</summary>
+        public string Body { get; }
+
+        /// <summary>Whether this is the same remark as another - same author, same words, same day.</summary>
+        /// <param name="other">The other remark.</param>
+        public bool Repeats(FindingComment? other) =>
+            other != null
+            && string.Equals(Author, other.Author, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Body, other.Body, StringComparison.Ordinal);
+
+        /// <inheritdoc />
+        public override string ToString() => Author + ": " + Body;
+    }
+
     /// <summary>What produced a finding. Not a category for display — a provenance.</summary>
     public enum FindingSource
     {
@@ -62,7 +96,8 @@ namespace CamelWorks.Core.Findings
         private readonly List<Finding> _children = new List<Finding>();
 
         private Finding(string id, FindingSource source, string rule, string title,
-                        IReadOnlyList<ElementKey> elements, KeyRung weakestRung)
+                        IReadOnlyList<ElementKey> elements, KeyRung weakestRung,
+                        string? discriminator)
         {
             Id = id;
             Source = source;
@@ -70,7 +105,17 @@ namespace CamelWorks.Core.Findings
             Title = title;
             Elements = elements;
             WeakestRung = weakestRung;
+            Discriminator = discriminator;
         }
+
+        /// <summary>
+        /// What made this finding distinct from another by the same rule on the same elements.
+        ///
+        /// Kept because the id is derived from it: reading a finding back has to rebuild the id
+        /// the same way it was built, and a discriminator that was consumed and forgotten would
+        /// make that impossible.
+        /// </summary>
+        public string? Discriminator { get; }
 
         /// <summary>Derived identity — stable across runs. See the type remarks.</summary>
         public string Id { get; }
@@ -81,8 +126,13 @@ namespace CamelWorks.Core.Findings
         /// <summary>The rule or test that produced it, as the user named it.</summary>
         public string Rule { get; }
 
-        /// <summary>One line, as the board shows it.</summary>
-        public string Title { get; }
+        /// <summary>
+        /// One line, as the board shows it.
+        ///
+        /// Settable, unlike identity: a later run may word the same finding better, and a
+        /// reviewer's tool may retitle it. Neither changes which finding it is.
+        /// </summary>
+        public string Title { get; set; }
 
         /// <summary>The elements this finding points at.</summary>
         public IReadOnlyList<ElementKey> Elements { get; }
@@ -114,6 +164,82 @@ namespace CamelWorks.Core.Findings
 
         /// <summary>Priority, from the project's configurable list. Null until somebody sets one.</summary>
         public string? Priority { get; set; }
+
+        /// <summary>The stage it belongs to, when a reviewer's tool said one. No host field holds this.</summary>
+        public string? Stage { get; set; }
+
+        /// <summary>The folder or group it was put in, when the producer or a reviewer said one.</summary>
+        public string? Group { get; set; }
+
+        /// <summary>Tags, from a reviewer's own tool. Never the labels this product writes itself.</summary>
+        public IList<string> Labels { get; } = new List<string>();
+
+        /// <summary>The authored trail, oldest first.</summary>
+        public IList<FindingComment> Comments { get; } = new List<FindingComment>();
+
+        // --- where and what ---
+
+        /// <summary>
+        /// A second line: the distance, the requirement that failed, the measured value.
+        ///
+        /// Free text on purpose. Every source has its own handful of numbers, and giving each of
+        /// them a field on this record is how one record becomes seven again.
+        /// </summary>
+        public string? Detail { get; set; }
+
+        /// <summary>
+        /// Where to look, in model units, or null when the producer gave no point.
+        ///
+        /// Carried rather than derived, because deriving it means resolving elements against the
+        /// host - which is the slow thing the board must not do to show a row.
+        /// </summary>
+        public double? X { get; set; }
+
+        /// <inheritdoc cref="X"/>
+        public double? Y { get; set; }
+
+        /// <inheritdoc cref="X"/>
+        public double? Z { get; set; }
+
+        /// <summary>
+        /// The producer's own numbers, by name - distance, overlap, grid reference, level.
+        ///
+        /// The escape hatch that stops this record growing a field per source. Shown by the board
+        /// as columns when a source declares them, and carried through export untouched.
+        /// </summary>
+        public IDictionary<string, string?> Facts { get; } =
+            new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        // --- provenance and projection ---
+
+        /// <summary>Where it last came from: a check run, or the file a markup arrived in.</summary>
+        public string? Origin { get; set; }
+
+        /// <summary>When it was last reported by a run, as UTC ticks.</summary>
+        public long LastSeenTicks { get; set; }
+
+        /// <summary>
+        /// Whether the latest run still reports it.
+        ///
+        /// A finding the newest run does not mention is kept, not deleted: it is the record of the
+        /// thing having been fixed, an issue may point at it, and a check re-run over a narrower
+        /// scope must not silently destroy history. The board hides them by default and can show
+        /// them.
+        /// </summary>
+        public bool IsPresent { get; set; } = true;
+
+        /// <summary>
+        /// Whether the host holds this finding's decisions too.
+        ///
+        /// The database is authoritative and the host is a projection of it. False means the
+        /// projection has not landed - a published NWD refusing the write, a source the host has
+        /// no field for at all - and <see cref="HostProblem"/> says which. Nothing is lost either
+        /// way; this is what the board reads to say so.
+        /// </summary>
+        public bool HostHasIt { get; set; }
+
+        /// <summary>Why the projection did not land, or null.</summary>
+        public string? HostProblem { get; set; }
 
         /// <summary>
         /// Create a leaf finding.
@@ -147,7 +273,7 @@ namespace CamelWorks.Core.Findings
             var id = Hash.Of(Hash.ComponentWidth, parts.ToArray());
             var weakest = elements.Count == 0 ? KeyRung.InstanceGuid : elements.Max(e => e.Rung);
 
-            return new Finding(id, source, rule, title, elements, weakest);
+            return new Finding(id, source, rule, title, elements, weakest, discriminator);
         }
 
         /// <summary>
