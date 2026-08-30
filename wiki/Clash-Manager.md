@@ -1,0 +1,154 @@
+# Clash Manager
+
+> Find what fights, and decide it.
+
+The clash week, end to end: say what gets tested, run it, filter the noise away, decide what is
+left, and record what was agreed.
+
+**Tabs:** [Manage](#manage) · [Matrix](#matrix) · [Clearance Check](#clearance-check) ·
+[Filter Clashes](#filter-clashes)
+
+Clash Detective ships with Navisworks **Manage** and not with Simulate. On Simulate these tabs open
+and say so; see [the offline review round](Common-workflows#the-offline-review-round) for how a
+Simulate user still works a board.
+
+---
+
+## Manage
+
+The bench you live in. **Tests on the left, the results of the picked tests on the right**, with a
+draggable split between them.
+
+**Main action: Read the results.** Nothing runs when the tab opens — on a half-million-element
+federation that would be a misclick you cannot take back.
+
+### The strip across the top
+
+- **One search over both tables.** It matches a test's name, a result's number, an element name, a
+  status, an assignee — everything on either row. *Both / Tests / Results* says what it is
+  covering.
+- **The status ticks**, beside it, because that is the filter you change every few minutes.
+
+### Working the tests
+
+Each test's row carries a band reading **new · active · closed** rather than five columns of
+numbers, which leaves the width for the name.
+
+Verbs under the tests table: **run**, **rename**, **renumber**, **move** into a folder,
+**compact**, **delete**, **copy**.
+
+### Working the results
+
+Verbs under the results table: **focus** the camera, **isolate**, set **status**, **assign**,
+**comment**, **group**, **rename**, drop a **marker sphere**, take a **snapshot**,
+**raise an issue**, **copy**.
+
+All of them work on however many rows are picked, and all of them are on right-click too.
+
+### Behind the ⚙ symbols
+
+| Symbol | What it holds |
+|---|---|
+| Source | Read from the model, or from an exported file |
+| Filters | Everything the search bar does not |
+| Columns and grouping | Property columns off either element, and a chained grouping order |
+| Status and assignment | What the status, assign and group verbs write |
+| In the model | Marker spheres, the camera and isolation |
+| The review round | The offline round trip — export, mark up, sync back |
+| Beyond the engine | The duplicate finder, the spreadsheet, the baseline |
+
+### What it will not do
+
+It will never show a smaller number than the engine found without saying so. Suppressed, collapsed
+and grouped results are all still counted, and can be shown.
+
+---
+
+## Matrix
+
+> Build a whole test set at once from a grid of one discipline against another, instead of naming
+> forty tests by hand.
+
+**Main action: Read the matrix.**
+
+Three ways in, all ending at the same grid and the same legend:
+
+1. **By hand** — categories are picked from the model's own search sets, selection sets or whole
+   models. Never typed, because a typed category that matches nothing is a test that finds nothing.
+2. **Out of the model's existing tests** — each test's two sides become categories, and each
+   distinct kind-and-tolerance becomes a lettered legend symbol. Useful for seeing what last
+   month's coordinator actually set up.
+3. **The client's spreadsheet** — with a mapping step, a preview, and a check that every category
+   names a set this model really has.
+
+The legend is per-symbol: **test type** (hard, clearance, …) and **tolerance**, on or off. Give the
+tests a name pattern and a folder, and it reports what it created per kind, with jumps to run them
+or open them in Manage.
+
+The whole matrix exports back out as an Excel file — the grid on one sheet, the legend on the next.
+It survives switching tabs.
+
+---
+
+## Clearance Check
+
+> Find where the clear height under the services is not there — which no clash test can find,
+> because nothing is touching.
+
+**Main action: Check.**
+
+A duct 1.9 m over a corridor floor clashes with nothing: there is air between them. No clash test
+at any tolerance will ever report it, and it is still a defect.
+
+### Pointing it
+
+Both inputs — the surfaces, and what is over them — list **every search set and selection set the
+document holds**, plus the current selection and everything loaded. So you can check the corridors
+by naming the corridors.
+
+- **Walking surfaces (a guess)** is one of the options, not the only one: it takes anything whose
+  category or type contains *floor, slab, stair, landing, ramp, platform* or *deck*, and the screen
+  says so.
+- **Everything except the surfaces** means exactly that — the elements the first input did not
+  take.
+
+### The findings
+
+The findings get the same bench as the clash results: sorting, filtering, status ticks, chained
+grouping, property columns read off the surface or off what is over it, and bulk
+Focus / Isolate / Mark / Assign / Comment / Group / Sphere / Copy.
+
+One row per surface, positioned at the overlap rather than at the middle of a forty-metre duct.
+
+**The judgement survives a re-run.** No clash engine found these, so there is nothing in the
+model's clash data to write into — instead status, assignment, comments and groups carry over onto
+the same surface-and-obstruction pair. Re-checking after a model update does not reopen everything
+somebody closed.
+
+### Out of the tab
+
+- The grid to a spreadsheet, exactly as filtered.
+- Every shown finding as a **clash XML** file — which the Manage tab's *A file* source opens, so a
+  clearance list runs the same offline review round as a clash export.
+- Right-click → **raise an issue**, into the [Issue Manager](Issue-Manager).
+
+---
+
+## Filter Clashes
+
+> Suppress what does not matter, group what is one issue, and assign what is left.
+
+**Main action: Try these on the board.**
+
+The reduction between the engine and the issue list, laid out in the order it runs:
+
+1. **Suppress and flag** — every raw result tested against a predicate.
+2. **Group** what survives. Left empty, the built-in stack applies: model pair → level →
+   proximity.
+3. **Assign**, first match wins.
+
+*Try these on the board* builds the board with your unsaved edits and shows the four figures the
+rules exist to move. **Nothing is written until you Save.**
+
+These act on **clash results, never on issues**. A rule that quietly closed something a person had
+written a sentence about would be the worst behaviour in the product.

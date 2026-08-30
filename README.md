@@ -92,6 +92,10 @@ against four years verifies the API surface and says nothing about behaviour.
 
 ## Documents
 
+**The [wiki](../../wiki) is the user guide** — installing, every app and tab, the common workflows,
+the stated limits and troubleshooting. Its pages are kept in [`wiki/`](wiki) so they are reviewed
+like code; [docs/wiki-publishing.md](docs/wiki-publishing.md) says how they are published.
+
 | | |
 |---|---|
 | [CAMELWORKS_IMPLEMENTATION.md](CAMELWORKS_IMPLEMENTATION.md) | The spec, and the single source of truth |
