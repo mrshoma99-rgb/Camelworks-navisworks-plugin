@@ -11,6 +11,7 @@ using CamelWorks.Core.Compare;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
+using CamelWorks.Core.Issues;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
 using CamelWorks.Nav;
@@ -977,14 +978,32 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    var at = 0;
                     var against = _result.Between();
+
+                    // Kept before they are raised, so the issue attaches to a record that
+                    // survives rather than to one this button invented and dropped. A compare
+                    // finding already knew how to be a finding; nothing was ever keeping it.
+                    var register = _session.Findings.Findings;
+
+                    register.Observe(FindingSource.Compare, findings, DateTime.UtcNow.Ticks,
+                                     origin: against);
+
+                    if (!_session.Findings.Save())
+                        _output.Children.Add(Ui.Note(
+                            "These are on the board but could not be kept: "
+                            + (_session.Findings.LastSaveProblem
+                               ?? "there was nowhere to write.")));
+
+                    var held = findings.Select(f => register.Find(f.Id) ?? f).ToList();
+
+                    var at = 0;
 
                     var (made, problem) = IssueViews.Raise(_session, id =>
                     {
-                        var finding = findings[at++];
+                        var finding = held[at++];
 
-                        var issue = new Core.Issues.Issue(id, finding.Title)
+                        var issue = new Core.Issues.Issue(id, finding.Title,
+                                                          Core.Issues.IssueOrigin.Compare)
                         {
                             Type = "Coordination",
                             Source = against,
@@ -992,11 +1011,13 @@ namespace CamelWorks.UI.Views
                                           + " — " + against,
                         };
 
+                        IssueFindings.Attach(issue, new[] { finding });
+
                         foreach (var key in finding.AllElements())
                             if (!issue.Elements.Contains(key)) issue.Elements.Add(key);
 
                         return issue;
-                    }, findings.Count);
+                    }, held.Count);
 
                     if (problem != null)
                     {

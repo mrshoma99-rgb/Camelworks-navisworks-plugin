@@ -7,7 +7,12 @@ using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Issues
 {
-    /// <summary>Where an issue came from. The one fact about an issue nobody may edit.</summary>
+    /// <summary>
+    /// Where an issue came from. The one fact about an issue nobody may edit.
+    ///
+    /// Written and read back by name rather than by number, so a member appended here leaves
+    /// every issue anybody has already raised reading exactly as it did.
+    /// </summary>
     public enum IssueOrigin
     {
         /// <summary>Somebody wrote it.</summary>
@@ -21,6 +26,15 @@ namespace CamelWorks.Core.Issues
 
         /// <summary>Read out of a BCF file somebody sent.</summary>
         Imported = 3,
+
+        /// <summary>Made from a difference between two revisions of the model.</summary>
+        Compare = 4,
+
+        /// <summary>Made from a model or data health rule.</summary>
+        Health = 5,
+
+        /// <summary>Made from a specification the model failed.</summary>
+        Ids = 6,
     }
 
     /// <summary>One thing somebody said on an issue, and when.</summary>

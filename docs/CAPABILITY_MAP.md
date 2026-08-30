@@ -65,7 +65,7 @@ surfaces work, not things a coordinator opens.
 | `ClashItem`, `ClashSnapshot`, `ClashDelta`, `ClashCarryOver`, `ClashHydration`, `GroupDecision`, `DuplicateCollapse` | Clash Board |
 | `ClashTestSides` | Clash Matrix — "The model's tests" mode reads each test's sides back into categories |
 | `ClashResultInfo` | Clash Results (Manage tab) — every row of the results grid, and the Board's read behind it |
-| `Issue`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
+| `Issue`, `IssueOrigin`, `IssueRegister`, `IssueComment` | **Issue Manager ▸ Issues** — the register and its detail panel; raised by hand, from clash results, from clearance findings, or read out of BCF |
 | `IssueBcf`, `IssueImportResult` | **Issue Manager ▸ Import / Export** — BCF in as a merge, BCF out as one topic per issue |
 | `IssueFindings`, `Cascade` | **Issue Manager ▸ Issues** — the findings card on an issue's detail, "Take {n} off", and the offer to mark attached findings when a status change implies one. Reached from the other side by **Clash Manager ▸ Manage ▸ Attach to an issue**, and by the swap that turns an older issue's clash results into finding names on the next read. |
 | `ManualIssue`, `ManualIssueList` | Board pipeline — issues raised in earlier versions still ride the board into reports and BCF |
@@ -101,7 +101,7 @@ surfaces work, not things a coordinator opens.
 | `CompareLayers`, `ComparePalette`, `CompareView` | Compare — "Paint the changes" |
 | `CompareStamp` | Compare — "Write the changes onto the elements" (new) |
 | `CompareClusters` | Changes — "Group by: Cluster" (new) |
-| `CompareIssues` | Changes — "Raise on the board" |
+| `CompareIssues` | **Compare Track ▸ Changes** — "Raise them as issues" keeps the findings beside the model first and attaches them, so an issue points at a record that survives rather than one the button invented and dropped. |
 | `CompareReport` | Compare — "Report" |
 | `BaselineModel`, `BaselineModels` | Compare — loading the baseline so removals can be seen |
 

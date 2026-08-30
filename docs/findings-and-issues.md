@@ -258,7 +258,37 @@ Each step ships working and verifiable on its own.
    comparison, then the party history. Only when the last one has moved does the snapshot stop
    being written. Splitting this out is the correction: replacing it in one step was proposed on
    the belief that it held results and nothing else.
-5. **Clearance, IDS, health, set drift, compare.** One per step.
+5. ~~**Clearance, IDS, health, set drift, compare.**~~ **Done, except set drift.** One per step, as
+   planned:
+
+   - **Clearance** kept its judgement on the row and carried it between runs *in memory*, so
+     closing Navisworks reopened everything anybody had closed. Identity is the floor, what is over
+     it, and where, quantised into a two-metre cell — wider than a clash's, because a clash is a
+     point where two solids meet and a low soffit is an area somebody walks under. The minimum is
+     deliberately not part of it: re-running at 2.4 m after 2.1 m finds the same low soffit, and
+     calling it new would throw away a decision on the strength of a settings change.
+   - **Health** had no persistence at all — it said what it found and forgot it. It is the first
+     producer to use the parent and child `Finding` was shaped for: one parent per rule carrying
+     the decision, one child per element carrying the location. Identity had to move off the prose
+     first, because review headlines read "37 elements sit on top of each other" with the count in
+     the words; `ReviewFinding` gained a stable rule id, set at every call site.
+   - **IDS** could select failures and write a workbook and remember nothing. One finding per
+     specification, identified by the file's own identifier so rewording it does not lose an
+     agreement. A specification that applied to nothing stays reported as its own kind of failure:
+     a requirement that quietly stops being checked is worse than one that fails, and a green tick
+     is where it would go to hide.
+   - **Compare** already produced findings through `CompareIssues` and never kept them, so an issue
+     pointed at a record the button invented and dropped. Now they are observed into the register
+     first and attached.
+
+   `IssueOrigin` gained `Compare`, `Health` and `Ids`. It is written and read by name, so appending
+   leaves every issue anybody has already raised reading exactly as it did.
+
+6. **Set drift.** ~~One per step.~~ **Nothing to move.** `FindingSource.SetDrift` is a reserved slot
+   and nothing else: there is no drift engine, no result type and no surface anywhere in the
+   product. A set that stopped returning what it used to is a real check worth writing, but writing
+   it is building a feature, not moving one onto findings, so it is not part of this work. The
+   enum member stays where it is — numbered last but one, so the slot costs nothing.
 6. **BCF for both.** Findings and issues out and back, with the relation between them.
 
 Step 2 is next. Steps 4 and 5 are independent of each other.

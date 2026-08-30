@@ -127,6 +127,9 @@ namespace CamelWorks.UI.Views
                 case IssueOrigin.Clash: return "Clash";
                 case IssueOrigin.Clearance: return "Clearance";
                 case IssueOrigin.Imported: return "Imported";
+                case IssueOrigin.Compare: return "Compare";
+                case IssueOrigin.Health: return "Health";
+                case IssueOrigin.Ids: return "IDS";
                 default: return "Raised";
             }
         }
@@ -709,6 +712,9 @@ namespace CamelWorks.UI.Views
                     "Clash" => "Made from " + Ui.Count(issue.Findings.Count + issue.Clashes.Count,
                                                        "clash result"),
                     "Clearance" => "Made from a clearance finding",
+                    "Compare" => "Made from what changed between two revisions",
+                    "Health" => "Made from a model review finding",
+                    "IDS" => "Made from a specification the model failed",
                     "Imported" => "Imported" + (issue.Source == null ? string.Empty : " from " + issue.Source),
                     _ => "Raised by hand",
                 };
