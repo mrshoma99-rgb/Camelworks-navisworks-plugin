@@ -841,10 +841,31 @@ namespace CamelWorks.UI.Views
                                      "a markup file, or the baseline — every markup beside it is read"),
                         Ui.Runner("Sync markups", _sync, primary: false, work: Sync),
                         _sync,
+                        Ui.Check("Raise topics I cannot place as issues", _raiseStrangers,
+                                 v => _raiseStrangers = v),
+                        Ui.Check("Note what this model has no field for, on the clash",
+                                 _noteAsides, v => _noteAsides = v),
                         Ui.Small("Reviewers on Simulate open the exported file on this tab, mark "
                                  + "it up, and save. This reads their markups back and writes the "
                                  + "statuses, comments and assignments into the model's own clash "
-                                 + "data.")));
+                                 + "data."),
+                        Ui.Small("A reviewer working in their own tool can also raise problems "
+                                 + "this model has never heard of, and set a priority or a due "
+                                 + "date a clash result cannot hold. The first goes to the Issue "
+                                 + "Manager, which is where a problem with no clash behind it "
+                                 + "belongs; the second becomes a comment on the clash, which is "
+                                 + "the one field the host does have and which travels back out "
+                                 + "on the next export.")));
+
+            /// <summary>Whether topics with no clash behind them become issues. On by default.</summary>
+            private static bool _raiseStrangers = true;
+
+            /// <summary>
+            /// Whether a reviewer's priority, due date, stage, retitle or tags become a comment on
+            /// the clash. On by default: silently dropping what somebody set is the failure this
+            /// round trip exists to avoid.
+            /// </summary>
+            private static bool _noteAsides = true;
 
             private UIElement BeyondPage() => Bench.Group("Beyond the engine",
                 Ui.Actions(
@@ -2752,7 +2773,13 @@ namespace CamelWorks.UI.Views
                 var comments = 0;
                 var groups = 0;
                 var missing = 0;
+                var notes = 0;
                 var problems = new List<string>();
+
+                // The topics no clash in this model answers to. They are somebody's own findings,
+                // raised while they had the file, and the issue register is where a problem with
+                // no clash behind it belongs.
+                var strangers = new List<CamelWorks.Core.OpenBim.BcfTopic>();
 
                 foreach (var file in files)
                 {
@@ -2798,6 +2825,12 @@ namespace CamelWorks.UI.Views
                         if (found == null)
                         {
                             missing++;
+
+                            var raised = markup.Topics
+                                .FirstOrDefault(t => t != null && t.Guid == result.FileGuid);
+
+                            if (raised != null) strangers.Add(raised);
+
                             continue;
                         }
 
@@ -2819,6 +2852,19 @@ namespace CamelWorks.UI.Views
 
                         foreach (var comment in result.Comments)
                             say.Add((found.TestId, found.ResultId, comment));
+
+                        if (_noteAsides)
+                        {
+                            var aside = ClashBcf.Aside(result, result.Name);
+
+                            if (aside != null)
+                            {
+                                say.Add((found.TestId, found.ResultId,
+                                         new ClashComment("CamelWorks", DateTime.UtcNow.Ticks, aside)));
+
+                                notes++;
+                            }
+                        }
 
                         // Later files see the state this one just asked for. The record is shared
                         // by both indexes, so it does not matter which one found it.
@@ -2860,6 +2906,8 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                var raisedNote = Raise(strangers, named);
+
                 _session.Record(ActivityKind.Regroup, "synced " + Ui.Count(files.Count, "markup")
                     + " into the model", statuses + " statuses, " + comments + " comments, "
                     + assigns + " assignments");
@@ -2869,11 +2917,15 @@ namespace CamelWorks.UI.Views
                     + Ui.Count(comments, "comment") + ", "
                     + Ui.Count(assigns, "assignment") + ", "
                     + Ui.Count(groups, "regrouped result") + "."
-                    + (missing > 0
+                    + (notes > 0
+                        ? " " + Ui.Count(notes, "clash") + " carries a note of what the reviewer "
+                          + "set that this model has no field for."
+                        : string.Empty)
+                    + (raisedNote ?? (missing > 0
                         ? " " + Ui.Count(missing, "topic") + " could not be placed on this model: "
                           + "either raised in the reviewer's own tool, or resolved and gone from a "
                           + "newer run."
-                        : string.Empty), problems);
+                        : string.Empty)), problems);
             }
 
             /// <summary>
@@ -3279,6 +3331,51 @@ namespace CamelWorks.UI.Views
                 return extension.Equals(ClashFile.Extension, StringComparison.OrdinalIgnoreCase)
                     || extension.Equals(".bcf", StringComparison.OrdinalIgnoreCase)
                     || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
+            }
+
+            /// <summary>
+            /// Put the topics no clash answers to into the issue register.
+            ///
+            /// <b>Why they are not simply dropped.</b> A reviewer with the file open raises what
+            /// they find, and what they find is not always a clash we sent them - a missing
+            /// handrail, a door that opens the wrong way, a coordination question. Those came back
+            /// counted and discarded, which is the same as not having asked.
+            ///
+            /// The register is where a problem with no clash behind it belongs, and importing is
+            /// a merge rather than a load, so the same reviewer sending the same file three times
+            /// updates their topics instead of tripling them.
+            /// </summary>
+            /// <param name="strangers">Topics this model could not place.</param>
+            /// <param name="source">Where they came from, for the register's Source column.</param>
+            /// <returns>What to say about it, or null when there was nothing to raise.</returns>
+            private string? Raise(IReadOnlyList<CamelWorks.Core.OpenBim.BcfTopic> strangers,
+                                  string? source)
+            {
+                if (!_raiseStrangers || strangers.Count == 0) return null;
+
+                try
+                {
+                    var register = IssueViews.Read(_session);
+                    var merged = IssueBcf.Merge(register, strangers, source);
+
+                    var problem = IssueViews.Write(_session, register);
+
+                    if (problem != null)
+                        return " " + Ui.Count(strangers.Count, "topic") + " could not be placed on "
+                               + "this model and could not be raised as issues either: " + problem;
+
+                    return " " + Ui.Count(merged.Added, "topic") + " had no clash behind "
+                           + (merged.Added == 1 ? "it" : "them") + " and went to the Issue Manager"
+                           + (merged.Updated > 0
+                               ? ", and " + Ui.Count(merged.Updated, "issue") + " already there was "
+                                 + "updated."
+                               : ".");
+                }
+                catch (Exception e)
+                {
+                    return " " + Ui.Count(strangers.Count, "topic")
+                           + " could not be raised as issues: " + Ui.Describe(e);
+                }
             }
 
             /// <summary>One of the model's results, as the sync tracks it while it works.</summary>

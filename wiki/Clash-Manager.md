@@ -126,8 +126,33 @@ re-authored — everything another tool rewrites — and it still lands. The id 
 element pair and not from the clash point, so a conflict that shifts a few millimetres between runs
 is still the same topic.
 
-Topics the sync cannot place are counted and named: either raised in the reviewer's own tool, or
-resolved and gone from a newer run.
+#### What comes back that a clash cannot hold
+
+Two ticks under **Bring it back**, both on by default, because silently dropping what somebody
+wrote is the failure the round trip exists to prevent.
+
+- **Raise topics I cannot place as issues.** A reviewer with your file open raises what they find,
+  and what they find is not always a clash you sent them — a missing handrail, a door that opens
+  the wrong way. Those topics answer to no clash in your model, and they now go to the
+  [Issue Manager](Issue-Manager) instead of being counted and discarded. Importing is a merge, so
+  the same reviewer sending the same file three times updates their issues rather than tripling
+  them.
+- **Note what this model has no field for, on the clash.** BCF carries a priority, a due date, a
+  stage, a title and any tags the reviewer likes; a Navisworks clash result carries none of them.
+  Anything they set is written as a comment on the clash — the one field the host does have, and
+  one that travels back out on the next export. Nothing set means nothing written, so an ordinary
+  sync adds no noise.
+
+Topics still not placed are counted and named: either raised in the reviewer's own tool with the
+tick off, or resolved and gone from a newer run.
+
+#### Where all this lives
+
+Beside the model, in `.camelworks\<model>.cwproj` — the project file. It holds the issue register,
+the clash edits a published NWD refused, the bench you set up, and every tool's remembered
+settings. It is a plain JSON file, so it diffs, and it travels with the job rather than with the
+machine. A document that has never been saved keeps the same thing under your user profile until
+it has a home.
 
 **Draw a picture of each clash** (under ⚙ *Beyond the engine*, and on the Clash file tab) writes a
 thumbnail into each topic. Every coordination tool shows its issue list as pictures, so a file

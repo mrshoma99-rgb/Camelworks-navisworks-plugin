@@ -77,7 +77,7 @@ surfaces work, not things a coordinator opens.
 | `HeldEdit`, `HeldEdits` | **Clash Manager ▸ Manage** — the decisions a published NWD refuses. Applied to the board, kept in the project file, offered back to the document with "Try writing them in now", and carried into the NWF by "Save the baseline". |
 | `IfcIdentity`, `IfcGuid` | **Clash Manager ▸ Clash file / baseline** and **Clearance Check ▸ out** — reads each element's IFC GlobalId on the way out so the receiving tool can select the two clashing elements; the export says how many carry none. |
 | `ClashBcf`, `ClashBcfDocument`, `ClashBcfOptions`, `ClashFile` | **Clash Manager ▸ Clash file** — clash results as BCF, which every reviewing tool opens. What BCF has no field for (tolerances, distances, element keys) rides in a sidecar inside the same archive, so nothing the clash XML carried is lost. `ClashFile` still reads the older XML so earlier baselines keep opening. |
-| `ClashXml`, `ClashXmlTest`, `ExportProfile` | Clash file — the reader for baselines written before BCF |
+| `ClashXml`, `ClashXmlTest`, `ClashXmlRead`, `ExportProfile` | Clash file — the reader for baselines written before BCF, and the topics a returned BCF carries: the ones no clash answers to go to the **Issue Manager**, and what the model has no field for (priority, due date, stage, a retitle, the reviewer's tags) becomes a comment on the clash. |
 
 ### Issues out
 | Engine | Surface |

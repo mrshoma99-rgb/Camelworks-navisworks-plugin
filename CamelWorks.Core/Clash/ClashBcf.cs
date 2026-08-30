@@ -368,7 +368,7 @@ namespace CamelWorks.Core.Clash
                     + (strangers == 1 ? "It is" : "They are") + " read as far as BCF describes "
                     + (strangers == 1 ? "it." : "them."));
 
-            return new ClashXmlRead(tests, results, warnings, null);
+            return new ClashXmlRead(tests, results, warnings, null) { Topics = read.Topics };
         }
 
         // -------------------------------------------------------------------------------------
@@ -711,6 +711,14 @@ namespace CamelWorks.Core.Clash
                                 .Where(c => c != null && !string.IsNullOrWhiteSpace(c.Text))
                                 .Select(c => new ClashComment(c.Author, c.Date.UtcTicks, c.Text!))
                                 .ToList(),
+                Title = topic.Title,
+                Priority = string.IsNullOrWhiteSpace(topic.Priority) ? null : topic.Priority,
+                Stage = string.IsNullOrWhiteSpace(topic.Stage) ? null : topic.Stage,
+                DueTicks = topic.DueDate?.UtcTicks ?? 0,
+
+                // Only the reviewer's own tags. Ours came out of this writer and saying them back
+                // would be a note about nothing.
+                Labels = topic.Labels.Where(l => !Ours(l)).ToList(),
             };
 
             return result;
@@ -868,6 +876,57 @@ namespace CamelWorks.Core.Clash
             if (lower.Contains("review") || lower.Contains("verif")) return FindingStatus.Reviewed;
 
             return FindingStatus.Active;
+        }
+
+        /// <summary>Whether a label is one this writer put there.</summary>
+        private static bool Ours(string? label) =>
+            label != null
+            && (label.StartsWith(TestLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(FolderLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(GroupLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(LevelLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(GridLabel, StringComparison.OrdinalIgnoreCase)
+                || label.StartsWith(ZoneLabel, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// What the reviewer said that a Navisworks clash result has nowhere to keep.
+        ///
+        /// <b>Why this exists.</b> BCF carries a priority, a due date, a stage, a title and any
+        /// tags the reviewer likes. A clash result in Navisworks carries none of them. Dropping
+        /// them silently is the failure this whole round trip is meant to avoid: somebody set a
+        /// due date, it went nowhere, and they find out at the coordination meeting.
+        ///
+        /// So they are written as a comment on the clash instead, which is the one field the host
+        /// does have and which travels back out on the next export. Null when the reviewer changed
+        /// none of them, so an ordinary sync adds no noise.
+        /// </summary>
+        /// <param name="result">The returned result.</param>
+        /// <param name="expectedName">What this export would have called it, so a real retitle
+        /// can be told from the generated name coming back unchanged.</param>
+        public static string? Aside(ClashXmlResult? result, string? expectedName = null)
+        {
+            if (result == null) return null;
+
+            var said = new List<string>();
+
+            if (result.Priority != null) said.Add("priority " + result.Priority);
+            if (result.Stage != null) said.Add("stage " + result.Stage);
+
+            if (result.DueTicks > 0)
+                said.Add("due " + new DateTime(result.DueTicks, DateTimeKind.Utc)
+                    .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+
+            if (result.Title != null
+                && !string.Equals(result.Title, expectedName ?? result.Name, StringComparison.Ordinal))
+                said.Add("titled \"" + result.Title + "\"");
+
+            if (result.Labels.Count > 0)
+                said.Add("tagged " + string.Join(", ", result.Labels));
+
+            return said.Count == 0
+                ? null
+                : "Set in the reviewer's tool, which this model has no field for: "
+                  + string.Join("; ", said) + ".";
         }
 
         /// <summary>One prefixed label's value, or null.</summary>
