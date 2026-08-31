@@ -574,6 +574,55 @@ namespace CamelWorks.UI.Views
             {
                 if (OnFile) ReadFile(job);
                 else ReadModel(job);
+
+                Ready(job);
+            }
+
+            /// <summary>
+            /// Build the element index here, where there is a progress bar and a Stop, when this
+            /// board is going to need one.
+            ///
+            /// <b>Why the read pays for it.</b> Focus, Isolate and every other row verb turn the
+            /// keys on a row back into host items. A key that is an instance GUID resolves through
+            /// the host's own native search, which stops at the first match and costs nothing.
+            /// Anything else - a tree path, a geometry signature - has no native search behind it,
+            /// so resolving one means an index of every geometry leaf in the federation.
+            ///
+            /// Left to happen lazily that walk lands inside a click handler: minutes of managed
+            /// work on the UI thread, no progress, no way to stop, and Navisworks saying Not
+            /// Responding. The honest reading of that is that Focus hung, which is exactly what it
+            /// was reported as. <c>NavDocument.Index</c> was written to be called from here and
+            /// nothing ever called it, so every board still paid on the first press.
+            ///
+            /// Only when the board needs it: a federation whose elements all carry GUIDs never
+            /// builds one, and stopping half way leaves it unbuilt rather than partial.
+            /// </summary>
+            /// <param name="job">The read that is already running, for progress and cancelling.</param>
+            private void Ready(Job job)
+            {
+                if (job.IsCancelled || _session.Model.IsIndexed) return;
+
+                // Whichever source was just read: a file's rows are focused against this model
+                // too, so they need the index on the same terms.
+                var board = Current();
+
+                if (board == null) return;
+
+                var needed = board.SelectMany(e => e.Rows)
+                                  .SelectMany(r => new[] { r.Info.A, r.Info.B })
+                                  .Any(k => !k.IsEmpty && k.Rung != KeyRung.InstanceGuid);
+
+                if (!needed) return;
+
+                job.Say("Indexing the federation, so the row verbs are instant...");
+
+                _session.Model.Index(seen => job.Step(seen, "elements indexed"),
+                                     () => !job.IsCancelled);
+
+                if (!_session.Model.IsIndexed)
+                    _log.Children.Add(Ui.Note("The index was stopped part way, so Focus and "
+                        + "Isolate will build it on the first press - which on a federation this "
+                        + "size takes a while with nothing to watch. Read again to build it here."));
             }
 
             private void ReadModel(Job job)

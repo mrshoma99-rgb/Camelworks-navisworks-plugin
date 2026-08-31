@@ -267,7 +267,7 @@
                  left white text on a washed fill at 1.76:1, and it faded the two themes
                  differently, so the same state was legible in neither. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Background" Value="{DynamicResource Track}"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
               <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
               <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
@@ -501,9 +501,14 @@
               <Setter TargetName="b" Property="Background" Value="{DynamicResource Hover}"/>
               <Setter Property="Foreground" Value="{DynamicResource Text}"/>
             </Trigger>
+            <!-- Off, not pressed. This style draws a plate for hover, so painting a solid one
+                 for disabled says the opposite of what it means: a row of unavailable symbols
+                 read as a row of held-down buttons. The plate stays out of it and the symbol
+                 fades, which is what off looks like. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Background" Value="{DynamicResource Track}"/>
-              <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+              <Setter TargetName="b" Property="Background" Value="Transparent"/>
+              <Setter TargetName="b" Property="Opacity" Value="0.4"/>
+              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>

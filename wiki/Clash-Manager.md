@@ -48,6 +48,12 @@ Verbs under the results table: **focus** the camera, **isolate**, set **status**
 **comment**, **group**, **rename**, drop a **marker sphere**, take a **snapshot**,
 **raise an issue**, **copy**.
 
+Turning a row back into elements needs the federation indexed, and on a model whose elements carry
+no GUIDs building that index is a walk of every geometry leaf in it. **Read the results** does it
+there, inside its own progress bar, so the verbs afterwards are instant. If a press ever needs one
+that has not been built — a board carried over, or a read you stopped — it gets its own small
+window with a progress bar and a **Stop** rather than a frozen Navisworks.
+
 All of them work on however many rows are picked, and all of them are on right-click too.
 
 ### Behind the ⚙ symbols

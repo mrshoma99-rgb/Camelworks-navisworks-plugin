@@ -284,39 +284,17 @@ namespace CamelWorks.UI.Views
             // of the surface it is one part of, which is right when a stage stacks several things
             // - and wrong here, where the table is the whole pane and the cap left a third of it
             // white with the rows still scrolling.
-            Fill(body);
+            //
+            // Said on the pane rather than done to the tables in it. The property is inherited, so
+            // it reaches a table drawn an hour later as surely as one that was there at build
+            // time - which the walk this replaced did not: reading a board replaces the results
+            // table, and the replacement came back capped with the empty third underneath it.
+            Ui.SetFills(scroll, true);
 
             var pane = new Border { Child = grid };
             pane.Tint(Border.BackgroundProperty, "Card");
 
             return pane;
-        }
-
-        /// <summary>
-        /// Let every table in a subtree grow to the height it is given.
-        ///
-        /// Walks the logical tree rather than the visual one, because a pane is built before it is
-        /// ever rendered and the visual tree does not exist yet. Clearing the binding is enough:
-        /// with no MaxHeight the ListView takes what the row allocates and scrolls inside it.
-        /// </summary>
-        /// <param name="element">The pane's body.</param>
-        private static void Fill(object? element)
-        {
-            if (element is System.Windows.Controls.ListView table)
-            {
-                BindingOperations.ClearBinding(table, FrameworkElement.MaxHeightProperty);
-                table.MaxHeight = double.PositiveInfinity;
-                table.VerticalAlignment = VerticalAlignment.Stretch;
-
-                return;
-            }
-
-            if (!(element is DependencyObject node)) return;
-
-            foreach (var child in LogicalTreeHelper.GetChildren(node))
-            {
-                Fill(child);
-            }
         }
 
         /// <summary>
