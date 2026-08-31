@@ -19,13 +19,11 @@ SheetLink). Their philosophy, distilled into law here:
    beside it. The classic dialog contract: read the data, set the options, press the big button.
 5. **Options are a quiet right-hand panel.** Compact, always visible, never folded.
 
-## 1. The suite: eleven apps, and the hub
+## 1. The suite: eleven apps
 
 | App | The job | Its tabs |
 |---|---|---|
-| **CamelWorks** (hub) | The week, the search, and the way to every app | one surface |
-| **Clash Manager** | Find what fights and decide it | Tests · Matrix · Clearance · Rules · Board · Freeze |
-| **Issue Link** | Issues out to the world and answers back | Report · BCF · Clash XML · Merge · Penetrations |
+| **Clash Manager** | Find what fights and decide it | Manage · Matrix · Clearance · Filter Clashes · Report · BCF · Clash file · Merge |
 | **Model Audit** | Is this federation fit to coordinate against | Health · IDS · Models · Broken Links · Project |
 | **Compare Track** | What changed, against what, since when | Compare · Changes · Change Notice · History |
 | **Data Manager** | What the elements carry, and the pen to fix it | Properties · Write · Excel · External Data · Levels & Zones · Breakdown |
@@ -33,11 +31,21 @@ SheetLink). Their philosophy, distilled into law here:
 | **Sets Manager** | The selections everything else works on | Builder · From a Schedule · Generate Library · Organise |
 | **Scene Kit** | What is visible and what colour it is | Appearance · Viewpoints |
 | **Export Kit** | The model as a file somebody else opens | IFC · GLB · Drawing · Extract · Compile |
-| **Site Pack** | The model reaching the people building it | Setting Out · Dimensions · Weight · Labels · Documents |
+| **Site Pack** | The model reaching the people building it | Setting Out · Dimensions · Weight · Labels · Penetrations · Documents |
 | **Automate** | Doing it again next Friday | Jobs · Canvas |
 
 Rules of the suite:
 
+- **An app carries its own files in and out.** There is no app whose subject is another app's
+  files: the report, BCF, the clash file and the merge sit in the clash manager, because they
+  are ways of writing and reading a board, and the penetration schedule sits with the rest of
+  the paperwork in Site Pack. There was an Issue Link app holding all five, and saving your work
+  meant leaving the screen you were working on.
+- **There is no front door.** The ribbon row is the menu; a window opening onto a second copy of
+  it added a press and said nothing new. The two things only that window had are where they
+  belong now: this project's week and its activity trail above the settings register on
+  **Model Audit ▸ Project**, and the tool search — which matches a symptom, not a product name —
+  in the title strip of every app window.
 - **An app is one window**, singleton, remembering its last tab. There are no dock panes: every
   app opens, does its job, and closes, and the 3D view stays the host's.
 - **Tools keep their identity** in `Shell/Tools.cs`; `Shell/Apps.cs` says which app and tab each

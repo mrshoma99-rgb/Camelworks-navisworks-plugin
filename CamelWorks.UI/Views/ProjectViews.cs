@@ -1423,7 +1423,7 @@ namespace CamelWorks.UI.Views
                 DefaultExt = ".xlsx",
             };
 
-            if (dialog.ShowDialog() != true) return;
+            if (!Ui.Asked(dialog)) return;
 
             try
             {
@@ -1749,6 +1749,12 @@ namespace CamelWorks.UI.Views
             if (session.Store.ConcurrencyNote.Length > 0)
                 broken.Children.Add(Ui.Note(session.Store.ConcurrencyNote));
 
+            // Read-only is the one store problem that stops every button in the product, so it is
+            // said wherever the project file is talked about. It used to be on the front door,
+            // which no longer exists.
+            if (session.Store.IsReadOnly)
+                broken.Children.Add(Ui.Note(session.Store.ReadOnlyReason ?? string.Empty));
+
             // Parties, code tables and the roster are reference data somebody sets up once and
             // then forgets; laid out beside the register they tripled the height of a screen whose
             // subject is the register. Each is behind its own symbol at the foot, live-applying,
@@ -1775,6 +1781,9 @@ namespace CamelWorks.UI.Views
                 foot,
                 Ui.Stack(
                     broken,
+                    Cycle(session),
+                    Recent(session),
+                    Ui.Rule(),
                     Ui.Eyebrow("What CamelWorks worked out"),
                     Ui.Field("Find", find),
                     rows,
@@ -1782,6 +1791,169 @@ namespace CamelWorks.UI.Views
                     status,
                     ModelWrites(session),
                     Ui.Split("Project file", session.Store.Where)));
+        }
+
+
+        // ===================================================================================
+        // The week, and what has happened on this job
+        //
+        // Both were on a front door of their own, which was a window that opened onto a menu.
+        // They belong with the project file: the week is this project's rhythm, and the trail is
+        // what has been done to this project. Everything else that screen showed - the list of
+        // apps, the count of models - is a row of ribbon buttons and a line on Models.
+        // ===================================================================================
+
+        /// <summary>
+        /// The three steps of the week, with when each last happened.
+        ///
+        /// Only the first undone step leads: on a project's first day all three are undone, and
+        /// three blue buttons is the same as none.
+        /// </summary>
+        /// <param name="session">The open model.</param>
+        private static UIElement Cycle(Session session)
+        {
+            var rows = Ui.Stack();
+
+            var label = Ui.Eyebrow("The week");
+            label.Margin = new Thickness(0, 0, 0, 4);
+            rows.Children.Add(label);
+
+            var step = 0;
+            var led = false;
+
+            foreach (var kind in ActivityKind.Cycle)
+            {
+                step++;
+
+                var here = kind;
+                var latest = session.Store.Activity.Latest(here);
+                var never = latest == null;
+
+                var line = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                line.Children.Add(Marker(step, here));
+
+                var left = Ui.Stack(
+                    Ui.Line(ActivityKind.Title(here), 1, true),
+                    Ui.Line(never ? ActivityKind.Purpose(here) : latest!.Summary, 0.75),
+                    Ui.Across(never
+                        ? Ui.Pill("Not done yet", Tone.Warn)
+                        : Ui.Pill(ActivityLog.Ago(latest!.WhenTicks, session.NowTicks), Tone.Good)));
+
+                left.Margin = new Thickness(11, 0, 10, 0);
+                Grid.SetColumn(left, 1);
+                line.Children.Add(left);
+
+                var lead = never && !led;
+                if (never) led = true;
+
+                var go = GoLabel(here);
+                var route = RouteFor(here);
+
+                var button = lead
+                    ? Ui.Primary(go, () => Ui.Told(ToolViews.Open(route)))
+                    : Ui.Button(go, () => Ui.Told(ToolViews.Open(route)));
+
+                button.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(button, 2);
+                line.Children.Add(button);
+
+                rows.Children.Add(line);
+                if (step < ActivityKind.Cycle.Count) rows.Children.Add(Ui.Rule());
+            }
+
+            return rows;
+        }
+
+        /// <summary>The step's number, in the colour of the app it opens.</summary>
+        /// <param name="step">Which step it is.</param>
+        /// <param name="kind">The activity the step stands for.</param>
+        private static UIElement Marker(int step, string kind)
+        {
+            var badge = new Border
+            {
+                Width = 26,
+                Height = 26,
+                CornerRadius = new CornerRadius(13),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 0, 0),
+                Child = new TextBlock
+                {
+                    Text = step.ToString(CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 12,
+                    Foreground = System.Windows.Media.Brushes.White,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+
+            badge.SetResourceReference(Border.BackgroundProperty, "Fam." + FamilyOf(kind));
+            return badge;
+        }
+
+        /// <summary>Which family's colour the step wears.</summary>
+        /// <param name="kind">The activity.</param>
+        private static string FamilyOf(string kind) =>
+            kind == ActivityKind.Reconcile ? "Project" : "Coordinate";
+
+        /// <summary>Which tool the step opens.</summary>
+        /// <param name="kind">The activity.</param>
+        private static string RouteFor(string kind)
+        {
+            if (kind == ActivityKind.Reconcile) return "health";
+            if (kind == ActivityKind.Regroup) return "issuelist";
+
+            return "clashreport";
+        }
+
+        /// <summary>What the step's button says.</summary>
+        /// <param name="kind">The activity.</param>
+        private static string GoLabel(string kind)
+        {
+            if (kind == ActivityKind.Reconcile) return "Check the models";
+            if (kind == ActivityKind.Regroup) return "Open the board";
+
+            return "Write the report";
+        }
+
+        /// <summary>What has been done to this project lately.</summary>
+        /// <param name="session">The open model.</param>
+        private static UIElement Recent(Session session)
+        {
+            var entries = session.Store.Activity.Entries.Take(12).ToList();
+
+            var stack = Ui.Stack();
+
+            var label = Ui.Eyebrow("Recent");
+            label.Margin = new Thickness(0, 12, 0, 4);
+            stack.Children.Add(label);
+
+            if (entries.Count == 0)
+            {
+                stack.Children.Add(Ui.Empty("Nothing has happened on this project yet.",
+                    "CamelWorks writes a line here every time it changes the model, produces a "
+                    + "report or runs the rules - so a project handed over mid-job says what was "
+                    + "done to it."));
+
+                return stack;
+            }
+
+            var rows = entries.Select(e => new TableRow(e,
+                ActivityKind.Title(e.Kind),
+                e.Summary,
+                ActivityLog.Ago(e.WhenTicks, session.NowTicks))).ToList();
+
+            var recent = Ui.Table(rows, ("What", 110), ("Happened", 0), ("When", 110));
+
+            stack.Children.Add(Ui.Picking(recent,
+                new Ui.OnPicked("Copy {n}",
+                    (picked, say) => Ui.Copy(Ui.Lines(recent, picked), say, "entry"))));
+
+            return stack;
         }
 
         /// <summary>

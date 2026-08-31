@@ -36,6 +36,19 @@ namespace CamelWorks.UI.Shell
     public static class HostWindow
     {
         private static bool _pinned;
+        private static Window? _last;
+        private static IntPtr _frame;
+
+        /// <summary>
+        /// The last window this product showed, for a dialog that needs a WPF owner.
+        ///
+        /// A file dialog is a native modal, and one with no owner disables every top-level window
+        /// on the thread and re-enables them from the owner it does not have — which is the same
+        /// bug this class was written for, arriving through a different door. Held weakly so a
+        /// closed window is not kept alive by having been the most recent one.
+        /// </summary>
+        public static Window? Active =>
+            _last != null && _last.IsLoaded ? _last : null;
 
         /// <summary>
         /// Give a window the Navisworks frame as its owner, and pin the shutdown mode.
@@ -48,6 +61,29 @@ namespace CamelWorks.UI.Shell
             if (window == null) return;
 
             Pin();
+
+            _last = window;
+            window.Closed += (s, e) => { if (ReferenceEquals(_last, window)) _last = null; };
+
+            // Two defensive lines about the pointer, both cheap and neither able to make anything
+            // worse. A host runs a plug-in command with a wait cursor up, and a window opened
+            // during one can be left showing it: the override is application-wide and static, so a
+            // stale one follows the pointer onto every window afterwards. And a window with no
+            // cursor of its own resolves whatever the chain above it says, which inside a native
+            // frame is not ours to predict. Children that ask for their own - a hand over a link -
+            // still win, because this is the window's cursor and not a forced one.
+            try
+            {
+                if (System.Windows.Input.Mouse.OverrideCursor != null)
+                    System.Windows.Input.Mouse.OverrideCursor = null;
+
+                window.Cursor = System.Windows.Input.Cursors.Arrow;
+            }
+            catch (Exception)
+            {
+                // A pointer that will not be set is worth one odd-looking cursor, not an
+                // exception on the way to a screen.
+            }
 
             try
             {
@@ -115,21 +151,53 @@ namespace CamelWorks.UI.Shell
             public IntPtr Handle { get; }
         }
 
-        /// <summary>The Navisworks main frame's window handle, or zero.</summary>
+        /// <summary>
+        /// The Navisworks main frame's window handle, or zero.
+        ///
+        /// <b>Why it is remembered.</b> The API's <c>Gui</c> is not answerable at every moment of
+        /// the host's life - with no document open it can be null or throw - and a zero here does
+        /// not mean "no frame", it means "not now". Taking it at face value made every window
+        /// opened before the first model an unowned one, which is exactly the two failures this
+        /// class exists to prevent: an app window that goes behind the frame and reads as never
+        /// having opened, and the next modal after it disabling the host and re-enabling it from
+        /// an owner it does not have - a grey, dead Navisworks with no cursor. The frame outlives
+        /// every document, so the first real answer is kept and the process's own main window
+        /// stands in until there is one.
+        /// </summary>
         private static IntPtr Handle()
         {
+            if (_frame != IntPtr.Zero) return _frame;
+
             try
             {
                 var gui = Autodesk.Navisworks.Api.Application.Gui;
                 var main = gui?.MainWindow;
 
-                return main?.Handle ?? IntPtr.Zero;
+                _frame = main?.Handle ?? IntPtr.Zero;
             }
             catch (Exception)
             {
-                // No document, no GUI, or a headless host: all of them mean no frame to own to.
-                return IntPtr.Zero;
+                // No document, no GUI, or a headless host. Only the last of those really means
+                // there is no frame, and the fallback below tells them apart.
+                _frame = IntPtr.Zero;
             }
+
+            if (_frame != IntPtr.Zero) return _frame;
+
+            try
+            {
+                // The plug-in runs inside Navisworks, so the process's main window is the frame
+                // whenever the API will not say so. Headless, it is zero, which is the honest
+                // answer there.
+                using (var self = System.Diagnostics.Process.GetCurrentProcess())
+                    _frame = self.MainWindowHandle;
+            }
+            catch (Exception)
+            {
+                _frame = IntPtr.Zero;
+            }
+
+            return _frame;
         }
     }
 }

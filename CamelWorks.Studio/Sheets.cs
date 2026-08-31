@@ -60,7 +60,7 @@ namespace CamelWorks.Studio
         /// <summary>Every page, in the order the harness lists them.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            new Sheet { Id = "home", Title = "The hub", Height = 1150, Builder = _ => HomePane(), Widths = new[] { 560 } },
+            new Sheet { Id = "week", Title = "The week, on Project", Height = 900, Builder = _ => WeekPane(), Widths = new[] { 560 } },
             new Sheet { Id = "controls", Title = "Every control", Height = 2100, Builder = _ => Controls(), Widths = new[] { 470 } },
             new Sheet { Id = "bench", Title = "The anatomy", Height = 700, Builder = _ => BenchSheet(), Widths = new[] { 940 } },
             new Sheet
@@ -272,20 +272,17 @@ namespace CamelWorks.Studio
         /// before any other — and the real one reads the host on its very first line, so the
         /// shell page can only ever show it failing.
         /// </summary>
-        private static UIElement HomePane()
+        // harness: the week
+        //
+        // What sits above the settings register on Project: this project's rhythm, and the trail
+        // of what has been done to it. It was a front door of its own until the door turned out
+        // to be a window opening onto a menu.
+        private static UIElement WeekPane()
         {
             var chips = Ui.Across(
                 Ui.Pill("9 models"),
                 Ui.Pill("Metres"),
                 Ui.Pill("4 clash tests"));
-
-            var desks = Ui.Stack();
-            var label = Ui.Eyebrow("The apps");
-            label.Margin = new Thickness(0, 12, 0, 4);
-            desks.Children.Add(label);
-
-            foreach (var app in Apps.All)
-                desks.Children.Add(DeskRow(app));
 
             return Page(
                 Ui.Stack(Ui.Eyebrow("RIVERSIDE — BLOCK B"), chips),
@@ -301,46 +298,8 @@ namespace CamelWorks.Studio
                      null, true, "Write the report"),
 
                 Ui.Rule(),
-                desks,
-
-                Ui.Rule(),
                 Ui.Eyebrow("Recent"),
                 Ui.Table(Activity(), ("What", 96), ("", 0), ("When", 96)));
-        }
-
-        /// <summary>One app on the front door: its colour, its name, and the job it is.</summary>
-        private static UIElement DeskRow(App app)
-        {
-            var marker = new Border
-            {
-                Width = 3,
-                CornerRadius = new CornerRadius(1.5),
-                Margin = new Thickness(0, 2, 9, 2),
-            };
-
-            marker.SetResourceReference(Border.BackgroundProperty, "Fam." + app.Family);
-
-            var text = Ui.Stack(
-                Ui.Line(app.Title, 1, true),
-                Ui.Line(app.Job, 0.7));
-
-            var row = new Grid();
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.Children.Add(marker);
-            Grid.SetColumn(text, 1);
-            row.Children.Add(text);
-
-            var button = new System.Windows.Controls.Button
-            {
-                Content = row,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(8, 6, 8, 6),
-                Margin = new Thickness(0, 0, 0, 2),
-            };
-
-            button.Wearing("RailRow");
-            return button;
         }
 
         private static UIElement Step(int number, string family, string title, string what,

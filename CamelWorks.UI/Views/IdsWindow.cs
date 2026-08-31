@@ -1243,7 +1243,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".ids",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -1308,7 +1308,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = IdsFile.Extension,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {

@@ -29,8 +29,8 @@ mid-week, on a real federation:
 
 - **The status strip** (`Surfaces.Status`, drawn by `AppWindow` under the tab strip): where the
   app's workflow stands, in clickable figures, on every tab, refreshed after every run. Clash
-  Manager says when tests last ran and what the board holds; Issue Link says what was last
-  issued; Model Audit says what is loaded and what is broken; Compare Track names the baseline.
+  Manager says when tests last ran, what the board holds and what was last issued; Model Audit
+  says what is loaded and what is broken; Compare Track names the baseline.
   Everything on it is a cheap read — store, index, host registers — never a traversal.
 - **Hand-offs** (`AppWindow.Show(app, tab)` carrying context): Run tests → the board opens and
   loads itself; freeze → the change notice; a missing source → Broken Links; an issue going out
@@ -42,7 +42,6 @@ mid-week, on a real federation:
 | App | Audit |
 |---|---|
 | Clash Manager | [docs/apps/clash.md](docs/apps/clash.md) |
-| Issue Link | [docs/apps/issues.md](docs/apps/issues.md) |
 | Model Audit | [docs/apps/audit.md](docs/apps/audit.md) |
 | Compare Track | [docs/apps/track.md](docs/apps/track.md) |
 | Data Manager | [docs/apps/data.md](docs/apps/data.md) |

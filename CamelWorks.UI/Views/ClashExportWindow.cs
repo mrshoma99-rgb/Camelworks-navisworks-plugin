@@ -166,32 +166,43 @@ namespace CamelWorks.UI.Views
                 return _half;
             }
 
-            /// <summary>What is decided once for the job, in a window of its own.</summary>
-            /// <param name="section">Which section to open on.</param>
+            /// <summary>
+            /// What one symbol on the action row is for, in a window of its own.
+            ///
+            /// One section, named by the symbol pressed and titling the window it opens. These
+            /// four used to hand over all four sections and merely re-order them, so the window
+            /// was identical whichever symbol opened it and the row read as one button drawn four
+            /// times.
+            /// </summary>
+            /// <param name="section">Which section the symbol names.</param>
             private void Configure(string section)
             {
-                var pages = new List<Ui.Page>
-                {
-                    new Ui.Page("What goes in", () => Bench.Group("What goes in", _filters)),
-                    new Ui.Page("How it is written", () => Bench.Group("How it is written", Shape())),
-                    new Ui.Page("This profile", () => Bench.Group("This profile", Profiles())),
-                    new Ui.Page("The file", () => Bench.Group("The file",
-                        Ui.PathField("File", _file, PathKind.Save, ClashFile.Filter,
-                                     "BCF - what Solibri, BIMcollab, Revizto and every "
-                                     + "other reviewing tool opens."))),
-                };
+                Ui.Page page;
 
-                var order = new[] { "in", "how", "profile", "file" };
-                var at = Math.Max(0, Array.IndexOf(order, section));
-
-                if (at > 0)
+                switch (section)
                 {
-                    var wanted = pages[at];
-                    pages.RemoveAt(at);
-                    pages.Insert(0, wanted);
+                    case "how":
+                        page = new Ui.Page("How it is written",
+                                           () => Bench.Group("How it is written", Shape()));
+                        break;
+
+                    case "profile":
+                        page = new Ui.Page("This profile", () => Bench.Group("This profile", Profiles()));
+                        break;
+
+                    case "file":
+                        page = new Ui.Page("The file", () => Bench.Group("The file",
+                            Ui.PathField("File", _file, PathKind.Save, ClashFile.Filter,
+                                         "BCF - what Solibri, BIMcollab, Revizto and every "
+                                         + "other reviewing tool opens.")));
+                        break;
+
+                    default:
+                        page = new Ui.Page("What goes in", () => Bench.Group("What goes in", _filters));
+                        break;
                 }
 
-                Ui.Configure("Clash file", () => { DrawFilters(); DrawTests(); }, pages.ToArray());
+                Ui.Configure(page.Name, () => { DrawFilters(); DrawTests(); }, page);
             }
 
             private UIElement? _write;
@@ -734,7 +745,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = Extension,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -758,7 +769,7 @@ namespace CamelWorks.UI.Views
                     CheckFileExists = true,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {

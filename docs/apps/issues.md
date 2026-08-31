@@ -46,6 +46,12 @@ and **Show** putting the model where the issue is.
 
 # Issue Link — product audit
 
+> **Retired.** Issue Link no longer exists as an app. Every one of its five tools was a way of
+> writing or reading some other app's work, and an app whose subject is other apps' files makes
+> somebody leave the screen they are working on in order to save it. Report, BCF, Clash file and
+> Merge are tabs of **Clash Manager**; Penetrations is a tab of **Site Pack**. This audit is kept
+> for the reasoning in it, which still applies to those tabs.
+
 **The app's job.** The outbound half of the coordination week. The board gets decided in Clash
 Manager; Issue Link is where it leaves the building — the report for the meeting, the BCF or
 the clash file for whoever answers in a tool, the worksheet for whoever answers in Excel — and where

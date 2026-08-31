@@ -716,7 +716,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".cwlook",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -745,7 +745,7 @@ namespace CamelWorks.UI.Views
                     CheckFileExists = true,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 JsonValue json;
 

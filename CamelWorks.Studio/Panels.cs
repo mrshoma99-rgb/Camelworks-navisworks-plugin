@@ -265,7 +265,8 @@ namespace CamelWorks.Studio
                          (Glyphs.Read, "Source"), (Glyphs.Filter, "Filters"),
                          (Glyphs.Columns, "Columns and grouping"),
                          (Glyphs.Person, "Status and assignment"), (Glyphs.Sphere, "Markers"),
-                         (Glyphs.Round, "The review round"), (Glyphs.More, "Beyond the engine"),
+                         (Glyphs.Round, "The review round"),
+                         (Glyphs.Onward, "Walk the board, one clash at a time"),
                      })
                 foot.Children.Add(Ui.Icon(glyph, tip, () => { }));
 

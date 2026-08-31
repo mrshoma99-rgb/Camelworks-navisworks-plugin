@@ -309,9 +309,13 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel();
 
                 row.Children.Add(Ui.Icon(Glyphs.Find, "Search the findings", () => _filter.Focus()));
-                row.Children.Add(_filter);
+                // Loose first: these two are kept in fields so what was typed and chosen
+                // survives a redraw, and a kept control still belongs to the row thrown away by
+                // the Clear above. The second draw used to throw from a window's Closed handler,
+                // which is to say it closed Navisworks.
+                row.Children.Add(Ui.Loose(_filter));
                 row.Children.Add(new Border { Width = 8 });
-                row.Children.Add(_filterScope);
+                row.Children.Add(Ui.Loose(_filterScope));
                 row.Children.Add(new Border { Width = 14 });
 
                 foreach (var status in Statuses)
@@ -353,35 +357,33 @@ namespace CamelWorks.UI.Views
             // The options panel
             // -------------------------------------------------------------------------------
 
-            /// <summary>Everything that is set up once, in a window of its own.</summary>
-            /// <param name="section">Which section to open on.</param>
+            /// <summary>
+            /// What one symbol on the action row is for, in a window of its own.
+            ///
+            /// Titled with the section the symbol named, and holding that section only. All six
+            /// used to open the same six-section window, which answered "what did I just press"
+            /// with the same screen six times.
+            /// </summary>
+            /// <param name="section">Which section the symbol names.</param>
             private void Configure(string section)
             {
-                var pages = new List<Ui.Page>
-                {
-                    new Ui.Page("What to measure", MeasurePage),
-                    new Ui.Page("Filters", FiltersPage),
-                    new Ui.Page("Columns and grouping", ColumnsPage),
-                    new Ui.Page("Status and assignment", VerbsPage),
-                    new Ui.Page("In the model", ModelPage),
-                    new Ui.Page("Out of the tab", OutPage),
-                };
+                Ui.Page page;
 
-                var order = new[] { "measure", "filters", "columns", "verbs", "model", "out" };
-                var at = Math.Max(0, Array.IndexOf(order, section));
-
-                if (at > 0)
+                switch (section)
                 {
-                    var wanted = pages[at];
-                    pages.RemoveAt(at);
-                    pages.Insert(0, wanted);
+                    case "filters": page = new Ui.Page("Filters", FiltersPage); break;
+                    case "columns": page = new Ui.Page("Columns and grouping", ColumnsPage); break;
+                    case "verbs": page = new Ui.Page("Status and assignment", VerbsPage); break;
+                    case "model": page = new Ui.Page("In the model", ModelPage); break;
+                    case "out": page = new Ui.Page("Out of the tab", OutPage); break;
+                    default: page = new Ui.Page("What to measure", MeasurePage); break;
                 }
 
-                Ui.Configure("Clearance check", () =>
+                Ui.Configure(page.Name, () =>
                 {
                     RedrawStrip();
                     Redraw();
-                }, pages.ToArray());
+                }, page);
             }
 
             private UIElement MeasurePage()
@@ -1754,7 +1756,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".xlsx",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {
@@ -1845,7 +1847,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ClashFile.Extension,
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 try
                 {

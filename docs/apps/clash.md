@@ -29,7 +29,7 @@ what it could do, then for how it read.
   and tooltipped, plus the same verbs on **right-click**; and
   **every other option in a configuration window** (`Ui.Configure`) opened from the symbol that
   names it: Source, Filters, Columns and grouping, Status and assignment, In the model, The
-  review round, Beyond the engine.
+  review round.
 - The tests table's five status columns became one band — *new · active · closed* — which says
   the same thing at a glance and leaves the width for the name, which is the long part.
 

@@ -213,9 +213,11 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The register's own filters, above the list.
             ///
-            /// Status, who owns it and a search are what somebody changes as they work a register;
-            /// everything else - the type, what raised it, what the bulk verb writes - is set once
-            /// and lives a window away.
+            /// All of them, on the surface. Status, mine and overdue were here; who it is assigned
+            /// to, what type it is and what raised it were behind a symbol that opened a window,
+            /// and the window was the same one a second symbol opened - so neither symbol said
+            /// what it had done. A filter is read at a glance and changed mid-thought; it does not
+            /// survive being a press away.
             /// </summary>
             private void RedrawStrip()
             {
@@ -224,7 +226,10 @@ namespace CamelWorks.UI.Views
                 var row = new WrapPanel();
 
                 row.Children.Add(Ui.Icon(Glyphs.Find, "Search the register", () => _find.Focus()));
-                row.Children.Add(_find);
+
+                // Loose first: the box is kept in a field so what was typed in it survives a
+                // redraw, and a kept control still belongs to the row that was thrown away.
+                row.Children.Add(Ui.Loose(_find));
                 row.Children.Add(new Border { Width = 14 });
 
                 foreach (var status in Issue.Statuses)
@@ -245,6 +250,7 @@ namespace CamelWorks.UI.Views
                 row.Children.Add(Ui.Check("Only overdue", _onlyOverdue, on => { _onlyOverdue = on; Redraw(); }));
 
                 _strip.Children.Add(row);
+                _strip.Children.Add(NarrowRow());
 
                 _strip.Children.Add(Ui.Across(
                     Ui.Figure(Skin.Num(_register.Open), "open"),
@@ -261,8 +267,6 @@ namespace CamelWorks.UI.Views
                 row.Children.Add(Ui.Primary("New issue", NewIssue));
                 row.Children.Add(new Border { Width = 14 });
 
-                row.Children.Add(Ui.Icon(Glyphs.Filter, "Narrow the register", () => Configure("narrow")));
-                row.Children.Add(Ui.Icon(Glyphs.Tick, "What the bulk verbs write", () => Configure("verbs")));
                 row.Children.Add(Ui.Icon(Glyphs.Read, "Import BCF",
                                          () => Ui.Told(Shell.AppWindow.Show("issuemgr", "issuein"))));
                 row.Children.Add(Ui.Icon(Glyphs.Onward, "Export BCF",
@@ -272,35 +276,11 @@ namespace CamelWorks.UI.Views
                 return row;
             }
 
-            // -------------------------------------------------------------------------------
-            // What is set up once
-            // -------------------------------------------------------------------------------
-
-            /// <summary>The register's set-once options, in a window of their own.</summary>
-            /// <param name="section">Which section to open on.</param>
-            private void Configure(string section)
-            {
-                var pages = new List<Ui.Page>
-                {
-                    new Ui.Page("Narrow it", NarrowPage),
-                    new Ui.Page("On the picked issues", VerbsPage),
-                };
-
-                if (section == "verbs")
-                {
-                    var wanted = pages[1];
-                    pages.RemoveAt(1);
-                    pages.Insert(0, wanted);
-                }
-
-                Ui.Configure("Issue register", () =>
-                {
-                    RedrawStrip();
-                    Redraw();
-                }, pages.ToArray());
-            }
-
-            private UIElement NarrowPage()
+            /// <summary>
+            /// Who it is assigned to, what type it is and what raised it - the three narrowings
+            /// that used to live in a window.
+            /// </summary>
+            private UIElement NarrowRow()
             {
                 var people = new List<string> { AnyOne };
                 people.AddRange(Assignees());
@@ -315,24 +295,23 @@ namespace CamelWorks.UI.Views
                 if (!people.Contains(_who)) _who = AnyOne;
                 if (!types.Contains(_type)) _type = AnyType;
 
-                return Bench.Group("Narrow it",
-                    Ui.Field("Assigned to", Ui.Choice(people, _who, pick => { _who = pick; Redraw(); }, 170)),
-                    Ui.Field("Type", Ui.Choice(types, _type, pick => { _type = pick; Redraw(); }, 170)),
-                    Ui.Field("Raised by", Ui.Choice(
-                        new[] { AnySource, "Raised", "Clash", "Clearance", "Imported" },
-                        _source, pick => { _source = pick; Redraw(); }, 170)),
-                    Ui.Small("Status, mine, overdue and the search are on the strip above the "
-                             + "register, where they are changed as somebody works."));
-            }
+                var row = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
 
-            private UIElement VerbsPage() => Bench.Group("On the picked issues",
-                Ui.Field("Set status to", Ui.Choice(Issue.Statuses, _mark, pick =>
-                {
-                    _mark = pick;
-                    Redraw();
-                }, 150)),
-                Ui.Small("The status symbol under the register writes this. Assigning writes "
-                         + "whoever \"Assigned to\" names on the previous page."));
+                row.Children.Add(Ui.Tally("Assigned to"));
+                row.Children.Add(Ui.Choice(people, _who, pick => { _who = pick; Redraw(); }, 150));
+                row.Children.Add(new Border { Width = 14 });
+
+                row.Children.Add(Ui.Tally("Type"));
+                row.Children.Add(Ui.Choice(types, _type, pick => { _type = pick; Redraw(); }, 150));
+                row.Children.Add(new Border { Width = 14 });
+
+                row.Children.Add(Ui.Tally("Raised by"));
+                row.Children.Add(Ui.Choice(
+                    new[] { AnySource, "Raised", "Clash", "Clearance", "Imported" },
+                    _source, pick => { _source = pick; Redraw(); }, 150));
+
+                return row;
+            }
 
             private List<string> Assignees()
             {
@@ -428,7 +407,11 @@ namespace CamelWorks.UI.Views
                     RedrawDetail();
                 };
 
-                _list.Children.Add(Ui.Picking(table,
+                var setTo = Ui.Across(
+                    Ui.Tally("Set to"),
+                    Ui.Choice(Issue.Statuses, _mark, pick => { _mark = pick; Redraw(); }, 120));
+
+                _list.Children.Add(Ui.Picking(table, setTo,
                     new Ui.OnPicked("Show {n}", ShowPicked, primary: true),
                     new Ui.OnPicked("Set {n} " + _mark, MarkPicked),
                     new Ui.OnPicked("Assign {n}", AssignPicked),
@@ -1059,7 +1042,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".xlsx",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 _log.Children.Clear();
 
@@ -1274,7 +1257,7 @@ namespace CamelWorks.UI.Views
                     DefaultExt = ".bcf",
                 };
 
-                if (dialog.ShowDialog() != true) return;
+                if (!Ui.Asked(dialog)) return;
 
                 job.Say("Building topics...");
 

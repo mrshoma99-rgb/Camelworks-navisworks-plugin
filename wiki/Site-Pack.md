@@ -2,10 +2,10 @@
 
 > The model reaching the people building it.
 
-Five tools for the people on the floor rather than the people in the model.
+Six tools for the people on the floor rather than the people in the model.
 
 **Tabs:** [Setting Out](#setting-out) · [Dimensions](#dimensions) · [Weight](#weight) ·
-[Labels](#labels) · [Documents](#documents)
+[Labels](#labels) · [Penetrations](#penetrations) · [Documents](#documents)
 
 Every tab starts from **Read the selection** — one read, shared across the app, with its age shown
 so you know whether it is stale. Where the files go is a ⚙ symbol on the action row.
@@ -80,6 +80,18 @@ The loss level is explained in consequence terms: the more the code can lose and
 bigger it has to be printed.
 
 A `.csv` index is written beside the sheet, so a code can be looked up.
+
+---
+
+## Penetrations
+
+> The services passing through structure, as the schedule the structural engineer asks for before
+> a pour.
+
+**Main action: Write the report.**
+
+The same screen as [Clash Manager ▸ Report](Clash-Manager#report), locked to one template — reached without having to answer "which of
+three reports?". No BCF hand-off afterwards: nobody answers a pour list through a BCF tool.
 
 ---
 

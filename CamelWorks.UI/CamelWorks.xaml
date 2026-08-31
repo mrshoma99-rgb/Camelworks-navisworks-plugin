@@ -34,13 +34,9 @@
 
     <RibbonPanel x:Uid="RibbonPanel_CW_Suite">
       <RibbonPanelSource x:Uid="RibbonPanelSource_CW_Suite" Title="CamelWorks">
-        <local:NWRibbonButton x:Uid="CW_Home" Id="ID_CW_Home"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
         <local:NWRibbonButton x:Uid="CW_AppClash" Id="ID_CW_AppClash"
                               Size="Large" ShowText="True" Orientation="Vertical" />
         <local:NWRibbonButton x:Uid="CW_AppIssueManager" Id="ID_CW_AppIssueManager"
-                              Size="Large" ShowText="True" Orientation="Vertical" />
-        <local:NWRibbonButton x:Uid="CW_AppIssues" Id="ID_CW_AppIssues"
                               Size="Large" ShowText="True" Orientation="Vertical" />
         <local:NWRibbonButton x:Uid="CW_AppAudit" Id="ID_CW_AppAudit"
                               Size="Large" ShowText="True" Orientation="Vertical" />

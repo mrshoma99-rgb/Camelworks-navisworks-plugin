@@ -14,7 +14,7 @@ spreadsheet beside the tool.
 | A person | **New issue**, on whatever is selected in the model |
 | Clash results | Right-click in Clash Manager ▸ Manage → *Create an issue from N*, or *Attach N to an issue…* to put them on one that already exists |
 | Clearance findings | Right-click in Clash Manager ▸ Clearance Check |
-| Somebody else's tool | A BCF file, read in through Import (or through Issue Link ▸ BCF) |
+| Somebody else's tool | A BCF file, read in through Import (or through [Clash Manager ▸ BCF](Clash-Manager#bcf)) |
 
 What raised an issue is a **column**, not a filing cabinet — one register holds all four. It is
 also the one field nobody can edit afterwards, because it is a fact about the past.
@@ -56,14 +56,16 @@ they offer nothing.
 The register, with the filters at the top, and a detail panel that opens on the row you pick and
 edits in place.
 
-**On the strip:** search, the status ticks, *only mine*, *overdue*, and the open / overdue / closed
-figures. Type, assignee and source live behind the ⚙ symbol, with what the bulk verbs write.
+**On the strip:** search, the status ticks, *only mine*, *overdue*, then *assigned to*, *type* and
+*raised by* on the row under them, and the open / overdue / closed figures. Every filter the
+register has is on the screen; none of them is behind a symbol.
 
 **In the detail panel:** title, description, status, type, priority, assignee, due date, root
 cause, level, zone — the comment trail underneath, and **Show**, which puts the model where the
 issue is.
 
-**Bulk verbs on the picked rows:** show, set status, assign, comment, delete, copy.
+**Bulk verbs on the picked rows:** show, set status, assign, comment, delete, copy. The status the
+*set status* verb writes is chosen on the same row, immediately before the button that spends it.
 
 Deleting says out loud that closing is usually what somebody means, and asks twice.
 
@@ -86,7 +88,7 @@ would lose what the other party meant.
 what it already brought in and adds only the comments nobody has said yet — it does not raise
 everything twice. Matching is on the BCF GUID; duplicate author-and-body comments are skipped.
 
-A BCF file read anywhere in the product — here, or in [Issue Link ▸ BCF](Issue-Link#bcf) — ends up
+A BCF file read anywhere in the product — here, or in [Clash Manager ▸ BCF](Clash-Manager#bcf) — ends up
 in this one register.
 
 ### A topic that answers a finding goes onto the finding

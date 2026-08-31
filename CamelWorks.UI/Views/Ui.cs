@@ -493,6 +493,23 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 3, 0, 0),
             }.Wearing("Hint");
 
+        /// <summary>
+        /// The count beside a table's verbs — "none picked", "3 picked".
+        ///
+        /// Its own shape rather than <see cref="Small"/>, because it sits on a line of 26-pixel
+        /// symbols and a hint carries a three-pixel top margin meant for prose under a field. On
+        /// that line it rode above the buttons and above the title, which is what somebody sees
+        /// when they say the header does not line up.
+        /// </summary>
+        /// <param name="text">What it says.</param>
+        public static TextBlock Tally(string text) =>
+            new TextBlock
+            {
+                Text = text,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, Gap, 0),
+            }.Wearing("Hint");
+
         /// <summary>An identifier, a path or a hash — anything that must not be read as prose.</summary>
         /// <param name="text">The text.</param>
         public static TextBlock Code(string text) =>
@@ -1082,6 +1099,80 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Ask for a path to write to, or null when the person changed their mind.
+        ///
+        /// <b>Every file dialog in this product goes through here or its twin.</b> A file dialog
+        /// is a native modal, and one shown with no owner disables every top-level window on the
+        /// thread and then re-enables them from the owner it does not have. What somebody sees is
+        /// a dialog they closed and a Navisworks that never comes back — the same bug
+        /// <see cref="Shell.HostWindow"/> was written for, arriving through a different door.
+        ///
+        /// Owning it at each of twenty call sites is a rule that holds until the twenty-first is
+        /// written, so there is one door and a repository check that keeps it the only one.
+        /// </summary>
+        /// <param name="title">What the dialog is called.</param>
+        /// <param name="filter">The file-type filter.</param>
+        /// <param name="suggested">The name to offer, or null.</param>
+        /// <param name="extension">The extension to add when somebody types none.</param>
+        public static string? AskToSave(string title, string filter, string? suggested = null,
+                                        string? extension = null)
+        {
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                FileName = suggested ?? string.Empty,
+                AddExtension = true,
+            };
+
+            if (!string.IsNullOrWhiteSpace(extension)) dialog.DefaultExt = extension;
+
+            return Asked(dialog) ? dialog.FileName : null;
+        }
+
+        /// <summary>Ask for a path to read, or null when the person changed their mind.</summary>
+        /// <param name="title">What the dialog is called.</param>
+        /// <param name="filter">The file-type filter.</param>
+        /// <param name="suggested">The name to offer, or null.</param>
+        public static string? AskToOpen(string title, string filter, string? suggested = null)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = title,
+                Filter = filter,
+                FileName = suggested ?? string.Empty,
+                CheckFileExists = true,
+                CheckPathExists = true,
+            };
+
+            return Asked(dialog) ? dialog.FileName : null;
+        }
+
+        /// <summary>
+        /// Show a file dialog owned by the window it was asked for from.
+        ///
+        /// The owner is what stops the host being disabled and left that way; see
+        /// <see cref="AskToSave"/>. With no window of ours on screen there is nothing to own it
+        /// to, and an unowned dialog is still better than no dialog — so it is shown, and that is
+        /// the one path where the old behaviour remains.
+        /// </summary>
+        /// <param name="dialog">The dialog.</param>
+        internal static bool Asked(Microsoft.Win32.CommonDialog dialog)
+        {
+            try
+            {
+                var owner = Shell.HostWindow.Active;
+
+                return (owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog()) == true;
+            }
+            catch (Exception)
+            {
+                // A dialog that will not open is not a reason to take the pane down with it.
+                return false;
+            }
+        }
+
+        /// <summary>
         /// The dialog itself.
         ///
         /// Nothing is written here and nothing is read: it puts a path in a box, and the button
@@ -1106,7 +1197,7 @@ namespace CamelWorks.UI.Views
 
                     Start(save, typed);
 
-                    if (save.ShowDialog() == true) box.Text = save.FileName;
+                    if (Asked(save)) box.Text = save.FileName;
                     return;
                 }
 
@@ -1129,7 +1220,7 @@ namespace CamelWorks.UI.Views
 
                 Start(open, typed);
 
-                if (open.ShowDialog() != true) return;
+                if (!Asked(open)) return;
 
                 box.Text = folder
                     ? System.IO.Path.GetDirectoryName(open.FileName) ?? typed
@@ -1288,7 +1379,7 @@ namespace CamelWorks.UI.Views
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
-                act();
+                Safely(act);
             }
             finally
             {
@@ -1303,7 +1394,7 @@ namespace CamelWorks.UI.Views
             if (style != null) button.Wearing(style);
             else button.MinWidth = 88;
 
-            if (onClick != null) button.Click += (s, e) => onClick();
+            if (onClick != null) button.Click += (s, e) => Safely(onClick);
             return button;
         }
 
@@ -1737,7 +1828,89 @@ namespace CamelWorks.UI.Views
         {
             if (string.IsNullOrWhiteSpace(message)) return;
 
+            // Owned, like every other modal here. A native box with no owner disables every
+            // top-level window on the thread - the host's own frame included - and re-enables
+            // them from the owner it does not have, so the one line explaining why a tool did
+            // not open would otherwise be the thing that killed Navisworks.
+            var owner = Shell.HostWindow.Active;
+
+            if (owner != null)
+            {
+                MessageBox.Show(owner, message, "CamelWorks", MessageBoxButton.OK,
+                                MessageBoxImage.Information);
+                return;
+            }
+
+            var frame = Shell.HostWindow.Frame();
+
+            if (frame != null)
+            {
+                System.Windows.Forms.MessageBox.Show(frame, message, "CamelWorks",
+                    System.Windows.Forms.MessageBoxButtons.OK,
+                    System.Windows.Forms.MessageBoxIcon.Information);
+                return;
+            }
+
             MessageBox.Show(message, "CamelWorks", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        /// <summary>
+        /// Run something that a user press or a window closing set off, and survive it throwing.
+        ///
+        /// <b>Why this exists.</b> A WPF handler that throws does not fail politely: the exception
+        /// leaves the handler, reaches the dispatcher, and takes the whole Navisworks process with
+        /// it. The ribbon entry point has been guarded since the beginning, but everything reached
+        /// after the first screen is up - a symbol under a table, a redraw run from a window's
+        /// Closed event - had no guard at all, so one re-parented text box in one screen's redraw
+        /// was enough to close the host. A fault in one screen is worth a sentence, not the
+        /// user's session.
+        /// </summary>
+        /// <param name="act">What to run.</param>
+        public static void Safely(Action? act)
+        {
+            if (act == null) return;
+
+            try
+            {
+                act();
+            }
+            catch (Exception e)
+            {
+                Told("Something went wrong: " + Describe(e));
+            }
+        }
+
+        /// <summary>
+        /// Take an element off whatever is holding it, so it can be put somewhere else.
+        ///
+        /// A screen that keeps a control in a field - a search box that must not lose what was
+        /// typed in it, or the focus - and rebuilds the row around it hits
+        /// "Specified element is already the logical child of another element" the second time it
+        /// draws: clearing the panel's children detaches the row, not the row's contents. That
+        /// throw used to arrive from inside a window's Closed handler, which is to say it closed
+        /// Navisworks. Pass the kept control through here on the way back in.
+        /// </summary>
+        /// <param name="element">The element to free.</param>
+        /// <returns>The same element, with no parent.</returns>
+        public static T Loose<T>(T element) where T : UIElement
+        {
+            switch (LogicalTreeHelper.GetParent(element))
+            {
+                case Panel panel:
+                    panel.Children.Remove(element);
+                    break;
+                case Decorator decorator when ReferenceEquals(decorator.Child, element):
+                    decorator.Child = null;
+                    break;
+                case ContentControl holder when ReferenceEquals(holder.Content, element):
+                    holder.Content = null;
+                    break;
+                case ItemsControl items:
+                    items.Items.Remove(element);
+                    break;
+            }
+
+            return element;
         }
 
         /// <summary>
@@ -2505,7 +2678,7 @@ namespace CamelWorks.UI.Views
             Shell.HostWindow.Own(window);
             ShowSection(0);
 
-            if (onClosed != null) window.Closed += (s, e) => onClosed();
+            if (onClosed != null) window.Closed += (s, e) => Safely(onClosed);
 
             window.ShowDialog();
         }
@@ -2584,7 +2757,7 @@ namespace CamelWorks.UI.Views
             Skin.Apply(window);
             Shell.HostWindow.Own(window);
 
-            if (onClosed != null) window.Closed += (s, e) => onClosed();
+            if (onClosed != null) window.Closed += (s, e) => Safely(onClosed);
 
             window.ShowDialog();
         }
@@ -2815,7 +2988,22 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="table">The table. It is switched to multi-select here.</param>
         /// <param name="actions">What can be done to the picked rows.</param>
-        public static UIElement Picking(ListView table, params OnPicked[] actions)
+        public static UIElement Picking(ListView table, params OnPicked[] actions) =>
+            Picking(table, null, actions);
+
+        /// <summary>
+        /// The verb bar, with something one of the verbs needs answered standing next to it.
+        ///
+        /// A verb that writes a value - set the picked issues to a status, tag them with a party -
+        /// has to get that value from somewhere, and the somewhere used to be a window opened by a
+        /// symbol somewhere else on the screen. That put the question a whole press away from the
+        /// answer and left two symbols opening the same window. The chooser belongs beside the
+        /// button that spends it.
+        /// </summary>
+        /// <param name="table">The table being picked from.</param>
+        /// <param name="aside">A control a verb reads, shown before the verbs, or null.</param>
+        /// <param name="actions">The verbs.</param>
+        public static UIElement Picking(ListView table, UIElement? aside, params OnPicked[] actions)
         {
             if (table == null) throw new ArgumentNullException(nameof(table));
 
@@ -2843,6 +3031,12 @@ namespace CamelWorks.UI.Views
             var buttons = new List<System.Windows.Controls.Button>();
 
             bar.Children.Add(tally);
+
+            if (aside != null)
+            {
+                bar.Children.Add(aside);
+                bar.Children.Add(new Border { Width = Gap });
+            }
 
             foreach (var action in verbs)
             {
@@ -3168,7 +3362,7 @@ namespace CamelWorks.UI.Views
             progress.Children.Add(bar);
             progress.Children.Add(status);
 
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, Gap, 0, 0) };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
             buttons.Children.Add(go);
             buttons.Children.Add(new Border { Width = 8 });
             buttons.Children.Add(stop);
@@ -3239,7 +3433,16 @@ namespace CamelWorks.UI.Views
                 }
             };
 
-            return Stack(buttons, progress);
+            // The gap above belongs to the runner as a whole, not to its button row. It used to
+            // sit on the row, which meant a runner placed beside ordinary buttons stood eight
+            // pixels lower than them - and it was reachable from nowhere to correct, because the
+            // row is inside what this returns. On the outside a caller can zero it, and every
+            // stacked runner looks exactly as it did.
+            var whole = Stack(buttons, progress);
+
+            whole.Margin = new Thickness(0, Gap, 0, 0);
+
+            return whole;
         }
 
         private static string Seconds(TimeSpan span) =>
