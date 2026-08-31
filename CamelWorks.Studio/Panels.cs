@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -27,7 +28,9 @@ namespace CamelWorks.Studio
         /// <summary>Every app page, in ribbon order.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            Page("app-clash-manage", "Clash Manager · Manage", 980, Coordination),
+            Page("app-clash-manage", "Clash Manager · Manage", 980, () => Coordination(false)),
+            Page("app-clash-finder", "Clash Manager · Manage, the filter panel open", 980,
+                 () => Coordination(true)),
             Page("app-issue-register", "Issue Manager · Issues", 780, Issues),
             Page("app-audit", "Model Audit · Health", 780, Federation),
             Page("app-data", "Data Manager · Properties", 780, Data),
@@ -205,88 +208,803 @@ namespace CamelWorks.Studio
         // Coordination — the clash results bench
         // -----------------------------------------------------------------------------------
 
-        private static UIElement Coordination()
+        /// <summary>
+        /// Clash Manager ▸ Manage: the test finder, the board, and the bar for what is picked.
+        ///
+        /// Reconstructed from <c>ClashManageViews</c>, which needs a live document and cannot run
+        /// here. Everything structural is the real thing — <see cref="Parts"/> draws the chips,
+        /// the bands and the bar, and the columns are the surface's own widths — so what this
+        /// picture gets wrong is the data and never the design.
+        /// </summary>
+        private static UIElement Coordination(bool panel)
         {
-            var strip = new WrapPanel();
+            var rail = Rail(panel);
+            var board = Board();
 
-            strip.Children.Add(Ui.Icon(Glyphs.Find, "Search both tables", () => { }));
-            strip.Children.Add(Ui.Text(string.Empty, "test, result, item, assignee or comment", null, 260));
-            strip.Children.Add(new Border { Width = 8 });
-            strip.Children.Add(Ui.Segmented(new[] { "Both", "Tests", "Results" }, "Both", null));
-            strip.Children.Add(new Border { Width = 16 });
+            var foot = new DockPanel { LastChildFill = false };
 
-            foreach (var status in new[] { "New", "Active", "Reviewed", "Approved", "Resolved" })
+            var right = new StackPanel
             {
-                strip.Children.Add(new Border { Width = 10 });
-                strip.Children.Add(Ui.Check(status, status != "Resolved", null));
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var runner = Ui.Runner("Read again", Ui.Stack(), _ => { }, primary: false);
+            runner.Margin = new Thickness(0, 0, 10, 0);
+            runner.VerticalAlignment = VerticalAlignment.Center;
+            right.Children.Add(runner);
+
+            right.Children.Add(Parts.MenuButton("Export", Glyphs.Onward, new[]
+            {
+                Parts.Entry.Barred("Sync into the document", Glyphs.Save,
+                    "This is a published NWD — its clash results are read-only"),
+                Parts.Entry.Saying("Save as a clash file (BCF)", Glyphs.Round,
+                                   "The offline review round — out and back", null),
+                Parts.Entry.Saying("Write a report", Glyphs.Report,
+                                   "One document per party, revision-lettered", null),
+            }));
+
+            // The caption the product declares. Its counted form — "Save 14 changes into the
+            // document" — is built at run time from what the document refused, and a picture
+            // cannot claim a caption no panel contains.
+            var save = Ui.Primary("Save the changes", () => { });
+            save.Margin = new Thickness(8, 0, 0, 0);
+            save.VerticalAlignment = VerticalAlignment.Center;
+            right.Children.Add(save);
+
+            DockPanel.SetDock(right, Dock.Right);
+            foot.Children.Add(right);
+
+            return Deck("clash", "manage", Bench.Split(null, rail, board, foot, 372));
+        }
+
+        // -----------------------------------------------------------------------------------
+        // Region 1 — the test finder
+        // -----------------------------------------------------------------------------------
+
+        private static UIElement Rail(bool panel)
+        {
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var tools = new StackPanel { Orientation = Orientation.Horizontal };
+
+            tools.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Sort: Most new",
+                new[] { Parts.Entry.Act("Most new", null, null) }));
+
+            // Accented, because a filter is in force and the chips that used to say so are gone.
+            var narrow = Ui.Icon(Glyphs.Filter, "Narrowed to Mechanical. Press to change it.",
+                                 () => { });
+
+            narrow.Content = Ui.Glyph(Glyphs.Filter, 15, "Accent");
+            tools.Children.Add(narrow);
+
+            var top = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(tools, Dock.Right);
+            top.Children.Add(tools);
+            top.Children.Add(Ui.Text(string.Empty, "Search tests by name or discipline", null, 150));
+
+            var head = new Border
+            {
+                Padding = new Thickness(14, 10, 14, 10),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = panel ? Ui.Stack(top, Narrowing()) : Ui.Stack(top),
+            };
+
+            head.Tint(Border.BorderBrushProperty, "Bd");
+            grid.Children.Add(head);
+
+            var rows = Ui.Stack(RailLabels());
+
+            rows.Children.Add(RailRow("L03 — Mech v Struct", "25 mm", true, 18, 42, 12, 31, 65));
+            rows.Children.Add(RailRow("L03 — Elec v Struct", "25 mm", false, 6, 11, 4, 8, 13));
+            rows.Children.Add(RailRow("L04 — Mech v Arch", "10 mm", false, 24, 61, 30, 4, 8));
+            rows.Children.Add(RailRow("Risers — All v All", "25 mm", false, 0, 0, 0, 40, 56));
+            rows.Children.Add(RailRow("B1 — Drainage v Struct", "50 mm · run Mon 08:40", false, 3, 7, 2, 1, 3));
+            rows.Children.Add(RailRow("L05 — Fire v Struct", "25 mm · run Mon 08:41", false, 0, 4, 9, 11, 20));
+
+            var list = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = rows,
+            };
+
+            Grid.SetRow(list, 1);
+            grid.Children.Add(list);
+
+            var verbs = new StackPanel { Orientation = Orientation.Horizontal };
+            verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all the tests again", () => { }));
+
+            verbs.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else you can do to tests",
+                new[] { Parts.Entry.Act("Rename this test", Glyphs.Pencil, null) }, up: true));
+
+            var bar = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(verbs, Dock.Right);
+            bar.Children.Add(verbs);
+
+            var dot = new System.Windows.Shapes.Ellipse
+            {
+                Width = 7,
+                Height = 7,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 5, 0),
+            };
+
+            dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
+
+            var held = Ui.Link("14 waiting", () => { });            // harness: data
+            held.Margin = new Thickness(0);
+            held.VerticalAlignment = VerticalAlignment.Center;
+
+            DockPanel.SetDock(dot, Dock.Right);
+            DockPanel.SetDock(held, Dock.Right);
+            bar.Children.Add(held);
+            bar.Children.Add(dot);
+
+            var say = new TextBlock
+            {
+                Text = "3 of 6 tests · 168 results, 143 loose",           // harness: data
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            bar.Children.Add(say.Wearing("Hint"));
+
+            var foot = new Border
+            {
+                Padding = new Thickness(14, 8, 14, 8),
+                BorderThickness = new Thickness(0, 1, 0, 0),
+                Child = bar,
+            };
+
+            foot.Tint(Border.BackgroundProperty, "Pane");
+            foot.Tint(Border.BorderBrushProperty, "Bd");
+
+            Grid.SetRow(foot, 2);
+            grid.Children.Add(foot);
+
+            var pane = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Child = grid };
+            pane.Tint(Border.BackgroundProperty, "Card");
+            pane.Tint(Border.BorderBrushProperty, "Bd");
+
+            return pane;
+        }
+
+        /// <summary>The rail's filter panel, which is where a filter is made and taken off.</summary>
+        private static UIElement Narrowing()
+        {
+            var body = Ui.Stack(Ui.Eyebrow("Discipline"));
+
+            var parties = new WrapPanel();
+
+            foreach (var party in new[] { "Mechanical", "Structures", "Electrical", "Architecture" })
+                parties.Children.Add(Parts.Pick(party, party == "Mechanical", () => { }));
+
+            body.Children.Add(parties);
+            body.Children.Add(Ui.Eyebrow("Folder"));
+
+            var folders = new WrapPanel();
+
+            foreach (var folder in new[] { "Week 33", "Week 32" })
+                folders.Children.Add(Parts.Pick(folder, false, () => { }));
+
+            body.Children.Add(folders);
+            body.Children.Add(Ui.Check("Only tests with something open", false, null));
+            body.Children.Add(Ui.Link("Clear all", () => { }));
+
+            var panel = new Border
+            {
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(10),
+                Margin = new Thickness(0, 8, 0, 0),
+                Child = body,
+            };
+
+            panel.Tint(Border.BackgroundProperty, "Bg");
+            panel.Tint(Border.BorderBrushProperty, "Bd");
+
+            return panel;
+        }
+
+        private static UIElement RailLabels()
+        {
+            var row = new DockPanel { LastChildFill = true };
+            var figures = new StackPanel { Orientation = Orientation.Horizontal };
+
+            foreach (var label in new[] { "New", "Active", "Rev.", "Appr.", "Res." })
+            {
+                var head = new TextBlock
+                {
+                    Text = label,
+                    MinWidth = 26,
+                    Margin = new Thickness(10, 0, 0, 0),
+                    TextAlignment = TextAlignment.Right,
+                };
+
+                figures.Children.Add(head.Wearing("Hint"));
             }
 
-            var testTools = new WrapPanel();
-            testTools.Children.Add(Ui.Small("1 picked"));
+            DockPanel.SetDock(figures, Dock.Right);
+            row.Children.Add(figures);
+            row.Children.Add(new TextBlock { Text = "Test" }.Wearing("Hint"));
 
-            foreach (var (glyph, tip) in new[]
-                     {
-                         (Glyphs.Play, "Run"), (Glyphs.Pencil, "Rename"),
-                         (Glyphs.Number, "Renumber the results"), (Glyphs.MoveIn, "Move to a folder"),
-                         (Glyphs.Compact, "Compact"), (Glyphs.Bin, "Delete"), (Glyphs.Copy, "Copy"),
-                     })
-                testTools.Children.Add(Ui.Icon(glyph, tip, () => { }));
+            var band = new Border
+            {
+                Padding = new Thickness(27, 5, 14, 5),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = row,
+            };
 
-            var resultTools = new WrapPanel();
-            resultTools.Children.Add(Ui.Small("3 picked"));
+            band.Tint(Border.BackgroundProperty, "Card2");
+            band.Tint(Border.BorderBrushProperty, "Bd");
 
-            foreach (var (glyph, tip) in new[]
-                     {
-                         (Glyphs.Focus, "Focus"), (Glyphs.Eye, "Isolate"),
-                         (Glyphs.EyeOff, "Show everything again"), (Glyphs.Tick, "Set the status"),
-                         (Glyphs.Person, "Assign"), (Glyphs.Comment, "Comment"),
-                         (Glyphs.Group, "Group"), (Glyphs.Sphere, "Marker sphere"),
-                         (Glyphs.Camera, "Snapshot"), (Glyphs.Issue, "Create an issue"),
-                         (Glyphs.Copy, "Copy"),
-                     })
-                resultTools.Children.Add(Ui.Icon(glyph, tip, () => { }));
-
-            var left = Bench.Pane("Tests", Ui.Small("160 tests, 18,844 results"),
-                Ui.Table(TestRows(), ("Test", 200), ("Folder", 80), ("Results", 65),
-                         ("New · active · closed", 0)),
-                testTools);
-
-            var right = Bench.Pane("Results", Ui.Small("of 1 picked test — 218 shown"),
-                Ui.Table(ResultRows(), ("Result", 110), ("Status", 70), ("Worst", 65),
-                         ("Assigned", 85), ("Item 1", 110), ("Item 2", 0)),
-                resultTools);
-
-            var foot = new WrapPanel();
-            foot.Children.Add(Ui.Runner("Read the results", Ui.Stack(), _ => { }));
-            foot.Children.Add(new Border { Width = 14 });
-
-            foreach (var (glyph, tip) in new[]
-                     {
-                         (Glyphs.Read, "Source"), (Glyphs.Filter, "Filters"),
-                         (Glyphs.Columns, "Columns and grouping"),
-                         (Glyphs.Person, "Status and assignment"), (Glyphs.Sphere, "Markers"),
-                         (Glyphs.Round, "The review round"),
-                         (Glyphs.Onward, "Walk the board, one clash at a time"),
-                     })
-                foot.Children.Add(Ui.Icon(glyph, tip, () => { }));
-
-            return Deck("clash", "manage", Bench.Split(strip, left, right, foot));
+            return band;
         }
 
-        private static IEnumerable<TableRow> ResultRows()
+        private static UIElement RailRow(string name, string hint, bool on,
+                                         int fresh, int active, int reviewed, int approved,
+                                         int closed)
         {
-            yield return new TableRow(null, "Clash119", "Active", "315 mm", "Mechanical", "Basic Wall", "BOX 300x200x8") { Tone = Tone.Warn };
-            yield return new TableRow(null, "Clash120", "New", "300 mm", "—", "Basic Wall", "BOX 200x200x8") { Tone = Tone.Bad };
-            yield return new TableRow(null, "Clash121", "Reviewed", "250 mm", "Structures", "HANDRAIL", "UB 305x165");
-            yield return new TableRow(null, "Clash122", "Approved", "222 mm", "Structures", "Concrete-Rectangular-Beam", "Duct 600x400") { Tone = Tone.Good };
+            var title = new TextBlock
+            {
+                Text = name,                                        // harness: data
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            var under = new TextBlock
+            {
+                Text = hint,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+                Margin = new Thickness(0, 1, 0, 0),
+            };
+
+            var row = new DockPanel { LastChildFill = true };
+
+            var band = Parts.CountBand(new[] { fresh, active, reviewed, approved, closed },
+                                       fresh + active == 0);
+
+            DockPanel.SetDock(band, Dock.Right);
+            row.Children.Add(band);
+            row.Children.Add(Ui.Stack(title.Wearing("Body"), under.Wearing("Hint")));
+
+            var tone = new Border
+            {
+                Padding = new Thickness(12, 8, 14, 8),
+                BorderThickness = new Thickness(3, 0, 0, 0),
+                Child = row,
+            };
+
+            tone.BorderBrush = on ? Skin.Of("Accent")
+                : fresh > 0 ? Skin.Of("RedTx")
+                : fresh + active > 0 ? Skin.Of("AmberTx")
+                : Skin.Of("Ok");
+
+            var line = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Child = tone };
+            line.Tint(Border.BorderBrushProperty, "Bd");
+
+            if (on) line.Tint(Border.BackgroundProperty, "NavActive");
+
+            return line;
         }
 
-        private static IEnumerable<TableRow> TestRows()
+        // -----------------------------------------------------------------------------------
+        // Region 2 and 3 — the board, and the bar for what is picked
+        // -----------------------------------------------------------------------------------
+
+        private static UIElement Board()
         {
-            yield return new TableRow(null, "ARC vs STR", "Week 33", "218", "Yesterday");
-            yield return new TableRow(null, "ARC vs MEP", "Week 33", "604", "Yesterday");
-            yield return new TableRow(null, "STR vs MEP", "Week 33", "462", "Yesterday");
-            yield return new TableRow(null, "MEP vs MEP", "", "—", "never run") { Tone = Tone.Warn };
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var head = new Border
+            {
+                Padding = new Thickness(16, 10, 16, 0),
+                Child = Ui.Stack(BoardTitle(), BoardStrip()),
+            };
+
+            grid.Children.Add(head);
+
+            var body = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Padding = new Thickness(16, 10, 16, 16),
+                Content = BoardTable(),
+            };
+
+            Grid.SetRow(body, 1);
+            grid.Children.Add(body);
+
+            var bar = Parts.SelectionBar(3, "row", () => { },
+                Parts.InlineChip(null, new[] { "New", "Active" }, _ => { }, Tone.Plain, "Set status"),
+                Parts.InlineChip(null, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign to"),
+                Parts.Verb("Group", Glyphs.Group, true, () => { }),
+                Parts.Verb("Raise as issues", Glyphs.Issue, false, () => { }),
+                Parts.MoreMenu(Glyphs.More, "Everything else for the picked rows",
+                    new[] { Parts.Entry.Act("Focus all of them", Glyphs.Focus, null) }, up: true));
+
+            Grid.SetRow(bar, 2);
+            grid.Children.Add(bar);
+
+            var ground = new Border { Child = grid };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            return ground;
+        }
+
+        private static UIElement BoardTitle()
+        {
+            var row = new DockPanel { LastChildFill = true };
+
+            var verbs = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test again", () => { }));
+            verbs.Children.Add(Ui.Icon(Glyphs.Read, "Walk the board one clash at a time", () => { }));
+            verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows", () => { }));
+
+            var layers = Parts.MoreMenu(Glyphs.Layers,
+                "Showing sharing an item with Pipe CHW-31 and Wall PC-200. Press to change it.",
+                new[]
+                {
+                    Parts.Entry.Heading("Show: Both"),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Heading("Sharing an item with Pipe CHW-31 and Wall PC-200"),
+                    Parts.Entry.Act("Every clash again, not just these", Glyphs.Close, null),
+                });
+
+            verbs.Children.Add(layers);
+
+            verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance", () => { }));
+
+            DockPanel.SetDock(verbs, Dock.Right);
+            row.Children.Add(verbs);
+
+            var said = new TextBlock
+            {
+                Text = "Showing 18 of 168",                         // harness: data
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(10, 0, 10, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            var head = new TextBlock
+            {
+                Text = "L03 — Mech v Struct",                       // harness: data
+                VerticalAlignment = VerticalAlignment.Bottom,
+            };
+
+            var words = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(head, Dock.Left);
+            words.Children.Add(head.Wearing("Head"));
+            words.Children.Add(said.Wearing("Hint"));
+
+            row.Children.Add(words);
+
+            return row;
+        }
+
+        private static UIElement BoardStrip()
+        {
+            var strip = new StackPanel { Orientation = Orientation.Horizontal };
+
+            var tabs = new (string Label, int Count, string Key, bool On)[]
+            {
+                ("all", 168, "Text", false),
+                ("new", 18, "RedTx", true),
+                ("active", 42, "Text", false),
+                ("reviewed", 12, "AmberTx", false),
+                ("approved", 31, "Ok", false),
+                ("resolved", 65, "Ok", false),
+            };
+
+            for (var i = 0; i < tabs.Length; i++)
+            {
+                var tab = tabs[i];
+
+                var figure = new TextBlock
+                {
+                    Text = tab.Count.ToString(CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                };
+
+                figure.Tint(TextBlock.ForegroundProperty, tab.Key);
+
+                var label = new TextBlock
+                {
+                    Text = tab.Label,
+                    FontSize = 11,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                    Margin = new Thickness(4, 0, 0, 0),
+                };
+
+                label.Tint(TextBlock.ForegroundProperty, tab.On ? "Text" : "Faint");
+
+                var words = new StackPanel { Orientation = Orientation.Horizontal };
+                words.Children.Add(figure.Wearing("Body"));
+                words.Children.Add(label);
+
+                var segment = new Border
+                {
+                    Padding = new Thickness(8, 6, 8, tab.On ? 4 : 6),
+                    BorderThickness = new Thickness(i == 0 ? 0 : 1, 0, 0, tab.On ? 2 : 0),
+                    Child = words,
+                };
+
+                segment.Tint(Border.BorderBrushProperty, tab.On ? "Accent" : "Bd");
+                if (tab.On) segment.Tint(Border.BackgroundProperty, "AccentWash");
+
+                strip.Children.Add(segment);
+            }
+
+            var pill = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = strip,
+            };
+
+            pill.Tint(Border.BackgroundProperty, "Card");
+            pill.Tint(Border.BorderBrushProperty, "Bd");
+            pill.SetValue(UIElement.ClipToBoundsProperty, true);
+
+            var row = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 8, 0, 0) };
+
+            var find = Ui.Text(string.Empty, "Search", null, 128);
+            find.MaxWidth = 128;
+            find.VerticalAlignment = VerticalAlignment.Center;
+            find.Margin = new Thickness(0, 0, 6, 0);
+
+            DockPanel.SetDock(find, Dock.Right);
+            row.Children.Add(find);
+            row.Children.Add(pill);
+
+            return row;
+        }
+
+        /// <summary>The nine columns, in the order the surface builds them.</summary>
+        private static Grid Cells()
+        {
+            var grid = new Grid();
+
+            void Fixed(double width) =>
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width) });
+
+            void Flexible(double share, double least) =>
+                grid.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(share, GridUnitType.Star),
+                    MinWidth = least,
+                });
+
+            Fixed(26);
+            Flexible(2, 110);
+            Flexible(1, 58);
+            Flexible(1, 58);
+            Fixed(44);
+            Fixed(60);
+            Flexible(1, 60);    // one property column, as somebody's own column would be
+            Fixed(104);
+            Fixed(104);
+            Fixed(120);
+
+            return grid;
+        }
+
+        private static void Put(Grid grid, UIElement cell, int column)
+        {
+            if (cell is FrameworkElement element)
+            {
+                element.Margin = new Thickness(0, 0, 8, 0);
+                element.VerticalAlignment = VerticalAlignment.Center;
+            }
+
+            Grid.SetColumn(cell, column);
+            grid.Children.Add(cell);
+        }
+
+        /// <summary>A column header: pressable to sort, with a handle to resize it.</summary>
+        private static UIElement Head(string column, bool right, bool on)
+        {
+            var label = new TextBlock
+            {
+                Text = column,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            label.Wearing("Hint");
+            if (on) label.Tint(TextBlock.ForegroundProperty, "Accent");
+
+            var words = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var mark = on
+                ? Ui.Glyph(Glyphs.Down, 10, "Accent",
+                           right ? new Thickness(0, 0, 3, 0) : new Thickness(4, 0, 0, 0))
+                : null;
+
+            if (right && mark != null) words.Children.Add(mark);
+            words.Children.Add(label);
+            if (!right && mark != null) words.Children.Add(mark);
+
+            return new Border
+            {
+                Background = Brushes.Transparent,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = on ? "Sorted by " + column + ". Press again to turn it round."
+                             : "Sort by " + column,
+                Child = words,
+            };
+        }
+
+        private static TextBlock Hint(string text) =>
+            new TextBlock
+            {
+                Text = text,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            }.Wearing("Hint");
+
+        private static TextBlock Right(TextBlock cell)
+        {
+            cell.TextAlignment = TextAlignment.Right;
+            return cell;
+        }
+
+        private static UIElement BoardTable()
+        {
+            var body = Ui.Stack(TableHead());
+
+            body.Children.Add(GroupRow("Corridor C — duct against beams", 7, "-48 mm", true, true));
+            body.Children.Add(ClashRow("Clash 121", "Duct 400×250", "Beam 610UB", "-48 mm",
+                                       "New", Tone.Bad, "Structures", "CHW Supply", true, false));
+            body.Children.Add(ClashRow("Clash 122", "Duct 600×300", "Beam 460UB", "-31 mm",
+                                       "Active", Tone.Plain, "Mechanical", "CHW Supply", true, false));
+            body.Children.Add(GroupRow("Riser 2 — pipework against slab edge", 5, "-22 mm", false, false));
+
+            body.Children.Add(Parts.ViewBand(Glyphs.Clash, "Not grouped", "143 loose results",
+                                             "of 143 — tick two or more and press Group", () => { }));
+
+            body.Children.Add(ClashRow("Clash 208", "Pipe CHW-31", "Wall PC-200", "-52 mm",
+                                       "New", Tone.Bad, string.Empty, "CHW Return", false, true));
+            body.Children.Add(ClashRow("Clash 209", "Tray CT-9", "Bracing BR-3", "-14 mm",
+                                       "Reviewed", Tone.Warn, "Electrical", "Small Power", false, true));
+            body.Children.Add(ClashRow("Clash 210", "Sprinkler SP-88", "Slab L03", "-9 mm",
+                                       "Resolved", Tone.Good, "Fire", "Wet Riser", false, false));
+
+            var card = new Border
+            {
+                MinWidth = 772,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Child = body,
+            };
+
+            card.Tint(Border.BackgroundProperty, "Card");
+            card.Tint(Border.BorderBrushProperty, "Bd");
+            card.SetValue(UIElement.ClipToBoundsProperty, true);
+
+            var sideways = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = card,
+            };
+
+            card.SetBinding(FrameworkElement.WidthProperty,
+                            new System.Windows.Data.Binding("ViewportWidth") { Source = sideways });
+
+            return sideways;
+        }
+
+        private static UIElement TableHead()
+        {
+            var grid = Cells();
+
+            var all = new CheckBox
+            {
+                IsThreeState = true,
+                IsChecked = null,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            Put(grid, all, 0);
+            Put(grid, Head("Group or result", false, false), 1);
+            Put(grid, Head("Item 1", false, false), 2);
+            Put(grid, Head("Item 2", false, false), 3);
+            Put(grid, Head("Clashes", true, false), 4);
+            Put(grid, Head("Worst", true, true), 5);
+            Put(grid, Head("System Name", false, false), 6);
+            Put(grid, Head("Status", false, false), 7);
+            Put(grid, Head("Assigned", false, false), 8);
+
+            var band = new Border
+            {
+                Padding = new Thickness(12, 8, 12, 8),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = grid,
+            };
+
+            band.Tint(Border.BackgroundProperty, "Card2");
+            band.Tint(Border.BorderBrushProperty, "Bd");
+
+            return band;
+        }
+
+        private static UIElement GroupRow(string name, int count, string worst, bool open, bool made)
+        {
+            var grid = Cells();
+
+            Put(grid, new CheckBox { IsChecked = false, VerticalAlignment = VerticalAlignment.Center }, 0);
+
+            var words = new StackPanel { Orientation = Orientation.Horizontal };
+            words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
+                                        new Thickness(0, 0, 7, 0)));
+
+            words.Children.Add(Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0)));
+
+            var title = new TextBlock
+            {
+                Text = name,                                        // harness: data
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            words.Children.Add(title.Wearing("Body"));
+
+            if (made) words.Children.Add(Parts.Note("grouped by you"));
+
+            Put(grid, words, 1);
+            Put(grid, Right(Hint("—")), 2);
+            Put(grid, Right(Hint("—")), 3);
+            Put(grid, Figure(count.ToString(CultureInfo.InvariantCulture), false), 4);
+            Put(grid, Figure(worst, true), 5);
+
+            Put(grid, Hint("—"), 6);
+            Put(grid, Parts.InlineChip("New", new[] { "New" }, _ => { }, Tone.Bad, "Set status"), 7);
+            Put(grid, Parts.InlineChip("Structures", new[] { "Structures" }, _ => { }, Tone.Plain, "Assign"), 8);
+            var groupVerbs = Verbs();
+            Put(grid, groupVerbs, 9);
+            groupVerbs.Margin = new Thickness(0);
+
+            var tone = new Border
+            {
+                Padding = new Thickness(12, 9, 12, 9),
+                BorderThickness = new Thickness(3, 0, 0, 0),
+                BorderBrush = Skin.Of("RedTx"),
+                Child = grid,
+            };
+
+            var line = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Child = tone };
+            line.Tint(Border.BorderBrushProperty, "Bd");
+
+            return line;
+        }
+
+        private static UIElement ClashRow(string name, string a, string b, string worst,
+                                          string status, Tone tone, string who, string system,
+                                          bool inside, bool picked)
+        {
+            var grid = Cells();
+
+            Put(grid, new CheckBox { IsChecked = picked, VerticalAlignment = VerticalAlignment.Center }, 0);
+
+            var title = new TextBlock
+            {
+                Text = name,                                        // harness: data
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+                Margin = new Thickness(inside ? 22 : 0, 0, 8, 0),
+            };
+
+            title.Wearing("Mono");
+            title.Tint(TextBlock.ForegroundProperty, "Faint");
+            Grid.SetColumn(title, 1);
+            grid.Children.Add(title);
+
+            Put(grid, Item(a), 2);
+            Put(grid, Item(b), 3);
+
+            Put(grid, Right(Hint("—")), 4);
+            Put(grid, Figure(worst, worst.StartsWith("-4", StringComparison.Ordinal)
+                                    || worst.StartsWith("-5", StringComparison.Ordinal)), 5);
+
+            Put(grid, Item(system), 6);
+            Put(grid, Parts.InlineChip(status, new[] { status }, _ => { }, tone, "Set status"), 7);
+            Put(grid, Parts.InlineChip(who, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign"), 8);
+
+            var verbs = Verbs();
+            verbs.Visibility = picked ? Visibility.Visible : Visibility.Hidden;
+            Put(grid, verbs, 9);
+            verbs.Margin = new Thickness(0);
+
+            var edge = status == "New" ? Skin.Of("RedTx")
+                : status == "Reviewed" ? Skin.Of("AmberTx")
+                : status == "Resolved" ? Skin.Of("Ok")
+                : Brushes.Transparent;
+
+            var toned = new Border
+            {
+                Padding = new Thickness(12, inside ? 7 : 9, 12, inside ? 7 : 9),
+                BorderThickness = new Thickness(inside ? 0 : 3, 0, 0, 0),
+                BorderBrush = inside ? Brushes.Transparent : edge,
+                Child = grid,
+            };
+
+            var line = new Border { BorderThickness = new Thickness(0, 0, 0, 1), Child = toned };
+            line.Tint(Border.BorderBrushProperty, "Bd");
+
+            if (picked) line.Tint(Border.BackgroundProperty, "NavActive");
+            else if (inside) line.Tint(Border.BackgroundProperty, "Card2");
+
+            return line;
+        }
+
+        private static TextBlock Item(string name) =>
+            new TextBlock
+            {
+                Text = name,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+            }.Wearing("Lbl");
+
+        private static FrameworkElement Verbs()
+        {
+            var bar = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+
+            bar.Children.Add(Ui.Icon(Glyphs.Focus, "Focus this clash", () => { }));
+            bar.Children.Add(Ui.Icon(Glyphs.Eye, "Isolate this clash", () => { }));
+            bar.Children.Add(Ui.Icon(Glyphs.Comment, "Comment", () => { }));
+
+            bar.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else for this clash",
+                new[]
+                {
+                    Parts.Entry.Act("Snapshot", Glyphs.Camera, null),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Act("Find other clashes with these items", Glyphs.Find, null),
+                }));
+
+            foreach (var verb in bar.Children.OfType<FrameworkElement>())
+                verb.Margin = new Thickness(2, 2, 2, 2);
+
+            return bar;
+        }
+
+        private static TextBlock Figure(string text, bool bad)
+        {
+            var cell = new TextBlock { Text = text, TextAlignment = TextAlignment.Right };
+            cell.Wearing("Body");
+            cell.Tint(TextBlock.ForegroundProperty, bad ? "RedTx" : "Muted");
+            return cell;
         }
 
         // -----------------------------------------------------------------------------------
@@ -509,5 +1227,6 @@ namespace CamelWorks.Studio
             frame.SetResourceReference(Border.BorderBrushProperty, "Bd");
             return frame;
         }
+
     }
 }
