@@ -22,11 +22,15 @@ namespace CamelWorks.Installer;
 /// produce a manifest Navisworks ignores without saying why. So the payload holds every
 /// <c>*.bundle</c> folder and each is installed and removed whole.
 ///
-/// <b>What that means for somebody who already has one.</b> Installing CamelWorks replaces the
-/// Dyncamelo or exporter bundle already in ApplicationPlugins with the version CamelWorks ships.
-/// Their own Add/Remove Programs entries are left exactly alone — this installer does not touch
-/// another product's registry keys, so uninstalling CamelWorks removes the bundles it put there
-/// and leaves the neighbour's bookkeeping to the neighbour.
+/// <b>What that means for somebody who already has one.</b> Installing CamelWorks installs the
+/// Dyncamelo or exporter bundle it ships — <i>unless the one already there is newer</i>. The
+/// companions release on their own cadence, so the copy CamelWorks folded in at its build time is
+/// often older than what somebody installed directly; overwriting it would silently take working
+/// nodes away and leave graphs failing with "unresolved definition". A newer neighbour is
+/// therefore left untouched and reported, and only the bundles this installer actually wrote are
+/// removed on uninstall (recorded in <see cref="CompanionRecordName"/>). CamelWorks' own bundle is
+/// always replaced. Their Add/Remove Programs entries are left exactly alone — this installer does
+/// not touch another product's registry keys.
 /// </summary>
 public static class InstallerEngine
 {
@@ -35,14 +39,17 @@ public static class InstallerEngine
     private const string UninstallKeyPath =
         @"Software\Microsoft\Windows\CurrentVersion\Uninstall\CamelWorks";
 
-    // The bundles this installer owns: its own, plus the two it ships. Every one of them is
-    // replaced on install and removed on uninstall. Registry keys belonging to the other two
-    // products are never touched - an installer that tidied up its neighbour's bookkeeping would
-    // be a very unwelcome surprise.
+    // The bundles this installer ships: its own, plus the two companions. CamelWorks' own is
+    // always replaced; a companion is replaced only when the installed copy is not newer (see
+    // Install). Registry keys belonging to the other two products are never touched - an installer
+    // that tidied up its neighbour's bookkeeping would be a very unwelcome surprise.
     private static readonly string[] Bundles =
     {
         BundleFolderName, "Dyncamelo.bundle", "BIMCamel.bundle",
     };
+
+    /// <summary>The file inside CamelWorks' bundle listing the companion bundles it installed.</summary>
+    internal const string CompanionRecordName = "installed-companions.txt";
 
     /// <summary>Reports installer progress: 0-100 plus a status line.</summary>
     public delegate void ProgressHandler(int percent, string status);
@@ -71,9 +78,16 @@ public static class InstallerEngine
         File.Exists(Path.Combine(BundleDir, "PackageContents.xml"));
 
     /// <summary>The installed bundle version ("1.2.3.0"), or null.</summary>
-    public static string? InstalledVersion()
+    public static string? InstalledVersion() => BundleVersionIn(BundleDir);
+
+    /// <summary>
+    /// The version declared by the PackageContents.xml of the bundle folder at
+    /// <paramref name="bundleDir"/>, or null when it is absent or unreadable.
+    /// </summary>
+    /// <param name="bundleDir">A *.bundle folder, installed or staged.</param>
+    public static string? BundleVersionIn(string bundleDir)
     {
-        var manifest = Path.Combine(BundleDir, "PackageContents.xml");
+        var manifest = Path.Combine(bundleDir, "PackageContents.xml");
         if (!File.Exists(manifest))
         {
             return null;
@@ -83,13 +97,23 @@ public static class InstallerEngine
         {
             var doc = new XmlDocument();
             doc.Load(manifest);
-            return doc.DocumentElement?.GetAttribute("Version");
+            var version = doc.DocumentElement?.GetAttribute("Version");
+            return string.IsNullOrWhiteSpace(version) ? null : version;
         }
         catch (Exception ex) when (ex is XmlException || ex is IOException)
         {
             return null;
         }
     }
+
+    /// <summary>
+    /// Whether the installed bundle is strictly newer than the one in the
+    /// payload — see <see cref="BundleVersion.IsNewer"/> for the exact rule.
+    /// </summary>
+    /// <param name="installed">Version string found in ApplicationPlugins.</param>
+    /// <param name="staged">Version string of the bundle in the payload.</param>
+    public static bool IsNewer(string? installed, string? staged) =>
+        BundleVersion.IsNewer(installed, staged);
 
     /// <summary>This installer's own version, e.g. "0.6.0".</summary>
     public static string SetupVersion()
@@ -198,25 +222,60 @@ public static class InstallerEngine
                     "Please re-download CamelWorksSetup.exe from bimcamel.com.");
             }
 
+            // A companion that is already installed at a NEWER version is left alone. The
+            // companions ship on their own cadence, so the copy folded in at CamelWorks build
+            // time is regularly behind what somebody installed directly, and overwriting it
+            // would take working nodes away from graphs that already use them.
+            var keep = new List<string>();
+            var write = new List<string>();
+            foreach (var source in staged)
+            {
+                var bundle = Path.GetFileName(source);
+                if (string.Equals(bundle, BundleFolderName, StringComparison.OrdinalIgnoreCase))
+                {
+                    write.Add(source); // our own bundle is always replaced
+                    continue;
+                }
+
+                var installedVersion = BundleVersionIn(BundleDirFor(bundle));
+                var stagedVersion = BundleVersionIn(source);
+                if (IsNewer(installedVersion, stagedVersion))
+                {
+                    keep.Add(bundle);
+                    progress(85, "Keeping your newer " + FriendlyName(bundle) + " " + installedVersion + ".");
+                }
+                else
+                {
+                    write.Add(source);
+                }
+            }
+
             progress(85, "Removing previous version…");
             EvacuateSelfFromBundle();
 
             foreach (var bundle in Bundles)
             {
-                DeleteBundleDir(BundleDirFor(bundle));
+                if (!keep.Contains(bundle, StringComparer.OrdinalIgnoreCase))
+                {
+                    DeleteBundleDir(BundleDirFor(bundle));
+                }
             }
 
             progress(90, "Moving files into place…");
 
-            foreach (var source in staged)
+            foreach (var source in write)
             {
                 Directory.Move(source, BundleDirFor(Path.GetFileName(source)));
             }
 
             progress(95, "Registering uninstaller…");
             CopySelfIntoBundle();
+            RecordInstalledCompanions(write.Select(Path.GetFileName));
             RegisterUninstall();
-            progress(100, "Done.");
+            progress(100, keep.Count == 0
+                ? "Done."
+                : "Done — kept your newer " +
+                  string.Join(" and ", keep.Select(FriendlyName)) + ".");
         }
         finally
         {
@@ -238,12 +297,82 @@ public static class InstallerEngine
             key?.DeleteSubKeyTree("CamelWorks", throwOnMissingSubKey: false);
         }
 
+        // Only the bundles this installer actually wrote come out. A companion that was left
+        // alone at install time because it was newer belongs to whoever put it there.
+        var ours = ReadInstalledCompanions();
+
         EvacuateSelfFromBundle();
 
         foreach (var bundle in Bundles)
         {
-            DeleteBundleDir(BundleDirFor(bundle));
+            if (string.Equals(bundle, BundleFolderName, StringComparison.OrdinalIgnoreCase) ||
+                ours.Contains(bundle, StringComparer.OrdinalIgnoreCase))
+            {
+                DeleteBundleDir(BundleDirFor(bundle));
+            }
         }
+    }
+
+    /// <summary>The friendly product name behind a bundle folder name.</summary>
+    /// <param name="bundle">A bundle folder name, e.g. "Dyncamelo.bundle".</param>
+    internal static string FriendlyName(string bundle)
+    {
+        if (string.Equals(bundle, "Dyncamelo.bundle", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Dyncamelo";
+        }
+
+        return string.Equals(bundle, "BIMCamel.bundle", StringComparison.OrdinalIgnoreCase)
+            ? "BIMCamel IFC exporter"
+            : Path.GetFileNameWithoutExtension(bundle);
+    }
+
+    /// <summary>
+    /// Notes which companion bundles this install wrote, so uninstall removes
+    /// exactly those and leaves a newer neighbour it skipped in place.
+    /// </summary>
+    /// <param name="bundles">The bundle folder names written (CamelWorks' own is ignored).</param>
+    private static void RecordInstalledCompanions(IEnumerable<string> bundles)
+    {
+        var companions = bundles
+            .Where(b => !string.Equals(b, BundleFolderName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        try
+        {
+            File.WriteAllLines(Path.Combine(BundleDir, CompanionRecordName), companions);
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            // Losing the note only costs precision at uninstall; never fail the install for it.
+        }
+    }
+
+    /// <summary>
+    /// The companion bundles the last install wrote. An install from before this
+    /// record existed has no file, and is read as "both" so upgrading from such a
+    /// version still cleans up after itself.
+    /// </summary>
+    private static string[] ReadInstalledCompanions()
+    {
+        var record = Path.Combine(BundleDir, CompanionRecordName);
+        try
+        {
+            if (File.Exists(record))
+            {
+                return File.ReadAllLines(record)
+                    .Select(line => line.Trim())
+                    .Where(line => line.Length > 0)
+                    .ToArray();
+            }
+        }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            // Fall through to the pre-record behaviour.
+        }
+
+        return Bundles.Where(b => !string.Equals(b, BundleFolderName, StringComparison.OrdinalIgnoreCase))
+                      .ToArray();
     }
 
     // ------------------------------------------------------------- payload
