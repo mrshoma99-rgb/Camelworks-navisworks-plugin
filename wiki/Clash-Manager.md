@@ -21,72 +21,161 @@ Simulate user still works a board.
 
 ## Manage
 
-The bench you live in. **Tests on the left, the results of the picked tests on the right**, with a
+The bench you live in. A **test finder** on the left and **one board** on the right, with a
 draggable split between them.
 
 **Main action: Read the results.** Nothing runs when the tab opens — on a half-million-element
 federation that would be a misclick you cannot take back.
 
-### The strip across the top
+### Finding the test
 
-- **One search over both tables.** It matches a test's name, a result's number, an element name, a
-  status, an assignee — everything on either row. *Both / Tests / Results* says what it is
-  covering.
-- **The status ticks**, beside it, because that is the filter you change every few minutes.
+One row per test, read down the rail rather than across a table: the name, one line of hint, and
+four figures — **new, active, reviewed, resolved** — as a band on the right. The bar down the left
+edge of a row is **red** while anything on that test is new, **amber** while anything is open, and
+**green** when the test is finished. The test on the board has a blue bar and a tinted row instead,
+so "where am I" reads before "how is it".
 
-### Working the tests
+The hint line carries the test's tolerance, and the time it ran **only when that differs from when
+the rest of them ran** — there is no point repeating "run Tue 14:20" down eighteen rows. The whole
+sentence is on the row's tooltip.
 
-Each test's row carries a band reading **new · active · closed** rather than five columns of
-numbers, which leaves the width for the name.
+At the top of the rail: a **search** over names and disciplines, a **sort** (most new, most open,
+name, last run) and a **filter panel** behind the funnel — discipline chips, folder chips, *only
+tests with something open*, and *Clear all*.
 
-Verbs under the tests table: **run**, **rename**, **renumber**, **move** into a folder,
-**compact**, **delete**, **copy**.
+**A filter comes off where it went on**, in that panel. There is no row of chips above the list:
+the rail is a list of tests and a row given to saying what it is filtered to is a row of tests you
+cannot see. Instead the **funnel turns blue** while anything is narrowing the list and says what,
+in full, on hover — and the line at the foot of the rail reads *Showing 3 of 6 tests* rather than
+its usual count.
 
-### Working the results
+> The design this was built from asks for a **Level** filter. Nothing on a clash test carries a
+> level, and one guessed out of the test's name would hide tests for a reason it could not state,
+> so the chips are the clash **folder** — which is where a level goes when a coordinator files
+> their tests.
 
-Verbs under the results table: **focus** the camera, **isolate**, set **status**, **assign**,
-**comment**, **group**, **rename**, drop a **marker sphere**, take a **snapshot**,
-**raise an issue**, **copy**.
+At the foot of the rail: **run all the tests again**, **rename this test**, **compact**, and a
+menu holding renumber, move into a folder, copy the list, find duplicates across tests, and
+delete.
 
-**Focus costs nothing.** It does not look anything up: a clash result records the point where the
-two elements met, and for a single result the engine also kept the view it composed when the test
-ran — so the camera has everywhere it needs to go already. The selection comes from the two items
-the engine is still holding for that result, which is a copy rather than a search. Isolate works
-the same way, then reads the keys back off what it just selected.
+### Working the board
 
-That matters because turning a *key* back into an element — which is what a board read from
-somebody else's file leaves you with — can mean indexing every geometry leaf in the federation.
-**Read the results** pays for that inside its own progress bar, and only when the board actually
-holds keys that need it, so a federation whose elements carry GUIDs never waits at all.
+The board is the picked test's results, as **two kinds of row at the same level**.
 
-All of them work on however many rows are picked, and all of them are on right-click too.
+- A **clash group** is a real object in the test. It is saved with the test, it carries its own
+  status and comments, and it goes out with every report and BCF file. It has a chevron that opens
+  it, a group icon, a count, and the worst overlap among its members. Its Item 1 and Item 2 columns
+  show em-dashes, because a group aggregates many different pairs and has none of its own.
+- A **loose result** is a single clash in no group. Same row, with the real Item 1 and Item 2 that
+  Navisworks reports, its own overlap, and no count.
 
-### Behind the ⚙ symbols
+Loose results sit under one **Not grouped** band, always visible — never behind a tab, because
+grouping them is the job.
 
-| Symbol | What it holds |
+**Status and assignee are edited on the row.** Click the chip and pick. There is no window.
+
+**Double-click to rename** — a test in the rail or in the title, a clash group on its row. A single
+clash renames too, though the host has no rename for one result: it takes a prefix and numbers what
+is picked from it, so renaming one makes `Corridor1`. The message says so.
+
+**The columns sort and resize.** Press a header to sort by it, press again to turn it round, press a
+third time for the order the test itself holds. Drag a header's right edge to resize. The rail's
+four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, or *Test* for name
+order; the sort menu holds the same six and says which is on.
+
+**Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
+comment, and a menu with snapshot, marker sphere, raise as an issue, attach to an existing issue,
+copy, and — depending on which kind of row it is — rename or ungroup the clash group, or group it
+with what is picked and move it into an existing one.
+
+### Filtering the board
+
+The **status strip** above the table is five segments carrying the counts — *all, new, active,
+reviewed, resolved*. Clicking one filters the board to it; clicking it again clears it. That is
+the only status filter; there are no tickboxes.
+
+Beside it, a **search**. The **layers** symbol in the header above holds three more:
+
+| | |
 |---|---|
-| Source | Read from the model, or from an exported file |
-| Filters | Everything the search bar does not |
-| Columns and grouping | Property columns off either element, and a chained grouping order |
-| Status and assignment | What the status, assign and group verbs write |
-| In the model | Marker spheres, the camera and isolation |
-| The review round | The offline round trip — export as BCF, mark up, sync back |
-| Walk the board | The review window, one clash at a time |
+| **Show** | Both, grouped only, or loose only |
+| **Assigned to** | Anyone, or one party |
+| **Arrange view by** | Nothing, assignee, status, or how bad |
+
+**Arranging the view changes nothing in the model.** It draws bands across the table and
+re-orders what is on screen. No clash group is created, dissolved or touched by it — which is why
+a band looks nothing like a group row: no tick, no chevron, no colour bar. *How bad* splits on
+**this test's own tolerance**, not a fixed number, because a 50 mm drainage test and a 10 mm
+ceiling test do not share a definition of bad.
+
+**A filter comes off where it went on**, exactly as on the rail: the lit status segment clears by
+pressing it again, the search box clears by emptying it, and the layers menu sets *Both*, *Anyone*
+and *Nothing* — with **Show everything again** at the bottom of it when anything is in force. There
+is no chips row: what the board is showing is written beside the test's name as *Showing 18 of 168*,
+and the layers symbol says the rest on hover.
+
+### Grouping, on the selection bar
+
+Tick anything and the **selection bar** appears at the foot of the board. It carries one grouping
+verb, and it is the one those rows actually have:
+
+| What is ticked | What the bar offers |
+|---|---|
+| Two or more loose results | **Group** — names it and makes it |
+| Anything already in a group | **Remove from the group** |
+| One whole clash group | **Dissolve the group** |
+| Two or more whole clash groups | **Merge the groups** |
+
+A group made this way is **made in the test**, not on this screen. It is saved with the test and
+goes out with every export.
+
+The bar also sets status and assignee over everything ticked, raises issues, and holds the **same
+verbs a single row holds** — focus, isolate, show everything again, comment, snapshot, marker
+sphere, raise as an issue, attach to an existing issue, copy as columns, move into an existing
+group and suppress. One row or forty, the list is the same one.
+
+### Which columns the board shows
+
+Nine, and they are the clash: the tick, the group or result name, **Item 1**, **Item 2**, how many
+clashes, the **worst** overlap, **status**, **assigned**, and the row's verbs. Navisworks reports a
+clash as a pair of colliding items and this keeps them as two columns rather than merging them
+into one sentence.
+
+The **columns** symbol in the board's header adds the column the host does not have: a **property
+read off the clashing elements themselves** — a system name, a workset, a fire rating — which
+lands between *Worst* and *Status*.
+
+### Behind the board's header symbols
+
+| Symbol | What it does |
+|---|---|
+| Run | Run this test again |
+| Walk | The review window, one clash at a time |
+| Columns | Property columns off either element |
+| Layers | How the board is shown — grouped or loose, whose it is, how it is arranged |
+| Source | Read from the model, or from an exported file; tolerance and markers |
+
+The footer's **Export** menu holds the ways work leaves: save as a clash file, write a report,
+the board to a spreadsheet, set up the review round, and raise the board as issues.
 
 ### Save the changes, and sync them
 
-Two buttons sit beside **Read the results**, and they do different jobs.
+**Every edit on this board is already written.** Picking a status or an assignee on a row asks the
+document there and then — there is no draft to commit. What is left to save is what the document
+**refused**, which is what the footer's one blue button is for.
 
-- **Save the changes** writes what is on the board to a file. From the model that is a *baseline*;
-  from a file it is your *markup*, saved into `markups\` beside the file you opened. Either way it
-  carries statuses, assignments, whole comment trails and groups.
-- **Sync into the document** writes the changes into the model's own clash results, where the
-  native clash window and every export can see them.
+- **Save the changes** writes every held decision into the model's own clash results, where the
+  native clash window and every export can see them. When something is waiting, the button counts
+  it: *Save 14 changes into the document*.
+- **Export ▸ Save as a clash file** writes what is on the board to a file instead. From
+  the model that is a *baseline*; from a file it is your *markup*, saved into `markups\` beside the
+  file you opened. Either way it carries statuses, assignments, whole comment trails and groups.
 
-**Sync is greyed out when this document cannot take it**, and hovering it says which of the four
-reasons applies: you are marking up a file rather than the model; this Navisworks edition has no
-clash engine; the document's results will not take an edit; or — the usual one — **it is a
-published NWD**.
+**The blue button greys out when this document cannot take a write**, and hovering it says which
+of the four reasons applies: you are marking up a file rather than the model; this Navisworks
+edition has no clash engine; the document's results will not take an edit; or — the usual one —
+**it is a published NWD**. The same reason appears in the *Export* menu, where somebody goes
+looking for a way out.
 
 ### Working on a published NWD
 
@@ -95,8 +184,8 @@ it. The manager does not throw your work away when that happens.
 
 Every status, assignment, comment and regroup the document refuses is **held**: it shows on the
 board the way you left it, it survives pressing *Read the results* again, and it survives closing
-Navisworks, because it lives in the findings kept beside the document. A banner says how many are
-waiting, with **What is waiting** to list them and **Forget them** to stop offering them.
+Navisworks, because it lives in the findings kept beside the document. The footer says how many are
+waiting, in red with a dot; pressing it lists them.
 
 What is held is remembered **field by field**, not as one lump. If the document takes the status
 and refuses the comment, only the comment is still waiting — so a sync never writes the status
@@ -109,9 +198,10 @@ that moved still updates.
 
 There are two ways out:
 
-- **Save the changes** puts them in the clash file, which is what carries them into the NWF.
-- Open the **NWF** the models were federated in and press **Sync into the document**. Everything
-  held goes in at once, and the count on the button tells you how much is waiting.
+- **Export ▸ Save as a clash file** puts them in the clash file, which is what carries them into
+  the NWF.
+- Open the **NWF** the models were federated in and press **Save the changes**. Everything held
+  goes in at once, and the count on the button tells you how much is waiting.
 
 ### The clash file
 

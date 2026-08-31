@@ -49,7 +49,6 @@ namespace CamelWorks.UI.Views
         // are how somebody set their bench up, and a bench that resets when glanced away from
         // is a bench nobody trusts with a long afternoon.
         private static readonly List<PropColumn> _columns = new List<PropColumn>();
-        private static readonly List<string> _chain = new List<string>();
 
         /// <summary>
         /// The finding behind each row that was read from the model, by test and result id.
@@ -83,7 +82,6 @@ namespace CamelWorks.UI.Views
             _byHost = null;
 
             _columns.Clear();
-            _chain.Clear();
         }
 
         // -----------------------------------------------------------------------------------
@@ -144,6 +142,15 @@ namespace CamelWorks.UI.Views
 
             internal ClashTestInfo Test { get; set; }
 
+            /// <summary>
+            /// What the test's two sides and its tolerance are, read once with the results.
+            ///
+            /// Once, because the rail asks every test what it is between on every keystroke in
+            /// its search box, and <c>Sides</c> is a host call that walks the test's selection.
+            /// Reading it per redraw is a search box that stutters on a job with forty tests.
+            /// </summary>
+            internal ClashTestSides? Shape { get; set; }
+
             internal List<Row> Rows { get; } = new List<Row>();
 
             internal int Of(string status) =>
@@ -200,72 +207,102 @@ namespace CamelWorks.UI.Views
         {
             private readonly Session _session;
 
-            private readonly StackPanel _tests = Ui.Stack();
-            private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _log = Ui.Stack();
             private readonly StackPanel _headline = Ui.Stack();
             private readonly StackPanel _sync = Ui.Stack();
 
-            private readonly TextBox _find;
-            private readonly TextBox _comment;
-            private readonly TextBox _group;
-            private readonly TextBox _renameTest;
-            private readonly TextBox _renameResults;
-            private readonly TextBox _folder;
+            // The two halves of the tab, redrawn independently: picking a test redraws the board
+            // and leaves the rail alone, and a write redraws both because it moved a count.
+            private readonly StackPanel _board = Ui.Stack();
+
             private readonly TextBox _path;
             private readonly TextBox _markups;
-            private readonly ComboBox _assign;
 
-            private readonly HashSet<string> _show =
-                new HashSet<string>(Statuses, StringComparer.OrdinalIgnoreCase);
-
-            private string _mark = "Reviewed";
-            private bool _hideEmpty;
-            private bool _onlyCommented;
             private double _markerAcross = 300;
 
-            private readonly HashSet<string> _pickedTests = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            /// <summary>What the results grid currently shows, for the spreadsheet writer.</summary>
+            /// <summary>What the board currently shows, for the spreadsheet writer.</summary>
             private List<Row> _shown = new List<Row>();
 
-            private readonly StackPanel _groups = Ui.Stack();
             private readonly StackPanel _columnList = Ui.Stack();
-            private readonly StackPanel _chainList = Ui.Stack();
             private readonly StackPanel _fill = Ui.Stack();
-            private readonly HashSet<string> _pickedGroups = new HashSet<string>(StringComparer.Ordinal);
 
             private string _newTab = string.Empty;
             private string _newProp = string.Empty;
             private string _newSide = BothSides;
-            private string _chainAdd = string.Empty;
 
-            private readonly TextBox _filter;
-            private readonly StackPanel _filterScope = Ui.Stack();
-            private string _filterIn = AnyColumn;
+            // ---- The rail: which test, and how the list of them is narrowed ----
 
-            // The bench: two panes, each with its own live line and its own row of symbols.
-            private readonly TextBlock _testsSay = Ui.Small(string.Empty);
-            private readonly TextBlock _resultsSay = Ui.Small(string.Empty);
-            private readonly TextBlock _testsPicked = Ui.Tally("none picked");
-            private readonly TextBlock _resultsPicked = Ui.Tally("none picked");
-            private readonly WrapPanel _testVerbs = new WrapPanel();
-            private readonly WrapPanel _resultVerbs = new WrapPanel();
-            private readonly List<System.Windows.Controls.Button> _testButtons =
-                new List<System.Windows.Controls.Button>();
-            private readonly List<System.Windows.Controls.Button> _resultButtons =
-                new List<System.Windows.Controls.Button>();
+            private string? _current;
+            private string _railFind = string.Empty;
+            private string _sort = MostNew;
+            private bool _panel;
 
-            private ListView? _testsTable;
-            private ListView? _resultsTable;
+            private readonly HashSet<string> _byParty =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            private string _searchIn = Both;
+            private readonly HashSet<string> _byFolder =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            private const string Both = "Both";
-            private const string JustTests = "Tests";
-            private const string JustResults = "Results";
+            private bool _openOnly;
 
-            private const string AnyColumn = "Any column";
+            // ---- The board: how the picked test's results are narrowed and arranged ----
+            //
+            // Every one of these is reset when the current test changes. A filter left over from
+            // the last test is a board that says "nothing matches" about a test somebody has not
+            // filtered, and the only clue is a chip they did not put there.
+
+            private string? _status;
+            private string? _party;
+            private string _boardFind = string.Empty;
+            private string _arrange = ByNothing;
+            private string _showing = BothKinds;
+
+            /// <summary>
+            /// The clash whose two items the board is narrowed to, or null.
+            ///
+            /// Not a status or a party but the same kind of thing: a narrowing, held with them,
+            /// cleared with them, and reset the moment another test is picked.
+            /// </summary>
+            private Row? _sameAs;
+
+            /// <summary>
+            /// The property columns the board is narrowed by, column id to the value wanted.
+            ///
+            /// A dictionary rather than one field, because the columns are somebody's own — two
+            /// of them narrowing at once (System Name "CHW", Workset "L03 MEP") is the question a
+            /// custom column exists to be able to ask.
+            /// </summary>
+            private readonly Dictionary<string, string> _byColumn =
+                new Dictionary<string, string>(StringComparer.Ordinal);
+
+            private readonly HashSet<string> _open = new HashSet<string>(StringComparer.Ordinal);
+            private readonly HashSet<string> _picked = new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>Groups made on this board in this session, by name, for the "grouped by you" pill.</summary>
+            private readonly HashSet<string> _made = new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>Where a prompt opens from, which has to be something long-lived on screen.</summary>
+            private readonly Border _anchor = new Border();
+
+            private const string MostNew = "Most new";
+            private const string MostOpen = "Most open";
+            private const string ByName = "Name";
+            private const string LastRun = "Last run";
+            private const string MostReviewed = "Most reviewed";
+            private const string MostApproved = "Most approved";
+            private const string MostClosed = "Most resolved";
+
+            private const string BothKinds = "Both";
+            private const string JustGrouped = "Grouped";
+            private const string JustLoose = "Loose";
+
+            private const string ByNothing = "Nothing";
+            private const string ByAssignee = "Assignee";
+            private const string ByStatus = "Status";
+            private const string ByHowBad = "How bad";
+
+            private const string Anyone = "Anyone";
+            private const string Nobody = "—";
 
             private const string FirstSide = "First item";
             private const string SecondSide = "Second item";
@@ -278,27 +315,69 @@ namespace CamelWorks.UI.Views
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
 
-                _find = Ui.Text(string.Empty, "test, result, item, assignee or comment", null, 260);
-                _filter = Ui.Text(string.Empty, null, 150);
-                _filter.TextChanged += (s, e) => RedrawGroups();
-                _comment = Ui.Text(string.Empty, null, 170);
-                _group = Ui.Text(string.Empty, null, 170);
-                _renameTest = Ui.Text(string.Empty, null, 170);
-                _renameResults = Ui.Text(string.Empty, null, 170);
-                _folder = Ui.Text(string.Empty, null, 170);
                 _path = Ui.Text(_file?.Path ?? string.Empty, null, 190);
                 _markups = Ui.Text(string.Empty, null, 190);
-                _assign = Suggesting(Assignees());
-                _find.TextChanged += (s, e) => Redraw();
+
+                // Both search boxes are built here and placed once. Rebuilding a text box inside
+                // the handler for its own keystroke takes the caret out of it, which is a search
+                // that accepts one letter at a time.
+                _railBox = Ui.Text(string.Empty, "Search tests by name or discipline", text =>
+                {
+                    _railFind = text;
+                    RedrawRail();
+                }, 150);
+
+                _boardBox = Ui.Text(string.Empty, "Search", text =>
+                {
+                    _boardFind = text;
+                    RedrawRows();
+                }, 128);
+
+                _boardBox.MaxWidth = 128;
+                _boardBox.VerticalAlignment = VerticalAlignment.Center;
+                _boardBox.Margin = new Thickness(0, 0, 6, 0);
             }
+
+            private readonly TextBox _railBox;
+            private readonly TextBox _boardBox;
 
             private bool OnFile => _source == FromFile;
 
+            /// <summary>
+            /// The tab: a test finder on the left, one board on the right, one footer under both.
+            ///
+            /// <b>What this replaced.</b> Two tables side by side with seventeen always-visible
+            /// symbols under them, and the two facts a coordinator changes every minute — a
+            /// result's status and who it is with — behind a window opened by one of those
+            /// symbols. The symbols were greyed rather than hidden, which is the wall of buttons
+            /// that read as pressed rather than off.
+            ///
+            /// So: the rail finds the test, the board works it, and a verb appears when there is
+            /// something for it to act on and not before.
+            /// </summary>
             internal UIElement Build()
             {
                 // One caption for both sources: the results are what gets read either way, and
                 // the tool registry promises this exact action.
-                var read = Ui.Runner("Read the results", _log, Read);
+                var already = Current() != null;
+
+                // "Read the results" is the promise the tool registry makes and the right words
+                // on an empty board. Once the board is full it is the wrong question — somebody
+                // looking at 168 results does not need telling to fetch them — so it becomes what
+                // pressing it again is actually for.
+                // Two calls rather than one with a ternary in its caption slot, so each caption
+                // is a literal the harness check can hold a picture to.
+                var read = already
+                    ? Ui.Runner("Read again", _log, Read, primary: false)
+                    : Ui.Runner("Read the results", _log, Read, primary: false);
+
+                read.ToolTip = already
+                    ? "Reads every test and result out of the document again. Worth pressing "
+                      + "after somebody runs a test in Navisworks' own clash window, or when the "
+                      + "board might have moved under you — nothing on this screen goes stale on "
+                      + "its own."
+                    : "Pulls every test and every result out of the document, with status, "
+                      + "assignee, comments and grouping.";
 
                 if (Current() == null)
                 {
@@ -308,8 +387,8 @@ namespace CamelWorks.UI.Views
                               + "works on the file's own results, and the markup saves beside it "
                               + "for whoever runs the sync."
                             : "Reading pulls every test and every result out of the document, with "
-                              + "status, assignee, comments and grouping — tests on the left, "
-                              + "their results on the right.",
+                              + "status, assignee, comments and grouping — the tests down the rail "
+                              + "on the left, the picked test's results on the board.",
                         OnFile
                             ? "This is the review round: the file came from a Manage seat, and "
                               + "your saved markup goes back into the model when they sync."
@@ -322,249 +401,2302 @@ namespace CamelWorks.UI.Views
                             + "open the exported file, mark it up, save the markup. "
                             + (_session.ClashProblem ?? string.Empty)));
                 }
-                else
-                {
-                    Redraw();
-                }
 
-                var left = Bench.Pane("Tests", _testsSay,
-                                      Ui.Stack(_headline, _tests),
-                                      TestTools());
+                Redraw();
 
-                var right = Bench.Pane("Results", _resultsSay,
-                                       Ui.Stack(_groups, _results),
-                                       ResultTools());
+                var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth);
 
-                return Bench.Split(Strip(), left, right, Foot(read));
+                // After the footer, not before: the button it arms is built in there, and arming
+                // a button that does not exist yet is how it came up saying "Save the changes"
+                // on a published NWD that cannot take one.
+                ArmSync();
+
+                return tab;
             }
 
+            /// <summary>How wide the test finder starts.</summary>
+            private const double RailWidth = 372;
+
             // -------------------------------------------------------------------------------
-            // The strip: what somebody touches every minute
+            // Region 1 — the test finder
+            //
+            // One row per test, read down rather than across: a name, one line of hint, and the
+            // four figures as a band. Eighteen tests in a table meant five numeric columns and
+            // the name squeezed into what was left, which is the wrong way round — the name is
+            // the long part and the numbers are the glance.
             // -------------------------------------------------------------------------------
+
+            private readonly StackPanel _rows = Ui.Stack();
+            private readonly Border _railFoot = new Border();
+            private readonly StackPanel _railTools = new StackPanel { Orientation = Orientation.Horizontal };
+            private readonly Border _railPanel = new Border();
+
+            /// <summary>The rail, as one pane: head, rows, footer.</summary>
+            private UIElement Rail()
+            {
+                var grid = new Grid();
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 0) };
+
+                DockPanel.SetDock(_railTools, Dock.Right);
+                top.Children.Add(_railTools);
+                top.Children.Add(_railBox);
+
+                var head = new Border
+                {
+                    Padding = new Thickness(14, 10, 14, 10),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = Ui.Stack(top, _railPanel),
+                };
+
+                head.Tint(Border.BorderBrushProperty, "Bd");
+                grid.Children.Add(head);
+
+                var list = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = _rows,
+                };
+
+                Grid.SetRow(list, 1);
+                grid.Children.Add(list);
+
+                Grid.SetRow(_railFoot, 2);
+                grid.Children.Add(_railFoot);
+
+                var pane = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 1, 0),
+                    Child = grid,
+                };
+
+                pane.Tint(Border.BackgroundProperty, "Card");
+                pane.Tint(Border.BorderBrushProperty, "Bd");
+
+                return pane;
+            }
 
             /// <summary>
-            /// One search over both tables, what it covers, and the status ticks.
+            /// The rail's head: sort, the filter panel, and the chips in force.
             ///
-            /// The old search matched a test's name and nothing else, which is why typing a result
-            /// number or an element name found nothing and the box read as broken. This one runs
-            /// over both tables and says which it is running over.
+            /// The search box itself is never rebuilt. It is a field, placed once, because a
+            /// box that is replaced on the keystroke that changed it is a box the caret leaves
+            /// after one letter — and this one narrows as you type.
             /// </summary>
-            private UIElement Strip()
+            private void RedrawRail()
             {
-                var scope = Ui.Segmented(new[] { Both, JustTests, JustResults }, _searchIn, pick =>
+                var read = Current();
+
+                _railTools.Children.Clear();
+
+                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Sort: " + _sort,
+                    new[]
+                        {
+                            MostNew, MostOpen, MostReviewed, MostApproved, MostClosed,
+                            ByName, LastRun,
+                        }
+                        .Select(o => Parts.Entry.Act(o, null, () => { _sort = o; RedrawRail(); }))
+                        .ToList()));
+
+                var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
                 {
-                    _searchIn = pick;
-                    Redraw();
+                    _panel = !_panel;
+                    RedrawRail();
                 });
 
-                var ticks = new WrapPanel();
+                // The funnel says whether it is doing anything. With the chips gone this is the
+                // only thing on the closed rail that does, and a list quietly hiding half its
+                // tests with nothing on screen admitting it is the fault the chips were for.
+                if (Narrowed) narrow.Content = Ui.Glyph(Glyphs.Filter, 15, "Accent");
 
-                foreach (var status in Statuses)
+                _railTools.Children.Add(narrow);
+
+                _railPanel.Child = _panel ? Narrowing(read) : null;
+
+                RedrawRailList();
+                RedrawRailFoot();
+            }
+
+            /// <summary>Whether anything is narrowing the rail.</summary>
+            private bool Narrowed =>
+                _byParty.Count > 0 || _byFolder.Count > 0 || _openOnly || _railFind.Trim().Length > 0;
+
+            /// <summary>What the funnel says it is doing, in full, on hover.</summary>
+            private string WhatIsNarrowed()
+            {
+                if (!Narrowed) return "Narrow the list";
+
+                var said = new List<string>();
+
+                if (_byParty.Count > 0) said.Add(string.Join(", ", _byParty));
+                if (_byFolder.Count > 0) said.Add(string.Join(", ", _byFolder));
+                if (_openOnly) said.Add("only tests with something open");
+                if (_railFind.Trim().Length > 0) said.Add("matching " + Quoted(_railFind.Trim()));
+
+                return "Narrowed to " + string.Join(" · ", said) + ". Press to change it.";
+            }
+
+            /// <summary>
+            /// The rail's filter panel: the disciplines and folders this read actually holds.
+            ///
+            /// The design asks for Level here. Nothing in a clash test carries one, and a level
+            /// guessed out of a test's name is a filter that hides tests for a reason it cannot
+            /// state. The folder a test was filed in is the grouping the host does carry, and it
+            /// is where coordinators put the level, so the chips are values rather than inferences.
+            /// </summary>
+            /// <param name="read">Everything read, or null before the first read.</param>
+            private UIElement Narrowing(List<TestEntry>? read)
+            {
+                var body = Ui.Stack();
+
+                body.Children.Add(Ui.Eyebrow("Discipline"));
+
+                var parties = new WrapPanel();
+
+                foreach (var party in Trades(read))
                 {
-                    var here = status;
+                    var here = party;
 
-                    ticks.Children.Add(new Border { Width = 10 });
-                    ticks.Children.Add(Ui.Check(here, _show.Contains(here), on =>
+                    parties.Children.Add(Parts.Pick(here, _byParty.Contains(here), () =>
                     {
-                        if (on) _show.Add(here); else _show.Remove(here);
-                        RedrawGroups();
+                        if (!_byParty.Remove(here)) _byParty.Add(here);
+                        RedrawRail();
                     }));
                 }
 
-                var row = new WrapPanel();
+                body.Children.Add(parties);
 
-                row.Children.Add(Ui.Icon(Glyphs.Find, "Search both tables", () => _find.Focus()));
-                row.Children.Add(Ui.Loose(_find));
-                row.Children.Add(new Border { Width = 8 });
-                row.Children.Add(scope);
-                row.Children.Add(new Border { Width = 16 });
-                row.Children.Add(ticks);
+                var folders = Folders(read);
 
-                return row;
-            }
-
-            /// <summary>The action row: read, then the windows where everything else lives.</summary>
-            private UIElement Foot(UIElement read)
-            {
-                var row = new WrapPanel();
-
-                // The three sit on one line, so they sit on one line properly: the runner's own
-                // gap above is for a runner stacked under a form and would drop it below its
-                // neighbours here, and their two button styles are different heights, so centres
-                // are what they are aligned on rather than tops.
-                if (read is FrameworkElement placed)
+                if (folders.Count > 0)
                 {
-                    placed.Margin = new Thickness(0);
-                    placed.VerticalAlignment = VerticalAlignment.Center;
+                    body.Children.Add(Ui.Eyebrow("Folder"));
+
+                    var chips = new WrapPanel();
+
+                    foreach (var folder in folders)
+                    {
+                        var here = folder;
+
+                        chips.Children.Add(Parts.Pick(here, _byFolder.Contains(here), () =>
+                        {
+                            if (!_byFolder.Remove(here)) _byFolder.Add(here);
+                            RedrawRail();
+                        }));
+                    }
+
+                    body.Children.Add(chips);
                 }
 
-                row.Children.Add(read);
-                row.Children.Add(new Border { Width = 8 });
-
-                _saveButton = Ui.Quiet("Save the changes", SaveChanges);
-                row.Children.Add(Middled(_saveButton));
-                row.Children.Add(new Border { Width = 6 });
-
-                _syncButton = Ui.Quiet("Sync into the document", Sync);
-                row.Children.Add(Middled(_syncButton));
-
-                ArmSync();
-
-                row.Children.Add(new Border { Width = 14 });
-
-                void Add(string glyph, string tip, string section)
+                body.Children.Add(Ui.Check("Only tests with something open", _openOnly, on =>
                 {
-                    row.Children.Add(Middled(Ui.Icon(glyph, tip, () => Configure(section))));
+                    _openOnly = on;
+                    RedrawRail();
+                }));
+
+                // Where the filters are made is where they come off. The chips that used to do
+                // this sat in a row of their own above the list, which is a row of tests.
+                if (Narrowed)
+                    body.Children.Add(Ui.Link("Clear all", () =>
+                    {
+                        _byParty.Clear();
+                        _byFolder.Clear();
+                        _openOnly = false;
+                        _railBox.Text = string.Empty;
+                        RedrawRail();
+                    }));
+
+                var panel = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(9),
+                    Padding = new Thickness(10),
+                    Margin = new Thickness(0, 8, 0, 0),
+                    Child = body,
+                };
+
+                panel.Tint(Border.BackgroundProperty, "Bg");
+                panel.Tint(Border.BorderBrushProperty, "Bd");
+
+                return panel;
+            }
+
+            /// <summary>The column labels over the rail's rows.</summary>
+            private UIElement RailLabels()
+            {
+                var row = new DockPanel { LastChildFill = true };
+
+                var figures = new StackPanel { Orientation = Orientation.Horizontal };
+
+                // Each figure's label is the order it stands for. The sort menu holds the same
+                // six and says which is on; these are the one-press way to the four that are
+                // already on screen as columns.
+                var orders = new[]
+                {
+                    ("New", MostNew), ("Active", MostOpen), ("Rev.", MostReviewed),
+                    ("Appr.", MostApproved), ("Res.", MostClosed),
+                };
+
+                foreach (var (label, order) in orders)
+                {
+                    var here = order;
+
+                    var head = new TextBlock
+                    {
+                        Text = label,
+                        TextAlignment = TextAlignment.Right,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                    head.Wearing("Hint");
+                    if (_sort == here) head.Tint(TextBlock.ForegroundProperty, "Accent");
+
+                    var press = new Border
+                    {
+                        MinWidth = 26,
+                        Margin = new Thickness(10, 0, 0, 0),
+                        Background = System.Windows.Media.Brushes.Transparent,
+                        Cursor = System.Windows.Input.Cursors.Hand,
+                        ToolTip = _sort == here ? "Sorted by " + here.ToLowerInvariant()
+                                                : "Sort by " + here.ToLowerInvariant(),
+                        Child = head,
+                    };
+
+                    press.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                    {
+                        _sort = here;
+                        RedrawRail();
+                    });
+
+                    figures.Children.Add(press);
                 }
 
-                Add(Glyphs.Read, "Source — the model, or a file to mark up", "source");
-                Add(Glyphs.Filter, "Filters", "filters");
-                Add(Glyphs.Columns, "Columns and grouping", "columns");
-                Add(Glyphs.Person, "What the status, assign and group verbs write", "verbs");
-                Add(Glyphs.Sphere, "Markers and the view", "model");
-                Add(Glyphs.Round, "The review round", "round");
+                DockPanel.SetDock(figures, Dock.Right);
+                row.Children.Add(figures);
 
-                // Review walks the board one clash at a time in its own window. A navigation, not
-                // a setting, so it is a symbol here rather than a text button inside a page.
-                row.Children.Add(Middled(Ui.Icon(Glyphs.Onward,
-                                                 "Walk the board, one clash at a time",
-                                                 () => Ui.Told(ReviewWindow.Show()))));
+                var name = new TextBlock { Text = "Test", VerticalAlignment = VerticalAlignment.Center };
+                name.Wearing("Hint");
+                if (_sort == ByName) name.Tint(TextBlock.ForegroundProperty, "Accent");
 
-                // The one that opens all of them, for somebody who does not know which symbol
-                // holds the thing they are after.
-                row.Children.Add(Middled(Ui.Icon(Glyphs.Tune, "All of the above, in one window",
-                                                 Everything)));
+                var byName = new Border
+                {
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = _sort == ByName ? "Sorted by name" : "Sort by name",
+                    Child = name,
+                };
 
-                row.Children.Add(new Border { Width = 14 });
-                row.Children.Add(_log);
+                byName.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    _sort = ByName;
+                    RedrawRail();
+                });
 
-                return row;
+                row.Children.Add(byName);
+
+                var band = new Border
+                {
+                    Padding = new Thickness(27, 5, 14, 5),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = row,
+                };
+
+                band.Tint(Border.BackgroundProperty, "Card2");
+                band.Tint(Border.BorderBrushProperty, "Bd");
+
+                return band;
             }
 
-            /// <summary>On the line's middle, which is where a row of unequal heights agrees.</summary>
-            /// <param name="element">What to place.</param>
-            private static T Middled<T>(T element) where T : FrameworkElement
+            /// <summary>The rows: one test each, in the order the sort asks for.</summary>
+            private void RedrawRailList()
             {
-                element.VerticalAlignment = VerticalAlignment.Center;
-                return element;
+                _rows.Children.Clear();
+                _rows.Children.Add(RailLabels());
+
+                var shown = Shown();
+
+                if (shown.Count == 0)
+                {
+                    _rows.Children.Add(new Border
+                    {
+                        Padding = new Thickness(14),
+                        Child = Current() == null
+                            ? Ui.Empty("Nothing has been read yet.",
+                                       "Press \"Read the results\" on the footer, and the tests "
+                                       + "land here.")
+                            : Ui.Empty("No test matches this.",
+                                       "Take a chip off above and the list comes back."),
+                    });
+
+                    return;
+                }
+
+                // Which run time most of them share, so a row can stay quiet about the ones that
+                // ran with everything else and call out only the one that did not.
+                var common = shown
+                    .GroupBy(When, StringComparer.Ordinal)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Key)
+                    .FirstOrDefault() ?? string.Empty;
+
+                foreach (var entry in shown) _rows.Children.Add(RailRow(entry, common));
             }
 
-            /// <summary>The verbs under the tests table.</summary>
-            private UIElement TestTools()
+            /// <summary>One test, as a row of the rail.</summary>
+            /// <param name="entry">The test.</param>
+            /// <param name="common">The run time most tests share, which goes unsaid.</param>
+            private UIElement RailRow(TestEntry entry, string common)
             {
-                _testVerbs.Children.Clear();
+                var on = string.Equals(entry.Test.Id, _current, StringComparison.OrdinalIgnoreCase);
+                var open = entry.Of("New") + entry.Of("Active");
 
-                var bar = _testVerbs;
+                var name = new TextBlock
+                {
+                    Text = entry.Test.Name,
+                    FontWeight = FontWeights.SemiBold,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                };
 
-                bar.Children.Add(_testsPicked);
+                var when = When(entry);
+
+                var hint = new TextBlock
+                {
+                    Text = Tolerance(entry)
+                           + (when.Length == 0 || when == common ? string.Empty : " · run " + when),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Margin = new Thickness(0, 1, 0, 0),
+                };
+
+                var words = Ui.Stack(name.Wearing("Body"), hint.Wearing("Hint"));
+
+                var row = new DockPanel { LastChildFill = true };
+
+                var band = Parts.CountBand(
+                    new[]
+                    {
+                        entry.Of("New"), entry.Of("Active"), entry.Of("Reviewed"),
+                        entry.Of("Approved"), entry.Of("Resolved"),
+                    },
+                    open == 0);
+
+                DockPanel.SetDock(band, Dock.Right);
+                row.Children.Add(band);
+                row.Children.Add(words);
+
+                var tone = new Border
+                {
+                    Padding = new Thickness(12, 8, 14, 8),
+                    BorderThickness = new Thickness(3, 0, 0, 0),
+                    Child = row,
+                };
+
+                var line = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = entry.Test.Name + " — " + Sides(entry) + ", hard clash at "
+                              + Tolerance(entry)
+                              + (when.Length == 0 ? string.Empty : ", run " + when),
+                    Child = tone,
+                };
+
+                line.Tint(Border.BorderBrushProperty, "Bd");
+
+                // The tone bar down the left edge: red while anything is new, amber while
+                // anything is open, green when the test is finished — and the accent when it is
+                // the one on the board, because "where am I" beats "how is it" on that one row.
+                tone.BorderBrush = on ? Skin.Of("Accent")
+                    : entry.Of("New") > 0 ? Skin.Of("RedTx")
+                    : open > 0 ? Skin.Of("AmberTx")
+                    : Skin.Of("Ok");
+
+                if (on) line.Tint(Border.BackgroundProperty, "NavActive");
+                else line.Background = System.Windows.Media.Brushes.Transparent;
+
+                line.MouseLeftButtonUp += (s, e) => Ui.Safely(() => Pick(entry.Test.Id));
+
+                if (!OnFile)
+                    line.MouseLeftButtonDown += (s, e) =>
+                    {
+                        if (e.ClickCount != 2) return;
+
+                        e.Handled = true;
+
+                        Prompt("Rename this test", entry.Test.Name, "Rename",
+                               renamed => RenameTest(entry, renamed));
+                    };
+
+                // The same verbs the rail's symbol holds, on the row they act on. Right-clicking
+                // a test that is not the one on the board picks it first, so the menu and the
+                // board are never talking about different tests.
+                line.ContextMenu = Parts.Context(() => TestMenu(entry),
+                                                 () => Pick(entry.Test.Id));
+
+                return line;
+            }
+
+            /// <summary>Put a test on the board, and forget everything set on the last one.</summary>
+            /// <param name="testId">Which test.</param>
+            private void Pick(string testId)
+            {
+                if (string.Equals(testId, _current, StringComparison.OrdinalIgnoreCase)) return;
+
+                _current = testId;
+
+                // Nothing carries over. A filter left from the last test is a board saying
+                // "nothing matches" about a test nobody filtered, with a chip they did not set.
+                _status = null;
+                _party = null;
+                _arrange = ByNothing;
+                _showing = BothKinds;
+                _sameAs = null;
+                _byColumn.Clear();
+                _open.Clear();
+                _picked.Clear();
+                _made.Clear();
+
+                // The box, not the field behind it: clearing the field alone leaves the last
+                // test's search showing over a board it is no longer filtering.
+                _boardBox.Text = string.Empty;
+
+                RedrawRailList();
+                RedrawBoard();
+            }
+
+            /// <summary>The rail's footer: what the list adds up to, and the verbs on a test.</summary>
+            /// <summary>
+            /// Everything one test offers, behind the rail's symbol and on its right button alike.
+            ///
+            /// Every line here is a host operation the seam actually carries — run, rename,
+            /// renumber, move, compact, delete. None of them is a finding, because none of them
+            /// is a decision about a clash: they are things done to the test itself, and a
+            /// document that will not take them has nothing to hold on their behalf.
+            /// </summary>
+            /// <param name="entry">The test the verbs act on, or null when none is picked.</param>
+            private List<Parts.Entry> TestMenu(TestEntry? entry)
+            {
+                var read = Current() ?? new List<TestEntry>();
+
+                if (OnFile)
+                    return new List<Parts.Entry>
+                    {
+                        Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
+                    };
+
+                return new List<Parts.Entry>
+                {
+                    Parts.Entry.Act("Run this test again", Glyphs.Play,
+                                    () => RunTests(One(entry), _log)),
+                    Parts.Entry.Act("Rename this test", Glyphs.Pencil,
+                        () => Prompt("Rename this test", entry?.Test.Name ?? string.Empty,
+                                     "Rename", name => RenameTest(entry, name))),
+                    Parts.Entry.Act("Renumber the results", Glyphs.Number,
+                        () => Prompt("Renumber the results", string.Empty, "Renumber",
+                                     prefix => RenameResults(One(entry), prefix, _log))),
+                    Parts.Entry.Act("Move into a folder", Glyphs.MoveIn,
+                        () => Prompt("Move into a folder", entry?.Test.Folder ?? string.Empty,
+                                     "Move", folder => MoveTests(One(entry), folder, _log))),
+                    Parts.Entry.Act("Compact — drop what is finished", Glyphs.Compact,
+                                    () => CompactTests(One(entry), _log)),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Act("Find duplicates across tests", Glyphs.Compact, Duplicates),
+                    Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Danger("Delete this test", Glyphs.Bin,
+                                       () => DeleteTests(One(entry), _log)),
+                };
+            }
+
+            private void RedrawRailFoot()
+            {
+                var read = Current() ?? new List<TestEntry>();
+                var entry = Entry();
+
+                var row = new DockPanel { LastChildFill = true };
+
+                var verbs = new StackPanel { Orientation = Orientation.Horizontal };
 
                 if (!OnFile)
                 {
-                    bar.Children.Add(Verb(Glyphs.Play, "Run", RunTests, _testButtons));
-                    bar.Children.Add(Verb(Glyphs.Pencil, "Rename", RenameTests, _testButtons));
-                    bar.Children.Add(Verb(Glyphs.Number, "Renumber the results", RenameResults, _testButtons));
-                    bar.Children.Add(Verb(Glyphs.MoveIn, "Move to a folder", MoveTests, _testButtons));
-                    bar.Children.Add(Verb(Glyphs.Compact, "Compact — drop resolved from storage",
-                                          CompactTests, _testButtons));
-                    bar.Children.Add(Verb(Glyphs.Bin, "Delete", DeleteTests, _testButtons));
+                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all the tests again",
+                        () => RunTests(read.Cast<object>().ToList(), _log)));
+
+                    verbs.Children.Add(Parts.MoreMenu(Glyphs.More,
+                        "Everything else you can do to tests", TestMenu(entry), up: true));
+                }
+                else
+                {
+                    verbs.Children.Add(Ui.Icon(Glyphs.Copy, "Copy the list", () => CopyTests(read)));
                 }
 
-                bar.Children.Add(Verb(Glyphs.Copy, "Copy", CopyTests, _testButtons));
+                DockPanel.SetDock(verbs, Dock.Right);
+                row.Children.Add(verbs);
 
-                return bar;
+                // The edits this document would not take, for the test on the board. Kept a
+                // link because it is the one fact here somebody acts on, and kept per-test
+                // because "14 waiting" over eighteen tests never said which one to open.
+                var waiting = OnFile || entry == null
+                    ? 0
+                    : Waiting.Count(f => string.Equals(f.Rule, entry.Test.Name,
+                                                       StringComparison.OrdinalIgnoreCase));
+
+                if (waiting > 0)
+                {
+                    var dot = new System.Windows.Shapes.Ellipse
+                    {
+                        Width = 7,
+                        Height = 7,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(8, 0, 5, 0),
+                    };
+
+                    dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
+
+                    var held = Ui.Link(Skin.Num(waiting) + " waiting", ShowHeld);
+                    held.Margin = new Thickness(0);
+                    held.VerticalAlignment = VerticalAlignment.Center;
+                    held.ToolTip = Ui.Count(waiting, "edit") + " on this test that the document "
+                                   + "would not take. Press to see them.";
+
+                    DockPanel.SetDock(dot, Dock.Right);
+                    DockPanel.SetDock(held, Dock.Right);
+                    row.Children.Add(held);
+                    row.Children.Add(dot);
+                }
+
+                var shown = Shown().Count;
+
+                var tests = read.Count == 0
+                    ? "Nothing read yet."
+                    : shown < read.Count
+                        ? shown + " of " + Ui.Count(read.Count, "test")
+                        : Ui.Count(read.Count, "test");
+
+                // What the selected test holds, under the list it was selected from. The grouped
+                // and loose split is the one number the board cannot show from its own rows,
+                // because the board is filtered and this is not.
+                var about = entry == null
+                    ? string.Empty
+                    : " · " + Skin.Num(entry.Rows.Count) + " results, "
+                      + Skin.Num(entry.Rows.Count(r => r.Group.Length == 0)) + " loose";
+
+                var say = new TextBlock
+                {
+                    Text = tests + about,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    ToolTip = entry == null ? null : entry.Test.Name + " — " + about.Substring(3),
+                };
+
+                row.Children.Add(say.Wearing("Hint"));
+
+                _railFoot.Padding = new Thickness(14, 8, 14, 8);
+                _railFoot.BorderThickness = new Thickness(0, 1, 0, 0);
+                _railFoot.Child = row;
+                _railFoot.Tint(Border.BackgroundProperty, "Pane");
+                _railFoot.Tint(Border.BorderBrushProperty, "Bd");
             }
 
-            /// <summary>The verbs under the results table.</summary>
-            private UIElement ResultTools()
+            private List<TestEntry>? Current() => OnFile ? _file?.Entries : _read;
+
+            // -------------------------------------------------------------------------------
+            // Region 2 — the board
+            //
+            // Two kinds of row at the same level, and the whole screen is built to keep them
+            // apart.
+            //
+            // A CLASH GROUP is a real thing in the test: saved, exported, carrying its own status
+            // and assignee, and changed only by grouping and ungrouping. ARRANGING THE VIEW is a
+            // way of looking at the same rows — it draws bands and touches nothing. Somebody who
+            // believes arranging by assignee regrouped their board will hand a report to the wrong
+            // party, so a band looks nothing like a group row: no tick, no chevron, no tone bar.
+            // -------------------------------------------------------------------------------
+
+            /// <summary>One row of the board: a clash group, or a single loose result.</summary>
+            private sealed class BoardRow
             {
-                _resultVerbs.Children.Clear();
-
-                var bar = _resultVerbs;
-
-                bar.Children.Add(_resultsPicked);
-
-                bar.Children.Add(Verb(Glyphs.Focus, "Focus", Focus, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Eye, "Isolate", Isolate, _resultButtons));
-                bar.Children.Add(Ui.Icon(Glyphs.EyeOff, "Show everything again", () =>
+                internal BoardRow(string id, string name, bool group, List<Row> rows)
                 {
-                    _session.View.ShowAll();
-                    Said(Ui.Done("Everything is visible again."));
+                    Id = id;
+                    Name = name;
+                    IsGroup = group;
+                    Rows = rows;
+                }
+
+                /// <summary>What picking and expanding key off — a group's name, or a result's id.</summary>
+                internal string Id { get; }
+
+                internal string Name { get; }
+
+                internal bool IsGroup { get; }
+
+                /// <summary>The clashes: every member for a group, and itself for a loose result.</summary>
+                internal List<Row> Rows { get; }
+
+                /// <summary>The one result behind a loose row.</summary>
+                internal Row Only => Rows[0];
+
+                /// <summary>
+                /// The status the row reads as.
+                ///
+                /// A group's members can disagree, and the worst of them is what the row says:
+                /// a group showing "Resolved" because four of its five are is how an unresolved
+                /// conflict leaves the board green and ends up in the building.
+                /// </summary>
+                internal string Status =>
+                    Rows.OrderBy(r => Rank(r.Status)).Select(r => r.Status).FirstOrDefault() ?? "New";
+
+                /// <summary>Who it is with, or empty when its members disagree.</summary>
+                internal string Assigned
+                {
+                    get
+                    {
+                        var names = Rows.Select(r => r.Assigned)
+                                        .Where(a => a.Length > 0)
+                                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                                        .Take(2)
+                                        .ToList();
+
+                        return names.Count == 1 ? names[0] : string.Empty;
+                    }
+                }
+
+                /// <summary>Where a status sits in the promote-only lattice, worst first.</summary>
+                /// <param name="status">The status.</param>
+                private static int Rank(string status) => status switch
+                {
+                    "New" => 0,
+                    "Active" => 1,
+                    "Reviewed" => 2,
+                    "Approved" => 3,
+                    _ => 4,
+                };
+            }
+
+            private readonly StackPanel _title = Ui.Stack();
+            private readonly DockPanel _tabs = new DockPanel
+            {
+                LastChildFill = true,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+
+            private readonly ContentControl _strip = new ContentControl();
+            private readonly ContentControl _view = new ContentControl
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            private readonly Border _bar = new Border();
+
+            /// <summary>The board, as one pane: head, table, and the bar for what is picked.</summary>
+            private UIElement BoardPane()
+            {
+                var grid = new Grid();
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                var head = new Border
+                {
+                    Padding = new Thickness(16, 10, 16, 0),
+                    Child = Ui.Stack(_anchor, _toast, _headline, _title, _tabs),
+                };
+
+                grid.Children.Add(head);
+
+                var body = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Padding = new Thickness(16, 10, 16, 16),
+                    Content = _board,
+                };
+
+                Grid.SetRow(body, 1);
+                grid.Children.Add(body);
+
+                Grid.SetRow(_bar, 2);
+                grid.Children.Add(_bar);
+
+                var ground = new Border { Child = grid };
+                ground.Tint(Border.BackgroundProperty, "Bg");
+
+                return ground;
+            }
+
+            /// <summary>Everything on the right-hand side, from the title down to the footnote.</summary>
+            private void RedrawBoard()
+            {
+                _title.Children.Clear();
+
+                var entry = Entry();
+
+                if (entry == null)
+                {
+                    _tabs.Children.Clear();
+                    _board.Children.Clear();
+
+                    if (Current() != null)
+                        _board.Children.Add(Ui.Empty("No test is on the board.",
+                            "Pick one on the left, and its results land here."));
+
+                    RedrawSelection();
+                    return;
+                }
+
+                _toleranceMm = ToleranceMm(entry);
+
+                _title.Children.Add(Title(entry));
+
+                if (_tabs.Children.Count == 0)
+                {
+                    // Built once. The strip is refilled in place and the search box beside it is
+                    // never touched — see the constructor.
+                    DockPanel.SetDock(_strip, Dock.Left);
+                    DockPanel.SetDock(_boardBox, Dock.Right);
+                    _tabs.Children.Add(_boardBox);
+                    _tabs.Children.Add(_strip);
+                }
+
+                _strip.Content = Strip(entry);
+
+                _view.Content = Parts.MoreMenu(Glyphs.Layers, WhatIsShown(entry),
+                                               ViewMenu(entry));
+
+                RedrawRows();
+            }
+
+            /// <summary>
+            /// The rows, the chips over them and the bar under them — everything a keystroke or a
+            /// tick moves, and nothing it does not.
+            /// </summary>
+            private void RedrawRows()
+            {
+                _board.Children.Clear();
+
+                var entry = Entry();
+
+                if (entry == null)
+                {
+                    RedrawSelection();
+                    return;
+                }
+
+                var groups = Sorted(GroupRows(entry));
+                var loose = Sorted(LooseRows(entry));
+
+                _shown = groups.SelectMany(g => g.Rows).Concat(loose.Select(r => r.Only)).ToList();
+
+                _board.Children.Add(Table(entry, groups, loose));
+
+                RedrawSelection();
+            }
+
+            /// <summary>The test, what it found, and the four verbs over the whole board.</summary>
+            /// <param name="entry">The test on the board.</param>
+            private UIElement Title(TestEntry entry)
+            {
+                var row = new DockPanel { LastChildFill = true };
+
+                var verbs = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                if (!OnFile)
+                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test again",
+                        () => RunTests(One(entry), _log)));
+
+                verbs.Children.Add(Ui.Icon(Glyphs.Read, "Walk the board one clash at a time",
+                    () => Ui.Told(ReviewWindow.Show())));
+
+                verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows",
+                    () => Configure("columns")));
+
+                // Up here with the rest of the controls that open something, rather than beside
+                // the search box where it read as a button that did something to the board.
+                verbs.Children.Add(_view);
+
+                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
+                    () => Configure("source")));
+
+                DockPanel.SetDock(verbs, Dock.Right);
+                row.Children.Add(verbs);
+
+                var total = entry.Rows.Count;
+                var count = Counted(entry);
+
+                var said = new TextBlock
+                {
+                    Text = count == total
+                        ? Ui.Count(total, "result")
+                        : "Showing " + Skin.Num(count) + " of " + Skin.Num(total),
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                    Margin = new Thickness(10, 0, 10, 0),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                };
+
+                var head = new TextBlock
+                {
+                    Text = entry.Test.Name,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+
+                    // The sentence that used to sit beside it: what the test is between, what it
+                    // ran at and when. None of it changes while the board is worked, so it was a
+                    // line of chrome the eye read once and then had to read past. It is on the
+                    // title's tooltip, and the place beside the title now carries the one number
+                    // that does change.
+                    ToolTip = entry.Test.Name + " — " + Sides(entry) + ", hard clash at "
+                              + Tolerance(entry)
+                              + (When(entry).Length == 0 ? string.Empty : ", run " + When(entry)),
+                };
+
+                var words = new DockPanel { LastChildFill = true };
+                DockPanel.SetDock(head, Dock.Left);
+
+                if (!OnFile)
+                {
+                    head.Cursor = System.Windows.Input.Cursors.Hand;
+
+                    head.MouseLeftButtonDown += (s, e) =>
+                    {
+                        if (e.ClickCount == 2)
+                            Prompt("Rename this test", entry.Test.Name, "Rename",
+                                   name => RenameTest(entry, name));
+                    };
+                }
+
+                words.Children.Add(head.Wearing("Head"));
+                words.Children.Add(said.Wearing("Hint"));
+
+                row.Children.Add(words);
+
+                return row;
+            }
+
+            /// <summary>
+            /// The status strip: five segments, and the only way the board is filtered by status.
+            ///
+            /// One row with the search and the view menu, and it does not wrap. Two rows of
+            /// controls over a table is the table losing a line of itself to chrome at every
+            /// window width.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private UIElement Strip(TestEntry entry)
+            {
+                var strip = new StackPanel { Orientation = Orientation.Horizontal };
+
+                var tabs = new (string Label, int Count, string Key, string? Status)[]
+                {
+                    ("all", entry.Rows.Count, "Text", null),
+                    ("new", entry.Of("New"), "RedTx", "New"),
+                    ("active", entry.Of("Active"), "Text", "Active"),
+                    ("reviewed", entry.Of("Reviewed"), "AmberTx", "Reviewed"),
+                    ("approved", entry.Of("Approved"), "Ok", "Approved"),
+                    ("resolved", entry.Of("Resolved"), "Ok", "Resolved"),
+                };
+
+                for (var i = 0; i < tabs.Length; i++)
+                {
+                    var tab = tabs[i];
+                    var on = string.Equals(_status, tab.Status, StringComparison.Ordinal);
+
+                    var figure = new TextBlock
+                    {
+                        Text = Skin.Num(tab.Count),
+                        FontWeight = FontWeights.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Bottom,
+                    };
+
+                    figure.SetValue(System.Windows.Documents.Typography.NumeralAlignmentProperty,
+                                    FontNumeralAlignment.Tabular);
+
+                    figure.Tint(TextBlock.ForegroundProperty, tab.Key);
+
+                    var label = new TextBlock
+                    {
+                        Text = tab.Label,
+                        FontSize = 11,
+                        VerticalAlignment = VerticalAlignment.Bottom,
+                        Margin = new Thickness(4, 0, 0, 0),
+                    };
+
+                    label.Tint(TextBlock.ForegroundProperty, on ? "Text" : "Faint");
+
+                    var words = new StackPanel { Orientation = Orientation.Horizontal };
+                    words.Children.Add(figure.Wearing("Body"));
+                    words.Children.Add(label);
+
+                    var segment = new Border
+                    {
+                        Padding = new Thickness(8, 6, 8, on ? 4 : 6),
+                        BorderThickness = new Thickness(i == 0 ? 0 : 1, 0, 0, on ? 2 : 0),
+                        Cursor = System.Windows.Input.Cursors.Hand,
+                        Child = words,
+                    };
+
+                    segment.Tint(Border.BorderBrushProperty, on ? "Accent" : "Bd");
+
+                    if (on) segment.Tint(Border.BackgroundProperty, "AccentWash");
+                    else segment.Background = System.Windows.Media.Brushes.Transparent;
+
+                    var status = tab.Status;
+
+                    segment.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                    {
+                        _status = on ? null : status;
+                        _picked.Clear();
+                        RedrawBoard();
+                    });
+
+                    strip.Children.Add(segment);
+                }
+
+                var pill = new Border
+                {
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(1),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = strip,
+                };
+
+                pill.Tint(Border.BackgroundProperty, "Card");
+                pill.Tint(Border.BorderBrushProperty, "Bd");
+
+                // A hard clip, or the segment washes paint over the rounded corners the strip
+                // just drew.
+                pill.SetValue(UIElement.ClipToBoundsProperty, true);
+
+                return pill;
+            }
+
+            /// <summary>What the view menu is currently doing, for the symbol that opens it.</summary>
+            /// <param name="entry">The test on the board.</param>
+            private string WhatIsShown(TestEntry entry)
+            {
+                var said = new List<string>();
+
+                if (_showing != BothKinds) said.Add(_showing.ToLowerInvariant() + " only");
+                if (_party != null) said.Add("assigned to " + _party);
+                if (_sameAs != null) said.Add("sharing an item with " + Both(_sameAs));
+
+                foreach (var narrowed in _byColumn)
+                {
+                    var column = _columns.FirstOrDefault(c => c.Id == narrowed.Key);
+                    if (column != null) said.Add(column.Title + " " + Quoted(narrowed.Value));
+                }
+                if (_arrange != ByNothing) said.Add("arranged by " + _arrange.ToLowerInvariant());
+
+                _ = entry;
+
+                return said.Count == 0
+                    ? "How this board is shown — grouped or loose, whose it is, how it is arranged"
+                    : "Showing " + string.Join(", ", said) + ". Press to change it.";
+            }
+
+            /// <summary>
+            /// One property column's section of the view menu: the values this test actually has.
+            ///
+            /// The values are read off the board rather than typed, so the menu can only offer a
+            /// narrowing that will match something. A column nobody has filled yet says so instead
+            /// of showing an empty list — the values arrive when "Read values" is pressed on the
+            /// Columns page, because reading a property off every clashing element is a walk of
+            /// the federation and not something a menu opens.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="column">The property column.</param>
+            private List<Parts.Entry> ColumnMenu(TestEntry entry, PropColumn column)
+            {
+                const int Most = 20;
+
+                var wanted = _byColumn.TryGetValue(column.Id, out var value) ? value : null;
+
+                var items = new List<Parts.Entry>
+                {
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anyone)),
+                };
+
+                var values = entry.Rows
+                    .Select(r => Custom(r, column))
+                    .Where(v => v.Length > 0)
+                    .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(g => g.Count())
+                    .Select(g => g.Key)
+                    .ToList();
+
+                if (values.Count == 0)
+                {
+                    items.Add(Parts.Entry.Barred("Nothing read into this column yet", null,
+                        "Press \"Read values\" on the Columns page. It reads the property off "
+                        + "every clashing element, which is a walk of the federation."));
+
+                    return items;
+                }
+
+                items.Add(Parts.Entry.Act(Anyone, null, () =>
+                {
+                    _byColumn.Remove(column.Id);
+                    _picked.Clear();
+                    RedrawBoard();
                 }));
 
-                bar.Children.Add(Verb(Glyphs.Tick, "Set the status", Mark, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Person, "Assign", AssignPicked, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Comment, "Comment", CommentPicked, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Group, "Group", GroupPicked, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Number, "Rename", RenamePickedResults, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Sphere, "Marker sphere", Spheres, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Camera, "Snapshot", Snapshots, _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Issue, "Create an issue",
-                                      (picked, say) => RaiseIssue(picked, false), _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Link, "Attach to an issue", AttachToIssue,
-                                      _resultButtons));
-                bar.Children.Add(Verb(Glyphs.Copy, "Copy", CopyResults, _resultButtons));
+                // The commonest first, then capped and put back in reading order. A column over a
+                // real federation carries two hundred distinct values, and a menu that long is a
+                // list nobody reaches the end of — the search box matches these columns too.
+                foreach (var one in values.Take(Most).OrderBy(v => v, StringComparer.CurrentCulture))
+                {
+                    var here = one;
 
-                // Two verbs over the whole grid rather than over what is picked, which is why
-                // they are plain symbols and not greyed with the rest. They were text buttons on
-                // a settings page behind a symbol, which is three presses and a wrong shape: a
-                // verb is a verb and belongs on the bar over the thing it acts on.
-                bar.Children.Add(Ui.Icon(Glyphs.Compact, "Find duplicates — the same conflict "
-                                         + "reported by two tests", Duplicates));
+                    items.Add(Parts.Entry.Act(here, null, () =>
+                    {
+                        _byColumn[column.Id] = here;
+                        _picked.Clear();
+                        RedrawBoard();
+                    }));
+                }
 
-                bar.Children.Add(Ui.Icon(Glyphs.Table, "The grid to a spreadsheet, exactly as it "
-                                         + "is filtered", Sheet));
+                if (values.Count > Most)
+                    items.Add(Parts.Entry.Barred(
+                        Skin.Num(values.Count - Most) + " more values", null,
+                        "The twenty commonest are listed. Type one into the search box for the "
+                        + "rest — it matches these columns too."));
+
+                return items;
+            }
+
+            /// <summary>What is behind the board's one view menu: show, assigned to, arrange by.</summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<Parts.Entry> ViewMenu(TestEntry entry)
+            {
+                var items = new List<Parts.Entry> { Parts.Entry.Heading("Show: " + _showing) };
+
+                foreach (var kind in new[] { BothKinds, JustGrouped, JustLoose })
+                {
+                    var here = kind;
+
+                    items.Add(Parts.Entry.Act(here, null, () =>
+                    {
+                        _showing = here;
+                        _picked.Clear();
+                        RedrawBoard();
+                    }));
+                }
+
+                if (_sameAs != null)
+                {
+                    items.Add(Parts.Entry.Rule());
+                    items.Add(Parts.Entry.Heading("Sharing an item with " + Both(_sameAs)));
+
+                    items.Add(Parts.Entry.Act("Every clash again, not just these", Glyphs.Close,
+                        () =>
+                        {
+                            _sameAs = null;
+                            RedrawBoard();
+                        }));
+                }
+
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Assigned to: " + (_party ?? Anyone)));
+
+                foreach (var who in new[] { Anyone }.Concat(Assignees(entry)))
+                {
+                    var here = who;
+
+                    items.Add(Parts.Entry.Act(here, null, () =>
+                    {
+                        _party = here == Anyone ? null : here;
+                        _picked.Clear();
+                        RedrawBoard();
+                    }));
+                }
+
+                foreach (var column in _columns) items.AddRange(ColumnMenu(entry, column));
+
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Arrange view by: " + _arrange));
+
+                foreach (var by in new[] { ByNothing, ByAssignee, ByStatus, ByHowBad })
+                {
+                    var here = by;
+
+                    items.Add(Parts.Entry.Act(here, null, () =>
+                    {
+                        _arrange = here;
+                        RedrawBoard();
+
+                        Said(Ui.Done(here == ByNothing
+                            ? "Back to the board's own order."
+                            : "Arranged the view by " + here.ToLowerInvariant()
+                              + ". No clash group was touched."));
+                    }));
+                }
+
+                // Where the narrowing is set is where it comes off, including the two set
+                // elsewhere: the status segment above and the text in the search box.
+                if (Filtering)
+                {
+                    items.Add(Parts.Entry.Rule());
+
+                    items.Add(Parts.Entry.Act("Show everything again", Glyphs.EyeOff, () =>
+                    {
+                        _status = null;
+                        _party = null;
+                        _showing = BothKinds;
+                        _arrange = ByNothing;
+                        _sameAs = null;
+                        _byColumn.Clear();
+                        _boardBox.Text = string.Empty;
+                        RedrawBoard();
+                    }));
+                }
+
+                return items;
+            }
+
+            // -------------------------------------------------------------------------------
+            // The table
+            // -------------------------------------------------------------------------------
+
+            /// <summary>One row's worth of columns, in the order the header names them.</summary>
+            private Grid Cells()
+            {
+                var grid = new Grid();
+
+                void Fixed(double width) =>
+                    grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width) });
+
+                void Flexible(double share, double least) =>
+                    grid.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(share, GridUnitType.Star),
+                        MinWidth = least,
+                    });
+
+                Fixed(26);
+
+                // The name takes twice what either item does, and all three give ground before
+                // the table starts scrolling sideways.
+                //
+                // The design fixes Item 1 and Item 2 at 118 apiece and lets only the name flex,
+                // which adds up to 862 — wider than the board is at the window's own default
+                // size. The picture that came back was a table scrolled off its own status and
+                // assignee columns, which are the two things this screen was rebuilt to put on
+                // the row. Horizontal scroll is meant to be the last resort here, not the
+                // resting state.
+                // The three that give ground give more of it once there are property columns to
+                // make room for. One custom column at the window's own width is the difference
+                // between a board that fits and a board scrolled off its row verbs, and a column
+                // somebody added on purpose should not cost them the verbs.
+                var tight = _columns.Count > 0;
+
+                Flexible(Wide(Named, 2), tight ? 110 : 130);
+                Flexible(Wide(ItemA, 1), tight ? 58 : 74);
+                Flexible(Wide(ItemB, 1), tight ? 58 : 74);
+
+                Fixed(Wide(Clashes, tight ? 44 : 48));
+                Fixed(Wide(Worst, tight ? 60 : 64));
+
+                // The property columns land between Worst and Status, where the eye is already
+                // reading facts about the elements rather than decisions about them.
+                // Flexible, like the name and the two items, and for the same reason: a fixed
+                // width adds itself to the table, and a table that grows by 95 pixels every time
+                // somebody adds a column is a table that scrolls sideways off its own row verbs
+                // on the second one. A property column takes a share of what there is and
+                // ellipsises, with the whole value on the cell's tooltip.
+                foreach (var column in _columns) Flexible(Wide(column.Title, 1), 60);
+
+                Fixed(Wide(Status, 104));
+                Fixed(Wide(Assigned, 104));
+
+                // Four row buttons, at the tighter margin the bar below sets on them. The
+                // design's 92 holds three and cuts the fourth, which in the picture read as a
+                // row that had lost its Focus verb.
+                Fixed(120);
+
+                return grid;
+            }
+
+            /// <summary>Put one cell in a row.</summary>
+            /// <param name="grid">The row.</param>
+            /// <param name="cell">What goes in it.</param>
+            /// <param name="column">Which column.</param>
+            private static void Put(Grid grid, UIElement cell, int column)
+            {
+                if (cell is FrameworkElement element)
+                {
+                    element.Margin = new Thickness(0, 0, 8, 0);
+                    element.VerticalAlignment = VerticalAlignment.Center;
+                }
+
+                Grid.SetColumn(cell, column);
+                grid.Children.Add(cell);
+            }
+
+            /// <summary>Where Status, Assigned and the verbs sit once the custom columns are in.</summary>
+            private int StatusColumn => 6 + _columns.Count;
+
+            // ---- The columns, and what somebody has done to them ----
+
+            // Short enough to survive the column it labels. "Clash group or loose result" is what
+            // the design writes, and at the board's own width it came out cut mid-word, which
+            // reads as a bug rather than as a long label.
+            private const string Named = "Group or result";
+            private const string ItemA = "Item 1";
+            private const string ItemB = "Item 2";
+            private const string Clashes = "Clashes";
+            private const string Worst = "Worst";
+            private const string Status = "Status";
+            private const string Assigned = "Assigned";
+
+            /// <summary>
+            /// How wide each column is: a share for the three that flex, pixels for the rest.
+            ///
+            /// Held here rather than written into <see cref="Cells"/> because a table whose
+            /// columns cannot be dragged is a table that is the wrong shape for somebody — the
+            /// names are long on one job and the assignees are long on the next.
+            /// </summary>
+            private readonly Dictionary<string, double> _wide =
+                new Dictionary<string, double>(StringComparer.Ordinal)
+                {
+                    { Named, 2 }, { ItemA, 1 }, { ItemB, 1 },
+                    { Clashes, 48 }, { Worst, 64 }, { Status, 104 }, { Assigned, 104 },
+                };
+
+            /// <summary>
+            /// How wide a column is: what was dragged, or what it starts at.
+            ///
+            /// Through a lookup rather than an indexer because a property column is somebody's
+            /// own — it did not exist when this table was written and it will not be there
+            /// tomorrow, so it has no entry until the first time it is dragged.
+            /// </summary>
+            /// <param name="column">The column.</param>
+            /// <param name="starting">Its width, or its share, before anybody moved it.</param>
+            private double Wide(string column, double starting) =>
+                _wide.TryGetValue(column, out var was) ? was : starting;
+
+            /// <summary>Which column the board is sorted by, or null for the board's own order.</summary>
+            private string? _by;
+
+            /// <summary>Whether the sort runs the other way.</summary>
+            private bool _back;
+
+            /// <summary>Sort by a column, or turn it round when it is already the one.</summary>
+            /// <param name="column">Which column.</param>
+            private void SortBy(string column)
+            {
+                if (string.Equals(_by, column, StringComparison.Ordinal))
+                {
+                    // Third press puts it back the way the test holds it. A sort with no way off
+                    // is a board somebody has to reload to see in its own order again.
+                    if (_back) { _by = null; _back = false; }
+                    else _back = true;
+                }
+                else
+                {
+                    _by = column;
+                    _back = false;
+                }
+
+                RedrawRows();
+            }
+
+            /// <summary>The rows in whatever order the column headers ask for.</summary>
+            /// <param name="rows">The rows.</param>
+            private List<BoardRow> Sorted(List<BoardRow> rows)
+            {
+                if (_by == null) return rows;
+
+                var sorted = rows.OrderBy(Key, StringComparer.CurrentCulture).ToList();
+
+                if (_back) sorted.Reverse();
+
+                return sorted;
+            }
+
+            /// <summary>What one row sorts on, for the column in force.</summary>
+            /// <param name="row">The row.</param>
+            private string Key(BoardRow row)
+            {
+                switch (_by)
+                {
+                    case ItemA: return row.IsGroup ? string.Empty : row.Only.Info.NameA ?? string.Empty;
+                    case ItemB: return row.IsGroup ? string.Empty : row.Only.Info.NameB ?? string.Empty;
+                    case Status: return row.Status;
+                    case Assigned: return row.Assigned;
+
+                    // Numbers, ordered as numbers. Sorting "-9 mm" against "-48 mm" as text puts
+                    // the shallower one first, which is the wrong end of the board entirely.
+                    case Clashes: return Ordered(row.IsGroup ? row.Rows.Count : 0);
+                    case Worst: return Ordered((int)(Deep(row) ?? 0));
+
+                    default:
+                        // A property column, sorted on the value it read. A group takes its
+                        // first member's, which is the only answer available: the column is a
+                        // fact about an element and a group is many of them.
+                        var column = _columns.FirstOrDefault(
+                            c => string.Equals(c.Title, _by, StringComparison.Ordinal));
+
+                        return column != null ? Custom(row.Rows[0], column) : row.Name;
+                }
+            }
+
+            /// <summary>A number as text that sorts like a number, negatives included.</summary>
+            /// <param name="value">The number.</param>
+            private static string Ordered(int value) =>
+                (value + 1000000000L).ToString("D10", CultureInfo.InvariantCulture);
+
+            /// <summary>The whole table: the header, the rows or the bands, inside one card.</summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="groups">The clash groups the filters left.</param>
+            /// <param name="loose">The loose results the filters left.</param>
+            private UIElement Table(TestEntry entry, List<BoardRow> groups, List<BoardRow> loose)
+            {
+                var body = Ui.Stack(Header(groups, loose));
+
+                if (groups.Count == 0 && loose.Count == 0)
+                {
+                    body.Children.Add(new Border
+                    {
+                        Padding = new Thickness(16),
+                        Child = Filtering
+                            ? Ui.Empty("Nothing on this board matches what you are showing.",
+                                       "Take a chip off above and the rows come back.")
+                            : Ui.Empty("Nothing on this board matches what you are showing.",
+                                       "This test found nothing at " + Tolerance(entry) + "."),
+                    });
+                }
+                else if (_arrange != ByNothing)
+                {
+                    foreach (var band in Bands(entry, groups, loose))
+                    {
+                        body.Children.Add(Parts.ViewBand(Glyphs.Columns, "View · " + _arrange,
+                            band.Key, Ui.Count(band.Value.Count, "row"),
+                            () => PickAll(band.Value)));
+
+                        foreach (var row in band.Value) body.Children.Add(Line(row));
+                    }
+                }
+                else
+                {
+                    foreach (var group in groups) body.Children.Add(Line(group));
+
+                    if (loose.Count > 0)
+                    {
+                        var total = All(entry).Count(r => r.Group.Length == 0);
+
+                        // Never behind a tab. Grouping the loose results is the job, so the rows
+                        // it is done to have to be on screen without anybody finding them first.
+                        body.Children.Add(Parts.ViewBand(Glyphs.Clash, "Not grouped",
+                            Ui.Count(loose.Count, "loose result"),
+                            "of " + Skin.Num(total) + " — tick two or more and press Group",
+                            () => PickAll(loose)));
+
+                        foreach (var row in loose) body.Children.Add(Line(row));
+                    }
+                }
+
+                var card = new Border
+                {
+                    // The columns' own floors, plus the 12 of padding either side of a row.
+                    // Left out, the card came up two dozen pixels narrower than its contents and
+                    // the last column lost a symbol off its right-hand end.
+                    MinWidth = (_columns.Count == 0 ? 744 : 686 + (_columns.Count * 60)) + 26,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(10),
+                    Child = body,
+                };
+
+                card.Tint(Border.BackgroundProperty, "Card");
+                card.Tint(Border.BorderBrushProperty, "Bd");
+                card.SetValue(UIElement.ClipToBoundsProperty, true);
+
+                // Only the table scrolls sideways. Wrapping the whole board in a horizontal
+                // scroller hands everything in it its desired width instead of the pane's, which
+                // is how the footnote under the table came out cut off mid-sentence.
+                var sideways = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Content = card,
+                };
+
+                // Width, bound to the viewport, and MinWidth left where it is.
+                //
+                // A scroller measures its content against infinite width, and a star column
+                // measured against infinity sizes to its own text — so the table came out wider
+                // than the board at every width, scrolled sideways off its status and assignee
+                // columns even when there was room for them. Saying how wide the card is puts a
+                // real number back in front of the stars. MinWidth still beats Width in WPF's
+                // own arithmetic, so the columns' floor is what makes it scroll, and only when
+                // the board is genuinely too narrow to hold them.
+                card.SetBinding(FrameworkElement.WidthProperty,
+                                new System.Windows.Data.Binding("ViewportWidth")
+                                {
+                                    Source = sideways,
+                                });
+
+                return sideways;
+            }
+
+            /// <summary>The header row: the tri-state tick, and one label per column.</summary>
+            /// <param name="groups">The clash groups the filters left.</param>
+            /// <param name="loose">The loose results the filters left.</param>
+            private UIElement Header(List<BoardRow> groups, List<BoardRow> loose)
+            {
+                var grid = Cells();
+
+                var top = groups.Concat(loose).ToList();
+                var picked = top.Count(r => _picked.Contains(r.Id));
+
+                var all = new CheckBox
+                {
+                    IsThreeState = true,
+                    IsChecked = picked == 0 ? false : picked == top.Count ? true : (bool?)null,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = "Pick every row on the board",
+                };
+
+                all.Click += (s, e) => Ui.Safely(() =>
+                {
+                    var on = picked < top.Count;
+
+                    _picked.Clear();
+                    if (on) foreach (var row in top) _picked.Add(row.Id);
+
+                    RedrawRows();
+                });
+
+                Put(grid, all, 0);
+                Put(grid, Head(Named, false), 1);
+                Put(grid, Head(ItemA, false), 2);
+                Put(grid, Head(ItemB, false), 3);
+                Put(grid, Head(Clashes, true), 4);
+                Put(grid, Head(Worst, true), 5);
+
+                for (var i = 0; i < _columns.Count; i++)
+                    Put(grid, Head(_columns[i].Title, false), 6 + i);
+
+                Put(grid, Head(Status, false), StatusColumn);
+                Put(grid, Head(Assigned, false), StatusColumn + 1);
+
+                var band = new Border
+                {
+                    Padding = new Thickness(12, 8, 12, 8),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = grid,
+                };
+
+                band.Tint(Border.BackgroundProperty, "Card2");
+                band.Tint(Border.BorderBrushProperty, "Bd");
+
+                return band;
+            }
+
+            /// <summary>
+            /// One column header: press it to sort, drag its edge to resize it.
+            ///
+            /// Both, because a header that does neither is a label, and a table of four hundred
+            /// rows is worked by ordering it. The sort has three states rather than two — one way,
+            /// the other, and back to the order the test itself holds — so there is a way off it
+            /// that is not re-reading the board.
+            /// </summary>
+            /// <param name="column">Which column, which is also what it says.</param>
+            /// <param name="right">True for a figure, whose label sits over its digits.</param>
+            private UIElement Head(string column, bool right)
+            {
+                var on = string.Equals(_by, column, StringComparison.Ordinal);
+
+                var label = new TextBlock
+                {
+                    Text = column,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                };
+
+                label.Wearing("Hint");
+                if (on) label.Tint(TextBlock.ForegroundProperty, "Accent");
+
+                var words = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                var mark = on
+                    ? Ui.Glyph(_back ? Glyphs.Up : Glyphs.Down, 10, "Accent",
+                               right ? new Thickness(0, 0, 3, 0) : new Thickness(4, 0, 0, 0))
+                    : null;
+
+                if (right && mark != null) words.Children.Add(mark);
+
+                words.Children.Add(label);
+
+                if (!right && mark != null) words.Children.Add(mark);
+
+                var press = new Border
+                {
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = !on ? "Sort by " + column
+                            : _back ? "Sorted by " + column + ", the other way round. Press again "
+                                      + "for the order the test holds."
+                            : "Sorted by " + column + ". Press again to turn it round.",
+                    Child = words,
+                };
+
+                press.MouseLeftButtonUp += (s, e) => Ui.Safely(() => SortBy(column));
+
+                // The drag handle on the right edge. A Thumb rather than a GridSplitter: every
+                // row builds its own Grid out of these widths, so there is no one grid for a
+                // splitter to live in — what is being dragged is the width itself, not a column
+                // of one particular row.
+                var grip = new System.Windows.Controls.Primitives.Thumb
+                {
+                    Width = 5,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Cursor = System.Windows.Input.Cursors.SizeWE,
+                    Opacity = 0,
+                    ToolTip = "Drag to resize " + column,
+                };
+
+                grip.DragDelta += (s, e) => Ui.Safely(() => Widen(column, e.HorizontalChange));
+
+                var cell = new Grid();
+                cell.Children.Add(press);
+                cell.Children.Add(grip);
+
+                return cell;
+            }
+
+            /// <summary>
+            /// Make a column wider or narrower by what the hand moved.
+            ///
+            /// The three flexible columns hold a share rather than a width, so a drag on one of
+            /// them moves the share by about what sixty pixels is worth — near enough that the
+            /// column follows the pointer, and it cannot fight the others for room the way a
+            /// fixed width would.
+            /// </summary>
+            /// <param name="column">Which column.</param>
+            /// <param name="by">How far the hand moved.</param>
+            private void Widen(string column, double by)
+            {
+                var flexes = column == Named || column == ItemA || column == ItemB;
+                var was = Wide(column, flexes ? 1 : 95);
+
+                _wide[column] = flexes
+                    ? Math.Max(0.4, Math.Min(8, was + (by / 60)))
+                    : Math.Max(44, Math.Min(320, was + by));
+
+                RedrawRows();
+            }
+
+            /// <summary>A column label.</summary>
+            /// <param name="text">What it says.</param>
+            private static TextBlock Hint(string text) =>
+                new TextBlock
+                {
+                    Text = text,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                }.Wearing("Hint");
+
+            /// <summary>Push a cell to the right of its column, for a figure.</summary>
+            /// <param name="cell">The cell.</param>
+            private static TextBlock Right(TextBlock cell)
+            {
+                cell.TextAlignment = TextAlignment.Right;
+                return cell;
+            }
+
+            /// <summary>A row and, when it is an open clash group, the clashes inside it.</summary>
+            /// <param name="row">The row.</param>
+            private UIElement Line(BoardRow row)
+            {
+                if (!row.IsGroup) return Clash(row.Only, row.Id, false);
+
+                var stack = Ui.Stack(Group(row));
+
+                if (_open.Contains(row.Id))
+                    foreach (var member in row.Rows)
+                        stack.Children.Add(Clash(member, Id(member), true));
+
+                return stack;
+            }
+
+            /// <summary>
+            /// A clash group: a real object in the test, and drawn as one.
+            ///
+            /// The group glyph appears here and nowhere else on the board. A grouping icon on a
+            /// loose row would say the row is a group, which is the confusion this screen exists
+            /// to remove.
+            /// </summary>
+            /// <param name="row">The group.</param>
+            private UIElement Group(BoardRow row)
+            {
+                var grid = Cells();
+                var on = _picked.Contains(row.Id);
+                var open = _open.Contains(row.Id);
+
+                Put(grid, Tick(row.Id, on), 0);
+
+                var words = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                };
+
+                words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
+                                            new Thickness(0, 0, 7, 0)));
+
+                words.Children.Add(Ui.Glyph(Glyphs.Group, 15, "Accent", new Thickness(0, 0, 7, 0)));
+
+                var name = new TextBlock
+                {
+                    Text = row.Name,
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                };
+
+                name.ToolTip = row.Name + " — double-click to rename it.";
+
+                name.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount != 2) return;
+
+                    e.Handled = true;
+
+                    Prompt("Rename the clash group", row.Name, "Rename",
+                           renamed => Regroup(row.Rows.Cast<object>().ToList(), renamed,
+                                              "Renamed the clash group to"));
+                };
+
+                words.Children.Add(name.Wearing("Body"));
+
+                if (_made.Contains(row.Id)) words.Children.Add(Parts.Note("grouped by you"));
+
+                words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    if (!_open.Remove(row.Id)) _open.Add(row.Id);
+                    RedrawRows();
+                });
+
+                Put(grid, words, 1);
+
+                // Em-dashes, not the first member's items. A group aggregates many different item
+                // pairs and has no pair of its own; borrowing one member's would be a lie the eye
+                // reads as fact.
+                Put(grid, Right(Hint("—")), 2);
+                Put(grid, Right(Hint("—")), 3);
+                Put(grid, Figure(Skin.Num(row.Rows.Count), false), 4);
+                Put(grid, Figure(Deepest(row), Bad(row)), 5);
+
+                for (var i = 0; i < _columns.Count; i++)
+                    Put(grid, Hint(Custom(row.Only, _columns[i])), 6 + i);
+
+                return Finish(grid, row, on, false);
+            }
+
+            /// <summary>One clash: loose on the board, or a member of an open group.</summary>
+            /// <param name="result">The result.</param>
+            /// <param name="id">What picking it keys off.</param>
+            /// <param name="inside">True when it is drawn under the group it belongs to.</param>
+            private UIElement Clash(Row result, string id, bool inside)
+            {
+                var grid = Cells();
+                var on = _picked.Contains(id);
+
+                Put(grid, Tick(id, on), 0);
+
+                var name = new TextBlock
+                {
+                    Text = result.Info.Name ?? string.Empty,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Margin = new Thickness(inside ? 22 : 0, 0, 8, 0),
+                };
+
+                name.Wearing("Mono");
+                name.Tint(TextBlock.ForegroundProperty, "Faint");
+                name.ToolTip = "Double-click to rename it.";
+
+                name.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount != 2) return;
+
+                    e.Handled = true;
+
+                    Prompt("Rename this clash", result.Info.Name ?? string.Empty, "Rename",
+                           renamed => Renumber(new List<Row> { result }, renamed));
+                };
+
+                Grid.SetColumn(name, 1);
+                grid.Children.Add(name);
+
+                var itemA = result.Info.NameA ?? string.Empty;
+                var itemB = result.Info.NameB ?? string.Empty;
+
+                Put(grid, Item(itemA), 2);
+                Put(grid, Item(itemB), 3);
+
+                // A loose clash is not a count of anything, so the column that counts is empty
+                // rather than showing one.
+                Put(grid, Right(Hint("—")), 4);
+                Put(grid, Figure(Millimetres(result), Bad(result)), 5);
+
+                for (var i = 0; i < _columns.Count; i++)
+                    Put(grid, Hint(Custom(result, _columns[i])), 6 + i);
+
+                var wrapper = new BoardRow(id, result.Info.Name ?? "this clash", false,
+                                           new List<Row> { result });
+
+                return Finish(grid, wrapper, on, inside);
+            }
+
+            /// <summary>
+            /// The three columns every row ends with: status, assignee and the verbs.
+            ///
+            /// Shared, because a group row and a clash row differ in what they are and not in what
+            /// can be done to them — and a board where the same verb sits in two places on two
+            /// kinds of row is a board somebody has to look at twice.
+            /// </summary>
+            /// <param name="grid">The row so far.</param>
+            /// <param name="row">What the row is about.</param>
+            /// <param name="on">Whether it is picked.</param>
+            /// <param name="inside">True when it is a member of an open group.</param>
+            private UIElement Finish(Grid grid, BoardRow row, bool on, bool inside)
+            {
+                Put(grid, Parts.InlineChip(row.Status, Statuses,
+                        value => SetStatus(row, value), Reads(row.Status), "Set status"),
+                    StatusColumn);
+
+                Put(grid, Parts.InlineChip(row.Assigned, Assignees(Entry()),
+                        value => SetAssignee(row, value), Tone.Plain, "Assign"),
+                    StatusColumn + 1);
+
+                var verbs = Verbs(row);
+                verbs.Visibility = on ? Visibility.Visible : Visibility.Hidden;
+                Put(grid, verbs, StatusColumn + 2);
+
+                // No gutter on the last column. There is nothing to its right to be kept away
+                // from, and the eight pixels were taken off the first symbol in the row.
+                verbs.Margin = new Thickness(0);
+
+                // Two borders, because the tone bar down the left and the hairline underneath
+                // are different colours and one Border has one brush. Drawn as one they were the
+                // same colour, which made every New row's underline red and every Active row's
+                // disappear.
+                var tone = new Border
+                {
+                    Padding = new Thickness(12, inside ? 7 : 9, 12, inside ? 7 : 9),
+                    BorderThickness = new Thickness(inside ? 0 : 3, 0, 0, 0),
+                    BorderBrush = inside
+                        ? System.Windows.Media.Brushes.Transparent
+                        : Edge(row.Status),
+                    Child = grid,
+                };
+
+                var line = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    Child = tone,
+                };
+
+                line.Tint(Border.BorderBrushProperty, "Bd");
+
+                void Paint()
+                {
+                    if (on) line.Tint(Border.BackgroundProperty, "NavActive");
+                    else if (inside) line.Tint(Border.BackgroundProperty, "Card2");
+                    else line.Background = System.Windows.Media.Brushes.Transparent;
+                }
+
+                Paint();
+
+                // The right button offers exactly what the symbols offer, off the same list. When
+                // the row is one of several picked it offers what the bar offers instead —
+                // right-clicking inside a selection and being handed a menu about one row is how
+                // somebody regroups the wrong thing.
+                line.ContextMenu = Parts.Context(
+                    () => _picked.Count > 1 && _picked.Contains(row.Id)
+                        ? PickedMenu(Picked())
+                        : RowMenu(row),
+                    () =>
+                    {
+                        // Right-clicking a row outside the selection moves the selection to it,
+                        // which is what every table in Windows does.
+                        if (_picked.Count == 0 || _picked.Contains(row.Id)) return;
+
+                        _picked.Clear();
+                        _picked.Add(row.Id);
+                        RedrawRows();
+                    });
+
+                // Hidden rather than greyed, and revealed on hover. A permanent row of off verbs
+                // is the wall of grey this screen was rebuilt to be rid of.
+                line.MouseEnter += (s, e) =>
+                {
+                    verbs.Visibility = Visibility.Visible;
+                    if (!on) line.Tint(Border.BackgroundProperty, "Hover");
+                };
+
+                line.MouseLeave += (s, e) =>
+                {
+                    if (!on) verbs.Visibility = Visibility.Hidden;
+                    Paint();
+                };
+
+                return line;
+            }
+
+            /// <summary>The three verbs on a row, and the menu holding the rest.</summary>
+            /// <param name="row">What the verbs act on.</param>
+            private FrameworkElement Verbs(BoardRow row)
+            {
+                var what = row.IsGroup ? "this clash group" : "this clash";
+                var picked = row.Rows.Cast<object>().ToList();
+
+                var bar = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                };
+
+                bar.Children.Add(Ui.Icon(Glyphs.Focus, "Focus " + what,
+                    () => Focus(picked, _toast)));
+
+                bar.Children.Add(Ui.Icon(Glyphs.Eye, "Isolate " + what,
+                    () => Isolate(picked, _toast)));
+
+                bar.Children.Add(Ui.Icon(Glyphs.Comment, "Comment",
+                    () => Prompt("Comment on " + what, string.Empty, "Comment",
+                                 body => CommentPicked(picked, body, _toast))));
+
+                bar.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else for " + what,
+                                                RowMenu(row)));
+
+                // Ui.Icon spaces symbols for a row of twelve, where a striped block of them is
+                // the thing to avoid. There are four here, and the six pixels a side were coming
+                // out of the clash group's name.
+                foreach (var verb in bar.Children.OfType<FrameworkElement>())
+                    verb.Margin = new Thickness(2, 2, 2, 2);
 
                 return bar;
             }
 
             /// <summary>
-            /// One verb, as a symbol.
+            /// Everything one row offers, behind its own symbol and on its right button alike.
             ///
-            /// Held in a list so the whole row can grey itself out the moment nothing is picked:
-            /// a verb that reads as available and then says "nothing to work on" is a press
-            /// wasted, and there are twelve of them under one table.
+            /// The same list the bar for picked rows builds, so one row and forty of them offer
+            /// the same verbs. What differs is only the grouping one, which depends on what this
+            /// row already is.
             /// </summary>
-            private UIElement Verb(string glyph, string tip, Action<IReadOnlyList<object>, Panel> act,
-                                   List<System.Windows.Controls.Button> into)
+            /// <param name="row">The row.</param>
+            private List<Parts.Entry> RowMenu(BoardRow row)
             {
-                var button = Ui.Icon(glyph, tip, () => act(Picked(into), _log));
+                var what = row.IsGroup ? "this clash group" : "this clash";
+                var picked = row.Rows.Cast<object>().ToList();
+                var rest = Doing(row.Rows, what);
 
-                button.IsEnabled = false;
-                into.Add(button);
+                rest.Add(Parts.Entry.Rule());
 
-                return button;
+                if (row.IsGroup)
+                {
+                    rest.Add(Parts.Entry.Act("Rename the clash group", Glyphs.Pencil,
+                        () => Prompt("Rename the clash group", row.Name, "Rename",
+                                     name => Regroup(picked, name, "Renamed the clash group to"))));
+
+                    rest.Add(Parts.Entry.Act("Dissolve the group", Glyphs.Group,
+                        () => Regroup(picked, string.Empty,
+                                      "Dissolved the clash group and put {0} back loose.")));
+                }
+                else if (row.Only.Group.Length > 0)
+                {
+                    rest.Add(Parts.Entry.Act("Remove from the group", Glyphs.MoveIn,
+                        () => Regroup(picked, string.Empty,
+                                      "Took {0} out of their clash group.")));
+                }
+                else
+                {
+                    rest.Add(Parts.Entry.Act("Group with the picked rows", Glyphs.Group,
+                        () => Prompt("Name the clash group", Suggested(), "Group",
+                                     name => Regroup(WithPicked(picked), name, "Grouped {0} into"))));
+                }
+
+                if (!row.IsGroup)
+                {
+                    // One clash is rarely one problem. A duct that hits a beam usually hits the
+                    // three beside it and the hanger under them, and answering "what else is this
+                    // element in" meant reading the board with an element name held in the head.
+                    rest.Add(Parts.Entry.Rule());
+
+                    rest.Add(Parts.Entry.Act("Find other clashes with these items", Glyphs.Find,
+                                             () => SameItems(row.Only)));
+                }
+
+                return rest;
             }
 
-            /// <summary>What the row verbs act on, by which table's row the button belongs to.</summary>
-            private IReadOnlyList<object> Picked(List<System.Windows.Controls.Button> which) =>
-                ReferenceEquals(which, _testButtons)
-                    ? (_testsTable?.PickedMany() ?? Array.Empty<object>())
-                    : (_resultsTable?.PickedMany() ?? Array.Empty<object>());
-
-            private void CopyTests(IReadOnlyList<object> picked, Panel say)
+            /// <summary>
+            /// Narrow the board to every clash touching either of one clash's two items.
+            ///
+            /// The other narrowings are lifted when this goes on, because the question being
+            /// asked is "what else is this element in" and the answer has to be all of it. A
+            /// status filter left over from a minute ago would quietly answer a different
+            /// question, and the row that proved the point would be the one it hid.
+            /// </summary>
+            /// <param name="origin">The clash whose items to look for.</param>
+            private void SameItems(Row origin)
             {
-                if (_testsTable != null) Ui.Copy(Ui.Lines(_testsTable, picked), say, "test");
+                _sameAs = origin;
+                _status = null;
+                _party = null;
+                _showing = BothKinds;
+                _boardBox.Text = string.Empty;
+                _picked.Clear();
+
+                RedrawBoard();
+
+                var entry = Entry();
+                if (entry == null) return;
+
+                var found = Counted(entry);
+
+                Said(Ui.Done(Ui.Count(found, "clash") + " on this test "
+                             + (found == 1 ? "touches " : "touch ") + Both(origin)
+                             + ". Every other filter was lifted to find them — the layers "
+                             + "menu above puts the board back."));
             }
 
-            private void CopyResults(IReadOnlyList<object> picked, Panel say)
+            /// <summary>One row's tick.</summary>
+            /// <param name="id">What picking it keys off.</param>
+            /// <param name="on">Whether it is picked.</param>
+            private UIElement Tick(string id, bool on)
             {
-                if (_resultsTable != null) Ui.Copy(Ui.Lines(_resultsTable, picked), say, "result");
+                var box = new CheckBox
+                {
+                    IsChecked = on,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                box.Click += (s, e) => Ui.Safely(() =>
+                {
+                    if (!_picked.Remove(id)) _picked.Add(id);
+                    RedrawRows();
+                });
+
+                return box;
             }
 
-            /// <summary>Grey every verb of a table that has nothing picked.</summary>
-            private void Arm()
+            /// <summary>One of a clash's two items, as the host named it.</summary>
+            /// <param name="name">The item's name.</param>
+            private static TextBlock Item(string name) =>
+                new TextBlock
+                {
+                    Text = name,
+                    ToolTip = name.Length == 0 ? null : name,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                }.Wearing("Lbl");
+
+            /// <summary>A right-aligned figure, red once it is past this test's tolerance.</summary>
+            /// <param name="text">The figure, already formatted.</param>
+            /// <param name="bad">Whether it is past tolerance.</param>
+            private static TextBlock Figure(string text, bool bad)
             {
-                var tests = _testsTable?.PickedMany().Count ?? 0;
-                var results = _resultsTable?.PickedMany().Count ?? 0;
+                var cell = new TextBlock
+                {
+                    Text = text,
+                    TextAlignment = TextAlignment.Right,
+                };
 
-                foreach (var button in _testButtons) button.IsEnabled = tests > 0;
-                foreach (var button in _resultButtons) button.IsEnabled = results > 0;
+                cell.SetValue(System.Windows.Documents.Typography.NumeralAlignmentProperty,
+                              FontNumeralAlignment.Tabular);
 
-                _testsPicked.Text = tests == 0 ? "none picked" : tests + " picked";
-                _resultsPicked.Text = results == 0 ? "none picked" : results + " picked";
+                cell.Wearing("Body");
+                cell.Tint(TextBlock.ForegroundProperty, bad ? "RedTx" : "Muted");
+
+                return cell;
             }
 
-            private List<TestEntry>? Current() => OnFile ? _file?.Entries : _read;
+            // -------------------------------------------------------------------------------
+            // Region 3 — the bar for what is picked
+            // -------------------------------------------------------------------------------
+
+            /// <summary>Draw the selection bar, or take it away when nothing is picked.</summary>
+            private void RedrawSelection()
+            {
+                if (_picked.Count == 0)
+                {
+                    _bar.Child = null;
+                    return;
+                }
+
+                var rows = Picked();
+                var picked = rows.Cast<object>().ToList();
+
+                _bar.Child = Parts.SelectionBar(_picked.Count, "row",
+                    () => { _picked.Clear(); RedrawRows(); },
+                    Parts.InlineChip(null, Statuses,
+                        value => SetMany(picked, value, true), Tone.Plain, "Set status"),
+                    Parts.InlineChip(null, Assignees(Entry()),
+                        value => SetMany(picked, value, false), Tone.Plain, "Assign to"),
+                    Grouping(rows),
+                    Parts.Verb("Raise as issues", Glyphs.Issue, false,
+                               () => RaiseIssue(picked, false)),
+                    Parts.MoreMenu(Glyphs.More, "Everything else for the picked rows",
+                                   PickedMenu(rows), up: true));
+            }
+
+            /// <summary>
+            /// The one grouping verb the picked rows actually have.
+            ///
+            /// There is exactly one sensible answer at any moment, and the bar offers that one
+            /// rather than a Group button that is wrong four times out of five and says so only
+            /// after it has been pressed. Loose rows can become a group; rows already in one can
+            /// leave it; a whole group can be dissolved; two or more can be merged.
+            /// </summary>
+            /// <param name="rows">The picked results.</param>
+            private UIElement Grouping(List<Row> rows)
+            {
+                var verb = GroupVerb(rows);
+
+                return Parts.Verb(verb.Text, verb.Glyph ?? Glyphs.Group, verb.IsDanger,
+                                  () => Ui.Safely(verb.OnAct));
+            }
+
+            /// <summary>
+            /// The one grouping verb the picked rows have, as a menu line.
+            ///
+            /// <b>All four are the same host write.</b> Navisworks has no merge, no dissolve and
+            /// no rename for a clash group — it has "put these results in a group called X", and
+            /// an empty name takes them out of one. Grouping, ungrouping, moving, merging and
+            /// renaming are all that call with a different name, which is why every one of them
+            /// lands in the document rather than only on this screen.
+            ///
+            /// <see cref="Parts.Entry.IsDanger"/> is doing duty for "this is the primary" here,
+            /// which the button reads and the menu ignores.
+            /// </summary>
+            /// <param name="rows">The picked results.</param>
+            private Parts.Entry GroupVerb(List<Row> rows)
+            {
+                var groups = rows.Where(r => r.Group.Length > 0)
+                                 .Select(r => r.Group)
+                                 .Distinct(StringComparer.Ordinal)
+                                 .ToList();
+
+                var loose = LooseIn(rows);
+                var picked = rows.Cast<object>().ToList();
+                var inside = rows.Where(r => r.Group.Length > 0).Cast<object>().ToList();
+
+                // Whole groups and nothing else: dissolve the one, or merge the several.
+                if (loose.Count == 0 && groups.Count > 0 && Whole(rows, groups))
+                {
+                    if (groups.Count == 1)
+                        return Parts.Entry.Act("Dissolve the group", Glyphs.Group,
+                            () => Regroup(picked, string.Empty,
+                                          "Dissolved the clash group and put {0} back loose."));
+
+                    return Parts.Entry.Danger("Merge the groups", Glyphs.Group,
+                        () => Prompt("Name the merged clash group", groups[0], "Merge",
+                                     name => Regroup(picked, name,
+                                                     "Merged " + groups.Count + " clash groups, "
+                                                     + "putting {0} into")));
+                }
+
+                // Anything already in a group, and the way out of it is the verb that matters.
+                if (groups.Count > 0)
+                    return Parts.Entry.Act("Remove from the group", Glyphs.MoveIn,
+                        () => Regroup(inside, string.Empty, "Took {0} out of their clash group."));
+
+                if (loose.Count > 1)
+                    return Parts.Entry.Danger("Group", Glyphs.Group,
+                        () => Prompt("Name the clash group", Suggested(), "Group",
+                                     name => Regroup(picked, name, "Grouped {0} into")));
+
+                return Parts.Entry.Act("Group", Glyphs.Group,
+                    () => Said(Ui.Note("Grouping takes two or more loose results. One on its own "
+                                       + "is already as ungrouped as it gets.")));
+            }
+
+            /// <summary>Everything the picked rows can be told to do, grouping included.</summary>
+            /// <param name="rows">The picked results.</param>
+            private List<Parts.Entry> PickedMenu(List<Row> rows)
+            {
+                var menu = Doing(rows, "the picked rows");
+
+                menu.Add(Parts.Entry.Rule());
+                menu.Add(GroupVerb(rows));
+
+                return menu;
+            }
+
+            /// <summary>Whether every result of every named group is picked.</summary>
+            /// <param name="rows">The picked results.</param>
+            /// <param name="groups">The groups they belong to.</param>
+            private bool Whole(List<Row> rows, List<string> groups)
+            {
+                var entry = Entry();
+                if (entry == null) return false;
+
+                var have = new HashSet<string>(rows.Select(Id), StringComparer.Ordinal);
+
+                foreach (var group in groups)
+                    foreach (var row in entry.Rows)
+                        if (string.Equals(row.Group, group, StringComparison.Ordinal)
+                            && !have.Contains(Id(row)))
+                            return false;
+
+                return true;
+            }
+
+            /// <summary>
+            /// Everything that can be done to results, whether it is one of them or forty.
+            ///
+            /// One list, built once, so the menu on a row and the menu on the bar cannot drift
+            /// apart: picking three clashes has to offer what picking one of them offers, and the
+            /// two menus were written separately once and immediately disagreed.
+            /// </summary>
+            /// <param name="rows">The results to act on.</param>
+            /// <param name="what">What they are called, for the captions.</param>
+            private List<Parts.Entry> Doing(List<Row> rows, string what)
+            {
+                var picked = rows.Cast<object>().ToList();
+
+                return new List<Parts.Entry>
+                {
+                    Parts.Entry.Act("Focus", Glyphs.Focus, () => Focus(picked, _toast)),
+                    Parts.Entry.Act("Isolate", Glyphs.Eye, () => Isolate(picked, _toast)),
+                    Parts.Entry.Act("Show everything again", Glyphs.EyeOff, () =>
+                    {
+                        _session.View.ShowAll();
+                        Said(Ui.Done("Everything is visible again."));
+                    }),
+                    Parts.Entry.Act("Comment", Glyphs.Comment,
+                        () => Prompt("Comment on " + what, string.Empty, "Comment",
+                                     body => CommentPicked(picked, body, _toast))),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
+                    Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
+                                    () => Spheres(picked, _toast)),
+                    Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
+                                    () => RaiseIssue(picked, false)),
+                    Parts.Entry.Act("Attach to an existing issue", Glyphs.Link,
+                                    () => AttachToIssue(picked, _toast)),
+                    Parts.Entry.Act("Copy as columns", Glyphs.Copy, () => CopyRows(rows)),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Act("Move into an existing group", Glyphs.MoveIn,
+                        () => Prompt("Move into which clash group", string.Empty, "Move",
+                                     name => Regroup(picked, name, "Moved {0} into"))),
+                };
+            }
+
+            // -------------------------------------------------------------------------------
+            // Region 4 — the footer
+            // -------------------------------------------------------------------------------
+
+            private readonly Border _send = new Border { VerticalAlignment = VerticalAlignment.Center };
+
+            /// <summary>The state of the week on the left, and the two ways out on the right.</summary>
+            /// <param name="read">The read runner, which carries its own progress and Stop.</param>
+            private UIElement Footer(UIElement read)
+            {
+                var row = new DockPanel { LastChildFill = false };
+
+                var right = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                if (read is FrameworkElement placed)
+                {
+                    placed.Margin = new Thickness(0, 0, 10, 0);
+                    placed.VerticalAlignment = VerticalAlignment.Center;
+                    right.Children.Add(placed);
+                }
+
+                right.Children.Add(_send);
+
+                _saveButton = Ui.Primary("Save the changes", () =>
+                {
+                    if (OnFile) SaveMarkup();
+                    else Sync();
+                });
+                _saveButton.Margin = new Thickness(8, 0, 0, 0);
+                _saveButton.VerticalAlignment = VerticalAlignment.Center;
+                right.Children.Add(_saveButton);
+
+                DockPanel.SetDock(right, Dock.Right);
+                row.Children.Add(right);
+
+                return Ui.Stack(_log, row);
+            }
+
+            /// <summary>
+            /// The footer's facts, every one of them derived.
+            ///
+            /// Derived and not typed: a footer claiming a run the rail contradicts is worse than a
+            /// footer that says less. The design's revision line is not here for that reason —
+            /// nothing in a Navisworks document carries an issued revision, and inventing one is
+            /// the kind of number somebody reads out in a meeting.
+            /// </summary>
+            private void RedrawFoot()
+            {
+                // Nothing on the left. What used to be there was four totals over every test in
+                // the document - how many were assigned out, how many were in groups - and a
+                // total across eighteen tests is a number nobody is working on. What is worth
+                // knowing is about the test on the board, and it belongs under the list of tests
+                // rather than in the far corner of the window from it.
+                _send.Child = Parts.MenuButton("Export", Glyphs.Onward, Sending());
+            }
+
+            /// <summary>The ways the board leaves the product, with the one that cannot say why.</summary>
+            private List<Parts.Entry> Sending()
+            {
+                var why = WhySync();
+
+                var lines = new List<Parts.Entry?>
+                {
+                    // The sync is the footer's primary, not a line in here — but when the
+                    // document will not take one, the reason belongs where somebody goes looking
+                    // for the way out, and not only in a tooltip on a button that looks broken.
+                    why == null
+                        ? null
+                        : Parts.Entry.Barred("Sync into the document", Glyphs.Save, why),
+                    Parts.Entry.Saying(OnFile ? "Save the markup" : "Save as a clash file (BCF)",
+                        Glyphs.Round, "The offline review round — out and back", SaveChanges),
+                    Parts.Entry.Saying("Write a report", Glyphs.Report,
+                        "One document per party, revision-lettered",
+                        () => Said(Ui.Info("The report is written on Clash Manager ▸ Report, which "
+                                           + "reads this same board."))),
+                    Parts.Entry.Saying("The board to a spreadsheet", Glyphs.Table,
+                        "Exactly as it is filtered, columns and all", Sheet),
+                    Parts.Entry.Saying("Set up the review round", Glyphs.Round,
+                        "What a baseline carries, and where a markup comes back to",
+                        () => Configure("round")),
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Saying("Raise the board as issues", Glyphs.Issue,
+                        "Into the Issue Manager's register",
+                        () => RaiseIssue(_shown.Cast<object>().ToList(), false)),
+                };
+
+                return lines.Where(l => l != null).Select(l => l!).ToList();
+            }
 
             // -------------------------------------------------------------------------------
             // Reading
@@ -592,7 +2724,10 @@ namespace CamelWorks.UI.Views
 
                 foreach (var test in _session.Clash.Tests())
                 {
-                    var entry = new TestEntry(test);
+                    // What the test is between and what it was run at, read here rather than
+                    // when the rail draws: this is the pass that is already holding the test,
+                    // and it has a progress line and a Stop.
+                    var entry = new TestEntry(test) { Shape = _session.Clash.Sides(test.Id) };
 
                     foreach (var result in _session.Clash.Results(test.Id))
                     {
@@ -904,23 +3039,24 @@ namespace CamelWorks.UI.Views
                 var page = Pages().FirstOrDefault(
                     p => string.Equals(p.Key, section, StringComparison.Ordinal));
 
-                if (page == null) { Everything(); return; }
+                if (page == null) return;
 
                 Ui.Configure(page.Page.Name, Redraw, page.Page);
             }
 
-            /// <summary>Every section at once, behind the More symbol, for a look around.</summary>
-            private void Everything() =>
-                Ui.Configure("Clash results", Redraw, Pages().Select(p => p.Page).ToArray());
-
-            /// <summary>The sections, in the order the foot's symbols read.</summary>
+            /// <summary>
+            /// The two sections left, and the symbol on the board that opens each.
+            ///
+            /// There were six. Four of them set up things the board now does where they happen:
+            /// the filters are the status strip and the chips, what the status and assign verbs
+            /// write is the value picked on the chip itself, and the markers page had one field
+            /// left once its prose moved onto the verb that uses it. What is left is the two the
+            /// board's own header names — where the results come from, and which columns show.
+            /// </summary>
             private IReadOnlyList<Section> Pages() => new[]
             {
-                new Section("source", new Ui.Page("Source", SourcePage)),
-                new Section("filters", new Ui.Page("Filters", FiltersPage)),
-                new Section("columns", new Ui.Page("Columns and grouping", ColumnsPage)),
-                new Section("verbs", new Ui.Page("Status and assignment", VerbsPage)),
-                new Section("model", new Ui.Page("In the model", ModelPage)),
+                new Section("source", new Ui.Page("Source and tolerance", SourcePage)),
+                new Section("columns", new Ui.Page("Columns", ColumnsPage)),
                 new Section("round", new Ui.Page("The review round", RoundPage)),
             };
 
@@ -960,72 +3096,44 @@ namespace CamelWorks.UI.Views
                         Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
                                  + "after you — it never touches the baseline or anyone else's "
                                  + "markup."))
-                    : null);
+                    : null,
 
-            private UIElement FiltersPage()
-            {
-                RedrawFilterScope();
+                // The marker size, which had a settings page of its own with one field on it. A
+                // page per field is how an action row ends up with six symbols, each opening a
+                // window holding one control.
+                ModelPage());
 
-                return Ui.Stack(
-                    Bench.Group("Narrow the results",
-                        Ui.Check("Only ones with comments", _onlyCommented, on =>
-                        {
-                            _onlyCommented = on;
-                            RedrawGroups();
-                        }),
-                        Ui.Check("Hide tests with no results", _hideEmpty, on =>
-                        {
-                            _hideEmpty = on;
-                            RedrawTests();
-                        }),
-                        Ui.Field("Where", _filterScope),
-                        Ui.Field("contains", _filter,
-                                 "one column, or any of them - the search at the top of the "
-                                 + "bench is the quick version of this")),
-                    Bench.Group(string.Empty,
-                        Ui.Small("The status ticks are on the strip above the tables, not here: "
-                                 + "they are the one filter somebody changes every few minutes.")));
-            }
-
+            /// <summary>
+            /// Which columns the board shows, behind the board's own columns symbol.
+            ///
+            /// The nine columns the board draws are not configurable and are not meant to be: they
+            /// are the clash, both its items, how bad it is and what has been decided about it,
+            /// which is the whole of what a result is. What this page adds is the column the host
+            /// does not have — a property read off the clashing elements themselves, so a board
+            /// can carry the system name, the workset or the fire rating beside the decision.
+            ///
+            /// The grouping chain that used to live here is gone. It bucketed the results table by
+            /// a chain of values, which is what "Arrange view by" on the board does now — in one
+            /// press, on the rows themselves, and saying in the band that no clash group moved.
+            /// </summary>
             private UIElement ColumnsPage()
             {
                 RedrawColumnList();
-                RedrawChainList();
 
-                return Ui.Stack(
-                    Bench.Group("Property columns",
-                        Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
-                        Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
-                        Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
-                                                        _newSide, pick => _newSide = pick, 150)),
-                        Ui.Actions(Ui.Icon(Glyphs.Add, "Add the column", AddColumn)),
-                        _columnList,
-                        Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
-                        _fill,
-                        Ui.Small("Each column reads that property off the clashing elements "
-                                 + "themselves - the results table carries whatever the model "
-                                 + "carries, and the grouping below can chain over it.")),
-                    Bench.Group("Group by, in order",
-                        _chainList,
-                        Ui.Small("Chained: the first entry makes the bands, the next splits each "
-                                 + "band, and so on. Pick group rows to work just those results.")));
+                return Bench.Group("Property columns",
+                    Ui.Field("Tab", Pickers.Tab(_newTab, pick => _newTab = pick)),
+                    Ui.Field("Property", Pickers.Property(_newProp, pick => _newProp = pick)),
+                    Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
+                                                    _newSide, pick => _newSide = pick, 150)),
+                    Ui.Actions(Ui.Icon(Glyphs.Add, "Add the column", AddColumn)),
+                    _columnList,
+                    Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
+                    _fill,
+                    Ui.Small("Each column reads that property off the clashing elements "
+                             + "themselves, and lands on the board between Worst and Status - "
+                             + "where the eye is already reading facts about the elements rather "
+                             + "than decisions about them."));
             }
-
-            private UIElement VerbsPage() => Ui.Stack(
-                Bench.Group("What the symbols under the results write",
-                    Ui.Field("Set the status to", Ui.Choice(Statuses, _mark, pick =>
-                    {
-                        _mark = pick;
-                        RedrawResults();
-                    }, 150)),
-                    Ui.Field("Assign to", _assign, "the project's parties, or type a name"),
-                    Ui.Field("Comment", _comment),
-                    Ui.Field("Group into", _group, "blank moves them out of any group")),
-                OnFile ? null : Bench.Group("On the tests",
-                    Ui.Field("Rename to", _renameTest, "for one picked test"),
-                    Ui.Field("Move into", _folder, "a clash folder; blank is the root"),
-                    Ui.Field("Results prefix", _renameResults,
-                             "renames a test's results prefix1, prefix2, ...")));
 
             private UIElement ModelPage() => Bench.Group("Markers and the view",
                 Ui.Field("Marker size", Ui.Text(
@@ -1057,7 +3165,9 @@ namespace CamelWorks.UI.Views
                                  + "thousands is worth starting before a break."),
                         Ui.Actions(Ui.Quiet("Export...", () =>
                         {
-                            ClashExportWindow.Preferred = _pickedTests.ToList();
+                            ClashExportWindow.Preferred = Entry() == null
+                                ? new List<string>()
+                                : new List<string> { Entry()!.Test.Id };
                             Ui.Told(Shell.AppWindow.Show("issues", "clashxml"));
                         }))),
                     Bench.Group("Bring it back",
@@ -1101,14 +3211,257 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private static bool _pictures;
 
-            /// <summary>Whoever the assign symbol would write, for the menu to say so.</summary>
-            private string Who()
+            /// <summary>The board's own message strip, over the table it is about.</summary>
+            private readonly StackPanel _toast = Ui.Stack();
+
+            /// <summary>This test's tolerance in millimetres, for what counts as bad on a row.</summary>
+            private double _toleranceMm = 25;
+
+            // -------------------------------------------------------------------------------
+            // Drawing
+            // -------------------------------------------------------------------------------
+
+            /// <summary>Redraw the whole tab: the rail, the board and the footer's facts.</summary>
+            private void Redraw()
             {
-                var name = (_assign.Text ?? string.Empty).Trim();
-                return name.Length == 0 ? "nobody" : name;
+                // The standing headline is what the tab says before its first read. Once there is
+                // something to look at it is in the way of it.
+                if (Current() != null) _headline.Children.Clear();
+
+                RedrawRail();
+                RedrawBoard();
+                RedrawFoot();
+                ArmSync();
             }
 
-            /// <summary>Whether a result answers the bench's own search box.</summary>
+            /// <summary>The test on the board, picking the first one when nothing is picked yet.</summary>
+            private TestEntry? Entry()
+            {
+                var read = Current();
+                if (read == null || read.Count == 0) return null;
+
+                var found = read.FirstOrDefault(
+                    e => string.Equals(e.Test.Id, _current, StringComparison.OrdinalIgnoreCase));
+
+                if (found != null) return found;
+
+                // A read that lands on an empty board is a read somebody has to click to see the
+                // result of. The first row of the rail, in whatever order the rail is in, is the
+                // one they were going to press.
+                var first = Shown().FirstOrDefault() ?? read[0];
+                _current = first.Test.Id;
+
+                return first;
+            }
+
+            /// <summary>One test, as the list the test verbs take.</summary>
+            /// <param name="entry">The test, or null when none is picked.</param>
+            private static IReadOnlyList<object> One(TestEntry? entry) =>
+                entry == null ? Array.Empty<object>() : new object[] { entry };
+
+            /// <summary>Every result of a test, whatever the board is filtered to.</summary>
+            /// <param name="entry">The test.</param>
+            private static List<Row> All(TestEntry entry) => entry.Rows;
+
+            // -------------------------------------------------------------------------------
+            // What the rail shows
+            // -------------------------------------------------------------------------------
+
+            /// <summary>The tests the rail's search, chips and sort leave.</summary>
+            private List<TestEntry> Shown()
+            {
+                var read = Current();
+                if (read == null) return new List<TestEntry>();
+
+                var find = _railFind.Trim();
+
+                var shown = read.Where(e =>
+                    (find.Length == 0
+                     || e.Test.Name.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0
+                     || Sides(e).IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0)
+                    && (_byParty.Count == 0 || Trades(e).Any(d => _byParty.Contains(d)))
+                    && (_byFolder.Count == 0 || _byFolder.Contains(e.Test.Folder ?? string.Empty))
+                    && (!_openOnly || e.Of("New") + e.Of("Active") > 0)).ToList();
+
+                switch (_sort)
+                {
+                    case MostOpen:
+                        return shown.OrderByDescending(e => e.Of("New") + e.Of("Active")).ToList();
+
+                    case ByName:
+                        return shown.OrderBy(e => e.Test.Name, StringComparer.CurrentCulture).ToList();
+
+                    case MostReviewed:
+                        return shown.OrderByDescending(e => e.Of("Reviewed")).ToList();
+
+                    case MostApproved:
+                        return shown.OrderByDescending(e => e.Of("Approved")).ToList();
+
+                    case MostClosed:
+                        return shown.OrderByDescending(e => e.Of("Resolved")).ToList();
+
+                    case LastRun:
+                        return shown.OrderByDescending(e => e.Test.LastRunTicks).ToList();
+
+                    default:
+                        return shown.OrderByDescending(e => e.Of("New")).ToList();
+                }
+            }
+
+            /// <summary>
+            /// The two disciplines one test is between, as the host records them.
+            ///
+            /// <b>Where they come from.</b> A clash test's two sides are read once, with the
+            /// results, through <c>IClashSource.Sides</c>. Each side is either a <b>saved
+            /// selection set</b> — which on a real job is what carries the discipline, because
+            /// the sets are called Mechanical, Structure, Fire — or, when the side is whole
+            /// models rather than a set, the <b>model's own name</b>. Nothing is derived and
+            /// nothing is parsed: a side that is neither of those returns nothing, and the test
+            /// simply has no discipline to filter on.
+            /// </summary>
+            /// <param name="entry">The test.</param>
+            private List<string> Trades(TestEntry entry)
+            {
+                var found = new List<string>();
+
+                void Add(string? name)
+                {
+                    var trimmed = (name ?? string.Empty).Trim();
+
+                    if (trimmed.Length > 0
+                        && !found.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+                        found.Add(trimmed);
+                }
+
+                var shape = entry.Shape;
+
+                if (shape != null)
+                {
+                    Add(shape.SetA ?? shape.ScopesA.FirstOrDefault());
+                    Add(shape.SetB ?? shape.ScopesB.FirstOrDefault());
+                }
+
+                // Nothing else. A test built by hand out of an ad-hoc selection has no set and
+                // no model behind either side, and it offers no discipline — it does not get one
+                // guessed out of its name.
+                //
+                // That fallback was here, splitting "L03 — Mech v Struct" on " v ". It reads well
+                // on tests named that way and invents a discipline on every test not named that
+                // way, which is the same fault as inferring a level: a chip that hides tests for
+                // a reason it cannot state. The rail says what the test records, or says nothing.
+                return found;
+            }
+
+            /// <summary>Every discipline the read carries, for the rail's chips.</summary>
+            /// <param name="read">Everything read, or null before the first read.</param>
+            private List<string> Trades(List<TestEntry>? read)
+            {
+                var found = new List<string>();
+
+                foreach (var entry in read ?? new List<TestEntry>())
+                    foreach (var name in Trades(entry))
+                        if (!found.Contains(name, StringComparer.OrdinalIgnoreCase)) found.Add(name);
+
+                found.Sort(StringComparer.CurrentCulture);
+
+                return found;
+            }
+
+            /// <summary>Every clash folder the read carries, for the rail's chips.</summary>
+            /// <param name="read">Everything read, or null before the first read.</param>
+            private static List<string> Folders(List<TestEntry>? read)
+            {
+                var found = new List<string>();
+
+                foreach (var entry in read ?? new List<TestEntry>())
+                {
+                    var folder = entry.Test.Folder ?? string.Empty;
+
+                    if (folder.Length > 0
+                        && !found.Contains(folder, StringComparer.OrdinalIgnoreCase))
+                        found.Add(folder);
+                }
+
+                found.Sort(StringComparer.CurrentCulture);
+
+                return found;
+            }
+
+            /// <summary>What a test is between, as one phrase.</summary>
+            /// <param name="entry">The test.</param>
+            private string Sides(TestEntry entry)
+            {
+                var both = Trades(entry);
+
+                // Not "everything against everything", which is a claim about the test. A test
+                // whose sides are an ad-hoc selection records nothing this can read, and saying
+                // so is the only honest line.
+                return both.Count >= 2 ? both[0] + " v " + both[1]
+                     : both.Count == 1 ? both[0] + " against a selection this test does not name"
+                     : "two selections this test does not name";
+            }
+
+            /// <summary>This test's tolerance, in the units somebody set it in.</summary>
+            /// <param name="entry">The test.</param>
+            private string Tolerance(TestEntry entry)
+            {
+                var metres = entry.Shape?.ToleranceMetres;
+
+                if (!metres.HasValue) return "the tolerance it was run at";
+
+                var mm = Math.Abs(metres.Value) * 1000;
+
+                return mm >= 1000
+                    ? (mm / 1000).ToString("0.##", CultureInfo.InvariantCulture) + " m"
+                    : mm.ToString("0.##", CultureInfo.InvariantCulture) + " mm";
+            }
+
+            /// <summary>This test's tolerance in millimetres, or the usual 25 when it has none.</summary>
+            /// <param name="entry">The test, or null.</param>
+            private static double ToleranceMm(TestEntry? entry)
+            {
+                var metres = entry?.Shape?.ToleranceMetres;
+
+                return metres.HasValue && Math.Abs(metres.Value) > 0
+                    ? Math.Abs(metres.Value) * 1000
+                    : 25;
+            }
+
+            /// <summary>When the host last ran a test, or empty when it has never said.</summary>
+            /// <param name="entry">The test.</param>
+            private static string When(TestEntry entry)
+            {
+                var ticks = entry.Test.LastRunTicks;
+
+                if (ticks <= 0 || ticks > DateTime.MaxValue.Ticks) return string.Empty;
+
+                var when = new DateTime(ticks, DateTimeKind.Utc).ToLocalTime();
+
+                // A run this week reads as a day and a time, which is how somebody talks about it.
+                // Older than that and the day of the week stops identifying anything.
+                return DateTime.Now - when < TimeSpan.FromDays(6)
+                    ? when.ToString("ddd HH:mm", CultureInfo.CurrentCulture)
+                    : when.ToString("d MMM HH:mm", CultureInfo.CurrentCulture);
+            }
+
+            /// <summary>Text in the quotation marks a chip puts round a search.</summary>
+            /// <param name="text">What was typed.</param>
+            private static string Quoted(string text) => "“" + text + "”";
+
+            // -------------------------------------------------------------------------------
+            // What the board shows
+            // -------------------------------------------------------------------------------
+
+            /// <summary>
+            /// Whether a result answers the board's search box.
+            ///
+            /// Every column the board can show, and the ones it cannot: the trail, the categories
+            /// and whatever a reviewer set. A search that only matched the result's own name is
+            /// the search that reads as broken the first time somebody types an element name into
+            /// it, which is what they will type.
+            /// </summary>
+            /// <param name="row">The result.</param>
+            /// <param name="find">What was typed.</param>
             private bool Hits(Row row, string find)
             {
                 bool Has(string? value) =>
@@ -1129,415 +3482,541 @@ namespace CamelWorks.UI.Views
                 return false;
             }
 
+            /// <summary>Whether anything at all is narrowing the board.</summary>
+            private bool Filtering =>
+                _status != null || _party != null || _boardFind.Trim().Length > 0
+                || _showing != BothKinds || _sameAs != null || _byColumn.Count > 0;
 
-            // -------------------------------------------------------------------------------
-            // Drawing
-            // -------------------------------------------------------------------------------
-
-            private void Redraw()
+            /// <summary>Whether one result survives every filter in force.</summary>
+            /// <param name="row">The result.</param>
+            private bool Keep(Row row)
             {
-                RedrawTests();
-            }
+                // One segment, one status. The strip used to fold Approved into Resolved on the
+                // grounds that the difference is a reviewer's rather than a coordinator's - which
+                // is true of the colour and not of the filter. Navisworks has five statuses, the
+                // chip on the row writes all five, and a status that can be written and not found
+                // is a row somebody loses.
+                if (_status != null
+                    && !string.Equals(row.Status, _status, StringComparison.OrdinalIgnoreCase))
+                    return false;
 
-            private void RedrawTests()
-            {
-                _tests.Children.Clear();
-                _testsTable = null;
+                if (_party != null
+                    && !string.Equals(row.Assigned, _party, StringComparison.OrdinalIgnoreCase))
+                    return false;
 
-                // The source can have changed since the foot was built, and with it whether the
-                // document will take a sync at all.
-                ArmSync();
+                if (_sameAs != null && !Shares(row, _sameAs)) return false;
 
-                var read = Current();
-                if (read == null) { Arm(); return; }
-
-                var find = _find.Text.Trim();
-                var searching = find.Length > 0 && _searchIn != JustResults;
-
-                var wanted = read
-                    .Where(e => !searching
-                                || e.Test.Name.IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0
-                                || e.Rows.Any(r => Hits(r, find)))
-                    .Where(e => !_hideEmpty || e.Rows.Count > 0)
-                    .ToList();
-
-                _headline.Children.Clear();
-
-                if (!OnFile && WaitingCount > 0)
+                foreach (var narrowed in _byColumn)
                 {
-                    _headline.Children.Add(Ui.Info(
-                        Ui.Count(WaitingCount, "result") + " carries an edit this document would "
-                        + "not take. Published files hold their clash results read-only, so the "
-                        + "decisions are kept here: they show on the board, they survive a "
-                        + "re-read, and \"Save the baseline\" writes them out as clash XML to "
-                        + "sync into the NWF the results belong to."));
+                    var column = _columns.FirstOrDefault(c => c.Id == narrowed.Key);
 
-                    _headline.Children.Add(Ui.Actions(
-                        Ui.Quiet("What is waiting", ShowHeld),
-                        Ui.Quiet("Forget them", ForgetHeld)));
+                    if (column != null
+                        && !string.Equals(Custom(row, column), narrowed.Value,
+                                          StringComparison.OrdinalIgnoreCase))
+                        return false;
                 }
 
-                _testsSay.Text =
-                    (OnFile && _file != null
-                        ? System.IO.Path.GetFileName(_file.Path) + " — "
-                        : string.Empty)
-                    + (wanted.Count == read.Count
-                        ? Ui.Count(read.Count, "test")
-                        : wanted.Count + " of " + Ui.Count(read.Count, "test"))
-                    + ", " + Ui.Count(read.Sum(e => e.Rows.Count), "result");
+                var find = _boardFind.Trim();
 
-                if (wanted.Count == 0)
-                {
-                    _tests.Children.Add(Ui.Empty("No test matches.",
-                        "Clear the search at the top, or widen what it covers."));
-                    Arm();
-                    RedrawGroups();
-                    return;
-                }
-
-                // Five status columns were five numbers to read per row. One band says the same
-                // thing at a glance and leaves the width for the name, which is the long part.
-                var rows = wanted.Select(e => new TableRow(e,
-                    e.Test.Name,
-                    e.Test.Folder ?? string.Empty,
-                    Skin.Num(e.Rows.Count),
-                    Band(e))
-                {
-                    Tone = e.Of("New") > 0 ? Tone.Warn : Tone.Plain,
-                }).ToList();
-
-                var table = Ui.Table(rows,
-                    ("Test", 200), ("Folder", 80), ("Results", 65), ("New · active · closed", 0));
-
-                _testsTable = table;
-
-                table.SelectionChanged += (s, e) =>
-                {
-                    _pickedTests.Clear();
-
-                    foreach (var picked in table.PickedMany())
-                        if (picked is TestEntry entry) _pickedTests.Add(entry.Test.Id);
-
-                    Arm();
-                    RedrawGroups();
-                };
-
-                // A file is a record of a run: tests cannot be run, renamed, moved or deleted in
-                // one, so those verbs are not on a file's menu rather than shown grey.
-                table.Menu(OnFile
-                    ? new[] { new Ui.OnMenu("Copy {n}", picked => CopyTests(picked, _log)) }
-                    : new[]
-                    {
-                        new Ui.OnMenu("Run {n}", picked => RunTests(picked, _log)),
-                        new Ui.OnMenu("Rename...", picked => RenameTests(picked, _log)),
-                        new Ui.OnMenu("Renumber the results of {n}", picked => RenameResults(picked, _log)),
-                        new Ui.OnMenu("Move {n} to a folder", picked => MoveTests(picked, _log)),
-                        new Ui.OnMenu("Compact {n}", picked => CompactTests(picked, _log)),
-                        new Ui.OnMenu("Delete {n}", picked => DeleteTests(picked, _log)),
-                        new Ui.OnMenu("Copy {n}", picked => CopyTests(picked, _log)),
-                    });
-
-                _tests.Children.Add(table);
-
-                Arm();
-                RedrawGroups();
-            }
-
-            /// <summary>A test's results as one band: how many are new, working, and closed.</summary>
-            private static string Band(TestEntry entry)
-            {
-                if (entry.Rows.Count == 0) return "—";
-
-                var closed = entry.Of("Approved") + entry.Of("Resolved");
-                var active = entry.Of("Active") + entry.Of("Reviewed");
-
-                return Skin.Num(entry.Of("New")) + " · " + Skin.Num(active) + " · " + Skin.Num(closed);
-            }
-
-            /// <summary>The rows the filters allow, before any group pick narrows them.</summary>
-            private List<Row> Filtered()
-            {
-                var read = Current();
-                if (read == null) return new List<Row>();
-
-                var from = _pickedTests.Count == 0
-                    ? read
-                    : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
-
-                var rows = from
-                    .SelectMany(e => e.Rows)
-                    .Where(r => _show.Contains(r.Status))
-                    .Where(r => !_onlyCommented || r.Comments > 0);
-
-                // The bench's own search, which covers both tables. The column filter below is
-                // the same idea aimed at one column, and lives in the configuration window.
-                var find = _find.Text.Trim();
-
-                if (find.Length > 0 && _searchIn != JustTests)
-                    rows = rows.Where(r => Hits(r, find));
-
-                var wanted = _filter.Text.Trim();
-
-                if (wanted.Length > 0)
-                    rows = rows.Where(r => Matches(r, wanted));
-
-                return rows.ToList();
-            }
-
-            /// <summary>Whether a row's chosen column - or any of them - contains the text.</summary>
-            private bool Matches(Row row, string wanted)
-            {
-                bool Has(string? value) =>
-                    value != null && value.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0;
-
-                if (_filterIn != AnyColumn)
-                {
-                    foreach (var column in _columns)
-                        if (string.Equals(_filterIn, column.Title, StringComparison.Ordinal))
-                            return Has(row.Custom.TryGetValue(column.Id, out var v) ? v : null);
-
-                    return _filterIn switch
-                    {
-                        "Result" => Has(row.Info.Name),
-                        "Test" => Has(row.TestName),
-                        "Group" => Has(row.Group),
-                        "Status" => Has(row.Status),
-                        "Assigned" => Has(row.Assigned),
-                        "Comment" => Has(row.LastComment),
-                        "Item 1" => Has(row.Info.NameA),
-                        "Item 2" => Has(row.Info.NameB),
-                        _ => false,
-                    };
-                }
-
-                if (Has(row.Info.Name) || Has(row.TestName) || Has(row.Group) || Has(row.Status)
-                    || Has(row.Assigned) || Has(row.LastComment)
-                    || Has(row.Info.NameA) || Has(row.Info.NameB)
-                    || Has(row.Info.CategoryA) || Has(row.Info.CategoryB))
-                    return true;
-
-                foreach (var value in row.Custom.Values)
-                    if (Has(value)) return true;
-
-                return false;
-            }
-
-            /// <summary>The filter's column picker, rebuilt when the custom columns change.</summary>
-            private void RedrawFilterScope()
-            {
-                _filterScope.Children.Clear();
-
-                var options = new List<string>
-                {
-                    AnyColumn, "Result", "Test", "Group", "Status", "Assigned", "Comment",
-                    "Item 1", "Item 2",
-                };
-
-                foreach (var column in _columns) options.Add(column.Title);
-
-                if (!options.Contains(_filterIn)) _filterIn = AnyColumn;
-
-                _filterScope.Children.Add(Ui.Choice(options, _filterIn, pick =>
-                {
-                    _filterIn = pick;
-                    if (_filter.Text.Trim().Length > 0) RedrawGroups();
-                }, 150));
+                return find.Length == 0 || Hits(row, find);
             }
 
             /// <summary>
-            /// The grouping chain's summary: one row per leaf band, with its counts, its own
-            /// bulk verbs, and picking that narrows the results grid to the picked bands. The
-            /// same master-detail the tests table already is, one level further in.
+            /// Whether a result touches either of another result's two items.
+            ///
+            /// <b>By key, not by name.</b> Two different ducts are called "Duct 400x250" on every
+            /// job there has ever been, and a filter that matched on the name would answer "what
+            /// else clashes with this duct" with every duct of that size in the federation. The
+            /// element key is the identity; the name is only what it is called.
+            ///
+            /// Names are the fallback for the one case the key cannot cover: a board read from
+            /// somebody else's file, where the keys did not survive the round trip.
             /// </summary>
-            private void RedrawGroups()
+            /// <param name="row">The result being tested.</param>
+            /// <param name="origin">The result whose items are being looked for.</param>
+            private static bool Shares(Row row, Row origin)
             {
-                _groups.Children.Clear();
-                _pickedGroups.Clear();
-
-                if (_chain.Count == 0)
+                bool Touches(ElementKey key, string? name)
                 {
-                    RedrawResults();
+                    if (!key.IsEmpty)
+                        return key.Equals(origin.Info.A) || key.Equals(origin.Info.B);
+
+                    if (string.IsNullOrEmpty(name)) return false;
+
+                    return string.Equals(name, origin.Info.NameA, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, origin.Info.NameB, StringComparison.OrdinalIgnoreCase);
+                }
+
+                return Touches(row.Info.A, row.Info.NameA) || Touches(row.Info.B, row.Info.NameB);
+            }
+
+            /// <summary>What the two items of the clash being matched against are called.</summary>
+            /// <param name="origin">The clash.</param>
+            private static string Both(Row origin)
+            {
+                var a = origin.Info.NameA ?? string.Empty;
+                var b = origin.Info.NameB ?? string.Empty;
+
+                return a.Length > 0 && b.Length > 0 ? a + " and " + b
+                     : a.Length > 0 ? a
+                     : b.Length > 0 ? b
+                     : origin.Info.Name ?? "this clash";
+            }
+
+            /// <summary>The clash groups the filters leave, each with the members they leave.</summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<BoardRow> GroupRows(TestEntry entry)
+            {
+                if (_showing == JustLoose) return new List<BoardRow>();
+
+                return entry.Rows
+                    .Where(r => r.Group.Length > 0)
+                    .Where(Keep)
+                    .GroupBy(r => r.Group, StringComparer.Ordinal)
+                    .Select(g => new BoardRow(GroupId(g.Key), g.Key, true, g.ToList()))
+                    .ToList();
+            }
+
+            /// <summary>The results in no group that the filters leave.</summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<BoardRow> LooseRows(TestEntry entry)
+            {
+                if (_showing == JustGrouped) return new List<BoardRow>();
+
+                return entry.Rows
+                    .Where(r => r.Group.Length == 0)
+                    .Where(Keep)
+                    .Select(r => new BoardRow(Id(r), r.Info.Name ?? "this clash", false,
+                                              new List<Row> { r }))
+                    .ToList();
+            }
+
+            /// <summary>How many results the board is showing.</summary>
+            /// <param name="entry">The test on the board.</param>
+            private int Counted(TestEntry entry) =>
+                GroupRows(entry).Sum(g => g.Rows.Count) + LooseRows(entry).Count;
+
+            /// <summary>
+            /// The rows bucketed by whatever the view is arranged by, first seen first.
+            ///
+            /// A view arrangement and nothing else: no clash group is created, dissolved or
+            /// touched by any of this, which is what the band above each bucket and the footnote
+            /// under the table both say in as many words.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="groups">The clash groups the filters left.</param>
+            /// <param name="loose">The loose results the filters left.</param>
+            private List<KeyValuePair<string, List<BoardRow>>> Bands(
+                TestEntry entry, List<BoardRow> groups, List<BoardRow> loose)
+            {
+                var order = new List<string>();
+                var into = new Dictionary<string, List<BoardRow>>(StringComparer.Ordinal);
+
+                foreach (var row in groups.Concat(loose))
+                {
+                    var key = Bucket(entry, row);
+
+                    if (!into.TryGetValue(key, out var list))
+                    {
+                        list = new List<BoardRow>();
+                        into[key] = list;
+                        order.Add(key);
+                    }
+
+                    list.Add(row);
+                }
+
+                return order
+                    .Select(k => new KeyValuePair<string, List<BoardRow>>(k, into[k]))
+                    .ToList();
+            }
+
+            /// <summary>Which band a row falls in.</summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="row">The row.</param>
+            private string Bucket(TestEntry entry, BoardRow row)
+            {
+                switch (_arrange)
+                {
+                    case ByAssignee:
+                        return row.Assigned.Length == 0 ? "Nobody yet" : row.Assigned;
+
+                    case ByStatus:
+                        return row.Status;
+
+                    case ByHowBad:
+                        // Against this test's own tolerance, not a number typed once into a
+                        // design: a 50 mm drainage test and a 10 mm ceiling test do not share a
+                        // definition of bad.
+                        return Past(Deep(row))
+                            ? "Worse than " + Tolerance(entry)
+                            : "Within " + Tolerance(entry);
+
+                    default:
+                        return string.Empty;
+                }
+            }
+
+            // -------------------------------------------------------------------------------
+            // Identity, distance and tone
+            // -------------------------------------------------------------------------------
+
+            /// <summary>What picking one result keys off.</summary>
+            /// <param name="row">The result.</param>
+            private static string Id(Row row) => Where(row.TestId, row.Info.Id);
+
+            /// <summary>
+            /// What picking a clash group keys off.
+            ///
+            /// It can never collide with a result's id, whatever a group is called: a result's is
+            /// two host ids either side of a unit separator, and no group name reaches this
+            /// carrying one.
+            /// </summary>
+            /// <param name="name">The group's name.</param>
+            private static string GroupId(string name) => "group" + name;
+
+            /// <summary>One result's overlap in millimetres, negative for a penetration.</summary>
+            /// <param name="row">The result.</param>
+            private double? Deep(Row row)
+            {
+                if (!row.Info.Distance.HasValue) return null;
+
+                return row.Info.Distance.Value * (OnFile ? 1.0 : _session.MetresPerUnit) * 1000;
+            }
+
+            /// <summary>The worst overlap among a row's results.</summary>
+            /// <param name="row">The row.</param>
+            private double? Deep(BoardRow row)
+            {
+                double? worst = null;
+
+                foreach (var member in row.Rows)
+                {
+                    var mm = Deep(member);
+                    if (mm.HasValue && (!worst.HasValue || mm.Value < worst.Value)) worst = mm;
+                }
+
+                return worst;
+            }
+
+            /// <summary>Whether an overlap is past this test's tolerance.</summary>
+            /// <param name="mm">The overlap in millimetres, or null when the host has none.</param>
+            private bool Past(double? mm) => mm.HasValue && mm.Value <= -_toleranceMm;
+
+            /// <summary>One result's overlap, as the board prints it.</summary>
+            /// <param name="row">The result.</param>
+            private string Millimetres(Row row)
+            {
+                var mm = Deep(row);
+
+                return mm.HasValue
+                    ? mm.Value.ToString("0", CultureInfo.InvariantCulture) + " mm"
+                    : "—";
+            }
+
+            /// <summary>A group's worst overlap, as the board prints it.</summary>
+            /// <param name="row">The group.</param>
+            private string Deepest(BoardRow row)
+            {
+                var mm = Deep(row);
+
+                return mm.HasValue
+                    ? mm.Value.ToString("0", CultureInfo.InvariantCulture) + " mm"
+                    : "—";
+            }
+
+            /// <summary>Whether a result is past tolerance.</summary>
+            /// <param name="row">The result.</param>
+            private bool Bad(Row row) => Past(Deep(row));
+
+            /// <summary>Whether a row's worst is past tolerance.</summary>
+            /// <param name="row">The row.</param>
+            private bool Bad(BoardRow row) => Past(Deep(row));
+
+            /// <summary>How a status reads.</summary>
+            /// <param name="status">The status.</param>
+            private static Tone Reads(string status) => status switch
+            {
+                "New" => Tone.Bad,
+                "Reviewed" => Tone.Warn,
+                "Approved" => Tone.Good,
+                "Resolved" => Tone.Good,
+                _ => Tone.Plain,
+            };
+
+            /// <summary>The tone bar down the left of a row, or nothing while it is only active.</summary>
+            /// <param name="status">The row's status.</param>
+            private static System.Windows.Media.Brush Edge(string status) => status switch
+            {
+                "New" => Skin.Of("RedTx"),
+                "Reviewed" => Skin.Of("AmberTx"),
+                "Approved" => Skin.Of("Ok"),
+                "Resolved" => Skin.Of("Ok"),
+                _ => System.Windows.Media.Brushes.Transparent,
+            };
+
+            /// <summary>One custom column's value on a result, or empty.</summary>
+            /// <param name="row">The result.</param>
+            /// <param name="column">The column.</param>
+            private static string Custom(Row row, PropColumn column) =>
+                row.Custom.TryGetValue(column.Id, out var value) ? value : string.Empty;
+
+            // -------------------------------------------------------------------------------
+            // What is picked
+            // -------------------------------------------------------------------------------
+
+            /// <summary>Every result under what is ticked, each one once.</summary>
+            private List<Row> Picked()
+            {
+                var entry = Entry();
+                if (entry == null) return new List<Row>();
+
+                var rows = new List<Row>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+
+                foreach (var row in GroupRows(entry).Concat(LooseRows(entry)))
+                {
+                    if (!_picked.Contains(row.Id)) continue;
+
+                    foreach (var member in row.Rows)
+                        if (seen.Add(Id(member))) rows.Add(member);
+                }
+
+                // A member of an open group, ticked on its own row rather than through its group.
+                foreach (var member in entry.Rows)
+                    if (_picked.Contains(Id(member)) && seen.Add(Id(member))) rows.Add(member);
+
+                return rows;
+            }
+
+            /// <summary>The results among these that are in no clash group.</summary>
+            /// <param name="rows">The results.</param>
+            private static List<Row> LooseIn(IEnumerable<Row> rows) =>
+                rows.Where(r => r.Group.Length == 0).ToList();
+
+            /// <summary>Tick every row of a band.</summary>
+            /// <param name="rows">The band's rows.</param>
+            private void PickAll(IEnumerable<BoardRow> rows)
+            {
+                foreach (var row in rows) _picked.Add(row.Id);
+                RedrawRows();
+            }
+
+            /// <summary>These results, plus whatever else is already ticked.</summary>
+            /// <param name="picked">The row the menu was opened on.</param>
+            private IReadOnlyList<object> WithPicked(IReadOnlyList<object> picked)
+            {
+                var rows = Rows(picked);
+                var seen = new HashSet<string>(rows.Select(Id), StringComparer.Ordinal);
+
+                foreach (var row in Picked()) if (seen.Add(Id(row))) rows.Add(row);
+
+                return rows.Cast<object>().ToList();
+            }
+
+            /// <summary>The next unused "New group N" for this test.</summary>
+            private string Suggested()
+            {
+                var entry = Entry();
+
+                var taken = new HashSet<string>(
+                    (entry?.Rows ?? new List<Row>()).Select(r => r.Group).Where(g => g.Length > 0),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var n = 1;
+                while (taken.Contains("New group " + n)) n++;
+
+                return "New group " + n;
+            }
+
+            // -------------------------------------------------------------------------------
+            // Asking for a word before doing something with it
+            // -------------------------------------------------------------------------------
+
+            /// <summary>
+            /// Ask for one line of text, beside the board rather than in a window.
+            ///
+            /// It used to be a field on a settings page behind a symbol: type the name there,
+            /// come back, pick the rows, press Group. Three of the four steps were the interface's
+            /// and not the job's.
+            /// </summary>
+            /// <param name="title">What is being asked for.</param>
+            /// <param name="starting">What the box starts with.</param>
+            /// <param name="caption">What the button says.</param>
+            /// <param name="onDone">What to do with the answer.</param>
+            private void Prompt(string title, string starting, string caption, Action<string> onDone)
+            {
+                Parts.Ask(_anchor, title, starting, caption, text => Ui.Safely(() => onDone(text)));
+            }
+
+            // -------------------------------------------------------------------------------
+            // Writing, from the board's own controls
+            // -------------------------------------------------------------------------------
+
+            /// <summary>Set one row's status, from the chip that shows it.</summary>
+            /// <param name="row">The row.</param>
+            /// <param name="status">The new status.</param>
+            private void SetStatus(BoardRow row, string status) =>
+                Mark(row.Rows.Cast<object>().ToList(), status, _toast);
+
+            /// <summary>Set one row's assignee, from the chip that shows it.</summary>
+            /// <param name="row">The row.</param>
+            /// <param name="who">Who it is with now.</param>
+            private void SetAssignee(BoardRow row, string who) =>
+                AssignPicked(row.Rows.Cast<object>().ToList(), who == Nobody ? string.Empty : who,
+                             _toast);
+
+            /// <summary>Set the status or the assignee over everything picked.</summary>
+            /// <param name="picked">The rows.</param>
+            /// <param name="value">The new value.</param>
+            /// <param name="status">True for a status, false for an assignee.</param>
+            private void SetMany(IReadOnlyList<object> picked, string value, bool status)
+            {
+                if (status) Mark(picked, value, _toast);
+                else AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
+            }
+
+            /// <summary>
+            /// Group, ungroup, rename or move — every one of which is the same host write.
+            ///
+            /// A real clash group, made in the test: it is saved with the test, it carries its own
+            /// status and comments, and it goes out with every report and BCF file. Nothing on
+            /// this board makes a group that only this screen can see.
+            /// </summary>
+            /// <param name="picked">The results to move.</param>
+            /// <param name="name">The group to put them in, or empty to put them back loose.</param>
+            /// <param name="did">What to say afterwards, with a slot for the count.</param>
+            private void Regroup(IReadOnlyList<object> picked, string name, string did)
+            {
+                var into = (name ?? string.Empty).Trim();
+
+                Write(picked, _toast,
+                      into.Length == 0
+                          ? "Put {0} back loose, out of their clash group."
+                          : did + " " + Quoted(into) + ".",
+                      (testId, ids) => _session.Clash.Regroup(testId, ids, into),
+                      row => row.Group = into,
+                      finding => finding.Group = into.Length == 0 ? null : into,
+                      FindingField.Group);
+
+                if (into.Length > 0)
+                {
+                    _made.Add(GroupId(into));
+                    _open.Add(GroupId(into));
+                }
+
+                _picked.Clear();
+                Redraw();
+            }
+
+            /// <summary>Rename the test on the board.</summary>
+            /// <param name="entry">The test.</param>
+            /// <param name="name">Its new name.</param>
+            private void RenameTest(TestEntry? entry, string name)
+            {
+                var wanted = (name ?? string.Empty).Trim();
+
+                if (entry == null || wanted.Length == 0)
+                {
+                    Said(Ui.Problem("Pick a test on the left and type a name for it."));
                     return;
                 }
 
-                var rows = Filtered();
+                if (!_session.Clash.RenameTest(entry.Test.Id, wanted))
+                {
+                    Said(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    return;
+                }
 
-                var buckets = new Dictionary<string, Bucket>(StringComparer.Ordinal);
+                _session.Record(ActivityKind.Regroup,
+                                "renamed the test \"" + entry.Test.Name + "\" to \"" + wanted + "\"");
+
+                Reread("Renamed.", null);
+            }
+
+            /// <summary>
+            /// Rename results — through the database, like every other edit on this board.
+            ///
+            /// <b>This one used to go straight to the host.</b> It called <c>RenamePicked</c>, and
+            /// if the document refused — a published NWD refuses everything — the rename was
+            /// simply gone. Every other edit on this screen survives that: the finding takes it,
+            /// the board keeps showing it, and the sync writes it into the NWF later. A name is
+            /// one of the five fields the register holds and one of the five the sync pushes, so
+            /// there was no reason for it to be the exception except that it was written last.
+            ///
+            /// The host has no rename for one result: it takes a prefix and numbers what is
+            /// picked from it, so renaming one row makes "Corridor1". The board is one test at a
+            /// time, so mirroring that numbering locally is exact.
+            /// </summary>
+            /// <param name="rows">The results to rename.</param>
+            /// <param name="prefix">What to number them from.</param>
+            private void Renumber(IReadOnlyList<Row> rows, string prefix)
+            {
+                prefix = (prefix ?? string.Empty).Trim();
+
+                if (rows.Count == 0 || prefix.Length == 0) return;
+
+                var n = 0;
+
+                Write(rows.Cast<object>().ToList(), _toast,
+                      rows.Count == 1
+                          ? "Renamed it to “" + prefix + "1” — the host numbers what "
+                            + "it renames."
+                          : "Renamed {0} to “" + prefix + "1” onwards.",
+                      (testId, ids) => _session.Clash.RenamePicked(testId, ids, prefix),
+                      row => row.Info.Name = prefix + (++n).ToString(CultureInfo.InvariantCulture),
+                      finding => finding.Title = prefix,
+                      FindingField.Title);
+            }
+
+            /// <summary>Copy the rail to the clipboard, one test per line.</summary>
+            /// <param name="read">The tests.</param>
+            private void CopyTests(IReadOnlyList<TestEntry> read)
+            {
+                var lines = new List<string> { "Test\tFolder\tResults\tNew\tActive\tReviewed\tClosed" };
+
+                foreach (var entry in read)
+                    lines.Add(string.Join("\t", entry.Test.Name, entry.Test.Folder ?? string.Empty,
+                                          entry.Rows.Count.ToString(CultureInfo.InvariantCulture),
+                                          entry.Of("New").ToString(CultureInfo.InvariantCulture),
+                                          entry.Of("Active").ToString(CultureInfo.InvariantCulture),
+                                          entry.Of("Reviewed").ToString(CultureInfo.InvariantCulture),
+                                          (entry.Of("Approved") + entry.Of("Resolved"))
+                                              .ToString(CultureInfo.InvariantCulture)));
+
+                Ui.Copy(lines, _toast, "test");
+            }
+
+            /// <summary>Copy results to the clipboard, as the board's own columns.</summary>
+            /// <param name="rows">The results.</param>
+            private void CopyRows(IReadOnlyList<Row> rows)
+            {
+                var head = new List<string> { "Result", "Clash group", "Item 1", "Item 2", "Worst" };
+
+                foreach (var column in _columns) head.Add(column.Title);
+
+                head.Add("Status");
+                head.Add("Assigned");
+
+                var lines = new List<string> { string.Join("\t", head) };
 
                 foreach (var row in rows)
                 {
-                    var name = ChainKey(row);
-
-                    if (!buckets.TryGetValue(name, out var bucket))
+                    var cells = new List<string>
                     {
-                        bucket = new Bucket(name);
-                        buckets[name] = bucket;
-                    }
-
-                    bucket.Rows.Add(row);
-                }
-
-                var ordered = buckets.Values
-                    .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                _groups.Children.Add(Ui.Eyebrow("Grouped by "
-                    + string.Join(" · ", _chain.Select(ChainTitle))));
-
-                var table = Ui.Table(ordered.Select(b => new TableRow(b,
-                    b.Name,
-                    Skin.Num(b.Rows.Count),
-                    Skin.Num(b.Of("New")),
-                    Skin.Num(b.Of("Active")),
-                    Skin.Num(b.Of("Reviewed")),
-                    Skin.Num(b.Of("Approved")),
-                    Skin.Num(b.Of("Resolved")))
-                {
-                    Tone = b.Of("New") > 0 ? Tone.Warn : Tone.Plain,
-                }).ToList(),
-                    ("Group", 300), ("Results", 70), ("New", 55), ("Active", 55),
-                    ("Reviewed", 70), ("Approved", 70), ("Resolved", 0));
-
-                table.SelectionChanged += (s, e) =>
-                {
-                    _pickedGroups.Clear();
-
-                    foreach (var picked in table.PickedMany())
-                        if (picked is Bucket bucket) _pickedGroups.Add(bucket.Name);
-
-                    RedrawResults();
-                };
-
-                _groups.Children.Add(Ui.Picking(table,
-                    new Ui.OnPicked("Mark {n}", (picked, say) =>
-                        Mark(Flatten(picked), say)),
-                    new Ui.OnPicked("Assign {n}", (picked, say) =>
-                        AssignPicked(Flatten(picked), say)),
-                    new Ui.OnPicked("Comment {n}", (picked, say) =>
-                        CommentPicked(Flatten(picked), say)),
-                    new Ui.OnPicked("Copy {n}",
-                        (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "group"))));
-
-                RedrawResults();
-            }
-
-            /// <summary>The picked buckets' rows, as the row verbs expect them.</summary>
-            private static IReadOnlyList<object> Flatten(IReadOnlyList<object> picked) =>
-                picked.OfType<Bucket>().SelectMany(b => b.Rows).Cast<object>().ToList();
-
-            private void RedrawResults()
-            {
-                _results.Children.Clear();
-                _resultsTable = null;
-
-                if (Current() == null) { Arm(); return; }
-
-                var rows = Filtered();
-
-                if (_chain.Count > 0 && _pickedGroups.Count > 0)
-                    rows = rows.Where(r => _pickedGroups.Contains(ChainKey(r))).ToList();
-
-                _resultsSay.Text =
-                    (_chain.Count > 0 && _pickedGroups.Count > 0
-                        ? "of " + Ui.Count(_pickedGroups.Count, "picked group")
-                        : _pickedTests.Count == 0
-                            ? "every test"
-                            : "of " + Ui.Count(_pickedTests.Count, "picked test"))
-                    + " — " + Ui.Count(rows.Count, "shown");
-
-                if (rows.Count == 0)
-                {
-                    _results.Children.Add(Ui.Empty("Nothing matches.",
-                        "Every result of "
-                        + (_pickedTests.Count == 0 ? "every test" : "the picked tests")
-                        + " is filtered out. Untick a status on the strip above, clear the search, "
-                        + "or pick other tests."));
-                    Arm();
-                    return;
-                }
-
-                // The window stays honest about what a table can hold: the verbs below act on
-                // what is picked in what is SHOWN, and a cap this size scrolls rather than hangs.
-                const int most = 2500;
-                var shown = rows.Count > most ? rows.Take(most).ToList() : rows;
-
-                _shown = shown;
-
-                // The columns are built as lists because the custom ones come and go: the
-                // property columns land between Worst and Assigned, where the eye is already
-                // reading facts about the elements.
-                var headers = new List<(string, double)>
-                {
-                    ("Result", 110), ("Test", 140), ("Group", 80), ("Status", 70), ("Worst", 65),
-                };
-
-                foreach (var column in _columns) headers.Add((column.Title, 95));
-
-                // Only when somebody has actually set one. A permanently empty column is width
-                // taken from the names, which are the long part.
-                var reviewed = shown.Any(r => r.Review != null);
-
-                if (reviewed) headers.Add(("Reviewer set", 130));
-
-                headers.Add(("Assigned", 85));
-                headers.Add(("Comment", 130));
-                headers.Add(("Item 1", 110));
-                headers.Add(("Item 2", 0));
-
-                TableRow Line(Row r)
-                {
-                    var cells = new List<string?>
-                    {
-                        r.Info.Name ?? string.Empty, r.TestName, r.Group, r.Status, Worst(r),
+                        row.Info.Name ?? string.Empty, row.Group, row.Info.NameA ?? string.Empty,
+                        row.Info.NameB ?? string.Empty, Millimetres(row),
                     };
 
-                    foreach (var column in _columns)
-                        cells.Add(r.Custom.TryGetValue(column.Id, out var value)
-                            ? value
-                            : string.Empty);
+                    foreach (var column in _columns) cells.Add(Custom(row, column));
 
-                    if (reviewed) cells.Add(r.Review?.Describe() ?? string.Empty);
+                    cells.Add(row.Status);
+                    cells.Add(row.Assigned);
 
-                    cells.Add(r.Assigned);
-                    cells.Add(r.Comments == 0 ? string.Empty : r.LastComment);
-                    cells.Add(r.Info.NameA ?? string.Empty);
-                    cells.Add(r.Info.NameB ?? string.Empty);
-
-                    return new TableRow(r, cells.ToArray())
-                    {
-                        Tone = r.Review?.IsOverdue(DateTime.UtcNow.Ticks) == true ? Tone.Bad
-                             : string.Equals(r.Status, "New", StringComparison.OrdinalIgnoreCase) ? Tone.Bad
-                             : string.Equals(r.Status, "Resolved", StringComparison.OrdinalIgnoreCase)
-                               || string.Equals(r.Status, "Approved", StringComparison.OrdinalIgnoreCase) ? Tone.Good
-                             : Tone.Plain,
-                    };
+                    lines.Add(string.Join("\t", cells));
                 }
 
-                var table = Ui.Table(shown.Select(Line).ToList(), headers.ToArray())
-                    .Menu(new Ui.OnMenu("Focus {n}", picked => Focus(picked, _log)),
-                          new Ui.OnMenu("Isolate {n}", picked => Isolate(picked, _log)),
-                          new Ui.OnMenu("Mark {n} " + _mark, picked => Mark(picked, _log)),
-                          new Ui.OnMenu("Assign {n} to " + Who(), picked => AssignPicked(picked, _log)),
-                          new Ui.OnMenu("Comment on {n}", picked => CommentPicked(picked, _log)),
-                          new Ui.OnMenu("Group {n}", picked => GroupPicked(picked, _log)),
-                          new Ui.OnMenu("Create an issue from {n}", picked => RaiseIssue(picked, false)),
-                          new Ui.OnMenu("An issue for each of {n}", picked => RaiseIssue(picked, true)),
-                          new Ui.OnMenu("Attach {n} to an issue...", picked => AttachToIssue(picked, _log)),
-                          new Ui.OnMenu("Marker sphere on {n}", picked => Spheres(picked, _log)),
-                          new Ui.OnMenu("Copy {n}", picked => CopyResults(picked, _log)));
-
-                _resultsTable = table;
-
-                table.SelectionChanged += (s, e) => Arm();
-
-                _results.Children.Add(table);
-
-                Arm();
-
-                if (rows.Count > most)
-                    _results.Children.Add(Ui.Note(Ui.Count(rows.Count, "result") + " match, and the "
-                        + "first " + most.ToString("N0", CultureInfo.InvariantCulture) + " are on "
-                        + "screen. Pick a test above, or tighten the status filter, to see the rest."));
+                Ui.Copy(lines, _toast, "result");
             }
 
             // -------------------------------------------------------------------------------
@@ -1579,47 +4058,20 @@ namespace CamelWorks.UI.Views
                 Reread(Ui.Count(ran, "test") + " ran.", problems);
             }
 
-            private void RenameTests(IReadOnlyList<object> picked, Panel say)
+            /// <summary>Renumber a test's results, prefix1, prefix2, and so on.</summary>
+            /// <param name="picked">The test.</param>
+            /// <param name="prefix">What to call them.</param>
+            /// <param name="say">Where the outcome goes.</param>
+            private void RenameResults(IReadOnlyList<object> picked, string prefix, Panel say)
             {
                 say.Children.Clear();
 
                 var tests = Entries(picked);
-                var name = _renameTest.Text.Trim();
-
-                if (tests.Count != 1)
-                {
-                    say.Children.Add(Ui.Problem("Renaming names one test. Pick exactly one, or use "
-                        + "the results prefix for the rows inside one."));
-                    return;
-                }
-
-                if (name.Length == 0)
-                {
-                    say.Children.Add(Ui.Problem("Type the new name in \"Rename to\" first."));
-                    return;
-                }
-
-                if (!_session.Clash.RenameTest(tests[0].Test.Id, name))
-                {
-                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
-                    return;
-                }
-
-                _session.Record(ActivityKind.Regroup,
-                                "renamed the test \"" + tests[0].Test.Name + "\" to \"" + name + "\"");
-                Reread("Renamed.", null);
-            }
-
-            private void RenameResults(IReadOnlyList<object> picked, Panel say)
-            {
-                say.Children.Clear();
-
-                var tests = Entries(picked);
-                var prefix = _renameResults.Text.Trim();
+                prefix = (prefix ?? string.Empty).Trim();
 
                 if (prefix.Length == 0)
                 {
-                    say.Children.Add(Ui.Problem("Type the prefix in \"Results prefix\" first."));
+                    say.Children.Add(Ui.Problem("Renumbering needs a prefix to number from."));
                     return;
                 }
 
@@ -1641,12 +4093,16 @@ namespace CamelWorks.UI.Views
                 Reread("Renamed the results of " + Ui.Count(done, "test") + ".", null);
             }
 
-            private void MoveTests(IReadOnlyList<object> picked, Panel say)
+            /// <summary>Move tests into a clash folder, or out to the root.</summary>
+            /// <param name="picked">The tests.</param>
+            /// <param name="folder">The folder, or empty for the root.</param>
+            /// <param name="say">Where the outcome goes.</param>
+            private void MoveTests(IReadOnlyList<object> picked, string folder, Panel say)
             {
                 say.Children.Clear();
 
                 var tests = Entries(picked);
-                var folder = _folder.Text.Trim();
+                folder = (folder ?? string.Empty).Trim();
 
                 if (!_session.Clash.MoveTests(tests.Select(t => t.Test.Id).ToList(),
                                               folder.Length == 0 ? null : folder))
@@ -2114,20 +4570,28 @@ namespace CamelWorks.UI.Views
                     : _session.Model.SelectedKeys();
             }
 
-            private void Mark(IReadOnlyList<object> picked, Panel say) =>
-                Write(picked, say, "Marked {0} as " + _mark + ".",
-                      (testId, ids) => _session.Clash.SetStatus(testId, ids, _mark),
-                      row => row.Status = _mark,
+            /// <summary>Set the status on everything picked.</summary>
+            /// <param name="picked">The results.</param>
+            /// <param name="status">The status to write.</param>
+            /// <param name="say">Where the outcome goes.</param>
+            private void Mark(IReadOnlyList<object> picked, string status, Panel say) =>
+                Write(picked, say, "Marked {0} as " + status + ".",
+                      (testId, ids) => _session.Clash.SetStatus(testId, ids, status),
+                      row => row.Status = status,
                       finding =>
                       {
-                          if (FindingStatusLattice.TryParse(_mark, out var marked))
+                          if (FindingStatusLattice.TryParse(status, out var marked))
                               finding.Status = marked;
                       },
                       FindingField.Status);
 
-            private void AssignPicked(IReadOnlyList<object> picked, Panel say)
+            /// <summary>Assign everything picked, or clear the assignment.</summary>
+            /// <param name="picked">The results.</param>
+            /// <param name="who">Who it is with, or empty to clear it.</param>
+            /// <param name="say">Where the outcome goes.</param>
+            private void AssignPicked(IReadOnlyList<object> picked, string who, Panel say)
             {
-                var who = (_assign.Text ?? string.Empty).Trim();
+                who = (who ?? string.Empty).Trim();
 
                 Write(picked, say,
                       who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
@@ -2137,14 +4601,18 @@ namespace CamelWorks.UI.Views
                       FindingField.AssignedTo);
             }
 
-            private void CommentPicked(IReadOnlyList<object> picked, Panel say)
+            /// <summary>Add one comment to everything picked.</summary>
+            /// <param name="picked">The results.</param>
+            /// <param name="body">What the comment says.</param>
+            /// <param name="say">Where the outcome goes.</param>
+            private void CommentPicked(IReadOnlyList<object> picked, string body, Panel say)
             {
-                var body = _comment.Text.Trim();
+                body = (body ?? string.Empty).Trim();
 
                 if (body.Length == 0)
                 {
                     say.Children.Clear();
-                    say.Children.Add(Ui.Problem("Type the comment in the panel first."));
+                    say.Children.Add(Ui.Problem("A comment with nothing in it is not a comment."));
                     return;
                 }
 
@@ -2162,70 +4630,6 @@ namespace CamelWorks.UI.Views
                       },
                       finding => finding.Comments.Add(new FindingComment(author, when, body)),
                       FindingField.Comments);
-            }
-
-            /// <summary>Rename just the picked results, prefix1, prefix2, ... in host order.</summary>
-            private void RenamePickedResults(IReadOnlyList<object> picked, Panel say)
-            {
-                say.Children.Clear();
-
-                if (OnFile)
-                {
-                    say.Children.Add(Ui.Problem("A markup regenerates its result names when it "
-                        + "saves, so renaming here would not survive the file. Rename in the "
-                        + "model, where the name is the result's own."));
-                    return;
-                }
-
-                var rows = Rows(picked);
-                if (rows.Count == 0) return;
-
-                var prefix = _renameResults.Text.Trim();
-
-                if (prefix.Length == 0)
-                {
-                    say.Children.Add(Ui.Problem("Type the prefix in \"Results prefix\" first."));
-                    return;
-                }
-
-                var done = 0;
-                var problems = new List<string>();
-
-                foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
-                {
-                    var ids = byTest.Select(r => r.Info.Id).ToList();
-
-                    if (!_session.Clash.RenamePicked(byTest.Key, ids, prefix))
-                    {
-                        problems.Add(_session.Clash.LastProblem ?? "The host refused.");
-                        continue;
-                    }
-
-                    done += ids.Count;
-                }
-
-                if (done == 0)
-                {
-                    foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
-                    return;
-                }
-
-                _session.Record(ActivityKind.Regroup, "renamed " + Ui.Count(done, "picked result")
-                    + " to \"" + prefix + "...\"");
-                Reread("Renamed " + Ui.Count(done, "result") + " to \"" + prefix + "...\".",
-                       problems);
-            }
-
-            private void GroupPicked(IReadOnlyList<object> picked, Panel say)
-            {
-                var group = _group.Text.Trim();
-
-                Write(picked, say,
-                      group.Length == 0 ? "Moved {0} out of their groups." : "Grouped {0} into \"" + group + "\".",
-                      (testId, ids) => _session.Clash.Regroup(testId, ids, group),
-                      row => row.Group = group,
-                      finding => finding.Group = group.Length == 0 ? null : group,
-                      FindingField.Group);
             }
 
             /// <summary>
@@ -2316,7 +4720,7 @@ namespace CamelWorks.UI.Views
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
-                RedrawTests();
+                Redraw();
                 Tell(what + Trailer(held), problems);
             }
 
@@ -2434,9 +4838,7 @@ namespace CamelWorks.UI.Views
                 _columns.Add(new PropColumn(_newTab.Trim(), name, _newSide, title));
 
                 RedrawColumnList();
-                RedrawChainList();
-                RedrawFilterScope();
-                RedrawGroups();
+                RedrawBoard();
 
                 Said(Ui.Done("Added \"" + title + "\". Press \"Read values\" to fill it."));
             }
@@ -2454,157 +4856,11 @@ namespace CamelWorks.UI.Views
                         Ui.Icon(Glyphs.Close, "Take the column out", () =>
                         {
                             _columns.Remove(here);
-                            _chain.Remove("col:" + here.Id);
                             RedrawColumnList();
-                            RedrawChainList();
-                            RedrawFilterScope();
-                            RedrawGroups();
+                            RedrawBoard();
                         })));
                 }
             }
-
-            /// <summary>Everything the chain can group by: the fixed facts, then the columns.</summary>
-            private List<(string Key, string Title)> ChainOptions()
-            {
-                var options = new List<(string, string)>
-                {
-                    ("test", "Test"),
-                    ("status", "Status"),
-                    ("assigned", "Assigned to"),
-                    ("hostgroup", "Host group"),
-                    ("item1", "Item 1"),
-                    ("item2", "Item 2"),
-                    ("cat1", "Category (1)"),
-                    ("cat2", "Category (2)"),
-                    ("worst", "Worst band"),
-                    ("commented", "Commented or not"),
-                };
-
-                foreach (var column in _columns) options.Add(("col:" + column.Id, column.Title));
-
-                return options;
-            }
-
-            private void RedrawChainList()
-            {
-                _chainList.Children.Clear();
-
-                for (var i = 0; i < _chain.Count; i++)
-                {
-                    var at = i;
-                    var key = _chain[at];
-
-                    _chainList.Children.Add(Ui.Across(
-                        Ui.Line((at + 1).ToString(CultureInfo.InvariantCulture) + ". "
-                                + ChainTitle(key), 0.85),
-                        Ui.Icon(Glyphs.Up, "Group by this sooner", () =>
-                        {
-                            if (at == 0) return;
-                            _chain.RemoveAt(at);
-                            _chain.Insert(at - 1, key);
-                            RedrawChainList();
-                            RedrawGroups();
-                        }),
-                        Ui.Icon(Glyphs.Down, "Group by this later", () =>
-                        {
-                            if (at >= _chain.Count - 1) return;
-                            _chain.RemoveAt(at);
-                            _chain.Insert(at + 1, key);
-                            RedrawChainList();
-                            RedrawGroups();
-                        }),
-                        Ui.Icon(Glyphs.Close, "Take it out of the chain", () =>
-                        {
-                            _chain.RemoveAt(at);
-                            RedrawChainList();
-                            RedrawGroups();
-                        })));
-                }
-
-                var options = ChainOptions()
-                    .Where(o => !_chain.Contains(o.Key))
-                    .ToList();
-
-                if (options.Count == 0) return;
-
-                var titles = options.Select(o => o.Title).ToList();
-
-                if (!titles.Contains(_chainAdd)) _chainAdd = titles[0];
-
-                _chainList.Children.Add(Ui.Across(
-                    Ui.Choice(titles, _chainAdd, pick => _chainAdd = pick, 160),
-                    Ui.Quiet("Add", () =>
-                    {
-                        var chosen = options.FirstOrDefault(
-                            o => string.Equals(o.Title, _chainAdd, StringComparison.Ordinal));
-
-                        if (chosen.Key == null) return;
-
-                        _chain.Add(chosen.Key);
-                        RedrawChainList();
-                        RedrawGroups();
-                    })));
-            }
-
-            private string ChainTitle(string key)
-            {
-                foreach (var option in ChainOptions())
-                    if (string.Equals(option.Key, key, StringComparison.Ordinal)) return option.Title;
-
-                return "(a removed column)";
-            }
-
-            /// <summary>One row's value for one link of the chain, with absence said honestly.</summary>
-            private string GroupValue(Row row, string key)
-            {
-                switch (key)
-                {
-                    case "test": return row.TestName;
-                    case "status": return row.Status;
-                    case "assigned": return row.Assigned.Length == 0 ? "(unassigned)" : row.Assigned;
-                    case "hostgroup": return row.Group.Length == 0 ? "(no group)" : row.Group;
-                    case "item1": return Blankless(row.Info.NameA, "(unnamed)");
-                    case "item2": return Blankless(row.Info.NameB, "(unnamed)");
-                    case "cat1": return Blankless(row.Info.CategoryA, "(no category)");
-                    case "cat2": return Blankless(row.Info.CategoryB, "(no category)");
-                    case "worst": return WorstBand(row);
-                    case "commented": return row.Comments > 0 ? "Commented" : "No comments";
-                }
-
-                if (key.StartsWith("col:", StringComparison.Ordinal))
-                {
-                    if (!row.Custom.TryGetValue(key.Substring(4), out var value))
-                        return "(values not read)";
-
-                    return value.Length == 0 ? "(none)" : value;
-                }
-
-                return "(unknown)";
-            }
-
-            private static string Blankless(string? value, string absent) =>
-                string.IsNullOrWhiteSpace(value) ? absent : value!;
-
-            /// <summary>
-            /// The worst distance as a band a person argues in - grouping by the raw millimetre
-            /// would put every clash in a band of one.
-            /// </summary>
-            private string WorstBand(Row row)
-            {
-                if (!row.Info.Distance.HasValue) return "(no distance)";
-
-                var mm = Math.Abs(row.Info.Distance.Value)
-                         * (OnFile ? 1.0 : _session.MetresPerUnit) * 1000;
-
-                return mm < 10 ? "under 10 mm"
-                     : mm < 25 ? "10 - 25 mm"
-                     : mm < 50 ? "25 - 50 mm"
-                     : mm < 100 ? "50 - 100 mm"
-                     : "over 100 mm";
-            }
-
-            private string ChainKey(Row row) =>
-                string.Join(" · ", _chain.Select(key => GroupValue(row, key)));
 
             /// <summary>
             /// Read every custom column's value off the clashing elements themselves.
@@ -2668,7 +4924,7 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                RedrawGroups();
+                RedrawBoard();
 
                 _fill.Children.Add(Ui.Done(Ui.Count(filled, "value") + " read into "
                     + Ui.Count(_columns.Count, "column") + "."
@@ -2695,18 +4951,6 @@ namespace CamelWorks.UI.Views
                 {
                     return null;
                 }
-            }
-
-            /// <summary>The result's worst distance, told in honest units, or nothing.</summary>
-            private string Worst(Row row)
-            {
-                if (!row.Info.Distance.HasValue) return string.Empty;
-
-                var metres = Math.Abs(row.Info.Distance.Value) * (OnFile ? 1.0 : _session.MetresPerUnit);
-
-                return metres >= 1
-                    ? metres.ToString("0.00", CultureInfo.InvariantCulture) + " m"
-                    : (metres * 1000).ToString("0", CultureInfo.InvariantCulture) + " mm";
             }
 
             /// <summary>
@@ -2856,7 +5100,7 @@ namespace CamelWorks.UI.Views
                         _session.Record(ActivityKind.Regroup, "approved "
                             + Ui.Count(marked, "cross-test duplicate") + ", each naming its keeper");
 
-                    RedrawTests();
+                    Redraw();
                     Tell("Marked " + Ui.Count(marked, "duplicate") + " Approved, each with a "
                          + "comment naming the result that stays open."
                          + (OnFile ? " Save the markup to keep it." : string.Empty), null);
@@ -2877,9 +5121,9 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var from = _pickedTests.Count == 0
-                    ? read
-                    : read.Where(e => _pickedTests.Contains(e.Test.Id)).ToList();
+                // The whole read, not the test on the board: a baseline that carried one test
+                // is a review round the other seventeen tests are missing from.
+                var from = read;
 
                 var items = new List<ClashItem>();
                 var scale = OnFile ? 1.0 : _session.MetresPerUnit;
@@ -3005,7 +5249,6 @@ namespace CamelWorks.UI.Views
                 };
 
                 foreach (var column in _columns) headers.Add(column.Title);
-                if (_chain.Count > 0) headers.Add("Grouped as");
 
                 headers.AddRange(new[]
                 {
@@ -3019,7 +5262,7 @@ namespace CamelWorks.UI.Views
                     var cells = new List<string>
                     {
                         row.TestName, row.Info.Name ?? string.Empty, row.Group, row.Status,
-                        Worst(row),
+                        Millimetres(row),
                     };
 
                     foreach (var column in _columns)
@@ -3027,7 +5270,6 @@ namespace CamelWorks.UI.Views
                             ? value
                             : string.Empty);
 
-                    if (_chain.Count > 0) cells.Add(ChainKey(row));
 
                     cells.Add(row.Assigned);
                     cells.Add(row.Comments.ToString(CultureInfo.InvariantCulture));
@@ -3500,7 +5742,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _read = entries;
-                RedrawTests();
+                Redraw();
 
                 Tell(did, problems);
             }
@@ -3642,7 +5884,7 @@ namespace CamelWorks.UI.Views
 
                 KeepFindings();
                 ArmSync();
-                RedrawTests();
+                Redraw();
 
                 Tell(written == 0
                         ? "This document still will not take them. They are still kept here."
@@ -3683,9 +5925,6 @@ namespace CamelWorks.UI.Views
                 return ok;
             }
 
-            /// <summary>The Sync button, kept so its state can be refreshed as the source changes.</summary>
-            private System.Windows.Controls.Button? _syncButton;
-
             /// <summary>
             /// The Save button, kept because what it writes depends on which source is open.
             ///
@@ -3724,39 +5963,38 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
-            /// <summary>Show the Sync button as available or not, and say which in a word.</summary>
+            /// <summary>
+            /// Say what the footer's one primary will write, and whether it can.
+            ///
+            /// The design calls this button "Save the changes", and every edit on this board has
+            /// already been written — the chip on the row asks the host the moment it is picked.
+            /// What is left to save is what the host refused, which a published NWD always does,
+            /// so the button names that: it is the sync, and its caption counts what is waiting
+            /// for it rather than promising a save nobody needs.
+            ///
+            /// Kept visible when it cannot run, with the reason on it. A button that disappears
+            /// teaches nobody that the sync exists, and it is the thing somebody came for.
+            /// </summary>
             private void ArmSync()
             {
-                if (_saveButton != null)
-                {
-                    _saveButton.Content = OnFile
-                        ? "Save the markup"
-                        : "Save the baseline for reviewers";
-
-                    _saveButton.ToolTip = OnFile
-                        ? "Writes what is on this board into a markup beside the file it came "
-                          + "from, which a Manage seat reads back."
-                        : "Writes a clash file carrying every status, assignment, comment trail "
-                          + "and group, for a reviewer to open in their own tool and answer.";
-                }
-
-                if (_syncButton == null) return;
+                if (_saveButton == null) return;
 
                 var why = WhySync();
+                var waiting = OnFile ? 0 : WaitingCount;
 
-                _syncButton.IsEnabled = why == null;
+                _saveButton.IsEnabled = why == null;
 
-                _syncButton.ToolTip = why
-                    ?? "Writes every held decision into the document's own clash results, where "
-                       + "the native clash window and every export can see them.";
+                _saveButton.Content = OnFile
+                    ? "Save the markup"
+                    : waiting == 0 ? "Save the changes"
+                    : "Save " + Ui.Count(waiting, "change") + " into the document";
 
-                // Kept visible rather than hidden when it cannot run: a button that disappears
-                // teaches nobody that the sync exists, and it is the thing somebody came for.
-                var waiting = WaitingCount;
-
-                _syncButton.Content = waiting == 0
-                    ? "Sync into the document"
-                    : "Sync " + Ui.Count(waiting, "change") + " into the document";
+                _saveButton.ToolTip = why
+                    ?? (OnFile
+                        ? "Writes what is on this board into a markup beside the file it came "
+                          + "from, which a Manage seat reads back."
+                        : "Writes every held decision into the document's own clash results, "
+                          + "where the native clash window and every export can see them.");
             }
 
             /// <summary>
@@ -3796,8 +6034,6 @@ namespace CamelWorks.UI.Views
             /// <summary>List what is waiting, so somebody can see it before deciding anything.</summary>
             private void ShowHeld()
             {
-                _log.Children.Clear();
-
                 var waiting = Waiting
                     .OrderBy(f => f.Rule, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.Title, StringComparer.OrdinalIgnoreCase)
@@ -3805,19 +6041,22 @@ namespace CamelWorks.UI.Views
 
                 if (waiting.Count == 0)
                 {
-                    _log.Children.Add(Ui.Line("Nothing is waiting.", 0.75));
+                    Said(Ui.Line("Nothing is waiting.", 0.75));
                     return;
                 }
 
-                _log.Children.Add(Ui.Eyebrow("Waiting to be written"));
+                // Over the board, and held there. A list somebody asked to see is not a
+                // confirmation, and three seconds is not long enough to read one.
+                Said(Ui.Eyebrow("Waiting to be written"));
+                Hold();
 
                 var table = Ui.Table(
                     waiting.Select(f => new TableRow(f, f.Rule, f.Title, f.Describe())),
                     ("Test", 200), ("Result", 140), ("What is held", 0));
 
-                _log.Children.Add(table);
+                _toast.Children.Add(table);
 
-                _log.Children.Add(Ui.Picking(table,
+                _toast.Children.Add(Ui.Picking(table,
                     new Ui.OnPicked("Copy {n}",
                         (picked, say) => Ui.Copy(Ui.Lines(table, picked), say, "held edit")),
                     new Ui.OnPicked("Forget {n}", (picked, say) =>
@@ -3833,39 +6072,6 @@ namespace CamelWorks.UI.Views
                             + "the board the way the document holds it."));
                     })));
             }
-
-            /// <summary>Throw the held edits away, on purpose.</summary>
-            private void ForgetHeld()
-            {
-                // Two presses, because there is no undo: the first says what would be lost, the
-                // second does it. A confirmation dialog would be the same question in a window
-                // somebody has to close.
-                if (!_forgetArmed)
-                {
-                    _forgetArmed = true;
-
-                    Tell("Press \"Forget them\" again to throw away "
-                         + Ui.Count(WaitingCount, "held edit")
-                         + ". They have not been written into any document, so once forgotten "
-                         + "they are gone - unless a baseline was saved while they were held.",
-                         null);
-
-                    return;
-                }
-
-                _forgetArmed = false;
-
-                foreach (var finding in Waiting.ToList()) finding.Released();
-
-                KeepFindings();
-                ArmSync();
-                RedrawTests();
-                Tell("Forgot the held edits. Press \"Read the results\" to see the board the "
-                     + "way the document holds it.", null);
-            }
-
-            /// <summary>Whether "Forget them" has been pressed once already.</summary>
-            private bool _forgetArmed;
 
             /// <summary>
             /// Whether a file in the markups folder is one a reviewer saved.
@@ -3962,33 +6168,116 @@ namespace CamelWorks.UI.Views
                 internal string Group = string.Empty;
             }
 
+            /// <summary>What a write did, and anything the host would not do.</summary>
+            /// <param name="did">What happened.</param>
+            /// <param name="problems">What was refused, or null when nothing was.</param>
             private void Tell(string did, List<string>? problems)
             {
-                _log.Children.Clear();
-                _log.Children.Add(Ui.Done(did));
+                var problem = problems ?? new List<string>();
 
-                foreach (var problem in problems ?? new List<string>())
-                    _log.Children.Add(Ui.Problem(problem));
+                Said(Ui.Done(did));
+
+                foreach (var line in problem) _toast.Children.Add(Ui.Problem(line));
+
+                // A refusal stays until it is read. "Grouped 12 results" is worth three seconds
+                // and "the document would not take it" is worth somebody's attention.
+                if (problem.Count > 0) Hold();
             }
 
+            /// <summary>
+            /// Say one thing, over the board it is about.
+            ///
+            /// Over the board and not down in the footer, which is where this went when the
+            /// footer was the only place a message could land: the outcome of a press belongs
+            /// next to the rows the press changed, where the eye already is.
+            /// </summary>
+            /// <param name="note">What to say.</param>
             private void Said(UIElement note)
             {
-                _log.Children.Clear();
-                _log.Children.Add(note);
+                _toast.Children.Clear();
+
+                var row = new DockPanel { LastChildFill = true };
+
+                var dismiss = Ui.Link("Dismiss", Clear);
+                dismiss.VerticalAlignment = VerticalAlignment.Center;
+                DockPanel.SetDock(dismiss, Dock.Right);
+                row.Children.Add(dismiss);
+
+                if (note is FrameworkElement placed) placed.Margin = new Thickness(0, 0, 8, 0);
+
+                row.Children.Add(note);
+                _toast.Children.Add(row);
+
+                Fades();
             }
 
-            private List<string> Assignees()
+            /// <summary>Take the message away.</summary>
+            private void Clear()
+            {
+                _fade?.Stop();
+                _toast.Children.Clear();
+            }
+
+            /// <summary>Leave this one up until somebody dismisses it.</summary>
+            private void Hold() => _fade?.Stop();
+
+            /// <summary>
+            /// Start the message's three seconds.
+            ///
+            /// Timed rather than left up, because most of what this says is a confirmation nobody
+            /// needs twice — and a strip of them stacking over the table would push the rows the
+            /// confirmations are about off the screen.
+            /// </summary>
+            private void Fades()
+            {
+                _fade?.Stop();
+
+                _fade = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(3.2),
+                };
+
+                _fade.Tick += (s, e) =>
+                {
+                    _fade?.Stop();
+                    _toast.Children.Clear();
+                };
+
+                _fade.Start();
+            }
+
+            private System.Windows.Threading.DispatcherTimer? _fade;
+
+            /// <summary>
+            /// Who a result can be assigned to: the project's parties, and whoever the board
+            /// already names.
+            ///
+            /// The board's own names as well as the profile's, because a federation inherited
+            /// mid-job carries assignments to parties nobody has written down yet, and a list
+            /// that cannot offer the name already on the row is a list that makes somebody type
+            /// it again slightly differently.
+            /// </summary>
+            /// <param name="entry">The test on the board, or null for the whole read.</param>
+            private List<string> Assignees(TestEntry? entry)
             {
                 var names = new List<string>();
 
                 foreach (var party in _session.Profile.Parties)
                     if (!names.Contains(party, StringComparer.OrdinalIgnoreCase)) names.Add(party);
 
-                foreach (var entry in Current() ?? new List<TestEntry>())
-                    foreach (var row in entry.Rows)
+                var from = entry != null
+                    ? new List<TestEntry> { entry }
+                    : Current() ?? new List<TestEntry>();
+
+                foreach (var one in from)
+                    foreach (var row in one.Rows)
                         if (row.Assigned.Length > 0
                             && !names.Contains(row.Assigned, StringComparer.OrdinalIgnoreCase))
                             names.Add(row.Assigned);
+
+                // Last, and always there: clearing an assignment is as ordinary as making one,
+                // and a list with no way back leaves the only route through a verb somewhere else.
+                names.Add(Nobody);
 
                 return names;
             }
