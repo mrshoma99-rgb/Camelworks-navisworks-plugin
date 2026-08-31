@@ -48,6 +48,17 @@ Verbs under the results table: **focus** the camera, **isolate**, set **status**
 **comment**, **group**, **rename**, drop a **marker sphere**, take a **snapshot**,
 **raise an issue**, **copy**.
 
+**Focus costs nothing.** It does not look anything up: a clash result records the point where the
+two elements met, and for a single result the engine also kept the view it composed when the test
+ran — so the camera has everywhere it needs to go already. The selection comes from the two items
+the engine is still holding for that result, which is a copy rather than a search. Isolate works
+the same way, then reads the keys back off what it just selected.
+
+That matters because turning a *key* back into an element — which is what a board read from
+somebody else's file leaves you with — can mean indexing every geometry leaf in the federation.
+**Read the results** pays for that inside its own progress bar, and only when the board actually
+holds keys that need it, so a federation whose elements carry GUIDs never waits at all.
+
 All of them work on however many rows are picked, and all of them are on right-click too.
 
 ### Behind the ⚙ symbols

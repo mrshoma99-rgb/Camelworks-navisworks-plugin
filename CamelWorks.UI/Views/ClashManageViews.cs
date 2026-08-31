@@ -574,6 +574,14 @@ namespace CamelWorks.UI.Views
             {
                 if (OnFile) ReadFile(job);
                 else ReadModel(job);
+
+                // Through the one shared door, so that a later rewrite of this method cannot
+                // quietly take the freeze fix with it - which is how it came back twice.
+                var board = Current();
+
+                if (board != null)
+                    Ui.Ready(job, board.SelectMany(e => e.Rows)
+                                       .SelectMany(r => new[] { r.Info.A, r.Info.B }));
             }
 
             private void ReadModel(Job job)
@@ -1709,12 +1717,38 @@ namespace CamelWorks.UI.Views
                 picked.OfType<Row>().ToList();
 
             /// <summary>The element keys behind the picked rows, minus the ones a file could not name.</summary>
-            private static List<ElementKey> Keys(List<Row> rows) =>
+            private static List<ElementKey> Keys(IReadOnlyList<Row> rows) =>
                 rows.SelectMany(r => new[] { r.Info.A, r.Info.B })
                     .Where(k => !k.IsEmpty)
                     .Distinct()
                     .ToList();
 
+            /// <summary>
+            /// Go and look at the picked clashes. Instantly, whatever the board holds.
+            ///
+            /// <b>Nothing here is allowed to search the model.</b> A row carries an element key
+            /// per side, and turning a key that is not an instance GUID back into an element means
+            /// an index of every geometry leaf in the federation - which, inside a press, is a
+            /// Navisworks that stops answering. It was reported as Focus freezing, and it was.
+            ///
+            /// Neither half of what Focus does needs a search:
+            ///
+            /// <list type="bullet">
+            /// <item><description>The camera. A clash result records the point where the two
+            /// elements met, and for a single result the engine also kept the view it composed
+            /// when the test ran. Both are on the row already.</description></item>
+            /// <item><description>The selection. These results came out of this document, and the
+            /// engine is still holding the two items each one is between. Asking it for them is a
+            /// copy, not a lookup.</description></item>
+            /// </list>
+            ///
+            /// A board read from somebody else's file is the one case with no engine behind it.
+            /// There the keys are all there is - so they are resolved, but only against an index
+            /// that already exists. Focus never builds one; the read does that, where there is a
+            /// progress bar.
+            /// </summary>
+            /// <param name="picked">The picked rows.</param>
+            /// <param name="say">Where to report what happened.</param>
             private void Focus(IReadOnlyList<object> picked, Panel say)
             {
                 say.Children.Clear();
@@ -1722,45 +1756,88 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                var keys = Keys(rows);
+                // The view first, because it is what somebody pressed Focus for and it is free.
+                var composed = !OnFile && rows.Count == 1
+                               && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id);
 
-                if (keys.Count == 0)
+                var point = composed ? null : Middle(rows);
+
+                if (point != null)
+                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
+
+                var selected = OnFile ? FromKeys(rows) : FromEngine(rows);
+
+                if (composed)
                 {
-                    say.Children.Add(Ui.Problem("Those results name no elements this federation "
-                        + "has, so there is nothing to look at."));
-                    return;
-                }
-
-                // One result from the model gets the host's own composed view of it - the frame
-                // the engine saved when the test ran, which reads like the native clash window.
-                if (!OnFile && rows.Count == 1
-                    && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
-                {
-                    _session.Model.Select(keys);
-
                     say.Children.Add(Ui.Done("Showing the engine's own view of \""
                         + (rows[0].Info.Name ?? "the result") + "\"."));
                     return;
                 }
 
-                // The camera goes to the point the results already carry, before anything is
-                // resolved. A clash result knows where it happened; framing the elements means
-                // finding them first, and the coordinator is looking at a 3D view either way.
-                var point = Middle(rows);
-
-                if (point != null)
+                if (point == null && selected == 0)
                 {
-                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
+                    say.Children.Add(Ui.Problem("Those results record no point and name no "
+                        + "elements this federation has, so there is nothing to look at."));
+                    return;
                 }
 
-                // Then the selection, which is what makes the view worth arriving at - and is now
-                // the only part that costs anything.
+                say.Children.Add(Ui.Done(selected > 0
+                    ? "Selected and framed " + Ui.Count(selected, "element") + "."
+                    : "Framed where " + (rows.Count == 1 ? "it happened" : "they happened")
+                      + " - the elements themselves are not selected, because this board's rows "
+                      + "name elements the model has not been indexed for. Reading the results "
+                      + "builds that index."));
+            }
+
+            /// <summary>
+            /// Select what the engine is holding for these rows. Costs a copy, never a search.
+            /// </summary>
+            /// <param name="rows">The picked rows, from the model.</param>
+            /// <returns>How many elements were selected.</returns>
+            private int FromEngine(IReadOnlyList<Row> rows)
+            {
+                var selected = 0;
+                var replacing = true;
+
+                foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.Ordinal))
+                {
+                    var count = _session.Clash.SelectResults(
+                        byTest.Key,
+                        byTest.Select(r => r.Info.Id).ToList(),
+                        !replacing);
+
+                    if (count < 0) continue;
+
+                    selected += count;
+                    replacing = false;
+                }
+
+                return selected;
+            }
+
+            /// <summary>
+            /// Select what these rows name, for a board that came out of a file rather than the
+            /// engine - and only from an index that has already been built.
+            ///
+            /// The keys are all a file leaves us. Resolving one that is not a GUID would build the
+            /// index here, inside the press, which is the freeze this verb exists on the other
+            /// side of. Read the results builds it; until then the camera goes and the selection
+            /// waits.
+            /// </summary>
+            /// <param name="rows">The picked rows, from a file.</param>
+            /// <returns>How many elements were selected.</returns>
+            private int FromKeys(IReadOnlyList<Row> rows)
+            {
+                var keys = Keys(rows);
+
+                if (keys.Count == 0) return 0;
+
+                if (!_session.Model.IsIndexed
+                    && keys.Any(k => k.Rung != KeyRung.InstanceGuid))
+                    return 0;
+
                 _session.Model.Select(keys);
-
-                if (point == null) _session.View.ZoomTo(keys, 1.0);
-
-                say.Children.Add(Ui.Done("Selected and framed "
-                    + Ui.Count(keys.Count, "element") + "."));
+                return keys.Count;
             }
 
             /// <summary>
@@ -1987,6 +2064,16 @@ namespace CamelWorks.UI.Views
                     "Open the register", () => IssueViews.Open(null)));
             }
 
+            /// <summary>
+            /// Hide everything but the picked clashes.
+            ///
+            /// Unlike Focus this genuinely needs the elements - there is no way to hide the rest
+            /// of a model without knowing which ones to keep. It still does not search for them:
+            /// the selection comes from the engine's own handles, and the keys are then read back
+            /// off what is selected, which is a handful of items rather than a federation.
+            /// </summary>
+            /// <param name="picked">The picked rows.</param>
+            /// <param name="say">Where to report what happened.</param>
             private void Isolate(IReadOnlyList<object> picked, Panel say)
             {
                 say.Children.Clear();
@@ -1994,7 +2081,7 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                var keys = Keys(rows);
+                var keys = Reach(rows);
 
                 if (keys.Count == 0)
                 {
@@ -2004,11 +2091,27 @@ namespace CamelWorks.UI.Views
                 }
 
                 _session.View.Isolate(keys);
-                _session.Model.Select(keys);
                 _session.View.ZoomTo(keys, 1.0);
 
                 say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
                     + "\"Show everything again\" on the right puts the rest back."));
+            }
+
+            /// <summary>
+            /// Select the picked rows' elements and hand back the keys of what actually got there.
+            ///
+            /// For the verbs that need the elements themselves rather than only a camera position.
+            /// Keying the selection is per-item work over a handful of items; it is nothing like
+            /// the walk of the whole federation that resolving a key from cold can be.
+            /// </summary>
+            /// <param name="rows">The picked rows.</param>
+            private IReadOnlyList<ElementKey> Reach(IReadOnlyList<Row> rows)
+            {
+                var selected = OnFile ? FromKeys(rows) : FromEngine(rows);
+
+                return selected == 0
+                    ? (IReadOnlyList<ElementKey>)Array.Empty<ElementKey>()
+                    : _session.Model.SelectedKeys();
             }
 
             private void Mark(IReadOnlyList<object> picked, Panel say) =>

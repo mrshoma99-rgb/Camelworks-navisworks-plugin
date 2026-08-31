@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Identity;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
@@ -345,6 +346,26 @@ namespace CamelWorks.UI.Views
     /// </summary>
     public static class Ui
     {
+        /// <summary>
+        /// Point the host layer's long walks at somewhere they can be watched and stopped.
+        ///
+        /// Here rather than at a screen's start-up, because there is no one screen: the walk that
+        /// needs this is set off by a press on any of twenty of them, and a screen that forgot to
+        /// arrange it is a screen that hangs. Every one of them touches this class before it draws
+        /// anything, so this runs first whichever one it is.
+        /// </summary>
+        static Ui()
+        {
+            try
+            {
+                CamelWorks.Nav.NavDocument.LongWork = Working;
+            }
+            catch (Exception)
+            {
+                // Without it the walk still happens; it simply has nowhere to report.
+            }
+        }
+
         /// <summary>The gap used between stacked things, everywhere.</summary>
         public const double Gap = 8;
 
@@ -1363,6 +1384,131 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Pay for the element index here, inside a job that is already running, when the rows
+        /// this job just produced are going to need it.
+        ///
+        /// <b>The rule.</b> A row verb - focus, isolate, a marker sphere, a snapshot - turns a
+        /// row's element keys back into elements. A key that is an instance GUID goes through the
+        /// host's own native search and costs nothing; anything else has no native search behind
+        /// it, so the first one resolved builds an index of every geometry leaf in the federation.
+        /// Inside a press that is minutes of managed work with no progress and no way out, which
+        /// is a Navisworks that has stopped answering.
+        ///
+        /// <b>Why it lives here.</b> This was written twice as a private method on the screen that
+        /// needed it, and deleted twice by a later commit rewriting that screen for something
+        /// else - the second time taking the freeze fix with it and nothing objecting. One shared
+        /// door, one check that the door is used, is the difference between a fix and a fix that
+        /// lasts.
+        ///
+        /// Nothing is built when the rows all carry GUIDs, so a federation that resolves natively
+        /// never pays for a walk it does not need. Stopping leaves the index unbuilt rather than
+        /// partial: two thirds of a federation would report the other third as elements the model
+        /// does not have.
+        /// </summary>
+        /// <param name="job">The job already running, for its progress line and its Stop.</param>
+        /// <param name="about">The keys the rows this job produced carry.</param>
+        public static void Ready(Job job, IEnumerable<ElementKey>? about)
+        {
+            if (job == null || job.IsCancelled || about == null) return;
+
+            if (!(Host.Current?.Model is CamelWorks.Nav.NavDocument document)) return;
+
+            if (document.IsIndexed) return;
+
+            if (!about.Any(k => !k.IsEmpty && k.Rung != KeyRung.InstanceGuid)) return;
+
+            job.Say("Indexing the federation, so the row verbs are instant...");
+
+            document.Index(seen => job.Step(seen, "elements indexed"), () => !job.IsCancelled);
+        }
+
+        /// <summary>
+        /// Run something long that a press did not expect to be long, with a bar and a Stop.
+        ///
+        /// <b>What this is for.</b> Some presses are cheap almost always and expensive once: the
+        /// first Focus on a federation whose elements carry no GUIDs pays for an index of every
+        /// geometry leaf in it. A wait cursor is the right signal for a second; for a minute it is
+        /// a plug-in that has hung, and there is no way to change your mind.
+        ///
+        /// So the work gets a small window of its own - owned, like everything here - reporting
+        /// what it is doing and offering to stop. It runs on this thread: the job's own progress
+        /// reporting pumps the message loop, which is what lets the window paint and the Stop be
+        /// clickable while the work is still going.
+        ///
+        /// <c>NavDocument.LongWork</c> is pointed here once, so every screen in the product gets
+        /// this without any of them knowing about it.
+        /// </summary>
+        /// <param name="what">What is happening, on the window's title and its first line.</param>
+        /// <param name="work">The work, given a progress callback and a keep-going question.</param>
+        public static void Working(string what, Action<Action<int>, Func<bool>> work)
+        {
+            if (work == null) return;
+
+            var status = new TextBlock
+            {
+                Text = what,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 8, 0, 0),
+            }.Wearing("Hint");
+
+            var bar = new ProgressBar { IsIndeterminate = true, Height = 6 };
+
+            var body = new StackPanel { Margin = new Thickness(16, 14, 16, 14) };
+            body.Children.Add(new TextBlock { Text = what, FontWeight = FontWeights.SemiBold });
+            body.Children.Add(new Border { Height = 10 });
+            body.Children.Add(bar);
+            body.Children.Add(status);
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                Width = 420,
+                SizeToContent = SizeToContent.Height,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var job = new Job(window.Dispatcher, status, bar);
+
+            var stop = Quiet("Stop", () => job.IsCancelled = true);
+            stop.HorizontalAlignment = HorizontalAlignment.Right;
+            stop.Margin = new Thickness(0, 12, 0, 0);
+            body.Children.Add(stop);
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            // Closing it is asking to stop, not a way to leave the work running unwatched.
+            window.Closing += (s, e) => job.IsCancelled = true;
+
+            try
+            {
+                window.Show();
+                work(seen => job.Step(seen, "elements"), () => !job.IsCancelled);
+            }
+            catch (Exception)
+            {
+                // The work's own failure is the caller's to report; this window only watches it.
+            }
+            finally
+            {
+                try
+                {
+                    window.Close();
+                }
+                catch (Exception)
+                {
+                    // A window already gone is the outcome wanted.
+                }
+            }
+        }
+
+        /// <summary>
         /// Run a row verb with the wait cursor up.
         ///
         /// A symbol under a table does its work on the UI thread — that is the right shape for
@@ -2229,6 +2375,33 @@ namespace CamelWorks.UI.Views
         // Tables
         // -----------------------------------------------------------------------------------
 
+        /// <summary>
+        /// Set on a container whose tables are the whole of it, so they grow to the room they get.
+        ///
+        /// Inherited, so a pane sets it once and every table drawn inside it afterwards is told -
+        /// including the ones that replace the first when a screen redraws. The alternative, and
+        /// what this replaced, was walking the pane at build time and clearing the cap on the
+        /// tables that happened to exist by then: correct for exactly as long as nobody pressed
+        /// anything.
+        /// </summary>
+        public static readonly DependencyProperty FillsProperty =
+            DependencyProperty.RegisterAttached(
+                "Fills",
+                typeof(bool),
+                typeof(Ui),
+                new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.Inherits));
+
+        /// <summary>Say that this element's tables should fill the height they are given.</summary>
+        /// <param name="element">The container.</param>
+        /// <param name="on">True to let its tables grow.</param>
+        public static void SetFills(DependencyObject element, bool on) =>
+            element.SetValue(FillsProperty, on);
+
+        /// <summary>Whether this element's tables should fill the height they are given.</summary>
+        /// <param name="element">The element to ask.</param>
+        public static bool GetFills(DependencyObject element) =>
+            (bool)element.GetValue(FillsProperty);
+
         /// <summary>A table.</summary>
         /// <param name="rows">The rows.</param>
         /// <param name="columns">Header and width per column. A width of 0 sizes to content.</param>
@@ -2285,6 +2458,23 @@ namespace CamelWorks.UI.Views
             // not depend on how tall its content turns out to be. Two thirds, so a table never
             // fills the screen it is one part of, and a floor so a collapsed pane still shows rows
             // rather than a header and a scrollbar.
+            //
+            // Unless it is the whole pane. On a bench the table is not one part of a stage, it is
+            // the thing the pane is for, and two thirds of a tall window left the bottom third
+            // white with the rows still scrolling. The pane says so by setting Fills, which every
+            // descendant inherits - asked here at Loaded, because a table has no parent at the
+            // moment it is built and so cannot yet be asked what it is inside. Asking then rather
+            // than walking the tree once at build time is the point: a table drawn again after a
+            // read is a new table, and the walk had already happened.
+            table.Loaded += (s, e) =>
+            {
+                if (!GetFills(table)) return;
+
+                BindingOperations.ClearBinding(table, FrameworkElement.MaxHeightProperty);
+                table.MaxHeight = double.PositiveInfinity;
+                table.VerticalAlignment = VerticalAlignment.Stretch;
+            };
+
             table.SetBinding(FrameworkElement.MaxHeightProperty, new Binding("ActualHeight")
             {
                 RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)

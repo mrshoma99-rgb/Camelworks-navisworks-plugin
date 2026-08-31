@@ -643,12 +643,53 @@ namespace CamelWorks.Nav
             _indexed = true;
         }
 
+        /// <summary>
+        /// How a build of the element index gets a progress bar and a Stop.
+        ///
+        /// <b>Why this is a hook and not a rule.</b> Every screen that turns a row back into
+        /// elements - Focus on a clash, a clearance finding, an issue, a set - eventually asks
+        /// <see cref="Resolve"/>, and a key that is not an instance GUID has no native search
+        /// behind it, so the first such ask pays for a walk of the whole federation. Inside a
+        /// click handler that is minutes of managed work with no progress and no way out, which
+        /// reads as a button that hung.
+        ///
+        /// The long jobs that know they are about to need one build it themselves, where their own
+        /// progress bar already is. This is for every other press: rather than each of the twenty
+        /// call sites remembering to check first - which is a rule, and rules last until the
+        /// twenty-first is written - the walk itself asks for somewhere to be shown. The UI sets
+        /// this once; left null, the build happens the old way.
+        ///
+        /// The runner is handed what to call and a name for it, and is expected to run it there
+        /// and then on this thread. A runner that cancels leaves the index unbuilt, and the verb
+        /// that asked reports the elements as unresolved - which is the honest outcome of stopping
+        /// and is a great deal better than a host that stopped answering.
+        /// </summary>
+        public static Action<string, Action<Action<int>, Func<bool>>>? LongWork { get; set; }
+
         private void EnsureIndexed()
         {
             // Indexed once and kept: keying an item is not free, and resolving a thousand-row clash
             // board one key at a time against an unindexed tree is the difference between a board
             // that opens and one that does not.
-            if (!_indexed) Index();
+            if (_indexed) return;
+
+            var runner = LongWork;
+
+            if (runner == null)
+            {
+                Index();
+                return;
+            }
+
+            try
+            {
+                runner("Indexing the federation", (onProgress, keepGoing) => Index(onProgress, keepGoing));
+            }
+            catch (Exception)
+            {
+                // A runner that will not run is worth a slow build rather than a failed verb.
+                Index();
+            }
         }
 
         private static void Collect(SavedItemCollection items, List<SelectionSet> result)

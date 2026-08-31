@@ -258,6 +258,26 @@ namespace CamelWorks.Core.Abstractions
         bool ApplyResultView(string testId, string resultId);
 
         /// <summary>
+        /// Select the elements the named results are between, using the handles the engine is
+        /// already holding.
+        ///
+        /// <b>Why this is not "resolve the keys".</b> A row on the board carries an
+        /// <see cref="CamelWorks.Core.Identity.ElementKey"/> for each side, and turning one of
+        /// those back into an element can mean an index of every geometry leaf in the federation.
+        /// That is the right price for a key that arrived in a file from somebody else. It is the
+        /// wrong price here: these results came out of this document a moment ago and the engine
+        /// still has the two items each one is between, so selecting them is a copy, not a search.
+        ///
+        /// Pressing Focus is the commonest thing anybody does on a board, and it must cost
+        /// nothing.
+        /// </summary>
+        /// <param name="testId">Which test the results belong to.</param>
+        /// <param name="resultIds">Which results.</param>
+        /// <param name="add">True to add to the current selection rather than replace it.</param>
+        /// <returns>How many elements were selected, or -1 when there is no engine.</returns>
+        int SelectResults(string testId, IReadOnlyList<string> resultIds, bool add);
+
+        /// <summary>
         /// The host's rendered image of one result — scene plus the clash highlight — as PNG
         /// bytes, or null when the host cannot make one.
         /// </summary>

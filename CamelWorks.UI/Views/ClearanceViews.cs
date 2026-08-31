@@ -599,6 +599,11 @@ namespace CamelWorks.UI.Views
 
                 _session.Record(ActivityKind.Regroup, "checked clear height: " + found);
 
+                // These findings carry focus, isolate, marker spheres and snapshots, every one of
+                // which resolves element keys. Paid here, with a progress bar and a Stop, rather
+                // than inside whichever button is pressed first.
+                Ui.Ready(job, Keys(rows));
+
             }
 
             private static bool NeedsWhole(string choice) =>
