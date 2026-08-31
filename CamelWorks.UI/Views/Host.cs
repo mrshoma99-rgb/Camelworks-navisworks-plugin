@@ -414,6 +414,8 @@ namespace CamelWorks.UI.Views
 
             public bool ApplyResultView(string testId, string resultId) => false;
 
+            public int SelectResults(string testId, IReadOnlyList<string> resultIds, bool add) => -1;
+
             public byte[]? ResultSnapshot(string testId, string resultId, int width, int height) => null;
         }
     }

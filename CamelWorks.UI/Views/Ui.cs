@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CamelWorks.Core.Data;
+using CamelWorks.Core.Identity;
 using ToggleButton = System.Windows.Controls.Primitives.ToggleButton;
 
 namespace CamelWorks.UI.Views
@@ -1380,6 +1381,45 @@ namespace CamelWorks.UI.Views
 
             if (onClick != null) button.Click += (s, e) => Busy(onClick);
             return button;
+        }
+
+        /// <summary>
+        /// Pay for the element index here, inside a job that is already running, when the rows
+        /// this job just produced are going to need it.
+        ///
+        /// <b>The rule.</b> A row verb - focus, isolate, a marker sphere, a snapshot - turns a
+        /// row's element keys back into elements. A key that is an instance GUID goes through the
+        /// host's own native search and costs nothing; anything else has no native search behind
+        /// it, so the first one resolved builds an index of every geometry leaf in the federation.
+        /// Inside a press that is minutes of managed work with no progress and no way out, which
+        /// is a Navisworks that has stopped answering.
+        ///
+        /// <b>Why it lives here.</b> This was written twice as a private method on the screen that
+        /// needed it, and deleted twice by a later commit rewriting that screen for something
+        /// else - the second time taking the freeze fix with it and nothing objecting. One shared
+        /// door, one check that the door is used, is the difference between a fix and a fix that
+        /// lasts.
+        ///
+        /// Nothing is built when the rows all carry GUIDs, so a federation that resolves natively
+        /// never pays for a walk it does not need. Stopping leaves the index unbuilt rather than
+        /// partial: two thirds of a federation would report the other third as elements the model
+        /// does not have.
+        /// </summary>
+        /// <param name="job">The job already running, for its progress line and its Stop.</param>
+        /// <param name="about">The keys the rows this job produced carry.</param>
+        public static void Ready(Job job, IEnumerable<ElementKey>? about)
+        {
+            if (job == null || job.IsCancelled || about == null) return;
+
+            if (!(Host.Current?.Model is CamelWorks.Nav.NavDocument document)) return;
+
+            if (document.IsIndexed) return;
+
+            if (!about.Any(k => !k.IsEmpty && k.Rung != KeyRung.InstanceGuid)) return;
+
+            job.Say("Indexing the federation, so the row verbs are instant...");
+
+            document.Index(seen => job.Step(seen, "elements indexed"), () => !job.IsCancelled);
         }
 
         /// <summary>

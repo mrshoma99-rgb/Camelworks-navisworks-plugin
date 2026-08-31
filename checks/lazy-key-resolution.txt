@@ -1,0 +1,25 @@
+# Screens whose row verbs still resolve element keys lazily.
+#
+# Resolving a key that is not an instance GUID builds an index of every geometry leaf in the
+# federation. Done inside a press, that is a host that has stopped answering; done inside the
+# screen's own read or check job, it is a progress line nobody minds.
+#
+# The two screens that were reported - the clash bench and the clearance check - pay in their own
+# job through Ui.Ready, and the clash bench's Focus and Isolate do not resolve at all: they go
+# through the handles the engine is already holding.
+#
+# These have not been done. They are not silent: NavDocument.LongWork gives the walk a window with
+# a progress bar and a Stop, so a slow press is visible and can be abandoned rather than looking
+# like a crash. That is a backstop, not a fix, and each line here is work still owed.
+#
+# The list may only shrink. A screen that starts resolving keys and is not here fails the check,
+# and a line here that no longer resolves any fails it too, so the file cannot rot.
+
+CamelWorks.UI/Views/CompareViews.cs
+CamelWorks.UI/Views/CoordinateViews.cs
+CamelWorks.UI/Views/ExtractWindow.cs
+CamelWorks.UI/Views/FreezeViews.cs
+CamelWorks.UI/Views/IssueViews.cs
+CamelWorks.UI/Views/ProjectViews.cs
+CamelWorks.UI/Views/SetsViews.cs
+CamelWorks.UI/Views/SideBySideViews.cs

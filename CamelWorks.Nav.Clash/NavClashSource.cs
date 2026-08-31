@@ -843,6 +843,81 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <inheritdoc />
+        public int SelectResults(string testId, IReadOnlyList<string> resultIds, bool add)
+        {
+            LastProblem = null;
+
+            var clash = Clash();
+
+            if (clash == null)
+            {
+                LastProblem = "This document has no clash engine.";
+                return -1;
+            }
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document. Re-read it.";
+                return -1;
+            }
+
+            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+
+            if (wanted.Count == 0) return 0;
+
+            // One pass over this test's results rather than one pass per row: the walk is over
+            // the test's own children, not the federation, but a board with a thousand picked
+            // rows would still do it a thousand times.
+            var found = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, found);
+
+            var items = new ModelItemCollection();
+
+            foreach (var entry in found)
+            {
+                if (!wanted.Contains(entry.Result.Guid.ToString())) continue;
+
+                // The two items the engine recorded when the test ran. No key, no lookup: it is
+                // still holding them.
+                Take(items, entry.Result.CompositeItem1);
+                Take(items, entry.Result.CompositeItem2);
+            }
+
+            try
+            {
+                var selection = _document.Document.CurrentSelection;
+
+                if (add)
+                {
+                    foreach (ModelItem item in items)
+                        if (!selection.SelectedItems.Contains(item)) selection.SelectedItems.Add(item);
+                }
+                else
+                {
+                    selection.CopyFrom(items);
+                }
+
+                return items.Count;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not change the selection: " + e.Message;
+                return -1;
+            }
+        }
+
+        /// <summary>Add one of a result's sides to a collection, when the engine recorded one.</summary>
+        private static void Take(ModelItemCollection items, ModelItem? item)
+        {
+            if (item == null || items.Contains(item)) return;
+
+            items.Add(item);
+        }
+
+        /// <inheritdoc />
         public byte[]? ResultSnapshot(string testId, string resultId, int width, int height)
         {
             LastProblem = null;
