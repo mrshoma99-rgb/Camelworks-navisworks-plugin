@@ -23,4 +23,14 @@
     <ProjectReference Include="..\CamelWorks.Core\CamelWorks.Core.csproj" />
   </ItemGroup>
 
+  <!-- The installer is a Windows WPF exe, so it cannot be referenced from this
+       Linux-run project. Its version-comparison rule is pure and dependency
+       free, so that one file is link-compiled here instead: the rule deciding
+       whether a companion bundle gets overwritten is worth proving, and a
+       silent downgrade is exactly the bug it exists to prevent. -->
+  <ItemGroup>
+    <Compile Include="..\installer\CamelWorks.Installer\BundleVersion.cs"
+             Link="Installer\BundleVersion.cs" />
+  </ItemGroup>
+
 </Project>
