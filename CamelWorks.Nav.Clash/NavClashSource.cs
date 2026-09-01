@@ -653,18 +653,17 @@ namespace CamelWorks.Nav.Clash
             var test = FindTest(clash, testId);
             if (test == null) return null;
 
-            return ShapeOf(test, SetSources());
+            return ShapeOf(test);
         }
 
-        /// <summary>What one test is between, against saved-set sources already in hand.</summary>
+        /// <summary>What one test is between.</summary>
         /// <param name="test">The test.</param>
-        /// <param name="sets">The document's saved sets, sourced once.</param>
-        private ClashTestSides? ShapeOf(ClashTest test, IReadOnlyList<(string Name, SelectionSource Source)> sets)
+        private ClashTestSides? ShapeOf(ClashTest test)
         {
             try
             {
-                var (setA, scopesA) = SideOf(test.SelectionA, sets);
-                var (setB, scopesB) = SideOf(test.SelectionB, sets);
+                var (setA, scopesA) = SideOf(test.SelectionA);
+                var (setB, scopesB) = SideOf(test.SelectionB);
 
                 var metres = NavUnits.MetresPerUnit(_document.Document.Units);
 
@@ -680,78 +679,56 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>
-        /// Every saved set with the source that points at it, built once.
+        /// What one side is: a saved set by name, whole models, or neither.
         ///
-        /// Describing a test's sides compares each side against these. Built per side per test,
-        /// as it was, a document with two hundred sets and a hundred and sixty tests asked the
-        /// host to create sixty-four thousand selection sources for two lines of text.
-        /// </summary>
-        private IReadOnlyList<(string Name, SelectionSource Source)> SetSources()
-        {
-            var found = new List<(string, SelectionSource)>();
-
-            try
-            {
-                var sets = _document.Document.SelectionSets;
-
-                foreach (var set in AllSets(sets.Value))
-                {
-                    try
-                    {
-                        found.Add((set.DisplayName ?? string.Empty, sets.CreateSelectionSource(set)));
-                    }
-                    catch (Exception)
-                    {
-                        // A set the host will not source cannot be any test's side.
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // A document with no sets at all describes no side as a set, which is not an
-                // error and not worth a message.
-            }
-
-            return found;
-        }
-
-        /// <summary>
-        /// What one side is: a single saved set, whole models, or neither.
+        /// <b>Nothing here resolves a selection.</b> That is the whole point of this method, and
+        /// the reason it looks the way it does. A clash test's side is usually a saved <i>search</i>
+        /// set, and asking the host what such a selection contains - <c>GetSelectedItems</c>, or
+        /// building a source per set and comparing - makes it run the search, with the host's own
+        /// "Searching" window over the top. Per side, per test, that is two search windows a test
+        /// on the one press where somebody is waiting to see their clashes, and all of it for two
+        /// lines of text on a rail.
         ///
-        /// A set is recognised by value against every saved set's own source - the host compares
-        /// sources by what they point at, so a renamed folder does not break the match. Whole
-        /// models are recognised as a selection made only of root items.
+        /// So: a source is handed straight back to the host to be <i>named</i>
+        /// (<c>ResolveSelectionSource</c>), which is a lookup rather than a search; and the
+        /// fall-back reads <c>ExplicitSelection</c>, which is the statically-picked items and
+        /// nothing else. Neither touches the model.
         /// </summary>
-        private (string? Set, IReadOnlyList<string> Scopes) SideOf(
-            ClashSelection selection, IReadOnlyList<(string Name, SelectionSource Source)> sets)
+        /// <param name="selection">The side.</param>
+        /// <returns>The set name if it is sets, and the whole models if it is whole models.</returns>
+        private (string? Set, IReadOnlyList<string> Scopes) SideOf(ClashSelection selection)
         {
             var none = (string?)null;
             var empty = (IReadOnlyList<string>)Array.Empty<string>();
 
             try
             {
-                var sources = selection.Selection.SelectionSources;
+                var side = selection.Selection;
 
-                if (sources != null && sources.Count == 1)
+                if (side.HasSelectionSources)
                 {
-                    var wanted = sources[0];
+                    var named = new List<string>();
 
-                    foreach (var (name, source) in sets)
+                    foreach (SelectionSource source in side.SelectionSources)
                     {
-                        try
-                        {
-                            if (source.Equals(wanted)) return (name, empty);
-                        }
-                        catch (Exception)
-                        {
-                            // A source the host will not compare cannot be this side.
-                        }
+                        var name = SetNameOf(source);
+
+                        // One source this document cannot name makes the whole side unnameable:
+                        // half a description reads as a test between one set and nothing.
+                        if (name == null) return (none, empty);
+
+                        named.Add(name);
                     }
 
-                    return (none, empty);
+                    // Almost always one. A side built from two sets is named as both rather than
+                    // as neither, which is what "not a single set" used to come out as.
+                    return named.Count == 0 ? (none, empty)
+                                            : (string.Join(" + ", named), empty);
                 }
 
-                var items = selection.Selection.GetSelectedItems();
+                // Whole models are a selection made only of root items. ExplicitSelection is what
+                // was picked and stored, so reading it costs nothing.
+                var items = side.HasExplicitSelection ? side.ExplicitSelection : null;
 
                 if (items != null && items.Count > 0)
                 {
@@ -774,13 +751,28 @@ namespace CamelWorks.Nav.Clash
             return (none, empty);
         }
 
-        private static IEnumerable<SelectionSet> AllSets(SavedItemCollection items)
+        /// <summary>
+        /// What the document calls the set a source points at, or null.
+        ///
+        /// A lookup in the saved-set tree, not a search: the host resolves the pointer to the
+        /// saved item itself, and the name is read off that. Whether the set is a search set or a
+        /// list of items never comes into it, which is exactly why this is the call to make.
+        /// </summary>
+        /// <param name="source">The selection source.</param>
+        /// <returns>The set's display name, or null when it is not a set this document holds.</returns>
+        private string? SetNameOf(SelectionSource source)
         {
-            foreach (SavedItem item in items)
+            try
             {
-                if (item is SelectionSet set) yield return set;
-                else if (item is GroupItem folder)
-                    foreach (var nested in AllSets(folder.Children)) yield return nested;
+                var found = _document.Document.SelectionSets.ResolveSelectionSource(source);
+                var name = found?.DisplayName;
+
+                return string.IsNullOrWhiteSpace(name) ? null : name;
+            }
+            catch (Exception)
+            {
+                // A source that points outside this document's sets names no set.
+                return null;
             }
         }
 
@@ -970,12 +962,6 @@ namespace CamelWorks.Nav.Clash
             var clash = Clash();
             if (clash == null) return read;
 
-            // The document's saved sets, sourced once. Describing what a test is between used to
-            // compare a side against every set in the document, per side, per test - so a job
-            // with two hundred sets and a hundred and sixty tests asked the host to build a
-            // selection source sixty-four thousand times for a line of text on a rail.
-            var sets = SetSources();
-
             var seen = 0;
 
             foreach (var found in AllTests(clash))
@@ -1000,7 +986,7 @@ namespace CamelWorks.Nav.Clash
                     flat.Count,
                     LastRunTicksOf(found.Test));
 
-                read.Add(new ClashTestRead(test, ShapeOf(found.Test, sets), results));
+                read.Add(new ClashTestRead(test, ShapeOf(found.Test), results));
             }
 
             return read;
