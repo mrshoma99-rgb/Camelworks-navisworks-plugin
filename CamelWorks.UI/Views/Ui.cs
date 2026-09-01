@@ -1677,8 +1677,6 @@ namespace CamelWorks.UI.Views
 
             foreach (var option in options)
             {
-                var pick = option;
-
                 var button = new ToggleButton
                 {
                     Content = option,
@@ -1687,6 +1685,24 @@ namespace CamelWorks.UI.Views
                 };
 
                 button.Wearing("Segment");
+
+                buttons.Add(button);
+                row.Children.Add(button);
+            }
+
+            // Settle which one is on BEFORE anything is listening.
+            //
+            // This line used to run after the handlers were wired, so a control built with a
+            // value that matched none of its options turned the first one on and told the caller
+            // somebody had picked it. Nobody had - the control was being drawn. On the clash
+            // board's source segment that callback re-opens the whole app, so opening the
+            // settings window silently rebuilt the screen and took every filter with it.
+            if (!buttons.Any(b => b.IsChecked == true)) buttons[0].IsChecked = true;
+
+            for (var i = 0; i < buttons.Count; i++)
+            {
+                var button = buttons[i];
+                var pick = options[i];
 
                 button.Checked += (s, e) =>
                 {
@@ -1702,12 +1718,7 @@ namespace CamelWorks.UI.Views
                 {
                     if (!buttons.Any(b => b.IsChecked == true)) button.IsChecked = true;
                 };
-
-                buttons.Add(button);
-                row.Children.Add(button);
             }
-
-            if (!buttons.Any(b => b.IsChecked == true)) buttons[0].IsChecked = true;
 
             var frame = new Border
             {
@@ -3681,11 +3692,10 @@ namespace CamelWorks.UI.Views
                     //
                     // What it was still telling anybody - how long it took - goes into the output
                     // instead, beside the counts the work itself wrote there.
+                    // The bar goes when the work does, and takes the line about how long it
+                    // took with it. A footer is one line; the elapsed time was the third of
+                    // three, and nobody reads it twice.
                     progress.Visibility = Visibility.Collapsed;
-
-                    output.Children.Add(Line(job.IsCancelled
-                        ? "Stopped after " + Seconds(job.Elapsed) + "."
-                        : "Finished in " + Seconds(job.Elapsed) + ".", 0.75));
                 }
                 catch (Exception ex)
                 {

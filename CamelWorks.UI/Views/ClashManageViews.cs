@@ -300,7 +300,56 @@ namespace CamelWorks.UI.Views
             /// riser wants less and one working a car park wants more, and there is no way to
             /// guess which from the clash - so it is a number they set once and forget.
             /// </summary>
-            private double _focusBack = 4.0;
+            private double _focusBack = 4000;
+
+            /// <summary>
+            /// Whether clicking a row moves the camera to it.
+            ///
+            /// Off by default, because picking and looking are different acts: somebody
+            /// Shift-picking forty rows to set a status does not want the camera walking through
+            /// all forty. On, it is the fastest way to read a board - click down the list and
+            /// watch the model.
+            /// </summary>
+            private bool _focusOnClick;
+
+            /// <summary>
+            /// What this person chose last time, read once when the screen is built.
+            ///
+            /// Static, so switching tab and coming back does not re-read the file, and so the
+            /// same choices are in force on every board in the session.
+            /// </summary>
+            private static readonly UserChoices Choices = UserChoices.Read();
+
+            private const string ChoiceFocusBack = "clash.focusBackMm";
+            private const string ChoiceMarkerAcross = "clash.markerAcrossMm";
+            private const string ChoiceMarkOnFocus = "clash.markOnFocus";
+            private const string ChoiceFocusOnClick = "clash.focusOnClick";
+
+            /// <summary>Take up what this person chose the last time they were here.</summary>
+            private void Remembered()
+            {
+                _focusBack = Choices.Get(ChoiceFocusBack, _focusBack);
+                _markerAcross = Choices.Get(ChoiceMarkerAcross, _markerAcross);
+                _markOnFocus = Choices.Get(ChoiceMarkOnFocus, _markOnFocus);
+                _focusOnClick = Choices.Get(ChoiceFocusOnClick, _focusOnClick);
+            }
+
+            /// <summary>
+            /// Keep what has just been chosen, beside the person rather than in the project.
+            ///
+            /// None of these is a fact about the job: how far the camera stands back and how big
+            /// a marker is are how one coordinator likes to work, and writing them into the
+            /// project file would impose them on everybody else who opens the same model.
+            /// </summary>
+            private void Remember()
+            {
+                Choices.Set(ChoiceFocusBack, _focusBack);
+                Choices.Set(ChoiceMarkerAcross, _markerAcross);
+                Choices.Set(ChoiceMarkOnFocus, _markOnFocus);
+                Choices.Set(ChoiceFocusOnClick, _focusOnClick);
+
+                Choices.Save();
+            }
 
             /// <summary>What the board currently shows, for the spreadsheet writer.</summary>
             private List<Row> _shown = new List<Row>();
@@ -442,6 +491,10 @@ namespace CamelWorks.UI.Views
             internal Screen(Session session)
             {
                 _session = session;
+
+                // Before anything is drawn, so the first board is already the way this person
+                // left it rather than the way it looked the first time they ever opened it.
+                Remembered();
 
                 // A seat with no clash engine has exactly one source; the switch would be a lie.
                 if (!session.Clash.IsAvailable) _source = FromFile;
@@ -889,7 +942,74 @@ namespace CamelWorks.UI.Views
                     .Select(g => g.Key)
                     .FirstOrDefault() ?? string.Empty;
 
-                foreach (var entry in shown) _rows.Children.Add(RailRow(entry, common));
+                // Folders first, because a coordinator with eighty tests files them before they
+                // sort them. The root's tests come first with no heading over them; every folder
+                // after that gets one. A rail with nothing filed looks exactly as it always did.
+                var filed = shown
+                    .GroupBy(e => (e.Test.Folder ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(g => g.Key.Length == 0 ? 0 : 1)
+                    .ThenBy(g => g.Key, StringComparer.CurrentCulture)
+                    .ToList();
+
+                foreach (var group in filed)
+                {
+                    if (group.Key.Length > 0)
+                        _rows.Children.Add(FolderBand(group.Key, group.Count()));
+
+                    foreach (var entry in group) _rows.Children.Add(RailRow(entry, common));
+                }
+            }
+
+            /// <summary>
+            /// A folder's heading on the rail.
+            ///
+            /// This project's folder, not the host's. Navisworks has folders of its own in the
+            /// clash detective, but a published NWD will not take a write into them, so filing a
+            /// test there simply refused on the seat where most review happens. These are kept in
+            /// the project database and laid over the read, which means they show here and
+            /// nowhere else - the native clash detective knows nothing about them.
+            /// </summary>
+            /// <param name="folder">The folder's name.</param>
+            /// <param name="count">How many tests are in it.</param>
+            private UIElement FolderBand(string folder, int count)
+            {
+                var row = new DockPanel { LastChildFill = true };
+
+                var tally = new TextBlock
+                {
+                    Text = count.ToString(System.Globalization.CultureInfo.CurrentCulture),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                tally.Wearing("Hint");
+                DockPanel.SetDock(tally, Dock.Right);
+                row.Children.Add(tally);
+
+                row.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
+
+                var name = new TextBlock
+                {
+                    Text = folder,
+                    FontWeight = FontWeights.SemiBold,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                name.Wearing("Hint");
+                row.Children.Add(name);
+
+                var band = new Border
+                {
+                    Padding = new Thickness(12, 6, 14, 5),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    ToolTip = folder + " — a CamelWorks folder, kept in this project",
+                    Child = row,
+                };
+
+                band.Tint(Border.BackgroundProperty, "Card2");
+                band.Tint(Border.BorderBrushProperty, "Bd");
+
+                return band;
             }
 
             /// <summary>One test, as a row of the rail.</summary>
@@ -930,6 +1050,10 @@ namespace CamelWorks.UI.Views
                         entry.Of("Approved"), entry.Of("Resolved"),
                     },
                     open == 0);
+
+                var tick = TestTick(entry);
+                DockPanel.SetDock(tick, Dock.Left);
+                row.Children.Add(tick);
 
                 DockPanel.SetDock(band, Dock.Right);
                 row.Children.Add(band);
@@ -1033,34 +1157,65 @@ namespace CamelWorks.UI.Views
                 if (OnFile)
                     return new List<Parts.Entry>
                     {
-                        Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                        Parts.Entry.Heading("Export"),
+                        Parts.Entry.Act("Marker spheres as .obj", Glyphs.Sphere,
                                         () => ExportTestMarkers(read)),
                         Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
                     };
 
+                var reaching = Reaching(entry);
+                var many = reaching.Count > 1;
+                var what = many ? Ui.Count(reaching.Count, "test") : "this test";
+
                 return new List<Parts.Entry>
                 {
-                    Parts.Entry.Act("Run this test again", Glyphs.Play,
-                                    () => RunTests(One(entry), _log)),
-                    Parts.Entry.Act("Rename this test", Glyphs.Pencil,
-                        () => Prompt("Rename this test", entry?.Test.Name ?? string.Empty,
-                                     "Rename", name => RenameTest(entry, name))),
-                    Parts.Entry.Act("Renumber the results", Glyphs.Number,
+                    Parts.Entry.Heading(many ? "Do to " + what : "This test"),
+                    Parts.Entry.Act(many ? "Run them again" : "Run this test again", Glyphs.Play,
+                                    () => RunTests(reaching, _log)),
+                    Parts.Entry.Act("Read every test's results again", Glyphs.Read,
+                                    () => _readButtons?.Children
+                                        .OfType<System.Windows.Controls.Primitives.ButtonBase>()
+                                        .FirstOrDefault()?
+                                        .RaiseEvent(new RoutedEventArgs(
+                                            System.Windows.Controls.Primitives.ButtonBase.ClickEvent))),
+
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Heading("Name and file"),
+                    many
+                        ? Parts.Entry.Barred("Rename", Glyphs.Pencil,
+                            "One test at a time - a rename is one name.")
+                        : Parts.Entry.Act("Rename this test", Glyphs.Pencil,
+                            () => Prompt("Rename this test", entry?.Test.Name ?? string.Empty,
+                                         "Rename", name => RenameTest(entry, name))),
+                    Parts.Entry.Act(many ? "Renumber their results" : "Renumber the results",
+                        Glyphs.Number,
                         () => Prompt("Renumber the results", string.Empty, "Renumber",
-                                     prefix => RenameResults(One(entry), prefix, _log))),
-                    Parts.Entry.Act("Move into a folder", Glyphs.MoveIn,
+                                     prefix => RenameResults(reaching, prefix, _log))),
+                    Parts.Entry.Act(many ? "Move them into a folder" : "Move into a folder",
+                        Glyphs.MoveIn,
                         () => Prompt("Move into a folder", entry?.Test.Folder ?? string.Empty,
-                                     "Move", folder => MoveTests(One(entry), folder, _log))),
-                    Parts.Entry.Act("Compact — drop what is finished", Glyphs.Compact,
-                                    () => CompactTests(One(entry), _log)),
+                                     "Move", folder => MoveTests(reaching, folder, _log))),
+                    Parts.Entry.Act(many ? "Compact them - drop what is finished"
+                                         : "Compact - drop what is finished",
+                                    Glyphs.Compact, () => CompactTests(reaching, _log)),
+
                     Parts.Entry.Rule(),
+                    Parts.Entry.Heading("Across the job"),
                     Parts.Entry.Act("Find duplicates across tests", Glyphs.Compact, Duplicates),
-                    Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
-                                    () => ExportTestMarkers(read)),
-                    Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
+
                     Parts.Entry.Rule(),
-                    Parts.Entry.Danger("Delete this test", Glyphs.Bin,
-                                       () => DeleteTests(One(entry), _log)),
+                    Parts.Entry.Heading("Export"),
+                    Parts.Entry.Act("Marker spheres as .obj", Glyphs.Sphere,
+                                    () => ExportTestMarkers(Entries(reaching))),
+                    Parts.Entry.Act("Export a snapshot of every result", Glyphs.Camera,
+                                    () => Snapshots(Entries(reaching)
+                                                    .SelectMany(t => t.Rows)
+                                                    .Cast<object>().ToList(), _log)),
+                    Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
+
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Danger(many ? "Delete " + what : "Delete this test", Glyphs.Bin,
+                                       () => DeleteTests(reaching, _log)),
                 };
             }
 
@@ -1288,12 +1443,9 @@ namespace CamelWorks.UI.Views
             }
 
             private readonly StackPanel _title = Ui.Stack();
-            private readonly DockPanel _tabs = new DockPanel
-            {
-                LastChildFill = true,
-                Margin = new Thickness(0, 8, 0, 0),
-            };
 
+            /// <summary>The read button and its Stop, kept so the footer can fold them away.</summary>
+            private Panel? _readButtons;
             private readonly ContentControl _strip = new ContentControl();
             private readonly ContentControl _view = new ContentControl
             {
@@ -1330,10 +1482,13 @@ namespace CamelWorks.UI.Views
                 grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
+                // One line, not two. The name, the counts, the search and the verbs all sit on
+                // the same row - the two rows they were on cost forty pixels of the thing this
+                // window is actually for, which is the results.
                 var head = new Border
                 {
-                    Padding = new Thickness(16, 10, 16, 0),
-                    Child = Ui.Stack(_anchor, _toast, _headline, _title, _tabs),
+                    Padding = new Thickness(16, 8, 16, 4),
+                    Child = Ui.Stack(_anchor, _toast, _headline, _title),
                 };
 
                 grid.Children.Add(head);
@@ -1371,7 +1526,6 @@ namespace CamelWorks.UI.Views
 
                 if (entry == null)
                 {
-                    _tabs.Children.Clear();
                     _board.Children.Clear();
 
                     if (Current() != null)
@@ -1385,16 +1539,6 @@ namespace CamelWorks.UI.Views
                 _toleranceMm = ToleranceMm(entry);
 
                 _title.Children.Add(Title(entry));
-
-                if (_tabs.Children.Count == 0)
-                {
-                    // Built once. The strip is refilled in place and the search box beside it is
-                    // never touched — see the constructor.
-                    DockPanel.SetDock(_strip, Dock.Left);
-                    DockPanel.SetDock(_boardBox, Dock.Right);
-                    _tabs.Children.Add(Ui.Loose(_boardBox));
-                    _tabs.Children.Add(Ui.Loose(_strip));
-                }
 
                 _strip.Content = Strip(entry);
 
@@ -1609,6 +1753,17 @@ namespace CamelWorks.UI.Views
                     Orientation = Orientation.Horizontal,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
+
+                // The search and the status chips come up here with the name and the verbs. They
+                // had a row of their own under this one, which is a strip of window spent on two
+                // controls.
+                _boardBox.VerticalAlignment = VerticalAlignment.Center;
+                _boardBox.Margin = new Thickness(10, 0, 10, 0);
+                verbs.Children.Add(Ui.Loose(_boardBox));
+
+                _strip.VerticalAlignment = VerticalAlignment.Center;
+                _strip.Margin = new Thickness(0, 0, 10, 0);
+                verbs.Children.Add(Ui.Loose(_strip));
 
                 if (!OnFile)
                     verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test again",
@@ -2950,6 +3105,23 @@ namespace CamelWorks.UI.Views
                 _pickedFrom = id;
 
                 RedrawRows();
+
+                // Last, and only on a plain press of one row. A run or a Ctrl-press is somebody
+                // building a selection, not asking to be taken somewhere.
+                if (_focusOnClick && !adding && !run) Look(id);
+            }
+
+            /// <summary>Put the camera on one picked row, for focus-on-click.</summary>
+            /// <param name="id">The row.</param>
+            private void Look(string id)
+            {
+                var line = _lines?.FirstOrDefault(
+                    l => string.Equals(l.Id, id, StringComparison.Ordinal));
+
+                var rows = line?.GroupRow?.Rows
+                           ?? (line?.Clash != null ? new List<Row> { line.Clash } : null);
+
+                if (rows != null && rows.Count > 0) Focus(rows.Cast<object>().ToList(), _toast);
             }
 
             /// <summary>
@@ -2988,8 +3160,14 @@ namespace CamelWorks.UI.Views
             /// <param name="row">What the verbs act on.</param>
             private FrameworkElement Verbs(BoardRow row)
             {
-                var what = row.IsGroup ? "this clash group" : "this clash";
-                var picked = row.Rows.Cast<object>().ToList();
+                var reaching = Reaching(row);
+                var many = reaching.Count > row.Rows.Count;
+
+                var what = many
+                    ? Ui.Count(_picked.Count, "picked row")
+                    : row.IsGroup ? "this clash group" : "this clash";
+
+                var picked = reaching;
 
                 var bar = new StackPanel
                 {
@@ -3034,9 +3212,14 @@ namespace CamelWorks.UI.Views
             /// <param name="row">The row.</param>
             private List<Parts.Entry> RowMenu(BoardRow row)
             {
-                var what = row.IsGroup ? "this clash group" : "this clash";
-                var picked = row.Rows.Cast<object>().ToList();
-                var rest = Doing(row.Rows, what);
+                var reaching = Reaching(row);
+
+                var what = _picked.Count > 1 && _picked.Contains(row.Id)
+                    ? Ui.Count(_picked.Count, "picked row")
+                    : row.IsGroup ? "this clash group" : "this clash";
+
+                var picked = reaching;
+                var rest = Doing(Rows(reaching), what);
 
                 rest.Add(Parts.Entry.Rule());
 
@@ -3100,6 +3283,33 @@ namespace CamelWorks.UI.Views
 
                 var entry = Entry();
                 if (entry == null) return;
+            }
+
+            /// <summary>
+            /// One rail row's tick, so a verb can be aimed at several tests at once.
+            ///
+            /// Ticking is not picking: the board still follows the row you click, and the ticks
+            /// only say which tests a verb reaches. Untick everything and every verb is back to
+            /// meaning the one test on the board.
+            /// </summary>
+            /// <param name="entry">The test the tick stands for.</param>
+            private UIElement TestTick(TestEntry entry)
+            {
+                var box = new CheckBox
+                {
+                    IsChecked = _tests.Contains(entry.Test.Id),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 9, 0),
+                    ToolTip = "Tick tests to run, move or export several at once",
+                };
+
+                box.Click += (s, e) => Ui.Safely(() =>
+                {
+                    if (!_tests.Remove(entry.Test.Id)) _tests.Add(entry.Test.Id);
+                    RedrawRailList();
+                });
+
+                return box;
             }
 
             /// <summary>One row's tick.</summary>
@@ -3307,37 +3517,42 @@ namespace CamelWorks.UI.Views
 
                 return new List<Parts.Entry>
                 {
+                    // Grouped by what the line does to the world, in the order somebody works:
+                    // look at it, say something about it, file it, send it somewhere.
+                    Parts.Entry.Heading("Look at " + what),
                     Parts.Entry.Act("Focus", Glyphs.Focus, () => Focus(picked, _toast)),
                     Parts.Entry.Act("Isolate", Glyphs.Eye, () => Isolate(picked, _toast)),
-                    Parts.Entry.Act("Show everything again", Glyphs.EyeOff,
-                                    () => _session.View.ShowAll()),
-                    Parts.Entry.Act("The engine's own view", Glyphs.Camera,
-                                    () => EngineView(picked, _toast)),
-                    rows.Count == 1
-                        ? Parts.Entry.Act("Comments", Glyphs.Comment, () => Conversation(rows[0]))
-                        : Parts.Entry.Act("Comment on all of them", Glyphs.Comment,
-                            () => Prompt("Comment on " + what, string.Empty, "Comment",
-                                         body => CommentPicked(picked, body, _toast))),
-                    Parts.Entry.Rule(),
-                    Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
-                    Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
-                                    () => Spheres(picked, _toast)),
                     Parts.Entry.Act(MarkerToggle(), Glyphs.EyeOff, () =>
                     {
                         Unmark(_toast);
                         RedrawMarkerToggle();
                     }),
-                    Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
-                                    () => ExportMarkers(rows, what, _toast)),
+
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Heading("Decide"),
+                    rows.Count == 1
+                        ? Parts.Entry.Act("Comments", Glyphs.Comment, () => Conversation(rows[0]))
+                        : Parts.Entry.Act("Comment on all of them", Glyphs.Comment,
+                            () => Prompt("Comment on " + what, string.Empty, "Comment",
+                                         body => CommentPicked(picked, body, _toast))),
                     Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
                                     () => RaiseIssue(picked, false)),
                     Parts.Entry.Act("Attach to an existing issue", Glyphs.Link,
                                     () => AttachToIssue(picked, _toast)),
-                    Parts.Entry.Act("Copy as columns", Glyphs.Copy, () => CopyRows(rows)),
+
                     Parts.Entry.Rule(),
+                    Parts.Entry.Heading("File"),
                     Parts.Entry.Act("Move into an existing group", Glyphs.MoveIn,
                         () => Prompt("Move into which clash group", string.Empty, "Move",
                                      name => Regroup(picked, name, "Moved {0} into"))),
+
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Heading("Export"),
+                    Parts.Entry.Act("Export a snapshot of each", Glyphs.Camera,
+                                    () => Snapshots(picked, _toast)),
+                    Parts.Entry.Act("Marker spheres as .obj", Glyphs.Sphere,
+                                    () => ExportMarkers(rows, what, _toast)),
+                    Parts.Entry.Act("Copy as columns", Glyphs.Copy, () => CopyRows(rows)),
                 };
             }
 
@@ -3373,6 +3588,11 @@ namespace CamelWorks.UI.Views
 
                 read.Buttons.VerticalAlignment = VerticalAlignment.Center;
                 read.Buttons.Margin = new Thickness(0, 0, 8, 0);
+
+                // Kept, because whether it is shown changes with every read - and the footer is
+                // built once.
+                _readButtons = read.Buttons;
+
                 right.Children.Add(Ui.Loose(read.Buttons));
 
                 _send.VerticalAlignment = VerticalAlignment.Center;
@@ -3417,6 +3637,14 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void RedrawFoot()
             {
+                // Only before the first read. Once the results are on the screen the press that
+                // put them there is the least useful thing in the footer, and "Read the results
+                // again" is on the test's own menu, where somebody who wants it is looking.
+                if (_readButtons != null)
+                    _readButtons.Visibility = Current() == null
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+
                 // Nothing on the left. What used to be there was four totals over every test in
                 // the document - how many were assigned out, how many were in groups - and a
                 // total across eighteen tests is a number nobody is working on. What is worth
@@ -3530,10 +3758,12 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
-                _log.Children.Add(Ui.Line(Ui.Count(entries.Count, "test") + ", "
-                    + Ui.Count(entries.Sum(e => e.Rows.Count), "result") + " read.", 1, true));
-
-                if (kept != null) _log.Children.Add(Ui.Line(kept, 0.75));
+                // One line. It was three - the counts, what was kept, and how long it took -
+                // stacked in a footer whose height is results nobody can see.
+                _log.Children.Add(Ui.Line(
+                    Ui.Count(entries.Count, "test") + ", "
+                    + Ui.Count(entries.Sum(e => e.Rows.Count), "result") + " read."
+                    + (kept == null ? string.Empty : "  " + kept), 1, true));
             }
 
             /// <summary>
@@ -3966,35 +4196,47 @@ namespace CamelWorks.UI.Views
                 return ModelPageBody();
             }
 
-            private UIElement ModelPageBody() => Bench.Group("Markers and the view",
-                Ui.Field("Marker size", Ui.Text(
-                    _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
-                    {
-                        if (double.TryParse(text, NumberStyles.Float,
-                                CultureInfo.InvariantCulture, out var mm) && mm > 0)
-                            _markerAcross = mm;
-                    }, 90), "millimetres across"),
-                Ui.Field("Focus distance", Ui.Text(
-                    _focusBack.ToString(CultureInfo.InvariantCulture), text =>
-                    {
-                        if (double.TryParse(text, NumberStyles.Float,
-                                CultureInfo.InvariantCulture, out var m) && m > 0)
-                            _focusBack = m;
-                    }, 90), "metres back from the clash"),
-                Ui.Check("Drop a marker where the camera lands on Focus", _markOnFocus,
-                         v => _markOnFocus = v),
-                Ui.Loose(_markerToggle),
-                Ui.Small("A marker is a status-coloured ball drawn over the model at the point "
-                         + "where the two elements met. It is not geometry: nothing is added to "
-                         + "the document, nothing appears in the selection tree, and clearing "
-                         + "them takes them straight back down, and pressing it again puts "
-                         + "the same ones back. \"Show everything again\" is the eye symbol "
-                         + "under the results."),
-                Ui.Small("\"Export the markers as .obj\", under the results and on the test menu, "
-                         + "writes the same balls as a file instead - a group per test, an object "
-                         + "per clash named what the engine named it, coloured by status. That is "
-                         + "for the person who has neither this plug-in nor Navisworks. Send the "
-                         + ".mtl beside it or the colours are lost."));
+            private UIElement ModelPageBody() => Ui.Stack(
+                Bench.Group("Focus",
+                    Ui.Field("Stand back", Ui.Text(
+                        _focusBack.ToString(CultureInfo.InvariantCulture), text =>
+                        {
+                            if (double.TryParse(text, NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                            {
+                                _focusBack = mm;
+                                Remember();
+                            }
+                        }, 90), "mm from the clash"),
+                    Ui.Check("Focus the camera when a row is clicked", _focusOnClick,
+                             v => { _focusOnClick = v; Remember(); }),
+                    Ui.Small("With this off, clicking a row picks it and the camera stays where "
+                             + "it is - Focus, on the row or in its menu, is what moves it.")),
+
+                Bench.Group("Markers",
+                    Ui.Field("How big", Ui.Text(
+                        _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
+                        {
+                            if (double.TryParse(text, NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                            {
+                                _markerAcross = mm;
+                                Remember();
+                            }
+                        }, 90), "mm across"),
+                    Ui.Check("Drop one where the camera lands on Focus", _markOnFocus,
+                             v => { _markOnFocus = v; Remember(); }),
+
+                    // A switch, not a button whose words are its state. It was a text button that
+                    // said "Hide the markers", and after pressing it the only thing telling you
+                    // what it would do next was the same words.
+                    Ui.Loose(_markerToggle),
+
+                    Ui.Small("A marker is a status-coloured ball drawn over the model where the "
+                             + "two elements met. It is not geometry: nothing is added to the "
+                             + "document and nothing joins the selection tree. Export ▸ Marker "
+                             + "spheres as .obj writes the same balls as a file, for somebody who "
+                             + "has neither this plug-in nor Navisworks.")));
 
             private UIElement RoundPage() => OnFile
                 ? Bench.Group("The review round",
@@ -4107,6 +4349,25 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test, or null when none is picked.</param>
             private static IReadOnlyList<object> One(TestEntry? entry) =>
                 entry == null ? Array.Empty<object>() : new object[] { entry };
+
+            /// <summary>
+            /// What a verb pressed on one test actually acts on.
+            ///
+            /// The ticked tests when this one is among them, and this one alone otherwise - the
+            /// same rule the board's rows follow. Running, moving, compacting and exporting are
+            /// all things somebody wants over eighteen tests at once, and doing them one at a
+            /// time is the afternoon this window exists to give back.
+            /// </summary>
+            /// <param name="entry">The test the verb was pressed on.</param>
+            private IReadOnlyList<object> Reaching(TestEntry? entry) =>
+                entry != null && _tests.Count > 1 && _tests.Contains(entry.Test.Id)
+                    ? (Current() ?? new List<TestEntry>())
+                        .Where(t => _tests.Contains(t.Test.Id)).Cast<object>().ToList()
+                    : One(entry);
+
+            /// <summary>Which tests are ticked on the rail.</summary>
+            private readonly HashSet<string> _tests =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             /// <summary>Every result of a test, whatever the board is filtered to.</summary>
             /// <param name="entry">The test.</param>
@@ -4801,18 +5062,35 @@ namespace CamelWorks.UI.Views
             // Writing, from the board's own controls
             // -------------------------------------------------------------------------------
 
-            /// <summary>Set one row's status, from the chip that shows it.</summary>
-            /// <param name="row">The row.</param>
+            /// <summary>Set the status from the chip on a row, over everything picked.</summary>
+            /// <param name="row">The row the chip is on.</param>
             /// <param name="status">The new status.</param>
             private void SetStatus(BoardRow row, string status) =>
-                Mark(row.Rows.Cast<object>().ToList(), status, _toast);
+                Mark(Reaching(row), status, _toast);
 
-            /// <summary>Set one row's assignee, from the chip that shows it.</summary>
-            /// <param name="row">The row.</param>
+            /// <summary>Set the assignee from the chip on a row, over everything picked.</summary>
+            /// <param name="row">The row the chip is on.</param>
             /// <param name="who">Who it is with now.</param>
             private void SetAssignee(BoardRow row, string who) =>
-                AssignPicked(row.Rows.Cast<object>().ToList(), who == Nobody ? string.Empty : who,
-                             _toast);
+                AssignPicked(Reaching(row), who == Nobody ? string.Empty : who, _toast);
+
+            /// <summary>
+            /// What a verb pressed on one row actually acts on.
+            ///
+            /// <b>The selection, when the row is in it.</b> Somebody who has picked forty rows
+            /// and then sets a status on one of them means all forty - that is what picking them
+            /// was for. Acting on the one row under the pointer and leaving the other
+            /// thirty-nine is the behaviour that makes a selection feel decorative, and it is
+            /// what every row chip and row verb did.
+            ///
+            /// A row outside the selection is itself, and only itself. Right-clicking one already
+            /// moves the selection to it, so the two rules never disagree.
+            /// </summary>
+            /// <param name="row">The row the verb was pressed on.</param>
+            private List<object> Reaching(BoardRow row) =>
+                _picked.Count > 1 && _picked.Contains(row.Id)
+                    ? Picked().Cast<object>().ToList()
+                    : row.Rows.Cast<object>().ToList();
 
             /// <summary>Set the status or the assignee over everything picked.</summary>
             /// <param name="picked">The rows.</param>
@@ -5188,22 +5466,23 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                // The document first, this project when the document will not take it - the
-                // same two steps as a rename, and for the same reason.
-                if (!_session.Clash.MoveTests(tests.Select(t => t.Test.Id).ToList(),
-                                              folder.Length == 0 ? null : folder))
+                // The database, and only the database.
+                //
+                // A folder here is this project's, not the host's. Writing it into the clash
+                // detective meant a published NWD refused the move outright, and on the seats
+                // that did take it the folder then belonged to a file rather than to the job -
+                // so two people reading the same model disagreed about how it was filed. Kept
+                // here it works on every seat, survives a re-read, and the native clash detective
+                // is left exactly as its own users expect to find it.
+                var names = TestNames();
+
+                foreach (var test in tests) names.Refile(test.Test.Id, folder);
+
+                if (!KeepTestNames(names))
                 {
-                    var names = TestNames();
-
-                    foreach (var test in tests) names.Refile(test.Test.Id, folder);
-
-                    if (!KeepTestNames(names))
-                    {
-                        Warned(Ui.Problem("Those tests were not moved, and where they were moved "
-                            + "to could not be kept in this project either. "
-                            + (_session.Clash.LastProblem ?? string.Empty)));
-                        return;
-                    }
+                    Warned(Ui.Problem("Where those tests were moved to could not be kept in "
+                        + "this project."));
+                    return;
                 }
 
                 _session.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, "clash test")
@@ -5335,7 +5614,8 @@ namespace CamelWorks.UI.Views
                 var point = Middle(rows);
 
                 if (point != null)
-                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, _focusBack);
+                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z,
+                                         _focusBack / 1000.0);
 
                 // The ball, if it is wanted. Every picked point rather than the average the camera
                 // used, because on a multi-row focus the average is a place where nothing clashed.
@@ -5352,33 +5632,6 @@ namespace CamelWorks.UI.Views
                         + "elements this federation has, so there is nothing to look at."));
             }
 
-            /// <summary>
-            /// Put the camera where the clash engine put it when the test ran.
-            ///
-            /// Its own verb rather than part of Focus. The host composes this view from the two
-            /// elements on every press, which is not free, and Focus is the press somebody makes
-            /// forty times in an afternoon.
-            /// </summary>
-            /// <param name="picked">The picked rows.</param>
-            /// <param name="say">Where to report what happened.</param>
-            private void EngineView(IReadOnlyList<object> picked, Panel say)
-            {
-                say.Children.Clear();
-
-                var rows = Rows(picked);
-                if (rows.Count == 0) return;
-
-                if (OnFile)
-                {
-                    say.Children.Add(Ui.Problem("This board came from a file, so there is no "
-                        + "engine holding a view of it."));
-                    return;
-                }
-
-                if (!_session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
-                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem
-                        ?? "The host has no saved view for that result."));
-            }
 
             /// <summary>
             /// Select what the engine is holding for these rows. Costs a copy, never a search.
@@ -6242,56 +6495,6 @@ namespace CamelWorks.UI.Views
                        + "Write the baseline to carry them into the NWF.";
             }
 
-            /// <summary>
-            /// Hang a status-coloured ball at each picked clash, and take the last lot down.
-            ///
-            /// <b>Temporary graphics, not a model.</b> These are drawn straight into the view by
-            /// <c>CamelWorksMarkers</c>, once a frame, from a set this hands over. They appear on
-            /// the next frame, they cost nothing to put up or take down, and they leave no trace:
-            /// no file to unload, nothing in the selection tree, no re-index. That is the whole
-            /// point of a marker - it says "here" for as long as somebody is looking, and stops.
-            ///
-            /// <b>Units.</b> The host's graphics calls take the document's own units, which is
-            /// what a board read from the model is already in. A board read from somebody else's
-            /// file counts in metres, so those come back the other way.
-            /// </summary>
-            /// <param name="picked">The picked rows.</param>
-            /// <param name="say">Where to report what happened.</param>
-            private void Spheres(IReadOnlyList<object> picked, Panel say)
-            {
-                say.Children.Clear();
-
-                var rows = Rows(picked);
-                if (rows.Count == 0) return;
-
-                if (!_session.View.CanMark)
-                {
-                    say.Children.Add(Ui.Problem("This host has no view to draw markers into."));
-                    return;
-                }
-
-                var metres = _session.MetresPerUnit;
-                var perUnit = metres > 0 ? metres : 1.0;
-                var scale = OnFile ? 1.0 / perUnit : 1.0;
-
-                // The size somebody typed is millimetres across; the ball is drawn in document
-                // units, so the radius crosses over here. A sphere sized in metres in a document
-                // that counts in millimetres is a thousandth of the marker that was asked for,
-                // which is a marker nobody sees.
-                var radius = _markerAcross / 2000.0 / perUnit;
-
-                if (radius <= 0)
-                {
-                    say.Children.Add(Ui.Problem("A marker of no size is a marker nobody can see. "
-                        + "Give it a size on the Model page."));
-                    return;
-                }
-
-                var marks = Marks(rows, scale, radius);
-                _session.View.ShowMarkers(marks);
-
-                _ = marks;
-            }
 
             /// <summary>
             /// The markers as an OBJ somebody else opens.
@@ -6414,10 +6617,12 @@ namespace CamelWorks.UI.Views
                     ? "Show the markers again"
                     : "Hide the markers";
 
-            /// <summary>Put the right words on the marker toggle.</summary>
+            /// <summary>Put the switch in the state the markers are actually in.</summary>
             private void RedrawMarkerToggle() =>
-                _markerToggle.Content = Ui.Quiet(MarkerToggle(), () =>
+                _markerToggle.Content = Ui.Check("Show the markers", MarkerOverlay.Any, on =>
                 {
+                    if (on == MarkerOverlay.Any) return;
+
                     Unmark(_toast);
                     RedrawMarkerToggle();
                 });
@@ -6587,59 +6792,96 @@ namespace CamelWorks.UI.Views
                 : side == SecondSide ? ClashElementSide.Second
                 : ClashElementSide.Both;
 
+            /// <summary>
+            /// Export a snapshot of each picked result, wherever the person says.
+            ///
+            /// It used to write into a "clash-snapshots" folder beside the project file and say
+            /// so on a message that faded, which on a seat with no project file meant the pictures
+            /// landed in the temp folder and nothing told anybody where. "The snapshot button
+            /// doesn't do anything at all" was that: it did the work somewhere nobody looked. A
+            /// save dialog is asked first, so the files land where they were sent and the person
+            /// is standing in the folder when they do.
+            /// </summary>
+            /// <param name="picked">The results to picture.</param>
+            /// <param name="say">Where the outcome goes.</param>
             private void Snapshots(IReadOnlyList<object> picked, Panel say)
             {
                 say.Children.Clear();
 
                 if (OnFile)
                 {
-                    say.Children.Add(Ui.Problem("Snapshots are rendered by the clash engine, so "
+                    Warned(Ui.Problem("Snapshots are rendered by the clash engine, so "
                         + "they need the model source."));
                     return;
                 }
 
                 var rows = Rows(picked);
-                if (rows.Count == 0) return;
 
-                var project = _session.Store.Path;
-                var beside = string.IsNullOrWhiteSpace(project)
-                    ? System.IO.Path.GetTempPath()
-                    : System.IO.Path.GetDirectoryName(project) ?? System.IO.Path.GetTempPath();
-                var folder = System.IO.Path.Combine(beside, "clash-snapshots");
-
-                try
+                if (rows.Count == 0)
                 {
-                    System.IO.Directory.CreateDirectory(folder);
-                }
-                catch (Exception e)
-                {
-                    say.Children.Add(Ui.Problem("Could not make the folder: " + Ui.Describe(e)));
+                    Warned(Ui.Problem("Nothing is picked, so there was nothing to picture."));
                     return;
                 }
 
-                var written = 0;
+                var first = Safe(rows[0].TestName) + "_" + Safe(rows[0].Info.Name ?? rows[0].Info.Id);
 
-                foreach (var row in rows)
+                var dialog = new Microsoft.Win32.SaveFileDialog
                 {
-                    var bytes = _session.Clash.ResultSnapshot(row.TestId, row.Info.Id, 1280, 720);
-                    if (bytes == null) continue;
+                    Title = rows.Count == 1
+                        ? "Export a snapshot"
+                        : "Export " + Ui.Count(rows.Count, "snapshot")
+                          + " — pick the first one's name, the rest land beside it",
+                    Filter = "PNG image|*.png",
+                    FileName = first + ".png",
+                    AddExtension = true,
+                    DefaultExt = ".png",
+                };
 
-                    var name = Safe(row.TestName) + "_" + Safe(row.Info.Name ?? row.Info.Id) + ".png";
+                if (!Ui.Asked(dialog)) return;
 
-                    try
+                var chosen = dialog.FileName;
+                var folder = System.IO.Path.GetDirectoryName(chosen) ?? System.IO.Path.GetTempPath();
+
+                var written = 0;
+                var failed = string.Empty;
+
+                Ui.Working("Rendering " + Ui.Count(rows.Count, "snapshot"), job =>
+                {
+                    for (var i = 0; i < rows.Count; i++)
                     {
-                        System.IO.File.WriteAllBytes(System.IO.Path.Combine(folder, name), bytes);
-                        written++;
-                    }
-                    catch (Exception e)
-                    {
-                        say.Children.Add(Ui.Problem(name + ": " + Ui.Describe(e)));
-                    }
-                }
+                        if (job.IsCancelled) break;
 
-                say.Children.Add(written == 0
-                    ? (UIElement)Ui.Problem(_session.Clash.LastProblem
-                        ?? "The host rendered none of them.")
+                        var row = rows[i];
+                        job.Step(i + 1, rows.Count, row.Info.Name ?? row.Info.Id);
+
+                        var bytes = _session.Clash.ResultSnapshot(row.TestId, row.Info.Id, 1280, 720);
+                        if (bytes == null) continue;
+
+                        // The one the dialog named keeps the name it was given; the rest are
+                        // named for the clash, because a folder of "snapshot (3).png" tells
+                        // nobody which clash they are looking at.
+                        var path = rows.Count == 1 || i == 0
+                            ? chosen
+                            : System.IO.Path.Combine(
+                                folder,
+                                Safe(row.TestName) + "_" + Safe(row.Info.Name ?? row.Info.Id) + ".png");
+
+                        try
+                        {
+                            System.IO.File.WriteAllBytes(path, bytes);
+                            written++;
+                        }
+                        catch (Exception e)
+                        {
+                            if (failed.Length == 0) failed = Ui.Describe(e);
+                        }
+                    }
+                });
+
+                Warned(written == 0
+                    ? (UIElement)Ui.Problem(failed.Length > 0
+                        ? "Nothing could be written: " + failed
+                        : _session.Clash.LastProblem ?? "The host rendered none of them.")
                     : Ui.Done(Ui.Count(written, "snapshot") + " written to " + folder + "."));
             }
 
