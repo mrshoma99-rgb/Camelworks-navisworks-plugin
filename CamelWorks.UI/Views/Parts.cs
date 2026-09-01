@@ -1006,10 +1006,26 @@ namespace CamelWorks.UI.Views
                 Child = card,
             };
 
-            // Inside the popup, so a press on an option closes the menu it was picked from. The
-            // handler on the card runs after the option's own, which is what lets an option act
-            // and the menu shut on one press rather than two.
-            card.PreviewMouseLeftButtonUp += (s, e) => popup.IsOpen = false;
+            // Close the menu once the option has acted - and *once*, which is the whole of the
+            // fix here.
+            //
+            // This was PreviewMouseLeftButtonUp, and the comment beside it claimed the card's
+            // handler ran after the option's own. It is the other way round: Preview tunnels, so
+            // the card saw the press first and set IsOpen = false before the press ever reached
+            // the option. Closing a Popup tears its child out of the visual tree, so the option's
+            // own bubbling handler was never raised and the press did nothing at all.
+            //
+            // Every menu and every dropdown in the product goes through here, so every one of
+            // them opened and then quietly refused to do anything: the status and assignee chips,
+            // the row and test menus - rename, move into a folder, dissolve the group - and every
+            // filter. What still worked was the handful of verbs that are direct buttons rather
+            // than menu options, which is exactly the split that was reported.
+            //
+            // Bubbling, and handledEventsToo, so the option acts first and the menu shuts after
+            // it whether or not the option marked the press handled.
+            card.AddHandler(UIElement.MouseLeftButtonUpEvent,
+                            new MouseButtonEventHandler((s, e) => popup.IsOpen = false),
+                            handledEventsToo: true);
 
             if (target is ButtonBase press) press.Click += (s, e) => popup.IsOpen = !popup.IsOpen;
             else target.MouseLeftButtonUp += (s, e) => popup.IsOpen = !popup.IsOpen;

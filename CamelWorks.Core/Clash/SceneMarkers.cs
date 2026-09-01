@@ -105,7 +105,45 @@ namespace CamelWorks.Core.Clash
             return set.Length;
         }
 
-        /// <summary>Take them all down.</summary>
-        public static void Clear() => Show(null);
+        /// <summary>Take them down, remembering them so they can come back.</summary>
+        /// <returns>How many went down.</returns>
+        public static int Hide()
+        {
+            var down = Volatile.Read(ref _shown);
+
+            if (down.Length > 0) Volatile.Write(ref _hidden, down);
+
+            Show(null);
+
+            return down.Length;
+        }
+
+        /// <summary>
+        /// Put back what <see cref="Hide"/> took down.
+        ///
+        /// The reason hiding remembers at all: a marker somebody has just dropped on a row they
+        /// then scrolled away from cannot be recovered by pressing anything - the rows it came
+        /// from are no longer picked. Hiding that could not be undone was a one-way door out of
+        /// the feature.
+        /// </summary>
+        /// <returns>How many came back.</returns>
+        public static int Unhide()
+        {
+            var back = Volatile.Read(ref _hidden);
+
+            return back.Length == 0 ? 0 : Show(back);
+        }
+
+        /// <summary>Whether there is a hidden set to put back.</summary>
+        public static bool CanUnhide => Volatile.Read(ref _hidden).Length > 0;
+
+        /// <summary>Take them all down and forget them.</summary>
+        public static void Clear()
+        {
+            Volatile.Write(ref _hidden, Array.Empty<SceneMarker>());
+            Show(null);
+        }
+
+        private static SceneMarker[] _hidden = Array.Empty<SceneMarker>();
     }
 }

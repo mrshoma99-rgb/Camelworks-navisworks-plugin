@@ -126,6 +126,53 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(2, marker.Colour.G);
         }
 
+        /// <summary>
+        /// Hiding used to be a one-way door: the only way back was to pick the same rows and drop
+        /// them again, which on a row somebody has scrolled past is no way back at all.
+        /// </summary>
+        [Fact]
+        public void HidingRemembersSoTheMarkersCanComeBack()
+        {
+            MarkerOverlay.Show(new[] { At(1, 1, 1), At(2, 2, 2) });
+
+            Assert.Equal(2, MarkerOverlay.Hide());
+            Assert.False(MarkerOverlay.Any);
+            Assert.True(MarkerOverlay.CanUnhide);
+
+            Assert.Equal(2, MarkerOverlay.Unhide());
+            Assert.Equal(2, MarkerOverlay.Count);
+        }
+
+        [Fact]
+        public void ThereIsNothingToPutBackBeforeAnythingIsHidden()
+        {
+            Assert.False(MarkerOverlay.CanUnhide);
+            Assert.Equal(0, MarkerOverlay.Unhide());
+        }
+
+        [Fact]
+        public void HidingNothingRemembersNothing()
+        {
+            MarkerOverlay.Show(new[] { At(1, 1, 1) });
+            MarkerOverlay.Hide();
+
+            // A second press with nothing up must not wipe what the first one is holding, or the
+            // toggle loses the set between two presses of the same button.
+            Assert.Equal(0, MarkerOverlay.Hide());
+            Assert.Equal(1, MarkerOverlay.Unhide());
+        }
+
+        [Fact]
+        public void ClearingForgetsThemForGood()
+        {
+            MarkerOverlay.Show(new[] { At(1, 1, 1) });
+            MarkerOverlay.Hide();
+            MarkerOverlay.Clear();
+
+            Assert.False(MarkerOverlay.CanUnhide);
+            Assert.Equal(0, MarkerOverlay.Unhide());
+        }
+
         /// <summary>Half by default: readable from across the model, still see-through.</summary>
         [Fact]
         public void MarkersAreDrawnHalfTransparent() =>

@@ -170,6 +170,15 @@ namespace CamelWorks.UI.Views
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
                 ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+
+                // A preview line while dragging, and the columns move once on release.
+                //
+                // Live, every pixel of the drag re-measures and re-arranges both panes - and the
+                // right-hand one is a results table whose columns are shares of its width, so
+                // every realised row is laid out again from scratch. That is a window that
+                // visibly trails the cursor. The preview costs one line of pixels and the panes
+                // land exactly where they were dropped.
+                ShowsPreview = true,
             };
 
             grip.Tint(GridSplitter.BackgroundProperty, "Bd");

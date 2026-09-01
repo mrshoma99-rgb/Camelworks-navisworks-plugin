@@ -111,7 +111,18 @@ namespace CamelWorks.Nav
             }
 
             Host.Models.ResetAllHidden();
-            Host.Models.SetHidden(Host.Models.RootItemDescendantsAndSelf, true);
+
+            // The roots, not every item under them.
+            //
+            // Hidden is inherited - an element inside a hidden parent is not drawn - so hiding
+            // the handful of model roots hides the whole federation, and un-hiding the ancestor
+            // chain collected above brings back exactly the branch that was asked for.
+            //
+            // This used to hide RootItemDescendantsAndSelf, which is every item in the document.
+            // The host enumerates it and marks each one, on the UI thread, with nothing on the
+            // screen to say so: on a real federation that is millions of items and a Navisworks
+            // that has stopped answering. It was reported as Isolate freezing, and it was.
+            Host.Models.SetHidden(Host.Models.RootItems, true);
             Host.Models.SetHidden(keep, false);
         }
 
@@ -208,6 +219,25 @@ namespace CamelWorks.Nav
             MarkerOverlay.Show(markers);
             Redraw();
         }
+
+        /// <inheritdoc />
+        public int HideMarkers()
+        {
+            var down = MarkerOverlay.Hide();
+            Redraw();
+            return down;
+        }
+
+        /// <inheritdoc />
+        public int UnhideMarkers()
+        {
+            var back = MarkerOverlay.Unhide();
+            Redraw();
+            return back;
+        }
+
+        /// <inheritdoc />
+        public bool CanUnhideMarkers => MarkerOverlay.CanUnhide;
 
         /// <inheritdoc />
         public void ClearMarkers()

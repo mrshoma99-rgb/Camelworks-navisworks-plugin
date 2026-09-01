@@ -3548,6 +3548,39 @@ namespace CamelWorks.UI.Views
         /// </param>
         public static Panel Runner(string caption, Panel output, Action<Job> work, bool primary = true)
         {
+            var parts = RunParts(caption, output, work, primary);
+
+            // The gap belongs to the runner as a whole, not to its button row. It used to sit on
+            // the row, which meant a runner placed beside ordinary buttons stood eight pixels
+            // lower than them - and it was reachable from nowhere to correct, because the row is
+            // inside what this returns.
+            var whole = Stack(parts.Buttons, parts.Progress);
+
+            whole.Margin = new Thickness(0, Gap, 0, 0);
+
+            return whole;
+        }
+
+        /// <summary>
+        /// The same runner, handed back in its two pieces.
+        ///
+        /// <b>Why a caller would want them apart.</b> Stacked, a runner is a button with a
+        /// progress bar and a status line growing underneath it. Put that whole column into a row
+        /// of ordinary buttons - a footer - and the row is three lines tall, the other buttons
+        /// centre themselves against a bar that is not there yet, and the moment the job runs
+        /// everything beside it moves. A footer wants the buttons on its own line and the progress
+        /// somewhere it can grow without pushing anything.
+        ///
+        /// The two pieces are one runner: the same job drives both.
+        /// </summary>
+        /// <param name="caption">What the button says.</param>
+        /// <param name="output">Where the work writes its result.</param>
+        /// <param name="work">The work.</param>
+        /// <param name="primary">Whether the button is the screen's main press.</param>
+        /// <returns>The button row, and the progress block that folds away when nothing runs.</returns>
+        public static RunPair RunParts(string caption, Panel output, Action<Job> work,
+                                   bool primary = true)
+        {
             var status = new TextBlock
             {
                 VerticalAlignment = VerticalAlignment.Center,
@@ -3651,16 +3684,23 @@ namespace CamelWorks.UI.Views
                 }
             };
 
-            // The gap above belongs to the runner as a whole, not to its button row. It used to
-            // sit on the row, which meant a runner placed beside ordinary buttons stood eight
-            // pixels lower than them - and it was reachable from nowhere to correct, because the
-            // row is inside what this returns. On the outside a caller can zero it, and every
-            // stacked runner looks exactly as it did.
-            var whole = Stack(buttons, progress);
+            return new RunPair(buttons, progress);
+        }
 
-            whole.Margin = new Thickness(0, Gap, 0, 0);
+        /// <summary>A runner in its two pieces: the buttons, and the progress under them.</summary>
+        public sealed class RunPair
+        {
+            internal RunPair(Panel buttons, Panel progress)
+            {
+                Buttons = buttons;
+                Progress = progress;
+            }
 
-            return whole;
+            /// <summary>The press, and the Stop that appears beside it while the job runs.</summary>
+            public Panel Buttons { get; }
+
+            /// <summary>The bar and the status line. Folded away until something runs.</summary>
+            public Panel Progress { get; }
         }
 
         private static string Seconds(TimeSpan span) =>
