@@ -780,8 +780,11 @@ namespace CamelWorks.UI.Views
                 return;
             }
 
+            // Framed on the selection just made, not on the keys again. ZoomTo resolves every
+            // key back to its element, which for a key that is not an instance GUID indexes the
+            // whole federation - a second time, inside the same press.
             session.Model.Select(keys);
-            session.View.ZoomTo(keys, 2.0);
+            session.View.ZoomToSelection(2.0);
 
             status.Children.Add(Ui.Done("Selected both sides of "
                                         + Ui.Count(picked.Count, "clash") + "."));
