@@ -1456,6 +1456,23 @@ namespace CamelWorks.UI.Views
         {
             if (work == null) return;
 
+            Working(what, job => work(seen => job.Step(seen, "elements"), () => !job.IsCancelled));
+        }
+
+        /// <summary>
+        /// The same watched window, handing the work the job itself.
+        ///
+        /// For work that already speaks <see cref="Job"/>, which is most of what this product does
+        /// long enough to be worth watching. Without it a caller either re-wraps the two callbacks
+        /// or - as the baseline export did - passes null for the job and runs a whole-board pass
+        /// under nothing but a wait cursor: no progress, no Stop, and a host that looks hung.
+        /// </summary>
+        /// <param name="what">What to say while it runs.</param>
+        /// <param name="work">The work, given the job to report through and to ask about stopping.</param>
+        public static void Working(string what, Action<Job> work)
+        {
+            if (work == null) return;
+
             var status = new TextBlock
             {
                 Text = what,
@@ -1517,7 +1534,7 @@ namespace CamelWorks.UI.Views
             try
             {
                 window.Show();
-                work(seen => job.Step(seen, "elements"), () => !job.IsCancelled);
+                work(job);
             }
             catch (Exception)
             {

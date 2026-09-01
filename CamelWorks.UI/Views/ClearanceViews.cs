@@ -1053,10 +1053,12 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // Selected once, then framed on what was selected. ZoomTo takes keys and turns
+                // every one of them back into the element it names - a second resolution of the
+                // same handful, and on a key that is not an instance GUID that means indexing the
+                // federation inside the press.
                 _session.Model.Select(keys);
-                _session.View.ZoomTo(keys, 1.0);
-
-                say.Children.Add(Ui.Done("Selected and framed " + Ui.Count(keys.Count, "element") + "."));
+                _session.View.ZoomToSelection(1.0);
             }
 
             private void Isolate(IReadOnlyList<object> picked, Panel say)
@@ -1075,12 +1077,11 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.View.Isolate(keys);
+                // One resolution, then two verbs on the selection it made. This resolved the same
+                // keys three times over - once to isolate, once to select, once to frame.
                 _session.Model.Select(keys);
-                _session.View.ZoomTo(keys, 1.0);
-
-                say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
-                    + "\"Show all\" on the left puts the rest back."));
+                _session.View.IsolateSelection();
+                _session.View.ZoomToSelection(1.0);
             }
 
             private void Mark(IReadOnlyList<object> picked, Panel say)
