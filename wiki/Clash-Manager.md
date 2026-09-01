@@ -110,8 +110,11 @@ third time for the order the test itself holds. Drag a header's right edge to re
 four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, or *Test* for name
 order; the sort menu holds the same six and says which is on.
 
-**Click a row to pick it**, Ctrl or Shift-click to add to what is picked, and drag rows onto a
-clash group to move them into it. **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
+**Click a row to pick it.** **Ctrl-click** adds one row or takes it back out; **Shift-click** picks
+the whole run between the last row you pressed and this one, and Ctrl with Shift adds that run to
+what is already picked. The run is what is on the screen in the order it is on the screen, so a run
+across an opened clash group takes the group and the members it is showing, and one over a closed
+group takes the group alone. Drag rows onto a clash group to move them into it. **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
 comment, and a menu with snapshot, marker sphere, clear the markers, raise as an issue, attach to an
 existing issue, copy, and — depending on which kind of row it is — rename or ungroup the clash
 group, or group it with what is picked and move it into an existing one.

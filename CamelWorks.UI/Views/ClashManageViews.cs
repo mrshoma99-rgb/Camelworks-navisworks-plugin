@@ -1005,6 +1005,7 @@ namespace CamelWorks.UI.Views
                 _byColumn.Clear();
                 _open.Clear();
                 _picked.Clear();
+                _pickedFrom = null;
                 _made.Clear();
 
                 // The box, not the field behind it: clearing the field alone leaves the last
@@ -1751,6 +1752,7 @@ namespace CamelWorks.UI.Views
                     {
                         _status = on ? null : status;
                         _picked.Clear();
+                        _pickedFrom = null;
                         RedrawBoard();
                     });
 
@@ -1845,6 +1847,7 @@ namespace CamelWorks.UI.Views
                 {
                     _byColumn.Remove(column.Id);
                     _picked.Clear();
+                    _pickedFrom = null;
                     RedrawBoard();
                 }));
 
@@ -1859,6 +1862,7 @@ namespace CamelWorks.UI.Views
                     {
                         _byColumn[column.Id] = here;
                         _picked.Clear();
+                        _pickedFrom = null;
                         RedrawBoard();
                     }));
                 }
@@ -1957,6 +1961,7 @@ namespace CamelWorks.UI.Views
                     {
                         _showing = here;
                         _picked.Clear();
+                        _pickedFrom = null;
                         RedrawBoard();
                     }));
                 }
@@ -1985,6 +1990,7 @@ namespace CamelWorks.UI.Views
                     {
                         _party = here == Anyone ? null : here;
                         _picked.Clear();
+                        _pickedFrom = null;
                         RedrawBoard();
                     }));
                 }
@@ -2365,6 +2371,7 @@ namespace CamelWorks.UI.Views
                     var on = picked < top.Count;
 
                     _picked.Clear();
+                    _pickedFrom = null;
                     if (on) foreach (var row in top) _picked.Add(row.Id);
 
                     RedrawRows();
@@ -2788,6 +2795,7 @@ namespace CamelWorks.UI.Views
                         if (_picked.Count == 0 || _picked.Contains(row.Id)) return;
 
                         _picked.Clear();
+                        _pickedFrom = null;
                         _picked.Add(row.Id);
                         RedrawRows();
                     });
@@ -2870,19 +2878,7 @@ namespace CamelWorks.UI.Views
                 // anybody uses selects on click; this one did not.
                 line.Cursor = System.Windows.Input.Cursors.Hand;
 
-                line.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
-                {
-                    // Ctrl and Shift add to what is picked, as they do everywhere else.
-                    var adding = (System.Windows.Input.Keyboard.Modifiers
-                                  & (System.Windows.Input.ModifierKeys.Control
-                                     | System.Windows.Input.ModifierKeys.Shift)) != 0;
-
-                    if (!adding) _picked.Clear();
-
-                    if (!_picked.Add(row.Id) && adding) _picked.Remove(row.Id);
-
-                    RedrawRows();
-                });
+                line.MouseLeftButtonUp += (s, e) => Ui.Safely(() => Clicked(row.Id));
 
                 // Hidden rather than greyed, and revealed on hover. A permanent row of off verbs
                 // is the wall of grey this screen was rebuilt to be rid of.
@@ -2900,6 +2896,93 @@ namespace CamelWorks.UI.Views
 
                 return line;
             }
+
+            /// <summary>
+            /// What one press on a row does to the selection.
+            ///
+            /// The three gestures every table in Windows has, and this one is no different:
+            ///
+            /// <list type="bullet">
+            /// <item><description>A plain press picks that row and nothing else, and becomes the
+            /// place a run is measured from.</description></item>
+            /// <item><description>Ctrl adds one row, or takes it back out, and moves the place a
+            /// run is measured from to it.</description></item>
+            /// <item><description>Shift picks the whole run between there and here.</description>
+            /// </item>
+            /// </list>
+            ///
+            /// <b>The run is what is on the screen</b>, in the order it is on the screen - the
+            /// board's own flattened lines, so a run across an opened clash group takes the group
+            /// and the members it is showing, and a run over a closed one takes the group alone.
+            /// Anything else would be a run through rows nobody can see.
+            /// </summary>
+            /// <param name="id">The row that was pressed.</param>
+            private void Clicked(string id)
+            {
+                var keys = System.Windows.Input.Keyboard.Modifiers;
+                var adding = (keys & System.Windows.Input.ModifierKeys.Control) != 0;
+                var run = (keys & System.Windows.Input.ModifierKeys.Shift) != 0;
+
+                if (run && _pickedFrom != null)
+                {
+                    var between = Between(_pickedFrom, id);
+
+                    if (between.Count > 0)
+                    {
+                        // Shift replaces what is picked with the run, as it does everywhere else.
+                        // Ctrl with it adds the run to what is already picked, which is how
+                        // somebody builds a selection out of two stretches of a long board.
+                        if (!adding) _picked.Clear();
+
+                        foreach (var one in between) _picked.Add(one);
+
+                        RedrawRows();
+                        return;
+                    }
+                }
+
+                if (!adding) _picked.Clear();
+
+                if (!_picked.Add(id) && adding) _picked.Remove(id);
+
+                // Where the next run is measured from. Not moved by a Shift press, so a run can
+                // be stretched and shrunk from the same end rather than walking away from it.
+                _pickedFrom = id;
+
+                RedrawRows();
+            }
+
+            /// <summary>
+            /// Every pickable line from one row to another, as the board is showing them.
+            /// </summary>
+            /// <param name="from">One end.</param>
+            /// <param name="to">The other.</param>
+            /// <returns>The ids in between, both ends included, or empty when either is not shown.</returns>
+            private List<string> Between(string from, string to)
+            {
+                var lines = _lines;
+
+                if (lines == null) return new List<string>();
+
+                var shown = lines.Where(l => l.Id.Length > 0).Select(l => l.Id).ToList();
+
+                var one = shown.IndexOf(from);
+                var other = shown.IndexOf(to);
+
+                // A run measured from a row that has since been filtered away, or collapsed into
+                // a group, has no ends to measure between. The press falls through to picking the
+                // one row, which is the honest answer rather than a guessed run.
+                if (one < 0 || other < 0) return new List<string>();
+
+                if (one > other) (one, other) = (other, one);
+
+                return shown.GetRange(one, other - one + 1);
+            }
+
+            /// <summary>
+            /// The row a run of them is measured from, or null before anything has been pressed.
+            /// </summary>
+            private string? _pickedFrom;
 
             /// <summary>The three verbs on a row, and the menu holding the rest.</summary>
             /// <param name="row">What the verbs act on.</param>
@@ -3011,6 +3094,7 @@ namespace CamelWorks.UI.Views
                 _showing = BothKinds;
                 _boardBox.Text = string.Empty;
                 _picked.Clear();
+                _pickedFrom = null;
 
                 RedrawBoard();
 
@@ -3090,7 +3174,7 @@ namespace CamelWorks.UI.Views
                 var picked = rows.Cast<object>().ToList();
 
                 _bar.Child = Parts.SelectionBar(_picked.Count, "row",
-                    () => { _picked.Clear(); RedrawRows(); },
+                    () => { _picked.Clear(); _pickedFrom = null; RedrawRows(); },
                     Parts.InlineChip(null, Statuses,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
                     Parts.InlineChip(null, Assignees(Entry()),
@@ -4770,6 +4854,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 _picked.Clear();
+                _pickedFrom = null;
                 Redraw();
             }
 
