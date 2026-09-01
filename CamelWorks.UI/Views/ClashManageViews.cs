@@ -3589,6 +3589,42 @@ namespace CamelWorks.UI.Views
             /// <summary>The finding a row is a view of, or null when this read kept none.</summary>
             private static Finding? Found(Row row) => Found(row.TestId, row.Info.Id);
 
+            /// <summary>
+            /// Make the finding a row has not got, so a decision on it has somewhere to live.
+            ///
+            /// The register is written by the read, so a row is normally already in it. The ones
+            /// that are not are the awkward cases - a result the engine renumbered since the read,
+            /// a board whose read could not save - and until now a decision on one of those was
+            /// applied to the row on screen and kept nowhere. On a document that accepts the write
+            /// that is invisible; on a published NWD, which accepts none of them, it is the whole
+            /// decision gone at the next read.
+            ///
+            /// Raised into the same register the read writes, with the same facts on it, so the
+            /// next read matches it to its result rather than making a second one.
+            /// </summary>
+            /// <param name="row">The row being edited.</param>
+            /// <returns>The new finding, or null when the register would not take one.</returns>
+            private Finding? Raised(Row row)
+            {
+                var entry = Current()?.FirstOrDefault(
+                    e => string.Equals(e.Test.Id, row.TestId, StringComparison.OrdinalIgnoreCase));
+
+                var made = ClashFindings.ForTest(row.TestId, entry?.Test.Name ?? row.TestName,
+                                                 new[] { row.Info }).FirstOrDefault();
+
+                if (made == null) return null;
+
+                var register = _session.Findings.Findings;
+
+                register.Observe(FindingSource.Clash, new[] { made }, DateTime.UtcNow.Ticks,
+                                 origin: _session.Store.Path,
+                                 scope: f => false);
+
+                Index(register);
+
+                return Found(row);
+            }
+
             /// <summary>The finding behind one of the host's results, or null.</summary>
             private static Finding? Found(string? testId, string? resultId) =>
                 _byHost != null && testId != null && resultId != null
@@ -4953,8 +4989,10 @@ namespace CamelWorks.UI.Views
                 {
                     if (!_session.Clash.Run(entry.Test.Id))
                     {
-                        problems.Add(_session.Clash.LastProblem
-                                     ?? "The host would not run \"" + entry.Test.Name + "\".");
+                        problems.Add("\"" + entry.Test.Name + "\" could not be run - running a "
+                                     + "test is the engine's work and there is nothing this "
+                                     + "project can keep on its behalf. "
+                                     + (_session.Clash.LastProblem ?? string.Empty));
                         continue;
                     }
 
@@ -4992,21 +5030,32 @@ namespace CamelWorks.UI.Views
                 }
 
                 var done = 0;
+                var refused = new List<TestEntry>();
 
                 foreach (var entry in tests)
                 {
-                    if (!_session.Clash.RenameResults(entry.Test.Id, prefix))
-                    {
-                        say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
-                        return;
-                    }
-
-                    done++;
+                    if (_session.Clash.RenameResults(entry.Test.Id, prefix)) done++;
+                    else refused.Add(entry);
                 }
 
+                // What the document would not renumber is renumbered here instead, through the
+                // same door every other decision on this board goes through: the row takes the
+                // new name, the finding keeps it, and the sync carries it into an NWF from a
+                // Manage seat. A published NWD refuses all of them, and that is not a reason for
+                // the renumber to have not happened.
+                if (refused.Count > 0)
+                    Renumber(refused.SelectMany(e => e.Rows).ToList(), prefix);
+
                 _session.Record(ActivityKind.Regroup, "renamed the results of "
-                    + Ui.Count(done, "test") + " to \"" + prefix + "...\"");
-                RereadTests(tests.Select(t => t.Test.Id).ToList(),
+                    + Ui.Count(tests.Count, "test") + " to \"" + prefix + "...\"");
+
+                if (done == 0)
+                {
+                    Redraw();
+                    return;
+                }
+
+                RereadTests(tests.Where(t => !refused.Contains(t)).Select(t => t.Test.Id).ToList(),
                             "Renamed the results of " + Ui.Count(done, "test") + ".", null);
             }
 
@@ -5071,7 +5120,14 @@ namespace CamelWorks.UI.Views
 
                     if (!_session.Clash.DeleteTests(tests.Select(t => t.Test.Id).ToList()))
                     {
-                        say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                        // One of the three verbs here that genuinely cannot fall back to the
+                        // project. A status, a group or a name is a decision about a clash and
+                        // belongs in the database whatever the document says; deleting a test is
+                        // not a decision that can be kept and synced later, because there would
+                        // be nothing left to sync it onto.
+                        say.Children.Add(Ui.Problem("Deleting a test is a change to the document "
+                            + "itself, so it cannot be kept in this project and synced later. "
+                            + (_session.Clash.LastProblem ?? "The host refused.")));
                         return;
                     }
 
@@ -5095,7 +5151,9 @@ namespace CamelWorks.UI.Views
 
                 if (!_session.Clash.CompactTests(tests.Select(t => t.Test.Id).ToList()))
                 {
-                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    say.Children.Add(Ui.Problem("Compacting drops results out of the document "
+                        + "itself, so it cannot be kept in this project and synced later. "
+                        + (_session.Clash.LastProblem ?? "The host refused.")));
                     return;
                 }
 
@@ -5691,7 +5749,15 @@ namespace CamelWorks.UI.Views
                             // document refuses - a published NWD holds its results read-only - is
                             // only that the field says it is still waiting, so the sync knows
                             // what to offer and never writes the same comment twice.
-                            var finding = Found(row);
+                            // A row with no finding yet gets one now.
+                            //
+                            // The register is written by the read, and a row the read had not
+                            // reached - or a result the engine renumbered under us - had no
+                            // finding to hold the decision. On a document that takes the write
+                            // that was invisible; on one that does not, the decision was simply
+                            // lost. It is the database that is the record, so the record is
+                            // made rather than the edit dropped.
+                            var finding = Found(row) ?? Raised(row);
 
                             if (finding != null && record != null)
                             {
@@ -5719,8 +5785,9 @@ namespace CamelWorks.UI.Views
                 if (done == 0 && held == 0)
                 {
                     if (problems.Count == 0)
-                        problems.Add(_session.Clash.LastProblem
-                            ?? "The host took the edit but changed nothing.");
+                        problems.Add("That change could not be kept. "
+                            + (_session.Findings.LastSaveProblem
+                               ?? "There was nowhere to write it."));
 
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
                     return;
@@ -5728,14 +5795,14 @@ namespace CamelWorks.UI.Views
 
                 if (!OnFile) { KeepFindings(); ArmSync(); }
 
-                // The document refused some of it and the findings register took it instead. That
-                // used to happen in silence, so the board showed a change the model did not have
-                // and nothing said which of the two was true.
-                if (held > 0)
-                    say.Children.Add(Ui.Note(Ui.Count(held, "result") + " could not be written "
-                        + "into this document, so " + (held == 1 ? "it is" : "they are")
-                        + " kept here and go out with the changes. "
-                        + (_session.Clash.LastProblem ?? string.Empty)));
+                // Nothing is said when the document will not take it.
+                //
+                // A decision on this board belongs to the project, and the project is where it
+                // was just kept. Whether the document could also take it is a fact about the
+                // document, said once by the strip at the top of the window on a published NWD -
+                // not a note on every status somebody sets all afternoon, on a seat where the
+                // answer is the same every time. The changes sync into an NWF from a Manage seat
+                // when there is one.
 
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));

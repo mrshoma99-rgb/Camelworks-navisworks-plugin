@@ -216,7 +216,18 @@ the board to a spreadsheet, set up the review round, and raise the board as issu
 document there and then — there is no draft to commit. What is left to save is what the document
 **refused**, which is what the footer's one blue button is for.
 
-- **Renaming a test, and moving it into a folder, are kept even on a published NWD.** Both are writes
+- **Every change on this board is kept, whatever the document will take.** A status, an assignment, a
+comment, a group, a clash's name, a test's name and the folder it is filed in all go into the
+project first — that is what *Save the changes* writes — and are synced into the document as well
+when the model is an NWF on a Manage seat. On a published NWD the document takes none of them and
+nothing on the board says so per edit: the strip at the top of the window says it once, and the
+changes wait for a seat that can write.
+
+Three verbs are the exception, and they say so when they refuse: **running** a test is the engine's
+work, and **deleting** or **compacting** one changes the document itself. None of those is a
+decision the project could hold and hand over later.
+
+**Renaming a test, and moving it into a folder, are kept even on a published NWD.** Both are writes
 into the host's clash data, which a published NWD holds read-only — so both used to refuse outright.
 They now fall back to the project, exactly as a status or a comment does, and the board shows the
 name you chose. A seat that can write puts them into the document instead.
