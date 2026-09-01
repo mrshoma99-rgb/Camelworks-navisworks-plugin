@@ -65,6 +65,20 @@ It is built at the end of **Read the results** and of the clearance **Check** �
 where there is a progress line and a Stop — so the verbs are instant afterwards. If the model
 changes, the index is dropped and the next verb rebuilds it, with the wait cursor up.
 
+## A menu opens and picking something does nothing
+
+Fixed. Every menu and dropdown in the product closed itself before the option you pressed could
+act, so they all opened, highlighted, closed on click and did nothing: the status and assignee
+chips, the row and test menus, and every filter. If you are on a build older than this, there is no
+workaround — the verbs are also on the selection bar and the right-click menu, which were affected
+the same way.
+
+## A rename or comment box will not let me type
+
+Fixed. Those prompts were popups, and a popup inside the Navisworks host never gets the keyboard —
+the box focused, the caret blinked, and nothing arrived. Opened from a double-click it did not even
+last that long. They are ordinary dialogue windows now.
+
 ## "Searching" windows appear when I read the results
 
 They should not, and as of the fix below they do not. If you still see them on an older build:

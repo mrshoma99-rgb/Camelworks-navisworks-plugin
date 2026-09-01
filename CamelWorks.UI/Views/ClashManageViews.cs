@@ -161,6 +161,12 @@ namespace CamelWorks.UI.Views
             internal void Rename(string named) =>
                 Test = new ClashTestInfo(Test.Id, named, Test.Folder, Test.ResultCount,
                                          Test.LastRunTicks);
+
+            /// <summary>Put this test in a folder, or take it to the root.</summary>
+            /// <param name="folder">The folder, or null for the root.</param>
+            internal void Refile(string? folder) =>
+                Test = new ClashTestInfo(Test.Id, Test.Name, folder, Test.ResultCount,
+                                         Test.LastRunTicks);
         }
 
         private sealed class Row
@@ -346,6 +352,15 @@ namespace CamelWorks.UI.Views
             private readonly HashSet<string> _sized = new HashSet<string>(StringComparer.Ordinal);
 
             /// <summary>Which column is being dragged, how wide it was, and where the drag began.</summary>
+            /// <summary>What a drag is carrying, or null when nothing is being dragged.</summary>
+            private List<Row>? _carrying;
+
+            /// <summary>Where the press that might become a drag started.</summary>
+            private Point _pressAt;
+
+            /// <summary>The clipboard format a row drag travels under, private to this board.</summary>
+            private const string CarryFormat = "CamelWorks.ClashRows";
+
             private string? _dragging;
             private double _dragFrom;
             private double _dragAt;
@@ -623,14 +638,15 @@ namespace CamelWorks.UI.Views
 
                 _railTools.Children.Clear();
 
-                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Tune, "Sort: " + _sort,
+                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + _sort,
                     new[]
                         {
                             MostNew, MostOpen, MostReviewed, MostApproved, MostClosed,
                             ByName, LastRun,
                         }
                         .Select(o => Parts.Entry.Act(o, null, () => { _sort = o; RedrawRail(); }))
-                        .ToList()));
+                        .ToList(),
+                    on: _sort != MostNew));
 
                 var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
                 {
@@ -1283,6 +1299,26 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
+            private readonly ContentControl _sortBy = new ContentControl
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            /// <summary>
+            /// The marker toggle, worded, and re-worded every time it is pressed.
+            ///
+            /// It was a symbol whose tooltip changed, on a page that is only rebuilt when the page
+            /// is reopened - so pressing it hid the markers and left a button that still said
+            /// "hide". Nothing about it said it would give them back, which is why it read as a
+            /// one-way press.
+            /// </summary>
+            private readonly ContentControl _markerToggle = new ContentControl
+            {
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 8, 0, 0),
+            };
+
+
             private readonly Border _bar = new Border();
 
             /// <summary>The board, as one pane: head, table, and the bar for what is picked.</summary>
@@ -1361,8 +1397,17 @@ namespace CamelWorks.UI.Views
 
                 _strip.Content = Strip(entry);
 
-                _view.Content = Parts.MoreMenu(Glyphs.Layers, WhatIsShown(entry),
-                                               ViewMenu(entry));
+                // Two controls, not one, and each says whether it is doing anything.
+                //
+                // All of this used to hide behind a single stack-of-layers symbol, which named
+                // neither of the two things it held. It was reported as "the clash results have
+                // no filtering options, only sorting" - the filtering was there, behind a symbol
+                // nobody reads as a filter, with nothing on screen saying it was in force.
+                _view.Content = Parts.MoreMenu(Glyphs.Filter, WhatIsShown(entry),
+                                               FilterMenu(entry), on: Filtering);
+
+                _sortBy.Content = Parts.MoreMenu(Glyphs.Sort, WhatIsSorted(),
+                                                 SortMenu(), on: InAnOrder);
 
                 RedrawRows();
             }
@@ -1568,14 +1613,12 @@ namespace CamelWorks.UI.Views
                     verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test again",
                         () => RunTests(One(entry), _log)));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Read, "Walk the board one clash at a time",
-                    () => Ui.Told(ReviewWindow.Show())));
-
                 verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows",
                     () => Configure("columns")));
 
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
+                verbs.Children.Add(Ui.Loose(_sortBy));
                 verbs.Children.Add(Ui.Loose(_view));
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
@@ -1751,12 +1794,10 @@ namespace CamelWorks.UI.Views
                     var column = _columns.FirstOrDefault(c => c.Id == narrowed.Key);
                     if (column != null) said.Add(column.Title + " " + Quoted(narrowed.Value));
                 }
-                if (_arrange != ByNothing) said.Add("arranged by " + _arrange.ToLowerInvariant());
-
                 _ = entry;
 
                 return said.Count == 0
-                    ? "How this board is shown — grouped or loose, whose it is, how it is arranged"
+                    ? "Narrow this board — grouped or loose, whose it is, what its columns say"
                     : "Showing " + string.Join(", ", said) + ". Press to change it.";
             }
 
@@ -1831,9 +1872,80 @@ namespace CamelWorks.UI.Views
                 return items;
             }
 
-            /// <summary>What is behind the board's one view menu: show, assigned to, arrange by.</summary>
+            /// <summary>Whether the board is in any order but the one the test holds.</summary>
+            private bool InAnOrder => _by != null || _arrange != ByNothing;
+
+            /// <summary>What the sort control is doing, for the symbol that opens it.</summary>
+            private string WhatIsSorted()
+            {
+                var said = new List<string>();
+
+                if (_by != null) said.Add("by " + _by + (_back ? ", backwards" : string.Empty));
+                if (_arrange != ByNothing) said.Add("arranged by " + _arrange.ToLowerInvariant());
+
+                return said.Count == 0
+                    ? "Sort the results"
+                    : "Sorted " + string.Join(", ", said) + ". Press to change it.";
+            }
+
+            /// <summary>
+            /// How the board is ordered: by a column, and banded by a facet.
+            ///
+            /// Its own control rather than a section of the filter menu, because sorting and
+            /// narrowing are different questions and a coordinator reaches for them at different
+            /// moments. The rail has had the two apart since it was built; the board had them in
+            /// one place behind a symbol that named neither.
+            /// </summary>
+            private List<Parts.Entry> SortMenu()
+            {
+                var items = new List<Parts.Entry>
+                {
+                    Parts.Entry.Heading("Order: " + (_by ?? "as the test holds them")),
+                };
+
+                foreach (var column in Widths())
+                {
+                    var here = column.Name;
+
+                    items.Add(Parts.Entry.Act(
+                        here + (string.Equals(_by, here, StringComparison.Ordinal)
+                                    ? _back ? " (backwards)" : " (forwards)"
+                                    : string.Empty),
+                        null, () => SortBy(here)));
+                }
+
+                if (_by != null)
+                {
+                    items.Add(Parts.Entry.Rule());
+
+                    items.Add(Parts.Entry.Act("Back to the test's own order", Glyphs.Close, () =>
+                    {
+                        _by = null;
+                        _back = false;
+                        RedrawBoard();
+                    }));
+                }
+
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Band the rows by: " + _arrange));
+
+                foreach (var by in new[] { ByNothing, ByAssignee, ByStatus, ByHowBad })
+                {
+                    var here = by;
+
+                    items.Add(Parts.Entry.Act(here, null, () =>
+                    {
+                        _arrange = here;
+                        RedrawBoard();
+                    }));
+                }
+
+                return items;
+            }
+
+            /// <summary>What is behind the board's filter menu: show, assigned to, the columns.</summary>
             /// <param name="entry">The test on the board.</param>
-            private List<Parts.Entry> ViewMenu(TestEntry entry)
+            private List<Parts.Entry> FilterMenu(TestEntry entry)
             {
                 var items = new List<Parts.Entry> { Parts.Entry.Heading("Show: " + _showing) };
 
@@ -1878,25 +1990,6 @@ namespace CamelWorks.UI.Views
                 }
 
                 foreach (var column in _columns) items.AddRange(ColumnMenu(entry, column));
-
-                items.Add(Parts.Entry.Rule());
-                items.Add(Parts.Entry.Heading("Arrange view by: " + _arrange));
-
-                foreach (var by in new[] { ByNothing, ByAssignee, ByStatus, ByHowBad })
-                {
-                    var here = by;
-
-                    items.Add(Parts.Entry.Act(here, null, () =>
-                    {
-                        _arrange = here;
-                        RedrawBoard();
-
-                        Said(Ui.Done(here == ByNothing
-                            ? "Back to the board's own order."
-                            : "Arranged the view by " + here.ToLowerInvariant()
-                              + ". No clash group was touched."));
-                    }));
-                }
 
                 // Where the narrowing is set is where it comes off, including the two set
                 // elsewhere: the status segment above and the text in the search box.
@@ -2166,6 +2259,11 @@ namespace CamelWorks.UI.Views
                 frame.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
                 _head.Content = Header(shape.Groups, shape.Loose);
+
+                // The header is outside the scroller and the rows are inside it, so the rows
+                // stop at the scrollbar and the header did not. The last column is the row's
+                // verbs, and what that looked like was the "..." menu clipped under the bar.
+                _head.Margin = new Thickness(0, 0, SystemParameters.VerticalScrollBarWidth, 0);
 
                 // Loose first. The header is kept in a field so its tri-state can be redrawn on
                 // its own, and this builds a new frame every draw - so the second draw hands the
@@ -2694,6 +2792,98 @@ namespace CamelWorks.UI.Views
                         RedrawRows();
                     });
 
+                // Dragging a row onto a group puts it in that group.
+                //
+                // Moving a result into a group meant typing the group's name into a box, which is
+                // a coordinator reading a name off one row so they can spell it at another. The
+                // rows and the groups are both on the screen; the gesture everybody already knows
+                // is to drag one onto the other.
+                line.MouseMove += (s, e) => Ui.Safely(() =>
+                {
+                    if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+                    if (_carrying != null) return;
+
+                    var at = e.GetPosition(line);
+
+                    // A threshold, or every click that wobbles a pixel becomes a drag and the
+                    // row can no longer simply be pressed.
+                    if (Math.Abs(at.Y - _pressAt.Y) < SystemParameters.MinimumVerticalDragDistance
+                        && Math.Abs(at.X - _pressAt.X) < SystemParameters.MinimumHorizontalDragDistance)
+                        return;
+
+                    // What is dragged is the whole selection when this row is part of it, and
+                    // this row alone otherwise - the same rule the right-click menu follows.
+                    _carrying = _picked.Contains(row.Id) && _picked.Count > 1
+                        ? Picked()
+                        : row.Rows.ToList();
+
+                    try
+                    {
+                        DragDrop.DoDragDrop(line, new DataObject(CarryFormat, row.Id),
+                                            DragDropEffects.Move);
+                    }
+                    finally
+                    {
+                        _carrying = null;
+                    }
+                });
+
+                line.MouseLeftButtonDown += (s, e) => _pressAt = e.GetPosition(line);
+
+                if (row.IsGroup)
+                {
+                    line.AllowDrop = true;
+
+                    line.DragOver += (s, e) => Ui.Safely(() =>
+                    {
+                        var take = _carrying != null && e.Data.GetDataPresent(CarryFormat);
+
+                        e.Effects = take ? DragDropEffects.Move : DragDropEffects.None;
+                        e.Handled = true;
+
+                        if (take) line.Tint(Border.BorderBrushProperty, "Accent");
+                    });
+
+                    line.DragLeave += (s, e) => Ui.Safely(Paint);
+
+                    line.Drop += (s, e) => Ui.Safely(() =>
+                    {
+                        e.Handled = true;
+
+                        var carried = _carrying;
+                        if (carried == null || carried.Count == 0) return;
+
+                        // A group dropped on itself is not a move.
+                        if (carried.All(r => string.Equals(r.Group, row.Name,
+                                                           StringComparison.Ordinal)))
+                            return;
+
+                        Regroup(carried.Cast<object>().ToList(), row.Name, "Moved {0} into");
+                    });
+                }
+
+                // Clicking a row picks it.
+                //
+                // The board had a tick box, a hover tint and a right-click, and no left-click at
+                // all - so pressing a row did nothing and left nothing behind, and the row you
+                // had just pressed was indistinguishable from the one above it. Every table
+                // anybody uses selects on click; this one did not.
+                line.Cursor = System.Windows.Input.Cursors.Hand;
+
+                line.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    // Ctrl and Shift add to what is picked, as they do everywhere else.
+                    var adding = (System.Windows.Input.Keyboard.Modifiers
+                                  & (System.Windows.Input.ModifierKeys.Control
+                                     | System.Windows.Input.ModifierKeys.Shift)) != 0;
+
+                    if (!adding) _picked.Clear();
+
+                    if (!_picked.Add(row.Id) && adding) _picked.Remove(row.Id);
+
+                    RedrawRows();
+                });
+
                 // Hidden rather than greyed, and revealed on hover. A permanent row of off verbs
                 // is the wall of grey this screen was rebuilt to be rid of.
                 line.MouseEnter += (s, e) =>
@@ -2821,13 +3011,6 @@ namespace CamelWorks.UI.Views
 
                 var entry = Entry();
                 if (entry == null) return;
-
-                var found = Counted(entry);
-
-                Said(Ui.Done(Ui.Count(found, "clash") + " on this test "
-                             + (found == 1 ? "touches " : "touch ") + Both(origin)
-                             + ". Every other filter was lifted to find them — the layers "
-                             + "menu above puts the board back."));
             }
 
             /// <summary>One row's tick.</summary>
@@ -2927,7 +3110,11 @@ namespace CamelWorks.UI.Views
             {
                 var verb = GroupVerb(rows);
 
-                return Parts.Verb(verb.Text, verb.Glyph ?? Glyphs.Group, verb.IsDanger,
+                // Always the same weight. Which grouping verb is offered depends on what is
+                // picked, and should - but it was also switching between a primary and an
+                // ordinary button, so the bar changed size and colour between one row picked and
+                // two. The bar is furniture; only its words should move.
+                return Parts.Verb(verb.Text, verb.Glyph ?? Glyphs.Group, primary: false,
                                   () => Ui.Safely(verb.OnAct));
             }
 
@@ -2980,9 +3167,9 @@ namespace CamelWorks.UI.Views
                         () => Prompt("Name the clash group", Suggested(), "Group",
                                      name => Regroup(picked, name, "Grouped {0} into")));
 
-                return Parts.Entry.Act("Group", Glyphs.Group,
-                    () => Said(Ui.Note("Grouping takes two or more loose results. One on its own "
-                                       + "is already as ungrouped as it gets.")));
+                return Parts.Entry.Barred("Group", Glyphs.Group,
+                    "Grouping takes two or more loose results. One on its own is already as "
+                    + "grouped as it can be.");
             }
 
             /// <summary>Everything the picked rows can be told to do, grouping included.</summary>
@@ -3044,7 +3231,11 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
                     Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
                                     () => Spheres(picked, _toast)),
-                    Parts.Entry.Act(MarkerToggle(), Glyphs.EyeOff, () => Unmark(_toast)),
+                    Parts.Entry.Act(MarkerToggle(), Glyphs.EyeOff, () =>
+                    {
+                        Unmark(_toast);
+                        RedrawMarkerToggle();
+                    }),
                     Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
                                     () => ExportMarkers(rows, what, _toast)),
                     Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
@@ -3158,10 +3349,8 @@ namespace CamelWorks.UI.Views
                         : Parts.Entry.Barred("Sync into the document", Glyphs.Save, why),
                     Parts.Entry.Saying(OnFile ? "Save the markup" : "Save as a clash file (BCF)",
                         Glyphs.Round, "The offline review round — out and back", SaveChanges),
-                    Parts.Entry.Saying("Write a report", Glyphs.Report,
-                        "One document per party, revision-lettered",
-                        () => Said(Ui.Info("The report is written on Clash Manager ▸ Report, which "
-                                           + "reads this same board."))),
+                    Parts.Entry.Barred("Write a report", Glyphs.Report,
+                        "Written on Clash Manager - Report, over this same board."),
                     Parts.Entry.Saying("The board to a spreadsheet", Glyphs.Table,
                         "Exactly as it is filtered, columns and all", Sheet),
                     Parts.Entry.Saying("Set up the review round", Glyphs.Round,
@@ -3240,6 +3429,10 @@ namespace CamelWorks.UI.Views
                 if (job.IsCancelled) return;
 
                 _read = entries;
+
+                // This project's own names over the host's, before anything is drawn.
+                Renamed(entries);
+
                 Moved();
 
                 var kept = Keep(entries, job);
@@ -3395,6 +3588,42 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The finding a row is a view of, or null when this read kept none.</summary>
             private static Finding? Found(Row row) => Found(row.TestId, row.Info.Id);
+
+            /// <summary>
+            /// Make the finding a row has not got, so a decision on it has somewhere to live.
+            ///
+            /// The register is written by the read, so a row is normally already in it. The ones
+            /// that are not are the awkward cases - a result the engine renumbered since the read,
+            /// a board whose read could not save - and until now a decision on one of those was
+            /// applied to the row on screen and kept nowhere. On a document that accepts the write
+            /// that is invisible; on a published NWD, which accepts none of them, it is the whole
+            /// decision gone at the next read.
+            ///
+            /// Raised into the same register the read writes, with the same facts on it, so the
+            /// next read matches it to its result rather than making a second one.
+            /// </summary>
+            /// <param name="row">The row being edited.</param>
+            /// <returns>The new finding, or null when the register would not take one.</returns>
+            private Finding? Raised(Row row)
+            {
+                var entry = Current()?.FirstOrDefault(
+                    e => string.Equals(e.Test.Id, row.TestId, StringComparison.OrdinalIgnoreCase));
+
+                var made = ClashFindings.ForTest(row.TestId, entry?.Test.Name ?? row.TestName,
+                                                 new[] { row.Info }).FirstOrDefault();
+
+                if (made == null) return null;
+
+                var register = _session.Findings.Findings;
+
+                register.Observe(FindingSource.Clash, new[] { made }, DateTime.UtcNow.Ticks,
+                                 origin: _session.Store.Path,
+                                 scope: f => false);
+
+                Index(register);
+
+                return Found(row);
+            }
 
             /// <summary>The finding behind one of the host's results, or null.</summary>
             private static Finding? Found(string? testId, string? resultId) =>
@@ -3640,7 +3869,13 @@ namespace CamelWorks.UI.Views
                              + "than decisions about them."));
             }
 
-            private UIElement ModelPage() => Bench.Group("Markers and the view",
+            private UIElement ModelPage()
+            {
+                RedrawMarkerToggle();
+                return ModelPageBody();
+            }
+
+            private UIElement ModelPageBody() => Bench.Group("Markers and the view",
                 Ui.Field("Marker size", Ui.Text(
                     _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
                     {
@@ -3657,7 +3892,7 @@ namespace CamelWorks.UI.Views
                     }, 90), "metres back from the clash"),
                 Ui.Check("Drop a marker where the camera lands on Focus", _markOnFocus,
                          v => _markOnFocus = v),
-                Ui.Actions(Ui.Icon(Glyphs.EyeOff, MarkerToggle(), () => Unmark(_toast))),
+                Ui.Loose(_markerToggle),
                 Ui.Small("A marker is a status-coloured ball drawn over the model at the point "
                          + "where the two elements met. It is not geometry: nothing is added to "
                          + "the document, nothing appears in the selection tree, and clearing "
@@ -4518,7 +4753,7 @@ namespace CamelWorks.UI.Views
                           : did + " " + Quoted(into) + ".",
                       (testId, ids) => _session.Clash.Regroup(testId, ids, into),
                       row => row.Group = into,
-                      finding => finding.Group = into.Length == 0 ? null : into,
+                      (finding, row) => { _ = row; finding.Group = into.Length == 0 ? null : into; },
                       FindingField.Group);
 
                 if (into.Length > 0)
@@ -4544,11 +4779,28 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                if (!_session.Clash.RenameTest(entry.Test.Id, wanted))
+                // The document first, this project when the document will not take it.
+                //
+                // A published NWD holds its clash data read-only, which is the seat most review
+                // actually happens on - and there this verb simply refused. The rule everywhere
+                // else on this board is that the database is the record and the document is a
+                // projection of it; a test's own name had nowhere to go, so it was the one
+                // decision that got lost.
+                var landed = _session.Clash.RenameTest(entry.Test.Id, wanted);
+
+                if (!landed)
                 {
-                    Warned(Ui.Problem("That test was not renamed. "
-                        + (_session.Clash.LastProblem ?? "The host refused.")));
-                    return;
+                    var names = TestNames();
+
+                    names.Rename(entry.Test.Id, wanted);
+
+                    if (!KeepTestNames(names))
+                    {
+                        Warned(Ui.Problem("That test was not renamed, and the new name could not "
+                            + "be kept in this project either. "
+                            + (_session.Clash.LastProblem ?? string.Empty)));
+                        return;
+                    }
                 }
 
                 _session.Record(ActivityKind.Regroup,
@@ -4586,16 +4838,36 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0 || prefix.Length == 0) return;
 
-                var n = 0;
+                // The names, worked out once, so the row and its finding get the same one.
+                //
+                // They did not. The row took prefix1, prefix2 and the finding took a bare
+                // "prefix" on every one of them - so the board read right and the database, which
+                // is the record, held every renamed clash under one name. And the counter ran
+                // straight through from one test into the next, while the host restarts it per
+                // test, so the two disagreed the moment more than one test was picked.
+                var named = new Dictionary<Row, string>();
+
+                foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
+                {
+                    var n = 0;
+
+                    foreach (var row in byTest)
+                        named[row] = prefix + (++n).ToString(CultureInfo.InvariantCulture);
+                }
 
                 Write(rows.Cast<object>().ToList(), _toast,
                       rows.Count == 1
-                          ? "Renamed it to “" + prefix + "1” — the host numbers what "
-                            + "it renames."
+                          ? "Renamed it to “" + prefix + "1”."
                           : "Renamed {0} to “" + prefix + "1” onwards.",
                       (testId, ids) => _session.Clash.RenamePicked(testId, ids, prefix),
-                      row => row.Info.Name = prefix + (++n).ToString(CultureInfo.InvariantCulture),
-                      finding => finding.Title = prefix,
+                      row =>
+                      {
+                          if (named.TryGetValue(row, out var call)) row.Info.Name = call;
+                      },
+                      (finding, row) =>
+                      {
+                          if (named.TryGetValue(row, out var call)) finding.Title = call;
+                      },
                       FindingField.Title);
             }
 
@@ -4623,6 +4895,51 @@ namespace CamelWorks.UI.Views
                 ExportMarkers(rows, read.Count == 1
                     ? "\"" + read[0].Test.Name + "\""
                     : Ui.Count(read.Count, "test"), _log);
+            }
+
+            /// <summary>What this project calls its tests, read fresh off the project file.</summary>
+            private ClashTestNames TestNames() =>
+                ClashTestNames.FromJson(_session.Store.Section(ProjectStore.ClashSection)[ClashTestNames.Key]);
+
+            /// <summary>Keep what this project calls its tests.</summary>
+            /// <param name="names">The names to keep.</param>
+            /// <returns>True when the project file took them.</returns>
+            private bool KeepTestNames(ClashTestNames names)
+            {
+                _session.Store.Section(ProjectStore.ClashSection)
+                        .Set(ClashTestNames.Key, names.ToJson());
+
+                return _session.Store.Save();
+            }
+
+            /// <summary>
+            /// Put this project's own names and folders over what the host reported.
+            ///
+            /// Applied on every read, so a test renamed on a published NWD still reads by the
+            /// name the coordinator chose - and a test the document has since accepted the name
+            /// for stops being overridden, because the entry is dropped the moment the host takes
+            /// it.
+            /// </summary>
+            /// <param name="entries">Everything just read.</param>
+            private void Renamed(IReadOnlyList<TestEntry> entries)
+            {
+                var names = TestNames();
+
+                if (names.Count == 0) return;
+
+                foreach (var entry in entries)
+                {
+                    var held = names.For(entry.Test.Id);
+
+                    if (held == null) continue;
+
+                    if (!string.IsNullOrWhiteSpace(held.Name)) entry.Rename(held.Name!);
+
+                    if (held.FolderCleared) entry.Refile(null);
+                    else if (!string.IsNullOrWhiteSpace(held.Folder)) entry.Refile(held.Folder);
+
+                    foreach (var row in entry.Rows) row.TestName = entry.Test.Name;
+                }
             }
 
             private void CopyTests(IReadOnlyList<TestEntry> read)
@@ -4692,8 +5009,10 @@ namespace CamelWorks.UI.Views
                 {
                     if (!_session.Clash.Run(entry.Test.Id))
                     {
-                        problems.Add(_session.Clash.LastProblem
-                                     ?? "The host would not run \"" + entry.Test.Name + "\".");
+                        problems.Add("\"" + entry.Test.Name + "\" could not be run - running a "
+                                     + "test is the engine's work and there is nothing this "
+                                     + "project can keep on its behalf. "
+                                     + (_session.Clash.LastProblem ?? string.Empty));
                         continue;
                     }
 
@@ -4731,21 +5050,32 @@ namespace CamelWorks.UI.Views
                 }
 
                 var done = 0;
+                var refused = new List<TestEntry>();
 
                 foreach (var entry in tests)
                 {
-                    if (!_session.Clash.RenameResults(entry.Test.Id, prefix))
-                    {
-                        say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
-                        return;
-                    }
-
-                    done++;
+                    if (_session.Clash.RenameResults(entry.Test.Id, prefix)) done++;
+                    else refused.Add(entry);
                 }
 
+                // What the document would not renumber is renumbered here instead, through the
+                // same door every other decision on this board goes through: the row takes the
+                // new name, the finding keeps it, and the sync carries it into an NWF from a
+                // Manage seat. A published NWD refuses all of them, and that is not a reason for
+                // the renumber to have not happened.
+                if (refused.Count > 0)
+                    Renumber(refused.SelectMany(e => e.Rows).ToList(), prefix);
+
                 _session.Record(ActivityKind.Regroup, "renamed the results of "
-                    + Ui.Count(done, "test") + " to \"" + prefix + "...\"");
-                RereadTests(tests.Select(t => t.Test.Id).ToList(),
+                    + Ui.Count(tests.Count, "test") + " to \"" + prefix + "...\"");
+
+                if (done == 0)
+                {
+                    Redraw();
+                    return;
+                }
+
+                RereadTests(tests.Where(t => !refused.Contains(t)).Select(t => t.Test.Id).ToList(),
                             "Renamed the results of " + Ui.Count(done, "test") + ".", null);
             }
 
@@ -4766,20 +5096,34 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // The document first, this project when the document will not take it - the
+                // same two steps as a rename, and for the same reason.
                 if (!_session.Clash.MoveTests(tests.Select(t => t.Test.Id).ToList(),
                                               folder.Length == 0 ? null : folder))
                 {
-                    // Over the board, and it stays up. This used to go to the footer's log at the
-                    // bottom of the window, which on a verb pressed from the rail at the top is a
-                    // refusal nobody ever saw - so the press read as doing nothing.
-                    Warned(Ui.Problem("Those tests were not moved. "
-                        + (_session.Clash.LastProblem ?? "The host refused.")));
-                    return;
+                    var names = TestNames();
+
+                    foreach (var test in tests) names.Refile(test.Test.Id, folder);
+
+                    if (!KeepTestNames(names))
+                    {
+                        Warned(Ui.Problem("Those tests were not moved, and where they were moved "
+                            + "to could not be kept in this project either. "
+                            + (_session.Clash.LastProblem ?? string.Empty)));
+                        return;
+                    }
                 }
 
                 _session.Record(ActivityKind.Regroup, "moved " + Ui.Count(tests.Count, "clash test")
                     + (folder.Length == 0 ? " to the root" : " into \"" + folder + "\""));
-                Reread("Moved " + Ui.Count(tests.Count, "test") + ".", null);
+
+                // In memory rather than a re-read. Re-reading threw the board away and put the
+                // rail back on whichever test came first, which is what "all it does is change
+                // the selected test" was.
+                foreach (var test in tests) test.Refile(folder.Length == 0 ? null : folder);
+
+                Moved();
+                Redraw();
             }
 
             private void DeleteTests(IReadOnlyList<object> picked, Panel say)
@@ -4796,7 +5140,14 @@ namespace CamelWorks.UI.Views
 
                     if (!_session.Clash.DeleteTests(tests.Select(t => t.Test.Id).ToList()))
                     {
-                        say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                        // One of the three verbs here that genuinely cannot fall back to the
+                        // project. A status, a group or a name is a decision about a clash and
+                        // belongs in the database whatever the document says; deleting a test is
+                        // not a decision that can be kept and synced later, because there would
+                        // be nothing left to sync it onto.
+                        say.Children.Add(Ui.Problem("Deleting a test is a change to the document "
+                            + "itself, so it cannot be kept in this project and synced later. "
+                            + (_session.Clash.LastProblem ?? "The host refused.")));
                         return;
                     }
 
@@ -4820,7 +5171,9 @@ namespace CamelWorks.UI.Views
 
                 if (!_session.Clash.CompactTests(tests.Select(t => t.Test.Id).ToList()))
                 {
-                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    say.Children.Add(Ui.Problem("Compacting drops results out of the document "
+                        + "itself, so it cannot be kept in this project and synced later. "
+                        + (_session.Clash.LastProblem ?? "The host refused.")));
                     return;
                 }
 
@@ -5221,15 +5574,7 @@ namespace CamelWorks.UI.Views
                     id => each ? Make(id, new[] { rows[at++] }) : Make(id, rows),
                     each ? rows.Count : 1);
 
-                if (problem != null)
-                {
-                    Warned(Ui.Problem(problem));
-                    return;
-                }
-
-                Said(Ui.Info(Ui.Count(made, "issue") + " raised from "
-                    + Ui.Count(rows.Count, "result") + ".",
-                    "Open the register", () => IssueViews.Open(null)));
+                if (problem != null) Warned(Ui.Problem(problem));
             }
 
             /// <summary>
@@ -5262,10 +5607,25 @@ namespace CamelWorks.UI.Views
                 // meant resolving each one back to the element it names, which for a key that is
                 // not an instance GUID indexes the whole federation - so isolating what was
                 // already selected started a walk of the model to find what it was holding.
-                _session.View.IsolateSelection();
+                var kept = _session.View.IsolateSelection();
+
+                // The one case that used to fail in silence. Isolating works off the host's
+                // current selection, so a selection the host did not take leaves this press
+                // having done nothing at all - and "isolate does not work" is then a report
+                // nobody can act on, because it does not say whether the host refused, hid the
+                // wrong thing, or had nothing to hide around.
+                if (kept == 0)
+                {
+                    say.Children.Add(Ui.Problem("The host is not holding a selection for those "
+                        + "results, so there was nothing to isolate around. Press Focus first - "
+                        + "if that does not select them either, this document no longer has the "
+                        + "elements the results were found between."));
+                    return;
+                }
+
                 _session.View.ZoomToSelection(1.0);
 
-                // Nothing said. What isolating did is the thing on the screen.
+                // Nothing said when it worked. What isolating did is the thing on the screen.
                 _ = keys;
             }
 
@@ -5294,8 +5654,10 @@ namespace CamelWorks.UI.Views
                 Write(picked, say, "Marked {0} as " + status + ".",
                       (testId, ids) => _session.Clash.SetStatus(testId, ids, status),
                       row => row.Status = status,
-                      finding =>
+                      (finding, row) =>
                       {
+                          _ = row;
+
                           if (FindingStatusLattice.TryParse(status, out var marked))
                               finding.Status = marked;
                       },
@@ -5313,7 +5675,7 @@ namespace CamelWorks.UI.Views
                       who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
                       (testId, ids) => _session.Clash.Assign(testId, ids, who),
                       row => row.Assigned = who,
-                      finding => finding.AssignedTo = who.Length == 0 ? null : who,
+                      (finding, row) => { _ = row; finding.AssignedTo = who.Length == 0 ? null : who; },
                       FindingField.AssignedTo);
             }
 
@@ -5344,7 +5706,11 @@ namespace CamelWorks.UI.Views
                           row.LastComment = body;
                           row.Trail.Add(new ClashComment(author, when, body));
                       },
-                      finding => finding.Comments.Add(new FindingComment(author, when, body)),
+                      (finding, row) =>
+                      {
+                          _ = row;
+                          finding.Comments.Add(new FindingComment(author, when, body));
+                      },
                       FindingField.Comments);
             }
 
@@ -5357,7 +5723,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
                                Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply,
-                               Action<Finding>? record = null, string? field = null)
+                               Action<Finding, Row>? record = null, string? field = null)
             {
                 say.Children.Clear();
 
@@ -5409,11 +5775,19 @@ namespace CamelWorks.UI.Views
                             // document refuses - a published NWD holds its results read-only - is
                             // only that the field says it is still waiting, so the sync knows
                             // what to offer and never writes the same comment twice.
-                            var finding = Found(row);
+                            // A row with no finding yet gets one now.
+                            //
+                            // The register is written by the read, and a row the read had not
+                            // reached - or a result the engine renumbered under us - had no
+                            // finding to hold the decision. On a document that takes the write
+                            // that was invisible; on one that does not, the decision was simply
+                            // lost. It is the database that is the record, so the record is
+                            // made rather than the edit dropped.
+                            var finding = Found(row) ?? Raised(row);
 
                             if (finding != null && record != null)
                             {
-                                record(finding);
+                                record(finding, row);
 
                                 if (took)
                                 {
@@ -5437,8 +5811,9 @@ namespace CamelWorks.UI.Views
                 if (done == 0 && held == 0)
                 {
                     if (problems.Count == 0)
-                        problems.Add(_session.Clash.LastProblem
-                            ?? "The host took the edit but changed nothing.");
+                        problems.Add("That change could not be kept. "
+                            + (_session.Findings.LastSaveProblem
+                               ?? "There was nowhere to write it."));
 
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
                     return;
@@ -5446,14 +5821,14 @@ namespace CamelWorks.UI.Views
 
                 if (!OnFile) { KeepFindings(); ArmSync(); }
 
-                // The document refused some of it and the findings register took it instead. That
-                // used to happen in silence, so the board showed a change the model did not have
-                // and nothing said which of the two was true.
-                if (held > 0)
-                    say.Children.Add(Ui.Note(Ui.Count(held, "result") + " could not be written "
-                        + "into this document, so " + (held == 1 ? "it is" : "they are")
-                        + " kept here and go out with the changes. "
-                        + (_session.Clash.LastProblem ?? string.Empty)));
+                // Nothing is said when the document will not take it.
+                //
+                // A decision on this board belongs to the project, and the project is where it
+                // was just kept. Whether the document could also take it is a fact about the
+                // document, said once by the strip at the top of the window on a published NWD -
+                // not a note on every status somebody sets all afternoon, on a seat where the
+                // answer is the same every time. The changes sync into an NWF from a Manage seat
+                // when there is one.
 
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));
@@ -5652,6 +6027,14 @@ namespace CamelWorks.UI.Views
                     ? "Show the markers again"
                     : "Hide the markers";
 
+            /// <summary>Put the right words on the marker toggle.</summary>
+            private void RedrawMarkerToggle() =>
+                _markerToggle.Content = Ui.Quiet(MarkerToggle(), () =>
+                {
+                    Unmark(_toast);
+                    RedrawMarkerToggle();
+                });
+
             /// <summary>
             /// The balls for these rows, in document units.
             /// </summary>
@@ -5699,8 +6082,6 @@ namespace CamelWorks.UI.Views
 
                 RedrawColumnList();
                 RedrawBoard();
-
-                Said(Ui.Done("Added \"" + title + "\". Press \"Read values\" to fill it."));
             }
 
             private void RedrawColumnList()
@@ -5912,7 +6293,9 @@ namespace CamelWorks.UI.Views
 
                 if (collapse.Count == 0)
                 {
-                    Said(Ui.Done("No two tests report the same conflict."));
+                    _log.Children.Clear();
+                    _log.Children.Add(Ui.Line("No two results across these tests are the same "
+                                              + "clash.", 0.8));
                     return;
                 }
 
@@ -6087,9 +6470,11 @@ namespace CamelWorks.UI.Views
 
                 _session.Record(ActivityKind.Export, "wrote a clash baseline", written.Explain());
 
-                Said(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()
-                    + " Statuses, assignments, comment trails and groups all travel in it. "
-                    + "Reviewers open it on this tab and save their markups beside it."));
+                // Into the footer, where the read's own counts go - not the strip over the board.
+                // A press that produces a file has to say where the file went, which is the one
+                // thing about it nobody can see.
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()));
 
                 if (!OnFile)
                 {
@@ -6177,8 +6562,9 @@ namespace CamelWorks.UI.Views
                 _session.Record(ActivityKind.Export, "wrote the clash results grid",
                                 Ui.Count(_shown.Count, "row") + " to " + dialog.FileName);
 
-                Said(Ui.Done("Wrote " + Ui.Count(_shown.Count, "row") + " to "
-                             + dialog.FileName + " - the grid exactly as it is filtered."));
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Done("Wrote " + Ui.Count(_shown.Count, "row") + " to "
+                                          + dialog.FileName));
             }
 
             // -------------------------------------------------------------------------------
@@ -6266,7 +6652,8 @@ namespace CamelWorks.UI.Views
                                  + "included."
                                : string.Empty);
 
-                Said(Ui.Done(note + " Send it back, or leave it there for the sync to find."));
+                _log.Children.Clear();
+                _log.Children.Add(Ui.Done(note));
             }
 
             /// <summary>
@@ -7194,15 +7581,26 @@ namespace CamelWorks.UI.Views
             /// <param name="problems">What was refused, or null when nothing was.</param>
             private void Tell(string did, List<string>? problems)
             {
+                _ = did;
+
                 var problem = problems ?? new List<string>();
 
-                Said(Ui.Done(did));
+                // Nothing is said when it worked.
+                //
+                // Every verb on this board used to put a strip over the table saying what it had
+                // just done - to a table that was showing the result of doing it. Forty of those
+                // in an afternoon is not feedback, it is a thing to dismiss, and it was reported
+                // as exactly that.
+                //
+                // A refusal is the opposite: it is the only account of why a press did nothing,
+                // so it stays until it is read.
+                if (problem.Count == 0) return;
+
+                _toast.Children.Clear();
 
                 foreach (var line in problem) _toast.Children.Add(Ui.Problem(line));
 
-                // A refusal stays until it is read. "Grouped 12 results" is worth three seconds
-                // and "the document would not take it" is worth somebody's attention.
-                if (problem.Count > 0) Hold();
+                Hold();
             }
 
             /// <summary>

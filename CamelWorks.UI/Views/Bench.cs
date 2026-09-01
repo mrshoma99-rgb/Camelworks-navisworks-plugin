@@ -195,7 +195,9 @@ namespace CamelWorks.UI.Views
             {
                 var footer = new Border
                 {
-                    Padding = new Thickness(14, 9, 14, 10),
+                    // Tight. The footer is a strip of buttons and a line of counts, and every
+                    // pixel of it is a row of the table nobody can see.
+                    Padding = new Thickness(14, 6, 14, 6),
                     BorderThickness = new Thickness(0, 1, 0, 0),
                     Child = foot,
                 };

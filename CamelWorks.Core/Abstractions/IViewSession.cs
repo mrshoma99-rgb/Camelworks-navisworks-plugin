@@ -48,7 +48,8 @@ namespace CamelWorks.Core.Abstractions
         /// was already selected started a walk of the whole model to find what it was already
         /// holding.
         /// </summary>
-        void IsolateSelection();
+        /// <returns>How many items were left visible. Zero means nothing was selected to keep.</returns>
+        int IsolateSelection();
 
         /// <summary>
         /// Frame what the host has selected right now.

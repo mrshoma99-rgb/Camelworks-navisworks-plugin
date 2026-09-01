@@ -28,8 +28,6 @@ namespace CamelWorks.UI.Shell
         private readonly App _app;
         private readonly StackPanel _strip = new StackPanel { Orientation = Orientation.Horizontal };
         private readonly ContentControl _surface = new ContentControl();
-        private readonly TextBox _search = new TextBox { MinWidth = 200 };
-        private readonly Popup _hits = new Popup { StaysOpen = false, AllowsTransparency = true };
         private string? _toolId;
         private bool _hooked;
 
@@ -157,52 +155,12 @@ namespace CamelWorks.UI.Shell
             suite.Wearing("Hint");
             titles.Children.Add(suite);
 
-            // The suite is thirteen apps of five tabs each, and nobody looking for the appearance
-            // manager types "appearance manager". Finder matches a tool by its name, by the other
-            // names for the same thing, and by the problem it solves. It was on a front door of
-            // its own; a search you have to open a window to reach is a search nobody uses, so it
-            // is here instead, in the title strip of whichever app is already open.
-            var line = new Grid();
-            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            line.Children.Add(titles);
-
-            var frame = new Border
-            {
-                Height = 26,
-                CornerRadius = new CornerRadius(6),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(8, 0, 8, 0),
-                Margin = new Thickness(0, 0, 16, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = _search,
-            };
-
-            frame.Tint(Border.BackgroundProperty, "Card");
-            frame.Tint(Border.BorderBrushProperty, "Bd");
-
-            _search.BorderThickness = new Thickness(0);
-            _search.Background = System.Windows.Media.Brushes.Transparent;
-            _search.VerticalAlignment = VerticalAlignment.Center;
-            _search.ToolTip = "Find a tool by what it does";
-            _search.TextChanged += (s, e) => Look();
-            _search.PreviewKeyDown += (s, e) =>
-            {
-                if (e.Key != System.Windows.Input.Key.Escape) return;
-
-                _search.Text = string.Empty;
-                _hits.IsOpen = false;
-            };
-
-            _hits.PlacementTarget = frame;
-            _hits.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-
-            Grid.SetColumn(frame, 1);
-            line.Children.Add(frame);
-
+            // No search box here any more. It was a tool finder in the title strip of every app,
+            // and what it mostly did was sit in the corner of a screen somebody was already on,
+            // looking like a search of the thing they were looking at.
             var bar = new Border
             {
-                Child = line,
+                Child = titles,
                 BorderThickness = new Thickness(0, 0, 0, 1),
             };
 
@@ -222,79 +180,6 @@ namespace CamelWorks.UI.Shell
             return header;
         }
 
-        /// <summary>
-        /// What the search box matches now, as a short list under it.
-        ///
-        /// A tool in this app opens as a tab; one belonging to another app opens that app. Either
-        /// way the press lands on the tool, which is the thing the search was about.
-        /// </summary>
-        private void Look()
-        {
-            var query = _search.Text;
-
-            if (string.IsNullOrWhiteSpace(query))
-            {
-                _hits.IsOpen = false;
-                return;
-            }
-
-            var found = Finder.Search(query).Take(8).ToList();
-            var list = new StackPanel { Margin = new Thickness(4) };
-
-            if (found.Count == 0)
-            {
-                list.Children.Add(Ui.Empty("Nothing matches \"" + query.Trim() + "\".",
-                    "Search knows every tool by name, by other names for the same thing, and by "
-                    + "the problem it solves."));
-            }
-
-            foreach (var tool in found)
-            {
-                var here = tool;
-                var app = Apps.Of(here.Id);
-
-                var row = new Button
-                {
-                    Content = Ui.Stack(
-                        Ui.Line(here.Title + (app == null ? string.Empty : "  ·  " + app.Title), 1, true),
-                        Ui.Line(here.Purpose, 0.7)),
-                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    Padding = new Thickness(8, 6, 8, 6),
-                    Margin = new Thickness(0, 0, 0, 2),
-                };
-
-                row.Wearing("RailRow");
-                row.Click += (s, e) =>
-                {
-                    _hits.IsOpen = false;
-                    _search.Text = string.Empty;
-                    Ui.Told(ToolViews.Open(here.Id));
-                };
-
-                list.Children.Add(row);
-            }
-
-            var card = new Border
-            {
-                Width = 380,
-                MaxHeight = 420,
-                BorderThickness = new Thickness(1),
-                Child = new ScrollViewer
-                {
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    Content = list,
-                },
-            };
-
-            card.Tint(Border.BackgroundProperty, "Card");
-            card.Tint(Border.BorderBrushProperty, "Bd");
-
-            Skin.Apply(card);
-
-            _hits.Child = card;
-            _hits.IsOpen = true;
-        }
 
         /// <summary>Show a tab and mark it on the strip.</summary>
         /// <param name="toolId">The tab's tool.</param>

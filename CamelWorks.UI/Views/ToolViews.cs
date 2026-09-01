@@ -35,9 +35,8 @@ namespace CamelWorks.UI.Views
 
             switch (tool.Id)
             {
-                // The two windows that are not apps: Review is a floating palette over the 3D
-                // view, and Help must work when the rest of the product will not.
-                case "review": return ReviewWindow.Show();
+                // The one window that is not an app: Help must work when the rest of the product
+                // will not.
                 case "help": return HelpWindow.Show();
             }
 

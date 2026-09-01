@@ -140,11 +140,6 @@ namespace CamelWorks.UI.Shell
 
             // ---- Coordinate -------------------------------------------------------------------
 
-            Of("review", "Review", ToolShape.Window, Glyph.Camera,
-               "Walk the findings one at a time over the model, deciding each in front of the "
-               + "geometry rather than off a list.",
-               "Record"),
-
             Of("manage", "Clash Results", ToolShape.Window, Glyph.Tune,
                "The bench: every test on the left, its results on the right, and the verbs that "
                + "work them - status, assignee, comments, groups, the camera, isolation and "

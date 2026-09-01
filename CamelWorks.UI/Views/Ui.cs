@@ -3674,13 +3674,18 @@ namespace CamelWorks.UI.Views
                 {
                     work(job);
 
-                    status.Text = job.IsCancelled
-                        ? "Stopped after " + Seconds(job.Elapsed) + "."
-                        : "Finished in " + Seconds(job.Elapsed) + ".";
+                    // The bar goes when the work does. A finished progress bar sitting at a
+                    // hundred per cent under a button is a strip of screen saying nothing, for
+                    // the rest of the session - and on a footer it is the difference between one
+                    // line and three.
+                    //
+                    // What it was still telling anybody - how long it took - goes into the output
+                    // instead, beside the counts the work itself wrote there.
+                    progress.Visibility = Visibility.Collapsed;
 
-                    bar.IsIndeterminate = false;
-                    bar.Maximum = 1;
-                    bar.Value = 1;
+                    output.Children.Add(Line(job.IsCancelled
+                        ? "Stopped after " + Seconds(job.Elapsed) + "."
+                        : "Finished in " + Seconds(job.Elapsed) + ".", 0.75));
                 }
                 catch (Exception ex)
                 {
@@ -3871,6 +3876,14 @@ namespace CamelWorks.UI.Views
 
         /// <summary>A dial: settings and thresholds.</summary>
         public const string Tune = "M4,7 L20,7 M4,17 L20,17 M9,4.5 L9,9.5 M15,14.5 L15,19.5";
+
+        /// <summary>
+        /// Bars long to short: put them in an order.
+        ///
+        /// One symbol for sorting, wherever sorting is. The rail's sort and the board's used to be
+        /// a dial and a stack of layers, which are two different promises for the same act.
+        /// </summary>
+        public const string Sort = "M4,6 L20,6 M4,12 L15,12 M4,18 L10,18";
 
         /// <summary>An arrow onward: this takes you somewhere.</summary>
         public const string Onward = "M5,12 L18,12 M13,7 L18,12 L13,17";

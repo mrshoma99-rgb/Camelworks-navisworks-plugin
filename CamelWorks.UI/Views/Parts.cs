@@ -439,7 +439,14 @@ namespace CamelWorks.UI.Views
             if (on) line.Tint(Border.BackgroundProperty, "NavActive");
             else Lights(line, "Hover");
 
-            line.MouseLeftButtonUp += (s, e) => Ui.Safely(onAct);
+            line.MouseLeftButtonUp += (s, e) =>
+            {
+                // Shut first, then act. The option has already been chosen by the time this runs,
+                // so closing cannot swallow it - and whatever the option opens is not fighting a
+                // menu still standing over it.
+                Shut(line);
+                Ui.Safely(onAct);
+            };
 
             return line;
         }
@@ -458,13 +465,20 @@ namespace CamelWorks.UI.Views
         /// <param name="tip">What the symbol does, as a tooltip.</param>
         /// <param name="items">The lines, in reading order.</param>
         /// <param name="up">True to open upwards, for a symbol near the bottom of the window.</param>
+        /// <param name="on">True when what the menu holds is in force, so the symbol says so.</param>
         public static UIElement MoreMenu(string glyph, string tip, IReadOnlyList<Entry> items,
-                                         bool up = false)
+                                         bool up = false, bool on = false)
         {
             // The press is the popup's, hung on below. Ui.Icon wants a handler, and one that does
             // nothing is honest here: opening the menu is not work, so it does not belong inside
             // the busy guard every other row symbol runs under.
             var button = Ui.Icon(glyph, tip, () => { });
+
+            // A control that is doing something says so. A menu holding a filter or a sort with
+            // nothing on screen admitting it is a board quietly hiding half its rows, which is the
+            // fault the coloured funnel on the rail already exists to prevent - and the board's
+            // own menu did not do it.
+            if (on) button.Content = Ui.Glyph(glyph, 15, "Accent");
 
             Opens(button, Floating(Menu(items, false), 210),
                   up ? PlacementMode.Top : PlacementMode.Bottom);
@@ -674,74 +688,109 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Ask for one line of text, beside the work rather than in a window.
+        /// Ask for one line of text, and do something with it.
         ///
-        /// <b>Not a dialog, on purpose.</b> A modal with no owner disables every top-level window
-        /// on the thread — the host's own frame among them — and Navisworks never comes back. This
-        /// is a popup on the same window, so there is no owner to get wrong, and it closes when
-        /// the pointer goes anywhere else.
+        /// <b>A window, not a popup.</b> This was a <c>Popup</c>, and inside the Navisworks host a
+        /// popup is its own top-level window that never gets the keyboard: the box focused, the
+        /// caret blinked, and nothing anybody typed arrived. Opened from a double-click it did not
+        /// even last that long - the second release of the double-click lands outside the popup,
+        /// and a popup that does not stay open takes that as "click away" and shuts.
+        ///
+        /// It was reported three separate ways: the rename window flashing and vanishing, the
+        /// comment box refusing to take a comment, and "move into a folder" refusing a folder.
+        /// One cause, and the fix is to be the same kind of window every other dialogue in this
+        /// product already is - owned by the screen that opened it, modal, and part of the
+        /// keyboard's world.
         /// </summary>
-        /// <param name="near">What it opens beside. Something long-lived on the screen.</param>
-        /// <param name="prompt">What is being asked for.</param>
+        /// <param name="near">The screen this belongs to, which becomes its owner.</param>
+        /// <param name="prompt">What is being asked.</param>
         /// <param name="starting">What the box starts with.</param>
-        /// <param name="caption">What the button says.</param>
-        /// <param name="onDone">What to do with the answer.</param>
+        /// <param name="caption">What the commit button says.</param>
+        /// <param name="onDone">Given the trimmed text, once somebody commits.</param>
         public static void Ask(FrameworkElement near, string prompt, string? starting,
                                string caption, Action<string> onDone)
         {
-            if (near == null) return;
+            _ = near;
 
-            var box = Ui.Text(starting ?? string.Empty, null, 240);
-            box.Margin = new Thickness(0, 6, 0, 0);
+            var box = Ui.Text(starting ?? string.Empty, null, 320);
 
             var label = new TextBlock
             {
                 Text = prompt ?? string.Empty,
                 FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 8),
             };
 
-            var popup = new Popup
+            var window = new Window
             {
-                PlacementTarget = near,
-                Placement = PlacementMode.Bottom,
-                StaysOpen = false,
-                AllowsTransparency = true,
-                HorizontalOffset = -8,
-                VerticalOffset = -8,
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
             };
+
+            string? said = null;
 
             void Done()
             {
-                popup.IsOpen = false;
-                onDone?.Invoke(box.Text.Trim());
+                said = box.Text.Trim();
+                window.Close();
             }
 
             var press = Ui.Primary(caption, Done);
-            press.Margin = new Thickness(0, 10, 0, 0);
-            press.HorizontalAlignment = HorizontalAlignment.Right;
+            press.MinWidth = 92;
 
-            // Return commits it. Somebody typing a group name has both hands on the keyboard,
-            // and reaching for the mouse to press a button beside the box they are typing in is
-            // the kind of thing that gets called clunky and is right.
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+            cancel.Margin = new Thickness(0, 0, 8, 0);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 14, 0, 0),
+            };
+
+            buttons.Children.Add(cancel);
+            buttons.Children.Add(press);
+
+            // Return commits, Escape leaves. Somebody typing a group name has both hands on the
+            // keyboard, and reaching for the mouse to press a button beside the box they are
+            // typing in is the kind of thing that gets called clunky and is right.
             box.KeyDown += (s, e) =>
             {
                 if (e.Key == Key.Enter) Done();
-                else if (e.Key == Key.Escape) popup.IsOpen = false;
+                else if (e.Key == Key.Escape) window.Close();
             };
 
-            popup.Child = Floating(Ui.Stack(label.Wearing("Body"), box, press), 260);
+            var body = new StackPanel { Margin = new Thickness(18, 16, 18, 16) };
 
-            // On Opened, not after setting IsOpen: the popup builds its own visual tree on a
-            // later pass, and focusing a box that is not in one yet quietly does nothing — which
-            // is a prompt you have to click into before you can type.
-            popup.Opened += (s, e) =>
+            body.Children.Add(label.Wearing("Body"));
+            body.Children.Add(box);
+            body.Children.Add(buttons);
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            // On Loaded, not before: focusing a box whose visual tree has not been built yet
+            // quietly does nothing, which is a prompt you have to click into before you can type.
+            window.Loaded += (s, e) =>
             {
                 box.Focus();
                 box.SelectAll();
             };
 
-            popup.IsOpen = true;
+            window.ShowDialog();
+
+            // After the window has gone, so whatever this opens next is not fighting a dialogue
+            // that is still closing.
+            if (said != null) onDone?.Invoke(said);
         }
 
         // -----------------------------------------------------------------------------------
@@ -990,6 +1039,29 @@ namespace CamelWorks.UI.Views
         /// back. A dropdown is not a modal and must not become one: a <see cref="Popup"/> is a
         /// layer over the same window, so there is no owner to get wrong.
         /// </summary>
+        /// <summary>
+        /// Close the menu an element sits in, if it sits in one.
+        ///
+        /// Walks out to the <see cref="Popup"/> rather than being handed it, so an option does not
+        /// have to be built knowing which menu it will end up in - which is what let the card try
+        /// to do this on the option's behalf, twice, and get it wrong both times.
+        /// </summary>
+        /// <param name="from">The option that was chosen.</param>
+        private static void Shut(DependencyObject? from)
+        {
+            for (var node = from; node != null; )
+            {
+                if (node is Popup popup)
+                {
+                    popup.IsOpen = false;
+                    return;
+                }
+
+                node = LogicalTreeHelper.GetParent(node)
+                       ?? (node is Visual ? VisualTreeHelper.GetParent(node) : null);
+            }
+        }
+
         /// <param name="target">What opens it.</param>
         /// <param name="card">What is inside it.</param>
         /// <param name="where">Which side of the target it opens on.</param>
@@ -1006,29 +1078,34 @@ namespace CamelWorks.UI.Views
                 Child = card,
             };
 
-            // Close the menu once the option has acted - and *once*, which is the whole of the
-            // fix here.
+            // Nothing here closes the menu. The options do, in Line, once they have acted.
             //
-            // This was PreviewMouseLeftButtonUp, and the comment beside it claimed the card's
-            // handler ran after the option's own. It is the other way round: Preview tunnels, so
-            // the card saw the press first and set IsOpen = false before the press ever reached
-            // the option. Closing a Popup tears its child out of the visual tree, so the option's
-            // own bubbling handler was never raised and the press did nothing at all.
+            // Two ways of doing it from the card have now been wrong. PreviewMouseLeftButtonUp
+            // tunnels: the card saw the press before the option did, and closing a Popup tears its
+            // child out of the visual tree, so the option's own handler was never raised and every
+            // menu in the product opened and did nothing. Bubbling fixed that and introduced the
+            // opposite fault - *any* release inside the card shuts the menu, including a click
+            // into a text box in one.
             //
-            // Every menu and every dropdown in the product goes through here, so every one of
-            // them opened and then quietly refused to do anything: the status and assignee chips,
-            // the row and test menus - rename, move into a folder, dissolve the group - and every
-            // filter. What still worked was the handful of verbs that are direct buttons rather
-            // than menu options, which is exactly the split that was reported.
-            //
-            // Bubbling, and handledEventsToo, so the option acts first and the menu shuts after
-            // it whether or not the option marked the press handled.
-            card.AddHandler(UIElement.MouseLeftButtonUpEvent,
-                            new MouseButtonEventHandler((s, e) => popup.IsOpen = false),
-                            handledEventsToo: true);
+            // An option knows when it has been chosen. Nothing else in a menu should decide the
+            // menu is finished.
 
-            if (target is ButtonBase press) press.Click += (s, e) => popup.IsOpen = !popup.IsOpen;
-            else target.MouseLeftButtonUp += (s, e) => popup.IsOpen = !popup.IsOpen;
+            if (target is ButtonBase press)
+            {
+                press.Click += (s, e) => popup.IsOpen = !popup.IsOpen;
+            }
+            else
+            {
+                target.MouseLeftButtonUp += (s, e) =>
+                {
+                    popup.IsOpen = !popup.IsOpen;
+
+                    // Marked, so opening a chip's menu is not also a click on the row underneath
+                    // it. A board row selects on click now, and a press meant for the status
+                    // dropdown must not move the selection out from under the person pressing it.
+                    e.Handled = true;
+                };
+            }
         }
 
         /// <summary>Fill a plate under the pointer, and take it away again.</summary>
