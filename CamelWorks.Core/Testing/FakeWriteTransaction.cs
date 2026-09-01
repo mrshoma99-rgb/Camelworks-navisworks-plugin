@@ -272,6 +272,27 @@ namespace CamelWorks.Core.Testing
         /// <summary>The keys the last <see cref="Isolate"/> kept visible, or null before one.</summary>
         public IReadOnlyList<ElementKey>? Isolated { get; private set; }
 
+        /// <summary>What is hanging in the view. Empty until something is shown.</summary>
+        public IReadOnlyList<Clash.SceneMarker> Markers { get; private set; }
+            = Array.Empty<Clash.SceneMarker>();
+
+        /// <summary>Whether this host draws markers. Settable, to model one that does not.</summary>
+        public bool CanMark { get; set; } = true;
+
+        /// <inheritdoc />
+        public void ShowMarkers(IReadOnlyList<Clash.SceneMarker> markers)
+        {
+            Markers = markers ?? Array.Empty<Clash.SceneMarker>();
+            _document.Record("view.showMarkers");
+        }
+
+        /// <inheritdoc />
+        public void ClearMarkers()
+        {
+            Markers = Array.Empty<Clash.SceneMarker>();
+            _document.Record("view.clearMarkers");
+        }
+
         /// <inheritdoc />
         public void IsolateSelection() => Isolated = Array.Empty<ElementKey>();
 

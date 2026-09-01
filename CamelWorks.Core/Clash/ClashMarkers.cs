@@ -112,12 +112,13 @@ namespace CamelWorks.Core.Clash
     }
 
     /// <summary>
-    /// Clash points as something you can see.
+    /// Clash points as a file somebody else opens.
     ///
-    /// A clash is a row on a board and a camera position, and both of those need somebody driving
-    /// the mouse. What a walkthrough, a site meeting or a subcontractor's own copy of the model
-    /// needs is the clash *in* the model - a ball hanging in the air where the duct meets the beam,
-    /// visible from across the room and still there tomorrow.
+    /// <b>Not the marker you press a button for.</b> Dropping a ball on a clash while you are
+    /// looking at it is <see cref="MarkerOverlay"/>: temporary graphics, up on the next frame and
+    /// down when you say so. This is the other thing - the mesh a walkthrough, a site meeting or a
+    /// subcontractor's own copy of the model needs, still there tomorrow and openable without this
+    /// product installed. It is only ever reached through an explicit export.
     ///
     /// <b>Metres, always.</b> The host reports clash points in the document's own units and its OBJ
     /// reader takes every vertex as metres. A millimetre model whose markers went out unconverted

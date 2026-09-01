@@ -139,6 +139,27 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="height">Pixels.</param>
         byte[]? Capture(int width, int height);
 
+        /// <summary>
+        /// Whether this host can hang temporary graphics in the view.
+        ///
+        /// False on a host that has no live view - the Studio harness, a headless run - and the
+        /// caller says so rather than reporting markers that were never drawn.
+        /// </summary>
+        bool CanMark { get; }
+
+        /// <summary>
+        /// Hang these markers in the view, replacing whatever was there.
+        ///
+        /// Temporary graphics: they are drawn on top of the model each frame and are gone the
+        /// moment <see cref="ClearMarkers"/> is called or Navisworks closes. Nothing is added to
+        /// the document, nothing appears in the selection tree, and nothing needs unloading.
+        /// </summary>
+        /// <param name="markers">Where the balls go, in document units. Empty clears.</param>
+        void ShowMarkers(IReadOnlyList<Clash.SceneMarker> markers);
+
+        /// <summary>Take every marker down.</summary>
+        void ClearMarkers();
+
         /// <summary>Set a section box around the given elements, with a context margin.</summary>
         void SetSectionBox(BoundingBox box, double marginMetres);
 

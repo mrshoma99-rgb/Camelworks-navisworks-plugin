@@ -278,6 +278,15 @@ namespace CamelWorks.UI.Views
 
             private double _markerAcross = 300;
 
+            /// <summary>
+            /// Whether Focus also drops a ball where it puts the camera.
+            ///
+            /// On, because the thing Focus is for is finding a clash, and a clash between a duct
+            /// and a beam looks exactly like a duct and a beam until something says which point
+            /// of it the engine objected to.
+            /// </summary>
+            private bool _markOnFocus = true;
+
             /// <summary>What the board currently shows, for the spreadsheet writer.</summary>
             private List<Row> _shown = new List<Row>();
 
@@ -3004,6 +3013,7 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
                     Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
                                     () => Spheres(picked, _toast)),
+                    Parts.Entry.Act("Clear the markers", Glyphs.EyeOff, () => Unmark(_toast)),
                     Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
                                     () => RaiseIssue(picked, false)),
                     Parts.Entry.Act("Attach to an existing issue", Glyphs.Link,
@@ -3581,9 +3591,14 @@ namespace CamelWorks.UI.Views
                                 CultureInfo.InvariantCulture, out var mm) && mm > 0)
                             _markerAcross = mm;
                     }, 90), "millimetres across"),
-                Ui.Small("Spheres are ordinary geometry, coloured by status, appended as their own "
-                         + "file so they come out again from the host's file list. \"Show "
-                         + "everything again\" is the eye symbol under the results."));
+                Ui.Check("Drop a marker where the camera lands on Focus", _markOnFocus,
+                         v => _markOnFocus = v),
+                Ui.Actions(Ui.Icon(Glyphs.EyeOff, "Clear the markers", () => Unmark(_toast))),
+                Ui.Small("A marker is a status-coloured ball drawn over the model at the point "
+                         + "where the two elements met. It is not geometry: nothing is added to "
+                         + "the document, nothing appears in the selection tree, and clearing "
+                         + "them takes them straight back down. \"Show everything again\" is the "
+                         + "eye symbol under the results."));
 
             private UIElement RoundPage() => OnFile
                 ? Bench.Group("The review round",
@@ -4768,6 +4783,11 @@ namespace CamelWorks.UI.Views
                 if (point != null)
                     _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
 
+                // The ball, if it is wanted. Every picked point rather than the average the camera
+                // used, because on a multi-row focus the average is a place where nothing clashed.
+                // Free: it is a set swap and a frame, not geometry.
+                if (_markOnFocus) MarkFocused(rows);
+
                 var selected = OnFile ? FromKeys(rows) : FromEngine(rows);
 
                 if (composed)
@@ -4852,6 +4872,28 @@ namespace CamelWorks.UI.Views
             /// middle of nowhere, and the selection they can still see in the tree is the answer
             /// to that.
             /// </summary>
+            /// <summary>
+            /// Hang a ball on each of these, quietly.
+            ///
+            /// Quiet because it is a side effect of Focus rather than something somebody asked
+            /// for: a host with no view to draw into, or a size that has been typed down to
+            /// nothing, leaves the camera move alone rather than putting an error where the
+            /// "Selected and framed" line goes.
+            /// </summary>
+            /// <param name="rows">The rows being focused.</param>
+            private void MarkFocused(IReadOnlyList<Row> rows)
+            {
+                if (!_session.View.CanMark) return;
+
+                var metres = _session.MetresPerUnit;
+                var perUnit = metres > 0 ? metres : 1.0;
+                var radius = _markerAcross / 2000.0 / perUnit;
+
+                if (radius <= 0) return;
+
+                _session.View.ShowMarkers(Marks(rows, OnFile ? 1.0 / perUnit : 1.0, radius));
+            }
+
             private static (double X, double Y, double Z)? Middle(IReadOnlyList<Row> rows)
             {
                 double x = 0, y = 0, z = 0;
@@ -5293,6 +5335,21 @@ namespace CamelWorks.UI.Views
                        + "Write the baseline to carry them into the NWF.";
             }
 
+            /// <summary>
+            /// Hang a status-coloured ball at each picked clash, and take the last lot down.
+            ///
+            /// <b>Temporary graphics, not a model.</b> These are drawn straight into the view by
+            /// <c>CamelWorksMarkers</c>, once a frame, from a set this hands over. They appear on
+            /// the next frame, they cost nothing to put up or take down, and they leave no trace:
+            /// no file to unload, nothing in the selection tree, no re-index. That is the whole
+            /// point of a marker - it says "here" for as long as somebody is looking, and stops.
+            ///
+            /// <b>Units.</b> The host's graphics calls take the document's own units, which is
+            /// what a board read from the model is already in. A board read from somebody else's
+            /// file counts in metres, so those come back the other way.
+            /// </summary>
+            /// <param name="picked">The picked rows.</param>
+            /// <param name="say">Where to report what happened.</param>
             private void Spheres(IReadOnlyList<object> picked, Panel say)
             {
                 say.Children.Clear();
@@ -5300,78 +5357,61 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                // Everything goes out in the document's own units, because that is what the
-                // host is told the file is in - see NavDocument.AppendInDocumentUnits. A model
-                // result is already in them; a file's are metres and come back the other way.
+                if (!_session.View.CanMark)
+                {
+                    say.Children.Add(Ui.Problem("This host has no view to draw markers into."));
+                    return;
+                }
+
                 var metres = _session.MetresPerUnit;
                 var perUnit = metres > 0 ? metres : 1.0;
                 var scale = OnFile ? 1.0 / perUnit : 1.0;
 
-                var items = rows.Select(r => new ClashItem(r.Info.Key(), r.TestName)
+                // The size somebody typed is millimetres across; the ball is drawn in document
+                // units, so the radius crosses over here. A sphere sized in metres in a document
+                // that counts in millimetres is a thousandth of the marker that was asked for,
+                // which is a marker nobody sees.
+                var radius = _markerAcross / 2000.0 / perUnit;
+
+                if (radius <= 0)
                 {
-                    X = r.Info.PointX * scale,
-                    Y = r.Info.PointY * scale,
-                    Z = r.Info.PointZ * scale,
-                    Status = Enum.TryParse<FindingStatus>(r.Status, true, out var parsed)
-                        ? parsed
-                        : FindingStatus.New,
-                }).ToList();
-
-                var recipe = new MarkerRecipe
-                {
-                    // The size somebody typed is millimetres across; the file is written in
-                    // document units, so the radius crosses over here too. A sphere written in
-                    // metres into a document that counts in millimetres is a marker a
-                    // thousandth of the size it was asked to be, which is a marker nobody sees.
-                    RadiusMetres = _markerAcross / 2000.0 / perUnit,
-
-                    // The coordinates above are already in document units.
-                    MetresPerUnit = 1.0,
-                };
-
-                var mesh = ClashMarkers.Write(items, recipe);
-
-                if (mesh.Refusal != null)
-                {
-                    say.Children.Add(Ui.Problem(mesh.Refusal));
+                    say.Children.Add(Ui.Problem("A marker of no size is a marker nobody can see. "
+                        + "Give it a size on the Model page."));
                     return;
                 }
 
-                var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "camelworks-markers");
-                var stamp = DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture);
-                var obj = System.IO.Path.Combine(folder, "clash-spheres-" + stamp + ".obj");
-                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+                var marks = Marks(rows, scale, radius);
+                _session.View.ShowMarkers(marks);
 
-                try
-                {
-                    System.IO.Directory.CreateDirectory(folder);
-
-                    System.IO.File.WriteAllText(obj, mesh.Text.Replace(
-                        "mtllib " + mesh.MaterialFile,
-                        "mtllib " + System.IO.Path.GetFileName(mtl)));
-
-                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
-                }
-                catch (Exception e)
-                {
-                    say.Children.Add(Ui.Problem("Could not write the markers: " + Ui.Describe(e)));
-                    return;
-                }
-
-                try
-                {
-                    say.Children.Add(_session.Model.AppendInDocumentUnits(obj)
-                        ? Ui.Done(Ui.Count(rows.Count, "sphere") + " dropped at the clash points, "
-                            + "coloured by status. They are ordinary geometry: take them out again "
-                            + "from the host's file list, where the file is called "
-                            + System.IO.Path.GetFileName(obj) + ".")
-                        : (UIElement)Ui.Problem("The host would not append the marker file."));
-                }
-                catch (Exception e)
-                {
-                    say.Children.Add(Ui.Problem("Could not append the markers: " + Ui.Describe(e)));
-                }
+                say.Children.Add(Ui.Done(Ui.Count(marks.Count, "sphere") + " hanging at the clash "
+                    + (marks.Count == 1 ? "point" : "points") + ", coloured by status. They are drawn over "
+                    + "the model, not added to it - \"Clear the markers\" takes them down."));
             }
+
+            /// <summary>Take every marker down.</summary>
+            /// <param name="say">Where to report what happened.</param>
+            private void Unmark(Panel say)
+            {
+                say.Children.Clear();
+                _session.View.ClearMarkers();
+                say.Children.Add(Ui.Done("The markers are down."));
+            }
+
+            /// <summary>
+            /// The balls for these rows, in document units.
+            /// </summary>
+            /// <param name="rows">The rows to mark.</param>
+            /// <param name="scale">What a row's stored coordinate is multiplied by.</param>
+            /// <param name="radius">How big each ball is, in document units.</param>
+            /// <returns>One marker per row.</returns>
+            private static List<SceneMarker> Marks(IReadOnlyList<Row> rows, double scale,
+                                                   double radius) =>
+                rows.Select(r => new SceneMarker(
+                        r.Info.PointX * scale, r.Info.PointY * scale, r.Info.PointZ * scale, radius,
+                        ClashMarkers.Colour(Enum.TryParse<FindingStatus>(r.Status, true, out var s)
+                            ? s
+                            : FindingStatus.New)))
+                    .ToList();
 
             // -------------------------------------------------------------------------------
             // Property columns and the grouping chain

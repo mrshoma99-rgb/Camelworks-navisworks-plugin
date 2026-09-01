@@ -111,9 +111,18 @@ four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, o
 order; the sort menu holds the same six and says which is on.
 
 **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
-comment, and a menu with snapshot, marker sphere, raise as an issue, attach to an existing issue,
-copy, and — depending on which kind of row it is — rename or ungroup the clash group, or group it
-with what is picked and move it into an existing one.
+comment, and a menu with snapshot, marker sphere, clear the markers, raise as an issue, attach to an
+existing issue, copy, and — depending on which kind of row it is — rename or ungroup the clash
+group, or group it with what is picked and move it into an existing one.
+
+**Marker spheres are drawn over the model, not added to it.** A marker is a status-coloured ball
+hanging at the point where the two elements met, so a clash between a duct and a beam stops looking
+like a duct and a beam. It appears on the next frame, it costs nothing, and it is gone the moment
+you press *Clear the markers* or close Navisworks — nothing joins the selection tree and there is no
+file to unload afterwards. **Focus drops one too**, which you can turn off, and their size is set,
+on the *Markers and the view* page under the ball symbol in the header. If what you want instead is
+a mesh somebody else can open without CamelWorks installed, that is the *Markers* section behind the
+ball symbol on [Report](#report), which saves an OBJ.
 
 ### Filtering the board
 
@@ -447,8 +456,10 @@ Thursday afternoon: one file per party, revision-lettered, superseding last week
 - The funnel is always reported over the **whole** board, whatever the report is filtered to.
 - A warning before you commit to pictures, which are what makes a report take minutes.
 
-Behind the ⚙ symbols: where the file goes and what it is called, markers in the model, and sending
-it onward as a file somebody works in.
+Behind the ⚙ symbols: where the file goes and what it is called, the clash points as an **OBJ mesh**
+somebody else can open, and sending it onward as a file somebody works in. That mesh is a file, not
+the on-screen ball the board's row verbs drop — use it when the markers have to survive without
+CamelWorks installed.
 
 When it has written, it offers the two jumps that actually follow — the same board as **BCF** or as
 **Clash file** — and says where a reply will land when it returns.

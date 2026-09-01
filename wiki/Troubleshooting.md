@@ -57,13 +57,24 @@ CamelWorks did not author and lets you select it, adopt it into the stack, or pu
 
 ## A row verb takes a long time the first time
 
-Focus, Isolate, marker spheres and snapshots all resolve element keys, and resolving one means
+Focus, Isolate and snapshots all resolve element keys, and resolving one means
 looking it up in an index of every geometry element in the federation. Building that index is a
 full walk, and on a large model it takes a while.
 
 It is built at the end of **Read the results** and of the clearance **Check** — inside the run,
 where there is a progress line and a Stop — so the verbs are instant afterwards. If the model
 changes, the index is dropped and the next verb rebuilds it, with the wait cursor up.
+
+## The marker spheres do not appear
+
+They are drawn by a render plug-in that loads with the rest of CamelWorks, so if nothing appears the
+usual cause is size rather than the markers. *Marker size* is in **millimetres across**, on the
+*Markers and the view* page — 300 by default. A size of a few millimetres on a site-sized model is a
+ball you would have to be standing on to see.
+
+They are also drawn where the *result* says the clash is. A result the engine recorded with no
+geometry behind it sits at the model origin, which on a surveyed model is a long way from the
+building.
 
 ## A run seems to hang
 
