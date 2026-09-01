@@ -110,7 +110,8 @@ third time for the order the test itself holds. Drag a header's right edge to re
 four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, or *Test* for name
 order; the sort menu holds the same six and says which is on.
 
-**Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
+**Click a row to pick it**, Ctrl or Shift-click to add to what is picked, and drag rows onto a
+clash group to move them into it. **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
 comment, and a menu with snapshot, marker sphere, clear the markers, raise as an issue, attach to an
 existing issue, copy, and — depending on which kind of row it is — rename or ungroup the clash
 group, or group it with what is picked and move it into an existing one.
@@ -142,7 +143,10 @@ The **status strip** above the table is five segments carrying the counts — *a
 reviewed, resolved*. Clicking one filters the board to it; clicking it again clears it. That is
 the only status filter; there are no tickboxes.
 
-Beside it, a **search**. The **layers** symbol in the header above holds three more:
+Beside it, a **search**. Two symbols in the header above hold the rest, and **each turns blue when
+it is doing something** — the sort (bars, long to short) and the filter (a funnel), the same pair
+and the same symbols the test rail uses. Sorting holds the column order and the banding; filtering
+holds grouped-or-loose, whose it is, and what the property columns say. The filter's menu is where:
 
 | | |
 |---|---|
@@ -212,7 +216,12 @@ the board to a spreadsheet, set up the review round, and raise the board as issu
 document there and then — there is no draft to commit. What is left to save is what the document
 **refused**, which is what the footer's one blue button is for.
 
-- **Save the changes** writes every held decision into the model's own clash results, where the
+- **Renaming a test, and moving it into a folder, are kept even on a published NWD.** Both are writes
+into the host's clash data, which a published NWD holds read-only — so both used to refuse outright.
+They now fall back to the project, exactly as a status or a comment does, and the board shows the
+name you chose. A seat that can write puts them into the document instead.
+
+**Save the changes** writes every held decision into the model's own clash results, where the
   native clash window and every export can see them. When something is waiting, the button counts
   it: *Save 14 changes into the document*.
 - **Export ▸ Save as a clash file** writes what is on the board to a file instead. From

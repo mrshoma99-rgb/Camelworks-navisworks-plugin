@@ -16,5 +16,4 @@ CamelWorks.UI/Views/ExtractWindow.cs
 CamelWorks.UI/Views/FreezeViews.cs
 CamelWorks.UI/Views/IssueViews.cs
 CamelWorks.UI/Views/ProjectViews.cs
-CamelWorks.UI/Views/ReviewWindow.cs
 CamelWorks.UI/Views/SideBySideViews.cs

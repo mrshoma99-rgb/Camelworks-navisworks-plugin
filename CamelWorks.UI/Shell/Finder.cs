@@ -55,9 +55,6 @@ namespace CamelWorks.UI.Shell
             ["issueout"] = (new[] { "export bcf", "send issues", "issues out" },
                 new[] { "send them the issues", "write a BCF file" }),
 
-            ["review"] = (new[] { "walk the clashes", "go through results", "sign off" },
-                new[] { "I need to go through these one at a time" }),
-
             ["manage"] = (new[] { "clash results", "run clashes", "test setup", "batch clash",
                                   "status", "assign", "comment", "tolerance" },
                 new[] { "setting up clash tests takes all morning",

@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
 EXPECTED_COMMANDS = 13
-EXPECTED_TOOLS = 54
+EXPECTED_TOOLS = 53
 
 # A ribbon panel is three rows tall, so a stack of Standard buttons is three at most.
 MAX_PER_COLUMN = 3
@@ -177,7 +177,7 @@ def main():
     surfaces = read("Views/Surfaces.cs")
     benched = set(re.findall(r'case "([a-z]+)"', surfaces))
 
-    OUTSIDE = {"review", "sectionbox", "baseline", "help"}
+    OUTSIDE = {"sectionbox", "baseline", "help"}
 
     for tool_id, shape in re.findall(
             r'Of\("([a-z]+)", "[^"]+", ToolShape\.(\w+),', tools_source):

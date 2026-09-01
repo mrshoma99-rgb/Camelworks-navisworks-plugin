@@ -7,19 +7,18 @@ using CamelWorks.UI.Views;
 namespace CamelWorks.Studio
 {
     /// <summary>
-    /// The two windows that are not desks, and the wizard spine, reconstructed.
+    /// The benches that are not desks, and the wizard spine, reconstructed.
     ///
-    /// Review is a floating palette over the 3D view and the wizards are a spine of steps down
-    /// the left — both shapes the desks cannot show, so each gets a picture of its own. Same rule
-    /// as <see cref="Panels"/>: same captions, same weights, plausible data where the real one
-    /// reads the host.
+    /// The wizards are a spine of steps down the left and the two benches are their own shape —
+    /// neither is something the desks can show, so each gets a picture of its own. Same rule as
+    /// <see cref="Panels"/>: same captions, same weights, plausible data where the real one reads
+    /// the host.
     /// </summary>
     public static class Dialogs
     {
         /// <summary>The windows, in the order the product offers them.</summary>
         public static IReadOnlyList<Sheet> All { get; } = new[]
         {
-            Sheet("dlg-review", "Window · Review a finding", 720, 620, Review),
             Sheet("dlg-clashxml", "Bench · Clash XML", 760, 1180, ClashXml),
             Sheet("dlg-ids", "Bench · IDS authoring", 1000, 1180, Ids),
             Sheet("dlg-wizard", "Wizard · The spine", 640, 1000, Wizard),
@@ -28,35 +27,6 @@ namespace CamelWorks.Studio
 
         private static Sheet Sheet(string id, string title, int height, int width, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { width } };
-
-        // -----------------------------------------------------------------------------------
-        // Review a finding — the walk through a clash board, one group at a time
-        // -----------------------------------------------------------------------------------
-
-        private static UIElement Review() => Sheets.Page(
-            Ui.Line("7 of 42 - Level 04 riser vs structural frame", 1, true),
-            Ui.Line("12 clashes - Structures - 12.480, 4.100, 15.750 m", 0.85),
-            Ui.Line("Move the duct 340 mm east", 0.85),
-
-            Ui.Across(
-                Ui.Icon(Glyphs.Backward, "Previous finding (P)", () => { }),
-                Ui.Icon(Glyphs.Onward, "Next finding (N)", () => { }),
-                Ui.Icon(Glyphs.Boxed, "Section box round this one (B)", () => { })),
-
-            Ui.Field("Where this one stands",
-                Ui.Segmented(new[] { "Active", "Reviewed", "Approved", "Resolved" }, "Reviewed", null)),
-
-            Ui.Field("What to do", Ui.Stack(
-                Ui.Across(
-                    Ui.Choice(new[] { "Move", "Reroute", "Resize", "Accept" }, "Move", null),
-                    Ui.Choice(new[] { "east", "west", "north", "south", "up", "down" }, "east", null),
-                    Ui.Text("340", null, 90)),
-                Ui.Actions(Ui.Primary("Record", () => { })))),
-
-            Ui.Line("Recorded.", 0.75),
-
-            Ui.Note("Keys: N and P move, 1 reviewed, 2 approved, 3 resolved, 0 active, "
-                    + "B boxes, A annotates. Nothing is written until this window closes."));
 
         // -----------------------------------------------------------------------------------
         // Clash XML — the two-leg editor on the bench
