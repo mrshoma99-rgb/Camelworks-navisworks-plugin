@@ -416,6 +416,26 @@ namespace CamelWorks.UI.Views
 
             public int SelectResults(string testId, IReadOnlyList<string> resultIds, bool add) => -1;
 
+            public IReadOnlyList<ClashTestRead> ReadEverything(Func<int, bool>? onProgress) =>
+                Array.Empty<ClashTestRead>();
+
+            public IReadOnlyList<CamelWorks.Core.Clash.ClashResultValues> ValuesFor(
+                string testId, IReadOnlyList<CamelWorks.Core.Clash.ClashPropertyWanted> wanted,
+                Func<int, bool>? onProgress) =>
+                Array.Empty<CamelWorks.Core.Clash.ClashResultValues>();
+
+            public IReadOnlyList<CamelWorks.Core.Clash.ClashResultIfc> IfcFor(
+                string testId, Func<int, bool>? onProgress) =>
+                Array.Empty<CamelWorks.Core.Clash.ClashResultIfc>();
+
+            public IReadOnlyList<CamelWorks.Core.Clash.ClashResultComments> CommentsFor(
+                string testId, Func<int, bool>? onProgress) =>
+                Array.Empty<CamelWorks.Core.Clash.ClashResultComments>();
+
+            public IReadOnlyList<CamelWorks.Core.Clash.ClashPropertyName> PropertyVocabulary(
+                int settleAfter, Func<int, bool>? onProgress) =>
+                Array.Empty<CamelWorks.Core.Clash.ClashPropertyName>();
+
             public byte[]? ResultSnapshot(string testId, string resultId, int width, int height) => null;
         }
     }

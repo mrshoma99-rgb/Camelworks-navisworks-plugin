@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Controls;
 using System.Windows.Input;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Clash;
 
 namespace CamelWorks.UI.Views
 {
@@ -57,8 +58,8 @@ namespace CamelWorks.UI.Views
         /// <param name="width">Minimum width.</param>
         public static ComboBox Property(string? current, Action<string>? onChanged, double width = 200) =>
             Lazy(current, onChanged, width,
-                 () => Scan().Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase)
-                             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
+                 _ => Scan().Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase)
+                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
                  onDemand: true);
 
         /// <summary>
@@ -69,9 +70,63 @@ namespace CamelWorks.UI.Views
         /// <param name="width">Minimum width.</param>
         public static ComboBox Tab(string? current, Action<string>? onChanged, double width = 170) =>
             Lazy(current, onChanged, width,
-                 () => Scan().Select(p => p.Category).Distinct(StringComparer.OrdinalIgnoreCase)
-                             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
+                 _ => Scan().Select(p => p.Category).Distinct(StringComparer.OrdinalIgnoreCase)
+                            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
                  onDemand: true);
+
+        /// <summary>
+        /// A property picker filled from the elements the clashes are actually between.
+        ///
+        /// <b>Why not the model's properties.</b> A property column on the clash board reads off
+        /// a clashing element, so the names worth offering are the ones those elements carry. The
+        /// general picker samples the federation instead - capped, and stopping once fifty
+        /// elements in a row add nothing - which reads thousands of elements nobody asked about
+        /// and can still miss the one property only the clashing pipes have.
+        ///
+        /// Across every test, because a column added on this board is added to all of them.
+        /// </summary>
+        /// <param name="current">The value as it stands.</param>
+        /// <param name="onChanged">Called with every edit or pick.</param>
+        /// <param name="width">Minimum width.</param>
+        public static ComboBox ClashProperty(string? current, Action<string>? onChanged,
+                                             double width = 200) =>
+            Lazy(current, onChanged, width,
+                 report => Clashing(report).Select(p => p.Name)
+                                           .Distinct(StringComparer.OrdinalIgnoreCase)
+                                           .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
+                 onDemand: true,
+                 watching: "Reading what the clashing elements carry");
+
+        /// <summary>
+        /// A property-tab picker filled from the elements the clashes are between.
+        /// </summary>
+        /// <param name="current">The value as it stands.</param>
+        /// <param name="onChanged">Called with every edit or pick.</param>
+        /// <param name="width">Minimum width.</param>
+        public static ComboBox ClashTab(string? current, Action<string>? onChanged,
+                                        double width = 170) =>
+            Lazy(current, onChanged, width,
+                 report => Clashing(report).Select(p => p.Tab)
+                                           .Where(t => t.Length > 0)
+                                           .Distinct(StringComparer.OrdinalIgnoreCase)
+                                           .OrderBy(n => n, StringComparer.OrdinalIgnoreCase),
+                 onDemand: true,
+                 watching: "Reading what the clashing elements carry");
+
+        /// <summary>The property vocabulary of the clashing elements, or nothing without a model.</summary>
+        /// <param name="report">Progress, returning false to stop.</param>
+        private static IReadOnlyList<ClashPropertyName> Clashing(Func<int, bool>? report)
+        {
+            var session = Host.Current;
+
+            if (session == null || !session.Clash.IsAvailable)
+                return Array.Empty<ClashPropertyName>();
+
+            // The same settling rule the model scan uses, over the right population: an element
+            // that clashes appears in as many results as it clashes in, and a federation's
+            // vocabulary repeats immediately.
+            return session.Clash.PropertyVocabulary(Settled, report);
+        }
 
         /// <summary>
         /// A saved-set picker: editable, filled from the document's selection sets on open.
@@ -80,7 +135,7 @@ namespace CamelWorks.UI.Views
         /// <param name="onChanged">Called with every edit or pick.</param>
         /// <param name="width">Minimum width.</param>
         public static ComboBox Set(string? current, Action<string>? onChanged, double width = 200) =>
-            Lazy(current, onChanged, width, () =>
+            Lazy(current, onChanged, width, _ =>
             {
                 var session = Host.Current;
                 if (session == null) return Enumerable.Empty<string>();
@@ -116,8 +171,14 @@ namespace CamelWorks.UI.Views
         /// True when filling the list costs a walk of the model, so the list offers to go looking
         /// rather than going. False for a supplier the document answers instantly.
         /// </param>
+        /// <param name="watching">
+        /// What to call the search while it runs. Set for a supplier that can take a noticeable
+        /// while: the fill then happens inside a window with a progress line and a Stop rather
+        /// than behind a wait cursor, which is a frozen screen with a nicer pointer.
+        /// </param>
         private static ComboBox Lazy(string? current, Action<string>? onChanged, double width,
-                                     Func<IEnumerable<string>> supply, bool onDemand = false)
+                                     Func<Func<int, bool>?, IEnumerable<string>> supply,
+                                     bool onDemand = false, string? watching = null)
         {
             var box = new ComboBox
             {
@@ -138,20 +199,41 @@ namespace CamelWorks.UI.Views
                 filled = true;
                 box.Items.Clear();
 
-                Mouse.OverrideCursor = Cursors.Wait;
+                var found = new List<string>();
 
-                try
+                if (watching != null)
                 {
-                    foreach (var item in supply()) box.Items.Add(item);
+                    // A window with a bar and a Stop. The supplier reports as it goes, so what is
+                    // on screen is the search happening rather than a pointer saying to wait.
+                    Ui.Working(watching, (onProgress, keepGoing) =>
+                    {
+                        try
+                        {
+                            found.AddRange(supply(seen =>
+                            {
+                                onProgress(seen);
+                                return keepGoing();
+                            }));
+                        }
+                        catch (Exception)
+                        {
+                            // A picker that cannot read is a text box, which is what it was
+                            // yesterday. Not worth an error over autocomplete.
+                        }
+                    });
+
+                    foreach (var item in found) box.Items.Add(item);
                 }
-                catch (Exception)
+                else
                 {
-                    // A picker that cannot read the model is a text box, which is what it was
-                    // yesterday. Not worth an error over autocomplete.
-                }
-                finally
-                {
-                    Mouse.OverrideCursor = null;
+                    try
+                    {
+                        foreach (var item in supply(null)) box.Items.Add(item);
+                    }
+                    catch (Exception)
+                    {
+                        // As above.
+                    }
                 }
 
                 if (box.Items.Count == 0)
