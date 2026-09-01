@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Core.Abstractions
@@ -278,6 +279,75 @@ namespace CamelWorks.Core.Abstractions
         int SelectResults(string testId, IReadOnlyList<string> resultIds, bool add);
 
         /// <summary>
+        /// Everything the board needs, in one walk of the clash tree.
+        ///
+        /// <b>Why one call and not three.</b> Reading a board used to be <c>Tests()</c>, then
+        /// <c>Results(id)</c> and <c>Sides(id)</c> for each test. Every one of those looked the
+        /// test up by walking the whole tree of tests, so the read was quadratic in how many
+        /// tests a document has - and <c>Tests()</c> also materialised every result in the
+        /// document a second time, only to count them. One walk answers all of it.
+        ///
+        /// The comment trail is deliberately not here: a board shows the newest comment and how
+        /// many there are, and reading every body of every comment is a large share of the read
+        /// for something almost nothing looks at. <see cref="CommentsFor"/> fetches them when
+        /// something does.
+        /// </summary>
+        /// <param name="onProgress">Called with the running result count; return false to stop.</param>
+        /// <returns>Every test, with what it is between and what it found.</returns>
+        IReadOnlyList<ClashTestRead> ReadEverything(Func<int, bool>? onProgress);
+
+        /// <summary>
+        /// Read named properties off the elements each of a test's results is between.
+        ///
+        /// <b>Why this is on the clash seam.</b> The alternative is to take each result's element
+        /// keys and resolve them back through the document, which for a key that is not an
+        /// instance GUID means indexing every geometry leaf in the federation. The engine is
+        /// already holding both elements of every result, so there is nothing to look up.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="wanted">The properties to read, each with the id to answer under.</param>
+        /// <param name="onProgress">Called with the running result count; return false to stop.</param>
+        IReadOnlyList<ClashResultValues> ValuesFor(string testId,
+                                                   IReadOnlyList<ClashPropertyWanted> wanted,
+                                                   Func<int, bool>? onProgress);
+
+        /// <summary>
+        /// The IFC GlobalIds of the elements each of a test's results is between.
+        ///
+        /// For an export a receiving tool can select from. Off the engine's own elements, for the
+        /// same reason as <see cref="ValuesFor"/>.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="onProgress">Called with the running result count; return false to stop.</param>
+        IReadOnlyList<ClashResultIfc> IfcFor(string testId, Func<int, bool>? onProgress);
+
+        /// <summary>
+        /// The whole comment trail of every result of one test.
+        ///
+        /// Kept off the read so a board opens on its clashes rather than on everything anybody
+        /// ever said about them. Wanted by an export, which carries the conversation, and by a
+        /// row somebody opens.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="onProgress">Called with the running result count; return false to stop.</param>
+        IReadOnlyList<ClashResultComments> CommentsFor(string testId, Func<int, bool>? onProgress);
+
+        /// <summary>
+        /// Every property name carried by the elements the clashes are between.
+        ///
+        /// <b>Why not the model's.</b> A property column reads off a clashing element, so the list
+        /// to choose from is the vocabulary of the clashing elements - not a sample of the
+        /// federation, which is what it used to be. A sample can miss the one property only the
+        /// clashing pipes carry, and it reads thousands of elements nobody is asking about.
+        ///
+        /// Across every test, because a column added here is added to all of them.
+        /// </summary>
+        /// <param name="settleAfter">Stop once this many elements in a row add no new name.</param>
+        /// <param name="onProgress">Called with the running element count; return false to stop.</param>
+        IReadOnlyList<ClashPropertyName> PropertyVocabulary(int settleAfter,
+                                                            Func<int, bool>? onProgress);
+
+        /// <summary>
         /// The host's rendered image of one result — scene plus the clash highlight — as PNG
         /// bytes, or null when the host cannot make one.
         /// </summary>
@@ -462,6 +532,31 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>True when side B could be described at all.</summary>
         public bool KnowsB => SetB != null || ScopesB.Count > 0;
+    }
+
+    /// <summary>One test as a single read hands it back: what it is, what it is between, what it found.</summary>
+    public sealed class ClashTestRead
+    {
+        /// <summary>Name it.</summary>
+        /// <param name="test">The test.</param>
+        /// <param name="shape">What it is between, or null when the host will not say.</param>
+        /// <param name="results">What it found.</param>
+        public ClashTestRead(ClashTestInfo test, ClashTestSides? shape,
+                             IReadOnlyList<ClashResultInfo> results)
+        {
+            Test = test;
+            Shape = shape;
+            Results = results ?? Array.Empty<ClashResultInfo>();
+        }
+
+        /// <summary>The test.</summary>
+        public ClashTestInfo Test { get; }
+
+        /// <summary>What it is between, or null when the host will not say.</summary>
+        public ClashTestSides? Shape { get; }
+
+        /// <summary>What it found.</summary>
+        public IReadOnlyList<ClashResultInfo> Results { get; }
     }
 
     /// <summary>One clash test.</summary>

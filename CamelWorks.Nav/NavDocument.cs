@@ -305,6 +305,25 @@ namespace CamelWorks.Nav
             return found;
         }
 
+        /// <summary>
+        /// A host item this product's own code already has, as one of ours.
+        ///
+        /// For the readers that are handed elements rather than keys - the clash engine holds
+        /// both elements of every result - so that they can use the shared property and identity
+        /// code without going the long way round through <see cref="Resolve"/>, which for a key
+        /// that is not an instance GUID means indexing the whole federation.
+        /// </summary>
+        /// <param name="item">The host item.</param>
+        /// <returns>The wrapped item, or null when it belongs to no loaded model.</returns>
+        public IModelItem? Wrap(ModelItem? item)
+        {
+            if (item == null) return null;
+
+            var model = ModelFor(item);
+
+            return model == null ? null : new NavModelItem(this, item, model);
+        }
+
         /// <inheritdoc />
         public IModelItem? Resolve(ElementKey key)
         {

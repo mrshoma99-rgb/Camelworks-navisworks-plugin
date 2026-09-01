@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Navisworks.Api;
 using Autodesk.Navisworks.Api.Clash;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Nav.Clash
@@ -60,14 +61,15 @@ namespace CamelWorks.Nav.Clash
 
             foreach (var found in AllTests(clash))
             {
-                var results = new List<ClashResult>();
-                Collect(found.Test.Children, results);
-
                 tests.Add(new ClashTestInfo(
                     found.Test.Guid.ToString(),
                     found.Test.DisplayName ?? "(unnamed test)",
                     found.Folder,
-                    results.Count,
+
+                    // Counted, not collected. This used to build a list of every ClashResult in
+                    // the test purely to read its Length, and the read that follows immediately
+                    // walks them all again anyway.
+                    CountResults(found.Test.Children),
                     LastRunTicksOf(found.Test)));
             }
 
@@ -90,70 +92,8 @@ namespace CamelWorks.Nav.Clash
 
             foreach (var (result, group) in found)
             {
-                var a = KeyOf(result.CompositeItem1);
-                var b = KeyOf(result.CompositeItem2);
-
-                // Both participants have to resolve or there is no clash key, and a key made from
-                // one side would collide with every other result on that element. Skipped, and the
-                // count difference shows up in the funnel rather than being invented here.
-                if (a.IsEmpty || b.IsEmpty) continue;
-
-                var centre = result.Center;
-
-                var info = new ClashResultInfo(
-                    result.Guid.ToString(),
-                    a, b,
-                    centre.X, centre.Y, centre.Z,
-                    StatusOf(result),
-                    AssignedToOf(result))
-                {
-                    // Read while the elements are in hand. Everything here used to be re-derived
-                    // above the seam by resolving the key back through the document index — a
-                    // full-federation walk the board paid on its first result, which is what froze
-                    // it on a real project.
-                    Name = result.DisplayName,
-                    GroupName = group,
-                    NameA = NameOf(result.CompositeItem1),
-                    NameB = NameOf(result.CompositeItem2),
-                    CategoryA = CategoryOf(result.CompositeItem1),
-                    CategoryB = CategoryOf(result.CompositeItem2),
-                };
-
-                try
-                {
-                    var comments = result.Comments;
-                    info.CommentCount = comments.Count;
-
-                    if (comments.Count > 0)
-                    {
-                        info.LastComment = comments[comments.Count - 1].Body;
-
-                        // The whole trail, not just the newest: it displays in the manager and
-                        // travels in the baseline. Results carry a handful at most.
-                        var trail = new List<Core.Clash.ClashComment>(comments.Count);
-
-                        foreach (Comment comment in comments)
-                            trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
-                                CreationTicks(comment), comment.Body ?? string.Empty));
-
-                        info.Comments = trail;
-                    }
-                }
-                catch (Exception)
-                {
-                    // A result whose comments cannot be read still counts and displays.
-                }
-
-                try
-                {
-                    info.Distance = result.Distance;
-                }
-                catch (Exception)
-                {
-                    // A result with no distance simply has none.
-                }
-
-                results.Add(info);
+                var info = Described(result, group);
+                if (info != null) results.Add(info);
             }
 
             return results;
@@ -713,10 +653,18 @@ namespace CamelWorks.Nav.Clash
             var test = FindTest(clash, testId);
             if (test == null) return null;
 
+            return ShapeOf(test, SetSources());
+        }
+
+        /// <summary>What one test is between, against saved-set sources already in hand.</summary>
+        /// <param name="test">The test.</param>
+        /// <param name="sets">The document's saved sets, sourced once.</param>
+        private ClashTestSides? ShapeOf(ClashTest test, IReadOnlyList<(string Name, SelectionSource Source)> sets)
+        {
             try
             {
-                var (setA, scopesA) = SideOf(test.SelectionA);
-                var (setB, scopesB) = SideOf(test.SelectionB);
+                var (setA, scopesA) = SideOf(test.SelectionA, sets);
+                var (setB, scopesB) = SideOf(test.SelectionB, sets);
 
                 var metres = NavUnits.MetresPerUnit(_document.Document.Units);
 
@@ -732,13 +680,50 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>
+        /// Every saved set with the source that points at it, built once.
+        ///
+        /// Describing a test's sides compares each side against these. Built per side per test,
+        /// as it was, a document with two hundred sets and a hundred and sixty tests asked the
+        /// host to create sixty-four thousand selection sources for two lines of text.
+        /// </summary>
+        private IReadOnlyList<(string Name, SelectionSource Source)> SetSources()
+        {
+            var found = new List<(string, SelectionSource)>();
+
+            try
+            {
+                var sets = _document.Document.SelectionSets;
+
+                foreach (var set in AllSets(sets.Value))
+                {
+                    try
+                    {
+                        found.Add((set.DisplayName ?? string.Empty, sets.CreateSelectionSource(set)));
+                    }
+                    catch (Exception)
+                    {
+                        // A set the host will not source cannot be any test's side.
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // A document with no sets at all describes no side as a set, which is not an
+                // error and not worth a message.
+            }
+
+            return found;
+        }
+
+        /// <summary>
         /// What one side is: a single saved set, whole models, or neither.
         ///
         /// A set is recognised by value against every saved set's own source - the host compares
         /// sources by what they point at, so a renamed folder does not break the match. Whole
         /// models are recognised as a selection made only of root items.
         /// </summary>
-        private (string? Set, IReadOnlyList<string> Scopes) SideOf(ClashSelection selection)
+        private (string? Set, IReadOnlyList<string> Scopes) SideOf(
+            ClashSelection selection, IReadOnlyList<(string Name, SelectionSource Source)> sets)
         {
             var none = (string?)null;
             var empty = (IReadOnlyList<string>)Array.Empty<string>();
@@ -749,19 +734,17 @@ namespace CamelWorks.Nav.Clash
 
                 if (sources != null && sources.Count == 1)
                 {
-                    var sets = _document.Document.SelectionSets;
                     var wanted = sources[0];
 
-                    foreach (var set in AllSets(sets.Value))
+                    foreach (var (name, source) in sets)
                     {
                         try
                         {
-                            if (sets.CreateSelectionSource(set).Equals(wanted))
-                                return (set.DisplayName, empty);
+                            if (source.Equals(wanted)) return (name, empty);
                         }
                         catch (Exception)
                         {
-                            // A set the host will not source cannot be this side.
+                            // A source the host will not compare cannot be this side.
                         }
                     }
 
@@ -915,6 +898,425 @@ namespace CamelWorks.Nav.Clash
             if (item == null || items.Contains(item)) return;
 
             items.Add(item);
+        }
+
+        /// <summary>
+        /// One host result as the board wants it, read while the elements are in hand.
+        ///
+        /// Everything here used to be re-derived above the seam by resolving the result's element
+        /// keys back through the document - a full-federation index the board paid for on its
+        /// first row, which is what froze it on a real project. The engine is holding both
+        /// elements; nothing here is a lookup.
+        ///
+        /// The comment trail is not read. A board shows how many comments there are and the
+        /// newest one, and reading every body of every comment was a large share of a read for
+        /// something almost nothing looks at. <see cref="CommentsFor"/> fetches them when an
+        /// export or an opened row actually wants them.
+        /// </summary>
+        /// <param name="result">The host result.</param>
+        /// <param name="group">The clash group it sits in, or null.</param>
+        /// <returns>The descriptor, or null when neither element can be named.</returns>
+        private static ClashResultInfo? Described(ClashResult result, string? group)
+        {
+            var a = KeyOf(result.CompositeItem1);
+            var b = KeyOf(result.CompositeItem2);
+
+            // Both participants have to resolve or there is no clash key, and a key made from
+            // one side would collide with every other result on that element. Skipped, and the
+            // count difference shows up in the funnel rather than being invented here.
+            if (a.IsEmpty || b.IsEmpty) return null;
+
+            var centre = result.Center;
+
+            var info = new ClashResultInfo(
+                result.Guid.ToString(),
+                a, b,
+                centre.X, centre.Y, centre.Z,
+                StatusOf(result),
+                AssignedToOf(result))
+            {
+                Name = result.DisplayName,
+                GroupName = group,
+                NameA = NameOf(result.CompositeItem1),
+                NameB = NameOf(result.CompositeItem2),
+                CategoryA = CategoryOf(result.CompositeItem1),
+                CategoryB = CategoryOf(result.CompositeItem2),
+            };
+
+            try
+            {
+                var comments = result.Comments;
+                info.CommentCount = comments.Count;
+
+                if (comments.Count > 0)
+                    info.LastComment = comments[comments.Count - 1].Body;
+            }
+            catch (Exception)
+            {
+                // A result whose comments cannot be counted still counts and displays.
+            }
+
+            try
+            {
+                info.Distance = result.Distance;
+            }
+            catch (Exception)
+            {
+                // A result with no distance simply has none.
+            }
+
+            return info;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<ClashTestRead> ReadEverything(Func<int, bool>? onProgress)
+        {
+            var read = new List<ClashTestRead>();
+
+            var clash = Clash();
+            if (clash == null) return read;
+
+            // The document's saved sets, sourced once. Describing what a test is between used to
+            // compare a side against every set in the document, per side, per test - so a job
+            // with two hundred sets and a hundred and sixty tests asked the host to build a
+            // selection source sixty-four thousand times for a line of text on a rail.
+            var sets = SetSources();
+
+            var seen = 0;
+
+            foreach (var found in AllTests(clash))
+            {
+                var flat = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(found.Test.Children, null, flat);
+
+                var results = new List<ClashResultInfo>(flat.Count);
+
+                foreach (var (result, group) in flat)
+                {
+                    if (onProgress != null && !onProgress(++seen)) return read;
+
+                    var info = Described(result, group);
+                    if (info != null) results.Add(info);
+                }
+
+                var test = new ClashTestInfo(
+                    found.Test.Guid.ToString(),
+                    found.Test.DisplayName ?? "(unnamed test)",
+                    found.Folder,
+                    flat.Count,
+                    LastRunTicksOf(found.Test));
+
+                read.Add(new ClashTestRead(test, ShapeOf(found.Test, sets), results));
+            }
+
+            return read;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<ClashResultValues> ValuesFor(string testId,
+                                                          IReadOnlyList<ClashPropertyWanted> wanted,
+                                                          Func<int, bool>? onProgress)
+        {
+            var read = new List<ClashResultValues>();
+
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null || wanted == null || wanted.Count == 0) return read;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document. Re-read it.";
+                return read;
+            }
+
+            var flat = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, flat);
+
+            var seen = 0;
+
+            foreach (var (result, _) in flat)
+            {
+                if (onProgress != null && !onProgress(++seen)) return read;
+
+                var values = new ClashResultValues(result.Guid.ToString());
+
+                // Read once per element rather than once per column: a board with six columns
+                // was six property enumerations of the same duct.
+                var a = PropertiesOf(result.CompositeItem1);
+                var b = PropertiesOf(result.CompositeItem2);
+
+                foreach (var column in wanted)
+                {
+                    var fromA = column.Side == ClashElementSide.Second ? null : Look(a, column);
+                    var fromB = column.Side == ClashElementSide.First ? null : Look(b, column);
+
+                    var value = column.Side == ClashElementSide.Both
+                        ? (fromA != null && fromB != null && fromA != fromB
+                            ? fromA + " | " + fromB
+                            : fromA ?? fromB)
+                        : column.Side == ClashElementSide.First ? fromA : fromB;
+
+                    if (value != null) values.Values[column.Id] = value;
+                }
+
+                read.Add(values);
+            }
+
+            return read;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<ClashResultIfc> IfcFor(string testId, Func<int, bool>? onProgress)
+        {
+            var read = new List<ClashResultIfc>();
+
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null) return read;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document. Re-read it.";
+                return read;
+            }
+
+            var flat = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, flat);
+
+            var seen = 0;
+
+            foreach (var (result, _) in flat)
+            {
+                if (onProgress != null && !onProgress(++seen)) return read;
+
+                read.Add(new ClashResultIfc(
+                    result.Guid.ToString(),
+                    IfcOf(result.CompositeItem1),
+                    IfcOf(result.CompositeItem2)));
+            }
+
+            return read;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<ClashResultComments> CommentsFor(string testId, Func<int, bool>? onProgress)
+        {
+            var read = new List<ClashResultComments>();
+
+            LastProblem = null;
+
+            var clash = Clash();
+            if (clash == null) return read;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document. Re-read it.";
+                return read;
+            }
+
+            var flat = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, flat);
+
+            var seen = 0;
+
+            foreach (var (result, _) in flat)
+            {
+                if (onProgress != null && !onProgress(++seen)) return read;
+
+                var trail = new ClashResultComments(result.Guid.ToString());
+
+                try
+                {
+                    foreach (Comment comment in result.Comments)
+                        trail.Trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
+                            CreationTicks(comment), comment.Body ?? string.Empty));
+                }
+                catch (Exception)
+                {
+                    // A result whose comments cannot be read carries none.
+                }
+
+                read.Add(trail);
+            }
+
+            return read;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<ClashPropertyName> PropertyVocabulary(int settleAfter,
+                                                                   Func<int, bool>? onProgress)
+        {
+            var found = new List<ClashPropertyName>();
+
+            var clash = Clash();
+            if (clash == null) return found;
+
+            var seen = new HashSet<(string, string)>();
+
+            // An element appears in as many results as it clashes in, and a federation's property
+            // vocabulary repeats immediately: the fiftieth duct carries what the first one did.
+            var asked = new HashSet<string>(StringComparer.Ordinal);
+            var quiet = 0;
+            var read = 0;
+
+            foreach (var test in AllTests(clash))
+            {
+                var flat = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Test.Children, null, flat);
+
+                foreach (var (result, _) in flat)
+                {
+                    foreach (var item in new[] { result.CompositeItem1, result.CompositeItem2 })
+                    {
+                        if (item == null) continue;
+
+                        // The same element on both sides of ten clashes is one enumeration.
+                        var mark = ItemMark(item);
+
+                        if (mark != null && !asked.Add(mark)) continue;
+
+                        if (onProgress != null && !onProgress(++read)) return Named(seen, found);
+
+                        var before = seen.Count;
+
+                        foreach (var property in PropertiesOf(item))
+                            seen.Add((property.Key.Tab, property.Key.Name));
+
+                        quiet = seen.Count == before ? quiet + 1 : 0;
+
+                        if (settleAfter > 0 && quiet >= settleAfter) return Named(seen, found);
+                    }
+                }
+            }
+
+            return Named(seen, found);
+        }
+
+        private static IReadOnlyList<ClashPropertyName> Named(
+            HashSet<(string Tab, string Name)> seen, List<ClashPropertyName> into)
+        {
+            foreach (var (tab, name) in seen) into.Add(new ClashPropertyName(tab, name));
+
+            return into;
+        }
+
+        /// <summary>Something that tells one element from another without keying it.</summary>
+        private static string? ItemMark(ModelItem item)
+        {
+            try
+            {
+                // Not an ElementKey: this only has to separate elements within one read, and
+                // keying costs a GUID read or a walk up the tree per item.
+                return item.GetHashCode().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>Every property an element carries, by tab and name.</summary>
+        private static Dictionary<(string Tab, string Name), string> PropertiesOf(ModelItem? item)
+        {
+            var found = new Dictionary<(string, string), string>();
+
+            if (item == null) return found;
+
+            try
+            {
+                foreach (var category in item.PropertyCategories)
+                {
+                    var tab = category.DisplayName ?? category.Name ?? "Properties";
+
+                    foreach (var property in category.Properties)
+                    {
+                        var name = property.DisplayName ?? property.Name ?? string.Empty;
+                        if (name.Length == 0) continue;
+
+                        var key = (tab, name);
+
+                        if (!found.ContainsKey(key)) found[key] = Text(property.Value);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // An element the host will not enumerate carries nothing as far as this is
+                // concerned, which is the same answer as an element with no properties.
+            }
+
+            return found;
+        }
+
+        /// <summary>The value one wanted property has on an element, or null.</summary>
+        private static string? Look(Dictionary<(string Tab, string Name), string> properties,
+                                    ClashPropertyWanted wanted)
+        {
+            if (wanted.Tab.Length > 0)
+                return properties.TryGetValue((wanted.Tab, wanted.Name), out var exact)
+                    ? exact
+                    : null;
+
+            // No tab named: the first tab that carries a property of this name.
+            foreach (var pair in properties)
+                if (string.Equals(pair.Key.Name, wanted.Name, StringComparison.OrdinalIgnoreCase))
+                    return pair.Value;
+
+            return null;
+        }
+
+        /// <summary>A property value as text, however the host typed it.</summary>
+        private static string Text(VariantData? value)
+        {
+            if (value == null) return string.Empty;
+
+            try
+            {
+                return value.ToDisplayString() ?? string.Empty;
+            }
+            catch (Exception)
+            {
+                return string.Empty;
+            }
+        }
+
+        /// <summary>One element's IFC GlobalId, through the identity the exporters share.</summary>
+        private string? IfcOf(ModelItem? item)
+        {
+            if (item == null) return null;
+
+            try
+            {
+                return Core.OpenBim.IfcIdentity.Of(_document.Wrap(item));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>How many results a test holds, without building a list of them.</summary>
+        private static int CountResults(SavedItemCollection items)
+        {
+            if (items == null) return 0;
+
+            var count = 0;
+
+            foreach (SavedItem item in items)
+            {
+                if (item is ClashResult) count++;
+                else if (item is ClashResultGroup group) count += CountResults(group.Children);
+            }
+
+            return count;
         }
 
         /// <inheritdoc />

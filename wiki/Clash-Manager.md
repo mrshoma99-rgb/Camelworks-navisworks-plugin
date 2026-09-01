@@ -58,6 +58,33 @@ At the foot of the rail: **run all the tests again**, **rename this test**, **co
 menu holding renumber, move into a folder, copy the list, find duplicates across tests, and
 delete.
 
+### What it costs
+
+**The board holds one screenful of rows at a time.** A test with thousands of results draws the
+rows you can see and builds the rest as you scroll to them, so searching, ticking, sorting and
+dragging a column edge cost the same on a board of fifty thousand results as on one of fifty.
+Typing in the search box waits for you to stop before it filters.
+
+**Reading is one pass.** *Read the results* walks the clash tree once for every test, its results
+and what each test is between. Nothing that only an export wants is read there: the comment trail
+and the IFC GlobalIds are fetched when a baseline is written, each with its own progress line and
+a **Stop**.
+
+**Nothing here searches the model.** Every verb on a board read from the model — focus, isolate,
+status, assign, comment, group, the property columns, the export's IFC ids — goes to the clash
+engine, which is holding both elements of every result. Only a board read from somebody else's
+**file** has element keys and nothing behind them, and only there does reading pay to index the
+federation.
+
+**Property columns belong to the board, not to a test.** A column you add lands on every test's
+results, and *Read the values* fills it across all of them. The names offered in the picker are
+what the clashing elements of every test actually carry — not a sample of the model, which can
+miss a property only the clashing pipes have.
+
+**An edit refreshes what it touched.** A run, a renumber or a compact reads back the tests it
+named; a rename changes a word in place. Only deleting or moving tests — which changes the rail
+itself — reads the document again, and it shows a progress line while it does.
+
 ### Working the board
 
 The board is the picked test's results, as **two kinds of row at the same level**.
