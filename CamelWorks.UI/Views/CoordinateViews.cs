@@ -166,6 +166,7 @@ namespace CamelWorks.UI.Views
 
                     var item = new ClashItem(result.Key(), test.Name)
                     {
+                        Name = result.Name,
                         TestFolder = test.Folder,
                         X = result.PointX * scale,
                         Y = result.PointY * scale,

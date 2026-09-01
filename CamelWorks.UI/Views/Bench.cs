@@ -323,7 +323,9 @@ namespace CamelWorks.UI.Views
                 if (field is FrameworkElement fe && fe.Margin == default)
                     fe.Margin = new Thickness(0, 0, 0, 8);
 
-                stack.Children.Add(field);
+                // Loose, for the same reason Ui.Stack does it: a group rebuilt around a
+                // control the screen keeps in a field must not be told it already has a parent.
+                stack.Children.Add(Ui.Loose(field));
             }
 
             return stack;

@@ -239,6 +239,10 @@ namespace CamelWorks.Nav
         private readonly List<NavModelSource> _models = new List<NavModelSource>();
         private bool _indexed;
 
+        // Set when somebody stopped a build. Cleared with the index, because a document that has
+        // changed is a fresh question rather than the one they already answered.
+        private bool _indexStopped;
+
         // What a key resolved to last time, including the keys that resolved to nothing. Cleared
         // with the index when the document changes.
         private readonly Dictionary<string, ModelItem?> _found =
@@ -274,6 +278,7 @@ namespace CamelWorks.Nav
         {
             Generation++;
             _indexed = false;
+            _indexStopped = false;
             _index.Clear();
             _found.Clear();
             _ifc.Clear();
@@ -692,6 +697,15 @@ namespace CamelWorks.Nav
             // that opens and one that does not.
             if (_indexed) return;
 
+            // Stop means stop.
+            //
+            // A cancelled build leaves the index unbuilt, and the caller that wanted it is almost
+            // always resolving a list - so without this the very next key asks again, the window
+            // comes straight back, and pressing Stop looks like it restarts the thing it was
+            // meant to end. Once somebody has declined the walk, every key resolves to nothing
+            // until the document changes and it is worth offering again.
+            if (_indexStopped) return;
+
             var runner = LongWork;
 
             if (runner == null)
@@ -708,7 +722,11 @@ namespace CamelWorks.Nav
             {
                 // A runner that will not run is worth a slow build rather than a failed verb.
                 Index();
+                return;
             }
+
+            // Cancelled, or stopped part way and left unbuilt.
+            if (!_indexed) _indexStopped = true;
         }
 
         private static void Collect(SavedItemCollection items, List<SelectionSet> result)

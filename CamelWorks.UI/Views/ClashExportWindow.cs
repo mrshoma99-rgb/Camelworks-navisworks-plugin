@@ -162,7 +162,7 @@ namespace CamelWorks.UI.Views
                 DrawFilters();
                 DrawTests();
 
-                _half.Content = _write;
+                _half.Content = Ui.Loose(_write);
                 return _half;
             }
 

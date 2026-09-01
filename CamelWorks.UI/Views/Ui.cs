@@ -659,7 +659,17 @@ namespace CamelWorks.UI.Views
         public static StackPanel Stack(params UIElement?[] children)
         {
             var panel = new StackPanel();
-            foreach (var child in children) if (child != null) panel.Children.Add(child);
+
+            // Loose on the way in.
+            //
+            // A screen keeps a control in a field when it must outlive a redraw, and every redraw
+            // hands it to a fresh panel through here. Clearing or discarding the old panel does
+            // not detach what was inside it, so the second draw would otherwise be told the
+            // element is already the logical child of another element - which is a screen that
+            // works once. Doing it here rather than at each call site is the difference between
+            // a rule and a mechanism; this one has come back four times as a rule.
+            foreach (var child in children) if (child != null) panel.Children.Add(Loose(child));
+
             return panel;
         }
 
@@ -673,7 +683,7 @@ namespace CamelWorks.UI.Views
             {
                 if (child == null) continue;
                 if (child is FrameworkElement element) element.Margin = new Thickness(0, 0, 6, 5);
-                panel.Children.Add(child);
+                panel.Children.Add(Loose(child));
             }
 
             return panel;
@@ -736,7 +746,7 @@ namespace CamelWorks.UI.Views
             // together left every panel with twice the air below it that it has above.
             Padding = new Thickness(12, 12, 12, 4),
             Background = Brushes.Transparent,
-            Content = content,
+            Content = Loose(content),
         };
 
         /// <summary>A titled block of related things.</summary>
@@ -1436,7 +1446,9 @@ namespace CamelWorks.UI.Views
         /// clickable while the work is still going.
         ///
         /// <c>NavDocument.LongWork</c> is pointed here once, so every screen in the product gets
-        /// this without any of them knowing about it.
+        /// this without any of them knowing about it. Stopping one of those is remembered there:
+        /// the caller is usually resolving a list, and without that memory the next item in it
+        /// would open this window again and Stop would look like a restart.
         /// </summary>
         /// <param name="what">What is happening, on the window's title and its first line.</param>
         /// <param name="work">The work, given a progress callback and a keep-going question.</param>
@@ -1471,7 +1483,23 @@ namespace CamelWorks.UI.Views
 
             var job = new Job(window.Dispatcher, status, bar);
 
-            var stop = Quiet("Stop", () => job.IsCancelled = true);
+            System.Windows.Controls.Button? stop = null;
+
+            stop = Quiet("Stop", () =>
+            {
+                job.IsCancelled = true;
+
+                // Said and shown. The work asks whether to keep going between batches rather
+                // than on every item, so there is a moment between the press and the window
+                // going - and a button that stays live through it invites a second press at
+                // something that is already stopping.
+                if (stop != null)
+                {
+                    stop.IsEnabled = false;
+                    stop.Content = "Stopping...";
+                }
+            });
+
             stop.HorizontalAlignment = HorizontalAlignment.Right;
             stop.Margin = new Thickness(0, 12, 0, 0);
             body.Children.Add(stop);

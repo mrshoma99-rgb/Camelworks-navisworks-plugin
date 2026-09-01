@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Clash;
 using CamelWorks.Core.Identity;
 
 namespace CamelWorks.Nav
@@ -81,10 +82,23 @@ namespace CamelWorks.Nav
         /// children are all hidden is an empty box.
         /// </summary>
         /// <param name="keys">What to leave visible.</param>
-        public void Isolate(IReadOnlyList<ElementKey> keys)
+        public void Isolate(IReadOnlyList<ElementKey> keys) => Keep(_document.ItemsFor(keys));
+
+        /// <inheritdoc />
+        public void IsolateSelection()
         {
-            var items = _document.ItemsFor(keys);
-            if (items.Count == 0) return;
+            var items = new ModelItemCollection();
+
+            foreach (ModelItem item in Host.CurrentSelection.SelectedItems) items.Add(item);
+
+            Keep(items);
+        }
+
+        /// <summary>Hide everything but these, their ancestors and what is under them.</summary>
+        /// <param name="items">What to keep visible.</param>
+        private void Keep(ModelItemCollection items)
+        {
+            if (items == null || items.Count == 0) return;
 
             var keep = new ModelItemCollection();
 
@@ -159,6 +173,70 @@ namespace CamelWorks.Nav
             }
 
             return states;
+        }
+
+        /// <inheritdoc />
+        public void ZoomToSelection(double marginMetres)
+        {
+            _ = marginMetres;
+
+            try
+            {
+                if (Host.CurrentSelection.SelectedItems.Count == 0) return;
+
+                // Nothing to borrow and nothing to put back: the selection the host focuses on is
+                // already the one the caller wanted framed.
+                Host.ActiveView.FocusOnCurrentSelection();
+            }
+            catch (Exception)
+            {
+                // A view that will not focus leaves the camera where it is, which is what it did
+                // before anybody pressed anything.
+            }
+        }
+
+        /// <inheritdoc />
+        ///
+        /// <remarks>
+        /// The markers themselves are drawn by the render plug-in, which the host calls once a
+        /// frame with a <c>Graphics</c> to draw into. All that happens here is the swap of the set
+        /// it reads and a nudge to redraw - so dropping a marker costs nothing beyond the frame it
+        /// appears on, and there is no geometry, no file and no re-index behind it.
+        /// </remarks>
+        public void ShowMarkers(IReadOnlyList<SceneMarker> markers)
+        {
+            MarkerOverlay.Show(markers);
+            Redraw();
+        }
+
+        /// <inheritdoc />
+        public void ClearMarkers()
+        {
+            MarkerOverlay.Clear();
+            Redraw();
+        }
+
+        /// <inheritdoc />
+        public bool CanMark => true;
+
+        /// <summary>
+        /// Ask for a frame.
+        ///
+        /// <c>All</c> rather than one or the other because the markers are drawn from
+        /// <c>Render</c> and a host that has only been asked for an overlay pass may leave the
+        /// model pass alone - which reads as a marker that never appeared.
+        /// </summary>
+        private void Redraw()
+        {
+            try
+            {
+                Host.ActiveView?.RequestDelayedRedraw(ViewRedrawRequests.All);
+            }
+            catch (Exception)
+            {
+                // No active view, or one mid-teardown. The set is already swapped, so the next
+                // frame the host draws for its own reasons shows it.
+            }
         }
 
         /// <inheritdoc />

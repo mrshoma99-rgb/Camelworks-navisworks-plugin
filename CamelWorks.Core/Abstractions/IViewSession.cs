@@ -38,6 +38,28 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="keys">What stays visible.</param>
         void Isolate(IReadOnlyList<ElementKey> keys);
 
+        /// <summary>
+        /// Hide everything but what the host has selected right now.
+        ///
+        /// <b>Why this exists beside the one above.</b> A caller that already has the elements -
+        /// the clash board asks the engine for the two a result is between, which costs nothing -
+        /// had to turn them into keys and hand those over, and resolving a key that is not an
+        /// instance GUID means indexing every geometry leaf in the federation. So isolating what
+        /// was already selected started a walk of the whole model to find what it was already
+        /// holding.
+        /// </summary>
+        void IsolateSelection();
+
+        /// <summary>
+        /// Frame what the host has selected right now.
+        ///
+        /// The counterpart of <see cref="IsolateSelection"/>, and for the same reason: the host
+        /// focuses on its own selection, so a caller that has already made one has nothing left
+        /// to look up.
+        /// </summary>
+        /// <param name="marginMetres">How much room to leave around it.</param>
+        void ZoomToSelection(double marginMetres);
+
         /// <summary>Unhide everything, including what somebody else hid.</summary>
         void ShowAll();
 
@@ -116,6 +138,27 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="width">Pixels.</param>
         /// <param name="height">Pixels.</param>
         byte[]? Capture(int width, int height);
+
+        /// <summary>
+        /// Whether this host can hang temporary graphics in the view.
+        ///
+        /// False on a host that has no live view - the Studio harness, a headless run - and the
+        /// caller says so rather than reporting markers that were never drawn.
+        /// </summary>
+        bool CanMark { get; }
+
+        /// <summary>
+        /// Hang these markers in the view, replacing whatever was there.
+        ///
+        /// Temporary graphics: they are drawn on top of the model each frame and are gone the
+        /// moment <see cref="ClearMarkers"/> is called or Navisworks closes. Nothing is added to
+        /// the document, nothing appears in the selection tree, and nothing needs unloading.
+        /// </summary>
+        /// <param name="markers">Where the balls go, in document units. Empty clears.</param>
+        void ShowMarkers(IReadOnlyList<Clash.SceneMarker> markers);
+
+        /// <summary>Take every marker down.</summary>
+        void ClearMarkers();
 
         /// <summary>Set a section box around the given elements, with a context margin.</summary>
         void SetSectionBox(BoundingBox box, double marginMetres);

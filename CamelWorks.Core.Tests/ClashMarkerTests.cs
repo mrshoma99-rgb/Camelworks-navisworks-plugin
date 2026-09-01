@@ -164,6 +164,75 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(2, lines.Count(l => l == "o Clash1_New"));
         }
 
+        /// <summary>
+        /// The whole reason the file is worth sending: the person opening it in another tool has
+        /// to be able to say which clash they are looking at back to the person who sent it.
+        /// </summary>
+        [Fact]
+        public void An_object_is_named_what_the_engine_named_the_clash()
+        {
+            var one = At("a", 0, status: FindingStatus.Active);
+            one.Name = "Clash117";
+
+            var two = At("b", 4, status: FindingStatus.Resolved);
+            two.Name = "Riser 3 v Beam";
+
+            var lines = ClashMarkers.Write(new[] { one, two }).Text.Split('\n');
+
+            Assert.Contains("o Clash117_Active", lines);
+
+            // Whitespace-delimited format: a name with spaces in it would arrive as an object
+            // called "Riser" and two pieces of nonsense after it.
+            Assert.Contains("o Riser_3_v_Beam_Resolved", lines);
+        }
+
+        [Fact]
+        public void A_clash_with_no_name_falls_back_to_the_counter()
+        {
+            var named = At("a", 0);
+            named.Name = "Clash117";
+
+            var lines = ClashMarkers.Write(new[] { named, At("b", 4) }).Text.Split('\n');
+
+            Assert.Contains("o Clash117_New", lines);
+            Assert.Contains("o Clash2_New", lines);
+        }
+
+        /// <summary>
+        /// Two objects of one name in a selection tree is a tree where one of them cannot be
+        /// pointed at, which is the one thing this file is for.
+        /// </summary>
+        [Fact]
+        public void Two_clashes_of_the_same_name_are_still_told_apart()
+        {
+            var one = At("a", 0);
+            var two = At("b", 4);
+            var three = At("c", 8);
+
+            one.Name = two.Name = three.Name = "Clash1";
+
+            var lines = ClashMarkers.Write(new[] { one, two, three }).Text
+                                    .Split('\n').Where(l => l.StartsWith("o ")).ToList();
+
+            Assert.Equal(3, lines.Count);
+            Assert.Equal(3, lines.Distinct().Count());
+            Assert.Contains("o Clash1_New", lines);
+        }
+
+        /// <summary>Names are per test, so the same name in two tests is not a collision.</summary>
+        [Fact]
+        public void The_same_name_under_two_tests_is_left_alone()
+        {
+            var one = At("a", 0);
+            var two = At("b", 4, test: "L04 MEP v STR");
+
+            one.Name = two.Name = "Clash1";
+
+            var lines = ClashMarkers.Write(new[] { one, two }).Text.Split('\n');
+
+            Assert.Equal(2, lines.Count(l => l == "o Clash1_New"));
+        }
+
         [Fact]
         public void Face_indices_run_across_the_whole_file_because_that_is_what_OBJ_says()
         {

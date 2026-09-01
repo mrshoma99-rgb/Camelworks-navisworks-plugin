@@ -838,35 +838,29 @@ namespace CamelWorks.Nav.Clash
                 return -1;
             }
 
-            var test = FindTest(clash, testId);
+            var byId = ById(clash, testId);
 
-            if (test == null)
+            if (byId == null)
             {
                 LastProblem = "That test is no longer in the document. Re-read it.";
                 return -1;
             }
 
-            var wanted = new HashSet<string>(resultIds ?? Array.Empty<string>(),
-                                             StringComparer.OrdinalIgnoreCase);
-
-            if (wanted.Count == 0) return 0;
-
-            // One pass over this test's results rather than one pass per row: the walk is over
-            // the test's own children, not the federation, but a board with a thousand picked
-            // rows would still do it a thousand times.
-            var found = new List<(ClashResult Result, string? Group)>();
-            CollectWithGroups(test.Children, null, found);
+            if (resultIds == null || resultIds.Count == 0) return 0;
 
             var items = new ModelItemCollection();
 
-            foreach (var entry in found)
+            foreach (var wanted in resultIds)
             {
-                if (!wanted.Contains(entry.Result.Guid.ToString())) continue;
+                // Straight to the result. This used to walk every result the test holds to find
+                // the handful that were picked, which on a large test is why one press on Focus
+                // took as long as it did.
+                if (wanted == null || !byId.TryGetValue(wanted, out var result)) continue;
 
                 // The two items the engine recorded when the test ran. No key, no lookup: it is
                 // still holding them.
-                Take(items, entry.Result.CompositeItem1);
-                Take(items, entry.Result.CompositeItem2);
+                Take(items, result.CompositeItem1);
+                Take(items, result.CompositeItem2);
             }
 
             try
@@ -1357,18 +1351,17 @@ namespace CamelWorks.Nav.Clash
             }
         }
 
-        private static ClashResult? FindResult(DocumentClash clash, string testId, string resultId)
+        /// <summary>One result of one test, by id, without walking the test to find it.</summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        private ClashResult? FindResult(DocumentClash clash, string testId, string resultId)
         {
-            var test = FindTest(clash, testId);
-            if (test == null) return null;
+            var byId = ById(clash, testId);
 
-            var found = new List<(ClashResult Result, string? Group)>();
-            CollectWithGroups(test.Children, null, found);
-
-            return found
-                .Select(f => f.Result)
-                .FirstOrDefault(r => string.Equals(r.Guid.ToString(), resultId,
-                                                   StringComparison.OrdinalIgnoreCase));
+            return byId != null && resultId != null && byId.TryGetValue(resultId, out var found)
+                ? found
+                : null;
         }
 
         private static long CreationTicks(Comment comment)
@@ -1442,8 +1435,76 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>The clash document when it can be written, or null with the reason said.</summary>
+        /// <summary>
+        /// One test's results by id, so a row verb does not walk the test to find one row.
+        ///
+        /// <b>Why this exists.</b> Focus, Isolate, a snapshot and the engine's own saved view each
+        /// name a result by id, and each was finding it by walking every result the test holds -
+        /// twice, for a Focus on a single row, because putting the camera on the engine's view and
+        /// selecting the two elements are separate calls. On a test with twenty thousand results
+        /// that is two traversals of twenty thousand items to answer a click, which is why Focus
+        /// felt slow next to a tool that keeps the result in hand.
+        ///
+        /// Built once per test, on the first verb that needs it, and dropped whole by any write -
+        /// see <see cref="Writable"/>, which every edit passes through, so there is no list of
+        /// mutators for anybody to keep in step.
+        /// </summary>
+        private readonly Dictionary<string, Dictionary<string, ClashResult>> _byId =
+            new Dictionary<string, Dictionary<string, ClashResult>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Which generation of the document the cache above was built against.</summary>
+        private int _cachedAt = -1;
+
+        /// <summary>
+        /// One test's results by id, built if this is the first ask since the last write.
+        /// </summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="testId">Which test.</param>
+        /// <returns>The results by id, or null when there is no such test.</returns>
+        private Dictionary<string, ClashResult>? ById(DocumentClash clash, string testId)
+        {
+            // A document that has changed underneath invalidates every handle in here.
+            if (_cachedAt != _document.Generation)
+            {
+                _cachedAt = _document.Generation;
+                _byId.Clear();
+            }
+
+            if (testId == null) return null;
+
+            if (_byId.TryGetValue(testId, out var known)) return known;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null) return null;
+
+            var flat = new List<(ClashResult Result, string? Group)>();
+            CollectWithGroups(test.Children, null, flat);
+
+            var byId = new Dictionary<string, ClashResult>(flat.Count, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (result, _) in flat) byId[result.Guid.ToString()] = result;
+
+            _byId[testId] = byId;
+
+            return byId;
+        }
+
+        /// <summary>Throw the by-id cache away, because the results it points at have moved.</summary>
+        private void Forget()
+        {
+            _byId.Clear();
+            _cachedAt = -1;
+        }
+
         private DocumentClash? Writable()
         {
+            // Anything that asks to write is about to make the cached result handles wrong - a
+            // regroup rebuilds the whole test from copies, so every one of them is replaced. This
+            // is the one door every edit goes through, which is why the invalidation lives here
+            // rather than in a list of mutators somebody has to remember to add to.
+            Forget();
+
             var clash = Clash();
 
             if (clash == null)

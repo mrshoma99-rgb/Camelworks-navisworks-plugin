@@ -466,11 +466,16 @@ namespace CamelWorks.UI.Views
                                 CultureInfo.InvariantCulture, out var mm) && mm > 0)
                             _markerAcross = mm;
                     }, 90), "millimetres across"),
-                Ui.Actions(Ui.Quiet("Show all", () =>
-                {
-                    _session.View.ShowAll();
-                    Said(Ui.Done("Everything is visible again."));
-                })));
+                Ui.Actions(
+                    Ui.Quiet("Clear the markers", Unmark),
+                    Ui.Quiet("Show all", () =>
+                    {
+                        _session.View.ShowAll();
+                        Said(Ui.Done("Everything is visible again."));
+                    })),
+                Ui.Small("A marker is a status-coloured ball drawn over the model, halfway up the "
+                         + "gap that is too low. It is not geometry: nothing is added to the "
+                         + "document, and clearing them takes them straight back down."));
 
             private UIElement OutPage() => Bench.Group("Out of the tab",
                 Ui.Actions(
@@ -1166,7 +1171,14 @@ namespace CamelWorks.UI.Views
             ///
             /// Halfway rather than at the surface or the soffit: the point of the marker is to be
             /// visible in the space the person will not fit through.
+            ///
+            /// <b>Temporary graphics, not geometry.</b> They are drawn over the model each frame
+            /// from a set handed to the view, so they appear at once and clear at once - nothing
+            /// is added to the document, nothing joins the selection tree, nothing needs
+            /// unloading.
             /// </summary>
+            /// <param name="picked">The picked rows.</param>
+            /// <param name="say">Where to report what happened.</param>
             private void Spheres(IReadOnlyList<object> picked, Panel say)
             {
                 say.Children.Clear();
@@ -1174,66 +1186,47 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                var items = rows.Select(r => new ClashItem(
-                    ClashKey.Create(r.Floor.Key, r.Over.Key, r.Span.X, r.Span.Y,
-                                    r.Floor.Box.MaxZ + r.Clear / 2), "Clearance")
+                if (!_session.View.CanMark)
                 {
-                    X = r.Span.X,
-                    Y = r.Span.Y,
-                    Z = r.Floor.Box.MaxZ + r.Clear / 2,
-                    Status = Enum.TryParse<FindingStatus>(r.Status, true, out var parsed)
-                        ? parsed
-                        : FindingStatus.New,
-                }).ToList();
-
-                var mesh = ClashMarkers.Write(items, new MarkerRecipe
-                {
-                    RadiusMetres = _markerAcross / 2000.0,
-
-                    // The coordinates above are already metres.
-                    MetresPerUnit = 1.0,
-                });
-
-                if (mesh.Refusal != null)
-                {
-                    say.Children.Add(Ui.Problem(mesh.Refusal));
+                    say.Children.Add(Ui.Problem("This host has no view to draw markers into."));
                     return;
                 }
 
-                var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "camelworks-markers");
-                var stamp = DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture);
-                var obj = System.IO.Path.Combine(folder, "clearance-spheres-" + stamp + ".obj");
-                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+                // The clearance engine works in metres and the host's graphics calls take the
+                // document's own units, so every coordinate and the radius cross over here.
+                var metres = _session.MetresPerUnit;
+                var perUnit = metres > 0 ? metres : 1.0;
+                var radius = _markerAcross / 2000.0 / perUnit;
 
-                try
+                if (radius <= 0)
                 {
-                    System.IO.Directory.CreateDirectory(folder);
-
-                    System.IO.File.WriteAllText(obj, mesh.Text.Replace(
-                        "mtllib " + mesh.MaterialFile,
-                        "mtllib " + System.IO.Path.GetFileName(mtl)));
-
-                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
-                }
-                catch (Exception e)
-                {
-                    say.Children.Add(Ui.Problem("Could not write the markers: " + Ui.Describe(e)));
+                    say.Children.Add(Ui.Problem("A marker of no size is a marker nobody can see. "
+                        + "Give it a size on the Model page."));
                     return;
                 }
 
-                try
-                {
-                    say.Children.Add(_session.Model.Document.TryAppendFile(obj)
-                        ? Ui.Done(Ui.Count(rows.Count, "sphere") + " dropped in the low gaps, "
-                            + "coloured by status. They are ordinary geometry: take them out "
-                            + "again from the host's file list, where the file is called "
-                            + System.IO.Path.GetFileName(obj) + ".")
-                        : (UIElement)Ui.Problem("The host would not append the marker file."));
-                }
-                catch (Exception e)
-                {
-                    say.Children.Add(Ui.Problem("Could not append the markers: " + Ui.Describe(e)));
-                }
+                var marks = rows.Select(r => new SceneMarker(
+                        r.Span.X / perUnit,
+                        r.Span.Y / perUnit,
+                        (r.Floor.Box.MaxZ + r.Clear / 2) / perUnit,
+                        radius,
+                        ClashMarkers.Colour(Enum.TryParse<FindingStatus>(r.Status, true, out var s)
+                            ? s
+                            : FindingStatus.New)))
+                    .ToList();
+
+                _session.View.ShowMarkers(marks);
+
+                say.Children.Add(Ui.Done(Ui.Count(marks.Count, "sphere") + " hanging in the low "
+                    + (marks.Count == 1 ? "gap" : "gaps") + ", coloured by status. They are drawn "
+                    + "over the model, not added to it - \"Clear the markers\" takes them down."));
+            }
+
+            /// <summary>Take every marker down.</summary>
+            private void Unmark()
+            {
+                _session.View.ClearMarkers();
+                Said(Ui.Done("The markers are down."));
             }
 
             /// <summary>

@@ -278,6 +278,15 @@ namespace CamelWorks.UI.Views
 
             private double _markerAcross = 300;
 
+            /// <summary>
+            /// Whether Focus also drops a ball where it puts the camera.
+            ///
+            /// On, because the thing Focus is for is finding a clash, and a clash between a duct
+            /// and a beam looks exactly like a duct and a beam until something says which point
+            /// of it the engine objected to.
+            /// </summary>
+            private bool _markOnFocus = true;
+
             /// <summary>What the board currently shows, for the spreadsheet writer.</summary>
             private List<Row> _shown = new List<Row>();
 
@@ -319,6 +328,21 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Bumped whenever a row's own contents change, which no filter can see.</summary>
             private int _edits;
+
+            /// <summary>
+            /// The columns somebody has dragged. Those are pixels from then on, not a share of
+            /// what is left - a star takes its width from what the other columns are doing, which
+            /// is the wrong answer for one that has just been given a width by hand.
+            /// </summary>
+            private readonly HashSet<string> _sized = new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>Which column is being dragged, how wide it was, and where the drag began.</summary>
+            private string? _dragging;
+            private double _dragFrom;
+            private double _dragAt;
+
+            /// <summary>The header's own column grid, which is what a drag measures against.</summary>
+            private Grid? _headCells;
 
             /// <summary>The column grids of the rows that exist right now, for a drag to resize.</summary>
             private readonly List<WeakReference<Grid>> _cells = new List<WeakReference<Grid>>();
@@ -539,8 +563,8 @@ namespace CamelWorks.UI.Views
                 var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 0) };
 
                 DockPanel.SetDock(_railTools, Dock.Right);
-                top.Children.Add(_railTools);
-                top.Children.Add(_railBox);
+                top.Children.Add(Ui.Loose(_railTools));
+                top.Children.Add(Ui.Loose(_railBox));
 
                 var head = new Border
                 {
@@ -563,7 +587,7 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(list);
 
                 Grid.SetRow(_railFoot, 2);
-                grid.Children.Add(_railFoot);
+                grid.Children.Add(Ui.Loose(_railFoot));
 
                 var pane = new Border
                 {
@@ -983,6 +1007,8 @@ namespace CamelWorks.UI.Views
                 if (OnFile)
                     return new List<Parts.Entry>
                     {
+                        Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                                        () => ExportTestMarkers(read)),
                         Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
                     };
 
@@ -1003,6 +1029,8 @@ namespace CamelWorks.UI.Views
                                     () => CompactTests(One(entry), _log)),
                     Parts.Entry.Rule(),
                     Parts.Entry.Act("Find duplicates across tests", Glyphs.Compact, Duplicates),
+                    Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                                    () => ExportTestMarkers(read)),
                     Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
                     Parts.Entry.Rule(),
                     Parts.Entry.Danger("Delete this test", Glyphs.Bin,
@@ -1280,7 +1308,7 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(body);
 
                 Grid.SetRow(_bar, 2);
-                grid.Children.Add(_bar);
+                grid.Children.Add(Ui.Loose(_bar));
 
                 var ground = new Border { Child = grid };
                 ground.Tint(Border.BackgroundProperty, "Bg");
@@ -1318,8 +1346,8 @@ namespace CamelWorks.UI.Views
                     // never touched — see the constructor.
                     DockPanel.SetDock(_strip, Dock.Left);
                     DockPanel.SetDock(_boardBox, Dock.Right);
-                    _tabs.Children.Add(_boardBox);
-                    _tabs.Children.Add(_strip);
+                    _tabs.Children.Add(Ui.Loose(_boardBox));
+                    _tabs.Children.Add(Ui.Loose(_strip));
                 }
 
                 _strip.Content = Strip(entry);
@@ -1533,7 +1561,7 @@ namespace CamelWorks.UI.Views
 
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
-                verbs.Children.Add(_view);
+                verbs.Children.Add(Ui.Loose(_view));
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
                     () => Configure("source")));
@@ -1900,15 +1928,33 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// How wide each column is, as one list, so a row and a drag cannot disagree.
             /// </summary>
-            private List<(GridLength Width, double Least)> Widths()
+            private List<(string Name, GridLength Width, double Least)> Widths()
             {
-                var columns = new List<(GridLength, double)>();
+                var columns = new List<(string, GridLength, double)>();
 
                 void Fixed(double width) =>
-                    columns.Add((new GridLength(width), 0));
+                    columns.Add((string.Empty, new GridLength(width), 0));
+
+                // A column somebody has dragged is that many pixels wide from then on, whatever
+                // it was before. Sharing what is left is the right resting behaviour and the
+                // wrong thing to do to a column that has just been given a width by hand: a star
+                // takes its size from what the others are doing, so dragging one moved the rest
+                // and the edge under the pointer went where the arithmetic sent it.
+                void Named2(string name, double share, double least)
+                {
+                    if (_sized.Contains(name))
+                    {
+                        columns.Add((name, new GridLength(Wide(name, least)), least));
+                        return;
+                    }
+
+                    columns.Add((name, new GridLength(share, GridUnitType.Star), least));
+                }
 
                 void Flexible(double share, double least) =>
-                    columns.Add((new GridLength(share, GridUnitType.Star), least));
+                    columns.Add((string.Empty, new GridLength(share, GridUnitType.Star), least));
+
+                _ = (Action<double, double>)Flexible;
 
                 Fixed(26);
 
@@ -1927,12 +1973,12 @@ namespace CamelWorks.UI.Views
                 // somebody added on purpose should not cost them the verbs.
                 var tight = _columns.Count > 0;
 
-                Flexible(Wide(Named, 2), tight ? 110 : 130);
-                Flexible(Wide(ItemA, 1), tight ? 58 : 74);
-                Flexible(Wide(ItemB, 1), tight ? 58 : 74);
+                Named2(Named, 2, tight ? 110 : 130);
+                Named2(ItemA, 1, tight ? 58 : 74);
+                Named2(ItemB, 1, tight ? 58 : 74);
 
-                Fixed(Wide(Clashes, tight ? 44 : 48));
-                Fixed(Wide(Worst, tight ? 60 : 64));
+                columns.Add((Clashes, new GridLength(Wide(Clashes, tight ? 44 : 48)), 0));
+                columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
 
                 // The property columns land between Worst and Status, where the eye is already
                 // reading facts about the elements rather than decisions about them.
@@ -1941,10 +1987,10 @@ namespace CamelWorks.UI.Views
                 // somebody adds a column is a table that scrolls sideways off its own row verbs
                 // on the second one. A property column takes a share of what there is and
                 // ellipsises, with the whole value on the cell's tooltip.
-                foreach (var column in _columns) Flexible(Wide(column.Title, 1), 60);
+                foreach (var column in _columns) Named2(column.Title, 1, 60);
 
-                Fixed(Wide(Status, 104));
-                Fixed(Wide(Assigned, 104));
+                columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
+                columns.Add((Assigned, new GridLength(Wide(Assigned, 104)), 0));
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
                 // design's 92 holds three and cuts the fourth, which in the picture read as a
@@ -2101,7 +2147,11 @@ namespace CamelWorks.UI.Views
                 frame.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
                 _head.Content = Header(shape.Groups, shape.Loose);
-                frame.Children.Add(_head);
+
+                // Loose first. The header is kept in a field so its tri-state can be redrawn on
+                // its own, and this builds a new frame every draw - so the second draw hands the
+                // same element to a second parent while the first still holds it.
+                frame.Children.Add(Ui.Loose(_head));
 
                 if (shape.Groups.Count == 0 && shape.Loose.Count == 0)
                 {
@@ -2127,7 +2177,7 @@ namespace CamelWorks.UI.Views
                     _list = new BoardList(Drawn) { ItemsSource = _lines };
 
                     Grid.SetRow(_list, 1);
-                    frame.Children.Add(_list);
+                    frame.Children.Add(Ui.Loose(_list));
                 }
 
                 var card = new Border
@@ -2179,6 +2229,8 @@ namespace CamelWorks.UI.Views
             private UIElement Header(List<BoardRow> groups, List<BoardRow> loose)
             {
                 var grid = Cells();
+
+                _headCells = grid;
 
                 var top = groups.Concat(loose).ToList();
                 var picked = top.Count(r => _picked.Contains(r.Id));
@@ -2296,7 +2348,31 @@ namespace CamelWorks.UI.Views
                     ToolTip = "Drag to resize " + column,
                 };
 
-                grip.DragDelta += (s, e) => Ui.Safely(() => Widen(column, e.HorizontalChange));
+                // Measured from the pointer, not from the thumb.
+                //
+                // The thumb sits at the right edge of the column it resizes, so resizing moves it
+                // - and a Thumb reports each change from wherever it now is. Feeding that back
+                // into the width made the edge lag, overshoot, and on a column whose neighbours
+                // took up the slack, travel the opposite way to the hand. The pointer does not
+                // move when the column does, so the whole drag is measured against where it
+                // started.
+                grip.DragStarted += (s, e) => Ui.Safely(() =>
+                {
+                    _dragging = column;
+                    _dragFrom = Rendered(column);
+                    _dragAt = System.Windows.Input.Mouse.GetPosition(_head).X;
+                });
+
+                grip.DragDelta += (s, e) => Ui.Safely(() =>
+                {
+                    if (!string.Equals(_dragging, column, StringComparison.Ordinal)) return;
+
+                    var now = System.Windows.Input.Mouse.GetPosition(_head).X;
+
+                    Widen(column, _dragFrom + (now - _dragAt));
+                });
+
+                grip.DragCompleted += (s, e) => Ui.Safely(() => _dragging = null);
 
                 var cell = new Grid();
                 cell.Children.Add(press);
@@ -2306,29 +2382,45 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Make a column wider or narrower by what the hand moved.
+            /// Set one column to the width the drag has reached.
             ///
-            /// The three flexible columns hold a share rather than a width, so a drag on one of
-            /// them moves the share by about what sixty pixels is worth — near enough that the
-            /// column follows the pointer, and it cannot fight the others for room the way a
-            /// fixed width would.
+            /// An absolute width, in pixels, not a nudge. The old arithmetic added the drag to a
+            /// star share through a divide-by-sixty, so a column's width depended on what every
+            /// other column was doing and the number under the pointer was never the number on
+            /// screen. From the first drag a column is simply as wide as it was dragged to.
             /// </summary>
             /// <param name="column">Which column.</param>
-            /// <param name="by">How far the hand moved.</param>
-            private void Widen(string column, double by)
+            /// <param name="to">How wide it should be now, in pixels.</param>
+            private void Widen(string column, double to)
             {
-                var flexes = column == Named || column == ItemA || column == ItemB;
-                var was = Wide(column, flexes ? 1 : 95);
-
-                _wide[column] = flexes
-                    ? Math.Max(0.4, Math.Min(8, was + (by / 60)))
-                    : Math.Max(44, Math.Min(320, was + by));
+                _sized.Add(column);
+                _wide[column] = Math.Max(Least(column), Math.Min(640, to));
 
                 // Every realised row shares these column definitions, so setting the width once
                 // moves all of them. This used to rebuild every row on the board on every
                 // mouse-move of the drag.
                 Resize();
             }
+
+            /// <summary>How wide a column is on screen right now.</summary>
+            /// <param name="column">Which column.</param>
+            private double Rendered(string column)
+            {
+                var at = Widths().FindIndex(c => string.Equals(c.Name, column, StringComparison.Ordinal));
+
+                if (at < 0 || !(_head.Content is FrameworkElement) || _headCells == null) return Least(column);
+
+                return at < _headCells.ColumnDefinitions.Count
+                    ? _headCells.ColumnDefinitions[at].ActualWidth
+                    : Least(column);
+            }
+
+            /// <summary>The narrowest a column may be dragged, so a header stays readable.</summary>
+            /// <param name="column">Which column.</param>
+            private double Least(string column) =>
+                column == Named ? 90
+                : column == ItemA || column == ItemB ? 56
+                : 44;
 
             /// <summary>A column label.</summary>
             /// <param name="text">What it says.</param>
@@ -2925,6 +3017,9 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
                     Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
                                     () => Spheres(picked, _toast)),
+                    Parts.Entry.Act("Clear the markers", Glyphs.EyeOff, () => Unmark(_toast)),
+                    Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                                    () => ExportMarkers(rows, what, _toast)),
                     Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
                                     () => RaiseIssue(picked, false)),
                     Parts.Entry.Act("Attach to an existing issue", Glyphs.Link,
@@ -2962,16 +3057,16 @@ namespace CamelWorks.UI.Views
                     right.Children.Add(placed);
                 }
 
-                right.Children.Add(_send);
+                right.Children.Add(Ui.Loose(_send));
 
                 _saveButton = Ui.Primary("Save the changes", () =>
                 {
                     if (OnFile) SaveMarkup();
-                    else Sync();
+                    else SaveWork();
                 });
                 _saveButton.Margin = new Thickness(8, 0, 0, 0);
                 _saveButton.VerticalAlignment = VerticalAlignment.Center;
-                right.Children.Add(_saveButton);
+                right.Children.Add(Ui.Loose(_saveButton));
 
                 DockPanel.SetDock(right, Dock.Right);
                 row.Children.Add(right);
@@ -3502,9 +3597,19 @@ namespace CamelWorks.UI.Views
                                 CultureInfo.InvariantCulture, out var mm) && mm > 0)
                             _markerAcross = mm;
                     }, 90), "millimetres across"),
-                Ui.Small("Spheres are ordinary geometry, coloured by status, appended as their own "
-                         + "file so they come out again from the host's file list. \"Show "
-                         + "everything again\" is the eye symbol under the results."));
+                Ui.Check("Drop a marker where the camera lands on Focus", _markOnFocus,
+                         v => _markOnFocus = v),
+                Ui.Actions(Ui.Icon(Glyphs.EyeOff, "Clear the markers", () => Unmark(_toast))),
+                Ui.Small("A marker is a status-coloured ball drawn over the model at the point "
+                         + "where the two elements met. It is not geometry: nothing is added to "
+                         + "the document, nothing appears in the selection tree, and clearing "
+                         + "them takes them straight back down. \"Show everything again\" is the "
+                         + "eye symbol under the results."),
+                Ui.Small("\"Export the markers as .obj\", under the results and on the test menu, "
+                         + "writes the same balls as a file instead - a group per test, an object "
+                         + "per clash named what the engine named it, coloured by status. That is "
+                         + "for the person who has neither this plug-in nor Navisworks. Send the "
+                         + ".mtl beside it or the colours are lost."));
 
             private UIElement RoundPage() => OnFile
                 ? Bench.Group("The review round",
@@ -4436,6 +4541,30 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Copy the rail to the clipboard, one test per line.</summary>
             /// <param name="read">The tests.</param>
+            /// <summary>
+            /// Every result of the shown tests, as an OBJ.
+            ///
+            /// The whole of what is read rather than one test, because the reason to write this
+            /// file is to send somebody a package - and a package of one test is a phone call.
+            /// The tests stay apart inside it: a group each, so the receiving tool's tree reads
+            /// the same way this board does.
+            /// </summary>
+            /// <param name="read">The tests on the board.</param>
+            private void ExportTestMarkers(IReadOnlyList<TestEntry> read)
+            {
+                var rows = read.SelectMany(e => e.Rows).ToList();
+
+                if (rows.Count == 0)
+                {
+                    Said(Ui.Problem("There are no results to mark. Read the results first."));
+                    return;
+                }
+
+                ExportMarkers(rows, read.Count == 1
+                    ? "\"" + read[0].Test.Name + "\""
+                    : Ui.Count(read.Count, "test"), _log);
+            }
+
             private void CopyTests(IReadOnlyList<TestEntry> read)
             {
                 var lines = new List<string> { "Test\tFolder\tResults\tNew\tActive\tReviewed\tClosed" };
@@ -4689,6 +4818,11 @@ namespace CamelWorks.UI.Views
                 if (point != null)
                     _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
 
+                // The ball, if it is wanted. Every picked point rather than the average the camera
+                // used, because on a multi-row focus the average is a place where nothing clashed.
+                // Free: it is a set swap and a frame, not geometry.
+                if (_markOnFocus) MarkFocused(rows);
+
                 var selected = OnFile ? FromKeys(rows) : FromEngine(rows);
 
                 if (composed)
@@ -4773,6 +4907,28 @@ namespace CamelWorks.UI.Views
             /// middle of nowhere, and the selection they can still see in the tree is the answer
             /// to that.
             /// </summary>
+            /// <summary>
+            /// Hang a ball on each of these, quietly.
+            ///
+            /// Quiet because it is a side effect of Focus rather than something somebody asked
+            /// for: a host with no view to draw into, or a size that has been typed down to
+            /// nothing, leaves the camera move alone rather than putting an error where the
+            /// "Selected and framed" line goes.
+            /// </summary>
+            /// <param name="rows">The rows being focused.</param>
+            private void MarkFocused(IReadOnlyList<Row> rows)
+            {
+                if (!_session.View.CanMark) return;
+
+                var metres = _session.MetresPerUnit;
+                var perUnit = metres > 0 ? metres : 1.0;
+                var radius = _markerAcross / 2000.0 / perUnit;
+
+                if (radius <= 0) return;
+
+                _session.View.ShowMarkers(Marks(rows, OnFile ? 1.0 / perUnit : 1.0, radius));
+            }
+
             private static (double X, double Y, double Z)? Middle(IReadOnlyList<Row> rows)
             {
                 double x = 0, y = 0, z = 0;
@@ -5014,8 +5170,12 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.View.Isolate(keys);
-                _session.View.ZoomTo(keys, 1.0);
+                // On the selection the engine just made, not on its keys. Handing keys over
+                // meant resolving each one back to the element it names, which for a key that is
+                // not an instance GUID indexes the whole federation - so isolating what was
+                // already selected started a walk of the model to find what it was holding.
+                _session.View.IsolateSelection();
+                _session.View.ZoomToSelection(1.0);
 
                 say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
                     + "\"Show everything again\" on the right puts the rest back."));
@@ -5210,6 +5370,21 @@ namespace CamelWorks.UI.Views
                        + "Write the baseline to carry them into the NWF.";
             }
 
+            /// <summary>
+            /// Hang a status-coloured ball at each picked clash, and take the last lot down.
+            ///
+            /// <b>Temporary graphics, not a model.</b> These are drawn straight into the view by
+            /// <c>CamelWorksMarkers</c>, once a frame, from a set this hands over. They appear on
+            /// the next frame, they cost nothing to put up or take down, and they leave no trace:
+            /// no file to unload, nothing in the selection tree, no re-index. That is the whole
+            /// point of a marker - it says "here" for as long as somebody is looking, and stops.
+            ///
+            /// <b>Units.</b> The host's graphics calls take the document's own units, which is
+            /// what a board read from the model is already in. A board read from somebody else's
+            /// file counts in metres, so those come back the other way.
+            /// </summary>
+            /// <param name="picked">The picked rows.</param>
+            /// <param name="say">Where to report what happened.</param>
             private void Spheres(IReadOnlyList<object> picked, Panel say)
             {
                 say.Children.Clear();
@@ -5217,28 +5392,85 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                // Model results arrive in document units; a file's are already metres.
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
-
-                var items = rows.Select(r => new ClashItem(r.Info.Key(), r.TestName)
+                if (!_session.View.CanMark)
                 {
-                    X = r.Info.PointX * scale,
-                    Y = r.Info.PointY * scale,
-                    Z = r.Info.PointZ * scale,
-                    Status = Enum.TryParse<FindingStatus>(r.Status, true, out var parsed)
-                        ? parsed
-                        : FindingStatus.New,
-                }).ToList();
+                    say.Children.Add(Ui.Problem("This host has no view to draw markers into."));
+                    return;
+                }
 
-                var recipe = new MarkerRecipe
+                var metres = _session.MetresPerUnit;
+                var perUnit = metres > 0 ? metres : 1.0;
+                var scale = OnFile ? 1.0 / perUnit : 1.0;
+
+                // The size somebody typed is millimetres across; the ball is drawn in document
+                // units, so the radius crosses over here. A sphere sized in metres in a document
+                // that counts in millimetres is a thousandth of the marker that was asked for,
+                // which is a marker nobody sees.
+                var radius = _markerAcross / 2000.0 / perUnit;
+
+                if (radius <= 0)
                 {
-                    RadiusMetres = _markerAcross / 2000.0,
+                    say.Children.Add(Ui.Problem("A marker of no size is a marker nobody can see. "
+                        + "Give it a size on the Model page."));
+                    return;
+                }
 
-                    // The coordinates above are already metres, so no further conversion.
-                    MetresPerUnit = 1.0,
-                };
+                var marks = Marks(rows, scale, radius);
+                _session.View.ShowMarkers(marks);
 
-                var mesh = ClashMarkers.Write(items, recipe);
+                say.Children.Add(Ui.Done(Ui.Count(marks.Count, "sphere") + " hanging at the clash "
+                    + (marks.Count == 1 ? "point" : "points") + ", coloured by status. They are drawn over "
+                    + "the model, not added to it - \"Clear the markers\" takes them down."));
+            }
+
+            /// <summary>
+            /// The markers as an OBJ somebody else opens.
+            ///
+            /// <b>The other half of a marker.</b> On screen a marker is temporary graphics, which
+            /// is right for the person driving Navisworks and useless for everybody else. This is
+            /// the file: the same status-coloured balls, at the same points, written as geometry
+            /// that Revit, Blender, Rhino, a viewer or a phone will open without this plug-in and
+            /// without Navisworks. It is how a clash reaches a subcontractor.
+            ///
+            /// <b>The tree has to be useful at the other end.</b> A group per test and an object
+            /// per clash, each named what the engine named it and each carrying its status
+            /// colour - so the receiving tool shows a line per test that expands to the clashes,
+            /// and somebody can say "Clash117" back down the phone.
+            ///
+            /// <b>Metres.</b> OBJ carries no units and every reader assumes metres, so this is
+            /// where the document's own units are converted - once, here.
+            /// </summary>
+            /// <param name="rows">The results to write.</param>
+            /// <param name="what">What they are called, for the file name and the report.</param>
+            /// <param name="say">Where to report what happened.</param>
+            private void ExportMarkers(IReadOnlyList<Row> rows, string what, Panel say)
+            {
+                say.Children.Clear();
+
+                if (rows.Count == 0) return;
+
+                var mesh = ClashMarkers.Write(
+                    rows.Select(r => new ClashItem(r.Info.Key(), r.TestName)
+                    {
+                        Name = r.Info.Name,
+                        X = r.Info.PointX,
+                        Y = r.Info.PointY,
+                        Z = r.Info.PointZ,
+                        Status = Enum.TryParse<FindingStatus>(r.Status, true, out var s)
+                            ? s
+                            : FindingStatus.New,
+                    }).ToList(),
+                    new MarkerRecipe
+                    {
+                        // Real metres: the file is in metres, so the size somebody typed in
+                        // millimetres converts straight and the document's units do not come into
+                        // it. They come into the coordinates instead, below.
+                        RadiusMetres = _markerAcross / 2000.0,
+
+                        // A file board's points are already metres; a model board's are in the
+                        // document's units and this is the one place that is put right.
+                        MetresPerUnit = OnFile ? 1.0 : _session.MetresPerUnit,
+                    });
 
                 if (mesh.Refusal != null)
                 {
@@ -5246,15 +5478,26 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "camelworks-markers");
-                var stamp = DateTime.Now.ToString("HHmmss", CultureInfo.InvariantCulture);
-                var obj = System.IO.Path.Combine(folder, "clash-spheres-" + stamp + ".obj");
+                foreach (var warning in mesh.Warnings) say.Children.Add(Ui.Note(warning));
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the marker spheres",
+                    Filter = "Wavefront OBJ|*.obj",
+                    FileName = "clash-markers.obj",
+                    AddExtension = true,
+                    DefaultExt = ".obj",
+                };
+
+                if (!Ui.Asked(dialog)) return;
+
+                var obj = dialog.FileName;
                 var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
 
                 try
                 {
-                    System.IO.Directory.CreateDirectory(folder);
-
+                    // The .obj names the .mtl beside it, so the two travel together or the
+                    // colours are lost at the other end without anything saying why.
                     System.IO.File.WriteAllText(obj, mesh.Text.Replace(
                         "mtllib " + mesh.MaterialFile,
                         "mtllib " + System.IO.Path.GetFileName(mtl)));
@@ -5263,24 +5506,46 @@ namespace CamelWorks.UI.Views
                 }
                 catch (Exception e)
                 {
-                    say.Children.Add(Ui.Problem("Could not write the markers: " + Ui.Describe(e)));
+                    say.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
                     return;
                 }
 
-                try
-                {
-                    say.Children.Add(_session.Model.Document.TryAppendFile(obj)
-                        ? Ui.Done(Ui.Count(rows.Count, "sphere") + " dropped at the clash points, "
-                            + "coloured by status. They are ordinary geometry: take them out again "
-                            + "from the host's file list, where the file is called "
-                            + System.IO.Path.GetFileName(obj) + ".")
-                        : (UIElement)Ui.Problem("The host would not append the marker file."));
-                }
-                catch (Exception e)
-                {
-                    say.Children.Add(Ui.Problem("Could not append the markers: " + Ui.Describe(e)));
-                }
+                _session.Record(ActivityKind.Export, "exported clash markers", mesh.Explain());
+
+                var tests = rows.Select(r => r.TestName).Distinct(StringComparer.Ordinal).Count();
+
+                say.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " for " + what + " to "
+                    + obj + " - " + (tests == 1
+                        ? "one group, named after the test"
+                        : Ui.Count(tests, "group") + ", one per test")
+                    + ", each clash a named object coloured by status. Send the .mtl beside it or "
+                    + "the colours are lost."));
             }
+
+            /// <summary>Take every marker down.</summary>
+            /// <param name="say">Where to report what happened.</param>
+            private void Unmark(Panel say)
+            {
+                say.Children.Clear();
+                _session.View.ClearMarkers();
+                say.Children.Add(Ui.Done("The markers are down."));
+            }
+
+            /// <summary>
+            /// The balls for these rows, in document units.
+            /// </summary>
+            /// <param name="rows">The rows to mark.</param>
+            /// <param name="scale">What a row's stored coordinate is multiplied by.</param>
+            /// <param name="radius">How big each ball is, in document units.</param>
+            /// <returns>One marker per row.</returns>
+            private static List<SceneMarker> Marks(IReadOnlyList<Row> rows, double scale,
+                                                   double radius) =>
+                rows.Select(r => new SceneMarker(
+                        r.Info.PointX * scale, r.Info.PointY * scale, r.Info.PointZ * scale, radius,
+                        ClashMarkers.Colour(Enum.TryParse<FindingStatus>(r.Status, true, out var s)
+                            ? s
+                            : FindingStatus.New)))
+                    .ToList();
 
             // -------------------------------------------------------------------------------
             // Property columns and the grouping chain
@@ -6523,18 +6788,21 @@ namespace CamelWorks.UI.Views
                     return "A file is open for markup, not the model. Save the markup and run the "
                            + "sync from the seat that has the model open.";
 
+                // These say why the DOCUMENT cannot take the changes - never why they cannot be
+                // saved. They are saved either way; this is the second half that is unavailable.
                 if (!_session.Clash.IsAvailable)
-                    return "This Navisworks edition has no clash engine, so there is nothing to "
-                           + "write into. " + (_session.ClashProblem ?? string.Empty).Trim();
+                    return "This Navisworks edition has no clash engine, so there are no clash "
+                           + "results in the file to write into. "
+                           + (_session.ClashProblem ?? string.Empty).Trim();
 
                 if (_session.IsPublished)
-                    return "This is a published NWD: its clash results are read-only and a "
-                           + "published file cannot be saved back into. Open the NWF the models "
-                           + "were federated in and this button writes the same changes into it.";
+                    return "This is a published NWD, and a published file holds its clash results "
+                           + "read-only. Open the NWF the models were federated in and the same "
+                           + "changes go into it.";
 
                 if (!_session.Clash.CanEdit)
                     return "This document's clash results will not take an edit. Open the NWF the "
-                           + "models were federated in.";
+                           + "models were federated in and the same changes go into it.";
 
                 return null;
             }
@@ -6558,19 +6826,26 @@ namespace CamelWorks.UI.Views
                 var why = WhySync();
                 var waiting = OnFile ? 0 : WaitingCount;
 
-                _saveButton.IsEnabled = why == null;
+                // Never off. Saving always has somewhere to go: the project database is where the
+                // decisions live, and writing them into the document is the extra step that a
+                // published NWD or a Simulate seat cannot take. A greyed-out Save on those said
+                // the work could not be saved at all, which was never true.
+                _saveButton.IsEnabled = true;
 
                 _saveButton.Content = OnFile
                     ? "Save the markup"
-                    : waiting == 0 ? "Save the changes"
-                    : "Save " + Ui.Count(waiting, "change") + " into the document";
+                    : waiting == 0 || why != null ? "Save the changes"
+                    : "Save, and write " + Ui.Count(waiting, "change") + " into the document";
 
-                _saveButton.ToolTip = why
-                    ?? (OnFile
-                        ? "Writes what is on this board into a markup beside the file it came "
-                          + "from, which a Manage seat reads back."
-                        : "Writes every held decision into the document's own clash results, "
-                          + "where the native clash window and every export can see them.");
+                _saveButton.ToolTip = OnFile
+                    ? "Writes what is on this board into a markup beside the file it came from, "
+                      + "which a Manage seat reads back."
+                    : why == null
+                        ? "Saves the decisions to this project, and writes them into the "
+                          + "document's own clash results as well, where the native clash window "
+                          + "and every export can see them."
+                        : "Saves the decisions to this project, which is where they live. They "
+                          + "cannot also be written into the document itself: " + Lowered(why);
             }
 
             /// <summary>
@@ -6586,26 +6861,68 @@ namespace CamelWorks.UI.Views
                 else SaveBaseline();
             }
 
-            /// <summary>Write the held decisions into the document, when it will have them.</summary>
-            private void Sync()
+            /// <summary>
+            /// Save the work. Always to this project; into the document as well where it can go.
+            ///
+            /// <b>What "save" means here.</b> The decisions on this board - a status, an
+            /// assignee, a group, a comment, a due date the host has no field for - belong to the
+            /// project, and the project database is where they are kept. Writing them into the
+            /// document's own clash results is a second thing, worth doing because the native
+            /// clash window and every export read from there, but it is not what makes the work
+            /// safe and it is not always possible.
+            ///
+            /// A published NWD holds its clash results read-only. A Simulate seat has no clash
+            /// engine at all. Both of those used to grey this button out, which told somebody
+            /// their afternoon's decisions could not be saved - when in fact they were already
+            /// kept and would travel to whoever opened the NWF next. Saving to the database is
+            /// the default and the whole of it; the document write is the part that is offered
+            /// when the document will take it.
+            /// </summary>
+            private void SaveWork()
             {
+                var stored = _session.Findings.Save();
                 var why = WhySync();
 
-                if (why != null)
+                if (why == null && WaitingCount > 0)
                 {
-                    Tell("Nothing was written.", new List<string> { why });
+                    // The document will take them, and some are waiting. PushHeld writes them and
+                    // says what landed.
+                    PushHeld();
                     return;
                 }
 
-                if (WaitingCount == 0)
+                if (!stored)
                 {
-                    Tell("Nothing is waiting to be written - every change on this board is "
-                         + "already in the document.", null);
+                    Tell("The decisions on this board could not be saved.",
+                         new List<string>
+                         {
+                             _session.Findings.LastSaveProblem
+                             ?? "There was nowhere to write the project file.",
+                         });
+
                     return;
                 }
 
-                PushHeld();
+                if (why == null)
+                {
+                    Tell("Saved. Every change on this board is in the project and in the "
+                         + "document's own clash results.", null);
+                    return;
+                }
+
+                Tell("Saved to this project. " + Ui.Count(_shown.Count, "result")
+                     + " on this board carries what you decided, and it travels with the project "
+                     + "rather than with the file that is open.",
+                     new List<string>
+                     {
+                         "The document itself was not written into: " + Lowered(why),
+                     });
             }
+
+            /// <summary>The same sentence, joined onto one that has already started.</summary>
+            /// <param name="said">What to lower the first letter of.</param>
+            private static string Lowered(string said) =>
+                said.Length == 0 ? said : char.ToLowerInvariant(said[0]) + said.Substring(1);
 
             /// <summary>List what is waiting, so somebody can see it before deciding anything.</summary>
             private void ShowHeld()

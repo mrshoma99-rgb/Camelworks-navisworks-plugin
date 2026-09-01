@@ -111,9 +111,30 @@ four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, o
 order; the sort menu holds the same six and says which is on.
 
 **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
-comment, and a menu with snapshot, marker sphere, raise as an issue, attach to an existing issue,
-copy, and — depending on which kind of row it is — rename or ungroup the clash group, or group it
-with what is picked and move it into an existing one.
+comment, and a menu with snapshot, marker sphere, clear the markers, raise as an issue, attach to an
+existing issue, copy, and — depending on which kind of row it is — rename or ungroup the clash
+group, or group it with what is picked and move it into an existing one.
+
+**Marker spheres are drawn over the model, not added to it.** A marker is a status-coloured ball
+hanging at the point where the two elements met, so a clash between a duct and a beam stops looking
+like a duct and a beam. It appears on the next frame, it costs nothing, and it is gone the moment
+you press *Clear the markers* or close Navisworks — nothing joins the selection tree and there is no
+file to unload afterwards. **Focus drops one too**, which you can turn off, and their size is set,
+on the *Markers and the view* page under the ball symbol in the header.
+
+**Export the markers as .obj** is the other half — the same balls as a file, for somebody who has
+neither this plug-in nor Navisworks. It is under the results, over whatever you have picked, and on
+the **test menu**, over every test on the board. What arrives at the other end is a **group per
+test** with an **object per clash inside it**, each named what the engine named it — *Clash117* —
+and coloured by its status. So the receiving tool's selection tree reads the way this board does:
+collapse to a line per test, expand to the clashes, click one and know which one it is. It opens in
+Revit, Rhino, Blender, SketchUp, a free viewer or a phone.
+
+> Send the **.mtl** file saved beside the .obj, or the status colours are lost. Coordinates are
+> written in metres, which is what every OBJ reader assumes.
+
+The same export over the *whole* board, rather than a selection, is the *Markers* section behind the
+ball symbol on [Report](#report).
 
 ### Filtering the board
 
@@ -447,8 +468,10 @@ Thursday afternoon: one file per party, revision-lettered, superseding last week
 - The funnel is always reported over the **whole** board, whatever the report is filtered to.
 - A warning before you commit to pictures, which are what makes a report take minutes.
 
-Behind the ⚙ symbols: where the file goes and what it is called, markers in the model, and sending
-it onward as a file somebody works in.
+Behind the ⚙ symbols: where the file goes and what it is called, the clash points as an **OBJ mesh**
+somebody else can open, and sending it onward as a file somebody works in. That mesh is a file, not
+the on-screen ball the board's row verbs drop — use it when the markers have to survive without
+CamelWorks installed.
 
 When it has written, it offers the two jumps that actually follow — the same board as **BCF** or as
 **Clash file** — and says where a reply will land when it returns.
