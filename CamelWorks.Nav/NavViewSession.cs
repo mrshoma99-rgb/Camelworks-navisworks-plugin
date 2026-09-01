@@ -94,7 +94,32 @@ namespace CamelWorks.Nav
             Keep(items);
         }
 
-        /// <summary>Hide everything but these, their ancestors and what is under them.</summary>
+        /// <summary>
+        /// Hide everything but these and the branch they hang from.
+        ///
+        /// <b>The host works out what "everything else" is.</b> <c>ModelItemCollection.Invert</c>
+        /// is the complement, computed natively in one call - the same thing the ribbon's own Hide
+        /// Unselected does, and the reason that command is instant on a federation this would
+        /// otherwise take minutes to walk.
+        ///
+        /// Two versions of this were wrong before it, and both are worth naming because the
+        /// mistake is easy to make twice:
+        ///
+        /// <list type="bullet">
+        /// <item><description>Hiding <c>RootItemDescendantsAndSelf</c> is correct and hands the
+        /// host every item in the document one at a time, on the UI thread, with nothing on the
+        /// screen to say so. That was Isolate freezing.</description></item>
+        /// <item><description>Hiding only the model roots is fast and does nothing. Hidden is
+        /// inherited, so the roots have to be un-hidden again to show the branch - and un-hiding a
+        /// root puts its whole model back, because nothing under it was ever marked.</description>
+        /// </item>
+        /// </list>
+        ///
+        /// The ancestors are not decoration. An element inside a hidden parent is not drawn, so
+        /// the chain from the root down to the item has to stay out of what gets hidden or the
+        /// thing being isolated goes with it. Descendants for the same reason in reverse: an
+        /// assembly is isolated with what it is made of.
+        /// </summary>
         /// <param name="items">What to keep visible.</param>
         private void Keep(ModelItemCollection items)
         {
@@ -110,9 +135,13 @@ namespace CamelWorks.Nav
                 foreach (var descendant in item.Descendants) keep.Add(descendant);
             }
 
+            var hide = new ModelItemCollection();
+
+            hide.CopyFrom(keep);
+            hide.Invert(Host);
+
             Host.Models.ResetAllHidden();
-            Host.Models.SetHidden(Host.Models.RootItemDescendantsAndSelf, true);
-            Host.Models.SetHidden(keep, false);
+            Host.Models.SetHidden(hide, true);
         }
 
         /// <inheritdoc />
@@ -208,6 +237,25 @@ namespace CamelWorks.Nav
             MarkerOverlay.Show(markers);
             Redraw();
         }
+
+        /// <inheritdoc />
+        public int HideMarkers()
+        {
+            var down = MarkerOverlay.Hide();
+            Redraw();
+            return down;
+        }
+
+        /// <inheritdoc />
+        public int UnhideMarkers()
+        {
+            var back = MarkerOverlay.Unhide();
+            Redraw();
+            return back;
+        }
+
+        /// <inheritdoc />
+        public bool CanUnhideMarkers => MarkerOverlay.CanUnhide;
 
         /// <inheritdoc />
         public void ClearMarkers()

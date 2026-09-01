@@ -287,11 +287,41 @@ namespace CamelWorks.Core.Testing
         }
 
         /// <inheritdoc />
+        public int HideMarkers()
+        {
+            var down = Markers.Count;
+
+            if (down > 0) _hiddenMarkers = Markers;
+
+            Markers = Array.Empty<Clash.SceneMarker>();
+            _document.Record("view.hideMarkers");
+
+            return down;
+        }
+
+        /// <inheritdoc />
+        public int UnhideMarkers()
+        {
+            if (_hiddenMarkers.Count == 0) return 0;
+
+            Markers = _hiddenMarkers;
+            _document.Record("view.unhideMarkers");
+
+            return Markers.Count;
+        }
+
+        /// <inheritdoc />
+        public bool CanUnhideMarkers => _hiddenMarkers.Count > 0;
+
+        /// <inheritdoc />
         public void ClearMarkers()
         {
+            _hiddenMarkers = Array.Empty<Clash.SceneMarker>();
             Markers = Array.Empty<Clash.SceneMarker>();
             _document.Record("view.clearMarkers");
         }
+
+        private IReadOnlyList<Clash.SceneMarker> _hiddenMarkers = Array.Empty<Clash.SceneMarker>();
 
         /// <inheritdoc />
         public void IsolateSelection() => Isolated = Array.Empty<ElementKey>();

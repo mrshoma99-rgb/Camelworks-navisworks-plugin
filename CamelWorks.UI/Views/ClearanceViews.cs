@@ -467,7 +467,7 @@ namespace CamelWorks.UI.Views
                             _markerAcross = mm;
                     }, 90), "millimetres across"),
                 Ui.Actions(
-                    Ui.Quiet("Clear the markers", Unmark),
+                    Ui.Quiet("Hide or show the markers", Unmark),
                     Ui.Quiet("Show all", () =>
                     {
                         _session.View.ShowAll();
@@ -475,7 +475,8 @@ namespace CamelWorks.UI.Views
                     })),
                 Ui.Small("A marker is a status-coloured ball drawn over the model, halfway up the "
                          + "gap that is too low. It is not geometry: nothing is added to the "
-                         + "document, and clearing them takes them straight back down."));
+                         + "document, and hiding them takes them straight back down - pressing "
+                         + "it again puts the same ones back."));
 
             private UIElement OutPage() => Bench.Group("Out of the tab",
                 Ui.Actions(
@@ -1222,11 +1223,11 @@ namespace CamelWorks.UI.Views
                     + "over the model, not added to it - \"Clear the markers\" takes them down."));
             }
 
-            /// <summary>Take every marker down.</summary>
+            /// <summary>Hide the markers, or put back the ones that were hidden.</summary>
             private void Unmark()
             {
-                _session.View.ClearMarkers();
-                Said(Ui.Done("The markers are down."));
+                if (_session.View.HideMarkers() == 0 && _session.View.CanUnhideMarkers)
+                    _session.View.UnhideMarkers();
             }
 
             /// <summary>

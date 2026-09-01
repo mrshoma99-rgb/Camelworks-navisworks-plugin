@@ -32,7 +32,7 @@ HARNESS = [ROOT / "CamelWorks.Studio" / "Panels.cs", ROOT / "CamelWorks.Studio" 
            ROOT / "CamelWorks.Studio" / "Dialogs.cs"]
 PANELS = ROOT / "CamelWorks.UI"
 
-CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner|Commit)\(')
+CALL = re.compile(r'Ui\.(?:Primary|Button|Danger|Quiet|Link|Runner|RunParts|Commit)\(')
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 BUILDER = re.compile(r'^\s*private static \S+ \w+\(')
 

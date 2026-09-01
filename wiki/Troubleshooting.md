@@ -65,6 +65,17 @@ It is built at the end of **Read the results** and of the clearance **Check** �
 where there is a progress line and a Stop — so the verbs are instant afterwards. If the model
 changes, the index is dropped and the next verb rebuilds it, with the wait cursor up.
 
+## "Searching" windows appear when I read the results
+
+They should not, and as of the fix below they do not. If you still see them on an older build:
+what was being searched is your own **search sets**. A clash test's side is normally a saved search
+set, which holds criteria rather than elements — so asking the host what that side *contains* made
+it run the search across the federation, one window per side per test. It was doing that only to
+work out the "MEP vs Structure" line on the test rail.
+
+The set behind a side is now looked up by name instead of resolved, so reading the results searches
+nothing at all.
+
 ## The marker spheres do not appear
 
 They are drawn by a render plug-in that loads with the rest of CamelWorks, so if nothing appears the

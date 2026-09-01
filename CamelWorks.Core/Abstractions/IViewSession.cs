@@ -157,7 +157,18 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="markers">Where the balls go, in document units. Empty clears.</param>
         void ShowMarkers(IReadOnlyList<Clash.SceneMarker> markers);
 
-        /// <summary>Take every marker down.</summary>
+        /// <summary>Take every marker down, remembering them.</summary>
+        /// <returns>How many went down.</returns>
+        int HideMarkers();
+
+        /// <summary>Put back what <see cref="HideMarkers"/> took down.</summary>
+        /// <returns>How many came back.</returns>
+        int UnhideMarkers();
+
+        /// <summary>Whether there is a hidden set of markers to put back.</summary>
+        bool CanUnhideMarkers { get; }
+
+        /// <summary>Take every marker down and forget them.</summary>
         void ClearMarkers();
 
         /// <summary>Set a section box around the given elements, with a context margin.</summary>

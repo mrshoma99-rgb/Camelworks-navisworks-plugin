@@ -87,11 +87,34 @@ namespace CamelWorks.UI.Views
                 return null;
             }
 
-            return Ui.Info("This is a published NWD, so it is a snapshot: nothing written here "
-                + "can be saved back into it. Reading, checking, reporting and exporting all work "
-                + "as normal. Clash decisions are kept and travel out as clash XML; open the NWF "
-                + "the models were federated in when you need a write to land in the file.");
+            if (_publishedRead) return null;
+
+            var strip = new Border();
+
+            strip.Child = Ui.Info("This is a published NWD, so it is a snapshot: nothing written "
+                + "here can be saved back into it. Reading, checking, reporting and exporting all "
+                + "work as normal. Clash decisions are kept and travel out as clash XML; open the "
+                + "NWF the models were federated in when you need a write to land in the file.",
+                "Dismiss",
+                () =>
+                {
+                    _publishedRead = true;
+                    strip.Visibility = Visibility.Collapsed;
+                });
+
+            return strip;
         }
+
+        /// <summary>
+        /// Whether somebody has read the published-NWD strip and said so.
+        ///
+        /// <b>For the rest of the session, not for ever.</b> It is a standing fact about the
+        /// document rather than an event, so it appears on every screen and would otherwise be
+        /// dismissed on every screen - which is how a banner stops being read at all. Kept in
+        /// memory rather than on disk because opening a different document, or coming back
+        /// tomorrow, is exactly when somebody needs telling again.
+        /// </summary>
+        private static bool _publishedRead;
 
         /// <summary>Put a strip above a screen, or hand the screen back untouched.</summary>
         /// <param name="surface">The screen.</param>

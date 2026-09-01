@@ -287,6 +287,15 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private bool _markOnFocus = true;
 
+            /// <summary>
+            /// How far back Focus stands the camera, in metres.
+            ///
+            /// Four by default, which frames a duct against a beam. A coordinator working a
+            /// riser wants less and one working a car park wants more, and there is no way to
+            /// guess which from the clash - so it is a number they set once and forget.
+            /// </summary>
+            private double _focusBack = 4.0;
+
             /// <summary>What the board currently shows, for the spreadsheet writer.</summary>
             private List<Row> _shown = new List<Row>();
 
@@ -489,10 +498,10 @@ namespace CamelWorks.UI.Views
                 // Two calls rather than one with a ternary in its caption slot, so each caption
                 // is a literal the harness check can hold a picture to.
                 var read = already
-                    ? Ui.Runner("Read again", _log, Read, primary: false)
-                    : Ui.Runner("Read the results", _log, Read, primary: false);
+                    ? Ui.RunParts("Read again", _log, Read, primary: false)
+                    : Ui.RunParts("Read the results", _log, Read, primary: false);
 
-                read.ToolTip = already
+                read.Buttons.ToolTip = already
                     ? "Reads every test and result out of the document again. Worth pressing "
                       + "after somebody runs a test in Navisworks' own clash window, or when the "
                       + "board might have moved under you — nothing on this screen goes stale on "
@@ -1420,10 +1429,16 @@ namespace CamelWorks.UI.Views
 
                     if (grid.ColumnDefinitions.Count != widths.Count) continue;
 
+                    // Only what actually differs. Assigning a GridLength that is already there
+                    // still invalidates the row's layout, so writing all ten columns on every
+                    // mouse-move of a drag re-measured every realised row ten times over - which
+                    // is the lag the cursor was running ahead of.
                     for (var i = 0; i < widths.Count; i++)
                     {
-                        grid.ColumnDefinitions[i].Width = widths[i].Width;
-                        grid.ColumnDefinitions[i].MinWidth = widths[i].Least;
+                        var column = grid.ColumnDefinitions[i];
+
+                        if (column.Width != widths[i].Width) column.Width = widths[i].Width;
+                        if (column.MinWidth != widths[i].Least) column.MinWidth = widths[i].Least;
                     }
                 }
 
@@ -1704,6 +1719,10 @@ namespace CamelWorks.UI.Views
                     CornerRadius = new CornerRadius(8),
                     BorderThickness = new Thickness(1),
                     VerticalAlignment = VerticalAlignment.Center,
+
+                    // Left, or the pill is stretched to the width of the window and the last
+                    // segment reads as a button running off across the screen.
+                    HorizontalAlignment = HorizontalAlignment.Left,
                     Child = strip,
                 };
 
@@ -2393,8 +2412,17 @@ namespace CamelWorks.UI.Views
             /// <param name="to">How wide it should be now, in pixels.</param>
             private void Widen(string column, double to)
             {
+                // Whole pixels. A drag reports sub-pixel moves, and a width that changes by a
+                // fifth of a pixel is a full measure and arrange of every row on the board for a
+                // change nobody can see.
+                var want = Math.Round(Math.Max(Least(column), Math.Min(640, to)));
+
+                if (_wide.TryGetValue(column, out var already) && already == want
+                    && _sized.Contains(column))
+                    return;
+
                 _sized.Add(column);
-                _wide[column] = Math.Max(Least(column), Math.Min(640, to));
+                _wide[column] = want;
 
                 // Every realised row shares these column definitions, so setting the width once
                 // moves all of them. This used to rebuild every row on the board on every
@@ -3005,11 +3033,10 @@ namespace CamelWorks.UI.Views
                 {
                     Parts.Entry.Act("Focus", Glyphs.Focus, () => Focus(picked, _toast)),
                     Parts.Entry.Act("Isolate", Glyphs.Eye, () => Isolate(picked, _toast)),
-                    Parts.Entry.Act("Show everything again", Glyphs.EyeOff, () =>
-                    {
-                        _session.View.ShowAll();
-                        Said(Ui.Done("Everything is visible again."));
-                    }),
+                    Parts.Entry.Act("Show everything again", Glyphs.EyeOff,
+                                    () => _session.View.ShowAll()),
+                    Parts.Entry.Act("The engine's own view", Glyphs.Camera,
+                                    () => EngineView(picked, _toast)),
                     Parts.Entry.Act("Comment", Glyphs.Comment,
                         () => Prompt("Comment on " + what, string.Empty, "Comment",
                                      body => CommentPicked(picked, body, _toast))),
@@ -3017,7 +3044,7 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
                     Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
                                     () => Spheres(picked, _toast)),
-                    Parts.Entry.Act("Clear the markers", Glyphs.EyeOff, () => Unmark(_toast)),
+                    Parts.Entry.Act(MarkerToggle(), Glyphs.EyeOff, () => Unmark(_toast)),
                     Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
                                     () => ExportMarkers(rows, what, _toast)),
                     Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
@@ -3040,9 +3067,21 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The state of the week on the left, and the two ways out on the right.</summary>
             /// <param name="read">The read runner, which carries its own progress and Stop.</param>
-            private UIElement Footer(UIElement read)
+            /// <summary>
+            /// The foot: what the read found on the left, what to do next on the right, on one
+            /// line.
+            ///
+            /// <b>Why the runner arrives in pieces.</b> A runner stacked whole is a button with a
+            /// progress bar and a status line growing underneath it. Dropped into a row of
+            /// ordinary buttons that made the row three lines tall, left Export and Save centred
+            /// against a bar that was not there yet, and moved both of them the moment a read
+            /// started. So the buttons join the row and the progress goes down the left, under the
+            /// counts it is about, where it can appear and disappear without shifting anything.
+            /// </summary>
+            /// <param name="read">The read button and its progress, apart.</param>
+            private UIElement Footer(Ui.RunPair read)
             {
-                var row = new DockPanel { LastChildFill = false };
+                var row = new DockPanel { LastChildFill = true };
 
                 var right = new StackPanel
                 {
@@ -3050,13 +3089,11 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Center,
                 };
 
-                if (read is FrameworkElement placed)
-                {
-                    placed.Margin = new Thickness(0, 0, 10, 0);
-                    placed.VerticalAlignment = VerticalAlignment.Center;
-                    right.Children.Add(placed);
-                }
+                read.Buttons.VerticalAlignment = VerticalAlignment.Center;
+                read.Buttons.Margin = new Thickness(0, 0, 8, 0);
+                right.Children.Add(Ui.Loose(read.Buttons));
 
+                _send.VerticalAlignment = VerticalAlignment.Center;
                 right.Children.Add(Ui.Loose(_send));
 
                 _saveButton = Ui.Primary("Save the changes", () =>
@@ -3071,7 +3108,21 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(right, Dock.Right);
                 row.Children.Add(right);
 
-                return Ui.Stack(_log, row);
+                // The counts and the bar, together, filling what the buttons leave. Centred
+                // against them so a one-line foot and a three-line one both read as one row.
+                var left = Ui.Stack(_log, read.Progress);
+
+                left.VerticalAlignment = VerticalAlignment.Center;
+                left.Margin = new Thickness(0, 0, 16, 0);
+
+                // The runner puts eight pixels above its progress for the stacked case, where it
+                // separates the bar from the button. Here there is nothing above it to separate
+                // from, and the gap is the foot growing for no reason.
+                read.Progress.Margin = new Thickness(0);
+
+                row.Children.Add(left);
+
+                return row;
             }
 
             /// <summary>
@@ -3597,14 +3648,22 @@ namespace CamelWorks.UI.Views
                                 CultureInfo.InvariantCulture, out var mm) && mm > 0)
                             _markerAcross = mm;
                     }, 90), "millimetres across"),
+                Ui.Field("Focus distance", Ui.Text(
+                    _focusBack.ToString(CultureInfo.InvariantCulture), text =>
+                    {
+                        if (double.TryParse(text, NumberStyles.Float,
+                                CultureInfo.InvariantCulture, out var m) && m > 0)
+                            _focusBack = m;
+                    }, 90), "metres back from the clash"),
                 Ui.Check("Drop a marker where the camera lands on Focus", _markOnFocus,
                          v => _markOnFocus = v),
-                Ui.Actions(Ui.Icon(Glyphs.EyeOff, "Clear the markers", () => Unmark(_toast))),
+                Ui.Actions(Ui.Icon(Glyphs.EyeOff, MarkerToggle(), () => Unmark(_toast))),
                 Ui.Small("A marker is a status-coloured ball drawn over the model at the point "
                          + "where the two elements met. It is not geometry: nothing is added to "
                          + "the document, nothing appears in the selection tree, and clearing "
-                         + "them takes them straight back down. \"Show everything again\" is the "
-                         + "eye symbol under the results."),
+                         + "them takes them straight back down, and pressing it again puts "
+                         + "the same ones back. \"Show everything again\" is the eye symbol "
+                         + "under the results."),
                 Ui.Small("\"Export the markers as .obj\", under the results and on the test menu, "
                          + "writes the same balls as a file instead - a group per test, an object "
                          + "per clash named what the engine named it, coloured by status. That is "
@@ -4481,13 +4540,14 @@ namespace CamelWorks.UI.Views
 
                 if (entry == null || wanted.Length == 0)
                 {
-                    Said(Ui.Problem("Pick a test on the left and type a name for it."));
+                    Warned(Ui.Problem("Pick a test on the left and type a name for it."));
                     return;
                 }
 
                 if (!_session.Clash.RenameTest(entry.Test.Id, wanted))
                 {
-                    Said(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    Warned(Ui.Problem("That test was not renamed. "
+                        + (_session.Clash.LastProblem ?? "The host refused.")));
                     return;
                 }
 
@@ -4556,7 +4616,7 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0)
                 {
-                    Said(Ui.Problem("There are no results to mark. Read the results first."));
+                    Warned(Ui.Problem("There are no results to mark. Read the results first."));
                     return;
                 }
 
@@ -4700,10 +4760,20 @@ namespace CamelWorks.UI.Views
                 var tests = Entries(picked);
                 folder = (folder ?? string.Empty).Trim();
 
+                if (tests.Count == 0)
+                {
+                    Warned(Ui.Problem("No test is picked, so there was nothing to move."));
+                    return;
+                }
+
                 if (!_session.Clash.MoveTests(tests.Select(t => t.Test.Id).ToList(),
                                               folder.Length == 0 ? null : folder))
                 {
-                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem ?? "The host refused."));
+                    // Over the board, and it stays up. This used to go to the footer's log at the
+                    // bottom of the window, which on a verb pressed from the rail at the top is a
+                    // refusal nobody ever saw - so the press read as doing nothing.
+                    Warned(Ui.Problem("Those tests were not moved. "
+                        + (_session.Clash.LastProblem ?? "The host refused.")));
                     return;
                 }
 
@@ -4809,14 +4879,18 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                // The view first, because it is what somebody pressed Focus for and it is free.
-                var composed = !OnFile && rows.Count == 1
-                               && _session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id);
-
-                var point = composed ? null : Middle(rows);
+                // The camera, from the point already on the row.
+                //
+                // Nothing is asked of the clash engine on the way. Focus used to open with
+                // ApplyResultView, which has the host compose a viewpoint for the result - and
+                // composing a view is work the host does from the two elements, every press, for
+                // a camera position the row already carries. That call is the second somebody was
+                // waiting through. It is still here, as its own verb, for the times the engine's
+                // own framing is what you want.
+                var point = Middle(rows);
 
                 if (point != null)
-                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, 4.0);
+                    _session.View.LookAt(point.Value.X, point.Value.Y, point.Value.Z, _focusBack);
 
                 // The ball, if it is wanted. Every picked point rather than the average the camera
                 // used, because on a multi-row focus the average is a place where nothing clashed.
@@ -4825,26 +4899,40 @@ namespace CamelWorks.UI.Views
 
                 var selected = OnFile ? FromKeys(rows) : FromEngine(rows);
 
-                if (composed)
-                {
-                    say.Children.Add(Ui.Done("Showing the engine's own view of \""
-                        + (rows[0].Info.Name ?? "the result") + "\"."));
-                    return;
-                }
-
+                // Nothing is said when it worked. A confirmation that the camera moved, over a
+                // view somebody is already looking at, is a strip that appears on every row they
+                // click and tells them what they can see.
                 if (point == null && selected == 0)
-                {
                     say.Children.Add(Ui.Problem("Those results record no point and name no "
                         + "elements this federation has, so there is nothing to look at."));
+            }
+
+            /// <summary>
+            /// Put the camera where the clash engine put it when the test ran.
+            ///
+            /// Its own verb rather than part of Focus. The host composes this view from the two
+            /// elements on every press, which is not free, and Focus is the press somebody makes
+            /// forty times in an afternoon.
+            /// </summary>
+            /// <param name="picked">The picked rows.</param>
+            /// <param name="say">Where to report what happened.</param>
+            private void EngineView(IReadOnlyList<object> picked, Panel say)
+            {
+                say.Children.Clear();
+
+                var rows = Rows(picked);
+                if (rows.Count == 0) return;
+
+                if (OnFile)
+                {
+                    say.Children.Add(Ui.Problem("This board came from a file, so there is no "
+                        + "engine holding a view of it."));
                     return;
                 }
 
-                say.Children.Add(Ui.Done(selected > 0
-                    ? "Selected and framed " + Ui.Count(selected, "element") + "."
-                    : "Framed where " + (rows.Count == 1 ? "it happened" : "they happened")
-                      + " - the elements themselves are not selected, because this board's rows "
-                      + "name elements the model has not been indexed for. Reading the results "
-                      + "builds that index."));
+                if (!_session.Clash.ApplyResultView(rows[0].TestId, rows[0].Info.Id))
+                    say.Children.Add(Ui.Problem(_session.Clash.LastProblem
+                        ?? "The host has no saved view for that result."));
             }
 
             /// <summary>
@@ -5135,7 +5223,7 @@ namespace CamelWorks.UI.Views
 
                 if (problem != null)
                 {
-                    Said(Ui.Problem(problem));
+                    Warned(Ui.Problem(problem));
                     return;
                 }
 
@@ -5177,8 +5265,8 @@ namespace CamelWorks.UI.Views
                 _session.View.IsolateSelection();
                 _session.View.ZoomToSelection(1.0);
 
-                say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
-                    + "\"Show everything again\" on the right puts the rest back."));
+                // Nothing said. What isolating did is the thing on the screen.
+                _ = keys;
             }
 
             /// <summary>
@@ -5274,7 +5362,16 @@ namespace CamelWorks.UI.Views
                 say.Children.Clear();
 
                 var rows = Rows(picked);
-                if (rows.Count == 0) return;
+
+                // Said rather than returned. A press that changes nothing and reports nothing is
+                // indistinguishable from a press that did not arrive, which is exactly how "the
+                // dropdown opens but does not change the status" gets reported.
+                if (rows.Count == 0)
+                {
+                    say.Children.Add(Ui.Problem("Nothing is picked, so there was nothing to "
+                        + "change. Tick the rows first, or use the row's own menu."));
+                    return;
+                }
 
                 var done = 0;
                 var held = 0;
@@ -5339,11 +5436,24 @@ namespace CamelWorks.UI.Views
 
                 if (done == 0 && held == 0)
                 {
+                    if (problems.Count == 0)
+                        problems.Add(_session.Clash.LastProblem
+                            ?? "The host took the edit but changed nothing.");
+
                     foreach (var problem in problems) say.Children.Add(Ui.Problem(problem));
                     return;
                 }
 
                 if (!OnFile) { KeepFindings(); ArmSync(); }
+
+                // The document refused some of it and the findings register took it instead. That
+                // used to happen in silence, so the board showed a change the model did not have
+                // and nothing said which of the two was true.
+                if (held > 0)
+                    say.Children.Add(Ui.Note(Ui.Count(held, "result") + " could not be written "
+                        + "into this document, so " + (held == 1 ? "it is" : "they are")
+                        + " kept here and go out with the changes. "
+                        + (_session.Clash.LastProblem ?? string.Empty)));
 
                 var what = string.Format(CultureInfo.InvariantCulture, didFormat,
                                          Ui.Count(done + held, "result"));
@@ -5418,9 +5528,7 @@ namespace CamelWorks.UI.Views
                 var marks = Marks(rows, scale, radius);
                 _session.View.ShowMarkers(marks);
 
-                say.Children.Add(Ui.Done(Ui.Count(marks.Count, "sphere") + " hanging at the clash "
-                    + (marks.Count == 1 ? "point" : "points") + ", coloured by status. They are drawn over "
-                    + "the model, not added to it - \"Clear the markers\" takes them down."));
+                _ = marks;
             }
 
             /// <summary>
@@ -5522,14 +5630,27 @@ namespace CamelWorks.UI.Views
                     + "the colours are lost."));
             }
 
-            /// <summary>Take every marker down.</summary>
+            /// <summary>
+            /// Hide the markers, or put back the ones that were hidden.
+            ///
+            /// <b>One press, both ways.</b> Hiding used to be a one-way door: the markers went
+            /// down and the only way back was to pick the same rows again and drop them afresh,
+            /// which on a row somebody had since scrolled past is no way back at all.
+            /// </summary>
             /// <param name="say">Where to report what happened.</param>
             private void Unmark(Panel say)
             {
                 say.Children.Clear();
-                _session.View.ClearMarkers();
-                say.Children.Add(Ui.Done("The markers are down."));
+
+                if (_session.View.HideMarkers() == 0 && _session.View.CanUnhideMarkers)
+                    _session.View.UnhideMarkers();
             }
+
+            /// <summary>What the marker toggle should say right now.</summary>
+            private string MarkerToggle() =>
+                _session.View.CanUnhideMarkers && !MarkerOverlay.Any
+                    ? "Show the markers again"
+                    : "Hide the markers";
 
             /// <summary>
             /// The balls for these rows, in document units.
@@ -5557,7 +5678,7 @@ namespace CamelWorks.UI.Views
 
                 if (name.Length == 0)
                 {
-                    Said(Ui.Problem("Pick or type the property first."));
+                    Warned(Ui.Problem("Pick or type the property first."));
                     return;
                 }
 
@@ -5764,7 +5885,7 @@ namespace CamelWorks.UI.Views
 
                 if (read == null)
                 {
-                    Said(Ui.Problem("Read the results first."));
+                    Warned(Ui.Problem("Read the results first."));
                     return;
                 }
 
@@ -5858,7 +5979,7 @@ namespace CamelWorks.UI.Views
 
                 if (read == null)
                 {
-                    Said(Ui.Problem("Read the results first."));
+                    Warned(Ui.Problem("Read the results first."));
                     return;
                 }
 
@@ -5902,7 +6023,7 @@ namespace CamelWorks.UI.Views
 
                 if (items.Count == 0)
                 {
-                    Said(Ui.Problem("Nothing here can be written: no result names elements by key."));
+                    Warned(Ui.Problem("Nothing here can be written: no result names elements by key."));
                     return;
                 }
 
@@ -5953,7 +6074,7 @@ namespace CamelWorks.UI.Views
                 }
                 catch (Exception e)
                 {
-                    Said(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    Warned(Ui.Problem("Could not write it: " + Ui.Describe(e)));
                     return;
                 }
 
@@ -5983,7 +6104,7 @@ namespace CamelWorks.UI.Views
             {
                 if (_shown.Count == 0)
                 {
-                    Said(Ui.Problem("Nothing is on the grid to write."));
+                    Warned(Ui.Problem("Nothing is on the grid to write."));
                     return;
                 }
 
@@ -6042,7 +6163,7 @@ namespace CamelWorks.UI.Views
                 }
                 catch (Exception e)
                 {
-                    Said(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    Warned(Ui.Problem("Could not write it: " + Ui.Describe(e)));
                     return;
                 }
 
@@ -6070,7 +6191,7 @@ namespace CamelWorks.UI.Views
 
                 if (round == null)
                 {
-                    Said(Ui.Problem("Read a file first — the markup is its edited state."));
+                    Warned(Ui.Problem("Read a file first — the markup is its edited state."));
                     return;
                 }
 
@@ -6103,7 +6224,7 @@ namespace CamelWorks.UI.Views
 
                 if (items.Count == 0)
                 {
-                    Said(Ui.Problem("Nothing in that file carries a CamelWorks key, so a markup "
+                    Warned(Ui.Problem("Nothing in that file carries a CamelWorks key, so a markup "
                         + "of it could never land back on the model."));
                     return;
                 }
@@ -6128,7 +6249,7 @@ namespace CamelWorks.UI.Views
                 }
                 catch (Exception e)
                 {
-                    Said(Ui.Problem("Could not write the markup: " + Ui.Describe(e)));
+                    Warned(Ui.Problem("Could not write the markup: " + Ui.Describe(e)));
                     return;
                 }
 
@@ -7085,7 +7206,22 @@ namespace CamelWorks.UI.Views
             /// next to the rows the press changed, where the eye already is.
             /// </summary>
             /// <param name="note">What to say.</param>
-            private void Said(UIElement note)
+            private void Said(UIElement note) => Said(note, hold: false);
+
+            /// <summary>
+            /// Say one thing over the board, and decide whether it goes away on its own.
+            ///
+            /// <b>A problem never fades.</b> Confirmations do - they are the press being
+            /// acknowledged, and a strip of them stacking over the table pushes the rows they are
+            /// about off the screen. A refusal is the opposite: it is the only account of why the
+            /// press did nothing, and three seconds of it while somebody is looking at the rail
+            /// rather than the board is a verb that silently does not work. Every one of "rename
+            /// does not work", "move only changes the selected test" and "the status dropdown
+            /// does not change it" was the host refusing and saying so where nobody was looking.
+            /// </summary>
+            /// <param name="note">What to say.</param>
+            /// <param name="hold">True to leave it up until it is dismissed.</param>
+            private void Said(UIElement note, bool hold)
             {
                 _toast.Children.Clear();
 
@@ -7101,8 +7237,13 @@ namespace CamelWorks.UI.Views
                 row.Children.Add(note);
                 _toast.Children.Add(row);
 
-                Fades();
+                if (hold) Hold();
+                else Fades();
             }
+
+            /// <summary>Say something that stays up until it is dismissed.</summary>
+            /// <param name="note">What went wrong.</param>
+            private void Warned(UIElement note) => Said(note, hold: true);
 
             /// <summary>Take the message away.</summary>
             private void Clear()
