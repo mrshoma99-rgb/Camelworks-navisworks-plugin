@@ -1,0 +1,20 @@
+# Screens that still resolve the same element keys twice in one press: Model.Select
+# resolves them, then View.ZoomTo or View.Isolate resolves them all over again.
+#
+# Found by checks/validate-select-then-act-on-selection.py after the Clash Manager's
+# three were fixed. Every one is the same shape and the same one-line change - select,
+# then IsolateSelection() and ZoomToSelection() on what was selected.
+#
+# They are recorded rather than swept because the sweep changes framing behaviour on
+# seven apps nobody has asked about yet: ZoomToSelection hands the framing to the host
+# and the caller's margin goes with it. The Clash Manager took that trade deliberately.
+#
+# The list may only shrink.
+
+CamelWorks.UI/Views/CompareViews.cs
+CamelWorks.UI/Views/ExtractWindow.cs
+CamelWorks.UI/Views/FreezeViews.cs
+CamelWorks.UI/Views/IssueViews.cs
+CamelWorks.UI/Views/ProjectViews.cs
+CamelWorks.UI/Views/ReviewWindow.cs
+CamelWorks.UI/Views/SideBySideViews.cs

@@ -6032,7 +6032,14 @@ namespace CamelWorks.UI.Views
                 // large board this is the slow part, and it is not a press that looks slow.
                 var named = 0;
 
-                if (!OnFile) Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
+                // Watched, with a Stop. This is a key resolution per element of the whole board -
+                // on a board of a few hundred results, the first export after a model change pays
+                // for the federation index and then a lookup each. It used to run under nothing
+                // but a wait cursor with the job passed as null, which is a press that looks like
+                // a host that has hung.
+                if (!OnFile)
+                    Ui.Working("Reading IFC ids for the export...",
+                               job => named = ClashIdentity.Stamp(_session, items, job));
 
                 // Which test and result each item came from, so the clash engine can draw it
                 // rather than the camera having to be moved.
