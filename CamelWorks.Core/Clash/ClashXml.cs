@@ -791,6 +791,7 @@ namespace CamelWorks.Core.Clash
 
             var item = new ClashItem(key, test)
             {
+                Name = string.IsNullOrWhiteSpace(name) ? null : name,
                 Status = status,
                 TestFolder = string.IsNullOrWhiteSpace(folder) ? null : folder,
                 X = x,

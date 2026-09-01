@@ -61,7 +61,12 @@ namespace CamelWorks.Core.Clash
         /// <summary>How many markers it will write before refusing outright.</summary>
         public int Ceiling { get; set; } = DefaultCeiling;
 
-        /// <summary>What every marker's name starts with.</summary>
+        /// <summary>
+        /// What a marker's name starts with when the result has no name of its own.
+        ///
+        /// A fallback only: a result the engine named is written under that name, so the person
+        /// opening the file elsewhere sees what the coordinator sees.
+        /// </summary>
         public string Prefix { get; set; } = "Clash";
     }
 
@@ -187,11 +192,33 @@ namespace CamelWorks.Core.Clash
                 body.Append("g ").Append(Clean(test.Key)).Append('\n');
 
                 var n = 0;
+                var taken = new Dictionary<string, int>(StringComparer.Ordinal);
 
                 foreach (var item in test)
                 {
-                    var name = Clean(how.Prefix) + (++n).ToString(CultureInfo.InvariantCulture)
-                             + "_" + Word(item.Status);
+                    // The engine's own name for the result when it has one, because the person on
+                    // the other end has to be able to say "Clash117" back to the person who sent
+                    // it. A counter otherwise, which is all a result with no name can offer.
+                    n++;
+
+                    var stem = string.IsNullOrWhiteSpace(item.Name)
+                        ? Clean(how.Prefix) + n.ToString(CultureInfo.InvariantCulture)
+                        : Clean(item.Name!);
+
+                    var name = stem + "_" + Word(item.Status);
+
+                    // Two results of one test can carry the same name - a renumber that collided,
+                    // or a name somebody typed twice. Two objects of one name in a selection tree
+                    // is a tree where one of them cannot be pointed at.
+                    if (taken.TryGetValue(name, out var seen))
+                    {
+                        taken[name] = seen + 1;
+                        name += "_" + (seen + 1).ToString(CultureInfo.InvariantCulture);
+                    }
+                    else
+                    {
+                        taken[name] = 1;
+                    }
 
                     body.Append("o ").Append(name).Append('\n');
 

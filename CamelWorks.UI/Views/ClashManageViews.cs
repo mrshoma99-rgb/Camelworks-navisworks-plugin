@@ -1007,6 +1007,8 @@ namespace CamelWorks.UI.Views
                 if (OnFile)
                     return new List<Parts.Entry>
                     {
+                        Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                                        () => ExportTestMarkers(read)),
                         Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
                     };
 
@@ -1027,6 +1029,8 @@ namespace CamelWorks.UI.Views
                                     () => CompactTests(One(entry), _log)),
                     Parts.Entry.Rule(),
                     Parts.Entry.Act("Find duplicates across tests", Glyphs.Compact, Duplicates),
+                    Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                                    () => ExportTestMarkers(read)),
                     Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
                     Parts.Entry.Rule(),
                     Parts.Entry.Danger("Delete this test", Glyphs.Bin,
@@ -3014,6 +3018,8 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
                                     () => Spheres(picked, _toast)),
                     Parts.Entry.Act("Clear the markers", Glyphs.EyeOff, () => Unmark(_toast)),
+                    Parts.Entry.Act("Export the markers as .obj", Glyphs.Save,
+                                    () => ExportMarkers(rows, what, _toast)),
                     Parts.Entry.Act("Raise as an issue", Glyphs.Issue,
                                     () => RaiseIssue(picked, false)),
                     Parts.Entry.Act("Attach to an existing issue", Glyphs.Link,
@@ -3598,7 +3604,12 @@ namespace CamelWorks.UI.Views
                          + "where the two elements met. It is not geometry: nothing is added to "
                          + "the document, nothing appears in the selection tree, and clearing "
                          + "them takes them straight back down. \"Show everything again\" is the "
-                         + "eye symbol under the results."));
+                         + "eye symbol under the results."),
+                Ui.Small("\"Export the markers as .obj\", under the results and on the test menu, "
+                         + "writes the same balls as a file instead - a group per test, an object "
+                         + "per clash named what the engine named it, coloured by status. That is "
+                         + "for the person who has neither this plug-in nor Navisworks. Send the "
+                         + ".mtl beside it or the colours are lost."));
 
             private UIElement RoundPage() => OnFile
                 ? Bench.Group("The review round",
@@ -4530,6 +4541,30 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Copy the rail to the clipboard, one test per line.</summary>
             /// <param name="read">The tests.</param>
+            /// <summary>
+            /// Every result of the shown tests, as an OBJ.
+            ///
+            /// The whole of what is read rather than one test, because the reason to write this
+            /// file is to send somebody a package - and a package of one test is a phone call.
+            /// The tests stay apart inside it: a group each, so the receiving tool's tree reads
+            /// the same way this board does.
+            /// </summary>
+            /// <param name="read">The tests on the board.</param>
+            private void ExportTestMarkers(IReadOnlyList<TestEntry> read)
+            {
+                var rows = read.SelectMany(e => e.Rows).ToList();
+
+                if (rows.Count == 0)
+                {
+                    Said(Ui.Problem("There are no results to mark. Read the results first."));
+                    return;
+                }
+
+                ExportMarkers(rows, read.Count == 1
+                    ? "\"" + read[0].Test.Name + "\""
+                    : Ui.Count(read.Count, "test"), _log);
+            }
+
             private void CopyTests(IReadOnlyList<TestEntry> read)
             {
                 var lines = new List<string> { "Test\tFolder\tResults\tNew\tActive\tReviewed\tClosed" };
@@ -5386,6 +5421,105 @@ namespace CamelWorks.UI.Views
                 say.Children.Add(Ui.Done(Ui.Count(marks.Count, "sphere") + " hanging at the clash "
                     + (marks.Count == 1 ? "point" : "points") + ", coloured by status. They are drawn over "
                     + "the model, not added to it - \"Clear the markers\" takes them down."));
+            }
+
+            /// <summary>
+            /// The markers as an OBJ somebody else opens.
+            ///
+            /// <b>The other half of a marker.</b> On screen a marker is temporary graphics, which
+            /// is right for the person driving Navisworks and useless for everybody else. This is
+            /// the file: the same status-coloured balls, at the same points, written as geometry
+            /// that Revit, Blender, Rhino, a viewer or a phone will open without this plug-in and
+            /// without Navisworks. It is how a clash reaches a subcontractor.
+            ///
+            /// <b>The tree has to be useful at the other end.</b> A group per test and an object
+            /// per clash, each named what the engine named it and each carrying its status
+            /// colour - so the receiving tool shows a line per test that expands to the clashes,
+            /// and somebody can say "Clash117" back down the phone.
+            ///
+            /// <b>Metres.</b> OBJ carries no units and every reader assumes metres, so this is
+            /// where the document's own units are converted - once, here.
+            /// </summary>
+            /// <param name="rows">The results to write.</param>
+            /// <param name="what">What they are called, for the file name and the report.</param>
+            /// <param name="say">Where to report what happened.</param>
+            private void ExportMarkers(IReadOnlyList<Row> rows, string what, Panel say)
+            {
+                say.Children.Clear();
+
+                if (rows.Count == 0) return;
+
+                var mesh = ClashMarkers.Write(
+                    rows.Select(r => new ClashItem(r.Info.Key(), r.TestName)
+                    {
+                        Name = r.Info.Name,
+                        X = r.Info.PointX,
+                        Y = r.Info.PointY,
+                        Z = r.Info.PointZ,
+                        Status = Enum.TryParse<FindingStatus>(r.Status, true, out var s)
+                            ? s
+                            : FindingStatus.New,
+                    }).ToList(),
+                    new MarkerRecipe
+                    {
+                        // Real metres: the file is in metres, so the size somebody typed in
+                        // millimetres converts straight and the document's units do not come into
+                        // it. They come into the coordinates instead, below.
+                        RadiusMetres = _markerAcross / 2000.0,
+
+                        // A file board's points are already metres; a model board's are in the
+                        // document's units and this is the one place that is put right.
+                        MetresPerUnit = OnFile ? 1.0 : _session.MetresPerUnit,
+                    });
+
+                if (mesh.Refusal != null)
+                {
+                    say.Children.Add(Ui.Problem(mesh.Refusal));
+                    return;
+                }
+
+                foreach (var warning in mesh.Warnings) say.Children.Add(Ui.Note(warning));
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "Save the marker spheres",
+                    Filter = "Wavefront OBJ|*.obj",
+                    FileName = "clash-markers.obj",
+                    AddExtension = true,
+                    DefaultExt = ".obj",
+                };
+
+                if (!Ui.Asked(dialog)) return;
+
+                var obj = dialog.FileName;
+                var mtl = System.IO.Path.ChangeExtension(obj, ".mtl");
+
+                try
+                {
+                    // The .obj names the .mtl beside it, so the two travel together or the
+                    // colours are lost at the other end without anything saying why.
+                    System.IO.File.WriteAllText(obj, mesh.Text.Replace(
+                        "mtllib " + mesh.MaterialFile,
+                        "mtllib " + System.IO.Path.GetFileName(mtl)));
+
+                    if (mesh.Materials.Length > 0) System.IO.File.WriteAllText(mtl, mesh.Materials);
+                }
+                catch (Exception e)
+                {
+                    say.Children.Add(Ui.Problem("Could not write it: " + Ui.Describe(e)));
+                    return;
+                }
+
+                _session.Record(ActivityKind.Export, "exported clash markers", mesh.Explain());
+
+                var tests = rows.Select(r => r.TestName).Distinct(StringComparer.Ordinal).Count();
+
+                say.Children.Add(Ui.Done("Wrote " + mesh.Explain() + " for " + what + " to "
+                    + obj + " - " + (tests == 1
+                        ? "one group, named after the test"
+                        : Ui.Count(tests, "group") + ", one per test")
+                    + ", each clash a named object coloured by status. Send the .mtl beside it or "
+                    + "the colours are lost."));
             }
 
             /// <summary>Take every marker down.</summary>

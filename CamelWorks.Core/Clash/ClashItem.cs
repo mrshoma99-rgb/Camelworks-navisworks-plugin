@@ -60,6 +60,16 @@ namespace CamelWorks.Core.Clash
         public string? TestFolder { get; set; }
 
         /// <summary>
+        /// What the engine calls this result, or null.
+        ///
+        /// The name a coordinator says out loud - "Clash117", or whatever they renumbered it to.
+        /// Carried so that a marker exported into somebody else's software arrives under that
+        /// name in their selection tree, which is the only way a person on the other end can say
+        /// which one they are looking at back to the person who sent it.
+        /// </summary>
+        public string? Name { get; set; }
+
+        /// <summary>
         /// Where this result stands, after carry-over has run.
         ///
         /// Defaults to <see cref="FindingStatus.New"/>, which is the truth for a result no previous
