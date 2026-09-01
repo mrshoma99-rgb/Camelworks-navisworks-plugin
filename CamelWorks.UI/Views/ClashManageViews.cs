@@ -4753,7 +4753,7 @@ namespace CamelWorks.UI.Views
                           : did + " " + Quoted(into) + ".",
                       (testId, ids) => _session.Clash.Regroup(testId, ids, into),
                       row => row.Group = into,
-                      finding => finding.Group = into.Length == 0 ? null : into,
+                      (finding, row) => { _ = row; finding.Group = into.Length == 0 ? null : into; },
                       FindingField.Group);
 
                 if (into.Length > 0)
@@ -4838,16 +4838,36 @@ namespace CamelWorks.UI.Views
 
                 if (rows.Count == 0 || prefix.Length == 0) return;
 
-                var n = 0;
+                // The names, worked out once, so the row and its finding get the same one.
+                //
+                // They did not. The row took prefix1, prefix2 and the finding took a bare
+                // "prefix" on every one of them - so the board read right and the database, which
+                // is the record, held every renamed clash under one name. And the counter ran
+                // straight through from one test into the next, while the host restarts it per
+                // test, so the two disagreed the moment more than one test was picked.
+                var named = new Dictionary<Row, string>();
+
+                foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
+                {
+                    var n = 0;
+
+                    foreach (var row in byTest)
+                        named[row] = prefix + (++n).ToString(CultureInfo.InvariantCulture);
+                }
 
                 Write(rows.Cast<object>().ToList(), _toast,
                       rows.Count == 1
-                          ? "Renamed it to “" + prefix + "1” — the host numbers what "
-                            + "it renames."
+                          ? "Renamed it to “" + prefix + "1”."
                           : "Renamed {0} to “" + prefix + "1” onwards.",
                       (testId, ids) => _session.Clash.RenamePicked(testId, ids, prefix),
-                      row => row.Info.Name = prefix + (++n).ToString(CultureInfo.InvariantCulture),
-                      finding => finding.Title = prefix,
+                      row =>
+                      {
+                          if (named.TryGetValue(row, out var call)) row.Info.Name = call;
+                      },
+                      (finding, row) =>
+                      {
+                          if (named.TryGetValue(row, out var call)) finding.Title = call;
+                      },
                       FindingField.Title);
             }
 
@@ -5634,8 +5654,10 @@ namespace CamelWorks.UI.Views
                 Write(picked, say, "Marked {0} as " + status + ".",
                       (testId, ids) => _session.Clash.SetStatus(testId, ids, status),
                       row => row.Status = status,
-                      finding =>
+                      (finding, row) =>
                       {
+                          _ = row;
+
                           if (FindingStatusLattice.TryParse(status, out var marked))
                               finding.Status = marked;
                       },
@@ -5653,7 +5675,7 @@ namespace CamelWorks.UI.Views
                       who.Length == 0 ? "Cleared the assignment on {0}." : "Assigned {0} to " + who + ".",
                       (testId, ids) => _session.Clash.Assign(testId, ids, who),
                       row => row.Assigned = who,
-                      finding => finding.AssignedTo = who.Length == 0 ? null : who,
+                      (finding, row) => { _ = row; finding.AssignedTo = who.Length == 0 ? null : who; },
                       FindingField.AssignedTo);
             }
 
@@ -5684,7 +5706,11 @@ namespace CamelWorks.UI.Views
                           row.LastComment = body;
                           row.Trail.Add(new ClashComment(author, when, body));
                       },
-                      finding => finding.Comments.Add(new FindingComment(author, when, body)),
+                      (finding, row) =>
+                      {
+                          _ = row;
+                          finding.Comments.Add(new FindingComment(author, when, body));
+                      },
                       FindingField.Comments);
             }
 
@@ -5697,7 +5723,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
                                Func<string, IReadOnlyList<string>, bool> write, Action<Row> apply,
-                               Action<Finding>? record = null, string? field = null)
+                               Action<Finding, Row>? record = null, string? field = null)
             {
                 say.Children.Clear();
 
@@ -5761,7 +5787,7 @@ namespace CamelWorks.UI.Views
 
                             if (finding != null && record != null)
                             {
-                                record(finding);
+                                record(finding, row);
 
                                 if (took)
                                 {

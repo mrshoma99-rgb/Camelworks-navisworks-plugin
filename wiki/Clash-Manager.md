@@ -216,7 +216,15 @@ the board to a spreadsheet, set up the review round, and raise the board as issu
 document there and then — there is no draft to commit. What is left to save is what the document
 **refused**, which is what the footer's one blue button is for.
 
-- **Every change on this board is kept, whatever the document will take.** A status, an assignment, a
+- **Renumbering writes the clash's own name.** A Navisworks clash result carries a `DisplayName`, and
+"Clash1", "Clash2" is Navisworks' own convention for filling it — there is no separate number field.
+Renumbering sets that name to *prefix*1, *prefix*2 and so on, in the order the test holds its
+results, so the new names show in the native Clash Detective grid and travel in the clash XML. It is
+not an identity: re-running a test recreates its results and renames them, which is why every
+decision here is keyed to the clash point and the two elements rather than to what the clash is
+called.
+
+**Every change on this board is kept, whatever the document will take.** A status, an assignment, a
 comment, a group, a clash's name, a test's name and the folder it is filed in all go into the
 project first — that is what *Save the changes* writes — and are synced into the document as well
 when the model is an NWF on a Manage seat. On a published NWD the document takes none of them and
