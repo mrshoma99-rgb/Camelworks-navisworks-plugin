@@ -81,10 +81,23 @@ namespace CamelWorks.Nav
         /// children are all hidden is an empty box.
         /// </summary>
         /// <param name="keys">What to leave visible.</param>
-        public void Isolate(IReadOnlyList<ElementKey> keys)
+        public void Isolate(IReadOnlyList<ElementKey> keys) => Keep(_document.ItemsFor(keys));
+
+        /// <inheritdoc />
+        public void IsolateSelection()
         {
-            var items = _document.ItemsFor(keys);
-            if (items.Count == 0) return;
+            var items = new ModelItemCollection();
+
+            foreach (ModelItem item in Host.CurrentSelection.SelectedItems) items.Add(item);
+
+            Keep(items);
+        }
+
+        /// <summary>Hide everything but these, their ancestors and what is under them.</summary>
+        /// <param name="items">What to keep visible.</param>
+        private void Keep(ModelItemCollection items)
+        {
+            if (items == null || items.Count == 0) return;
 
             var keep = new ModelItemCollection();
 
@@ -159,6 +172,26 @@ namespace CamelWorks.Nav
             }
 
             return states;
+        }
+
+        /// <inheritdoc />
+        public void ZoomToSelection(double marginMetres)
+        {
+            _ = marginMetres;
+
+            try
+            {
+                if (Host.CurrentSelection.SelectedItems.Count == 0) return;
+
+                // Nothing to borrow and nothing to put back: the selection the host focuses on is
+                // already the one the caller wanted framed.
+                Host.ActiveView.FocusOnCurrentSelection();
+            }
+            catch (Exception)
+            {
+                // A view that will not focus leaves the camera where it is, which is what it did
+                // before anybody pressed anything.
+            }
         }
 
         /// <inheritdoc />

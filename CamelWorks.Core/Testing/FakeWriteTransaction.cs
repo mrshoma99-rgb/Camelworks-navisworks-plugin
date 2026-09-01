@@ -273,6 +273,12 @@ namespace CamelWorks.Core.Testing
         public IReadOnlyList<ElementKey>? Isolated { get; private set; }
 
         /// <inheritdoc />
+        public void IsolateSelection() => Isolated = Array.Empty<ElementKey>();
+
+        /// <inheritdoc />
+        public void ZoomToSelection(double marginMetres) => _ = marginMetres;
+
+        /// <inheritdoc />
         public void Isolate(IReadOnlyList<ElementKey> keys)
         {
             Isolated = keys;

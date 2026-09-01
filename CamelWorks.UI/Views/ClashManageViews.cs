@@ -320,6 +320,21 @@ namespace CamelWorks.UI.Views
             /// <summary>Bumped whenever a row's own contents change, which no filter can see.</summary>
             private int _edits;
 
+            /// <summary>
+            /// The columns somebody has dragged. Those are pixels from then on, not a share of
+            /// what is left - a star takes its width from what the other columns are doing, which
+            /// is the wrong answer for one that has just been given a width by hand.
+            /// </summary>
+            private readonly HashSet<string> _sized = new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>Which column is being dragged, how wide it was, and where the drag began.</summary>
+            private string? _dragging;
+            private double _dragFrom;
+            private double _dragAt;
+
+            /// <summary>The header's own column grid, which is what a drag measures against.</summary>
+            private Grid? _headCells;
+
             /// <summary>The column grids of the rows that exist right now, for a drag to resize.</summary>
             private readonly List<WeakReference<Grid>> _cells = new List<WeakReference<Grid>>();
 
@@ -1900,15 +1915,33 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// How wide each column is, as one list, so a row and a drag cannot disagree.
             /// </summary>
-            private List<(GridLength Width, double Least)> Widths()
+            private List<(string Name, GridLength Width, double Least)> Widths()
             {
-                var columns = new List<(GridLength, double)>();
+                var columns = new List<(string, GridLength, double)>();
 
                 void Fixed(double width) =>
-                    columns.Add((new GridLength(width), 0));
+                    columns.Add((string.Empty, new GridLength(width), 0));
+
+                // A column somebody has dragged is that many pixels wide from then on, whatever
+                // it was before. Sharing what is left is the right resting behaviour and the
+                // wrong thing to do to a column that has just been given a width by hand: a star
+                // takes its size from what the others are doing, so dragging one moved the rest
+                // and the edge under the pointer went where the arithmetic sent it.
+                void Named2(string name, double share, double least)
+                {
+                    if (_sized.Contains(name))
+                    {
+                        columns.Add((name, new GridLength(Wide(name, least)), least));
+                        return;
+                    }
+
+                    columns.Add((name, new GridLength(share, GridUnitType.Star), least));
+                }
 
                 void Flexible(double share, double least) =>
-                    columns.Add((new GridLength(share, GridUnitType.Star), least));
+                    columns.Add((string.Empty, new GridLength(share, GridUnitType.Star), least));
+
+                _ = (Action<double, double>)Flexible;
 
                 Fixed(26);
 
@@ -1927,12 +1960,12 @@ namespace CamelWorks.UI.Views
                 // somebody added on purpose should not cost them the verbs.
                 var tight = _columns.Count > 0;
 
-                Flexible(Wide(Named, 2), tight ? 110 : 130);
-                Flexible(Wide(ItemA, 1), tight ? 58 : 74);
-                Flexible(Wide(ItemB, 1), tight ? 58 : 74);
+                Named2(Named, 2, tight ? 110 : 130);
+                Named2(ItemA, 1, tight ? 58 : 74);
+                Named2(ItemB, 1, tight ? 58 : 74);
 
-                Fixed(Wide(Clashes, tight ? 44 : 48));
-                Fixed(Wide(Worst, tight ? 60 : 64));
+                columns.Add((Clashes, new GridLength(Wide(Clashes, tight ? 44 : 48)), 0));
+                columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
 
                 // The property columns land between Worst and Status, where the eye is already
                 // reading facts about the elements rather than decisions about them.
@@ -1941,10 +1974,10 @@ namespace CamelWorks.UI.Views
                 // somebody adds a column is a table that scrolls sideways off its own row verbs
                 // on the second one. A property column takes a share of what there is and
                 // ellipsises, with the whole value on the cell's tooltip.
-                foreach (var column in _columns) Flexible(Wide(column.Title, 1), 60);
+                foreach (var column in _columns) Named2(column.Title, 1, 60);
 
-                Fixed(Wide(Status, 104));
-                Fixed(Wide(Assigned, 104));
+                columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
+                columns.Add((Assigned, new GridLength(Wide(Assigned, 104)), 0));
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
                 // design's 92 holds three and cuts the fourth, which in the picture read as a
@@ -2184,6 +2217,8 @@ namespace CamelWorks.UI.Views
             {
                 var grid = Cells();
 
+                _headCells = grid;
+
                 var top = groups.Concat(loose).ToList();
                 var picked = top.Count(r => _picked.Contains(r.Id));
 
@@ -2300,7 +2335,31 @@ namespace CamelWorks.UI.Views
                     ToolTip = "Drag to resize " + column,
                 };
 
-                grip.DragDelta += (s, e) => Ui.Safely(() => Widen(column, e.HorizontalChange));
+                // Measured from the pointer, not from the thumb.
+                //
+                // The thumb sits at the right edge of the column it resizes, so resizing moves it
+                // - and a Thumb reports each change from wherever it now is. Feeding that back
+                // into the width made the edge lag, overshoot, and on a column whose neighbours
+                // took up the slack, travel the opposite way to the hand. The pointer does not
+                // move when the column does, so the whole drag is measured against where it
+                // started.
+                grip.DragStarted += (s, e) => Ui.Safely(() =>
+                {
+                    _dragging = column;
+                    _dragFrom = Rendered(column);
+                    _dragAt = System.Windows.Input.Mouse.GetPosition(_head).X;
+                });
+
+                grip.DragDelta += (s, e) => Ui.Safely(() =>
+                {
+                    if (!string.Equals(_dragging, column, StringComparison.Ordinal)) return;
+
+                    var now = System.Windows.Input.Mouse.GetPosition(_head).X;
+
+                    Widen(column, _dragFrom + (now - _dragAt));
+                });
+
+                grip.DragCompleted += (s, e) => Ui.Safely(() => _dragging = null);
 
                 var cell = new Grid();
                 cell.Children.Add(press);
@@ -2310,29 +2369,45 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Make a column wider or narrower by what the hand moved.
+            /// Set one column to the width the drag has reached.
             ///
-            /// The three flexible columns hold a share rather than a width, so a drag on one of
-            /// them moves the share by about what sixty pixels is worth — near enough that the
-            /// column follows the pointer, and it cannot fight the others for room the way a
-            /// fixed width would.
+            /// An absolute width, in pixels, not a nudge. The old arithmetic added the drag to a
+            /// star share through a divide-by-sixty, so a column's width depended on what every
+            /// other column was doing and the number under the pointer was never the number on
+            /// screen. From the first drag a column is simply as wide as it was dragged to.
             /// </summary>
             /// <param name="column">Which column.</param>
-            /// <param name="by">How far the hand moved.</param>
-            private void Widen(string column, double by)
+            /// <param name="to">How wide it should be now, in pixels.</param>
+            private void Widen(string column, double to)
             {
-                var flexes = column == Named || column == ItemA || column == ItemB;
-                var was = Wide(column, flexes ? 1 : 95);
-
-                _wide[column] = flexes
-                    ? Math.Max(0.4, Math.Min(8, was + (by / 60)))
-                    : Math.Max(44, Math.Min(320, was + by));
+                _sized.Add(column);
+                _wide[column] = Math.Max(Least(column), Math.Min(640, to));
 
                 // Every realised row shares these column definitions, so setting the width once
                 // moves all of them. This used to rebuild every row on the board on every
                 // mouse-move of the drag.
                 Resize();
             }
+
+            /// <summary>How wide a column is on screen right now.</summary>
+            /// <param name="column">Which column.</param>
+            private double Rendered(string column)
+            {
+                var at = Widths().FindIndex(c => string.Equals(c.Name, column, StringComparison.Ordinal));
+
+                if (at < 0 || !(_head.Content is FrameworkElement) || _headCells == null) return Least(column);
+
+                return at < _headCells.ColumnDefinitions.Count
+                    ? _headCells.ColumnDefinitions[at].ActualWidth
+                    : Least(column);
+            }
+
+            /// <summary>The narrowest a column may be dragged, so a header stays readable.</summary>
+            /// <param name="column">Which column.</param>
+            private double Least(string column) =>
+                column == Named ? 90
+                : column == ItemA || column == ItemB ? 56
+                : 44;
 
             /// <summary>A column label.</summary>
             /// <param name="text">What it says.</param>
@@ -2971,7 +3046,7 @@ namespace CamelWorks.UI.Views
                 _saveButton = Ui.Primary("Save the changes", () =>
                 {
                     if (OnFile) SaveMarkup();
-                    else Sync();
+                    else SaveWork();
                 });
                 _saveButton.Margin = new Thickness(8, 0, 0, 0);
                 _saveButton.VerticalAlignment = VerticalAlignment.Center;
@@ -5018,8 +5093,12 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _session.View.Isolate(keys);
-                _session.View.ZoomTo(keys, 1.0);
+                // On the selection the engine just made, not on its keys. Handing keys over
+                // meant resolving each one back to the element it names, which for a key that is
+                // not an instance GUID indexes the whole federation - so isolating what was
+                // already selected started a walk of the model to find what it was holding.
+                _session.View.IsolateSelection();
+                _session.View.ZoomToSelection(1.0);
 
                 say.Children.Add(Ui.Done(Ui.Count(keys.Count, "element") + " isolated. "
                     + "\"Show everything again\" on the right puts the rest back."));
@@ -6527,18 +6606,21 @@ namespace CamelWorks.UI.Views
                     return "A file is open for markup, not the model. Save the markup and run the "
                            + "sync from the seat that has the model open.";
 
+                // These say why the DOCUMENT cannot take the changes - never why they cannot be
+                // saved. They are saved either way; this is the second half that is unavailable.
                 if (!_session.Clash.IsAvailable)
-                    return "This Navisworks edition has no clash engine, so there is nothing to "
-                           + "write into. " + (_session.ClashProblem ?? string.Empty).Trim();
+                    return "This Navisworks edition has no clash engine, so there are no clash "
+                           + "results in the file to write into. "
+                           + (_session.ClashProblem ?? string.Empty).Trim();
 
                 if (_session.IsPublished)
-                    return "This is a published NWD: its clash results are read-only and a "
-                           + "published file cannot be saved back into. Open the NWF the models "
-                           + "were federated in and this button writes the same changes into it.";
+                    return "This is a published NWD, and a published file holds its clash results "
+                           + "read-only. Open the NWF the models were federated in and the same "
+                           + "changes go into it.";
 
                 if (!_session.Clash.CanEdit)
                     return "This document's clash results will not take an edit. Open the NWF the "
-                           + "models were federated in.";
+                           + "models were federated in and the same changes go into it.";
 
                 return null;
             }
@@ -6562,19 +6644,26 @@ namespace CamelWorks.UI.Views
                 var why = WhySync();
                 var waiting = OnFile ? 0 : WaitingCount;
 
-                _saveButton.IsEnabled = why == null;
+                // Never off. Saving always has somewhere to go: the project database is where the
+                // decisions live, and writing them into the document is the extra step that a
+                // published NWD or a Simulate seat cannot take. A greyed-out Save on those said
+                // the work could not be saved at all, which was never true.
+                _saveButton.IsEnabled = true;
 
                 _saveButton.Content = OnFile
                     ? "Save the markup"
-                    : waiting == 0 ? "Save the changes"
-                    : "Save " + Ui.Count(waiting, "change") + " into the document";
+                    : waiting == 0 || why != null ? "Save the changes"
+                    : "Save, and write " + Ui.Count(waiting, "change") + " into the document";
 
-                _saveButton.ToolTip = why
-                    ?? (OnFile
-                        ? "Writes what is on this board into a markup beside the file it came "
-                          + "from, which a Manage seat reads back."
-                        : "Writes every held decision into the document's own clash results, "
-                          + "where the native clash window and every export can see them.");
+                _saveButton.ToolTip = OnFile
+                    ? "Writes what is on this board into a markup beside the file it came from, "
+                      + "which a Manage seat reads back."
+                    : why == null
+                        ? "Saves the decisions to this project, and writes them into the "
+                          + "document's own clash results as well, where the native clash window "
+                          + "and every export can see them."
+                        : "Saves the decisions to this project, which is where they live. They "
+                          + "cannot also be written into the document itself: " + Lowered(why);
             }
 
             /// <summary>
@@ -6590,26 +6679,68 @@ namespace CamelWorks.UI.Views
                 else SaveBaseline();
             }
 
-            /// <summary>Write the held decisions into the document, when it will have them.</summary>
-            private void Sync()
+            /// <summary>
+            /// Save the work. Always to this project; into the document as well where it can go.
+            ///
+            /// <b>What "save" means here.</b> The decisions on this board - a status, an
+            /// assignee, a group, a comment, a due date the host has no field for - belong to the
+            /// project, and the project database is where they are kept. Writing them into the
+            /// document's own clash results is a second thing, worth doing because the native
+            /// clash window and every export read from there, but it is not what makes the work
+            /// safe and it is not always possible.
+            ///
+            /// A published NWD holds its clash results read-only. A Simulate seat has no clash
+            /// engine at all. Both of those used to grey this button out, which told somebody
+            /// their afternoon's decisions could not be saved - when in fact they were already
+            /// kept and would travel to whoever opened the NWF next. Saving to the database is
+            /// the default and the whole of it; the document write is the part that is offered
+            /// when the document will take it.
+            /// </summary>
+            private void SaveWork()
             {
+                var stored = _session.Findings.Save();
                 var why = WhySync();
 
-                if (why != null)
+                if (why == null && WaitingCount > 0)
                 {
-                    Tell("Nothing was written.", new List<string> { why });
+                    // The document will take them, and some are waiting. PushHeld writes them and
+                    // says what landed.
+                    PushHeld();
                     return;
                 }
 
-                if (WaitingCount == 0)
+                if (!stored)
                 {
-                    Tell("Nothing is waiting to be written - every change on this board is "
-                         + "already in the document.", null);
+                    Tell("The decisions on this board could not be saved.",
+                         new List<string>
+                         {
+                             _session.Findings.LastSaveProblem
+                             ?? "There was nowhere to write the project file.",
+                         });
+
                     return;
                 }
 
-                PushHeld();
+                if (why == null)
+                {
+                    Tell("Saved. Every change on this board is in the project and in the "
+                         + "document's own clash results.", null);
+                    return;
+                }
+
+                Tell("Saved to this project. " + Ui.Count(_shown.Count, "result")
+                     + " on this board carries what you decided, and it travels with the project "
+                     + "rather than with the file that is open.",
+                     new List<string>
+                     {
+                         "The document itself was not written into: " + Lowered(why),
+                     });
             }
+
+            /// <summary>The same sentence, joined onto one that has already started.</summary>
+            /// <param name="said">What to lower the first letter of.</param>
+            private static string Lowered(string said) =>
+                said.Length == 0 ? said : char.ToLowerInvariant(said[0]) + said.Substring(1);
 
             /// <summary>List what is waiting, so somebody can see it before deciding anything.</summary>
             private void ShowHeld()

@@ -38,6 +38,28 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="keys">What stays visible.</param>
         void Isolate(IReadOnlyList<ElementKey> keys);
 
+        /// <summary>
+        /// Hide everything but what the host has selected right now.
+        ///
+        /// <b>Why this exists beside the one above.</b> A caller that already has the elements -
+        /// the clash board asks the engine for the two a result is between, which costs nothing -
+        /// had to turn them into keys and hand those over, and resolving a key that is not an
+        /// instance GUID means indexing every geometry leaf in the federation. So isolating what
+        /// was already selected started a walk of the whole model to find what it was already
+        /// holding.
+        /// </summary>
+        void IsolateSelection();
+
+        /// <summary>
+        /// Frame what the host has selected right now.
+        ///
+        /// The counterpart of <see cref="IsolateSelection"/>, and for the same reason: the host
+        /// focuses on its own selection, so a caller that has already made one has nothing left
+        /// to look up.
+        /// </summary>
+        /// <param name="marginMetres">How much room to leave around it.</param>
+        void ZoomToSelection(double marginMetres);
+
         /// <summary>Unhide everything, including what somebody else hid.</summary>
         void ShowAll();
 
