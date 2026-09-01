@@ -5529,10 +5529,25 @@ namespace CamelWorks.UI.Views
                 // meant resolving each one back to the element it names, which for a key that is
                 // not an instance GUID indexes the whole federation - so isolating what was
                 // already selected started a walk of the model to find what it was holding.
-                _session.View.IsolateSelection();
+                var kept = _session.View.IsolateSelection();
+
+                // The one case that used to fail in silence. Isolating works off the host's
+                // current selection, so a selection the host did not take leaves this press
+                // having done nothing at all - and "isolate does not work" is then a report
+                // nobody can act on, because it does not say whether the host refused, hid the
+                // wrong thing, or had nothing to hide around.
+                if (kept == 0)
+                {
+                    say.Children.Add(Ui.Problem("The host is not holding a selection for those "
+                        + "results, so there was nothing to isolate around. Press Focus first - "
+                        + "if that does not select them either, this document no longer has the "
+                        + "elements the results were found between."));
+                    return;
+                }
+
                 _session.View.ZoomToSelection(1.0);
 
-                // Nothing said. What isolating did is the thing on the screen.
+                // Nothing said when it worked. What isolating did is the thing on the screen.
                 _ = keys;
             }
 

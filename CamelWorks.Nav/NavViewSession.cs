@@ -85,13 +85,13 @@ namespace CamelWorks.Nav
         public void Isolate(IReadOnlyList<ElementKey> keys) => Keep(_document.ItemsFor(keys));
 
         /// <inheritdoc />
-        public void IsolateSelection()
+        public int IsolateSelection()
         {
             var items = new ModelItemCollection();
 
             foreach (ModelItem item in Host.CurrentSelection.SelectedItems) items.Add(item);
 
-            Keep(items);
+            return Keep(items);
         }
 
         /// <summary>
@@ -121,9 +121,12 @@ namespace CamelWorks.Nav
         /// assembly is isolated with what it is made of.
         /// </summary>
         /// <param name="items">What to keep visible.</param>
-        private void Keep(ModelItemCollection items)
+        private int Keep(ModelItemCollection items)
         {
-            if (items == null || items.Count == 0) return;
+            // Nothing selected is not an isolate, and it used to be a silent one - the press
+            // returned having done nothing, with nothing on screen able to say whether the host
+            // had refused, hidden the wrong thing, or simply had nothing to work from.
+            if (items == null || items.Count == 0) return 0;
 
             var keep = new ModelItemCollection();
 
@@ -142,6 +145,8 @@ namespace CamelWorks.Nav
 
             Host.Models.ResetAllHidden();
             Host.Models.SetHidden(hide, true);
+
+            return keep.Count;
         }
 
         /// <inheritdoc />

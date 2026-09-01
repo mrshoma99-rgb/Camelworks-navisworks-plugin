@@ -324,7 +324,11 @@ namespace CamelWorks.Core.Testing
         private IReadOnlyList<Clash.SceneMarker> _hiddenMarkers = Array.Empty<Clash.SceneMarker>();
 
         /// <inheritdoc />
-        public void IsolateSelection() => Isolated = Array.Empty<ElementKey>();
+        public int IsolateSelection()
+        {
+            Isolated = Array.Empty<ElementKey>();
+            return 0;
+        }
 
         /// <inheritdoc />
         public void ZoomToSelection(double marginMetres) => _ = marginMetres;
