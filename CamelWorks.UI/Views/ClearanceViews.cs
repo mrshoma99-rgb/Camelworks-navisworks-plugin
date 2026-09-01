@@ -1174,13 +1174,20 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
+                // Into the document's own units, which is what the host is told the marker file
+                // is in. The clearance engine works in metres, and a file of metres appended to a
+                // document that counts in millimetres puts every sphere in a heap at the origin,
+                // too small to see - which reads as markers that never appeared.
+                var metres = _session.MetresPerUnit;
+                var perUnit = metres > 0 ? metres : 1.0;
+
                 var items = rows.Select(r => new ClashItem(
                     ClashKey.Create(r.Floor.Key, r.Over.Key, r.Span.X, r.Span.Y,
                                     r.Floor.Box.MaxZ + r.Clear / 2), "Clearance")
                 {
-                    X = r.Span.X,
-                    Y = r.Span.Y,
-                    Z = r.Floor.Box.MaxZ + r.Clear / 2,
+                    X = r.Span.X / perUnit,
+                    Y = r.Span.Y / perUnit,
+                    Z = (r.Floor.Box.MaxZ + r.Clear / 2) / perUnit,
                     Status = Enum.TryParse<FindingStatus>(r.Status, true, out var parsed)
                         ? parsed
                         : FindingStatus.New,
@@ -1188,9 +1195,9 @@ namespace CamelWorks.UI.Views
 
                 var mesh = ClashMarkers.Write(items, new MarkerRecipe
                 {
-                    RadiusMetres = _markerAcross / 2000.0,
+                    RadiusMetres = _markerAcross / 2000.0 / perUnit,
 
-                    // The coordinates above are already metres.
+                    // The coordinates above are already in document units.
                     MetresPerUnit = 1.0,
                 });
 
@@ -1223,7 +1230,7 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    say.Children.Add(_session.Model.Document.TryAppendFile(obj)
+                    say.Children.Add(_session.Model.AppendInDocumentUnits(obj)
                         ? Ui.Done(Ui.Count(rows.Count, "sphere") + " dropped in the low gaps, "
                             + "coloured by status. They are ordinary geometry: take them out "
                             + "again from the host's file list, where the file is called "

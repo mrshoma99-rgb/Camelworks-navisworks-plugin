@@ -479,6 +479,54 @@ namespace CamelWorks.Nav
         }
 
         /// <summary>
+        /// Append a file this product wrote, and tell the host its numbers are in this
+        /// document's units.
+        ///
+        /// <b>Why the units have to be said.</b> The marker files this product makes are OBJ,
+        /// and OBJ carries no units at all - so the host reads one with whatever default it keeps
+        /// for a unitless file. A document in millimetres given a file the host decides is in
+        /// metres puts every sphere a thousand times too far out; decide the other way and they
+        /// land in a heap at the origin, too small to see. Either way what somebody reports is
+        /// that the markers did not appear.
+        ///
+        /// So the caller writes the file in this document's units and this says so, which leaves
+        /// nothing for the host to guess.
+        /// </summary>
+        /// <param name="path">The file to append.</param>
+        /// <returns>True when the host took it.</returns>
+        public bool AppendInDocumentUnits(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+
+            if (!Document.TryAppendFile(path)) return false;
+
+            try
+            {
+                var models = Document.Models;
+
+                if (models.Count > 0)
+                {
+                    // The one just added is the last in the collection.
+                    var added = models[models.Count - 1];
+
+                    models.SetModelUnitsAndTransform(added, Document.Units, added.Transform,
+                                                     added.IsTransformReflected);
+                }
+            }
+            catch (Exception)
+            {
+                // A host that will not restate the units leaves the file as it read it, which is
+                // the behaviour this replaced rather than a new failure.
+            }
+
+            // A model has arrived, so every handle handed out so far points into a tree that has
+            // changed shape.
+            Invalidate();
+
+            return true;
+        }
+
+        /// <summary>
         /// Put a model back where it was.
         ///
         /// The counterpart of recording the placement, and the reason recording it is worth doing.

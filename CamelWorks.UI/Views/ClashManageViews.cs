@@ -5300,8 +5300,12 @@ namespace CamelWorks.UI.Views
                 var rows = Rows(picked);
                 if (rows.Count == 0) return;
 
-                // Model results arrive in document units; a file's are already metres.
-                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+                // Everything goes out in the document's own units, because that is what the
+                // host is told the file is in - see NavDocument.AppendInDocumentUnits. A model
+                // result is already in them; a file's are metres and come back the other way.
+                var metres = _session.MetresPerUnit;
+                var perUnit = metres > 0 ? metres : 1.0;
+                var scale = OnFile ? 1.0 / perUnit : 1.0;
 
                 var items = rows.Select(r => new ClashItem(r.Info.Key(), r.TestName)
                 {
@@ -5315,9 +5319,13 @@ namespace CamelWorks.UI.Views
 
                 var recipe = new MarkerRecipe
                 {
-                    RadiusMetres = _markerAcross / 2000.0,
+                    // The size somebody typed is millimetres across; the file is written in
+                    // document units, so the radius crosses over here too. A sphere written in
+                    // metres into a document that counts in millimetres is a marker a
+                    // thousandth of the size it was asked to be, which is a marker nobody sees.
+                    RadiusMetres = _markerAcross / 2000.0 / perUnit,
 
-                    // The coordinates above are already metres, so no further conversion.
+                    // The coordinates above are already in document units.
                     MetresPerUnit = 1.0,
                 };
 
@@ -5352,7 +5360,7 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    say.Children.Add(_session.Model.Document.TryAppendFile(obj)
+                    say.Children.Add(_session.Model.AppendInDocumentUnits(obj)
                         ? Ui.Done(Ui.Count(rows.Count, "sphere") + " dropped at the clash points, "
                             + "coloured by status. They are ordinary geometry: take them out again "
                             + "from the host's file list, where the file is called "
