@@ -29,6 +29,15 @@ namespace CamelWorks.Core.Clash
         /// <summary>What they wrote.</summary>
         public string Body { get; }
 
+        /// <summary>
+        /// What the host calls this comment, or zero when it did not come from one.
+        ///
+        /// Navisworks gives every comment an id and makes every other field read-only, so an
+        /// existing remark can only be changed by rebuilding the whole trail without it, or with
+        /// something else in its place. The id is how the rebuild knows which one that is.
+        /// </summary>
+        public long HostId { get; set; }
+
         /// <inheritdoc />
         public override string ToString() => Author + ": " + Body;
     }

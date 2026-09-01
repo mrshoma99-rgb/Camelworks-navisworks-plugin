@@ -333,6 +333,42 @@ namespace CamelWorks.Core.Abstractions
         IReadOnlyList<ClashResultComments> CommentsFor(string testId, Func<int, bool>? onProgress);
 
         /// <summary>
+        /// One result's comment trail, oldest first.
+        ///
+        /// The whole-test read above is for an export. This is for a person who has opened one
+        /// clash and wants to read what has been said about it - which, until it existed, nothing
+        /// in the product could do: the board showed how many comments there were and the newest
+        /// one, and the rest were write-only.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <returns>The trail, oldest first, each carrying the host's id for it.</returns>
+        IReadOnlyList<ClashComment> CommentsOn(string testId, string resultId);
+
+        /// <summary>
+        /// Take one comment off a result.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <param name="commentId">The host's id for the comment.</param>
+        /// <returns>True when the document took it.</returns>
+        bool DeleteComment(string testId, string resultId, long commentId);
+
+        /// <summary>
+        /// Change what one comment says.
+        ///
+        /// <b>The host has no edit.</b> Every field of a comment is read-only, so this is a
+        /// rebuild of the trail with a new comment in the old one's place - which means the
+        /// original's date and id do not survive it. The caller has to be willing to say so.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <param name="commentId">The host's id for the comment being replaced.</param>
+        /// <param name="body">What it should say now.</param>
+        /// <returns>True when the document took it.</returns>
+        bool EditComment(string testId, string resultId, long commentId, string body);
+
+        /// <summary>
         /// Every property name carried by the elements the clashes are between.
         ///
         /// <b>Why not the model's.</b> A property column reads off a clashing element, so the list

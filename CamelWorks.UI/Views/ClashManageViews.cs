@@ -2920,9 +2920,14 @@ namespace CamelWorks.UI.Views
                 bar.Children.Add(Ui.Icon(Glyphs.Eye, "Isolate " + what,
                     () => Isolate(picked, _toast)));
 
-                bar.Children.Add(Ui.Icon(Glyphs.Comment, "Comment",
-                    () => Prompt("Comment on " + what, string.Empty, "Comment",
-                                 body => CommentPicked(picked, body, _toast))));
+                // One clash opens its conversation; a group opens a box that says the same thing
+                // on all of its members, because a group has no trail of its own.
+                bar.Children.Add(row.IsGroup || row.Rows.Count != 1
+                    ? Ui.Icon(Glyphs.Comment, "Comment on " + what,
+                        () => Prompt("Comment on " + what, string.Empty, "Comment",
+                                     body => CommentPicked(picked, body, _toast)))
+                    : Ui.Icon(Glyphs.Comment, "Read and write the comments on this clash",
+                        () => Conversation(row.Rows[0])));
 
                 bar.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else for " + what,
                                                 RowMenu(row)));
@@ -3224,9 +3229,11 @@ namespace CamelWorks.UI.Views
                                     () => _session.View.ShowAll()),
                     Parts.Entry.Act("The engine's own view", Glyphs.Camera,
                                     () => EngineView(picked, _toast)),
-                    Parts.Entry.Act("Comment", Glyphs.Comment,
-                        () => Prompt("Comment on " + what, string.Empty, "Comment",
-                                     body => CommentPicked(picked, body, _toast))),
+                    rows.Count == 1
+                        ? Parts.Entry.Act("Comments", Glyphs.Comment, () => Conversation(rows[0]))
+                        : Parts.Entry.Act("Comment on all of them", Glyphs.Comment,
+                            () => Prompt("Comment on " + what, string.Empty, "Comment",
+                                         body => CommentPicked(picked, body, _toast))),
                     Parts.Entry.Rule(),
                     Parts.Entry.Act("Snapshot", Glyphs.Camera, () => Snapshots(picked, _toast)),
                     Parts.Entry.Act("Drop a marker sphere", Glyphs.Sphere,
@@ -5677,6 +5684,301 @@ namespace CamelWorks.UI.Views
                       row => row.Assigned = who,
                       (finding, row) => { _ = row; finding.AssignedTo = who.Length == 0 ? null : who; },
                       FindingField.AssignedTo);
+            }
+
+            /// <summary>
+            /// The conversation about one clash: what has been said, and the say in it.
+            ///
+            /// <b>Reading was the half that did not exist.</b> The board showed how many comments
+            /// a result had and the newest one, and the only verb was "Comment", which added
+            /// another - so a trail could be written and never read back. Everything a coordinator
+            /// actually does with a comment thread, which is read it before adding to it, had to
+            /// happen in Navisworks' own clash window.
+            ///
+            /// <b>Edit is a rebuild, and says so.</b> Every field of a host comment is read-only
+            /// and the only write is the whole trail at once, so changing a remark means putting a
+            /// new one in its place - which takes today's date. The button says that rather than
+            /// implying the original was amended.
+            /// </summary>
+            /// <param name="row">The clash whose conversation this is.</param>
+            private void Conversation(Row row)
+            {
+                var body = Ui.Stack();
+
+                var window = new Window
+                {
+                    Title = "CamelWorks - " + (row.Info.Name ?? "this clash"),
+                    Width = 520,
+                    Height = 520,
+                    MinWidth = 380,
+                    MinHeight = 320,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    ShowInTaskbar = false,
+                };
+
+                var trail = Ui.Stack();
+
+                void Redraw()
+                {
+                    trail.Children.Clear();
+
+                    var said = Trail(row);
+
+                    if (said.Count == 0)
+                    {
+                        trail.Children.Add(Ui.Empty("Nothing has been said about this clash yet.",
+                            "What is written here goes into the model's own clash data, and "
+                            + "travels out with every report and BCF file."));
+                        return;
+                    }
+
+                    foreach (var comment in said) trail.Children.Add(Remark(row, comment, Redraw));
+                }
+
+                Redraw();
+
+                var box = Ui.Text(string.Empty, null, 0);
+                box.AcceptsReturn = true;
+                box.TextWrapping = TextWrapping.Wrap;
+                box.Height = 64;
+                box.Margin = new Thickness(0, 10, 0, 0);
+
+                var add = Ui.Primary("Add", () =>
+                {
+                    var wrote = box.Text.Trim();
+
+                    if (wrote.Length == 0) return;
+
+                    CommentPicked(new List<object> { row }, wrote, _toast);
+                    box.Text = string.Empty;
+                    Redraw();
+                });
+
+                add.MinWidth = 92;
+                add.HorizontalAlignment = HorizontalAlignment.Right;
+                add.Margin = new Thickness(0, 8, 0, 0);
+
+                body.Children.Add(Ui.Line(row.Info.Name ?? "this clash", 1, true));
+                body.Children.Add(Ui.Line(Both(row), 0.75));
+
+                var scroll = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = trail,
+                    Margin = new Thickness(0, 10, 0, 0),
+                };
+
+                var root = new Grid();
+                root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                root.Children.Add(body);
+                Grid.SetRow(scroll, 1);
+                root.Children.Add(scroll);
+
+                var foot = Ui.Stack(box, add);
+                Grid.SetRow(foot, 2);
+                root.Children.Add(foot);
+
+                var ground = new Border { Child = root, Padding = new Thickness(18, 16, 18, 16) };
+                ground.Tint(Border.BackgroundProperty, "Bg");
+
+                window.Content = ground;
+
+                Skin.Apply(window);
+                Shell.HostWindow.Own(window);
+
+                window.Closed += (s, e) => Ui.Safely(RedrawRows);
+                window.ShowDialog();
+            }
+
+            /// <summary>
+            /// One remark, with the two things that can be done to it.
+            /// </summary>
+            /// <param name="row">The clash it is about.</param>
+            /// <param name="comment">The remark.</param>
+            /// <param name="redraw">What to call once it has changed.</param>
+            private UIElement Remark(Row row, ClashComment comment, Action redraw)
+            {
+                var head = new DockPanel { LastChildFill = true };
+
+                var verbs = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                // Only what came out of the host can be changed there. A remark added on this
+                // board a moment ago and not yet written has no id to rebuild the trail around,
+                // and offering an Edit that quietly does nothing is worse than not offering one.
+                if (comment.HostId != 0)
+                {
+                    verbs.Children.Add(Ui.Icon(Glyphs.Pencil,
+                        "Change what this says. The host has no edit, so it is replaced - and "
+                        + "takes today's date.",
+                        () => Prompt("Change this comment", comment.Body, "Save",
+                                     said => Amend(row, comment, said, redraw))));
+
+                    verbs.Children.Add(Ui.Icon(Glyphs.Bin, "Take this comment off the clash",
+                        () => Erase(row, comment, redraw)));
+                }
+
+                DockPanel.SetDock(verbs, Dock.Right);
+                head.Children.Add(verbs);
+
+                var who = comment.Author
+                          + (comment.WhenTicks > 0
+                              ? " - " + new DateTime(comment.WhenTicks, DateTimeKind.Utc)
+                                        .ToLocalTime().ToString("d MMM yyyy HH:mm",
+                                                                CultureInfo.CurrentCulture)
+                              : string.Empty);
+
+                head.Children.Add(Ui.Line(who, 0.7));
+
+                var said = new TextBlock
+                {
+                    Text = comment.Body,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 3, 0, 0),
+                };
+
+                var card = new Border
+                {
+                    Padding = new Thickness(10, 8, 10, 9),
+                    Margin = new Thickness(0, 0, 0, 6),
+                    CornerRadius = new CornerRadius(6),
+                    BorderThickness = new Thickness(1),
+                    Child = Ui.Stack(head, said),
+                };
+
+                card.Tint(Border.BackgroundProperty, "Card");
+                card.Tint(Border.BorderBrushProperty, "Bd");
+
+                return card;
+            }
+
+            /// <summary>
+            /// The trail to show for one clash: the host's, and anything not written into it yet.
+            /// </summary>
+            /// <param name="row">The clash.</param>
+            private List<ClashComment> Trail(Row row)
+            {
+                if (OnFile) return row.Trail.ToList();
+
+                var said = _session.Clash.CommentsOn(row.TestId, row.Info.Id).ToList();
+
+                // What the document would not take is held on the finding, and belongs in the
+                // conversation as much as what it did take - it is the same remark, waiting for a
+                // seat that can write it.
+                var held = Found(row);
+
+                if (held != null)
+                    foreach (var comment in held.Comments)
+                        if (!said.Any(c => string.Equals(c.Body, comment.Body, StringComparison.Ordinal)
+                                           && string.Equals(c.Author, comment.Author,
+                                                            StringComparison.OrdinalIgnoreCase)))
+                            said.Add(new ClashComment(comment.Author, comment.WhenTicks,
+                                                      comment.Body));
+
+                return said.OrderBy(c => c.WhenTicks).ToList();
+            }
+
+            /// <summary>Change what one comment says, in the document and in the record.</summary>
+            /// <param name="row">The clash.</param>
+            /// <param name="comment">The remark being changed.</param>
+            /// <param name="said">What it should say now.</param>
+            /// <param name="redraw">What to call once it has changed.</param>
+            private void Amend(Row row, ClashComment comment, string said, Action redraw)
+            {
+                said = (said ?? string.Empty).Trim();
+
+                if (said.Length == 0 || said == comment.Body) return;
+
+                if (!_session.Clash.EditComment(row.TestId, row.Info.Id, comment.HostId, said))
+                {
+                    Warned(Ui.Problem("That comment was not changed. "
+                        + (_session.Clash.LastProblem ?? string.Empty)));
+                    return;
+                }
+
+                Swap(row, comment.Body, said);
+                Kept(row);
+                redraw();
+            }
+
+            /// <summary>Take one comment off, in the document and in the record.</summary>
+            /// <param name="row">The clash.</param>
+            /// <param name="comment">The remark being taken off.</param>
+            /// <param name="redraw">What to call once it has gone.</param>
+            private void Erase(Row row, ClashComment comment, Action redraw)
+            {
+                if (!_session.Clash.DeleteComment(row.TestId, row.Info.Id, comment.HostId))
+                {
+                    Warned(Ui.Problem("That comment was not taken off. "
+                        + (_session.Clash.LastProblem ?? string.Empty)));
+                    return;
+                }
+
+                Swap(row, comment.Body, null);
+                Kept(row);
+                redraw();
+            }
+
+            /// <summary>
+            /// Put the same change through the record the document just took.
+            /// </summary>
+            /// <param name="row">The clash.</param>
+            /// <param name="was">What the comment said.</param>
+            /// <param name="now">What it says now, or null when it has gone.</param>
+            private void Swap(Row row, string was, string? now)
+            {
+                var finding = Found(row);
+
+                if (finding != null)
+                {
+                    var at = finding.Comments.ToList()
+                                    .FindIndex(c => string.Equals(c.Body, was, StringComparison.Ordinal));
+
+                    if (at >= 0)
+                    {
+                        var old = finding.Comments[at];
+
+                        finding.Comments.RemoveAt(at);
+
+                        if (now != null)
+                            finding.Comments.Insert(at, new FindingComment(old.Author,
+                                                                          DateTime.UtcNow.Ticks, now));
+                    }
+                }
+
+                var mine = row.Trail.FindIndex(c => string.Equals(c.Body, was, StringComparison.Ordinal));
+
+                if (mine >= 0)
+                {
+                    var old = row.Trail[mine];
+
+                    row.Trail.RemoveAt(mine);
+
+                    if (now != null)
+                        row.Trail.Insert(mine, new ClashComment(old.Author, old.WhenTicks, now));
+                }
+
+                row.Comments = row.Trail.Count > 0 ? row.Trail.Count : Math.Max(0, row.Comments - 1);
+                row.LastComment = now ?? (row.Trail.Count > 0 ? row.Trail[row.Trail.Count - 1].Body : string.Empty);
+            }
+
+            /// <summary>Keep what just changed, and put the board back in step with it.</summary>
+            /// <param name="row">The clash.</param>
+            private void Kept(Row row)
+            {
+                _ = row;
+
+                Moved();
+                KeepFindings();
+                ArmSync();
+                RedrawRows();
             }
 
             /// <summary>Add one comment to everything picked.</summary>
