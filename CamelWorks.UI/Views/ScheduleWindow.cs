@@ -148,7 +148,7 @@ namespace CamelWorks.UI.Views
 
                 // The Runner's output panel, on the Runner's own step. It was on the next one,
                 // behind a gate that does not open until the read has worked.
-                _shape.Children.Add(_warnings);
+                _shape.Children.Add(Ui.Loose(_warnings));
             }
 
             private Panel Number(string label, int value, Action<int> set, string? hint = null) =>

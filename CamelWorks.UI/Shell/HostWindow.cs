@@ -56,7 +56,20 @@ namespace CamelWorks.UI.Shell
         /// Call it before <c>Show</c> or <c>ShowDialog</c> on every window this product creates.
         /// </summary>
         /// <param name="window">The window about to be shown.</param>
-        public static void Own(Window? window)
+        /// <param name="topLevel">
+        /// True for a window that stands beside the others rather than over one of them - an app
+        /// window. Those take the host frame as their owner, so two of them can be brought in
+        /// front of each other freely.
+        ///
+        /// Everything else - a settings window, a picker, anything shown over the screen that
+        /// opened it - takes that screen as its owner, which is what keeps it in front of it. It
+        /// is the default deliberately: a dialog owned by the host frame is a sibling of the app
+        /// window rather than its child, so clicking the app window put the settings behind it and
+        /// left somebody hunting for a window they had just opened. Defaulting the other way means
+        /// the one kind that must opt out is the handful of app windows, not the dozens of
+        /// dialogs.
+        /// </param>
+        public static void Own(Window? window, bool topLevel = false)
         {
             if (window == null) return;
 
@@ -83,6 +96,28 @@ namespace CamelWorks.UI.Shell
             {
                 // A pointer that will not be set is worth one odd-looking cursor, not an
                 // exception on the way to a screen.
+            }
+
+            try
+            {
+                // The screen this was opened from, when there is one and it is not this window.
+                // A real WPF owner, so the host keeps it above its parent and takes it away with
+                // it - which the interop handle below cannot do, since the frame is every app
+                // window's owner too and they are therefore all siblings.
+                if (!topLevel)
+                {
+                    var over = Active;
+
+                    if (over != null && !ReferenceEquals(over, window))
+                    {
+                        window.Owner = over;
+                        return;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // A window that will not take an owner falls through to the frame below.
             }
 
             try

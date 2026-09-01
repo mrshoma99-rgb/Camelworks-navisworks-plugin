@@ -539,8 +539,8 @@ namespace CamelWorks.UI.Views
                 var top = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 0) };
 
                 DockPanel.SetDock(_railTools, Dock.Right);
-                top.Children.Add(_railTools);
-                top.Children.Add(_railBox);
+                top.Children.Add(Ui.Loose(_railTools));
+                top.Children.Add(Ui.Loose(_railBox));
 
                 var head = new Border
                 {
@@ -563,7 +563,7 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(list);
 
                 Grid.SetRow(_railFoot, 2);
-                grid.Children.Add(_railFoot);
+                grid.Children.Add(Ui.Loose(_railFoot));
 
                 var pane = new Border
                 {
@@ -1280,7 +1280,7 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(body);
 
                 Grid.SetRow(_bar, 2);
-                grid.Children.Add(_bar);
+                grid.Children.Add(Ui.Loose(_bar));
 
                 var ground = new Border { Child = grid };
                 ground.Tint(Border.BackgroundProperty, "Bg");
@@ -1318,8 +1318,8 @@ namespace CamelWorks.UI.Views
                     // never touched — see the constructor.
                     DockPanel.SetDock(_strip, Dock.Left);
                     DockPanel.SetDock(_boardBox, Dock.Right);
-                    _tabs.Children.Add(_boardBox);
-                    _tabs.Children.Add(_strip);
+                    _tabs.Children.Add(Ui.Loose(_boardBox));
+                    _tabs.Children.Add(Ui.Loose(_strip));
                 }
 
                 _strip.Content = Strip(entry);
@@ -1533,7 +1533,7 @@ namespace CamelWorks.UI.Views
 
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
-                verbs.Children.Add(_view);
+                verbs.Children.Add(Ui.Loose(_view));
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
                     () => Configure("source")));
@@ -2101,7 +2101,11 @@ namespace CamelWorks.UI.Views
                 frame.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
                 _head.Content = Header(shape.Groups, shape.Loose);
-                frame.Children.Add(_head);
+
+                // Loose first. The header is kept in a field so its tri-state can be redrawn on
+                // its own, and this builds a new frame every draw - so the second draw hands the
+                // same element to a second parent while the first still holds it.
+                frame.Children.Add(Ui.Loose(_head));
 
                 if (shape.Groups.Count == 0 && shape.Loose.Count == 0)
                 {
@@ -2127,7 +2131,7 @@ namespace CamelWorks.UI.Views
                     _list = new BoardList(Drawn) { ItemsSource = _lines };
 
                     Grid.SetRow(_list, 1);
-                    frame.Children.Add(_list);
+                    frame.Children.Add(Ui.Loose(_list));
                 }
 
                 var card = new Border
@@ -2962,7 +2966,7 @@ namespace CamelWorks.UI.Views
                     right.Children.Add(placed);
                 }
 
-                right.Children.Add(_send);
+                right.Children.Add(Ui.Loose(_send));
 
                 _saveButton = Ui.Primary("Save the changes", () =>
                 {
@@ -2971,7 +2975,7 @@ namespace CamelWorks.UI.Views
                 });
                 _saveButton.Margin = new Thickness(8, 0, 0, 0);
                 _saveButton.VerticalAlignment = VerticalAlignment.Center;
-                right.Children.Add(_saveButton);
+                right.Children.Add(Ui.Loose(_saveButton));
 
                 DockPanel.SetDock(right, Dock.Right);
                 row.Children.Add(right);

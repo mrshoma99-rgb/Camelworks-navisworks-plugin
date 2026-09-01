@@ -72,7 +72,7 @@ namespace CamelWorks.UI.Shell
             root.Children.Add(tabs);
 
             Grid.SetRow(_surface, 2);
-            root.Children.Add(_surface);
+            root.Children.Add(Ui.Loose(_surface));
 
             var ground = new Border { Child = LeaseStrip.Over(root) };
             ground.Tint(Border.BackgroundProperty, "Bg");
@@ -101,7 +101,8 @@ namespace CamelWorks.UI.Shell
             if (!Open.TryGetValue(app.Id, out var window) || window == null)
             {
                 window = new AppWindow(app);
-                HostWindow.Own(window);
+                // An app window stands beside the others, not over one of them.
+                HostWindow.Own(window, topLevel: true);
                 window.Show();
 
                 // Remembered only once it is up. Written before the Show, a window that failed
