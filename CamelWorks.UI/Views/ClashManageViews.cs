@@ -5638,7 +5638,8 @@ namespace CamelWorks.UI.Views
                     + Quoted(entry.Test.Name ?? "this test") + ", one for each band the view is "
                     + "showing, holding " + Ui.Count(leaves.Sum(l => l.Value.Count), "result")
                     + " between them. Each is named for the trail of bands above it, so "
-                    + Quoted(leaves[0].Key) + " is one of them."
+                    + Quoted(ClashTrail.Join(leaves[0].Key.Trail)) + " is one of them, and it "
+                    + "is nested in the document where the document holds groups inside groups."
                     + (moving > 0
                         ? " " + Ui.Count(moving, "result") + " already in a clash group will "
                           + "move out of it into the new one; a result belongs to one group and "
@@ -5657,12 +5658,12 @@ namespace CamelWorks.UI.Views
             /// path separators to somebody.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
-            private List<KeyValuePair<string, List<Row>>> Leaves(TestEntry entry)
+            private List<KeyValuePair<ClashGroupPath, List<Row>>> Leaves(TestEntry entry)
             {
-                var leaves = new List<KeyValuePair<string, List<Row>>>();
+                var leaves = new List<KeyValuePair<ClashGroupPath, List<Row>>>();
                 var shape = Shape(entry);
 
-                Walk(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, string.Empty, leaves);
+                Walk(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, new List<string>(), leaves);
 
                 return leaves;
             }
@@ -5671,95 +5672,96 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The test on the board.</param>
             /// <param name="rows">The rows this level is banding.</param>
             /// <param name="depth">How many levels are already above this one.</param>
-            /// <param name="trail">What the bands above this one were called.</param>
+            /// <param name="trail">What the bands above this one were called, outermost first.</param>
             /// <param name="into">The leaves found so far.</param>
-            private void Walk(TestEntry entry, List<BoardRow> rows, int depth, string trail,
-                              List<KeyValuePair<string, List<Row>>> into)
+            private void Walk(TestEntry entry, List<BoardRow> rows, int depth, List<string> trail,
+                              List<KeyValuePair<ClashGroupPath, List<Row>>> into)
             {
                 if (depth >= _bands.Count)
                 {
                     var members = rows.SelectMany(r => r.Rows).ToList();
 
-                    if (members.Count > 0 && trail.Length > 0)
-                        into.Add(new KeyValuePair<string, List<Row>>(trail, members));
+                    if (members.Count > 0 && trail.Count > 0)
+                        into.Add(new KeyValuePair<ClashGroupPath, List<Row>>(
+                            new ClashGroupPath(trail.ToList(),
+                                               members.Select(r => r.Info.Id).ToList()),
+                            members));
 
                     return;
                 }
 
                 foreach (var band in Bands(entry, rows, _bands[depth]))
-                    Walk(entry, band.Value, depth + 1,
-                         trail.Length == 0 ? band.Key : trail + " · " + band.Key, into);
+                {
+                    trail.Add(band.Key);
+                    Walk(entry, band.Value, depth + 1, trail, into);
+                    trail.RemoveAt(trail.Count - 1);
+                }
             }
 
             /// <summary>
-            /// Write one clash group per leaf, and drop the bands that named them.
+            /// Write the bands into the document as clash groups, and drop the bands.
             ///
-            /// <b>Its own loop rather than the board's usual write.</b> That one takes a set of
-            /// rows and one value to write to all of them; this writes a different name to each
-            /// bucket, and doing it by calling that once per bucket would be a toast, a redraw
-            /// and a rail pass for every group made - fifty of each on a real board.
+            /// <b>One call, one edit.</b> The seam is told the whole assignment at once rather
+            /// than being called per bucket: the host rebuilds a test's entire result tree for
+            /// any change to it, so a bucket at a time would be fifty rebuilds of the same test,
+            /// each with its own toast, redraw and rail pass.
+            ///
+            /// <b>Nested where the document holds it.</b> The seam tries groups inside groups
+            /// and falls back to one group per trail when the document will not, so what comes
+            /// back may not be the shape that was asked for - and the board says which happened
+            /// rather than leaving somebody to open Clash Detective and wonder.
+            ///
+            /// Either way the board reads the same, because a nested group reads back as the
+            /// trail down to it and a flat one is named for that same trail.
             ///
             /// The bands come off at the end. They have become the thing they were describing,
             /// and leaving them up would show every group twice: once as a band and once as the
             /// group inside it.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
-            /// <param name="leaves">The leaves, each named for the trail down to it.</param>
-            private void Realise(TestEntry entry, List<KeyValuePair<string, List<Row>>> leaves)
+            /// <param name="leaves">The leaves, each with its trail and the results under it.</param>
+            private void Realise(TestEntry entry,
+                                 List<KeyValuePair<ClashGroupPath, List<Row>>> leaves)
             {
-                var made = 0;
-                var held = 0;
                 var problems = new List<string>();
+                var results = leaves.Sum(l => l.Value.Count);
 
                 // The filters cannot see inside a row, and every one of these moves a row from
                 // one line of the board to another.
                 Moved();
 
+                var answer = OnFile
+                    ? new ClashNesting(true, false, leaves.Count, null)
+                    : _session.Clash.Regroup(entry.Test.Id,
+                                             leaves.Select(l => l.Key).ToList());
+
+                if (!answer.Took)
+                {
+                    Warned(Ui.Problem(answer.Problem ?? "The host refused the regroup."));
+                    return;
+                }
+
+                if (answer.Problem != null) problems.Add(answer.Problem);
+
                 foreach (var leaf in leaves)
                 {
-                    var name = leaf.Key;
-                    var rows = leaf.Value;
+                    // What the board shows is the trail, whether the document nested the groups
+                    // or holds one named for the whole trail. Reading a nested group back gives
+                    // the same string, so this row says now what a re-read would say later.
+                    var name = ClashTrail.Join(leaf.Key.Trail);
 
-                    var took = true;
-                    string? refused = null;
-
-                    if (!OnFile)
-                    {
-                        foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
-                        {
-                            var ids = byTest.Select(r => r.Info.Id).ToList();
-
-                            if (_session.Clash.Regroup(byTest.Key, ids, name)) continue;
-
-                            took = false;
-                            refused = _session.Clash.LastProblem ?? "The host refused.";
-                        }
-
-                        if (refused != null && !problems.Contains(refused)) problems.Add(refused);
-                    }
-
-                    foreach (var row in rows)
+                    foreach (var row in leaf.Value)
                     {
                         if (!OnFile)
                         {
                             // The database is the record and the document a projection of it, so
-                            // the finding takes the name either way; what a refusal changes is
-                            // only that the field says it is still waiting.
+                            // the finding takes the name whatever the document did with it.
                             var finding = Found(row) ?? Raised(row);
 
                             if (finding != null)
                             {
                                 finding.Group = name;
-
-                                if (took)
-                                {
-                                    finding.Landed(FindingField.Group);
-                                }
-                                else
-                                {
-                                    finding.Hold(FindingField.Group);
-                                    finding.HostProblem = refused;
-                                }
+                                finding.Landed(FindingField.Group);
                             }
                         }
 
@@ -5767,8 +5769,6 @@ namespace CamelWorks.UI.Views
                     }
 
                     _made.Add(GroupId(name));
-
-                    if (took) made++; else held++;
                 }
 
                 if (!OnFile) { KeepFindings(); ArmSync(); }
@@ -5777,8 +5777,11 @@ namespace CamelWorks.UI.Views
                 _picked.Clear();
                 _pickedFrom = null;
 
-                var what = Ui.Count(made + held, "clash group") + " made from the bands, holding "
-                           + Ui.Count(leaves.Sum(l => l.Value.Count), "result") + ".";
+                var what = Ui.Count(leaves.Count, "clash group") + " made from the bands, holding "
+                           + Ui.Count(results, "result") + "."
+                           + (answer.Nested
+                               ? " They are nested in the document, as they were on the board."
+                               : string.Empty);
 
                 if (!OnFile) _session.Record(ActivityKind.Regroup, what);
 
@@ -5787,7 +5790,7 @@ namespace CamelWorks.UI.Views
                 RedrawFoot();
                 ArmSync();
 
-                Tell(what + Trailer(held == 0 ? 0 : leaves.Sum(l => l.Value.Count)), problems);
+                Tell(what + (OnFile ? " Save the markup to keep it." : string.Empty), problems);
             }
 
             /// <summary>Rename the test on the board.</summary>

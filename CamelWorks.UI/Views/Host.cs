@@ -397,6 +397,10 @@ namespace CamelWorks.UI.Views
             public bool Regroup(string testId,
                 System.Collections.Generic.IReadOnlyList<string> resultIds, string groupName) => false;
 
+            public CamelWorks.Core.Clash.ClashNesting Regroup(string testId,
+                System.Collections.Generic.IReadOnlyList<CamelWorks.Core.Clash.ClashGroupPath> paths) =>
+                new CamelWorks.Core.Clash.ClashNesting(false, false, 0, "There is no model open.");
+
             public bool RenameResults(string testId, string prefix) => false;
 
             public bool RenameTest(string testId, string name) => false;

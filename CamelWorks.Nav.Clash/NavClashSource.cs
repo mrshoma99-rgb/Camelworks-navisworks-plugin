@@ -293,6 +293,260 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <inheritdoc />
+        /// <inheritdoc />
+        public ClashNesting Regroup(string testId, IReadOnlyList<ClashGroupPath> paths)
+        {
+            LastProblem = null;
+
+            if (paths == null || paths.Count == 0)
+                return new ClashNesting(false, false, 0, "There was nothing to group.");
+
+            var clash = Writable();
+
+            if (clash == null)
+                return new ClashNesting(false, false, 0,
+                                        LastProblem ?? "This document will not take the change.");
+
+            // Nesting is only a question when something is actually two deep. A chain one level
+            // long is the flat case by definition, and asking the host to prove that costs an
+            // edit and a read of the whole test.
+            var deep = paths.Any(p => p.Trail.Count > 1);
+
+            if (deep && Rebuild(clash, testId, paths, nest: true))
+            {
+                if (Nested(testId))
+                    return new ClashNesting(true, true, paths.Count, null);
+
+                // It took the edit and flattened it. That leaves every group named for its
+                // innermost segment alone, so two branches ending in "Beam" are now one group
+                // called "Beam" - which is worse than not nesting at all. Written again flat,
+                // where each group is named for its whole trail and nothing collides.
+                if (Rebuild(clash, testId, paths, nest: false))
+                    return new ClashNesting(true, false, paths.Count,
+                        "This document holds clash groups but not groups inside groups, so each "
+                        + "band became one group named for its whole trail.");
+
+                return new ClashNesting(false, false, 0,
+                                        LastProblem ?? "The host refused the regroup.");
+            }
+
+            if (Rebuild(clash, testId, paths, nest: false))
+                return new ClashNesting(true, false, paths.Count,
+                    deep
+                        ? "This document would not take groups inside groups, so each band "
+                          + "became one group named for its whole trail."
+                        : null);
+
+            return new ClashNesting(false, false, 0,
+                                    LastProblem ?? "The host refused the regroup.");
+        }
+
+        /// <summary>
+        /// Rebuild one test's whole result tree from a plan, and swap it in as a single edit.
+        ///
+        /// The same copy-and-swap the single-name regroup uses, and for the same reason: the
+        /// host disposes a saved item's native handle the moment it leaves its collection, so
+        /// nothing can be lifted out and re-added.
+        ///
+        /// Results the plan does not name keep the group they were in, so a board narrowed to
+        /// one discipline groups that discipline and leaves the rest of the test alone.
+        /// </summary>
+        /// <param name="clash">The document's clash data, already known writable.</param>
+        /// <param name="testId">Which test.</param>
+        /// <param name="paths">Each bucket: the trail down to it and the results in it.</param>
+        /// <param name="nest">True to build groups inside groups, false for one per trail.</param>
+        private bool Rebuild(DocumentClash clash, string testId,
+                             IReadOnlyList<ClashGroupPath> paths, bool nest)
+        {
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            // Which trail each named result is wanted at. Last mention wins, which cannot happen
+            // from the board - a result falls into exactly one band - and is the only sane answer
+            // if it ever did.
+            var wanted = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var path in paths)
+            {
+                var trail = path.Trail.Where(t => !string.IsNullOrEmpty(t)).ToList();
+
+                if (trail.Count == 0) continue;
+
+                foreach (var id in path.ResultIds) wanted[id] = trail;
+            }
+
+            try
+            {
+                var copy = test.CreateCopy() as ClashTest;
+
+                if (copy == null)
+                {
+                    LastProblem = "The host would not copy the test for editing.";
+                    return false;
+                }
+
+                var flat = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(copy.Children, null, flat);
+
+                var rebuilt = new List<(ClashResult Result, IReadOnlyList<string> Trail)>();
+
+                foreach (var (result, group) in flat)
+                {
+                    var clone = result.CreateCopy() as ClashResult;
+                    if (clone == null) continue;
+
+                    var trail = wanted.TryGetValue(result.Guid.ToString(), out var into)
+                        ? into
+                        : string.IsNullOrEmpty(group)
+                            ? (IReadOnlyList<string>)Array.Empty<string>()
+                            : new[] { group! };
+
+                    rebuilt.Add((clone, trail));
+                }
+
+                copy.Children.Clear();
+
+                // A group per trail, keyed on the whole trail so two branches ending in the same
+                // word stay two groups.
+                var made = new Dictionary<string, ClashResultGroup>(StringComparer.Ordinal);
+
+                foreach (var (result, trail) in rebuilt)
+                {
+                    if (trail.Count == 0)
+                    {
+                        copy.Children.Add(result);
+                        continue;
+                    }
+
+                    var host = nest ? Branch(copy, made, trail) : Leaf(copy, made, trail);
+
+                    if (host == null)
+                    {
+                        LastProblem = "This document will not hold a clash group inside another.";
+                        return false;
+                    }
+
+                    host.Children.Add(result);
+                }
+
+                clash.TestsData.TestsEditTestFromCopy(test, copy);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the regroup: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The group at the end of a trail, as one group named for the whole trail.
+        /// </summary>
+        /// <param name="test">The copy being rebuilt.</param>
+        /// <param name="made">The groups made so far, keyed on their trail.</param>
+        /// <param name="trail">The trail, outermost first.</param>
+        private static ClashResultGroup Leaf(ClashTest test,
+                                             Dictionary<string, ClashResultGroup> made,
+                                             IReadOnlyList<string> trail)
+        {
+            var name = ClashTrail.Join(trail);
+
+            if (made.TryGetValue(name, out var found)) return found;
+
+            var group = new ClashResultGroup { DisplayName = name };
+
+            made[name] = group;
+            test.Children.Add(group);
+
+            return group;
+        }
+
+        /// <summary>
+        /// The group at the end of a trail, as a group inside a group inside a group.
+        ///
+        /// <b>Asked before told.</b> Every collection here answers <c>CanAdd</c>, and that is
+        /// the only honest way to find out whether this document holds a group inside another:
+        /// the API's types permit it - a group is a saved item and the collection takes saved
+        /// items - and the native side is what decides. A refusal returns null rather than
+        /// throwing, and the caller writes the test flat instead.
+        /// </summary>
+        /// <param name="test">The copy being rebuilt.</param>
+        /// <param name="made">The groups made so far, keyed on their trail.</param>
+        /// <param name="trail">The trail, outermost first.</param>
+        private static ClashResultGroup? Branch(ClashTest test,
+                                                Dictionary<string, ClashResultGroup> made,
+                                                IReadOnlyList<string> trail)
+        {
+            ClashResultGroup? parent = null;
+            var reached = string.Empty;
+
+            foreach (var name in trail)
+            {
+                reached = ClashTrail.Under(reached, name);
+
+                if (made.TryGetValue(reached, out var found))
+                {
+                    parent = found;
+                    continue;
+                }
+
+                var group = new ClashResultGroup { DisplayName = name };
+
+                if (parent == null)
+                {
+                    test.Children.Add(group);
+                }
+                else
+                {
+                    if (!parent.Children.CanAdd(group)) return null;
+
+                    parent.Children.Add(group);
+                }
+
+                made[reached] = group;
+                parent = group;
+            }
+
+            return parent;
+        }
+
+        /// <summary>
+        /// Whether the document actually holds a clash group inside another, having been asked to.
+        ///
+        /// Read back rather than assumed. <c>CanAdd</c> answers for the collection in hand; this
+        /// answers for the test after the host has taken the edit, which is the only place a
+        /// document that quietly flattens what it was given can be caught.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        private bool Nested(string testId)
+        {
+            var clash = Clash();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            return test != null && Nested(test.Children);
+        }
+
+        /// <summary>Whether any group in a collection holds a group of its own.</summary>
+        /// <param name="items">The collection to look through.</param>
+        private static bool Nested(SavedItemCollection items)
+        {
+            if (items == null) return false;
+
+            foreach (SavedItem item in items)
+                if (item is ClashResultGroup group)
+                    foreach (SavedItem child in group.Children)
+                        if (child is ClashResultGroup) return true;
+
+            return false;
+        }
+
         public bool Regroup(string testId, IReadOnlyList<string> resultIds, string groupName)
         {
             LastProblem = null;
@@ -1739,7 +1993,14 @@ namespace CamelWorks.Nav.Clash
                 if (item is ClashResult result)
                     results.Add((result, group));
                 else if (item is ClashResultGroup nested)
-                    CollectWithGroups(nested.Children, nested.DisplayName, results);
+                    // The trail, not the innermost name. This passed nested.DisplayName alone,
+                    // so a group inside a group read back as the inner name and every ancestor
+                    // was silently dropped - and the inner names of two different branches
+                    // collide, which is how "Beam" ends up meaning two things on one board. A
+                    // trail joined the one way both sides spell it reads the same whether the
+                    // document nested the groups or held one group named for the whole trail.
+                    CollectWithGroups(nested.Children,
+                                      ClashTrail.Under(group, nested.DisplayName), results);
             }
         }
 

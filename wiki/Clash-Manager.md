@@ -194,6 +194,19 @@ will move out of it, because a result belongs to exactly one group and the host 
 place to put it. **Only what the filters leave is grouped**: a board narrowed to one discipline
 makes groups of that discipline and leaves the rest of the test alone.
 
+**Nested in the document where the document holds it.** Navisworks' own clash groups are typed to
+hold other groups — a group is a saved item and a group's children take saved items — but whether a
+given document actually accepts one is decided by the host, not by the type. So CamelWorks asks:
+it builds the nested tree, checks with the host before adding each group inside another, writes it,
+then **reads the tree back** to see whether the nesting survived. If it did, the groups nest in
+Clash Detective exactly as they banded on the board, and the board says so. If it did not, the same
+buckets are written again as one group each, named for the whole trail — never for the innermost
+segment alone, or *Level 02 · Steel · Beam* and *Level 02 · Timber · Beam* would both become a group
+called *Beam*.
+
+Either way the board reads the same, because a nested group reads back as the trail down to it and
+a flat one is named for that same trail.
+
 The bands come off once they are made. They have become the thing they were describing, and
 leaving them up would show every group twice.
 

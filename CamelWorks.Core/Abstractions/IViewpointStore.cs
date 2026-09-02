@@ -201,6 +201,26 @@ namespace CamelWorks.Core.Abstractions
         bool Regroup(string testId, IReadOnlyList<string> resultIds, string groupName);
 
         /// <summary>
+        /// Put every result of one test where a chain of bands says it belongs, nesting the
+        /// host's groups along each trail when the document will hold them.
+        ///
+        /// <b>Why this is not the call above in a loop.</b> That one takes one name and leaves
+        /// the rest of the test alone; this one states the whole assignment at once, which is
+        /// what lets it be a single edit to the document rather than one per group - fifty
+        /// rebuilds of the same test on a real board. It is also the only way to ask for depth,
+        /// because a trail is only a trail relative to the others beside it.
+        ///
+        /// <b>It may not get what it asked for.</b> Whether the host's clash groups hold other
+        /// groups is a fact about the document, not about the API's types, so the implementation
+        /// tries, reads the tree back, and falls back to one group per trail - named for the
+        /// whole trail, so nothing collides and the board reads the same either way. The answer
+        /// says which happened.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="paths">Each bucket: the trail down to it and the results in it.</param>
+        ClashNesting Regroup(string testId, IReadOnlyList<ClashGroupPath> paths);
+
+        /// <summary>
         /// Rename the results of one test sequentially: prefix1, prefix2, ... in host order.
         /// </summary>
         /// <param name="testId">Which test.</param>
