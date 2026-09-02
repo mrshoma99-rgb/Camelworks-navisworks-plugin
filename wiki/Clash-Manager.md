@@ -5,7 +5,7 @@
 The clash week, end to end: say what gets tested, run it, filter the noise away, decide what is
 left, and record what was agreed.
 
-**Tabs:** [Manage](#manage) · [Matrix](#matrix) · [Clearance Check](#clearance-check) ·
+**Tabs:** [Manage](#manage) · [Clash matrix](#clash-matrix) · [Clearance Check](#clearance-check) ·
 [Filter Clashes](#filter-clashes) · [Report](#report) · [BCF](#bcf) ·
 [Clash file](#clash-file) · [Merge](#merge)
 
@@ -508,29 +508,104 @@ and grouped results are all still counted, and can be shown.
 
 ---
 
-## Matrix
+## Clash matrix
 
-> Build a whole test set at once from a grid of one discipline against another, instead of naming
-> forty tests by hand.
+> The matrix is the document; the clash tests are what falls out of it.
 
-**Main action: Read the matrix.**
+A clash matrix is the disciplines down one side and across the top, with a symbol where two of
+them have to be checked against each other. That grid is drawn at a kick-off, argued over, re-cut
+when a package moves, and lived with for a year — so it is editable whatever it came from, it is
+saved with the project, it goes back out as a spreadsheet, and **building it a second time changes
+only what actually changed**.
 
-Three ways in, all ending at the same grid and the same legend:
+### Rows and columns
 
-1. **By hand** — categories are picked from the model's own search sets, selection sets or whole
-   models. Never typed, because a typed category that matches nothing is a test that finds nothing.
-2. **Out of the model's existing tests** — each test's two sides become categories, and each
-   distinct kind-and-tolerance becomes a lettered legend symbol. Useful for seeing what last
-   month's coordinator actually set up.
-3. **The client's spreadsheet** — with a mapping step, a preview, and a check that every category
-   names a set this model really has.
+**A row is side A and a column is side B.** They are two lists of their own, so the square grid
+everybody draws is the case where they hold the same things — and four packages down the side
+against every discipline across the top is possible without inventing categories that mean nothing
+on the other axis. *Make the columns match the rows*, under **Start from**, squares it off in one
+press.
 
-The legend is per-symbol: **test type** (hard, clearance, …) and **tolerance**, on or off. Give the
-tests a name pattern and a folder, and it reports what it created per kind, with jumps to run them
-or open them in Manage.
+Click a header for everything that can be done to it: name it, number it, code it, point it at
+something, move it, add another, take it out. **Or drag it** — a row onto another row, a column onto
+another column — and the line under the pointer shows where it will land. Its cells travel with it.
 
-The whole matrix exports back out as an Excel file — the grid on one sheet, the legend on the next.
-It survives switching tabs.
+Where both axes hold the same thing, the cell at (Ducts, Steel) and the cell at (Steel, Ducts) name
+**one test**. The first is built and the second is skipped, saying so, rather than giving the job two
+identical tests with two sets of results to review.
+
+### What a row points at
+
+| | |
+|---|---|
+| **A saved set** | A selection set or a search set, chosen from what the model has |
+| **Whole models** | One or more of the loaded files |
+| **What is selected now** | Captured as a list of elements |
+| **A pick from the selection tree** | The same, from branches picked in Navisworks |
+| **What is visible now** | The same, after one walk of the model |
+
+**Nothing is typed.** The document knows what it has, so the choice is what it has — a set name
+typed by hand is right until somebody renames the set, at which point the matrix silently tests
+nothing.
+
+The first two **re-resolve every run**, so a wall modelled tomorrow is in tomorrow's results. The
+last three are a list of elements **as they were** when the row was pointed at them, and nothing
+added later joins. The header says which, because a matrix that did not would be a coordination
+plan quietly going stale. *What is visible now* is the one thing on this screen that walks the
+model, and it says so.
+
+### The legend
+
+A symbol is a **setting**: a kind of test and a tolerance, on or off. `A` for a hard clash at 10 mm,
+`B` for a clearance at 50 mm. A cell carrying that symbol becomes a test with those settings, so
+changing one entry changes every cell that uses it — the cells repaint, the grid is not rebuilt.
+
+Click a cell to put a symbol in it, take it out, or fill the whole grid with what is in it.
+
+### The three ways in
+
+1. **By hand** — add a row, point it at something, repeat.
+2. **The model's own tests** — every test says what it is between, so the matrix is already in the
+   document. Each source becomes a row and a column, and **the legend is built from the kinds and
+   tolerances the tests actually use**, lettered A, B, C in the order they turn up. Useful for
+   seeing what last month's coordinator set up.
+3. **A spreadsheet** — the client's own workbook with its own symbols. Its symbols arrive in the
+   legend as ordinary hard clashes, visibly, so what is left is correcting the two that are not —
+   a smaller job than describing all of them.
+
+### Naming
+
+Test names are a **pattern**, under *Naming*, built out of the pieces a cell knows: `{row}`,
+`{column}`, their numbers, their codes, their numbered titles, `{symbol}`, `{test}`, `{tolerance}`,
+`{n}`. Anything else you type is kept as typed, so a job code or a separator needs no token of its
+own. Every job names its tests differently, and the naming is what somebody sorts and filters a
+rail of a hundred and sixty by.
+
+### Before you build
+
+**Check it against the model** takes every row and column and asks whether this model actually has
+what it points at. A test built on a set that no longer exists runs and finds nothing — which reads
+exactly like a discipline with no clashes, the most dangerous thing a clash matrix can say.
+
+**See what would change** is the difference between this matrix and the tests already in the
+document: how many to make, how many to change, how many are already right, and how many the
+document has that no cell asks for.
+
+### Building
+
+**Build the tests** writes only what is not right already. A test is matched on **what it is
+between**, not on what it is called, so a rename is not a new test — changing the naming pattern
+renames rather than rebuilds. What is already right is left exactly as it is, **with its statuses,
+assignments, comment trails and groups**. A test in the document that no cell asks for is reported
+and never deleted: a federation carries tests this matrix does not own.
+
+### Out
+
+**Save it in this project** so it is there the next time the model opens. **As a spreadsheet** for
+whoever asked, with the legend under the grid.
+
+**A matrix can be drawn on a seat with no clash engine at all** — read it, edit it, save it, send
+it. Only building is refused, and it says so.
 
 ---
 

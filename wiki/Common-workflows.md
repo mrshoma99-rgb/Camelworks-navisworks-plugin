@@ -21,7 +21,7 @@ Worth knowing before the meeting rather than during it.
 
 ## The clash week
 
-1. **[Clash Manager ▸ Matrix](Clash-Manager#matrix)** — build the test set from a grid, or read
+1. **[Clash Manager ▸ Clash matrix](Clash-Manager#clash-matrix)** — build the test set from a grid, or read
    the client's spreadsheet. Give the tests a name pattern and a folder.
 2. **[Manage](Clash-Manager#manage)** → pick the tests → **run** → *Read the results*.
 3. **[Filter Clashes](Clash-Manager#filter-clashes)** — suppress the noise, group what is one

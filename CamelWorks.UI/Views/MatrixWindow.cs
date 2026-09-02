@@ -303,6 +303,7 @@ namespace CamelWorks.UI.Views
                 words.Children.Add(stacked);
                 head.Child = words;
 
+                Draggable(head, line, rows: true);
                 Opens(head, () => LineMenu(line, at, rows: true));
 
                 return head;
@@ -343,6 +344,7 @@ namespace CamelWorks.UI.Views
 
                 head.Child = stacked;
 
+                Draggable(head, line, rows: false);
                 Opens(head, () => LineMenu(line, at, rows: false));
 
                 return head;
@@ -436,6 +438,14 @@ namespace CamelWorks.UI.Views
                         : ". First one: " + Quoted(plan.Tests[0].Name));
             }
 
+            /// <summary>
+            /// Where a press started, so a drag can be told from a click.
+            ///
+            /// One field rather than one per header: only one pointer is ever down.
+            /// </summary>
+            private Point _from;
+            private bool _dragging;
+
             private static void Opens(Border on, Func<List<Parts.Entry>> menu)
             {
                 on.MouseLeftButtonUp += (s, e) =>
@@ -444,6 +454,104 @@ namespace CamelWorks.UI.Views
                     Ui.Safely(() => Parts.PopMenu(on, menu()));
                 };
             }
+
+            /// <summary>
+            /// Let a header be dragged into a new place in its own axis.
+            ///
+            /// <b>A drag has to be told from a click</b>, because the same header opens a menu.
+            /// So a press only records where it started; it becomes a drag once the pointer has
+            /// moved past the system's own threshold, and the flag it sets suppresses the menu
+            /// that the release would otherwise open. Getting this wrong gives a header that
+            /// opens a menu every time somebody tries to move it, which is worse than not being
+            /// draggable at all.
+            ///
+            /// <b>Rows drop on rows and columns on columns.</b> A row dragged onto a column
+            /// header would have to mean something, and there is nothing sensible for it to mean.
+            /// </summary>
+            /// <param name="head">The header.</param>
+            /// <param name="line">The row or column it stands for.</param>
+            /// <param name="rows">True for a row header, false for a column.</param>
+            private void Draggable(Border head, MatrixLine line, bool rows)
+            {
+                var carried = rows ? RowCarried : ColumnCarried;
+
+                head.AllowDrop = true;
+
+                head.PreviewMouseLeftButtonDown += (s, e) =>
+                {
+                    _from = e.GetPosition(null);
+                    _dragging = false;
+                };
+
+                head.MouseMove += (s, e) =>
+                {
+                    if (e.LeftButton != MouseButtonState.Pressed || _dragging) return;
+
+                    var now = e.GetPosition(null);
+
+                    if (Math.Abs(now.X - _from.X) < SystemParameters.MinimumHorizontalDragDistance
+                        && Math.Abs(now.Y - _from.Y) < SystemParameters.MinimumVerticalDragDistance)
+                        return;
+
+                    _dragging = true;
+
+                    Ui.Safely(() => DragDrop.DoDragDrop(head, new DataObject(carried, line),
+                                                        DragDropEffects.Move));
+                };
+
+                head.DragOver += (s, e) =>
+                {
+                    var taking = e.Data.GetDataPresent(carried);
+
+                    e.Effects = taking ? DragDropEffects.Move : DragDropEffects.None;
+                    e.Handled = true;
+
+                    // A line down the edge it would land on, so it is obvious where it goes
+                    // before the button comes up.
+                    head.BorderThickness = taking
+                        ? (rows ? new Thickness(0, 2, 1, 1) : new Thickness(2, 0, 1, 1))
+                        : new Thickness(0, 0, 1, 1);
+                };
+
+                head.DragLeave += (s, e) => head.BorderThickness = new Thickness(0, 0, 1, 1);
+
+                head.Drop += (s, e) =>
+                {
+                    head.BorderThickness = new Thickness(0, 0, 1, 1);
+
+                    if (!(e.Data.GetData(carried) is MatrixLine moved) || ReferenceEquals(moved, line))
+                        return;
+
+                    e.Handled = true;
+
+                    Ui.Safely(() =>
+                    {
+                        var lines = rows ? _board.Rows : _board.Columns;
+
+                        var from = lines.ToList().FindIndex(l => ReferenceEquals(l, moved));
+                        var to = lines.ToList().FindIndex(l => ReferenceEquals(l, line));
+
+                        if (from < 0 || to < 0) return;
+
+                        if (rows) _board.MoveRow(from, to); else _board.MoveColumn(from, to);
+
+                        Redraw();
+                    });
+                };
+
+                // The release that ends a drag must not also open the menu.
+                head.PreviewMouseLeftButtonUp += (s, e) =>
+                {
+                    if (!_dragging) return;
+
+                    _dragging = false;
+                    e.Handled = true;
+                };
+            }
+
+            /// <summary>What a dragged row and a dragged column are carried as.</summary>
+            private const string RowCarried = "CamelWorks.MatrixRow";
+            private const string ColumnCarried = "CamelWorks.MatrixColumn";
 
 
             // ---------------------------------------------------------------------------
