@@ -412,6 +412,8 @@ namespace CamelWorks.UI.Views
             public bool RenamePicked(string testId,
                 System.Collections.Generic.IReadOnlyList<string> resultIds, string prefix) => false;
 
+            public bool RenameResult(string testId, string resultId, string name) => false;
+
             public bool CompactTests(System.Collections.Generic.IReadOnlyList<string> testIds) => false;
 
             public ClashTestSides? Sides(string testId) => null;

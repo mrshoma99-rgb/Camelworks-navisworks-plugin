@@ -112,8 +112,14 @@ namespace CamelWorks.Nav.Clash
             {
                 try
                 {
+                    // Whether there is clash data to write to, and nothing more. This also asked
+                    // TestsData.Value.IsReadOnly, which is a property of the snapshot object and
+                    // says nothing about whether the document part will take an edit - the whole
+                    // mutation API lives on the part, not on the snapshot, and it is the API
+                    // Clash Detective itself edits an NWD through. Asking the snapshot made this
+                    // false on files somebody was editing by hand in the next window along.
                     var clash = Clash();
-                    return clash != null && !clash.TestsData.Value.IsReadOnly;
+                    return clash != null && clash.TestsData != null;
                 }
                 catch (Exception)
                 {
@@ -659,6 +665,54 @@ namespace CamelWorks.Nav.Clash
                         stem + number++.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
                 return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the rename: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool RenameResult(string testId, string resultId, string name)
+        {
+            LastProblem = null;
+
+            var wanted = (name ?? string.Empty).Trim();
+
+            if (wanted.Length == 0)
+            {
+                LastProblem = "A clash needs a name.";
+                return false;
+            }
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            try
+            {
+                var found = new List<(ClashResult Result, string? Group)>();
+                CollectWithGroups(test.Children, null, found);
+
+                foreach (var (result, _) in found)
+                {
+                    if (!string.Equals(result.Guid.ToString(), resultId,
+                                       StringComparison.OrdinalIgnoreCase)) continue;
+
+                    clash.TestsData.TestsEditDisplayName(result, wanted);
+                    return true;
+                }
+
+                LastProblem = "That result is not in the test any more. Re-read it.";
+                return false;
             }
             catch (Exception e)
             {
@@ -1893,6 +1947,25 @@ namespace CamelWorks.Nav.Clash
             _cachedAt = -1;
         }
 
+        /// <summary>
+        /// The document's clash data, for something that is about to write to it.
+        ///
+        /// <b>No read-only gate.</b> This refused whenever <c>TestsData.Value.IsReadOnly</c> was
+        /// true, which is why a published NWD read as a document that takes no decisions at all -
+        /// while Clash Detective, in the same seat on the same file, renames tests, sets statuses
+        /// and writes comments. The flag was the wrong question. <c>Value</c> is a
+        /// <c>ClashTestsData</c> - a snapshot with <c>CreateCopy</c> and <c>CopyFrom</c> - and
+        /// nothing is ever meant to be written through it. Every edit goes through the document
+        /// part instead: <c>TestsEditResultStatus</c>, <c>TestsEditResultAssignedTo</c>,
+        /// <c>TestsEditResultComments</c>, <c>TestsEditTestFromCopy</c>, <c>TestsEditDisplayName</c>.
+        /// That is the API Clash Detective itself is written against, and asking the snapshot
+        /// whether it may be mutated says nothing about whether those will be accepted.
+        ///
+        /// So the answer is the attempt. Every writer here is already inside a try that turns a
+        /// refusal into <see cref="LastProblem"/>, and a document that genuinely will not take an
+        /// edit says so there - once, about the edit that was actually refused, rather than in
+        /// advance about every edit there might ever be.
+        /// </summary>
         private DocumentClash? Writable()
         {
             // Anything that asks to write is about to make the cached result handles wrong - a
@@ -1906,20 +1979,6 @@ namespace CamelWorks.Nav.Clash
             if (clash == null)
             {
                 LastProblem = "This document has no clash engine to write to.";
-                return null;
-            }
-
-            try
-            {
-                if (clash.TestsData.Value.IsReadOnly)
-                {
-                    LastProblem = "The document's clash data is read-only here.";
-                    return null;
-                }
-            }
-            catch (Exception)
-            {
-                LastProblem = "The document's clash data could not be reached.";
                 return null;
             }
 

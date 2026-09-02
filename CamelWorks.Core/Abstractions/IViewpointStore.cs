@@ -236,6 +236,21 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="prefix">What each name starts with.</param>
         bool RenamePicked(string testId, IReadOnlyList<string> resultIds, string prefix);
 
+        /// <summary>
+        /// Give one result the name it was actually given.
+        ///
+        /// <b>Not the numbering one with a list of one.</b> Renaming a single clash went through
+        /// <see cref="RenamePicked"/>, which takes a stem and numbers what it is given - so
+        /// typing "Corridor duct" produced "Corridor duct1", every time, on every rename. The
+        /// host has an exact rename and always did; it just was not reached for, because the
+        /// numbering one was written first and a rename of one row looked like a rename of a
+        /// list.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <param name="name">Its new name, exactly.</param>
+        bool RenameResult(string testId, string resultId, string name);
+
         /// <summary>Rename one test.</summary>
         /// <param name="testId">Which test.</param>
         /// <param name="name">The new name.</param>

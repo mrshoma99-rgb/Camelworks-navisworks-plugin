@@ -91,10 +91,17 @@ namespace CamelWorks.UI.Views
 
             var strip = new Border();
 
-            strip.Child = Ui.Info("This is a published NWD, so it is a snapshot: nothing written "
-                + "here can be saved back into it. Reading, checking, reporting and exporting all "
-                + "work as normal. Clash decisions are kept and travel out as clash XML; open the "
-                + "NWF the models were federated in when you need a write to land in the file.",
+            // It no longer says that nothing written here can be saved back. That was read off
+            // a read-only flag on a snapshot object rather than off the document part edits
+            // actually go through, and it is not what people find in practice: Clash Detective
+            // edits an NWD's results in the window next door. Whether a particular write lands
+            // is answered by making it, so this says what is certainly true of a snapshot - it is
+            // one - and leaves the rest to the attempt.
+            strip.Child = Ui.Info("This is a published NWD: a snapshot of the models as they were "
+                + "when it was written, not the federation they came from. Reading, checking, "
+                + "reporting and exporting all work as normal, and decisions are kept in the "
+                + "project whatever the file accepts. Open the NWF the models were federated in "
+                + "when the models themselves have moved on.",
                 "Dismiss",
                 () =>
                 {

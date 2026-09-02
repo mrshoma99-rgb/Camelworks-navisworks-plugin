@@ -1115,6 +1115,19 @@ namespace CamelWorks.UI.Views
                 name.Wearing("Hint");
                 row.Children.Add(name);
 
+                // Renaming it, where it is. A folder here is made by moving a test into a name
+                // that does not exist yet, so it could be created and filled but never corrected
+                // - a typo in a folder name was permanent short of moving every test in it out
+                // and back again.
+                var rename = Ui.Icon(Glyphs.Pencil, "Rename this folder",
+                                     () => Prompt("Rename this folder", folder, "Rename",
+                                                  named => RenameFolder(folder, named)));
+
+                rename.VerticalAlignment = VerticalAlignment.Center;
+                rename.Margin = new Thickness(6, 0, 0, 0);
+                DockPanel.SetDock(rename, Dock.Right);
+                row.Children.Insert(0, rename);
+
                 var band = new Border
                 {
                     Padding = new Thickness(12, 6, 14, 5),
@@ -1433,38 +1446,12 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(verbs, Dock.Right);
                 row.Children.Add(verbs);
 
-                // The edits this document would not take, for the test on the board. Kept a
-                // link because it is the one fact here somebody acts on, and kept per-test
-                // because "14 waiting" over eighteen tests never said which one to open.
-                var waiting = OnFile || entry == null
-                    ? 0
-                    : Waiting.Count(f => string.Equals(f.Rule, entry.Test.Name,
-                                                       StringComparison.OrdinalIgnoreCase));
-
-                if (waiting > 0)
-                {
-                    var dot = new System.Windows.Shapes.Ellipse
-                    {
-                        Width = 7,
-                        Height = 7,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 5, 0),
-                    };
-
-                    dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
-
-                    var held = Ui.Link(Skin.Num(waiting) + " waiting", ShowHeld);
-                    held.Margin = new Thickness(0);
-                    held.VerticalAlignment = VerticalAlignment.Center;
-                    held.ToolTip = Ui.Count(waiting, "edit") + " on this test that the document "
-                                   + "would not take. Press to see them.";
-
-                    DockPanel.SetDock(dot, Dock.Right);
-                    DockPanel.SetDock(held, Dock.Right);
-                    row.Children.Add(held);
-                    row.Children.Add(dot);
-                }
-
+                // No "14 waiting" here any more. It counted the edits the document had refused,
+                // which on a real job is either nought or everything: it said nothing about which
+                // test to open, it sat in the corner of the rail being red at somebody all
+                // afternoon, and the count it was reporting was mostly an artefact of refusing to
+                // attempt writes this product had decided in advance would fail. What is waiting
+                // is still on the save button, which is where it is acted on.
                 var shown = Shown().Count;
 
                 var tests = read.Count == 0
@@ -3191,7 +3178,7 @@ namespace CamelWorks.UI.Views
                     e.Handled = true;
 
                     Prompt("Rename this clash", result.Info.Name ?? string.Empty, "Rename",
-                           renamed => Renumber(new List<Row> { result }, renamed));
+                           renamed => RenameOne(result, renamed));
                 };
 
                 Grid.SetColumn(name, 1);
@@ -4032,6 +4019,15 @@ namespace CamelWorks.UI.Views
                     why == null
                         ? null
                         : Parts.Entry.Barred("Sync into the document", Glyphs.Save, why),
+
+                    // Where "what is waiting" lives now that the rail no longer keeps a red count
+                    // in its corner. Listed only when there is something waiting, so it is an
+                    // answer to a question somebody has rather than a standing reproach.
+                    OnFile || WaitingCount == 0
+                        ? null
+                        : Parts.Entry.Saying("See what is waiting", Glyphs.Clock,
+                            Ui.Count(WaitingCount, "change") + " the document has not taken",
+                            ShowHeld),
                     Parts.Entry.Saying(OnFile ? "Save the markup" : "Save as a clash file (BCF)",
                         Glyphs.Round, "The offline review round — out and back", SaveChanges),
                     Parts.Entry.Barred("Write a report", Glyphs.Report,
@@ -5849,6 +5845,33 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Give one clash the name that was typed for it.
+            ///
+            /// <b>Not the numbering verb with a list of one.</b> This went through
+            /// <see cref="Renumber"/>, which takes a stem and numbers what it is given, so
+            /// typing "Corridor duct" produced "Corridor duct1" - every rename, every time, a
+            /// digit nobody asked for. The host has an exact rename and always did; the numbered
+            /// one was simply written first, and renaming one row looked like renaming a list.
+            /// Renumbering is still its own verb, on the selection bar, where a prefix and a
+            /// running number are what is being asked for.
+            /// </summary>
+            /// <param name="row">The result to rename.</param>
+            /// <param name="name">Its new name, exactly as typed.</param>
+            private void RenameOne(Row row, string name)
+            {
+                var wanted = (name ?? string.Empty).Trim();
+
+                if (wanted.Length == 0) return;
+
+                Write(new List<object> { row }, _toast,
+                      "Renamed it to " + Quoted(wanted) + ".",
+                      (testId, ids) => _session.Clash.RenameResult(testId, ids[0], wanted),
+                      one => one.Info.Name = wanted,
+                      (finding, one) => { _ = one; finding.Title = wanted; },
+                      FindingField.Title);
+            }
+
+            /// <summary>
             /// Rename results — through the database, like every other edit on this board.
             ///
             /// <b>This one used to go straight to the host.</b> It called <c>RenamePicked</c>, and
@@ -6158,6 +6181,62 @@ namespace CamelWorks.UI.Views
                 Moved();
                 Redraw();
             }
+
+            /// <summary>
+            /// Rename a folder of tests, keeping every test in it.
+            ///
+            /// A folder is this project's rather than the host's - it exists because tests say
+            /// they are in it - so renaming one is refiling all of them at once, and there is no
+            /// folder object anywhere to rename. That also means the name can be corrected on a
+            /// published NWD, where the host would not have taken it.
+            /// </summary>
+            /// <param name="folder">The folder as it is called now.</param>
+            /// <param name="name">What to call it instead.</param>
+            private void RenameFolder(string folder, string name)
+            {
+                var wanted = (name ?? string.Empty).Trim();
+                var read = Current();
+
+                if (wanted.Length == 0 || read == null) return;
+
+                if (string.Equals(wanted, folder, StringComparison.Ordinal)) return;
+
+                var inside = read
+                    .Where(e => string.Equals((e.Test.Folder ?? string.Empty).Trim(), folder,
+                                              StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (inside.Count == 0)
+                {
+                    Warned(Ui.Problem("That folder is empty now, so there is nothing to rename."));
+                    return;
+                }
+
+                var names = TestNames();
+
+                foreach (var entry in inside) names.Refile(entry.Test.Id, wanted);
+
+                if (!KeepTestNames(names))
+                {
+                    Warned(Ui.Problem("That folder was not renamed: the new name could not be "
+                                      + "kept in this project."));
+                    return;
+                }
+
+                foreach (var entry in inside) entry.Refile(wanted);
+
+                // The fold state travels with the name, or a folded folder springs open the
+                // moment it is renamed.
+                if (_shutFolders.Remove(folder)) _shutFolders.Add(wanted);
+
+                _session.Record(ActivityKind.Regroup,
+                                "renamed the folder \"" + folder + "\" to \"" + wanted + "\"");
+
+                Moved();
+                RedrawRailList();
+                RedrawFoot();
+            }
+
 
             private void DeleteTests(IReadOnlyList<object> picked, Panel say)
             {
@@ -8679,8 +8758,18 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Why this document cannot take the changes, or null when it can.
             ///
-            /// Four reasons, and each one is a different thing to do about it, so each says so
-            /// rather than all four sharing a grey button and a shrug.
+            /// <b>Only what is knowable before trying.</b> This also said, in advance, that a
+            /// published NWD holds its clash results read-only and that a document whose
+            /// <c>CanEdit</c> was false would take nothing - both of them read off
+            /// <c>TestsData.Value.IsReadOnly</c>, which is a property of a snapshot object and
+            /// not a statement about the document part every edit actually goes through. So the
+            /// product told somebody their afternoon could not be written into a file that Clash
+            /// Detective, in the next window along, was editing happily.
+            ///
+            /// What is left here is the two facts that are true before any attempt: a file is
+            /// open for markup instead of the model, or this edition has no clash engine at all.
+            /// A document that really does refuse an edit says so when it refuses one, about the
+            /// edit it refused.
             /// </summary>
             private string? WhySync()
             {
@@ -8688,21 +8777,12 @@ namespace CamelWorks.UI.Views
                     return "A file is open for markup, not the model. Save the markup and run the "
                            + "sync from the seat that has the model open.";
 
-                // These say why the DOCUMENT cannot take the changes - never why they cannot be
+                // This says why the DOCUMENT cannot take the changes - never why they cannot be
                 // saved. They are saved either way; this is the second half that is unavailable.
                 if (!_session.Clash.IsAvailable)
                     return "This Navisworks edition has no clash engine, so there are no clash "
                            + "results in the file to write into. "
                            + (_session.ClashProblem ?? string.Empty).Trim();
-
-                if (_session.IsPublished)
-                    return "This is a published NWD, and a published file holds its clash results "
-                           + "read-only. Open the NWF the models were federated in and the same "
-                           + "changes go into it.";
-
-                if (!_session.Clash.CanEdit)
-                    return "This document's clash results will not take an edit. Open the NWF the "
-                           + "models were federated in and the same changes go into it.";
 
                 return null;
             }
