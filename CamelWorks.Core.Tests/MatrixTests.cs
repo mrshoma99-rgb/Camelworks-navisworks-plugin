@@ -158,20 +158,33 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void TheMirroredCellIsTheSameTestAndIsSkipped()
+        public void TheMirroredCellIsTheSameTestAndIsNotASecondOne()
         {
-            // The whole reason the planner exists: a square grid filled on both sides of the
-            // diagonal must not give the job two identical tests with two sets of results.
+            // A clash matrix is mirrored about its diagonal: A against B is the same test as B
+            // against A. Writing one half writes the other, and the pair is planned once - with
+            // nothing reported as skipped, because nothing was left out.
             var board = Square("Steel", "Ducts");
 
             board.Set(board.Rows[0], board.Columns[1], "A");
-            board.Set(board.Rows[1], board.Columns[0], "A");
+
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[0]));
 
             var plan = MatrixPlanner.Plan(board, Legend());
 
             Assert.Single(plan.Tests);
-            Assert.Single(plan.Skipped);
-            Assert.Contains("already tested", plan.Skipped[0].Why);
+            Assert.Empty(plan.Skipped);
+        }
+
+        [Fact]
+        public void ClearingOneHalfClearsTheOther()
+        {
+            var board = Square("Steel", "Ducts");
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[1], board.Columns[0], null);
+
+            Assert.Null(board.At(board.Rows[0], board.Columns[1]));
+            Assert.Empty(MatrixPlanner.Plan(board, Legend()).Tests);
         }
 
         [Fact]

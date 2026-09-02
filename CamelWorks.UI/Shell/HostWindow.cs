@@ -140,6 +140,37 @@ namespace CamelWorks.UI.Shell
         }
 
         /// <summary>
+        /// Let a window that is not modal take the keyboard.
+        ///
+        /// <b>Why a text box in an app window would not accept a letter.</b> Navisworks runs a
+        /// WinForms message loop, and a WPF window shown modelessly inside one is outside it: the
+        /// box takes focus, the caret blinks, the border lights - and every key pressed is eaten
+        /// by the loop that owns the thread before WPF ever sees it. A modal window escapes it
+        /// because <c>ShowDialog</c> pumps messages itself, which is why every dialogue in this
+        /// product could always be typed into and the two search boxes on the Manage tab, sitting
+        /// in a window that was merely shown, could not.
+        ///
+        /// The bridge is one call. It installs a message filter that hands keyboard messages to
+        /// the WPF window's own input system, and it is what every modeless WPF window inside a
+        /// WinForms host needs.
+        /// </summary>
+        /// <param name="window">A window about to be shown with <c>Show</c>, not <c>ShowDialog</c>.</param>
+        public static void Typing(Window? window)
+        {
+            if (window == null) return;
+
+            try
+            {
+                System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(window);
+            }
+            catch (Exception)
+            {
+                // A host with no WinForms loop of its own does not need the bridge, and a window
+                // that will not take it is worth no keyboard rather than no window.
+            }
+        }
+
+        /// <summary>
         /// Stop the host's WPF application from treating our last closed window as its own.
         ///
         /// Only when there is an application: showing a WPF window from a native host usually

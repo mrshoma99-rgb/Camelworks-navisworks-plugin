@@ -530,9 +530,11 @@ Click a header for everything that can be done to it: name it, number it, code i
 something, move it, add another, take it out. **Or drag it** — a row onto another row, a column onto
 another column — and the line under the pointer shows where it will land. Its cells travel with it.
 
-Where both axes hold the same thing, the cell at (Ducts, Steel) and the cell at (Steel, Ducts) name
-**one test**. The first is built and the second is skipped, saying so, rather than giving the job two
-identical tests with two sets of results to review.
+**A matrix is mirrored about its diagonal**, because Ducts against Steel is the same check as Steel
+against Ducts. Where both axes hold the same thing, putting a symbol in one of those two cells puts
+it in the other, and taking it out takes both out — the grid cannot hold two different answers about
+one pair. The half below the diagonal is drawn quieter and says in its tip which cell it is the
+other side of, and the pair is built **once**: one test, one set of results to review.
 
 ### What a row points at
 

@@ -104,6 +104,12 @@ namespace CamelWorks.UI.Shell
                 window = new AppWindow(app);
                 // An app window stands beside the others, not over one of them.
                 HostWindow.Own(window, topLevel: true);
+
+                // Before it is up: a modeless window inside the host's WinForms loop gets no
+                // keys until it is bridged, and a search box you cannot type in is what that
+                // looks like from the outside.
+                HostWindow.Typing(window);
+
                 window.Show();
 
                 // Remembered only once it is up. Written before the Show, a window that failed

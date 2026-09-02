@@ -85,6 +85,7 @@ namespace CamelWorks.UI.Views
 
             Skin.Apply(window);
             Shell.HostWindow.Own(window);
+            Shell.HostWindow.Typing(window);
 
             window.Closed += (s, e) => Open.Remove(tool.Id);
 
