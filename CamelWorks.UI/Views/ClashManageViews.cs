@@ -1786,21 +1786,20 @@ namespace CamelWorks.UI.Views
                 var total = entry.Rows.Count;
                 var count = Counted(entry);
 
-                var said = new TextBlock
-                {
-                    Text = count == total
-                        ? Ui.Count(total, "result")
-                        : "Showing " + Skin.Num(count) + " of " + Skin.Num(total),
-                    VerticalAlignment = VerticalAlignment.Bottom,
-                    Margin = new Thickness(10, 0, 10, 0),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    TextWrapping = TextWrapping.NoWrap,
-                };
-
                 var head = new TextBlock
                 {
                     Text = entry.Test.Name,
                     VerticalAlignment = VerticalAlignment.Bottom,
+
+                    // Set here rather than left to the "Head" style, which wraps.
+                    //
+                    // A wrapping title in a row that also holds the search, the chips and six
+                    // symbols is a title with whatever width they leave it - and on a real test
+                    // name in a pane this wide, that was about twenty pixels. The name came out as
+                    // a column of single letters down the side of the board. A title has one line
+                    // and loses its tail when there is no room for it.
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
 
                     // The sentence that used to sit beside it: what the test is between, what it
                     // ran at and when. None of it changes while the board is worked, so it was a
@@ -1813,7 +1812,6 @@ namespace CamelWorks.UI.Views
                 };
 
                 var words = new DockPanel { LastChildFill = true };
-                DockPanel.SetDock(head, Dock.Left);
 
                 if (!OnFile)
                 {
@@ -1827,8 +1825,27 @@ namespace CamelWorks.UI.Views
                     };
                 }
 
+                // Only when a filter is actually hiding something. Unfiltered it said "178
+                // results" next to chips already reading "178 all", which is the same number
+                // twice - and the width it spent was width the name did not have.
+                if (count != total)
+                {
+                    var said = new TextBlock
+                    {
+                        Text = "Showing " + Skin.Num(count) + " of " + Skin.Num(total),
+                        VerticalAlignment = VerticalAlignment.Bottom,
+                        Margin = new Thickness(10, 0, 10, 0),
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                    };
+
+                    DockPanel.SetDock(said, Dock.Right);
+                    words.Children.Add(said.Wearing("Hint"));
+                }
+
+                // The name last, so it is the child that fills what the rest have left and the
+                // one that gives way when there is not enough for everybody.
                 words.Children.Add(head.Wearing("Head"));
-                words.Children.Add(said.Wearing("Hint"));
 
                 row.Children.Add(words);
 
