@@ -1233,8 +1233,41 @@ namespace CamelWorks.UI.Views
                 RepaintRail(was);
                 RepaintRail(testId);
 
-                RedrawBoard();
+                // The head says which test straight away. The rows are the expensive half - a
+                // pass over every result through every filter, then a table - and doing them in
+                // the same press meant nothing reached the screen until they were done, so the
+                // card you clicked sat unlit for as long as the board took to build.
+                if (!RedrawBoardHead()) return;
+
+                // The last test's rows are not this test's, so they go now rather than sitting
+                // there under the new name until the new ones arrive.
+                _board.Children.Clear();
+                _cells.Clear();
+                _lines = null;
+
+                Next(() =>
+                {
+                    // A newer press supersedes this one. Clicking down a rail of tests should
+                    // build the board once, for the test the person stopped on.
+                    if (!string.Equals(_current, testId, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    RedrawRows();
+                });
             }
+
+            /// <summary>
+            /// Run something once what is on screen has been drawn.
+            ///
+            /// Background is below render, so everything queued ahead of it - layout, the paint
+            /// of whatever just changed - happens first. That is what turns "the screen updates
+            /// when the work finishes" into "the screen updates, then the work happens".
+            /// </summary>
+            /// <param name="work">What to do next.</param>
+            private void Next(Action work) =>
+                _board.Dispatcher.BeginInvoke(
+                    new Action(() => Ui.Safely(work)),
+                    System.Windows.Threading.DispatcherPriority.Background);
 
             /// <summary>The rail's footer: what the list adds up to, and the verbs on a test.</summary>
             /// <summary>
@@ -1614,6 +1647,20 @@ namespace CamelWorks.UI.Views
             /// <summary>Everything on the right-hand side, from the title down to the footnote.</summary>
             private void RedrawBoard()
             {
+                if (RedrawBoardHead()) RedrawRows();
+            }
+
+            /// <summary>
+            /// The board's head: the name, the counts, the search and the two menus.
+            ///
+            /// Split from the rows because the two cost different amounts. This is a handful of
+            /// controls over facts already in hand; the rows are a pass over every result of the
+            /// test through every filter and then a table built from what survives. Putting a
+            /// test on the board can therefore say which test immediately and fill in underneath.
+            /// </summary>
+            /// <returns>True when there is a test to draw rows for.</returns>
+            private bool RedrawBoardHead()
+            {
                 _title.Children.Clear();
 
                 var entry = Entry();
@@ -1627,7 +1674,7 @@ namespace CamelWorks.UI.Views
                             "Pick one on the left, and its results land here."));
 
                     RedrawSelection();
-                    return;
+                    return false;
                 }
 
                 _toleranceMm = ToleranceMm(entry);
@@ -1648,7 +1695,7 @@ namespace CamelWorks.UI.Views
                 _sortBy.Content = Parts.MoreMenu(Glyphs.Sort, WhatIsSorted(),
                                                  SortMenu(), on: InAnOrder);
 
-                RedrawRows();
+                return true;
             }
 
             /// <summary>
