@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -793,6 +794,414 @@ namespace CamelWorks.UI.Views
             if (said != null) onDone?.Invoke(said);
         }
 
+        /// <summary>
+        /// Say what is about to happen and let it happen, or not.
+        ///
+        /// For an act that reaches the document in bulk and cannot be undone by pressing the
+        /// same thing again. The prompt says what will be done and to how much; the button says
+        /// the verb rather than "OK", so the last thing read before the press is the act itself.
+        /// </summary>
+        /// <param name="near">The element this belongs to; the window is owned by the host.</param>
+        /// <param name="prompt">What is about to happen, in full.</param>
+        /// <param name="doIt">The verb on the button that does it.</param>
+        /// <param name="onYes">Called when the verb is pressed, and not otherwise.</param>
+        public static void Sure(FrameworkElement near, string prompt, string doIt, Action onYes)
+        {
+            _ = near;
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var said = false;
+
+            var body = new StackPanel { Margin = new Thickness(18, 16, 18, 16), MaxWidth = 420 };
+
+            body.Children.Add(new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 14),
+            }.Wearing("Body"));
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+            cancel.MinWidth = 92;
+            buttons.Children.Add(cancel);
+
+            var go = Ui.Primary(doIt, () =>
+            {
+                said = true;
+                window.Close();
+            });
+
+            go.MinWidth = 92;
+            go.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(go);
+
+            body.Children.Add(buttons);
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.ShowDialog();
+
+            if (said) onYes?.Invoke();
+        }
+
+
+        /// <summary>
+        /// Ask which of a known set of things, with the option of a new one.
+        ///
+        /// <b>Why this is not <see cref="Ask"/>.</b> Asking somebody to type a name that is
+        /// already on their screen asks them to remember it and spell it, and one typo makes a
+        /// second thing that looks like the first - two folders called Level 03 and Level 3, and
+        /// nothing to say which tests went where. A name that exists is picked; a name that does
+        /// not is typed, once.
+        /// </summary>
+        /// <param name="near">The screen this belongs to, which becomes its owner.</param>
+        /// <param name="prompt">What is being asked.</param>
+        /// <param name="known">What already exists, in the order to offer it.</param>
+        /// <param name="current">What the subject is on now, ticked in the list. May be null.</param>
+        /// <param name="fresh">What the "something new" line says, or null to leave it out.</param>
+        /// <param name="none">What the "none of them" line says, or null to leave it out.</param>
+        /// <param name="onDone">Given the chosen name, or the empty string for none.</param>
+        /// <param name="starting">What the new-one box starts with, when there is a sensible guess.</param>
+        public static void Choose(FrameworkElement near, string prompt,
+                                  IReadOnlyList<string> known, string? current,
+                                  string? fresh, string? none, Action<string> onDone,
+                                  string? starting = null)
+        {
+            _ = near;
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            string? said = null;
+
+            void Done(string what)
+            {
+                said = what;
+                window.Close();
+            }
+
+            var body = new StackPanel { Margin = new Thickness(18, 16, 18, 16), MinWidth = 300 };
+
+            var label = new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+
+            body.Children.Add(label.Wearing("Body"));
+
+            var list = new StackPanel();
+
+            foreach (var one in known ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(one)) continue;
+
+                var here = one;
+                var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+
+                var press = Ui.Quiet(on ? here + "  ·  where it is now" : here, () => Done(here));
+
+                press.HorizontalAlignment = HorizontalAlignment.Stretch;
+                press.HorizontalContentAlignment = HorizontalAlignment.Left;
+                press.Margin = new Thickness(0, 0, 0, 4);
+                press.IsEnabled = !on;
+
+                list.Children.Add(press);
+            }
+
+            // Scrolled rather than grown: a job with forty folders should not open a window taller
+            // than the screen it is opening on.
+            body.Children.Add(new ScrollViewer
+            {
+                Content = list,
+                MaxHeight = 260,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            });
+
+            if (fresh != null)
+            {
+                var box = Ui.Text(starting ?? string.Empty, null, 300);
+                box.Margin = new Thickness(0, 10, 0, 0);
+
+                void Make()
+                {
+                    var typed = box.Text.Trim();
+                    if (typed.Length > 0) Done(typed);
+                }
+
+                box.KeyDown += (s, e) =>
+                {
+                    if (e.Key == Key.Enter) Make();
+                    else if (e.Key == Key.Escape) window.Close();
+                };
+
+                body.Children.Add(Ui.Rule());
+                body.Children.Add(Ui.Eyebrow(fresh));
+                body.Children.Add(box);
+
+                var make = Ui.Primary("Move", Make);
+                make.MinWidth = 92;
+                make.HorizontalAlignment = HorizontalAlignment.Right;
+                make.Margin = new Thickness(0, 8, 0, 0);
+
+                body.Children.Add(make);
+            }
+
+            if (none != null)
+            {
+                var off = Ui.Quiet(none, () => Done(string.Empty));
+
+                off.HorizontalAlignment = HorizontalAlignment.Left;
+                off.Margin = new Thickness(0, 10, 0, 0);
+
+                body.Children.Add(off);
+            }
+
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+
+            cancel.HorizontalAlignment = HorizontalAlignment.Right;
+            cancel.Margin = new Thickness(0, 12, 0, 0);
+
+            body.Children.Add(cancel);
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.ShowDialog();
+
+            if (said != null) onDone?.Invoke(said);
+        }
+
+        /// <summary>
+        /// Pick one value out of however many there are, by typing at them.
+        ///
+        /// <b>Why not a menu.</b> <see cref="Choose"/> lists what it is given, which is right for
+        /// a job's folders or a test's groups - a dozen of each. A property column over a real
+        /// federation carries hundreds of distinct values, and putting those in a drop-down makes
+        /// a list nobody reaches the bottom of, hanging off the filter symbol and covering the
+        /// board behind it. The list here is filtered as you type and capped at what a person can
+        /// actually read, and the cap says how many it is not showing rather than hiding the
+        /// fact.
+        ///
+        /// <b>Counts, because they are what the choice turns on.</b> Narrowing to a value that
+        /// holds four of six hundred results is a different act from narrowing to one that holds
+        /// four hundred, and the only place that is knowable is here, next to the value.
+        /// </summary>
+        /// <param name="near">The element this belongs to; the window is owned by the host.</param>
+        /// <param name="prompt">What the window says at the top.</param>
+        /// <param name="values">Every value and how many rows carry it, commonest first.</param>
+        /// <param name="current">The value in force, shown as where it stands.</param>
+        /// <param name="any">The wording for taking the narrowing off, or null for no such button.</param>
+        /// <param name="onDone">Called with the picked value, or null when the narrowing came off.</param>
+        public static void Search(FrameworkElement near, string prompt,
+                                  IReadOnlyList<KeyValuePair<string, int>> values,
+                                  string? current, string? any, Action<string?> onDone)
+        {
+            _ = near;
+
+            // As many as a person scans before they start typing instead. The rest are reachable
+            // by typing, and the note under the list says how many they are.
+            const int Most = 60;
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.Width,
+                Height = 460,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var picked = false;
+            string? said = null;
+
+            void Done(string? what)
+            {
+                picked = true;
+                said = what;
+                window.Close();
+            }
+
+            var body = new DockPanel
+            {
+                Margin = new Thickness(18, 16, 18, 16),
+                MinWidth = 380,
+                LastChildFill = true,
+            };
+
+            var label = new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+
+            DockPanel.SetDock(label.Wearing("Body"), Dock.Top);
+            body.Children.Add(label);
+
+            var box = Ui.Text(string.Empty, null, 340);
+            box.Margin = new Thickness(0, 0, 0, 10);
+            DockPanel.SetDock(box, Dock.Top);
+            body.Children.Add(box);
+
+            if (any != null)
+            {
+                var off = Ui.Quiet(any, () => Done(null));
+
+                off.HorizontalAlignment = HorizontalAlignment.Stretch;
+                off.HorizontalContentAlignment = HorizontalAlignment.Left;
+                off.Margin = new Thickness(0, 0, 0, 8);
+                off.IsEnabled = current != null;
+
+                DockPanel.SetDock(off, Dock.Top);
+                body.Children.Add(off);
+            }
+
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+
+            cancel.HorizontalAlignment = HorizontalAlignment.Right;
+            cancel.Margin = new Thickness(0, 12, 0, 0);
+
+            DockPanel.SetDock(cancel, Dock.Bottom);
+            body.Children.Add(cancel);
+
+            var note = Ui.Small(string.Empty);
+            note.Margin = new Thickness(0, 8, 0, 0);
+            DockPanel.SetDock(note, Dock.Bottom);
+            body.Children.Add(note);
+
+            var list = new StackPanel();
+
+            void Fill()
+            {
+                var typed = box.Text.Trim();
+
+                list.Children.Clear();
+
+                var matching = values == null
+                    ? new List<KeyValuePair<string, int>>()
+                    : values.Where(v => typed.Length == 0
+                                        || (v.Key ?? string.Empty).IndexOf(
+                                               typed, StringComparison.OrdinalIgnoreCase) >= 0)
+                            .ToList();
+
+                foreach (var one in matching.Take(Most))
+                {
+                    var here = one.Key ?? string.Empty;
+                    var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+
+                    var line = new DockPanel { LastChildFill = true };
+
+                    var tally = new TextBlock
+                    {
+                        Text = Skin.Num(one.Value),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(10, 0, 0, 0),
+                    };
+
+                    tally.Wearing("Hint");
+                    DockPanel.SetDock(tally, Dock.Right);
+                    line.Children.Add(tally);
+
+                    line.Children.Add(new TextBlock
+                    {
+                        Text = on ? here + "  ·  where it stands" : here,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    }.Wearing("Body"));
+
+                    var press = Ui.Quiet(string.Empty, () => Done(here));
+
+                    press.Content = line;
+                    press.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    press.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                    press.Margin = new Thickness(0, 0, 0, 4);
+                    press.IsEnabled = !on;
+
+                    list.Children.Add(press);
+                }
+
+                note.Text = matching.Count == 0
+                    ? "Nothing carries that."
+                    : matching.Count > Most
+                        ? Skin.Num(matching.Count - Most) + " more match. Keep typing to narrow it."
+                        : Ui.Count(matching.Count, "value") + ", all of them shown.";
+            }
+
+            box.TextChanged += (s, e) => Ui.Safely(Fill);
+
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Enter) return;
+
+                // Enter on a single match takes it: typing four letters and pressing Enter is how
+                // a filter is used when the value is already known.
+                if (list.Children.Count == 1 && list.Children[0] is Button only && only.IsEnabled)
+                    only.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+            };
+
+            Fill();
+
+            body.Children.Add(new ScrollViewer
+            {
+                Content = list,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            });
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            // A modal window of our own, so the box takes the keys. A popup inside the host never
+            // gets keyboard focus, which is the whole reason this is a window.
+            window.Loaded += (s, e) => box.Focus();
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.ShowDialog();
+
+            if (picked) onDone?.Invoke(said);
+        }
+
         // -----------------------------------------------------------------------------------
         // Bands and bars
         // -----------------------------------------------------------------------------------
@@ -862,8 +1271,14 @@ namespace CamelWorks.UI.Views
         /// <param name="value">The bucket's value.</param>
         /// <param name="count">How many rows are under it.</param>
         /// <param name="onPickAll">Picks every row under it, or null for none.</param>
+        /// <param name="glyph">The symbol at the left.</param>
+        /// <param name="label">What the band is banding by.</param>
+        /// <param name="value">The value this band holds.</param>
+        /// <param name="count">How much is under it.</param>
+        /// <param name="onPickAll">Ticks everything under the band, or null for no such link.</param>
+        /// <param name="depth">How many bands are above this one, which is what indents it.</param>
         public static UIElement ViewBand(string glyph, string label, string value, string count,
-                                         Action? onPickAll)
+                                         Action? onPickAll, int depth = 0)
         {
             var row = new DockPanel { LastChildFill = true };
 
@@ -910,10 +1325,13 @@ namespace CamelWorks.UI.Views
 
             row.Children.Add(words);
 
+            // Indented by its level rather than nested inside anything: the table is one flat
+            // list of lines, virtualised, and a band that contained its rows would be a panel the
+            // list could not recycle.
             var band = new Border
             {
-                Padding = new Thickness(12, 6, 12, 6),
-                BorderThickness = new Thickness(0, 1, 0, 1),
+                Padding = new Thickness(12 + (depth * 18), 6, 12, 6),
+                BorderThickness = new Thickness(0, depth == 0 ? 1 : 0, 0, 1),
                 Child = row,
             };
 

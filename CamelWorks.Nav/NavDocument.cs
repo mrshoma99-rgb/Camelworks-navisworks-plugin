@@ -1031,6 +1031,21 @@ namespace CamelWorks.Nav
         /// <summary>
         /// A property value as text.
         ///
+        /// <b>Every kind the host has, not just the string one.</b> A variant is one of fourteen
+        /// things, and asking a boolean for its display string throws. Reading only display
+        /// strings therefore blanks every property that is not text - Item / Hidden, Element ID,
+        /// a duct's Length - while the name still appears in the pickers, because a name is
+        /// harvested from the category whether or not its value renders. So every branch is
+        /// covered here, and this is the only place that turns a variant into text.
+        ///
+        /// <b>Doubles by way of AnyDouble.</b> Length, area, volume and angle are their own
+        /// variant kinds and <c>IsDouble</c> is false for all four; <c>IsAnyDouble</c> is the
+        /// branch that takes them, plain doubles included, so it is asked first.
+        ///
+        /// <b>Nothing rather than a type name.</b> An unrecognised kind returns null, not
+        /// <c>value.ToString()</c> - which yields "Autodesk.Navisworks.Api.VariantData" and would
+        /// read, in a column, as though the element carried that.
+        ///
         /// Every branch is guarded. A federation contains property values the host itself cannot
         /// render, and one of them must not stop a traversal of two hundred thousand elements.
         /// </summary>
@@ -1038,16 +1053,34 @@ namespace CamelWorks.Nav
         {
             if (value == null) return null;
 
+            var plain = System.Globalization.CultureInfo.InvariantCulture;
+
             try
             {
+                if (value.IsNone) return null;
                 if (value.IsDisplayString) return value.ToDisplayString();
+                if (value.IsIdentifierString) return value.ToIdentifierString();
                 if (value.IsNamedConstant) return value.ToNamedConstant().DisplayName;
                 if (value.IsBoolean) return value.ToBoolean() ? "Yes" : "No";
-                if (value.IsInt32) return value.ToInt32().ToString(System.Globalization.CultureInfo.InvariantCulture);
-                if (value.IsDouble) return value.ToDouble().ToString("R", System.Globalization.CultureInfo.InvariantCulture);
-                if (value.IsDateTime) return value.ToDateTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+                if (value.IsInt32) return value.ToInt32().ToString(plain);
+                if (value.IsAnyDouble) return value.ToAnyDouble().ToString("R", plain);
+                if (value.IsDouble) return value.ToDouble().ToString("R", plain);
+                if (value.IsDateTime) return value.ToDateTime().ToString("o", plain);
 
-                return value.ToString();
+                if (value.IsPoint3D)
+                {
+                    var point = value.ToPoint3D();
+                    return point.X.ToString("R", plain) + ", " + point.Y.ToString("R", plain)
+                        + ", " + point.Z.ToString("R", plain);
+                }
+
+                if (value.IsPoint2D)
+                {
+                    var flat = value.ToPoint2D();
+                    return flat.X.ToString("R", plain) + ", " + flat.Y.ToString("R", plain);
+                }
+
+                return null;
             }
             catch (Exception)
             {

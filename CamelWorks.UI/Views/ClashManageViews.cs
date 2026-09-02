@@ -434,7 +434,21 @@ namespace CamelWorks.UI.Views
             /// <summary>The lines the board is showing, and the list that draws the visible ones.</summary>
             private List<BoardLine>? _lines;
             private BoardList? _list;
-            private string _arrange = ByNothing;
+            /// <summary>
+            /// The chain of facets the view is banded by, outermost first.
+            ///
+            /// <b>A chain, not one facet.</b> The question a coordinator asks of six hundred
+            /// results is rarely one facet deep: it is the steel by level, or every service by
+            /// discipline and then by system. One band at a time answered the first half of that
+            /// and left the second to the eye. Each level here buckets what the level above it
+            /// left, so the bands nest, and the trail down to a row reads as the sentence that
+            /// describes it.
+            ///
+            /// <b>These are views, not clash groups.</b> Nothing in this list creates,
+            /// dissolves or renames anything in the document; the bands say so, and turning a
+            /// view into real clash groups is a separate, named act.
+            /// </summary>
+            private readonly List<string> _bands = new List<string>();
             private string _showing = BothKinds;
 
             /// <summary>
@@ -477,11 +491,20 @@ namespace CamelWorks.UI.Views
             private const string JustLoose = "Loose";
 
             private const string ByNothing = "Nothing";
+
+            /// <summary>What a band key carries in front of a property column's id.</summary>
+            private const string ByColumn = "column:";
+
+            /// <summary>The band a row falls in when the property it is banded by is empty.</summary>
+            private const string Blank = "(not carried)";
             private const string ByAssignee = "Assignee";
             private const string ByStatus = "Status";
             private const string ByHowBad = "How bad";
 
             private const string Anyone = "Anyone";
+
+            /// <summary>What a column reads as when nothing is narrowing it.</summary>
+            private const string Anything = "Anything";
             private const string Nobody = "—";
 
             private const string FirstSide = "First item";
@@ -951,13 +974,100 @@ namespace CamelWorks.UI.Views
                     .ThenBy(g => g.Key, StringComparer.CurrentCulture)
                     .ToList();
 
+                _railAt.Clear();
+                _railOrder.Clear();
+                _railCommon = common;
+
                 foreach (var group in filed)
                 {
                     if (group.Key.Length > 0)
                         _rows.Children.Add(FolderBand(group.Key, group.Count()));
 
-                    foreach (var entry in group) _rows.Children.Add(RailRow(entry, common));
+                    // Shut folders keep their heading and hide their tests, so a rail of eighty
+                    // tests can be read as a dozen folders.
+                    if (_shutFolders.Contains(group.Key)) continue;
+
+                    foreach (var entry in group)
+                    {
+                        _railAt[entry.Test.Id] = _rows.Children.Count;
+                        _railOrder.Add(entry.Test.Id);
+                        _rows.Children.Add(RailRow(entry, common));
+                    }
                 }
+            }
+
+            /// <summary>Where each test's row sits in the rail, so one can be redrawn alone.</summary>
+            private readonly Dictionary<string, int> _railAt =
+                new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>The run time most tests share, kept so a single row can be rebuilt.</summary>
+            private string _railCommon = string.Empty;
+
+            /// <summary>The order the rail was last drawn in, to tell a move from a repaint.</summary>
+            private readonly List<string> _railOrder = new List<string>();
+
+            /// <summary>
+            /// Redraw the rail after a change: the rows that moved, or the list when the list did.
+            ///
+            /// <b>Why this is not simply "redraw the rail".</b> Setting a status is the commonest
+            /// thing anybody does on this board, and it moves one number on one row. Rebuilding
+            /// the rail for it meant a row per test in the job - counts, tooltip and a context
+            /// menu each - every time somebody marked a clash.
+            ///
+            /// It cannot always be one row, though, and the reason is worth naming: the rail hides
+            /// finished tests when "only the open ones" is on, and sorts by a count under five of
+            /// its seven orders. A status write can therefore take a row out of the list or move
+            /// it up past three others, and a repaint in place would leave the rail lying about
+            /// its own order.
+            ///
+            /// So the question is asked rather than assumed. Working out which tests would be
+            /// shown, and in what order, is a filter and a sort over the tests - tens or hundreds
+            /// of items - against building that many rows of controls. When the answer is the same
+            /// list in the same order, only the rows that changed are drawn again.
+            /// </summary>
+            /// <param name="touched">The tests whose rows changed.</param>
+            private void RailChanged(IReadOnlyCollection<string> touched)
+            {
+                var now = Shown().Select(e => e.Test.Id).ToList();
+
+                if (now.Count != _railOrder.Count
+                    || !now.SequenceEqual(_railOrder, StringComparer.OrdinalIgnoreCase))
+                {
+                    RedrawRailList();
+                    return;
+                }
+
+                foreach (var id in touched) RepaintRail(id);
+            }
+
+            /// <summary>Folders whose tests are hidden. Keyed the way the rail groups them.</summary>
+            private readonly HashSet<string> _shutFolders =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// Redraw one test's row, leaving the rest of the rail alone.
+            ///
+            /// Moving the board from one test to another changes exactly two rows: the one that
+            /// stops being current and the one that starts. Rebuilding the list for that meant a
+            /// row per test in the job - each with its counts, its tooltip and its own context
+            /// menu - to move one highlight, and on a job of any size that is the second between
+            /// pressing a test and the rail admitting it.
+            /// </summary>
+            /// <param name="testId">The test whose row to redraw, or null for none.</param>
+            private void RepaintRail(string? testId)
+            {
+                if (testId == null
+                    || !_railAt.TryGetValue(testId, out var at)
+                    || at < 0 || at >= _rows.Children.Count)
+                    return;
+
+                var entry = Current()?.FirstOrDefault(
+                    e => string.Equals(e.Test.Id, testId, StringComparison.OrdinalIgnoreCase));
+
+                if (entry == null) return;
+
+                _rows.Children.RemoveAt(at);
+                _rows.Children.Insert(at, RailRow(entry, _railCommon));
             }
 
             /// <summary>
@@ -985,6 +1095,13 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(tally, Dock.Right);
                 row.Children.Add(tally);
 
+                var shut = _shutFolders.Contains(folder);
+
+                // The chevron carries the state; the folder stays a folder. A second icon that
+                // also changed would be two things saying one thing.
+                row.Children.Add(Ui.Glyph(shut ? Glyphs.Right : Glyphs.Down, 12, "Muted",
+                                          new Thickness(0, 0, 5, 0)));
+
                 row.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
 
                 var name = new TextBlock
@@ -1002,12 +1119,20 @@ namespace CamelWorks.UI.Views
                 {
                     Padding = new Thickness(12, 6, 14, 5),
                     BorderThickness = new Thickness(0, 0, 0, 1),
-                    ToolTip = folder + " — a CamelWorks folder, kept in this project",
+                    ToolTip = folder + " — a CamelWorks folder, kept in this project. "
+                              + (shut ? "Click to open it." : "Click to fold it away."),
                     Child = row,
+                    Cursor = System.Windows.Input.Cursors.Hand,
                 };
 
                 band.Tint(Border.BackgroundProperty, "Card2");
                 band.Tint(Border.BorderBrushProperty, "Bd");
+
+                band.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    if (!_shutFolders.Remove(folder)) _shutFolders.Add(folder);
+                    RedrawRailList();
+                });
 
                 return band;
             }
@@ -1111,11 +1236,41 @@ namespace CamelWorks.UI.Views
                 return line;
             }
 
+            /// <summary>
+            /// Ask which folder these tests go in, offering the ones this project already has.
+            ///
+            /// It used to be a box to type a folder name into, which asks somebody to remember and
+            /// spell a name that is on their screen a few inches away - and one typo makes a
+            /// second folder that looks like the first, with no way afterwards to tell which
+            /// tests went where. The folders are listed because they are already known; typing is
+            /// for the one case that needs it, a folder that does not exist yet.
+            /// </summary>
+            /// <param name="reaching">The tests the move acts on.</param>
+            /// <param name="entry">The test the menu was opened on, for what to mark as current.</param>
+            private void MoveInto(IReadOnlyList<object> reaching, TestEntry? entry)
+            {
+                var known = Folders(Current());
+                var now = (entry?.Test.Folder ?? string.Empty).Trim();
+
+                Parts.Choose(
+                    _rows,
+                    reaching.Count > 1
+                        ? "Move " + Ui.Count(reaching.Count, "test") + " into a folder"
+                        : "Move this test into a folder",
+                    known,
+                    now.Length == 0 ? null : now,
+                    "Or a new folder",
+                    now.Length > 0 || reaching.Count > 1 ? "Take them out of any folder" : null,
+                    folder => MoveTests(reaching, folder, _log));
+            }
+
             /// <summary>Put a test on the board, and forget everything set on the last one.</summary>
             /// <param name="testId">Which test.</param>
             private void Pick(string testId)
             {
                 if (string.Equals(testId, _current, StringComparison.OrdinalIgnoreCase)) return;
+
+                var was = _current;
 
                 _current = testId;
 
@@ -1123,7 +1278,7 @@ namespace CamelWorks.UI.Views
                 // "nothing matches" about a test nobody filtered, with a chip they did not set.
                 _status = null;
                 _party = null;
-                _arrange = ByNothing;
+                _bands.Clear();
                 _showing = BothKinds;
                 _sameAs = null;
                 _byColumn.Clear();
@@ -1136,9 +1291,45 @@ namespace CamelWorks.UI.Views
                 // test's search showing over a board it is no longer filtering.
                 _boardBox.Text = string.Empty;
 
-                RedrawRailList();
-                RedrawBoard();
+                // The two rows that changed, not the hundred and sixty that did not.
+                RepaintRail(was);
+                RepaintRail(testId);
+
+                // The head says which test straight away. The rows are the expensive half - a
+                // pass over every result through every filter, then a table - and doing them in
+                // the same press meant nothing reached the screen until they were done, so the
+                // card you clicked sat unlit for as long as the board took to build.
+                if (!RedrawBoardHead()) return;
+
+                // The last test's rows are not this test's, so they go now rather than sitting
+                // there under the new name until the new ones arrive.
+                _board.Children.Clear();
+                _cells.Clear();
+                _lines = null;
+
+                Next(() =>
+                {
+                    // A newer press supersedes this one. Clicking down a rail of tests should
+                    // build the board once, for the test the person stopped on.
+                    if (!string.Equals(_current, testId, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    RedrawRows();
+                });
             }
+
+            /// <summary>
+            /// Run something once what is on screen has been drawn.
+            ///
+            /// Background is below render, so everything queued ahead of it - layout, the paint
+            /// of whatever just changed - happens first. That is what turns "the screen updates
+            /// when the work finishes" into "the screen updates, then the work happens".
+            /// </summary>
+            /// <param name="work">What to do next.</param>
+            private void Next(Action work) =>
+                _board.Dispatcher.BeginInvoke(
+                    new Action(() => Ui.Safely(work)),
+                    System.Windows.Threading.DispatcherPriority.Background);
 
             /// <summary>The rail's footer: what the list adds up to, and the verbs on a test.</summary>
             /// <summary>
@@ -1192,9 +1383,7 @@ namespace CamelWorks.UI.Views
                         () => Prompt("Renumber the results", string.Empty, "Renumber",
                                      prefix => RenameResults(reaching, prefix, _log))),
                     Parts.Entry.Act(many ? "Move them into a folder" : "Move into a folder",
-                        Glyphs.MoveIn,
-                        () => Prompt("Move into a folder", entry?.Test.Folder ?? string.Empty,
-                                     "Move", folder => MoveTests(reaching, folder, _log))),
+                        Glyphs.MoveIn, () => MoveInto(reaching, entry)),
                     Parts.Entry.Act(many ? "Compact them - drop what is finished"
                                          : "Compact - drop what is finished",
                                     Glyphs.Compact, () => CompactTests(reaching, _log)),
@@ -1520,6 +1709,20 @@ namespace CamelWorks.UI.Views
             /// <summary>Everything on the right-hand side, from the title down to the footnote.</summary>
             private void RedrawBoard()
             {
+                if (RedrawBoardHead()) RedrawRows();
+            }
+
+            /// <summary>
+            /// The board's head: the name, the counts, the search and the two menus.
+            ///
+            /// Split from the rows because the two cost different amounts. This is a handful of
+            /// controls over facts already in hand; the rows are a pass over every result of the
+            /// test through every filter and then a table built from what survives. Putting a
+            /// test on the board can therefore say which test immediately and fill in underneath.
+            /// </summary>
+            /// <returns>True when there is a test to draw rows for.</returns>
+            private bool RedrawBoardHead()
+            {
                 _title.Children.Clear();
 
                 var entry = Entry();
@@ -1533,7 +1736,7 @@ namespace CamelWorks.UI.Views
                             "Pick one on the left, and its results land here."));
 
                     RedrawSelection();
-                    return;
+                    return false;
                 }
 
                 _toleranceMm = ToleranceMm(entry);
@@ -1554,7 +1757,7 @@ namespace CamelWorks.UI.Views
                 _sortBy.Content = Parts.MoreMenu(Glyphs.Sort, WhatIsSorted(),
                                                  SortMenu(), on: InAnOrder);
 
-                RedrawRows();
+                return true;
             }
 
             /// <summary>
@@ -1665,6 +1868,40 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Redraw the rows whose picked state changed, and nothing else.
+            ///
+            /// <b>Why not just redraw the rows.</b> Rebuilding the table throws the list away and
+            /// makes a new one, and a new list starts at the top - so clicking a result forty rows
+            /// down took the board back to the first row and left the thing that had just been
+            /// clicked off the screen. A press that moves the view away from what it pressed is
+            /// the board arguing with the person using it.
+            ///
+            /// Ticking a box already worked this way. Clicking a row did not, and the difference
+            /// was that a plain click also un-picks everything else - so it is not one row that
+            /// changed, it is one row and whatever was picked before.
+            /// </summary>
+            /// <param name="ids">The rows to draw again.</param>
+            private void Repainted(ICollection<string> ids)
+            {
+                if (ids.Count == 0) return;
+
+                if (_lines != null && _list != null)
+                    foreach (var line in _lines)
+                        if (ids.Contains(line.Id))
+                            _list.Redraw(line);
+
+                var entry = Entry();
+
+                if (entry != null)
+                {
+                    var shape = Shape(entry);
+                    _head.Content = Header(shape.Groups, shape.Loose);
+                }
+
+                RedrawSelection();
+            }
+
+            /// <summary>
             /// Every line the board is showing, in order, as plain objects.
             ///
             /// The visuals are made by <see cref="BoardList"/> for the lines that reach the
@@ -1693,21 +1930,9 @@ namespace CamelWorks.UI.Views
                         lines.Add(BoardLine.Result(member, Id(member), true));
                 }
 
-                if (_arrange != ByNothing)
+                if (_bands.Count > 0)
                 {
-                    foreach (var band in Bands(entry, shape.Groups, shape.Loose))
-                    {
-                        var rows = band.Value;
-
-                        var named = band.Key;
-
-                        lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                            Glyphs.Columns, "View · " + _arrange, named,
-                            Ui.Count(rows.Count, "row"), () => PickAll(rows))));
-
-                        foreach (var row in rows) Add(row);
-                    }
-
+                    Sink(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, lines, Add);
                     return lines;
                 }
 
@@ -1727,6 +1952,47 @@ namespace CamelWorks.UI.Views
                 }
 
                 return lines;
+            }
+
+            /// <summary>
+            /// Lay one level of the band chain out, then the level under it, then the rows.
+            ///
+            /// Depth is what draws the nesting: each band is indented by its level, so a chain
+            /// of Section then Material then Type reads as three widths of margin down to the
+            /// rows, the way a table of contents does. The count on a band is the results below
+            /// it in total, not the rows - a clash group is one row holding twelve results, and
+            /// "12 results" is the figure a coordinator is deciding against.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="depth">How many levels are already above this one.</param>
+            /// <param name="lines">The lines being built.</param>
+            /// <param name="add">Puts one row, and its members when it is an open group, on screen.</param>
+            private void Sink(TestEntry entry, List<BoardRow> rows, int depth,
+                              List<BoardLine> lines, Action<BoardRow> add)
+            {
+                if (depth >= _bands.Count)
+                {
+                    foreach (var row in rows) add(row);
+                    return;
+                }
+
+                var by = _bands[depth];
+                var label = (depth == 0 ? "View · " : string.Empty) + Facet(by);
+
+                foreach (var band in Bands(entry, rows, by))
+                {
+                    var here = band.Value;
+                    var named = band.Key;
+                    var at = depth;
+
+                    lines.Add(BoardLine.Banner(() => Parts.ViewBand(
+                        at == 0 ? Glyphs.Columns : Glyphs.Layers, label, named,
+                        Ui.Count(here.Sum(r => r.Rows.Count), "result"),
+                        () => PickAll(here), at)));
+
+                    Sink(entry, here, depth + 1, lines, add);
+                }
             }
 
             /// <summary>The row that one line shows, built when the list scrolls to it.</summary>
@@ -1786,21 +2052,20 @@ namespace CamelWorks.UI.Views
                 var total = entry.Rows.Count;
                 var count = Counted(entry);
 
-                var said = new TextBlock
-                {
-                    Text = count == total
-                        ? Ui.Count(total, "result")
-                        : "Showing " + Skin.Num(count) + " of " + Skin.Num(total),
-                    VerticalAlignment = VerticalAlignment.Bottom,
-                    Margin = new Thickness(10, 0, 10, 0),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    TextWrapping = TextWrapping.NoWrap,
-                };
-
                 var head = new TextBlock
                 {
                     Text = entry.Test.Name,
                     VerticalAlignment = VerticalAlignment.Bottom,
+
+                    // Set here rather than left to the "Head" style, which wraps.
+                    //
+                    // A wrapping title in a row that also holds the search, the chips and six
+                    // symbols is a title with whatever width they leave it - and on a real test
+                    // name in a pane this wide, that was about twenty pixels. The name came out as
+                    // a column of single letters down the side of the board. A title has one line
+                    // and loses its tail when there is no room for it.
+                    TextWrapping = TextWrapping.NoWrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
 
                     // The sentence that used to sit beside it: what the test is between, what it
                     // ran at and when. None of it changes while the board is worked, so it was a
@@ -1813,7 +2078,6 @@ namespace CamelWorks.UI.Views
                 };
 
                 var words = new DockPanel { LastChildFill = true };
-                DockPanel.SetDock(head, Dock.Left);
 
                 if (!OnFile)
                 {
@@ -1827,8 +2091,27 @@ namespace CamelWorks.UI.Views
                     };
                 }
 
+                // Only when a filter is actually hiding something. Unfiltered it said "178
+                // results" next to chips already reading "178 all", which is the same number
+                // twice - and the width it spent was width the name did not have.
+                if (count != total)
+                {
+                    var said = new TextBlock
+                    {
+                        Text = "Showing " + Skin.Num(count) + " of " + Skin.Num(total),
+                        VerticalAlignment = VerticalAlignment.Bottom,
+                        Margin = new Thickness(10, 0, 10, 0),
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                    };
+
+                    DockPanel.SetDock(said, Dock.Right);
+                    words.Children.Add(said.Wearing("Hint"));
+                }
+
+                // The name last, so it is the child that fills what the rest have left and the
+                // one that gives way when there is not enough for everybody.
                 words.Children.Add(head.Wearing("Head"));
-                words.Children.Add(said.Wearing("Hint"));
 
                 row.Children.Add(words);
 
@@ -1971,23 +2254,15 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The property column.</param>
             private List<Parts.Entry> ColumnMenu(TestEntry entry, PropColumn column)
             {
-                const int Most = 20;
-
                 var wanted = _byColumn.TryGetValue(column.Id, out var value) ? value : null;
 
                 var items = new List<Parts.Entry>
                 {
                     Parts.Entry.Rule(),
-                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anyone)),
+                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anything)),
                 };
 
-                var values = entry.Rows
-                    .Select(r => Custom(r, column))
-                    .Where(v => v.Length > 0)
-                    .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
-                    .OrderByDescending(g => g.Count())
-                    .Select(g => g.Key)
-                    .ToList();
+                var values = Values(entry, column);
 
                 if (values.Count == 0)
                 {
@@ -1998,41 +2273,59 @@ namespace CamelWorks.UI.Views
                     return items;
                 }
 
-                items.Add(Parts.Entry.Act(Anyone, null, () =>
-                {
-                    _byColumn.Remove(column.Id);
-                    _picked.Clear();
-                    _pickedFrom = null;
-                    RedrawBoard();
-                }));
+                // One entry, not a list of them. This put the twenty commonest values into the
+                // filter menu itself and told you to type the rest into the search box: over a
+                // real federation a column carries hundreds, so the menu became a column of
+                // values hanging over the board, and the twenty it could fit were rarely the one
+                // being looked for. The window it opens is filtered by typing and shows how many
+                // results each value holds, which is what the choice actually turns on.
+                items.Add(Parts.Entry.Act(
+                    "Narrow to a value  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
+                    () => Parts.Search(_board, "Show only results whose " + column.Title + " is",
+                                       values, wanted,
+                                       wanted == null ? null : "Any " + column.Title,
+                                       pick =>
+                                       {
+                                           if (pick == null) _byColumn.Remove(column.Id);
+                                           else _byColumn[column.Id] = pick;
 
-                // The commonest first, then capped and put back in reading order. A column over a
-                // real federation carries two hundred distinct values, and a menu that long is a
-                // list nobody reaches the end of — the search box matches these columns too.
-                foreach (var one in values.Take(Most).OrderBy(v => v, StringComparer.CurrentCulture))
-                {
-                    var here = one;
+                                           _picked.Clear();
+                                           _pickedFrom = null;
+                                           RedrawBoard();
+                                       })));
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                if (wanted != null)
+                    items.Add(Parts.Entry.Act("Any " + column.Title, Glyphs.Close, () =>
                     {
-                        _byColumn[column.Id] = here;
+                        _byColumn.Remove(column.Id);
                         _picked.Clear();
                         _pickedFrom = null;
                         RedrawBoard();
                     }));
-                }
-
-                if (values.Count > Most)
-                    items.Add(Parts.Entry.Barred(
-                        Skin.Num(values.Count - Most) + " more values", null,
-                        "The twenty commonest are listed. Type one into the search box for the "
-                        + "rest — it matches these columns too."));
 
                 return items;
             }
 
+            /// <summary>
+            /// Every value a column carries on this test, commonest first, with how many carry it.
+            ///
+            /// Commonest first because the picker shows the head of the list before anything is
+            /// typed, and the values worth seeing unprompted are the ones most of the board is in.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="column">The column.</param>
+            private static List<KeyValuePair<string, int>> Values(TestEntry entry, PropColumn column) =>
+                entry.Rows
+                    .Select(r => Custom(r, column))
+                    .Where(v => v.Length > 0)
+                    .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key, StringComparer.CurrentCulture)
+                    .Select(g => new KeyValuePair<string, int>(g.Key, g.Count()))
+                    .ToList();
+
             /// <summary>Whether the board is in any order but the one the test holds.</summary>
-            private bool InAnOrder => _by != null || _arrange != ByNothing;
+            private bool InAnOrder => _by != null || _bands.Count > 0;
 
             /// <summary>What the sort control is doing, for the symbol that opens it.</summary>
             private string WhatIsSorted()
@@ -2040,7 +2333,8 @@ namespace CamelWorks.UI.Views
                 var said = new List<string>();
 
                 if (_by != null) said.Add("by " + _by + (_back ? ", backwards" : string.Empty));
-                if (_arrange != ByNothing) said.Add("arranged by " + _arrange.ToLowerInvariant());
+                if (_bands.Count > 0)
+                    said.Add("banded by " + string.Join(" then ", _bands.Select(Facet)));
 
                 return said.Count == 0
                     ? "Sort the results"
@@ -2086,17 +2380,65 @@ namespace CamelWorks.UI.Views
                 }
 
                 items.Add(Parts.Entry.Rule());
-                items.Add(Parts.Entry.Heading("Band the rows by: " + _arrange));
 
-                foreach (var by in new[] { ByNothing, ByAssignee, ByStatus, ByHowBad })
+                items.Add(Parts.Entry.Heading(_bands.Count == 0
+                    ? "Band the rows by: " + ByNothing
+                    : "Banded by: " + string.Join(" > ", _bands.Select(Facet))));
+
+                // The chain as it stands, each level removable where it is. Levels come off from
+                // any depth rather than only the last, because a chain of four that wants its
+                // second level gone should not have to be rebuilt from the third down.
+                for (var at = 0; at < _bands.Count; at++)
                 {
+                    var here = at;
+
+                    items.Add(Parts.Entry.Act(
+                        (here + 1).ToString(CultureInfo.InvariantCulture) + ". " + Facet(_bands[here]),
+                        Glyphs.Close,
+                        () =>
+                        {
+                            _bands.RemoveAt(here);
+                            RedrawBoard();
+                        }));
+                }
+
+                foreach (var by in Bandable())
+                {
+                    if (_bands.Contains(by, StringComparer.Ordinal)) continue;
+
                     var here = by;
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                    // Appended, so the order they are pressed in is the order they nest in. That
+                    // is the whole grammar of the chain: Section, then Material, then Type gives
+                    // sections holding materials holding types, and nothing else has to be said.
+                    items.Add(Parts.Entry.Act(
+                        (_bands.Count == 0 ? "Band by " : "Then by ") + Facet(here), Glyphs.Add,
+                        () =>
+                        {
+                            _bands.Add(here);
+                            RedrawBoard();
+                        }));
+                }
+
+                if (_bands.Count > 0)
+                {
+                    items.Add(Parts.Entry.Rule());
+
+                    items.Add(Parts.Entry.Act("Make these the test's clash groups", Glyphs.Group,
+                                              AskToRealise));
+
+                    items.Add(Parts.Entry.Act("No bands", Glyphs.Close, () =>
                     {
-                        _arrange = here;
+                        _bands.Clear();
                         RedrawBoard();
                     }));
+                }
+                else if (_columns.Count == 0)
+                {
+                    items.Add(Parts.Entry.Barred("Add a property column to band by one", null,
+                        "The board's own facets are here already. Banding by system, level or "
+                        + "fire rating means reading that property onto the board first, which "
+                        + "is what the Columns page does."));
                 }
 
                 return items;
@@ -2163,7 +2505,7 @@ namespace CamelWorks.UI.Views
                         _status = null;
                         _party = null;
                         _showing = BothKinds;
-                        _arrange = ByNothing;
+                        _bands.Clear();
                         _sameAs = null;
                         _byColumn.Clear();
                         _boardBox.Text = string.Empty;
@@ -3078,6 +3420,10 @@ namespace CamelWorks.UI.Views
                 var adding = (keys & System.Windows.Input.ModifierKeys.Control) != 0;
                 var run = (keys & System.Windows.Input.ModifierKeys.Shift) != 0;
 
+                // What was picked before, so afterwards the rows that changed can be told from
+                // the rows that did not.
+                var was = new HashSet<string>(_picked, StringComparer.Ordinal);
+
                 if (run && _pickedFrom != null)
                 {
                     var between = Between(_pickedFrom, id);
@@ -3091,7 +3437,7 @@ namespace CamelWorks.UI.Views
 
                         foreach (var one in between) _picked.Add(one);
 
-                        RedrawRows();
+                        Repainted(Flipped(was));
                         return;
                     }
                 }
@@ -3104,11 +3450,28 @@ namespace CamelWorks.UI.Views
                 // be stretched and shrunk from the same end rather than walking away from it.
                 _pickedFrom = id;
 
-                RedrawRows();
+                Repainted(Flipped(was));
 
                 // Last, and only on a plain press of one row. A run or a Ctrl-press is somebody
                 // building a selection, not asking to be taken somewhere.
                 if (_focusOnClick && !adding && !run) Look(id);
+            }
+
+            /// <summary>
+            /// Which rows are picked now that were not, or were and are not.
+            ///
+            /// Named apart from <see cref="Moved()"/>, which is the edit counter and has nothing
+            /// to do with this: two methods called the same thing meaning two different things is
+            /// how the next person reading this loses ten minutes.
+            /// </summary>
+            /// <param name="was">What was picked before.</param>
+            private HashSet<string> Flipped(HashSet<string> was)
+            {
+                var changed = new HashSet<string>(_picked, StringComparer.Ordinal);
+
+                changed.SymmetricExceptWith(was);
+
+                return changed;
             }
 
             /// <summary>Put the camera on one picked row, for focus-on-click.</summary>
@@ -3242,8 +3605,7 @@ namespace CamelWorks.UI.Views
                 else
                 {
                     rest.Add(Parts.Entry.Act("Group with the picked rows", Glyphs.Group,
-                        () => Prompt("Name the clash group", Suggested(), "Group",
-                                     name => Regroup(WithPicked(picked), name, "Grouped {0} into"))));
+                        () => GroupInto(WithPicked(picked), "Grouped {0} into")));
                 }
 
                 if (!row.IsGroup)
@@ -3305,8 +3667,13 @@ namespace CamelWorks.UI.Views
 
                 box.Click += (s, e) => Ui.Safely(() =>
                 {
+                    // Nothing on the screen but this box shows what is ticked, and the box has
+                    // just drawn itself. Rebuilding the rail here meant a hundred and sixty rows
+                    // were thrown away and made again to record one tick - and the box the user
+                    // pressed was among them, so the tick they had already seen was discarded and
+                    // then reappeared a second later. Which is what "it takes a second before the
+                    // mark kicks in" was.
                     if (!_tests.Remove(entry.Test.Id)) _tests.Add(entry.Test.Id);
-                    RedrawRailList();
                 });
 
                 return box;
@@ -3463,8 +3830,7 @@ namespace CamelWorks.UI.Views
 
                 if (loose.Count > 1)
                     return Parts.Entry.Danger("Group", Glyphs.Group,
-                        () => Prompt("Name the clash group", Suggested(), "Group",
-                                     name => Regroup(picked, name, "Grouped {0} into")));
+                        () => GroupInto(picked, "Grouped {0} into"));
 
                 return Parts.Entry.Barred("Group", Glyphs.Group,
                     "Grouping takes two or more loose results. One on its own is already as "
@@ -4164,9 +4530,10 @@ namespace CamelWorks.UI.Views
             /// does not have — a property read off the clashing elements themselves, so a board
             /// can carry the system name, the workset or the fire rating beside the decision.
             ///
-            /// The grouping chain that used to live here is gone. It bucketed the results table by
-            /// a chain of values, which is what "Arrange view by" on the board does now — in one
-            /// press, on the rows themselves, and saying in the band that no clash group moved.
+            /// The grouping chain that used to live here is gone, but not the idea: the board's
+            /// own sort control bands the rows by a chain of these columns, nested in the order
+            /// they are pressed, saying in each band that no clash group moved — and turning the
+            /// bands into real clash groups when that is what is wanted.
             /// </summary>
             private UIElement ColumnsPage()
             {
@@ -4740,7 +5107,7 @@ namespace CamelWorks.UI.Views
                     _party ?? string.Empty,
                     _boardFind.Trim(),
                     _showing,
-                    _arrange,
+                    string.Join(">", _bands),
                     _by ?? string.Empty,
                     _back ? "1" : "0",
                     _sameAs == null ? string.Empty : Id(_sameAs),
@@ -4806,24 +5173,28 @@ namespace CamelWorks.UI.Views
             private int Counted(TestEntry entry) => Shape(entry).Counted;
 
             /// <summary>
-            /// The rows bucketed by whatever the view is arranged by, first seen first.
+            /// The rows bucketed by one facet, first seen first.
             ///
             /// A view arrangement and nothing else: no clash group is created, dissolved or
             /// touched by any of this, which is what the band above each bucket and the footnote
             /// under the table both say in as many words.
+            ///
+            /// First seen rather than sorted, because the rows arriving here are already in the
+            /// order the board's own sort put them in, and re-ordering the bands would throw that
+            /// away at every level.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
-            /// <param name="groups">The clash groups the filters left.</param>
-            /// <param name="loose">The loose results the filters left.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="by">The facet this level bands by.</param>
             private List<KeyValuePair<string, List<BoardRow>>> Bands(
-                TestEntry entry, List<BoardRow> groups, List<BoardRow> loose)
+                TestEntry entry, IEnumerable<BoardRow> rows, string by)
             {
                 var order = new List<string>();
                 var into = new Dictionary<string, List<BoardRow>>(StringComparer.Ordinal);
 
-                foreach (var row in groups.Concat(loose))
+                foreach (var row in rows)
                 {
-                    var key = Bucket(entry, row);
+                    var key = Bucket(entry, row, by);
 
                     if (!into.TryGetValue(key, out var list))
                     {
@@ -4840,12 +5211,21 @@ namespace CamelWorks.UI.Views
                     .ToList();
             }
 
-            /// <summary>Which band a row falls in.</summary>
+            /// <summary>
+            /// Which band a row falls in, at one level of the chain.
+            ///
+            /// <b>A clash group is one row here and can hold results that disagree.</b> Six
+            /// clashes grouped as "Level 2 risers" may sit on four different systems, and the
+            /// band cannot pretend otherwise: it says so. Splitting the group to satisfy the
+            /// view would be the view editing the document, which is the one thing banding must
+            /// never do.
+            /// </summary>
             /// <param name="entry">The test on the board.</param>
             /// <param name="row">The row.</param>
-            private string Bucket(TestEntry entry, BoardRow row)
+            /// <param name="by">The facet this level bands by.</param>
+            private string Bucket(TestEntry entry, BoardRow row, string by)
             {
-                switch (_arrange)
+                switch (by)
                 {
                     case ByAssignee:
                         return row.Assigned.Length == 0 ? "Nobody yet" : row.Assigned;
@@ -4860,11 +5240,44 @@ namespace CamelWorks.UI.Views
                         return Past(Deep(row))
                             ? "Worse than " + Tolerance(entry)
                             : "Within " + Tolerance(entry);
-
-                    default:
-                        return string.Empty;
                 }
+
+                var column = Column(by);
+
+                if (column == null) return string.Empty;
+
+                var values = row.Rows
+                    .Select(r => Custom(r, column))
+                    .Select(v => v.Length == 0 ? Blank : v)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                return values.Count == 0 ? Blank
+                    : values.Count == 1 ? values[0]
+                    : "Several values";
             }
+
+            /// <summary>The column a band key names, or null when it names a facet or nothing.</summary>
+            /// <param name="by">The facet this level bands by.</param>
+            private PropColumn? Column(string by) =>
+                by != null && by.StartsWith(ByColumn, StringComparison.Ordinal)
+                    ? _columns.FirstOrDefault(c => string.Equals(
+                          c.Id, by.Substring(ByColumn.Length), StringComparison.Ordinal))
+                    : null;
+
+            /// <summary>
+            /// What a band key is called on screen.
+            ///
+            /// Not "Named": that is already the results table's own first column.
+            /// </summary>
+            /// <param name="by">The facet a level bands by.</param>
+            private string Facet(string by) => Column(by)?.Title ?? by;
+
+            /// <summary>Every facet the view can be banded by, in the order the menu offers them.</summary>
+            private List<string> Bandable() =>
+                new[] { ByAssignee, ByStatus, ByHowBad }
+                    .Concat(_columns.Select(c => ByColumn + c.Id))
+                    .ToList();
 
             // -------------------------------------------------------------------------------
             // Identity, distance and tone
@@ -5024,6 +5437,41 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The next unused "New group N" for this test.</summary>
+            /// <summary>
+            /// Ask which clash group these results go in, offering the ones this test has.
+            ///
+            /// The same fault the folders had: a box to type a name into, for a name that is on
+            /// the board a few rows away. Typing it again risks "Level 3 riser" beside "Level 03
+            /// riser", which is two groups where the coordinator meant one - and on a board that
+            /// can sort, filter and collapse by group, two names is two places to look.
+            ///
+            /// The box for a new one is still there, starting at the name that would have been
+            /// suggested anyway, because the first group on a test has nothing to pick from.
+            /// </summary>
+            /// <param name="picked">The results to group.</param>
+            /// <param name="did">What the outcome line says, with a slot for the count.</param>
+            private void GroupInto(IReadOnlyList<object> picked, string did)
+            {
+                var entry = Entry();
+
+                var known = (entry?.Rows ?? new List<Row>())
+                    .Select(r => r.Group)
+                    .Where(g => g.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(g => g, StringComparer.CurrentCulture)
+                    .ToList();
+
+                Parts.Choose(
+                    _board,
+                    "Group " + Ui.Count(Rows(picked).Count, "result"),
+                    known,
+                    null,
+                    "Or a new group, named",
+                    null,
+                    name => Regroup(picked, name, did),
+                    Suggested());
+            }
+
             private string Suggested()
             {
                 var entry = Entry();
@@ -5133,7 +5581,216 @@ namespace CamelWorks.UI.Views
 
                 _picked.Clear();
                 _pickedFrom = null;
-                Redraw();
+
+                // The board, not everything. Grouping moves a result from one line of this test
+                // to another; it changes no status, so every count the rail shows is the same
+                // afterwards as before. Redrawing the rail rebuilt a row per test in the job for
+                // no change at all, which is the pause between letting go of a dragged result and
+                // seeing it land.
+                RedrawBoard();
+                RedrawFoot();
+            }
+
+            /// <summary>
+            /// Turn the bands the view is showing into the test's own clash groups.
+            ///
+            /// <b>Why the two are separate at all.</b> A band is ours and costs nothing: it
+            /// buckets what is on screen, moves nothing, and is gone the moment the chain is
+            /// cleared. A clash group is the host's - an item in the document, in the saved
+            /// results, in every export and in what the next person opens - and a result belongs
+            /// to exactly one. So the view is where the arranging is done and this is the one
+            /// place it becomes permanent, said out loud before it happens.
+            ///
+            /// <b>What the filters leave, not the whole test.</b> The leaves come off the shape
+            /// the board is showing, so a board narrowed to one discipline makes groups of that
+            /// discipline and leaves the rest of the test alone. The prompt says the figure.
+            /// </summary>
+            private void AskToRealise()
+            {
+                var entry = Entry();
+
+                if (entry == null)
+                {
+                    Warned(Ui.Problem("Pick a test on the left first."));
+                    return;
+                }
+
+                if (_bands.Count == 0)
+                {
+                    Warned(Ui.Problem("Band the view by something first. The chain of bands is "
+                                      + "what becomes the groups."));
+                    return;
+                }
+
+                var leaves = Leaves(entry);
+
+                if (leaves.Count == 0)
+                {
+                    Warned(Ui.Problem("The bands hold nothing to group. Widen the filters or "
+                                      + "read the results again."));
+                    return;
+                }
+
+                var moving = leaves.Sum(l => l.Value.Count(r => r.Group.Length > 0));
+
+                Parts.Sure(_board,
+                    "This makes " + Ui.Count(leaves.Count, "clash group") + " in "
+                    + Quoted(entry.Test.Name ?? "this test") + ", one for each band the view is "
+                    + "showing, holding " + Ui.Count(leaves.Sum(l => l.Value.Count), "result")
+                    + " between them. Each is named for the trail of bands above it, so "
+                    + Quoted(ClashTrail.Join(leaves[0].Key.Trail)) + " is one of them, and it "
+                    + "is nested in the document where the document holds groups inside groups."
+                    + (moving > 0
+                        ? " " + Ui.Count(moving, "result") + " already in a clash group will "
+                          + "move out of it into the new one; a result belongs to one group and "
+                          + "the host has no second place to put it."
+                        : string.Empty)
+                    + " Results the filters are hiding are not touched.",
+                    "Make the groups",
+                    () => Realise(entry, leaves));
+            }
+
+            /// <summary>
+            /// Every leaf of the band chain, named for the trail down to it.
+            ///
+            /// Joined with a middle dot rather than a slash or a backslash: a clash group's name
+            /// is written into the document and read back out of it, and both of those are
+            /// path separators to somebody.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<KeyValuePair<ClashGroupPath, List<Row>>> Leaves(TestEntry entry)
+            {
+                var leaves = new List<KeyValuePair<ClashGroupPath, List<Row>>>();
+                var shape = Shape(entry);
+
+                Walk(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, new List<string>(), leaves);
+
+                return leaves;
+            }
+
+            /// <summary>Walk one level of the chain, gathering the leaves under it.</summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="depth">How many levels are already above this one.</param>
+            /// <param name="trail">What the bands above this one were called, outermost first.</param>
+            /// <param name="into">The leaves found so far.</param>
+            private void Walk(TestEntry entry, List<BoardRow> rows, int depth, List<string> trail,
+                              List<KeyValuePair<ClashGroupPath, List<Row>>> into)
+            {
+                if (depth >= _bands.Count)
+                {
+                    var members = rows.SelectMany(r => r.Rows).ToList();
+
+                    if (members.Count > 0 && trail.Count > 0)
+                        into.Add(new KeyValuePair<ClashGroupPath, List<Row>>(
+                            new ClashGroupPath(trail.ToList(),
+                                               members.Select(r => r.Info.Id).ToList()),
+                            members));
+
+                    return;
+                }
+
+                foreach (var band in Bands(entry, rows, _bands[depth]))
+                {
+                    trail.Add(band.Key);
+                    Walk(entry, band.Value, depth + 1, trail, into);
+                    trail.RemoveAt(trail.Count - 1);
+                }
+            }
+
+            /// <summary>
+            /// Write the bands into the document as clash groups, and drop the bands.
+            ///
+            /// <b>One call, one edit.</b> The seam is told the whole assignment at once rather
+            /// than being called per bucket: the host rebuilds a test's entire result tree for
+            /// any change to it, so a bucket at a time would be fifty rebuilds of the same test,
+            /// each with its own toast, redraw and rail pass.
+            ///
+            /// <b>Nested where the document holds it.</b> The seam tries groups inside groups
+            /// and falls back to one group per trail when the document will not, so what comes
+            /// back may not be the shape that was asked for - and the board says which happened
+            /// rather than leaving somebody to open Clash Detective and wonder.
+            ///
+            /// Either way the board reads the same, because a nested group reads back as the
+            /// trail down to it and a flat one is named for that same trail.
+            ///
+            /// The bands come off at the end. They have become the thing they were describing,
+            /// and leaving them up would show every group twice: once as a band and once as the
+            /// group inside it.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="leaves">The leaves, each with its trail and the results under it.</param>
+            private void Realise(TestEntry entry,
+                                 List<KeyValuePair<ClashGroupPath, List<Row>>> leaves)
+            {
+                var problems = new List<string>();
+                var results = leaves.Sum(l => l.Value.Count);
+
+                // The filters cannot see inside a row, and every one of these moves a row from
+                // one line of the board to another.
+                Moved();
+
+                var answer = OnFile
+                    ? new ClashNesting(true, false, leaves.Count, null)
+                    : _session.Clash.Regroup(entry.Test.Id,
+                                             leaves.Select(l => l.Key).ToList());
+
+                if (!answer.Took)
+                {
+                    Warned(Ui.Problem(answer.Problem ?? "The host refused the regroup."));
+                    return;
+                }
+
+                if (answer.Problem != null) problems.Add(answer.Problem);
+
+                foreach (var leaf in leaves)
+                {
+                    // What the board shows is the trail, whether the document nested the groups
+                    // or holds one named for the whole trail. Reading a nested group back gives
+                    // the same string, so this row says now what a re-read would say later.
+                    var name = ClashTrail.Join(leaf.Key.Trail);
+
+                    foreach (var row in leaf.Value)
+                    {
+                        if (!OnFile)
+                        {
+                            // The database is the record and the document a projection of it, so
+                            // the finding takes the name whatever the document did with it.
+                            var finding = Found(row) ?? Raised(row);
+
+                            if (finding != null)
+                            {
+                                finding.Group = name;
+                                finding.Landed(FindingField.Group);
+                            }
+                        }
+
+                        row.Group = name;
+                    }
+
+                    _made.Add(GroupId(name));
+                }
+
+                if (!OnFile) { KeepFindings(); ArmSync(); }
+
+                _bands.Clear();
+                _picked.Clear();
+                _pickedFrom = null;
+
+                var what = Ui.Count(leaves.Count, "clash group") + " made from the bands, holding "
+                           + Ui.Count(results, "result") + "."
+                           + (answer.Nested
+                               ? " They are nested in the document, as they were on the board."
+                               : string.Empty);
+
+                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
+
+                RailChanged(new[] { entry.Test.Id });
+                RedrawBoard();
+                RedrawFoot();
+                ArmSync();
+
+                Tell(what + (OnFile ? " Save the markup to keep it." : string.Empty), problems);
             }
 
             /// <summary>Rename the test on the board.</summary>
@@ -5182,7 +5839,12 @@ namespace CamelWorks.UI.Views
 
                 foreach (var row in entry.Rows) row.TestName = wanted;
 
-                Redraw();
+                // One row on the rail, unless the rail is sorted by name - in which case the
+                // renamed test may have moved, and RailChanged is the thing that knows.
+                RailChanged(new[] { entry.Test.Id });
+                RedrawBoard();
+                RedrawFoot();
+
                 Tell("Renamed.", null);
             }
 
@@ -6453,6 +7115,10 @@ namespace CamelWorks.UI.Views
                 var held = 0;
                 var problems = new List<string>();
 
+                // Which tests this reached, so the rail can redraw the rows that changed rather
+                // than every row there is.
+                var touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 // Whatever this writes changes what the filters would answer, and no signature
                 // over the filter state can see inside a row.
                 Moved();
@@ -6467,6 +7133,8 @@ namespace CamelWorks.UI.Views
                     foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
                     {
                         var ids = byTest.Select(r => r.Info.Id).ToList();
+
+                        touched.Add(byTest.Key);
 
                         var took = write(byTest.Key, ids);
 
@@ -6547,7 +7215,16 @@ namespace CamelWorks.UI.Views
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
-                Redraw();
+                //
+                // The rail only where it moved. This is the door every status, assignee, group
+                // and comment on the board goes through, and it used to rebuild the rail whole
+                // for each of them - a row per test in the job to move one number on one row, or
+                // for an assignee and a comment, which the rail does not show at all.
+                RailChanged(touched);
+                RedrawBoard();
+                RedrawFoot();
+                ArmSync();
+
                 Tell(what + Trailer(held), problems);
             }
 

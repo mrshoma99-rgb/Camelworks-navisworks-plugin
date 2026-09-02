@@ -54,7 +54,8 @@ a result's status and who it is with, were behind a window opened by one of thos
 **What the setup windows became.** There were six sections behind six symbols. Four are gone
 because the board does what they set up where it happens: the filter page is the status strip and
 the chips; "what the status, assign and group verbs write" is the value picked on the chip itself;
-and the grouping chain is *Arrange view by*, in one press, on the rows, saying that nothing moved.
+and the grouping chain became the sort menu's band chain, on the rows, saying that nothing moved —
+and able to say the word that makes it move, once the arrangement is the one wanted.
 Two are left, and the board's own header names each: **Source and tolerance** and **Columns**.
 The review round moved into the footer's *Export* menu, with the rest of the ways work
 leaves the product.
