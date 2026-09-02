@@ -1341,9 +1341,32 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>Every property an element carries, by tab and name.</summary>
+        /// <summary>
+        /// Tab and name, compared the way the pickers offer them.
+        ///
+        /// The picker de-duplicates names case-insensitively, so the one it offers may differ in
+        /// case from the one a given element carries; an ordinal dictionary would then miss on a
+        /// name the user picked out of a list built from these very elements.
+        /// </summary>
+        private static readonly IEqualityComparer<(string, string)> TabAndName = new Insensitive();
+
+        /// <summary>Compares a tab-and-name pair without regard to case.</summary>
+        private sealed class Insensitive : IEqualityComparer<(string, string)>
+        {
+            /// <inheritdoc />
+            public bool Equals((string, string) left, (string, string) right) =>
+                string.Equals(left.Item1, right.Item1, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(left.Item2, right.Item2, StringComparison.OrdinalIgnoreCase);
+
+            /// <inheritdoc />
+            public int GetHashCode((string, string) pair) =>
+                StringComparer.OrdinalIgnoreCase.GetHashCode(pair.Item1 ?? string.Empty) * 397
+                ^ StringComparer.OrdinalIgnoreCase.GetHashCode(pair.Item2 ?? string.Empty);
+        }
+
         private static Dictionary<(string Tab, string Name), string> PropertiesOf(ModelItem? item)
         {
-            var found = new Dictionary<(string, string), string>();
+            var found = new Dictionary<(string, string), string>(TabAndName);
 
             if (item == null) return found;
 
@@ -1390,20 +1413,16 @@ namespace CamelWorks.Nav.Clash
             return null;
         }
 
-        /// <summary>A property value as text, however the host typed it.</summary>
-        private static string Text(VariantData? value)
-        {
-            if (value == null) return string.Empty;
-
-            try
-            {
-                return value.ToDisplayString() ?? string.Empty;
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
-        }
+        /// <summary>
+        /// A property value as text, however the host typed it.
+        ///
+        /// This asked for the display string alone, which throws for every variant that is not
+        /// text and, caught, read back as an empty cell: a column on Item / Hidden filled six
+        /// hundred blanks off elements that plainly carry it. <see cref="NavValues.ToText"/>
+        /// covers all fourteen kinds and is the one place that renders a variant.
+        /// </summary>
+        private static string Text(VariantData? value) =>
+            value == null ? string.Empty : NavValues.ToText(value) ?? string.Empty;
 
         /// <summary>One element's IFC GlobalId, through the identity the exporters share.</summary>
         private string? IfcOf(ModelItem? item)
