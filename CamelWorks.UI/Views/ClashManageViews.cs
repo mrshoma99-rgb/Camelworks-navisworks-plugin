@@ -951,13 +951,61 @@ namespace CamelWorks.UI.Views
                     .ThenBy(g => g.Key, StringComparer.CurrentCulture)
                     .ToList();
 
+                _railAt.Clear();
+                _railCommon = common;
+
                 foreach (var group in filed)
                 {
                     if (group.Key.Length > 0)
                         _rows.Children.Add(FolderBand(group.Key, group.Count()));
 
-                    foreach (var entry in group) _rows.Children.Add(RailRow(entry, common));
+                    // Shut folders keep their heading and hide their tests, so a rail of eighty
+                    // tests can be read as a dozen folders.
+                    if (_shutFolders.Contains(group.Key)) continue;
+
+                    foreach (var entry in group)
+                    {
+                        _railAt[entry.Test.Id] = _rows.Children.Count;
+                        _rows.Children.Add(RailRow(entry, common));
+                    }
                 }
+            }
+
+            /// <summary>Where each test's row sits in the rail, so one can be redrawn alone.</summary>
+            private readonly Dictionary<string, int> _railAt =
+                new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>The run time most tests share, kept so a single row can be rebuilt.</summary>
+            private string _railCommon = string.Empty;
+
+            /// <summary>Folders whose tests are hidden. Keyed the way the rail groups them.</summary>
+            private readonly HashSet<string> _shutFolders =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>
+            /// Redraw one test's row, leaving the rest of the rail alone.
+            ///
+            /// Moving the board from one test to another changes exactly two rows: the one that
+            /// stops being current and the one that starts. Rebuilding the list for that meant a
+            /// row per test in the job - each with its counts, its tooltip and its own context
+            /// menu - to move one highlight, and on a job of any size that is the second between
+            /// pressing a test and the rail admitting it.
+            /// </summary>
+            /// <param name="testId">The test whose row to redraw, or null for none.</param>
+            private void RepaintRail(string? testId)
+            {
+                if (testId == null
+                    || !_railAt.TryGetValue(testId, out var at)
+                    || at < 0 || at >= _rows.Children.Count)
+                    return;
+
+                var entry = Current()?.FirstOrDefault(
+                    e => string.Equals(e.Test.Id, testId, StringComparison.OrdinalIgnoreCase));
+
+                if (entry == null) return;
+
+                _rows.Children.RemoveAt(at);
+                _rows.Children.Insert(at, RailRow(entry, _railCommon));
             }
 
             /// <summary>
@@ -985,6 +1033,13 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(tally, Dock.Right);
                 row.Children.Add(tally);
 
+                var shut = _shutFolders.Contains(folder);
+
+                // The chevron carries the state; the folder stays a folder. A second icon that
+                // also changed would be two things saying one thing.
+                row.Children.Add(Ui.Glyph(shut ? Glyphs.Right : Glyphs.Down, 12, "Muted",
+                                          new Thickness(0, 0, 5, 0)));
+
                 row.Children.Add(Ui.Glyph(Glyphs.Folder, 13, "Muted", new Thickness(0, 0, 7, 0)));
 
                 var name = new TextBlock
@@ -1002,12 +1057,20 @@ namespace CamelWorks.UI.Views
                 {
                     Padding = new Thickness(12, 6, 14, 5),
                     BorderThickness = new Thickness(0, 0, 0, 1),
-                    ToolTip = folder + " — a CamelWorks folder, kept in this project",
+                    ToolTip = folder + " — a CamelWorks folder, kept in this project. "
+                              + (shut ? "Click to open it." : "Click to fold it away."),
                     Child = row,
+                    Cursor = System.Windows.Input.Cursors.Hand,
                 };
 
                 band.Tint(Border.BackgroundProperty, "Card2");
                 band.Tint(Border.BorderBrushProperty, "Bd");
+
+                band.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    if (!_shutFolders.Remove(folder)) _shutFolders.Add(folder);
+                    RedrawRailList();
+                });
 
                 return band;
             }
@@ -1111,11 +1174,41 @@ namespace CamelWorks.UI.Views
                 return line;
             }
 
+            /// <summary>
+            /// Ask which folder these tests go in, offering the ones this project already has.
+            ///
+            /// It used to be a box to type a folder name into, which asks somebody to remember and
+            /// spell a name that is on their screen a few inches away - and one typo makes a
+            /// second folder that looks like the first, with no way afterwards to tell which
+            /// tests went where. The folders are listed because they are already known; typing is
+            /// for the one case that needs it, a folder that does not exist yet.
+            /// </summary>
+            /// <param name="reaching">The tests the move acts on.</param>
+            /// <param name="entry">The test the menu was opened on, for what to mark as current.</param>
+            private void MoveInto(IReadOnlyList<object> reaching, TestEntry? entry)
+            {
+                var known = Folders(Current());
+                var now = (entry?.Test.Folder ?? string.Empty).Trim();
+
+                Parts.Choose(
+                    _rows,
+                    reaching.Count > 1
+                        ? "Move " + Ui.Count(reaching.Count, "test") + " into a folder"
+                        : "Move this test into a folder",
+                    known,
+                    now.Length == 0 ? null : now,
+                    "Or a new folder",
+                    now.Length > 0 || reaching.Count > 1 ? "Take them out of any folder" : null,
+                    folder => MoveTests(reaching, folder, _log));
+            }
+
             /// <summary>Put a test on the board, and forget everything set on the last one.</summary>
             /// <param name="testId">Which test.</param>
             private void Pick(string testId)
             {
                 if (string.Equals(testId, _current, StringComparison.OrdinalIgnoreCase)) return;
+
+                var was = _current;
 
                 _current = testId;
 
@@ -1136,7 +1229,10 @@ namespace CamelWorks.UI.Views
                 // test's search showing over a board it is no longer filtering.
                 _boardBox.Text = string.Empty;
 
-                RedrawRailList();
+                // The two rows that changed, not the hundred and sixty that did not.
+                RepaintRail(was);
+                RepaintRail(testId);
+
                 RedrawBoard();
             }
 
@@ -1192,9 +1288,7 @@ namespace CamelWorks.UI.Views
                         () => Prompt("Renumber the results", string.Empty, "Renumber",
                                      prefix => RenameResults(reaching, prefix, _log))),
                     Parts.Entry.Act(many ? "Move them into a folder" : "Move into a folder",
-                        Glyphs.MoveIn,
-                        () => Prompt("Move into a folder", entry?.Test.Folder ?? string.Empty,
-                                     "Move", folder => MoveTests(reaching, folder, _log))),
+                        Glyphs.MoveIn, () => MoveInto(reaching, entry)),
                     Parts.Entry.Act(many ? "Compact them - drop what is finished"
                                          : "Compact - drop what is finished",
                                     Glyphs.Compact, () => CompactTests(reaching, _log)),
@@ -3322,8 +3416,13 @@ namespace CamelWorks.UI.Views
 
                 box.Click += (s, e) => Ui.Safely(() =>
                 {
+                    // Nothing on the screen but this box shows what is ticked, and the box has
+                    // just drawn itself. Rebuilding the rail here meant a hundred and sixty rows
+                    // were thrown away and made again to record one tick - and the box the user
+                    // pressed was among them, so the tick they had already seen was discarded and
+                    // then reappeared a second later. Which is what "it takes a second before the
+                    // mark kicks in" was.
                     if (!_tests.Remove(entry.Test.Id)) _tests.Add(entry.Test.Id);
-                    RedrawRailList();
                 });
 
                 return box;
@@ -5150,7 +5249,14 @@ namespace CamelWorks.UI.Views
 
                 _picked.Clear();
                 _pickedFrom = null;
-                Redraw();
+
+                // The board, not everything. Grouping moves a result from one line of this test
+                // to another; it changes no status, so every count the rail shows is the same
+                // afterwards as before. Redrawing the rail rebuilt a row per test in the job for
+                // no change at all, which is the pause between letting go of a dragged result and
+                // seeing it land.
+                RedrawBoard();
+                RedrawFoot();
             }
 
             /// <summary>Rename the test on the board.</summary>

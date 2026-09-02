@@ -793,6 +793,145 @@ namespace CamelWorks.UI.Views
             if (said != null) onDone?.Invoke(said);
         }
 
+        /// <summary>
+        /// Ask which of a known set of things, with the option of a new one.
+        ///
+        /// <b>Why this is not <see cref="Ask"/>.</b> Asking somebody to type a name that is
+        /// already on their screen asks them to remember it and spell it, and one typo makes a
+        /// second thing that looks like the first - two folders called Level 03 and Level 3, and
+        /// nothing to say which tests went where. A name that exists is picked; a name that does
+        /// not is typed, once.
+        /// </summary>
+        /// <param name="near">The screen this belongs to, which becomes its owner.</param>
+        /// <param name="prompt">What is being asked.</param>
+        /// <param name="known">What already exists, in the order to offer it.</param>
+        /// <param name="current">What the subject is on now, ticked in the list. May be null.</param>
+        /// <param name="fresh">What the "something new" line says, or null to leave it out.</param>
+        /// <param name="none">What the "none of them" line says, or null to leave it out.</param>
+        /// <param name="onDone">Given the chosen name, or the empty string for none.</param>
+        public static void Choose(FrameworkElement near, string prompt,
+                                  IReadOnlyList<string> known, string? current,
+                                  string? fresh, string? none, Action<string> onDone)
+        {
+            _ = near;
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            string? said = null;
+
+            void Done(string what)
+            {
+                said = what;
+                window.Close();
+            }
+
+            var body = new StackPanel { Margin = new Thickness(18, 16, 18, 16), MinWidth = 300 };
+
+            var label = new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+
+            body.Children.Add(label.Wearing("Body"));
+
+            var list = new StackPanel();
+
+            foreach (var one in known ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(one)) continue;
+
+                var here = one;
+                var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
+
+                var press = Ui.Quiet(on ? here + "  ·  where it is now" : here, () => Done(here));
+
+                press.HorizontalAlignment = HorizontalAlignment.Stretch;
+                press.HorizontalContentAlignment = HorizontalAlignment.Left;
+                press.Margin = new Thickness(0, 0, 0, 4);
+                press.IsEnabled = !on;
+
+                list.Children.Add(press);
+            }
+
+            // Scrolled rather than grown: a job with forty folders should not open a window taller
+            // than the screen it is opening on.
+            body.Children.Add(new ScrollViewer
+            {
+                Content = list,
+                MaxHeight = 260,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            });
+
+            if (fresh != null)
+            {
+                var box = Ui.Text(string.Empty, null, 300);
+                box.Margin = new Thickness(0, 10, 0, 0);
+
+                void Make()
+                {
+                    var typed = box.Text.Trim();
+                    if (typed.Length > 0) Done(typed);
+                }
+
+                box.KeyDown += (s, e) =>
+                {
+                    if (e.Key == Key.Enter) Make();
+                    else if (e.Key == Key.Escape) window.Close();
+                };
+
+                body.Children.Add(Ui.Rule());
+                body.Children.Add(Ui.Eyebrow(fresh));
+                body.Children.Add(box);
+
+                var make = Ui.Primary("Move", Make);
+                make.MinWidth = 92;
+                make.HorizontalAlignment = HorizontalAlignment.Right;
+                make.Margin = new Thickness(0, 8, 0, 0);
+
+                body.Children.Add(make);
+            }
+
+            if (none != null)
+            {
+                var off = Ui.Quiet(none, () => Done(string.Empty));
+
+                off.HorizontalAlignment = HorizontalAlignment.Left;
+                off.Margin = new Thickness(0, 10, 0, 0);
+
+                body.Children.Add(off);
+            }
+
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+
+            cancel.HorizontalAlignment = HorizontalAlignment.Right;
+            cancel.Margin = new Thickness(0, 12, 0, 0);
+
+            body.Children.Add(cancel);
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.ShowDialog();
+
+            if (said != null) onDone?.Invoke(said);
+        }
+
         // -----------------------------------------------------------------------------------
         // Bands and bars
         // -----------------------------------------------------------------------------------
