@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -110,21 +112,15 @@ namespace CamelWorks.UI.Views
             var window = new Window
             {
                 Title = "CamelWorks — the team",
-                Width = 620,
-                Height = 560,
+                Width = 940,
+                Height = 600,
                 ResizeMode = ResizeMode.CanResize,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ShowInTaskbar = false,
             };
 
-            var list = Ui.Stack();
+            var rows = Ui.Stack();
             var said = Ui.Stack();
-
-            var name = Ui.Text(string.Empty, "who", null, 150);
-            var role = Ui.Text(string.Empty, "what they do", null, 140);
-            var team = Ui.Text(string.Empty, "which team", null, 90);
-            var company = Ui.Text(string.Empty, "which company", null, 140);
-            var email = Ui.Text(string.Empty, "where a BCF reaches them", null, 190);
 
             void Kept()
             {
@@ -138,84 +134,17 @@ namespace CamelWorks.UI.Views
 
             void Fill()
             {
-                list.Children.Clear();
+                rows.Children.Clear();
 
                 foreach (var member in roster.Members
-                             .OrderBy(m => m.Name, StringComparer.CurrentCulture))
-                {
-                    var here = member;
-                    var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 3, 0, 3) };
-
-                    var off = Ui.Icon(Glyphs.Bin, "Take them off the team", () =>
-                    {
-                        roster.Remove(here.Id);
-                        Fill();
-                        Kept();
-                    });
-
-                    DockPanel.SetDock(off, Dock.Right);
-                    row.Children.Add(off);
-
-                    var words = new StackPanel { Orientation = Orientation.Horizontal };
-
-                    words.Children.Add(Ui.Glyph(Glyphs.Person, 13, "Muted", new Thickness(0, 0, 8, 0)));
-
-                    var who = new TextBlock
-                    {
-                        Text = here.Name,
-                        FontWeight = FontWeights.SemiBold,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        MinWidth = 150,
-                    };
-
-                    words.Children.Add(who.Wearing("Body"));
-
-                    var under = here.Under();
-
-                    words.Children.Add(new TextBlock
-                    {
-                        Text = under.Length == 0 ? "no role, team or company yet" : under,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        Margin = new Thickness(8, 0, 0, 0),
-                    }.Wearing("Hint"));
-
-                    row.Children.Add(words);
-                    list.Children.Add(row);
-                }
+                             .OrderBy(m => m.Name, StringComparer.CurrentCulture)
+                             .ToList())
+                    rows.Children.Add(Line(roster, member, Fill, Kept));
 
                 if (roster.Members.Count == 0)
-                    list.Children.Add(Ui.Small("Nobody yet. Until there is somebody here, a clash "
-                        + "can still be assigned to whatever name is typed on the board — this is "
-                        + "what turns those names into people, roles, companies and teams."));
-            }
-
-            void Add()
-            {
-                var who = name.Text.Trim();
-
-                if (who.Length == 0)
-                {
-                    said.Children.Clear();
-                    said.Children.Add(Ui.Problem("Somebody needs a name."));
-                    return;
-                }
-
-                var member = roster.Add(who, company.Text.Trim(), email.Text.Trim());
-
-                member.Role = Or(role.Text);
-                member.Team = Or(team.Text);
-
-                name.Text = string.Empty;
-                role.Text = string.Empty;
-                team.Text = string.Empty;
-                company.Text = string.Empty;
-                email.Text = string.Empty;
-
-                Fill();
-                Kept();
-
-                name.Focus();
+                    rows.Children.Add(Ui.Small("Nobody yet. Press “Add somebody” and fill "
+                        + "the row in — every field is editable where it stands, and the roles, "
+                        + "teams and companies you use turn up in the lists afterwards."));
             }
 
             Fill();
@@ -231,15 +160,36 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(head, Dock.Top);
             body.Children.Add(head);
 
-            var adding = new WrapPanel { Margin = new Thickness(0, 12, 0, 6) };
+            // The headings, once, over the rows - which is what makes it a table rather than a
+            // list of controls. Every one of them is editable where it stands: the old window
+            // had a row of boxes at the top and an Add button, and nothing already added could
+            // be corrected at all.
+            var headings = Columns();
 
-            foreach (var box in new[] { name, role, team, company, email })
+            headings.Margin = new Thickness(0, 12, 0, 4);
+
+            Put(headings, Ui.Eyebrow("Name"), 0);
+            Put(headings, Ui.Eyebrow("Role"), 1);
+            Put(headings, Ui.Eyebrow("Team"), 2);
+            Put(headings, Ui.Eyebrow("Company"), 3);
+            Put(headings, Ui.Eyebrow("Email"), 4);
+            Put(headings, Ui.Eyebrow("BCF folder"), 5);
+
+            DockPanel.SetDock(headings, Dock.Top);
+            body.Children.Add(headings);
+
+            var adding = Ui.Primary("Add somebody", () =>
             {
-                box.Margin = new Thickness(0, 0, 8, 6);
-                adding.Children.Add(box);
-            }
+                var name = Fresh(roster);
 
-            adding.Children.Add(Ui.Primary("Add", Add));
+                roster.Add(name);
+
+                Fill();
+                Kept();
+            });
+
+            adding.HorizontalAlignment = HorizontalAlignment.Left;
+            adding.Margin = new Thickness(0, 8, 0, 0);
 
             DockPanel.SetDock(adding, Dock.Top);
             body.Children.Add(adding);
@@ -252,8 +202,8 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(close, Dock.Right);
             foot.Children.Add(close);
 
-            // Handing the team to somebody else, and taking theirs. A roster is typed once and
-            // then wanted by four people, and the way that happens today is a screenshot.
+            var ways = new StackPanel { Orientation = Orientation.Horizontal };
+
             var send = Ui.Quiet("Save to a file", () =>
             {
                 var path = Ui.AskToSave("Save the team", "Team|*.json", "team.json");
@@ -267,7 +217,10 @@ namespace CamelWorks.UI.Views
                     : Ui.Problem(roster.LastProblem ?? "It could not be written."));
             });
 
-            var take = Ui.Quiet("Open a team file", () =>
+            send.Margin = new Thickness(0, 0, 8, 0);
+            ways.Children.Add(send);
+
+            ways.Children.Add(Ui.Quiet("Open a team file", () =>
             {
                 var path = Ui.AskToOpen("Open a team file", "Team|*.json");
 
@@ -281,18 +234,12 @@ namespace CamelWorks.UI.Views
 
                     added.Role = member.Role ?? added.Role;
                     added.Team = member.Team ?? added.Team;
+                    added.Folder = member.Folder ?? added.Folder;
                 }
 
                 Fill();
                 Kept();
-            });
-
-            send.Margin = new Thickness(0, 0, 8, 0);
-
-            var ways = new StackPanel { Orientation = Orientation.Horizontal };
-
-            ways.Children.Add(send);
-            ways.Children.Add(take);
+            }));
 
             foot.Children.Add(ways);
 
@@ -304,7 +251,7 @@ namespace CamelWorks.UI.Views
 
             body.Children.Add(new ScrollViewer
             {
-                Content = list,
+                Content = Ui.Loose(rows),
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Margin = new Thickness(0, 6, 0, 0),
@@ -314,7 +261,6 @@ namespace CamelWorks.UI.Views
             ground.Tint(Border.BackgroundProperty, "Bg");
 
             window.Content = ground;
-            window.Loaded += (s, e) => name.Focus();
 
             Skin.Apply(window);
             Shell.HostWindow.Own(window);
@@ -322,6 +268,175 @@ namespace CamelWorks.UI.Views
             window.ShowDialog();
 
             if (changed) onChanged?.Invoke();
+        }
+
+        /// <summary>The one column layout the headings and every row share.</summary>
+        private static Grid Columns()
+        {
+            var grid = new Grid();
+
+            foreach (var width in new[] { 150.0, 150.0, 90.0, 140.0, 180.0, 1.0 })
+                grid.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = width > 2
+                        ? new GridLength(width)
+                        : new GridLength(1, GridUnitType.Star),
+                    MinWidth = width > 2 ? width : 120,
+                });
+
+            // The bin, hard right.
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            return grid;
+        }
+
+        private static void Put(Grid grid, UIElement child, int column)
+        {
+            if (child is FrameworkElement held) held.Margin = new Thickness(0, 0, 6, 0);
+
+            Grid.SetColumn(child, column);
+            grid.Children.Add(child);
+        }
+
+        /// <summary>
+        /// One person, as a row of editable fields.
+        ///
+        /// <b>Suggested, never insisted on.</b> The role list starts with the roles this roster
+        /// already uses and then the ones a job usually has; team and company are whatever the
+        /// roster already holds. All three are editable, so a job with its own words for things
+        /// types them once and finds them in the list from then on. That is the whole difference
+        /// between a picker that helps and one that argues.
+        /// </summary>
+        /// <param name="roster">The team, for the lists the boxes offer.</param>
+        /// <param name="member">The person.</param>
+        /// <param name="onShape">Called when the list itself has to be drawn again.</param>
+        /// <param name="onEdit">Called after every edit, to keep it.</param>
+        private static UIElement Line(TeamRoster roster, TeamMember member,
+                                      Action onShape, Action onEdit)
+        {
+            var grid = Columns();
+
+            grid.Margin = new Thickness(0, 2, 0, 2);
+
+            // The name is the identity, so changing it is a remove and an add rather than an
+            // edit in place - and the list is drawn again because the order may have moved.
+            var name = Ui.Text(member.Name, null, 140);
+
+            name.LostFocus += (s, e) => Ui.Safely(() =>
+            {
+                var typed = name.Text.Trim();
+
+                if (typed.Length == 0 || string.Equals(typed, member.Name, StringComparison.Ordinal))
+                {
+                    name.Text = member.Name;
+                    return;
+                }
+
+                var moved = roster.Add(typed, member.Party, member.Email);
+
+                moved.Role = member.Role;
+                moved.Team = member.Team;
+                moved.Folder = member.Folder;
+                moved.Note = member.Note;
+
+                roster.Remove(member.Id);
+
+                onEdit();
+                onShape();
+            });
+
+            Put(grid, name, 0);
+
+            Put(grid, Suggesting(roster.RolesOffered, member.Role,
+                                 typed => { member.Role = Or(typed); onEdit(); }), 1);
+
+            Put(grid, Suggesting(roster.Teams, member.Team,
+                                 typed => { member.Team = Or(typed); onEdit(); }), 2);
+
+            Put(grid, Suggesting(roster.Parties, member.Party,
+                                 typed => { member.Party = Or(typed); onEdit(); }), 3);
+
+            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, 170);
+
+            email.LostFocus += (s, e) => Ui.Safely(() =>
+            {
+                member.Email = Or(email.Text);
+                onEdit();
+            });
+
+            Put(grid, email, 4);
+
+            // A folder, with a Browse, because a job that issues clashes by folder rather than
+            // by email has nowhere else to put it - and typing a share path by hand is how the
+            // wrong consultant gets somebody else's clashes.
+            var folder = Ui.Text(member.Folder ?? string.Empty, "where their BCFs go", null, 150);
+
+            folder.LostFocus += (s, e) => Ui.Safely(() =>
+            {
+                member.Folder = Or(folder.Text);
+                onEdit();
+            });
+
+            var path = Ui.PathField(string.Empty, folder, PathKind.Folder);
+
+            Put(grid, path, 5);
+
+            var off = Ui.Icon(Glyphs.Bin, "Take them off the team", () =>
+            {
+                roster.Remove(member.Id);
+                onEdit();
+                onShape();
+            });
+
+            off.Margin = new Thickness(0);
+
+            Grid.SetColumn(off, 6);
+            grid.Children.Add(off);
+
+            return grid;
+        }
+
+        /// <summary>A box that offers what is already in use, and takes anything else.</summary>
+        /// <param name="known">What to offer.</param>
+        /// <param name="current">What it holds now.</param>
+        /// <param name="onDone">Called with what it holds when the caret leaves it.</param>
+        private static ComboBox Suggesting(IReadOnlyList<string> known, string? current,
+                                           Action<string> onDone)
+        {
+            var box = new ComboBox
+            {
+                IsEditable = true,
+                Text = current ?? string.Empty,
+                MinWidth = 80,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+
+            foreach (var one in known) box.Items.Add(one);
+
+            box.LostFocus += (s, e) => Ui.Safely(() => onDone(box.Text));
+
+            box.SelectionChanged += (s, e) => Ui.Safely(() =>
+            {
+                if (box.SelectedItem is string picked) onDone(picked);
+            });
+
+            return box;
+        }
+
+        /// <summary>A name nobody on the roster has yet, for a row that was just added.</summary>
+        private static string Fresh(TeamRoster roster)
+        {
+            for (var at = 1; at < 500; at++)
+            {
+                var tried = at == 1
+                    ? "New person"
+                    : "New person " + at.ToString(CultureInfo.InvariantCulture);
+
+                if (roster.Find(tried) == null) return tried;
+            }
+
+            return "New person";
         }
 
         private static string? Or(string? text)

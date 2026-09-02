@@ -97,8 +97,24 @@ namespace CamelWorks.UI.Views
         private sealed class PropColumn
         {
             internal PropColumn(string tab, string name, string side, string title)
+                : this(Guid.NewGuid().ToString("N"), tab, name, side, title)
             {
-                Id = Guid.NewGuid().ToString("N");
+            }
+
+            /// <summary>
+            /// The same column with a field changed, keeping its id.
+            ///
+            /// The id is what every row's read value is keyed by, so an edited column that took
+            /// a new one would silently empty the board.
+            /// </summary>
+            /// <param name="id">The id it keeps.</param>
+            /// <param name="tab">Its tab.</param>
+            /// <param name="name">Its property.</param>
+            /// <param name="side">Which side it reads.</param>
+            /// <param name="title">What it is called on the board.</param>
+            internal PropColumn(string id, string tab, string name, string side, string title)
+            {
+                Id = id;
                 Tab = tab;
                 Name = name;
                 Side = side;
@@ -358,9 +374,6 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _columnList = Ui.Stack();
             private readonly StackPanel _fill = Ui.Stack();
 
-            private string _newTab = string.Empty;
-            private string _newProp = string.Empty;
-            private string _newSide = BothSides;
 
             // ---- The rail: which test, and how the list of them is narrowed ----
 
@@ -4907,7 +4920,17 @@ namespace CamelWorks.UI.Views
 
                 if (page == null) return;
 
-                Ui.Configure(page.Page.Name, Redraw, page.Page);
+                // Reading the values when the page closes, rather than from a button on it.
+                //
+                // "Read values" was a third press nobody could be expected to know about: add a
+                // column, and the board shows an empty column until somebody finds the button
+                // under it. Done is when the columns are settled, so Done is when they are read.
+                Ui.Configure(page.Page.Name, () =>
+                {
+                    Redraw();
+
+                    if (string.Equals(section, "columns", StringComparison.Ordinal)) FillNow();
+                }, page.Page);
             }
 
             /// <summary>
@@ -4988,21 +5011,16 @@ namespace CamelWorks.UI.Views
                 RedrawColumnList();
 
                 return Bench.Group("Property columns",
-                    Ui.Field("Tab", Pickers.ClashTab(_newTab, pick => _newTab = pick)),
-                    Ui.Field("Property", Pickers.ClashProperty(_newProp, pick => _newProp = pick)),
-                    Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
-                                                    _newSide, pick => _newSide = pick, 150)),
-                    Ui.Actions(Ui.Icon(Glyphs.Add, "Add the column", AddColumn)),
                     _columnList,
-                    Ui.Runner("Read values", _fill, primary: false, work: FillColumns),
                     _fill,
                     Ui.Small("A column belongs to the board, not to one test: it lands on every "
-                             + "test's results, and the names offered above are what the clashing "
+                             + "test's results, and the names offered are what the clashing "
                              + "elements of every test actually carry. Each column reads that "
                              + "property off the clashing elements themselves, and lands "
                              + "between Worst and Status - "
                              + "where the eye is already reading facts about the elements rather "
-                             + "than decisions about them."));
+                             + "than decisions about them. "
+                             + "The values are read when you close this page."));
             }
 
             private UIElement ModelPage()
@@ -7976,53 +7994,169 @@ namespace CamelWorks.UI.Views
             // Property columns and the grouping chain
             // -------------------------------------------------------------------------------
 
+            /// <summary>
+            /// Put an empty column on the page, for its fields to be filled in inside it.
+            ///
+            /// <b>The card first, the fields after.</b> This used to need the three boxes at the
+            /// top of the page filled in before the Add symbol would do anything - so the press
+            /// that makes a column refused until somebody had already described one, and refused
+            /// silently enough that it read as a dead button. A column is a card now: press, then
+            /// say what it is, in the card.
+            /// </summary>
             private void AddColumn()
             {
-                var name = _newProp.Trim();
+                _columns.Add(new PropColumn(string.Empty, string.Empty, BothSides,
+                                            Titled(string.Empty, string.Empty, BothSides)));
 
-                if (name.Length == 0)
-                {
-                    Warned(Ui.Problem("Pick or type the property first."));
-                    return;
-                }
-
-                // The title has to tell two columns apart: the bare name until it collides,
-                // the tab beside it after, the side beside that when both sides are read apart.
-                var title = name;
-
-                if (_columns.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))
-                    && _newTab.Trim().Length > 0)
-                    title = _newTab.Trim() + " / " + name;
-
-                if (_newSide == FirstSide) title += " (1)";
-                else if (_newSide == SecondSide) title += " (2)";
-
-                _columns.Add(new PropColumn(_newTab.Trim(), name, _newSide, title));
                 Indexed();
-
-
                 RedrawColumnList();
                 RedrawBoard();
             }
 
+            /// <summary>
+            /// The columns, as cards, with the way to add one at the top.
+            ///
+            /// <b>Why cards and not a form.</b> This was three fixed boxes at the top of the page
+            /// and an Add symbol under them: fill the boxes, press a symbol with no word on it,
+            /// watch a line appear in a list somewhere below, and then remember to press "Read
+            /// values" - four steps and two of them invisible. A column is a thing, so it is a
+            /// card, and it is made by pressing something that says what it makes. Its fields
+            /// live inside it and can be changed afterwards, which the old form could not do at
+            /// all.
+            /// </summary>
             private void RedrawColumnList()
             {
                 _columnList.Children.Clear();
 
+                // Always first, always the full width, and it says what it does. The old one was
+                // a bare plus.
+                var add = Ui.Primary("Add a property column", AddColumn);
+
+                add.HorizontalAlignment = HorizontalAlignment.Stretch;
+                add.HorizontalContentAlignment = HorizontalAlignment.Center;
+                add.Margin = new Thickness(0, 0, 0, 8);
+
+                _columnList.Children.Add(add);
+
                 foreach (var column in _columns)
                 {
                     var here = column;
+                    var card = new Border
+                    {
+                        CornerRadius = new CornerRadius(8),
+                        BorderThickness = new Thickness(1),
+                        Padding = new Thickness(10, 8, 10, 10),
+                        Margin = new Thickness(0, 0, 0, 8),
+                    };
 
-                    _columnList.Children.Add(Ui.Across(
-                        Ui.Line(here.Title, 0.85),
-                        Ui.Icon(Glyphs.Close, "Take the column out", () =>
-                        {
-                            _columns.Remove(here);
-                            Indexed();
-                            RedrawColumnList();
-                            RedrawBoard();
-                        })));
+                    card.Tint(Border.BackgroundProperty, "Card");
+                    card.Tint(Border.BorderBrushProperty, "Bd");
+
+                    var head = new DockPanel { LastChildFill = true };
+
+                    var bin = Ui.Icon(Glyphs.Bin, "Take the column out", () =>
+                    {
+                        _columns.Remove(here);
+                        Indexed();
+                        RedrawColumnList();
+                        RedrawBoard();
+                    });
+
+                    DockPanel.SetDock(bin, Dock.Right);
+                    head.Children.Add(bin);
+
+                    head.Children.Add(new TextBlock
+                    {
+                        Text = here.Title,
+                        FontWeight = FontWeights.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    }.Wearing("Body"));
+
+                    card.Child = Ui.Stack(
+                        head,
+                        Ui.Field("Tab", Pickers.ClashTab(here.Tab, pick => Recut(here, pick, null, null))),
+                        Ui.Field("Property", Pickers.ClashProperty(here.Name,
+                            pick => Recut(here, null, pick, null))),
+                        Ui.Field("Read from", Ui.Choice(new[] { BothSides, FirstSide, SecondSide },
+                            here.Side, pick => Recut(here, null, null, pick), 150)));
+
+                    _columnList.Children.Add(card);
                 }
+
+                if (_columns.Count == 0)
+                    _columnList.Children.Add(Ui.Small("No columns yet. One carries a property off "
+                        + "the clashing elements themselves - the system name, the workset, the "
+                        + "fire rating - beside the decision about them."));
+            }
+
+            /// <summary>
+            /// Change one field of a column, keeping the rest.
+            ///
+            /// A column is immutable - its id is what the values on every row are keyed by - so
+            /// an edit is a new column in the same place, carrying the same id, and the values
+            /// already read against it are carried across rather than thrown away.
+            /// </summary>
+            /// <param name="column">The column being edited.</param>
+            /// <param name="tab">Its new tab, or null to keep it.</param>
+            /// <param name="name">Its new property, or null to keep it.</param>
+            /// <param name="side">Its new side, or null to keep it.</param>
+            private void Recut(PropColumn column, string? tab, string? name, string? side)
+            {
+                var at = _columns.IndexOf(column);
+
+                if (at < 0) return;
+
+                var wantedTab = (tab ?? column.Tab).Trim();
+                var wantedName = (name ?? column.Name).Trim();
+                var wantedSide = side ?? column.Side;
+
+                if (string.Equals(wantedTab, column.Tab, StringComparison.Ordinal)
+                    && string.Equals(wantedName, column.Name, StringComparison.Ordinal)
+                    && string.Equals(wantedSide, column.Side, StringComparison.Ordinal))
+                    return;
+
+                _columns[at] = new PropColumn(column.Id, wantedTab, wantedName, wantedSide,
+                                              Titled(wantedTab, wantedName, wantedSide, column));
+
+                Indexed();
+                RedrawColumnList();
+                RedrawBoard();
+            }
+
+            /// <summary>What a column is called, told apart from the others.</summary>
+            /// <param name="tab">Its tab.</param>
+            /// <param name="name">Its property.</param>
+            /// <param name="side">Which side it reads.</param>
+            /// <param name="itself">The column being renamed, which does not collide with itself.</param>
+            private string Titled(string tab, string name, string side, PropColumn? itself = null)
+            {
+                var title = name.Length == 0 ? "(no property yet)" : name;
+
+                if (_columns.Any(c => !ReferenceEquals(c, itself)
+                                      && string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase))
+                    && tab.Length > 0)
+                    title = tab + " / " + title;
+
+                if (side == FirstSide) title += " (1)";
+                else if (side == SecondSide) title += " (2)";
+
+                return title;
+            }
+
+            /// <summary>
+            /// Read the columns' values, if there is anything to read them into.
+            ///
+            /// Quiet when there is nothing to do - no columns, no board, or a board read from a
+            /// file with no elements behind it - because this runs on closing a page rather than
+            /// on a press, and a page that answers with a problem nobody asked for is worse than
+            /// one that answers with nothing.
+            /// </summary>
+            private void FillNow()
+            {
+                if (_columns.Count == 0 || Current() == null || OnFile) return;
+
+                Ui.Working("Reading the values off the clashing elements...", FillColumns);
             }
 
             /// <summary>
@@ -8063,8 +8197,15 @@ namespace CamelWorks.UI.Views
                 }
 
                 var wanted = _columns
+                    .Where(c => c.Name.Trim().Length > 0)
                     .Select(c => new ClashPropertyWanted(c.Id, c.Tab, c.Name, Sided(c.Side)))
                     .ToList();
+
+                if (wanted.Count == 0)
+                {
+                    _fill.Children.Add(Ui.Problem("No column says which property to read yet."));
+                    return;
+                }
 
                 job.Total = read.Sum(e => e.Rows.Count);
                 job.Say("Reading the values off the clashing elements...");
