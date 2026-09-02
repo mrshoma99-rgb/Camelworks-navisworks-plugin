@@ -86,6 +86,53 @@ namespace CamelWorks.Core.Tests
             Assert.DoesNotContain(fine.Warnings, w => w.Contains("GlobalId", StringComparison.Ordinal));
         }
 
+        // -----------------------------------------------------------------------------------
+        // Where the writing seat had the elements, so the reading seat need not search
+
+        [Fact]
+        public void TheLocatorsSurviveTheRoundTrip()
+        {
+            var item = Item(A, B);
+
+            item.PathIdA = "3/1/44";
+            item.PathIdB = "3/1/91";
+            item.TreeA = "Structure.rvt\u001FLevel 02\u001FBeams\u001FUB 305x165";
+            item.TreeB = "Structure.rvt\u001FLevel 02\u001FDucts\u001FSupply 400x200";
+
+            using var stream = new System.IO.MemoryStream(ClashBcf.Write(new[] { item }).Bytes);
+
+            var back = ClashBcf.Read(stream).Results.Single();
+
+            Assert.Equal("3/1/44", back.Item.PathIdA);
+            Assert.Equal("3/1/91", back.Item.PathIdB);
+            Assert.Equal("Structure.rvt\u001FLevel 02\u001FBeams\u001FUB 305x165", back.Item.TreeA);
+            Assert.Equal("Structure.rvt\u001FLevel 02\u001FDucts\u001FSupply 400x200", back.Item.TreeB);
+        }
+
+        [Fact]
+        public void AFileWrittenWithoutThemStillReads()
+        {
+            // Every file written before the locators existed. Absent is an ordinary answer, and
+            // the keys are what the reading seat falls back to.
+            using var stream = new System.IO.MemoryStream(ClashBcf.Write(new[] { Item(A, B) }).Bytes);
+
+            var back = ClashBcf.Read(stream).Results.Single();
+
+            Assert.Null(back.Item.PathIdA);
+            Assert.Null(back.Item.TreeA);
+            Assert.False(back.Item.Key.IsEmpty);
+        }
+
+        [Fact]
+        public void ALocatorKnowsWhetherItSavesASearch()
+        {
+            var key = ElementKey.FromInstanceGuid(ElementKey.ScopeOf("Structure.rvt"), Guid.Parse(A));
+
+            Assert.True(new ElementLocator(key, "3/1/44", null).HasRoute);
+            Assert.True(new ElementLocator(key, null, "a\u001Fb").HasRoute);
+            Assert.False(new ElementLocator(key, null, null).HasRoute);
+        }
+
         [Fact]
         public void ABlindTopicStillCarriesACameraSoItIsWorthSending()
         {

@@ -638,6 +638,13 @@ namespace CamelWorks.Core.Clash
             Text("zone", item.Zone);
             Text("ifcA", item.IfcGuidA);
             Text("ifcB", item.IfcGuidB);
+
+            // Where the writing document had these two elements, so the reading document can look
+            // them up instead of searching itself for something whose key is a hash.
+            Text("pathA", item.PathIdA);
+            Text("pathB", item.PathIdB);
+            Text("treeA", item.TreeA);
+            Text("treeB", item.TreeB);
             Text("modelA", item.ModelA);
             Text("modelB", item.ModelB);
             Text("categoryA", item.CategoryA);
@@ -867,6 +874,11 @@ namespace CamelWorks.Core.Clash
             {
                 item.IfcGuidA = record["ifcA"].AsString();
                 item.IfcGuidB = record["ifcB"].AsString();
+
+                item.PathIdA = record["pathA"].AsString();
+                item.PathIdB = record["pathB"].AsString();
+                item.TreeA = record["treeA"].AsString();
+                item.TreeB = record["treeB"].AsString();
                 item.ModelA = record["modelA"].AsString();
                 item.ModelB = record["modelB"].AsString();
                 item.CategoryA = record["categoryA"].AsString();

@@ -525,7 +525,7 @@ namespace CamelWorks.UI.Views
 
                 var about = ClashIdentity.Explain(picked.Items.Count, named);
 
-                if (about != null) _output.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+                if (about != null) _output.Children.Add(named.Read == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                 if (_pictures)
                     _output.Children.Add(written.Snapshots == 0

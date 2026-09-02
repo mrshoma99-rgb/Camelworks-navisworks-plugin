@@ -5695,25 +5695,48 @@ namespace CamelWorks.UI.Views
             {
                 _outOfReach = 0;
 
-                var keys = Keys(rows);
+                var found = Located(rows);
 
-                if (keys.Count == 0) return 0;
+                if (found.Count == 0) return 0;
 
-                // Indexed already: every rung resolves, so ask for the lot.
-                if (_session.Model.IsIndexed)
+                var selected = _session.Model.SelectByLocator(found);
+
+                _outOfReach = found.Count - selected;
+
+                return selected;
+            }
+
+            /// <summary>
+            /// The picked rows' elements, with whatever the file said about where to find them.
+            ///
+            /// A file written by this product since the locators went in carries, per element, the
+            /// host's own handle and the path down the tree - so the document can be asked for the
+            /// element rather than searched for it. An older file carries neither, and the key is
+            /// what is left; that still works for an instance GUID and still declines to index the
+            /// federation behind a press for anything else.
+            /// </summary>
+            /// <param name="rows">The picked rows, from a file.</param>
+            private List<ElementLocator> Located(IReadOnlyList<Row> rows)
+            {
+                var found = new List<ElementLocator>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+
+                void Add(ElementKey key, string? pathId, string? tree)
                 {
-                    _session.Model.Select(keys);
-                    return keys.Count;
+                    if (key.IsEmpty || !seen.Add(key.ToString())) return;
+
+                    found.Add(new ElementLocator(key, pathId, tree));
                 }
 
-                var free = keys.Where(k => k.Rung == KeyRung.InstanceGuid).ToList();
+                foreach (var row in rows)
+                {
+                    var item = row.FileItem;
 
-                _outOfReach = keys.Count - free.Count;
+                    Add(row.Info.A, item?.PathIdA, item?.TreeA);
+                    Add(row.Info.B, item?.PathIdB, item?.TreeB);
+                }
 
-                if (free.Count == 0) return 0;
-
-                _session.Model.Select(free);
-                return free.Count;
+                return found;
             }
 
             /// <summary>
@@ -7089,7 +7112,7 @@ namespace CamelWorks.UI.Views
                 // The GlobalIds are what let the receiving tool select the two clashing
                 // elements. Read before writing, under the wait cursor: on a first export of a
                 // large board this is the slow part, and it is not a press that looks slow.
-                var named = 0;
+                var named = default(ClashIdentity.IdStamp);
 
                 // Watched, with a Stop. This is a key resolution per element of the whole board -
                 // on a board of a few hundred results, the first export after a model change pays
@@ -7165,7 +7188,7 @@ namespace CamelWorks.UI.Views
                     // same fact twice in two different numbers.
                     var about = ClashIdentity.Explain(items.Count, named);
 
-                    if (about != null && named >= items.Count * 2) Said(Ui.Line(about, 0.8));
+                    if (about != null) Said(named.Derived > 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                     if (_pictures)
                         Said(written.Snapshots == 0
