@@ -952,6 +952,7 @@ namespace CamelWorks.UI.Views
                     .ToList();
 
                 _railAt.Clear();
+                _railOrder.Clear();
                 _railCommon = common;
 
                 foreach (var group in filed)
@@ -966,6 +967,7 @@ namespace CamelWorks.UI.Views
                     foreach (var entry in group)
                     {
                         _railAt[entry.Test.Id] = _rows.Children.Count;
+                        _railOrder.Add(entry.Test.Id);
                         _rows.Children.Add(RailRow(entry, common));
                     }
                 }
@@ -977,6 +979,43 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The run time most tests share, kept so a single row can be rebuilt.</summary>
             private string _railCommon = string.Empty;
+
+            /// <summary>The order the rail was last drawn in, to tell a move from a repaint.</summary>
+            private readonly List<string> _railOrder = new List<string>();
+
+            /// <summary>
+            /// Redraw the rail after a change: the rows that moved, or the list when the list did.
+            ///
+            /// <b>Why this is not simply "redraw the rail".</b> Setting a status is the commonest
+            /// thing anybody does on this board, and it moves one number on one row. Rebuilding
+            /// the rail for it meant a row per test in the job - counts, tooltip and a context
+            /// menu each - every time somebody marked a clash.
+            ///
+            /// It cannot always be one row, though, and the reason is worth naming: the rail hides
+            /// finished tests when "only the open ones" is on, and sorts by a count under five of
+            /// its seven orders. A status write can therefore take a row out of the list or move
+            /// it up past three others, and a repaint in place would leave the rail lying about
+            /// its own order.
+            ///
+            /// So the question is asked rather than assumed. Working out which tests would be
+            /// shown, and in what order, is a filter and a sort over the tests - tens or hundreds
+            /// of items - against building that many rows of controls. When the answer is the same
+            /// list in the same order, only the rows that changed are drawn again.
+            /// </summary>
+            /// <param name="touched">The tests whose rows changed.</param>
+            private void RailChanged(IReadOnlyCollection<string> touched)
+            {
+                var now = Shown().Select(e => e.Test.Id).ToList();
+
+                if (now.Count != _railOrder.Count
+                    || !now.SequenceEqual(_railOrder, StringComparer.OrdinalIgnoreCase))
+                {
+                    RedrawRailList();
+                    return;
+                }
+
+                foreach (var id in touched) RepaintRail(id);
+            }
 
             /// <summary>Folders whose tests are hidden. Keyed the way the rail groups them.</summary>
             private readonly HashSet<string> _shutFolders =
@@ -5352,7 +5391,12 @@ namespace CamelWorks.UI.Views
 
                 foreach (var row in entry.Rows) row.TestName = wanted;
 
-                Redraw();
+                // One row on the rail, unless the rail is sorted by name - in which case the
+                // renamed test may have moved, and RailChanged is the thing that knows.
+                RailChanged(new[] { entry.Test.Id });
+                RedrawBoard();
+                RedrawFoot();
+
                 Tell("Renamed.", null);
             }
 
@@ -6623,6 +6667,10 @@ namespace CamelWorks.UI.Views
                 var held = 0;
                 var problems = new List<string>();
 
+                // Which tests this reached, so the rail can redraw the rows that changed rather
+                // than every row there is.
+                var touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 // Whatever this writes changes what the filters would answer, and no signature
                 // over the filter state can see inside a row.
                 Moved();
@@ -6637,6 +6685,8 @@ namespace CamelWorks.UI.Views
                     foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
                     {
                         var ids = byTest.Select(r => r.Info.Id).ToList();
+
+                        touched.Add(byTest.Key);
 
                         var took = write(byTest.Key, ids);
 
@@ -6717,7 +6767,16 @@ namespace CamelWorks.UI.Views
 
                 // Redrawing replaces the table whose bar the message panel lived in, so the
                 // outcome goes to the screen's own log, which survives.
-                Redraw();
+                //
+                // The rail only where it moved. This is the door every status, assignee, group
+                // and comment on the board goes through, and it used to rebuild the rail whole
+                // for each of them - a row per test in the job to move one number on one row, or
+                // for an assignee and a comment, which the rail does not show at all.
+                RailChanged(touched);
+                RedrawBoard();
+                RedrawFoot();
+                ArmSync();
+
                 Tell(what + Trailer(held), problems);
             }
 
