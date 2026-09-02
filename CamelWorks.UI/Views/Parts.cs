@@ -413,6 +413,221 @@ namespace CamelWorks.UI.Views
             return chip;
         }
 
+        /// <summary>One thing a chip can be set to, with what it is and what it is under.</summary>
+        public readonly struct ChipOption
+        {
+            /// <summary>Describe one option.</summary>
+            /// <param name="value">What setting it writes.</param>
+            /// <param name="label">What it says.</param>
+            /// <param name="under">A quieter second line, or null.</param>
+            /// <param name="glyph">The symbol that says what kind of thing it is, or null.</param>
+            /// <param name="key">The skin key the symbol is tinted with, or null.</param>
+            public ChipOption(string value, string label, string? under = null,
+                              string? glyph = null, string? key = null)
+            {
+                _value = value ?? string.Empty;
+                _label = label ?? string.Empty;
+                Under = under;
+                Glyph = glyph;
+                Key = key;
+            }
+
+            private readonly string? _value;
+            private readonly string? _label;
+
+            /// <summary>
+            /// What setting it writes.
+            ///
+            /// Read through the field so <c>default(ChipOption)</c> answers with an empty string
+            /// rather than null: a struct promising a string its own default would not give is a
+            /// null reference waiting for the first array somebody sizes before filling.
+            /// </summary>
+            public string Value => _value ?? string.Empty;
+
+            /// <summary>What it says.</summary>
+            public string Label => _label ?? string.Empty;
+
+            /// <summary>A quieter second line, or null.</summary>
+            public string? Under { get; }
+
+            /// <summary>The symbol that says what kind of thing it is, or null.</summary>
+            public string? Glyph { get; }
+
+            /// <summary>The skin key the symbol is tinted with, or null.</summary>
+            public string? Key { get; }
+        }
+
+        /// <summary>
+        /// A chip whose options are things of different kinds, each saying which kind it is.
+        ///
+        /// <b>Why the symbol matters.</b> A list holding Sam Reed, the fire engineer, Acme and
+        /// the ARC team is four different kinds of thing spelled the same way, and a coordinator
+        /// reading a board has to know at a glance whether a row is one person's or a whole
+        /// team's - those are different amounts of work and different conversations. So the kind
+        /// travels with the name, in the list and on the chip.
+        ///
+        /// <b>And a way to add one.</b> An assign list with nobody on it used to be an empty
+        /// dropdown, which is a dead end at exactly the moment somebody wants to build the team.
+        /// The last line always offers it.
+        /// </summary>
+        /// <param name="value">What it is set to now.</param>
+        /// <param name="options">What it can be set to.</param>
+        /// <param name="onChange">Called with the new value.</param>
+        /// <param name="glyph">The symbol for what it is set to now, or null.</param>
+        /// <param name="placeholder">What it says when it is set to nothing.</param>
+        /// <param name="last">One more line under the options, or null.</param>
+        public static UIElement KindChip(string? value, IReadOnlyList<ChipOption> options,
+                                         Action<string> onChange, string? glyph = null,
+                                         string placeholder = "Set", ChipOption? last = null)
+        {
+            var empty = string.IsNullOrEmpty(value) || value == "—";
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (!empty && glyph != null)
+                row.Children.Add(Ui.Glyph(glyph, 11, "Muted", new Thickness(0, 0, 4, 0)));
+
+            var label = new TextBlock
+            {
+                Text = empty ? placeholder : value,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 140,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+
+            row.Children.Add(label);
+
+            var chevron = Ui.Glyph(Glyphs.Down, 10, empty ? "Faint" : "Muted",
+                                   new Thickness(5, 0, 0, 0));
+
+            chevron.Opacity = empty ? 0.35 : 0.7;
+            row.Children.Add(chevron);
+
+            var chip = new Border
+            {
+                Height = 24,
+                CornerRadius = new CornerRadius(7),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(7, 0, 7, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Child = row,
+            };
+
+            if (empty)
+            {
+                chip.Background = Brushes.Transparent;
+                chip.BorderBrush = Brushes.Transparent;
+                label.Tint(TextBlock.ForegroundProperty, "Faint");
+
+                chip.MouseEnter += (s, e) =>
+                {
+                    chip.Tint(Border.BackgroundProperty, "Hover");
+                    chip.Tint(Border.BorderBrushProperty, "BdStrong");
+                };
+
+                chip.MouseLeave += (s, e) =>
+                {
+                    chip.Background = Brushes.Transparent;
+                    chip.BorderBrush = Brushes.Transparent;
+                };
+            }
+            else
+            {
+                chip.Tint(Border.BackgroundProperty, "Nav");
+                chip.Tint(Border.BorderBrushProperty, "Bd");
+                label.Tint(TextBlock.ForegroundProperty, "Muted");
+            }
+
+            var list = Ui.Stack();
+
+            foreach (var option in options ?? Array.Empty<ChipOption>())
+            {
+                var here = option;
+
+                list.Children.Add(Kinded(here,
+                                         string.Equals(here.Value, value, StringComparison.Ordinal),
+                                         () => onChange?.Invoke(here.Value)));
+            }
+
+            if (last.HasValue)
+            {
+                if (list.Children.Count > 0) list.Children.Add(Ui.Rule());
+
+                var one = last.Value;
+
+                list.Children.Add(Kinded(one, false, () => onChange?.Invoke(one.Value)));
+            }
+
+            Opens(chip, Floating(list, 210), PlacementMode.Bottom);
+
+            return chip;
+        }
+
+        /// <summary>One option of a kind chip: its symbol, its name, and what it is under.</summary>
+        /// <param name="option">The option.</param>
+        /// <param name="on">Whether it is the one in force.</param>
+        /// <param name="onAct">What picking it does.</param>
+        private static UIElement Kinded(ChipOption option, bool on, Action onAct)
+        {
+            var words = new StackPanel { Orientation = Orientation.Horizontal };
+
+            if (option.Glyph != null)
+                words.Children.Add(Ui.Glyph(option.Glyph, 12, option.Key ?? "Muted",
+                                            new Thickness(0, 0, 7, 0)));
+
+            var stacked = new StackPanel();
+
+            var label = new TextBlock
+            {
+                Text = option.Label,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            label.Tint(TextBlock.ForegroundProperty, "Text");
+            stacked.Children.Add(label);
+
+            if (!string.IsNullOrEmpty(option.Under))
+                stacked.Children.Add(new TextBlock
+                {
+                    Text = option.Under,
+                    FontSize = 10,
+                    Margin = new Thickness(0, 1, 0, 0),
+                }.Wearing("Hint"));
+
+            words.Children.Add(stacked);
+
+            var line = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 6, 8, 6),
+                Cursor = Cursors.Hand,
+                Background = Brushes.Transparent,
+                Child = words,
+            };
+
+            if (on) line.Tint(Border.BackgroundProperty, "NavActive");
+
+            line.MouseEnter += (s, e) => { if (!on) line.Tint(Border.BackgroundProperty, "Hover"); };
+            line.MouseLeave += (s, e) => { if (!on) line.Background = Brushes.Transparent; };
+
+            line.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                Ui.Safely(onAct);
+            };
+
+            return line;
+        }
+
         /// <summary>One option inside a dropdown, marked when it is the one in force.</summary>
         /// <param name="text">What it says.</param>
         /// <param name="on">Whether it is the current value.</param>
@@ -1021,15 +1236,20 @@ namespace CamelWorks.UI.Views
         /// holds four of six hundred results is a different act from narrowing to one that holds
         /// four hundred, and the only place that is knowable is here, next to the value.
         /// </summary>
+        /// <b>Many at once.</b> A column narrowed to one value answers "show me the ducts". What
+        /// a coordinator asks is "mechanical and electrical, not structural" - so the values tick,
+        /// the window stays open while several are ticked, and it reports the set when it closes.
+        /// </summary>
         /// <param name="near">The element this belongs to; the window is owned by the host.</param>
         /// <param name="prompt">What the window says at the top.</param>
         /// <param name="values">Every value and how many rows carry it, commonest first.</param>
-        /// <param name="current">The value in force, shown as where it stands.</param>
+        /// <param name="chosen">The values in force, which come back ticked.</param>
         /// <param name="any">The wording for taking the narrowing off, or null for no such button.</param>
-        /// <param name="onDone">Called with the picked value, or null when the narrowing came off.</param>
+        /// <param name="onDone">Called with the ticked values; an empty set means no narrowing.</param>
         public static void Search(FrameworkElement near, string prompt,
                                   IReadOnlyList<KeyValuePair<string, int>> values,
-                                  string? current, string? any, Action<string?> onDone)
+                                  IReadOnlyCollection<string>? chosen, string? any,
+                                  Action<IReadOnlyCollection<string>> onDone)
         {
             _ = near;
 
@@ -1047,15 +1267,9 @@ namespace CamelWorks.UI.Views
                 ShowInTaskbar = false,
             };
 
-            var picked = false;
-            string? said = null;
-
-            void Done(string? what)
-            {
-                picked = true;
-                said = what;
-                window.Close();
-            }
+            var ticked = new HashSet<string>(chosen ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+            var changed = false;
 
             var body = new DockPanel
             {
@@ -1080,33 +1294,8 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(box, Dock.Top);
             body.Children.Add(box);
 
-            if (any != null)
-            {
-                var off = Ui.Quiet(any, () => Done(null));
-
-                off.HorizontalAlignment = HorizontalAlignment.Stretch;
-                off.HorizontalContentAlignment = HorizontalAlignment.Left;
-                off.Margin = new Thickness(0, 0, 0, 8);
-                off.IsEnabled = current != null;
-
-                DockPanel.SetDock(off, Dock.Top);
-                body.Children.Add(off);
-            }
-
-            var cancel = Ui.Quiet("Cancel", () => window.Close());
-
-            cancel.HorizontalAlignment = HorizontalAlignment.Right;
-            cancel.Margin = new Thickness(0, 12, 0, 0);
-
-            DockPanel.SetDock(cancel, Dock.Bottom);
-            body.Children.Add(cancel);
-
-            var note = Ui.Small(string.Empty);
-            note.Margin = new Thickness(0, 8, 0, 0);
-            DockPanel.SetDock(note, Dock.Bottom);
-            body.Children.Add(note);
-
             var list = new StackPanel();
+            var note = Ui.Small(string.Empty);
 
             void Fill()
             {
@@ -1124,9 +1313,6 @@ namespace CamelWorks.UI.Views
                 foreach (var one in matching.Take(Most))
                 {
                     var here = one.Key ?? string.Empty;
-                    var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
-
-                    var line = new DockPanel { LastChildFill = true };
 
                     var tally = new TextBlock
                     {
@@ -1136,25 +1322,31 @@ namespace CamelWorks.UI.Views
                     };
 
                     tally.Wearing("Hint");
+
+                    var line = new DockPanel { LastChildFill = true };
+
                     DockPanel.SetDock(tally, Dock.Right);
                     line.Children.Add(tally);
 
                     line.Children.Add(new TextBlock
                     {
-                        Text = on ? here + "  ·  where it stands" : here,
+                        Text = here,
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     }.Wearing("Body"));
 
-                    var press = Ui.Quiet(string.Empty, () => Done(here));
+                    var tick = new CheckBox
+                    {
+                        Content = line,
+                        IsChecked = ticked.Contains(here),
+                        Margin = new Thickness(0, 0, 0, 6),
+                        VerticalContentAlignment = VerticalAlignment.Center,
+                    };
 
-                    press.Content = line;
-                    press.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    press.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-                    press.Margin = new Thickness(0, 0, 0, 4);
-                    press.IsEnabled = !on;
+                    tick.Checked += (s, e) => { ticked.Add(here); changed = true; Say(); };
+                    tick.Unchecked += (s, e) => { ticked.Remove(here); changed = true; Say(); };
 
-                    list.Children.Add(press);
+                    list.Children.Add(tick);
                 }
 
                 note.Text = matching.Count == 0
@@ -1162,7 +1354,49 @@ namespace CamelWorks.UI.Views
                     : matching.Count > Most
                         ? Skin.Num(matching.Count - Most) + " more match. Keep typing to narrow it."
                         : Ui.Count(matching.Count, "value") + ", all of them shown.";
+
+                Say();
             }
+
+            var chose = Ui.Small(string.Empty);
+
+            void Say() =>
+                chose.Text = ticked.Count == 0
+                    ? "Nothing ticked, so every value is shown."
+                    : Ui.Count(ticked.Count, "value") + " ticked.";
+
+            if (any != null)
+            {
+                var off = Ui.Quiet(any, () =>
+                {
+                    ticked.Clear();
+                    changed = true;
+                    Fill();
+                });
+
+                off.HorizontalAlignment = HorizontalAlignment.Stretch;
+                off.HorizontalContentAlignment = HorizontalAlignment.Left;
+                off.Margin = new Thickness(0, 0, 0, 8);
+
+                DockPanel.SetDock(off, Dock.Top);
+                body.Children.Add(off);
+            }
+
+            var done = Ui.Primary("Show these", () => window.Close());
+
+            done.MinWidth = 110;
+            done.HorizontalAlignment = HorizontalAlignment.Right;
+            done.Margin = new Thickness(0, 10, 0, 0);
+
+            DockPanel.SetDock(done, Dock.Bottom);
+            body.Children.Add(done);
+
+            DockPanel.SetDock(chose, Dock.Bottom);
+            body.Children.Add(chose);
+
+            note.Margin = new Thickness(0, 8, 0, 0);
+            DockPanel.SetDock(note, Dock.Bottom);
+            body.Children.Add(note);
 
             box.TextChanged += (s, e) => Ui.Safely(Fill);
 
@@ -1170,10 +1404,11 @@ namespace CamelWorks.UI.Views
             {
                 if (e.Key != Key.Enter) return;
 
-                // Enter on a single match takes it: typing four letters and pressing Enter is how
-                // a filter is used when the value is already known.
-                if (list.Children.Count == 1 && list.Children[0] is Button only && only.IsEnabled)
-                    only.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                // Enter on a single match ticks it: typing four letters and pressing Enter is how
+                // a filter is used when the value is already known. The window stays open,
+                // because the next thing somebody does is type the second value.
+                if (list.Children.Count == 1 && list.Children[0] is CheckBox only)
+                    only.IsChecked = !(only.IsChecked ?? false);
             };
 
             Fill();
@@ -1199,7 +1434,7 @@ namespace CamelWorks.UI.Views
 
             window.ShowDialog();
 
-            if (picked) onDone?.Invoke(said);
+            if (changed) onDone?.Invoke(ticked);
         }
 
         // -----------------------------------------------------------------------------------
@@ -1277,8 +1512,11 @@ namespace CamelWorks.UI.Views
         /// <param name="count">How much is under it.</param>
         /// <param name="onPickAll">Ticks everything under the band, or null for no such link.</param>
         /// <param name="depth">How many bands are above this one, which is what indents it.</param>
+        /// <param name="shut">True when this band is folded away, or null when it cannot fold.</param>
+        /// <param name="onFold">Folds it, or unfolds it.</param>
         public static UIElement ViewBand(string glyph, string label, string value, string count,
-                                         Action? onPickAll, int depth = 0)
+                                         Action? onPickAll, int depth = 0, bool? shut = null,
+                                         Action? onFold = null)
         {
             var row = new DockPanel { LastChildFill = true };
 
@@ -1296,6 +1534,12 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
+            // The chevron first, so the eye reads the fold state before anything else - and only
+            // where there is something to fold.
+            if (shut.HasValue)
+                words.Children.Add(Ui.Glyph(shut.Value ? Glyphs.Right : Glyphs.Down, 12, "Muted",
+                                            new Thickness(0, 0, 6, 0)));
+
             words.Children.Add(Ui.Glyph(glyph, 12, "Faint", new Thickness(0, 0, 8, 0)));
 
             var eyebrow = Ui.Eyebrow(label);
@@ -1305,9 +1549,11 @@ namespace CamelWorks.UI.Views
             var what = new TextBlock
             {
                 Text = value ?? string.Empty,
-                FontWeight = FontWeights.SemiBold,
+                FontWeight = depth == 0 ? FontWeights.SemiBold : FontWeights.Medium,
+                FontSize = depth == 0 ? 13 : 12,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
             };
 
             what.Wearing("Body");
@@ -1328,17 +1574,58 @@ namespace CamelWorks.UI.Views
             // Indented by its level rather than nested inside anything: the table is one flat
             // list of lines, virtualised, and a band that contained its rows would be a panel the
             // list could not recycle.
+            //
+            // <b>Depth has to be visible, not just measurable.</b> Indent alone read as three
+            // identical grey bars at slightly different margins, and on a chain three deep
+            // nobody could tell which band was inside which. So each level also recedes: the
+            // outermost is a full-weight bar with a rule above it, and every level under it is
+            // lighter, smaller and unruled, with a rail down its left edge marking where its
+            // parent's ground ends.
             var band = new Border
             {
-                Padding = new Thickness(12 + (depth * 18), 6, 12, 6),
+                Padding = new Thickness(12 + (depth * 20), depth == 0 ? 6 : 4, 12,
+                                        depth == 0 ? 6 : 4),
                 BorderThickness = new Thickness(0, depth == 0 ? 1 : 0, 0, 1),
                 Child = row,
+                Cursor = onFold == null ? null : Cursors.Hand,
+                Background = Brushes.Transparent,
             };
 
-            band.Tint(Border.BackgroundProperty, "Bg");
+            band.Tint(Border.BackgroundProperty, depth == 0 ? "Bg" : depth == 1 ? "Card2" : "Pane");
             band.Tint(Border.BorderBrushProperty, "Bd");
 
-            return band;
+            if (onFold != null)
+                band.MouseLeftButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    Ui.Safely(onFold);
+                };
+
+            if (depth == 0) return band;
+
+            // The rail: one line at the depth this band sits at, so a fold three deep still says
+            // where it belongs when its parents have scrolled off the top.
+            var rail = new Border
+            {
+                Padding = new Thickness(6 + ((depth - 1) * 20), 0, 0, 0),
+                BorderThickness = new Thickness(0, 0, 0, 0),
+                Child = band,
+            };
+
+            var line = new Border
+            {
+                Width = 2,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(6 + ((depth - 1) * 20), 0, 0, 0),
+            };
+
+            line.Tint(Border.BackgroundProperty, "Bd");
+
+            var stacked = new Grid();
+            stacked.Children.Add(rail);
+            stacked.Children.Add(line);
+
+            return stacked;
         }
 
         /// <summary>

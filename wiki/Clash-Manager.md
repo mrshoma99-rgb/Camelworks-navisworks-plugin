@@ -146,31 +146,51 @@ The **status strip** above the table is five segments carrying the counts — *a
 reviewed, resolved*. Clicking one filters the board to it; clicking it again clears it. That is
 the only status filter; there are no tickboxes.
 
-Beside it, a **search**. Two symbols in the header above hold the rest, and **each turns blue when
-it is doing something** — the sort (bars, long to short) and the filter (a funnel), the same pair
-and the same symbols the test rail uses. Sorting holds the column order and the banding; filtering
-holds grouped-or-loose, whose it is, and what the property columns say. The filter's menu is where:
+Beside it, a **search**. One symbol in the header holds everything else about what the table is
+showing and in what shape, and it **turns blue when any of it is in force**. It was two — a sort
+and a funnel — and which of narrowing, banding and order lived under which was a rule nobody could
+learn: *band the rows by* sat under the sort, *what the columns say* under the funnel, so both had
+to be opened to find out what the table was doing. Its tooltip says the whole answer.
 
 | | |
 |---|---|
 | **Show** | Both, grouped only, or loose only |
-| **Assigned to** | Anyone, or one party |
-| **Narrow to a value** | One value of a property column, chosen by typing at it |
+| **Assigned to** | Anyone, one person, or a whole role, company or team |
+| **Narrow to values** | Any number of a property column's values, chosen by typing at them |
+| **Band by** | A chain of facets, nested in the order you press them |
+| **Order** | The way back to the test's own order |
+| **Reset the table** | Every narrowing, the order, the bands and the search box, in one press |
 
-A property column's values are not listed in the menu. Over a real federation a column carries
-hundreds of them, so the menu holds one entry — **Narrow to a value**, with how many there are —
-and it opens a window you type at. The list filters as you type and each value carries **how many
-results hold it**, which is what the choice actually turns on: narrowing to a value four results
-deep is a different act from narrowing to one four hundred deep. Enter takes the value when your
-typing has left exactly one.
+**There is no list of columns to sort by.** Pressing a column's own header already does it, and a
+menu restating the table underneath it read as a second feature. What the menu keeps is the way
+back to the order the test holds, which no header press reaches: a header turns an order round, it
+never takes one off.
+
+A property column's values are not listed in the menu either. Over a real federation a column
+carries hundreds of them, so the menu holds one entry — **Narrow to values**, with how many there
+are — and it opens a window you type at. The list filters as you type and each value carries **how
+many results hold it**, which is what the choice actually turns on: a value four results deep is a
+different act from one four hundred deep. **The values tick**, so a board can show mechanical and
+electrical and not structural in one pass rather than three; Enter ticks a single match and waits
+for the next.
+
+**Reset the table** is last, and appears only when there is something to undo. Taking six
+narrowings off one at a time, from the six places each was set, is how somebody ends up closing the
+app to clear a filter.
 
 ### Banding the view, in a chain
 
-The **sort** menu holds the bands. Press a facet to band by it, press another to band by that
+The same menu holds the bands. Press a facet to band by it, press another to band by that
 inside the first, and so on: the order you press them in is the order they nest in. **Assignee**,
 **status** and **how bad** are always there; every property column you have added joins them, so
 a chain of *Section*, then *Material*, then *Type* gives sections holding materials holding types,
 each band indented under the one above and carrying the number of results beneath it.
+
+**Each level looks like a level.** The outermost band is a full-weight bar with a rule above it;
+every level under it is lighter, smaller and unruled, with a rail down its left edge marking where
+its parent's ground ends. Every band **folds**, and folding is keyed on the trail down to it — so
+*Steel* under one section and *Steel* under the next fold separately, because they are different
+bands.
 
 Each level comes off where it stands — a chain of four that wants its second level gone does not
 have to be rebuilt from the third down.
@@ -183,6 +203,57 @@ do not share a definition of bad. Where a clash group holds results that disagre
 being banded — six clashes grouped as *Level 2 risers* sitting on four systems — the band says
 *Several values* rather than splitting the group, because splitting it would be the view editing
 the document.
+
+### Who a clash is given to
+
+The **Assign** chip on a row, and *Assign to* on the selection bar, offer four kinds of thing and
+each carries **its own symbol**, in the list and on the chip:
+
+| | |
+|---|---|
+| person | one named person on the team |
+| role | everybody who holds it, whichever company they are at |
+| company | everybody there |
+| team | everybody on it |
+
+A coordinator assigning two hundred clashes on a Friday does not know, and should not have to
+know, which architect picks each one up — what they know is that it is architecture's. A board
+where one row is one person's and the next is a whole team's is two different amounts of work and
+two different conversations, and they used to look identical.
+
+The last line of every assign list is **Add team members…**, which opens the team window. An
+assign list with nobody on it used to be an empty dropdown, which is a dead end at exactly the
+moment somebody wants to build the team.
+
+**Narrowing understands it.** Asking the filter for *STR* answers with the rows given to the STR
+team **and** the rows given to the people the team holds. It does not run the other way: work
+given to a whole team is not any one member's, or filtering to your own name would hand you
+everything your team was ever given.
+
+What is written into the document is the name, so the native clash window and every export still
+read as they did — and a name with no kind in front of it means a person, so every assignment made
+before any of this existed reads back unchanged.
+
+### The team
+
+The team window is reachable from every assign list and from **Project ▸ Who is on the job**, and
+it is the one place a name, role, company or team is known. Somebody has a **name**, and
+optionally a **role**, a **team**, a **company** and an address.
+
+It is kept **beside you** as well as in the project. The same architect, the same fire engineer and
+the same three companies turn up job after job, and typing them in again for every model is the
+reason nobody assigns anything to anybody — so the roster is there the moment a new model is
+opened, and it survives closing one. The project keeps a copy too, so whoever opens the job next
+gets the team with it; opening merges the project's people into yours, yours winning on a name you
+both hold, because that is the one you have been correcting.
+
+**Save to a file** and **Open a team file** hand a roster to somebody else, which is otherwise done
+by screenshot.
+
+Roles, companies and teams are **not lists of their own** — they are what the people say they are.
+Type *ARC* against two people and ARC becomes something clashes can be given to; take the last one
+off and it stops being one. A role nobody holds cannot be assigned to, which is the right answer
+and needs no rule.
 
 ### Turning bands into clash groups
 

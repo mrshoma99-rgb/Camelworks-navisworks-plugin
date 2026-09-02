@@ -9,6 +9,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
+using CamelWorks.Core.People;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
@@ -449,6 +450,38 @@ namespace CamelWorks.UI.Views
             /// view into real clash groups is a separate, named act.
             /// </summary>
             private readonly List<string> _bands = new List<string>();
+
+            /// <summary>
+            /// The bands folded away, keyed on the trail down to each rather than on its value.
+            ///
+            /// On the trail because "Steel" under one section and "Steel" under the next are
+            /// different bands, and folding one must not fold the other.
+            /// </summary>
+            private readonly HashSet<string> _shutBands =
+                new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>
+            /// The results that some issue in the register already covers, keyed as the board
+            /// keys a row.
+            ///
+            /// <b>Read once, not once a row.</b> Answering "is this one raised?" per row means
+            /// walking every issue's attachments six hundred times over, inside the draw. It is
+            /// read when the board is drawn and when an issue is raised from it, which are the
+            /// only two moments the answer can change without a re-read.
+            /// </summary>
+            private HashSet<string>? _raised;
+
+            /// <summary>
+            /// The team, read once per draw rather than once per row.
+            ///
+            /// Filtering asks "does this row's assignee fall under what I picked?" of every row
+            /// on the board, and the answer needs the roster. Reading it per row would be a file
+            /// read six hundred times inside one press.
+            /// </summary>
+            private TeamRoster? _roster;
+
+            /// <summary>The team as it stands, read once and held until something changes it.</summary>
+            private TeamRoster Roster() => _roster ??= TeamWindow.Read(_session);
             private string _showing = BothKinds;
 
             /// <summary>
@@ -466,8 +499,17 @@ namespace CamelWorks.UI.Views
             /// of them narrowing at once (System Name "CHW", Workset "L03 MEP") is the question a
             /// custom column exists to be able to ask.
             /// </summary>
-            private readonly Dictionary<string, string> _byColumn =
-                new Dictionary<string, string>(StringComparer.Ordinal);
+            /// <summary>
+            /// Which values each property column is narrowed to, or no entry for any of them.
+            ///
+            /// <b>A set per column, not one value.</b> One value answers "show me the ducts" and
+            /// nothing else. What a coordinator actually asks is "show me mechanical and
+            /// electrical, not structural" - three of eleven disciplines - and doing that one
+            /// value at a time means reading the board three times and holding the difference in
+            /// your head.
+            /// </summary>
+            private readonly Dictionary<string, HashSet<string>> _byColumn =
+                new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
             private readonly HashSet<string> _open = new HashSet<string>(StringComparer.Ordinal);
             private readonly HashSet<string> _picked = new HashSet<string>(StringComparer.Ordinal);
@@ -1115,6 +1157,19 @@ namespace CamelWorks.UI.Views
                 name.Wearing("Hint");
                 row.Children.Add(name);
 
+                // Renaming it, where it is. A folder here is made by moving a test into a name
+                // that does not exist yet, so it could be created and filled but never corrected
+                // - a typo in a folder name was permanent short of moving every test in it out
+                // and back again.
+                var rename = Ui.Icon(Glyphs.Pencil, "Rename this folder",
+                                     () => Prompt("Rename this folder", folder, "Rename",
+                                                  named => RenameFolder(folder, named)));
+
+                rename.VerticalAlignment = VerticalAlignment.Center;
+                rename.Margin = new Thickness(6, 0, 0, 0);
+                DockPanel.SetDock(rename, Dock.Right);
+                row.Children.Insert(0, rename);
+
                 var band = new Border
                 {
                     Padding = new Thickness(12, 6, 14, 5),
@@ -1279,6 +1334,7 @@ namespace CamelWorks.UI.Views
                 _status = null;
                 _party = null;
                 _bands.Clear();
+                _shutBands.Clear();
                 _showing = BothKinds;
                 _sameAs = null;
                 _byColumn.Clear();
@@ -1433,38 +1489,12 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(verbs, Dock.Right);
                 row.Children.Add(verbs);
 
-                // The edits this document would not take, for the test on the board. Kept a
-                // link because it is the one fact here somebody acts on, and kept per-test
-                // because "14 waiting" over eighteen tests never said which one to open.
-                var waiting = OnFile || entry == null
-                    ? 0
-                    : Waiting.Count(f => string.Equals(f.Rule, entry.Test.Name,
-                                                       StringComparison.OrdinalIgnoreCase));
-
-                if (waiting > 0)
-                {
-                    var dot = new System.Windows.Shapes.Ellipse
-                    {
-                        Width = 7,
-                        Height = 7,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 5, 0),
-                    };
-
-                    dot.Tint(System.Windows.Shapes.Shape.FillProperty, "RedTx");
-
-                    var held = Ui.Link(Skin.Num(waiting) + " waiting", ShowHeld);
-                    held.Margin = new Thickness(0);
-                    held.VerticalAlignment = VerticalAlignment.Center;
-                    held.ToolTip = Ui.Count(waiting, "edit") + " on this test that the document "
-                                   + "would not take. Press to see them.";
-
-                    DockPanel.SetDock(dot, Dock.Right);
-                    DockPanel.SetDock(held, Dock.Right);
-                    row.Children.Add(held);
-                    row.Children.Add(dot);
-                }
-
+                // No "14 waiting" here any more. It counted the edits the document had refused,
+                // which on a real job is either nought or everything: it said nothing about which
+                // test to open, it sat in the corner of the rail being red at somebody all
+                // afternoon, and the count it was reporting was mostly an artefact of refusing to
+                // attempt writes this product had decided in advance would fail. What is waiting
+                // is still on the save button, which is where it is acted on.
                 var shown = Shown().Count;
 
                 var tests = read.Count == 0
@@ -1641,11 +1671,6 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            private readonly ContentControl _sortBy = new ContentControl
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
             /// <summary>
             /// The marker toggle, worded, and re-worded every time it is pressed.
             ///
@@ -1745,17 +1770,12 @@ namespace CamelWorks.UI.Views
 
                 _strip.Content = Strip(entry);
 
-                // Two controls, not one, and each says whether it is doing anything.
-                //
-                // All of this used to hide behind a single stack-of-layers symbol, which named
-                // neither of the two things it held. It was reported as "the clash results have
-                // no filtering options, only sorting" - the filtering was there, behind a symbol
-                // nobody reads as a filter, with nothing on screen saying it was in force.
-                _view.Content = Parts.MoreMenu(Glyphs.Filter, WhatIsShown(entry),
-                                               FilterMenu(entry), on: Filtering);
+                // One control that names the whole state of the table and lights when any of it
+                // is in force. It was two - a funnel and a sort - and before that one symbol that
+                // named neither of the things behind it.
+                _view.Content = Parts.MoreMenu(Glyphs.Tune, WhatIsShown(entry),
+                                               TableMenu(entry), on: Filtering || InAnOrder);
 
-                _sortBy.Content = Parts.MoreMenu(Glyphs.Sort, WhatIsSorted(),
-                                                 SortMenu(), on: InAnOrder);
 
                 return true;
             }
@@ -1968,8 +1988,10 @@ namespace CamelWorks.UI.Views
             /// <param name="depth">How many levels are already above this one.</param>
             /// <param name="lines">The lines being built.</param>
             /// <param name="add">Puts one row, and its members when it is an open group, on screen.</param>
+            /// <param name="trail">What the bands above this one were called, for folding.</param>
             private void Sink(TestEntry entry, List<BoardRow> rows, int depth,
-                              List<BoardLine> lines, Action<BoardRow> add)
+                              List<BoardLine> lines, Action<BoardRow> add,
+                              string trail = "")
             {
                 if (depth >= _bands.Count)
                 {
@@ -1986,12 +2008,19 @@ namespace CamelWorks.UI.Views
                     var named = band.Key;
                     var at = depth;
 
+                    // Keyed on the trail rather than the value, so "Steel" under one section and
+                    // "Steel" under the next fold separately - they are different bands.
+                    var key = trail.Length == 0 ? named : trail + "\u001f" + named;
+                    var shut = _shutBands.Contains(key);
+
                     lines.Add(BoardLine.Banner(() => Parts.ViewBand(
                         at == 0 ? Glyphs.Columns : Glyphs.Layers, label, named,
                         Ui.Count(here.Sum(r => r.Rows.Count), "result"),
-                        () => PickAll(here), at)));
+                        () => PickAll(here), at, shut, () => Folded(key))));
 
-                    Sink(entry, here, depth + 1, lines, add);
+                    if (shut) continue;
+
+                    Sink(entry, here, depth + 1, lines, add, key);
                 }
             }
 
@@ -2040,7 +2069,14 @@ namespace CamelWorks.UI.Views
 
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
-                verbs.Children.Add(Ui.Loose(_sortBy));
+                // One control, not two.
+                //
+                // Sorting, narrowing and banding were a sort symbol and a filter symbol side by
+                // side, and which of the three a thing lived under was a rule nobody could learn:
+                // "band the rows by" was under sort, "what the columns say" was under filter, and
+                // both had to be opened to find out what the table was currently doing. They are
+                // one question - what is this table showing me, and in what shape - so they are
+                // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
@@ -2226,18 +2262,37 @@ namespace CamelWorks.UI.Views
                 var said = new List<string>();
 
                 if (_showing != BothKinds) said.Add(_showing.ToLowerInvariant() + " only");
-                if (_party != null) said.Add("assigned to " + _party);
+                if (_party != null)
+                {
+                    var who = Responsible.Read(_party);
+
+                    said.Add(who.Kind == ResponsibleKind.Person
+                        ? "assigned to " + who.Name
+                        : "assigned to the " + who.Name + " " + who.Kinded);
+                }
                 if (_sameAs != null) said.Add("sharing an item with " + Both(_sameAs));
 
                 foreach (var narrowed in _byColumn)
                 {
                     var column = _columns.FirstOrDefault(c => c.Id == narrowed.Key);
-                    if (column != null) said.Add(column.Title + " " + Quoted(narrowed.Value));
+
+                    if (column == null) continue;
+
+                    said.Add(narrowed.Value.Count == 1
+                        ? column.Title + " " + Quoted(narrowed.Value.First())
+                        : column.Title + " one of "
+                          + Ui.Count(narrowed.Value.Count, "value"));
                 }
                 _ = entry;
 
+                if (_by != null) said.Add("in " + _by + " order"
+                                          + (_back ? ", backwards" : string.Empty));
+
+                if (_bands.Count > 0)
+                    said.Add("banded by " + string.Join(" then ", _bands.Select(Facet)));
+
                 return said.Count == 0
-                    ? "Narrow this board — grouped or loose, whose it is, what its columns say"
+                    ? "What this table shows, and in what shape — narrow it, band it, order it"
                     : "Showing " + string.Join(", ", said) + ". Press to change it.";
             }
 
@@ -2254,12 +2309,17 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The property column.</param>
             private List<Parts.Entry> ColumnMenu(TestEntry entry, PropColumn column)
             {
-                var wanted = _byColumn.TryGetValue(column.Id, out var value) ? value : null;
+                var wanted = _byColumn.TryGetValue(column.Id, out var value)
+                    ? value
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 var items = new List<Parts.Entry>
                 {
                     Parts.Entry.Rule(),
-                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anything)),
+                    Parts.Entry.Heading(column.Title + ": " + (
+                        wanted.Count == 0 ? Anything
+                        : wanted.Count == 1 ? wanted.First()
+                        : Ui.Count(wanted.Count, "value"))),
                 };
 
                 var values = Values(entry, column);
@@ -2280,21 +2340,22 @@ namespace CamelWorks.UI.Views
                 // being looked for. The window it opens is filtered by typing and shows how many
                 // results each value holds, which is what the choice actually turns on.
                 items.Add(Parts.Entry.Act(
-                    "Narrow to a value  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
-                    () => Parts.Search(_board, "Show only results whose " + column.Title + " is",
+                    "Narrow to values  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
+                    () => Parts.Search(_board, "Show results whose " + column.Title + " is any of",
                                        values, wanted,
-                                       wanted == null ? null : "Any " + column.Title,
+                                       wanted.Count == 0 ? null : "Any " + column.Title,
                                        pick =>
                                        {
-                                           if (pick == null) _byColumn.Remove(column.Id);
-                                           else _byColumn[column.Id] = pick;
+                                           if (pick.Count == 0) _byColumn.Remove(column.Id);
+                                           else _byColumn[column.Id] =
+                                               new HashSet<string>(pick, StringComparer.OrdinalIgnoreCase);
 
                                            _picked.Clear();
                                            _pickedFrom = null;
                                            RedrawBoard();
                                        })));
 
-                if (wanted != null)
+                if (wanted.Count > 0)
                     items.Add(Parts.Entry.Act("Any " + column.Title, Glyphs.Close, () =>
                     {
                         _byColumn.Remove(column.Id);
@@ -2342,34 +2403,23 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How the board is ordered: by a column, and banded by a facet.
+            /// How the board is banded, and the one thing about its order a header cannot say.
             ///
-            /// Its own control rather than a section of the filter menu, because sorting and
-            /// narrowing are different questions and a coordinator reaches for them at different
-            /// moments. The rail has had the two apart since it was built; the board had them in
-            /// one place behind a symbol that named neither.
+            /// <b>The list of columns to sort by is gone.</b> It named every column of the table
+            /// and did exactly what pressing that column's own header does, so it was a menu
+            /// restating the table underneath it - and the two could be read as different
+            /// features by anybody who had not noticed the headers were live. What is left is the
+            /// way back to the order the test holds, which no header press reaches: a header
+            /// turns an order round, it never takes one off.
             /// </summary>
             private List<Parts.Entry> SortMenu()
             {
-                var items = new List<Parts.Entry>
-                {
-                    Parts.Entry.Heading("Order: " + (_by ?? "as the test holds them")),
-                };
-
-                foreach (var column in Widths())
-                {
-                    var here = column.Name;
-
-                    items.Add(Parts.Entry.Act(
-                        here + (string.Equals(_by, here, StringComparison.Ordinal)
-                                    ? _back ? " (backwards)" : " (forwards)"
-                                    : string.Empty),
-                        null, () => SortBy(here)));
-                }
+                var items = new List<Parts.Entry>();
 
                 if (_by != null)
                 {
-                    items.Add(Parts.Entry.Rule());
+                    items.Add(Parts.Entry.Heading("Order: by " + _by
+                                                  + (_back ? ", backwards" : string.Empty)));
 
                     items.Add(Parts.Entry.Act("Back to the test's own order", Glyphs.Close, () =>
                     {
@@ -2377,9 +2427,9 @@ namespace CamelWorks.UI.Views
                         _back = false;
                         RedrawBoard();
                     }));
-                }
 
-                items.Add(Parts.Entry.Rule());
+                    items.Add(Parts.Entry.Rule());
+                }
 
                 items.Add(Parts.Entry.Heading(_bands.Count == 0
                     ? "Band the rows by: " + ByNothing
@@ -2430,6 +2480,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Act("No bands", Glyphs.Close, () =>
                     {
                         _bands.Clear();
+                        _shutBands.Clear();
                         RedrawBoard();
                     }));
                 }
@@ -2477,15 +2528,30 @@ namespace CamelWorks.UI.Views
                 }
 
                 items.Add(Parts.Entry.Rule());
-                items.Add(Parts.Entry.Heading("Assigned to: " + (_party ?? Anyone)));
 
-                foreach (var who in new[] { Anyone }.Concat(Assignees(entry)))
+                items.Add(Parts.Entry.Heading("Assigned to: "
+                    + (_party == null ? Anyone : Responsible.Read(_party).Name)));
+
+                items.Add(Parts.Entry.Act(Anyone, null, () =>
                 {
-                    var here = who;
+                    _party = null;
+                    _picked.Clear();
+                    _pickedFrom = null;
+                    RedrawBoard();
+                }));
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                // Roles, companies and teams as well as people - and narrowing to one of those
+                // takes in everybody the roster says is in it, so "show me structures" answers
+                // with the rows given to the STR team and the rows given to the people on it.
+                foreach (var option in Giving())
+                {
+                    if (option.Value.Length == 0) continue;
+
+                    var here = option;
+
+                    items.Add(Parts.Entry.Act(here.Label, here.Glyph, () =>
                     {
-                        _party = here == Anyone ? null : here;
+                        _party = here.Value;
                         _picked.Clear();
                         _pickedFrom = null;
                         RedrawBoard();
@@ -2494,21 +2560,46 @@ namespace CamelWorks.UI.Views
 
                 foreach (var column in _columns) items.AddRange(ColumnMenu(entry, column));
 
-                // Where the narrowing is set is where it comes off, including the two set
-                // elsewhere: the status segment above and the text in the search box.
-                if (Filtering)
+                return items;
+            }
+
+            /// <summary>
+            /// Everything about what this table is showing and in what shape, in one menu.
+            ///
+            /// Sorting, narrowing and banding were two symbols, and which of the three a thing
+            /// lived under was a rule nobody could learn - "band the rows by" sat under the sort
+            /// and "what the columns say" under the funnel, so both had to be opened to find out
+            /// what the table was currently doing. They are one question.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<Parts.Entry> TableMenu(TestEntry entry)
+            {
+                var items = FilterMenu(entry);
+
+                items.AddRange(SortMenu());
+
+                // Last, and only when there is something to undo. One press that puts the table
+                // back to how it opened - every narrowing, the order, the bands and the search
+                // box - because taking six of them off one at a time, from the places each was
+                // set, is how somebody ends up closing the app to clear a filter.
+                if (Filtering || InAnOrder)
                 {
                     items.Add(Parts.Entry.Rule());
 
-                    items.Add(Parts.Entry.Act("Show everything again", Glyphs.EyeOff, () =>
+                    items.Add(Parts.Entry.Act("Reset the table", Glyphs.Round, () =>
                     {
                         _status = null;
                         _party = null;
                         _showing = BothKinds;
+                        _by = null;
+                        _back = false;
                         _bands.Clear();
+                        _shutBands.Clear();
                         _sameAs = null;
                         _byColumn.Clear();
                         _boardBox.Text = string.Empty;
+                        _picked.Clear();
+                        _pickedFrom = null;
                         RedrawBoard();
                     }));
                 }
@@ -3101,10 +3192,23 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, Tick(row.Id, on), 0);
 
+                // <b>One target, and all of it.</b> Opening a group was reported as working
+                // sometimes on the chevron, sometimes on the name, sometimes on neither. Three
+                // causes met here. The panel had no background, so every transparent gap between
+                // the glyphs and the text was a hole the click fell through to the row beneath -
+                // which picks rather than opens. The rename handled only the second MouseDown, so
+                // its MouseUp still reached the toggle and a double-click renamed and opened at
+                // once. And the toggle rebuilt the table, which sent the scroll back to the top,
+                // so a group that did open looked as though nothing had happened.
+                //
+                // Now: the whole strip is one hit target, a click anywhere on it opens or shuts
+                // the group, a double-click on the name renames and stops there, and the rows
+                // stay where they were.
                 var words = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Cursor = System.Windows.Input.Cursors.Hand,
+                    Background = System.Windows.Media.Brushes.Transparent,
                 };
 
                 words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
@@ -3121,17 +3225,31 @@ namespace CamelWorks.UI.Views
                     TextWrapping = TextWrapping.NoWrap,
                 };
 
-                name.ToolTip = row.Name + " — double-click to rename it.";
+                name.ToolTip = row.Name + " — click to open it, double-click to rename it.";
+
+                // Set on the Down of the second click and read on the Up that follows it. WPF
+                // sends Down, Up, Down(2), Up for a double-click, so handling only the Down let
+                // the last Up through to the toggle underneath.
+                var renaming = false;
 
                 name.MouseLeftButtonDown += (s, e) =>
                 {
                     if (e.ClickCount != 2) return;
 
+                    renaming = true;
                     e.Handled = true;
 
                     Prompt("Rename the clash group", row.Name, "Rename",
                            renamed => Regroup(row.Rows.Cast<object>().ToList(), renamed,
                                               "Renamed the clash group to"));
+                };
+
+                name.MouseLeftButtonUp += (s, e) =>
+                {
+                    if (!renaming) return;
+
+                    renaming = false;
+                    e.Handled = true;
                 };
 
                 words.Children.Add(name.Wearing("Body"));
@@ -3140,8 +3258,8 @@ namespace CamelWorks.UI.Views
 
                 words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
-                    if (!_open.Remove(row.Id)) _open.Add(row.Id);
-                    RedrawRows();
+                    e.Handled = true;
+                    Opened(row.Id);
                 });
 
                 Put(grid, words, 1);
@@ -3158,6 +3276,176 @@ namespace CamelWorks.UI.Views
                     Put(grid, Hint(Custom(row.Only, _columns[i])), 6 + i);
 
                 return Finish(grid, row, on, false);
+            }
+
+            /// <summary>
+            /// Open or shut one clash group, leaving the table where it was.
+            ///
+            /// The line count changes, so the list has to be given a new set of lines - and a
+            /// new set starts at the top unless the offset is carried across it.
+            /// </summary>
+            /// <param name="id">The group.</param>
+            private void Opened(string id)
+            {
+                if (!_open.Remove(id)) _open.Add(id);
+
+                Held(RedrawRows);
+            }
+
+            /// <summary>What the assign chip writes to mean "open the team window".</summary>
+            private const string TheTeam = "\u0001team";
+
+            /// <summary>
+            /// Everything a clash can be given to, each saying what kind of thing it is.
+            ///
+            /// People first, then the roles, companies and teams they make up, then whatever
+            /// names the board itself already carries that the roster has never heard of - an
+            /// assignment made before the team existed is still an assignment, and dropping it
+            /// off the list would make it unreachable from the row that holds it.
+            /// </summary>
+            private List<Parts.ChipOption> Giving()
+            {
+                var roster = TeamWindow.Read(_session);
+                var options = new List<Parts.ChipOption>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                void Offer(Responsible who, string? under)
+                {
+                    if (who.IsEmpty || !seen.Add(who.Written)) return;
+
+                    options.Add(new Parts.ChipOption(who.Written, who.Name, under,
+                                                     Symbol(who.Kind), Tint(who.Kind)));
+                }
+
+                foreach (var member in roster.Members.Where(m => m.IsActive)
+                                             .OrderBy(m => m.Name, StringComparer.CurrentCulture))
+                {
+                    var under = member.Under();
+
+                    Offer(member.AsResponsible, under.Length == 0 ? null : under);
+                }
+
+                foreach (var role in roster.Roles)
+                    Offer(new Responsible(ResponsibleKind.Role, role), "everyone in this role");
+
+                foreach (var party in roster.Parties)
+                    Offer(new Responsible(ResponsibleKind.Company, party), "everyone at this company");
+
+                foreach (var team in roster.Teams)
+                    Offer(new Responsible(ResponsibleKind.Team, team), "everyone on this team");
+
+                // Names already on the board that the roster has never met.
+                var read = Current();
+
+                if (read != null)
+                    foreach (var row in read.SelectMany(e => e.Rows))
+                        if (row.Assigned.Length > 0)
+                            Offer(Responsible.Read(row.Assigned), null);
+
+                foreach (var party in _session.Profile.Parties)
+                    Offer(Responsible.Person(party), null);
+
+                options.Add(new Parts.ChipOption(string.Empty, Nobody, null, Glyphs.Close, "Faint"));
+
+                return options;
+            }
+
+            /// <summary>The symbol that says what kind of thing an assignment is to.</summary>
+            /// <param name="kind">The kind.</param>
+            private static string Symbol(ResponsibleKind kind) =>
+                kind == ResponsibleKind.Role ? Glyphs.Tune
+                : kind == ResponsibleKind.Company ? Glyphs.Boxed
+                : kind == ResponsibleKind.Team ? Glyphs.Group
+                : Glyphs.Person;
+
+            /// <summary>What the symbol is tinted with, so a grouping reads as wider than a person.</summary>
+            /// <param name="kind">The kind.</param>
+            private static string Tint(ResponsibleKind kind) =>
+                kind == ResponsibleKind.Person ? "Muted" : "Accent";
+
+            /// <summary>An assignment as the board prints it: the name, without its kind marker.</summary>
+            /// <param name="assigned">The field as it is stored.</param>
+            private static string Shown(string assigned) => Responsible.Read(assigned).Name;
+
+            /// <summary>The symbol for what a row is assigned to, or null when it is nobody.</summary>
+            /// <param name="assigned">The field as it is stored.</param>
+            private static string? Marked(string assigned)
+            {
+                var who = Responsible.Read(assigned);
+
+                return who.IsEmpty ? null : Symbol(who.Kind);
+            }
+
+            /// <summary>Whether an issue in the register already covers this result.</summary>
+            /// <param name="testId">Which test the result is in.</param>
+            /// <param name="resultId">The result.</param>
+            private bool Raised(string testId, string resultId) =>
+                (_raised ??= Register()).Contains(Where(testId, resultId));
+
+            /// <summary>
+            /// Which results the issue register covers, keyed the way the board keys a row.
+            ///
+            /// Both ways an issue can name a clash are read: the findings it has attached, which
+            /// is how one raised from this board is held, and the clash keys an older issue kept
+            /// before findings existed. Guarded whole - a register that will not open is a board
+            /// without two small marks on it, not a board that will not draw.
+            /// </summary>
+            private HashSet<string> Register()
+            {
+                var found = new HashSet<string>(StringComparer.Ordinal);
+
+                try
+                {
+                    var read = Current();
+
+                    if (read == null) return found;
+
+                    var register = IssueViews.Read(_session);
+
+                    var attached = new HashSet<string>(
+                        register.Issues.SelectMany(i => i.Findings), StringComparer.OrdinalIgnoreCase);
+
+                    var keyed = new HashSet<ClashKey>(register.Issues.SelectMany(i => i.Clashes));
+
+                    if (attached.Count == 0 && keyed.Count == 0) return found;
+
+                    foreach (var row in read.SelectMany(e => e.Rows))
+                    {
+                        var finding = Found(row);
+
+                        if ((finding != null && attached.Contains(finding.Id))
+                            || (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty
+                                && keyed.Contains(row.Info.Key())))
+                            found.Add(Where(row.TestId, row.Info.Id));
+                    }
+                }
+                catch (Exception)
+                {
+                    // A register that cannot be read is two marks missing, not a board that
+                    // will not draw.
+                }
+
+                return found;
+            }
+
+            /// <summary>Fold one band away, or open it, leaving the table where it was.</summary>
+            /// <param name="key">The trail down to the band.</param>
+            private void Folded(string key)
+            {
+                if (!_shutBands.Remove(key)) _shutBands.Add(key);
+
+                Held(RedrawRows);
+            }
+
+            /// <summary>Do something that rebuilds the table, and put the scroll back afterwards.</summary>
+            /// <param name="work">What rebuilds it.</param>
+            private void Held(Action work)
+            {
+                var at = _list?.Offset ?? 0;
+
+                work();
+
+                if (_list != null) _list.Offset = at;
             }
 
             /// <summary>One clash: loose on the board, or a member of an open group.</summary>
@@ -3191,11 +3479,54 @@ namespace CamelWorks.UI.Views
                     e.Handled = true;
 
                     Prompt("Rename this clash", result.Info.Name ?? string.Empty, "Rename",
-                           renamed => Renumber(new List<Row> { result }, renamed));
+                           renamed => RenameOne(result, renamed));
                 };
 
-                Grid.SetColumn(name, 1);
-                grid.Children.Add(name);
+                // The two facts about a row that were only findable by opening it: whether
+                // anybody has said anything about it, and whether it has already been raised as
+                // an issue. Both are decisions somebody else made about this clash, and reading
+                // a board of six hundred to find them one at a time is not reading.
+                //
+                // Marks rather than columns: they are present-or-absent, they belong beside the
+                // name they are about, and two more columns on a table already nine wide would
+                // cost the name the width it has just been given back.
+                var marks = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0),
+                };
+
+                var said = result.Trail.Count > 0 ? result.Trail.Count : result.Comments;
+
+                if (said > 0)
+                {
+                    var talk = Ui.Glyph(Glyphs.Comment, 12, "Accent", new Thickness(0, 0, 4, 0));
+
+                    talk.ToolTip = Ui.Count(said, "comment") + " on this clash.";
+                    marks.Children.Add(talk);
+                }
+
+                if (Raised(result.TestId, result.Info.Id))
+                {
+                    var raised = Ui.Glyph(Glyphs.Issue, 12, "AmberTx", new Thickness(0, 0, 4, 0));
+
+                    raised.ToolTip = "Attached to an issue in the Issue Manager.";
+                    marks.Children.Add(raised);
+                }
+
+                var named = new DockPanel { LastChildFill = true };
+
+                if (marks.Children.Count > 0)
+                {
+                    DockPanel.SetDock(marks, Dock.Right);
+                    named.Children.Add(marks);
+                }
+
+                named.Children.Add(name);
+
+                Grid.SetColumn(named, 1);
+                grid.Children.Add(named);
 
                 var itemA = result.Info.NameA ?? string.Empty;
                 var itemB = result.Info.NameB ?? string.Empty;
@@ -3234,8 +3565,10 @@ namespace CamelWorks.UI.Views
                         value => SetStatus(row, value), Reads(row.Status), "Set status"),
                     StatusColumn);
 
-                Put(grid, Parts.InlineChip(row.Assigned, Assignees(Entry()),
-                        value => SetAssignee(row, value), Tone.Plain, "Assign"),
+                Put(grid, Parts.KindChip(Shown(row.Assigned), Giving(),
+                        value => SetAssignee(row, value), Marked(row.Assigned), "Assign",
+                        new Parts.ChipOption(TheTeam, "Add team members…", null, Glyphs.Add,
+                                             "Accent")),
                     StatusColumn + 1);
 
                 var verbs = Verbs(row);
@@ -3754,8 +4087,10 @@ namespace CamelWorks.UI.Views
                     () => { _picked.Clear(); _pickedFrom = null; RedrawRows(); },
                     Parts.InlineChip(null, Statuses,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
-                    Parts.InlineChip(null, Assignees(Entry()),
-                        value => SetMany(picked, value, false), Tone.Plain, "Assign to"),
+                    Parts.KindChip(null, Giving(),
+                        value => SetMany(picked, value, false), null, "Assign to",
+                        new Parts.ChipOption(TheTeam, "Add team members…", null, Glyphs.Add,
+                                             "Accent")),
                     Grouping(rows),
                     Parts.Verb("Raise as issues", Glyphs.Issue, false,
                                () => RaiseIssue(picked, false)),
@@ -3961,6 +4296,20 @@ namespace CamelWorks.UI.Views
 
                 right.Children.Add(Ui.Loose(read.Buttons));
 
+                // The second way in, beside the first, and only while there is no board.
+                //
+                // A clash manager with nothing read is a screen whose whole job is one of two
+                // presses: read this model's results, or open the file somebody sent back. The
+                // second was three steps down a settings page - switch the source, type a path,
+                // press read - which is not where anybody looks for it.
+                _openFile = Ui.Quiet("Open a clash file", OpenClashFile);
+                _openFile.VerticalAlignment = VerticalAlignment.Center;
+                _openFile.Margin = new Thickness(0, 0, 8, 0);
+                _openFile.ToolTip = "A baseline a Manage seat exported, or a markup coming back "
+                                    + "from review. Opens it and reads it in one press.";
+
+                right.Children.Add(Ui.Loose(_openFile));
+
                 _send.VerticalAlignment = VerticalAlignment.Center;
                 right.Children.Add(Ui.Loose(_send));
 
@@ -4006,10 +4355,29 @@ namespace CamelWorks.UI.Views
                 // Only before the first read. Once the results are on the screen the press that
                 // put them there is the least useful thing in the footer, and "Read the results
                 // again" is on the test's own menu, where somebody who wants it is looking.
+                // Two states, and each shows only what belongs to it.
+                //
+                // Nothing read: the two ways in, and nothing else. Save and Export used to sit
+                // there over an empty table offering to save nothing and export nothing, which
+                // is a footer of three buttons where two of them cannot do anything.
+                //
+                // Something read: the way in is the least useful thing in the footer, and
+                // "Read the results again" is on the test's own menu where somebody who wants it
+                // is already looking.
+                var empty = Current() == null;
+
                 if (_readButtons != null)
-                    _readButtons.Visibility = Current() == null
-                        ? Visibility.Visible
-                        : Visibility.Collapsed;
+                    _readButtons.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+
+                if (_openFile != null)
+                    _openFile.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+
+                if (_saveButton != null)
+                    _saveButton.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+
+                _send.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+
+                if (empty) return;
 
                 // Nothing on the left. What used to be there was four totals over every test in
                 // the document - how many were assigned out, how many were in groups - and a
@@ -4032,6 +4400,15 @@ namespace CamelWorks.UI.Views
                     why == null
                         ? null
                         : Parts.Entry.Barred("Sync into the document", Glyphs.Save, why),
+
+                    // Where "what is waiting" lives now that the rail no longer keeps a red count
+                    // in its corner. Listed only when there is something waiting, so it is an
+                    // answer to a question somebody has rather than a standing reproach.
+                    OnFile || WaitingCount == 0
+                        ? null
+                        : Parts.Entry.Saying("See what is waiting", Glyphs.Clock,
+                            Ui.Count(WaitingCount, "change") + " the document has not taken",
+                            ShowHeld),
                     Parts.Entry.Saying(OnFile ? "Save the markup" : "Save as a clash file (BCF)",
                         Glyphs.Round, "The offline review round — out and back", SaveChanges),
                     Parts.Entry.Barred("Write a report", Glyphs.Report,
@@ -4329,6 +4706,29 @@ namespace CamelWorks.UI.Views
 
             /// <summary>How many clashes are waiting for the document.</summary>
             private int WaitingCount => Waiting.Count();
+
+            /// <summary>
+            /// Open a clash file and read it, in one press.
+            ///
+            /// Everything the settings page does in three steps: point the source at a file, put
+            /// the path in the field the page shares, and run the same read. The page still
+            /// exists and still holds the path, so somebody who went that way finds what they
+            /// left there.
+            /// </summary>
+            private void OpenClashFile()
+            {
+                var path = Ui.AskToOpen("Open a clash file", ClashFile.Filter);
+
+                if (string.IsNullOrWhiteSpace(path)) return;
+
+                _source = FromFile;
+                _path.Text = path!;
+
+                Ui.Working("Reading the file...", Read);
+
+                Redraw();
+                ArmSync();
+            }
 
             private void ReadFile(Job job)
             {
@@ -4995,7 +5395,8 @@ namespace CamelWorks.UI.Views
                     return false;
 
                 if (_party != null
-                    && !string.Equals(row.Assigned, _party, StringComparison.OrdinalIgnoreCase))
+                    && !Roster().Covers(Responsible.Read(row.Assigned),
+                                        Responsible.Read(_party)))
                     return false;
 
                 if (_sameAs != null && !Shares(row, _sameAs)) return false;
@@ -5007,8 +5408,7 @@ namespace CamelWorks.UI.Views
                     // every result of the test on every keystroke.
                     if (!_columnsById.TryGetValue(narrowed.Key, out var column)) continue;
 
-                    if (!string.Equals(Custom(row, column), narrowed.Value,
-                                       StringComparison.OrdinalIgnoreCase))
+                    if (narrowed.Value.Count > 0 && !narrowed.Value.Contains(Custom(row, column)))
                         return false;
                 }
 
@@ -5111,7 +5511,8 @@ namespace CamelWorks.UI.Views
                     _by ?? string.Empty,
                     _back ? "1" : "0",
                     _sameAs == null ? string.Empty : Id(_sameAs),
-                    string.Join(",", _byColumn.Select(n => n.Key + "=" + n.Value)),
+                    string.Join(",", _byColumn.Select(
+                        n => n.Key + "=" + string.Join("|", n.Value.OrderBy(v => v, StringComparer.Ordinal)))),
                     entry.Rows.Count.ToString(CultureInfo.InvariantCulture),
                     _edits.ToString(CultureInfo.InvariantCulture),
                 });
@@ -5138,7 +5539,15 @@ namespace CamelWorks.UI.Views
             /// A status written, a regroup, a re-read. The filters have not moved but their answer
             /// has, and the signature above cannot see inside a row.
             /// </summary>
-            private void Moved() => _edits++;
+            private void Moved()
+            {
+                _edits++;
+
+                // Which results an issue covers can change with any of these, and it is read
+                // again the next time a row asks.
+                _raised = null;
+                _roster = null;
+            }
 
             /// <summary>The clash groups the filters leave, each with the members they leave.</summary>
             /// <param name="entry">The test on the board.</param>
@@ -5519,8 +5928,29 @@ namespace CamelWorks.UI.Views
             /// <summary>Set the assignee from the chip on a row, over everything picked.</summary>
             /// <param name="row">The row the chip is on.</param>
             /// <param name="who">Who it is with now.</param>
-            private void SetAssignee(BoardRow row, string who) =>
+            /// <summary>
+            /// Give a row to somebody, or open the team window when there is nobody to give it to.
+            ///
+            /// The last line of the assign list is a way to build the team, so it arrives here
+            /// like any other value and is caught before it can be written as an assignment.
+            /// </summary>
+            /// <param name="row">The row.</param>
+            /// <param name="who">What was picked, written.</param>
+            private void SetAssignee(BoardRow row, string who)
+            {
+                if (string.Equals(who, TheTeam, StringComparison.Ordinal))
+                {
+                    TeamWindow.Show(_board, _session, () =>
+                    {
+                        _roster = null;
+                        RedrawRows();
+                        RedrawBoardHead();
+                    });
+                    return;
+                }
+
                 AssignPicked(Reaching(row), who == Nobody ? string.Empty : who, _toast);
+            }
 
             /// <summary>
             /// What a verb pressed on one row actually acts on.
@@ -5546,8 +5976,21 @@ namespace CamelWorks.UI.Views
             /// <param name="status">True for a status, false for an assignee.</param>
             private void SetMany(IReadOnlyList<object> picked, string value, bool status)
             {
-                if (status) Mark(picked, value, _toast);
-                else AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
+                if (status) { Mark(picked, value, _toast); return; }
+
+                if (string.Equals(value, TheTeam, StringComparison.Ordinal))
+                {
+                    TeamWindow.Show(_board, _session, () =>
+                    {
+                        _roster = null;
+                        RedrawRows();
+                        RedrawBoardHead();
+                    });
+
+                    return;
+                }
+
+                AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
             }
 
             /// <summary>
@@ -5774,6 +6217,7 @@ namespace CamelWorks.UI.Views
                 if (!OnFile) { KeepFindings(); ArmSync(); }
 
                 _bands.Clear();
+                _shutBands.Clear();
                 _picked.Clear();
                 _pickedFrom = null;
 
@@ -5846,6 +6290,33 @@ namespace CamelWorks.UI.Views
                 RedrawFoot();
 
                 Tell("Renamed.", null);
+            }
+
+            /// <summary>
+            /// Give one clash the name that was typed for it.
+            ///
+            /// <b>Not the numbering verb with a list of one.</b> This went through
+            /// <see cref="Renumber"/>, which takes a stem and numbers what it is given, so
+            /// typing "Corridor duct" produced "Corridor duct1" - every rename, every time, a
+            /// digit nobody asked for. The host has an exact rename and always did; the numbered
+            /// one was simply written first, and renaming one row looked like renaming a list.
+            /// Renumbering is still its own verb, on the selection bar, where a prefix and a
+            /// running number are what is being asked for.
+            /// </summary>
+            /// <param name="row">The result to rename.</param>
+            /// <param name="name">Its new name, exactly as typed.</param>
+            private void RenameOne(Row row, string name)
+            {
+                var wanted = (name ?? string.Empty).Trim();
+
+                if (wanted.Length == 0) return;
+
+                Write(new List<object> { row }, _toast,
+                      "Renamed it to " + Quoted(wanted) + ".",
+                      (testId, ids) => _session.Clash.RenameResult(testId, ids[0], wanted),
+                      one => one.Info.Name = wanted,
+                      (finding, one) => { _ = one; finding.Title = wanted; },
+                      FindingField.Title);
             }
 
             /// <summary>
@@ -6158,6 +6629,62 @@ namespace CamelWorks.UI.Views
                 Moved();
                 Redraw();
             }
+
+            /// <summary>
+            /// Rename a folder of tests, keeping every test in it.
+            ///
+            /// A folder is this project's rather than the host's - it exists because tests say
+            /// they are in it - so renaming one is refiling all of them at once, and there is no
+            /// folder object anywhere to rename. That also means the name can be corrected on a
+            /// published NWD, where the host would not have taken it.
+            /// </summary>
+            /// <param name="folder">The folder as it is called now.</param>
+            /// <param name="name">What to call it instead.</param>
+            private void RenameFolder(string folder, string name)
+            {
+                var wanted = (name ?? string.Empty).Trim();
+                var read = Current();
+
+                if (wanted.Length == 0 || read == null) return;
+
+                if (string.Equals(wanted, folder, StringComparison.Ordinal)) return;
+
+                var inside = read
+                    .Where(e => string.Equals((e.Test.Folder ?? string.Empty).Trim(), folder,
+                                              StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (inside.Count == 0)
+                {
+                    Warned(Ui.Problem("That folder is empty now, so there is nothing to rename."));
+                    return;
+                }
+
+                var names = TestNames();
+
+                foreach (var entry in inside) names.Refile(entry.Test.Id, wanted);
+
+                if (!KeepTestNames(names))
+                {
+                    Warned(Ui.Problem("That folder was not renamed: the new name could not be "
+                                      + "kept in this project."));
+                    return;
+                }
+
+                foreach (var entry in inside) entry.Refile(wanted);
+
+                // The fold state travels with the name, or a folded folder springs open the
+                // moment it is renamed.
+                if (_shutFolders.Remove(folder)) _shutFolders.Add(wanted);
+
+                _session.Record(ActivityKind.Regroup,
+                                "renamed the folder \"" + folder + "\" to \"" + wanted + "\"");
+
+                Moved();
+                RedrawRailList();
+                RedrawFoot();
+            }
+
 
             private void DeleteTests(IReadOnlyList<object> picked, Panel say)
             {
@@ -6637,6 +7164,11 @@ namespace CamelWorks.UI.Views
                     each ? rows.Count : 1);
 
                 if (problem != null) Warned(Ui.Problem(problem));
+
+                // Raising is the one act that changes which rows carry the issue mark without
+                // changing a row.
+                _raised = null;
+                RedrawRows();
             }
 
             /// <summary>
@@ -8676,11 +9208,24 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private System.Windows.Controls.Button? _saveButton;
 
+            /// <summary>The second way in, shown only while there is no board.</summary>
+            private System.Windows.Controls.Button? _openFile;
+
             /// <summary>
             /// Why this document cannot take the changes, or null when it can.
             ///
-            /// Four reasons, and each one is a different thing to do about it, so each says so
-            /// rather than all four sharing a grey button and a shrug.
+            /// <b>Only what is knowable before trying.</b> This also said, in advance, that a
+            /// published NWD holds its clash results read-only and that a document whose
+            /// <c>CanEdit</c> was false would take nothing - both of them read off
+            /// <c>TestsData.Value.IsReadOnly</c>, which is a property of a snapshot object and
+            /// not a statement about the document part every edit actually goes through. So the
+            /// product told somebody their afternoon could not be written into a file that Clash
+            /// Detective, in the next window along, was editing happily.
+            ///
+            /// What is left here is the two facts that are true before any attempt: a file is
+            /// open for markup instead of the model, or this edition has no clash engine at all.
+            /// A document that really does refuse an edit says so when it refuses one, about the
+            /// edit it refused.
             /// </summary>
             private string? WhySync()
             {
@@ -8688,21 +9233,12 @@ namespace CamelWorks.UI.Views
                     return "A file is open for markup, not the model. Save the markup and run the "
                            + "sync from the seat that has the model open.";
 
-                // These say why the DOCUMENT cannot take the changes - never why they cannot be
+                // This says why the DOCUMENT cannot take the changes - never why they cannot be
                 // saved. They are saved either way; this is the second half that is unavailable.
                 if (!_session.Clash.IsAvailable)
                     return "This Navisworks edition has no clash engine, so there are no clash "
                            + "results in the file to write into. "
                            + (_session.ClashProblem ?? string.Empty).Trim();
-
-                if (_session.IsPublished)
-                    return "This is a published NWD, and a published file holds its clash results "
-                           + "read-only. Open the NWF the models were federated in and the same "
-                           + "changes go into it.";
-
-                if (!_session.Clash.CanEdit)
-                    return "This document's clash results will not take an edit. Open the NWF the "
-                           + "models were federated in and the same changes go into it.";
 
                 return null;
             }
@@ -8803,20 +9339,30 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // Saying so, rather than saying nothing.
+                //
+                // The rule on this board is that a press that worked stays quiet, because forty
+                // confirmations in an afternoon is a thing to dismiss rather than feedback. Save
+                // is the one press that rule does not fit: it is deliberate, it is what somebody
+                // came to the footer to do, and a save that acknowledges nothing at all reads as
+                // a button that did not fire. It fades like every other confirmation.
                 if (why == null)
                 {
-                    Tell("Saved. Every change on this board is in the project and in the "
-                         + "document's own clash results.", null);
+                    Said(Ui.Done("Saved. Every decision on this board is in the project, and in "
+                                 + "the document's own clash results."));
                     return;
                 }
 
-                Tell("Saved to this project. " + Ui.Count(_shown.Count, "result")
-                     + " on this board carries what you decided, and it travels with the project "
-                     + "rather than with the file that is open.",
-                     new List<string>
-                     {
-                         "The document itself was not written into: " + Lowered(why),
-                     });
+                // A note, not a problem.
+                //
+                // This went out through the refusal path, so pressing Save - which saves to the
+                // project, and always could - answered with a red strip about the document that
+                // held until it was dismissed. The save worked. Where it also went is a fact
+                // about the seat, worth one line, and not an error to be cleared.
+                Said(Ui.Note("Saved to the project. " + Ui.Count(_shown.Count, "result")
+                             + " on this board carries what you decided, and it travels with the "
+                             + "project rather than with the file that is open. The document "
+                             + "itself was not written into: " + Lowered(why)));
             }
 
             /// <summary>The same sentence, joined onto one that has already started.</summary>

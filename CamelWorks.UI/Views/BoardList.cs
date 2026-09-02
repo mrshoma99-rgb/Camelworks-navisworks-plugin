@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace CamelWorks.UI.Views
 {
@@ -81,6 +82,48 @@ namespace CamelWorks.UI.Views
             if (item == null) return;
 
             if (_live.TryGetValue(item, out var container)) Fill(container, item);
+        }
+
+        /// <summary>
+        /// Where the list is scrolled to, so a rebuild can put it back.
+        ///
+        /// Opening a clash group or folding a band changes how many lines there are, so the
+        /// list has to be given a new set - and a new set starts at the top. That is the whole
+        /// of "the table jumps to the top when I open a group": the offset was never wrong, it
+        /// was thrown away. Held and restored around the swap, the rows under the pointer stay
+        /// under the pointer.
+        /// </summary>
+        public double Offset
+        {
+            get => Scroller()?.VerticalOffset ?? 0;
+
+            set
+            {
+                var scroll = Scroller();
+
+                if (scroll == null || value <= 0) return;
+
+                // After the new items have been measured, or there is nothing to scroll within
+                // yet and the offset is clamped to zero - which is the bug this exists to fix.
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var to = Scroller();
+
+                    if (to != null) to.ScrollToVerticalOffset(Math.Min(value, to.ScrollableHeight));
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
+        /// <summary>The scroll viewer inside the template, once the template has been applied.</summary>
+        private ScrollViewer? Scroller()
+        {
+            ApplyTemplate();
+
+            if (VisualTreeHelper.GetChildrenCount(this) == 0) return null;
+
+            var border = VisualTreeHelper.GetChild(this, 0) as Border;
+
+            return border?.Child as ScrollViewer;
         }
 
         /// <inheritdoc />
