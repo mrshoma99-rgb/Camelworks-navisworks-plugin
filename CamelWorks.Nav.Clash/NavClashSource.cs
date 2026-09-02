@@ -1117,7 +1117,10 @@ namespace CamelWorks.Nav.Clash
                 {
                     foreach (Comment comment in result.Comments)
                         trail.Trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
-                            CreationTicks(comment), comment.Body ?? string.Empty));
+                            CreationTicks(comment), comment.Body ?? string.Empty)
+                        {
+                            HostId = comment.Id,
+                        });
                 }
                 catch (Exception)
                 {
@@ -1128,6 +1131,124 @@ namespace CamelWorks.Nav.Clash
             }
 
             return read;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<Core.Clash.ClashComment> CommentsOn(string testId, string resultId)
+        {
+            LastProblem = null;
+
+            var result = OneResult(testId, resultId);
+
+            if (result == null) return Array.Empty<Core.Clash.ClashComment>();
+
+            var trail = new List<Core.Clash.ClashComment>();
+
+            try
+            {
+                foreach (Comment comment in result.Comments)
+                    trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
+                        CreationTicks(comment), comment.Body ?? string.Empty)
+                    {
+                        HostId = comment.Id,
+                    });
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host would not read that result's comments: " + e.Message;
+            }
+
+            return trail;
+        }
+
+        /// <inheritdoc />
+        public bool DeleteComment(string testId, string resultId, long commentId) =>
+            Rebuild(testId, resultId, commentId, null);
+
+        /// <inheritdoc />
+        public bool EditComment(string testId, string resultId, long commentId, string body) =>
+            Rebuild(testId, resultId, commentId, body ?? string.Empty);
+
+        /// <summary>
+        /// Write a result's trail back without one comment, or with something else in its place.
+        ///
+        /// <b>Everything on a comment is read-only.</b> Body, author, status and date all have a
+        /// getter and no setter, and the only write the host offers is the whole collection at
+        /// once - so taking one out and changing one are the same act, and both are a rebuild.
+        ///
+        /// A replacement is a new comment, which means a new id and today's date. There is no way
+        /// to keep the original's, and a caller offering an edit has to say so rather than
+        /// pretend the remark was amended in place.
+        /// </summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        /// <param name="commentId">The comment to take out.</param>
+        /// <param name="body">What to put in its place, or null to leave the gap.</param>
+        /// <returns>True when the document took the rebuilt trail.</returns>
+        private bool Rebuild(string testId, string resultId, long commentId, string? body)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var result = OneResult(testId, resultId);
+
+            if (result == null)
+            {
+                LastProblem = "That result is no longer in the test. Re-read it.";
+                return false;
+            }
+
+            try
+            {
+                var rebuilt = new CommentCollection();
+                var found = false;
+
+                foreach (Comment comment in result.Comments)
+                {
+                    if (comment.Id != commentId)
+                    {
+                        rebuilt.Add(comment);
+                        continue;
+                    }
+
+                    found = true;
+
+                    // In place, so an edited remark keeps its place in the conversation rather
+                    // than jumping to the end of it.
+                    if (body != null)
+                        rebuilt.Add(new Comment(body, comment.Status, comment.Author));
+                }
+
+                if (!found)
+                {
+                    LastProblem = "That comment is no longer on the result. Re-read it.";
+                    return false;
+                }
+
+                clash.TestsData.TestsEditResultComments(result, rebuilt);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the comment change: " + e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>One result of one test, straight off the per-test index.</summary>
+        /// <param name="testId">Which test.</param>
+        /// <param name="resultId">Which result.</param>
+        private ClashResult? OneResult(string testId, string resultId)
+        {
+            var clash = Clash();
+
+            if (clash == null || string.IsNullOrWhiteSpace(resultId)) return null;
+
+            var byId = ById(clash, testId);
+
+            return byId != null && byId.TryGetValue(resultId, out var found) ? found : null;
         }
 
         /// <inheritdoc />

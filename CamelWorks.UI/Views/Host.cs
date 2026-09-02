@@ -432,6 +432,15 @@ namespace CamelWorks.UI.Views
                 string testId, Func<int, bool>? onProgress) =>
                 Array.Empty<CamelWorks.Core.Clash.ClashResultComments>();
 
+            public IReadOnlyList<CamelWorks.Core.Clash.ClashComment> CommentsOn(
+                string testId, string resultId) =>
+                Array.Empty<CamelWorks.Core.Clash.ClashComment>();
+
+            public bool DeleteComment(string testId, string resultId, long commentId) => false;
+
+            public bool EditComment(string testId, string resultId, long commentId, string body) =>
+                false;
+
             public IReadOnlyList<CamelWorks.Core.Clash.ClashPropertyName> PropertyVocabulary(
                 int settleAfter, Func<int, bool>? onProgress) =>
                 Array.Empty<CamelWorks.Core.Clash.ClashPropertyName>();

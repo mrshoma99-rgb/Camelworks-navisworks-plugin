@@ -52,24 +52,11 @@ namespace CamelWorks.UI.Shell
 
             var root = new Grid();
             root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             root.Children.Add(Header());
 
-            var tabs = new Border
-            {
-                Padding = new Thickness(10, 0, 10, 0),
-                BorderThickness = new Thickness(0, 0, 0, 1),
-                Child = _strip,
-            };
-
-            tabs.Tint(Border.BackgroundProperty, "Pane");
-            tabs.Tint(Border.BorderBrushProperty, "Bd");
-            Grid.SetRow(tabs, 1);
-            root.Children.Add(tabs);
-
-            Grid.SetRow(_surface, 2);
+            Grid.SetRow(_surface, 1);
             root.Children.Add(Ui.Loose(_surface));
 
             var ground = new Border { Child = LeaseStrip.Over(root) };
@@ -131,7 +118,8 @@ namespace CamelWorks.UI.Shell
             var titles = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin = new Thickness(16, 10, 16, 9),
+                Margin = new Thickness(16, 6, 16, 5),
+                VerticalAlignment = VerticalAlignment.Center,
             };
 
             var name = new TextBlock
@@ -154,6 +142,16 @@ namespace CamelWorks.UI.Shell
 
             suite.Wearing("Hint");
             titles.Children.Add(suite);
+
+            // The tabs sit on the title row rather than in a band under it.
+            //
+            // A band of its own cost a strip of window on every app for a row that is four words
+            // wide, and the app's name and its tabs are the same thing said twice - which of this
+            // app's screens you are on. On one line they read as one thing, and the screen below
+            // gets the band back.
+            _strip.VerticalAlignment = VerticalAlignment.Center;
+            _strip.Margin = new Thickness(18, 0, 0, 0);
+            titles.Children.Add(Ui.Loose(_strip));
 
             // No search box here any more. It was a tool finder in the title strip of every app,
             // and what it mostly did was sit in the corner of a screen somebody was already on,

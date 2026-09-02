@@ -110,8 +110,11 @@ third time for the order the test itself holds. Drag a header's right edge to re
 four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, or *Test* for name
 order; the sort menu holds the same six and says which is on.
 
-**Click a row to pick it**, Ctrl or Shift-click to add to what is picked, and drag rows onto a
-clash group to move them into it. **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
+**Click a row to pick it.** **Ctrl-click** adds one row or takes it back out; **Shift-click** picks
+the whole run between the last row you pressed and this one, and Ctrl with Shift adds that run to
+what is already picked. The run is what is on the screen in the order it is on the screen, so a run
+across an opened clash group takes the group and the members it is showing, and one over a closed
+group takes the group alone. Drag rows onto a clash group to move them into it. **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
 comment, and a menu with snapshot, marker sphere, clear the markers, raise as an issue, attach to an
 existing issue, copy, and — depending on which kind of row it is — rename or ungroup the clash
 group, or group it with what is picked and move it into an existing one.
@@ -216,7 +219,20 @@ the board to a spreadsheet, set up the review round, and raise the board as issu
 document there and then — there is no draft to commit. What is left to save is what the document
 **refused**, which is what the footer's one blue button is for.
 
-- **Renumbering writes the clash's own name.** A Navisworks clash result carries a `DisplayName`, and
+- **Comments read as well as write.** The speech-bubble on a single clash opens its conversation:
+every remark with who wrote it and when, a box to add another, and — on remarks that came from the
+document — a pencil and a bin.
+
+> **Editing replaces.** Every field of a Navisworks comment is read-only and the only write the host
+> offers is the whole trail at once, so changing a remark means putting a new one in its place. It
+> keeps its position in the conversation and its author, and takes **today's date**. There is no way
+> round that; the button says so rather than pretending otherwise.
+
+A remark added here that the document would not take is shown in the conversation too — it is the
+same remark, waiting for a seat that can write it. Picking several clashes and commenting still
+says the one thing on all of them, because a set of clashes has no single trail.
+
+**Renumbering writes the clash's own name.** A Navisworks clash result carries a `DisplayName`, and
 "Clash1", "Clash2" is Navisworks' own convention for filling it — there is no separate number field.
 Renumbering sets that name to *prefix*1, *prefix*2 and so on, in the order the test holds its
 results, so the new names show in the native Clash Detective grid and travel in the clash XML. It is

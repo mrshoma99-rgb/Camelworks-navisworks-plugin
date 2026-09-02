@@ -97,13 +97,13 @@ namespace CamelWorks.Nav
         /// <summary>
         /// Hide everything but these and the branch they hang from.
         ///
-        /// <b>The host works out what "everything else" is.</b> <c>ModelItemCollection.Invert</c>
-        /// is the complement, computed natively in one call - the same thing the ribbon's own Hide
-        /// Unselected does, and the reason that command is instant on a federation this would
-        /// otherwise take minutes to walk.
+        /// <b>Only the branches leading to the elements are ever walked.</b> Isolating two items
+        /// in a federation of millions is a walk of two paths from the root and the siblings
+        /// hanging off each step of them - depth times branching, not the size of the model. That
+        /// is why the ribbon's own Hide Unselected is instant, and it is what this does.
         ///
-        /// Two versions of this were wrong before it, and both are worth naming because the
-        /// mistake is easy to make twice:
+        /// Three versions of this were wrong before it, and all three are worth naming because
+        /// each mistake is an easy one to make twice:
         ///
         /// <list type="bullet">
         /// <item><description>Hiding <c>RootItemDescendantsAndSelf</c> is correct and hands the
@@ -113,12 +113,19 @@ namespace CamelWorks.Nav
         /// inherited, so the roots have to be un-hidden again to show the branch - and un-hiding a
         /// root puts its whole model back, because nothing under it was ever marked.</description>
         /// </item>
+        /// <item><description>Hiding the complement from <c>ModelItemCollection.Invert</c> is
+        /// fast and also does nothing, for a subtler reason: that inversion works the way the
+        /// selection tree does, where a branch stands for everything under it. The kept set has to
+        /// carry the ancestors of the elements, the topmost of which is the model root - so the
+        /// set being inverted already stands for the whole document, and its complement is empty.
+        /// Isolate then hid nothing at all, which is exactly what "the isolate still doesn't
+        /// isolate the elements" looked like.</description></item>
         /// </list>
         ///
         /// The ancestors are not decoration. An element inside a hidden parent is not drawn, so
         /// the chain from the root down to the item has to stay out of what gets hidden or the
-        /// thing being isolated goes with it. Descendants for the same reason in reverse: an
-        /// assembly is isolated with what it is made of.
+        /// thing being isolated goes with it. Its descendants are never hidden either, and get
+        /// there by being left alone: an assembly is isolated with what it is made of.
         /// </summary>
         /// <param name="items">What to keep visible.</param>
         private int Keep(ModelItemCollection items)
@@ -128,25 +135,39 @@ namespace CamelWorks.Nav
             // had refused, hidden the wrong thing, or simply had nothing to work from.
             if (items == null || items.Count == 0) return 0;
 
-            var keep = new ModelItemCollection();
+            var wanted = new HashSet<ModelItem>();
+            var branch = new HashSet<ModelItem>();
 
             foreach (ModelItem item in items)
             {
-                keep.Add(item);
+                wanted.Add(item);
+                branch.Add(item);
 
-                foreach (var ancestor in item.Ancestors) keep.Add(ancestor);
-                foreach (var descendant in item.Descendants) keep.Add(descendant);
+                foreach (var ancestor in item.Ancestors) branch.Add(ancestor);
             }
 
             var hide = new ModelItemCollection();
 
-            hide.CopyFrom(keep);
-            hide.Invert(Host);
+            // A model with nothing kept in it goes whole, in one item. Its root is not on any
+            // kept branch, so nothing below walks it.
+            foreach (var model in Host.Models)
+                if (!branch.Contains(model.RootItem)) hide.Add(model.RootItem);
+
+            foreach (var node in branch)
+            {
+                // Stop at the elements themselves: everything under them stays visible, which is
+                // what isolating an assembly is meant to mean.
+                if (wanted.Contains(node)) continue;
+
+                foreach (var child in node.Children)
+                    if (!branch.Contains(child)) hide.Add(child);
+            }
 
             Host.Models.ResetAllHidden();
-            Host.Models.SetHidden(hide, true);
 
-            return keep.Count;
+            if (hide.Count > 0) Host.Models.SetHidden(hide, true);
+
+            return branch.Count;
         }
 
         /// <inheritdoc />
@@ -333,6 +354,26 @@ namespace CamelWorks.Nav
                 viewpoint.Position = new Point3D(target.X, target.Y - back, target.Z + back);
                 viewpoint.Rotation = new Rotation3D();
                 viewpoint.PointAt(target);
+
+                // Orthographic cameras have no vanishing point, so standing one closer changes
+                // nothing at all on screen: what an ortho view shows is its extent at the focal
+                // distance, and moving the eye along the view direction leaves that exactly where
+                // the last zoom left it. Focusing a clash in ortho therefore pointed the camera
+                // perfectly and still showed the whole federated model - which is "focus doesn't
+                // work when it is ortho mode in camera".
+                //
+                // So in ortho the framing is asked for outright, with a box the size of the step
+                // back centred on the point. ZoomBox is the host's own fit: it knows the aspect
+                // ratio, the projection and the near plane, all three of which are easy to get
+                // wrong by hand and yield a view aimed correctly at nothing.
+                if (viewpoint.Projection == ViewpointProjection.Orthographic)
+                {
+                    var half = back / 2.0;
+
+                    viewpoint.ZoomBox(new BoundingBox3D(
+                        new Point3D(target.X - half, target.Y - half, target.Z - half),
+                        new Point3D(target.X + half, target.Y + half, target.Z + half)));
+                }
 
                 Host.CurrentViewpoint.CopyFrom(viewpoint);
             }
