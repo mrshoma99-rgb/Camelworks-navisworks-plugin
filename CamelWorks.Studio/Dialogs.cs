@@ -124,11 +124,11 @@ namespace CamelWorks.Studio
                 // Answered, so the wizard opens past them - which is what puts this
                 // picture on the step it is about.
                 new Ui.Step("The sheet", () => Ui.Stack(), () => null),
-                new Ui.Step("The matrix", () => Ui.Stack(), () => null),
-                new Ui.Step("The tests", () => Ui.Stack(
-                    Ui.Commit("Preview", "Create", "test",
+                new Ui.Step("The mapping", () => Ui.Stack(), () => null),
+                new Ui.Step("The write", () => Ui.Stack(
+                    Ui.Commit("See what would change", "Write", "element",
                               (job, into) => 0, job => { }),
-                    Ui.Line("38 tests, 6 already there and left alone.", 0.85))),
+                    Ui.Line("38 elements, 6 already right and left alone.", 0.85))),
             }, null, null);
 
         // -----------------------------------------------------------------------------------

@@ -1703,6 +1703,38 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
+        /// Hang a menu off anything, opened by whatever the caller decides opens it.
+        ///
+        /// <see cref="MoreMenu"/> and <see cref="MenuButton"/> both make a button and put a menu
+        /// on it. A grid's row headers and its cells are not buttons - they are the grid - and
+        /// giving each of four hundred of them a button chrome would be four hundred boxes
+        /// competing with the symbols they hold. So this attaches the same menu to an element
+        /// that already exists, built when it is opened rather than up front, because a cell's
+        /// menu depends on what is in the cell right now.
+        /// </summary>
+        /// <param name="on">What the menu hangs off.</param>
+        /// <param name="items">The menu, as it stands.</param>
+        public static void PopMenu(FrameworkElement on, IReadOnlyList<Entry> items)
+        {
+            if (on == null || items == null || items.Count == 0) return;
+
+            var popup = new Popup
+            {
+                PlacementTarget = on,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                HorizontalOffset = -8,
+                VerticalOffset = -8,
+                Child = Floating(Menu(items, false), 230),
+            };
+
+            // Parented into the same window as everything else on screen, so the skin reaches it
+            // and it closes when the pane it belongs to goes away.
+            popup.IsOpen = true;
+        }
+
+        /// <summary>
         /// The one popup card shape: the product's only shadow, on a bordered card.
         /// </summary>
         /// <param name="content">What is inside it.</param>
