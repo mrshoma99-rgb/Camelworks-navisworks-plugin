@@ -1277,8 +1277,11 @@ namespace CamelWorks.UI.Views
         /// <param name="count">How much is under it.</param>
         /// <param name="onPickAll">Ticks everything under the band, or null for no such link.</param>
         /// <param name="depth">How many bands are above this one, which is what indents it.</param>
+        /// <param name="shut">True when this band is folded away, or null when it cannot fold.</param>
+        /// <param name="onFold">Folds it, or unfolds it.</param>
         public static UIElement ViewBand(string glyph, string label, string value, string count,
-                                         Action? onPickAll, int depth = 0)
+                                         Action? onPickAll, int depth = 0, bool? shut = null,
+                                         Action? onFold = null)
         {
             var row = new DockPanel { LastChildFill = true };
 
@@ -1296,6 +1299,12 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
+            // The chevron first, so the eye reads the fold state before anything else - and only
+            // where there is something to fold.
+            if (shut.HasValue)
+                words.Children.Add(Ui.Glyph(shut.Value ? Glyphs.Right : Glyphs.Down, 12, "Muted",
+                                            new Thickness(0, 0, 6, 0)));
+
             words.Children.Add(Ui.Glyph(glyph, 12, "Faint", new Thickness(0, 0, 8, 0)));
 
             var eyebrow = Ui.Eyebrow(label);
@@ -1305,9 +1314,11 @@ namespace CamelWorks.UI.Views
             var what = new TextBlock
             {
                 Text = value ?? string.Empty,
-                FontWeight = FontWeights.SemiBold,
+                FontWeight = depth == 0 ? FontWeights.SemiBold : FontWeights.Medium,
+                FontSize = depth == 0 ? 13 : 12,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
+                TextTrimming = TextTrimming.CharacterEllipsis,
             };
 
             what.Wearing("Body");
@@ -1328,17 +1339,58 @@ namespace CamelWorks.UI.Views
             // Indented by its level rather than nested inside anything: the table is one flat
             // list of lines, virtualised, and a band that contained its rows would be a panel the
             // list could not recycle.
+            //
+            // <b>Depth has to be visible, not just measurable.</b> Indent alone read as three
+            // identical grey bars at slightly different margins, and on a chain three deep
+            // nobody could tell which band was inside which. So each level also recedes: the
+            // outermost is a full-weight bar with a rule above it, and every level under it is
+            // lighter, smaller and unruled, with a rail down its left edge marking where its
+            // parent's ground ends.
             var band = new Border
             {
-                Padding = new Thickness(12 + (depth * 18), 6, 12, 6),
+                Padding = new Thickness(12 + (depth * 20), depth == 0 ? 6 : 4, 12,
+                                        depth == 0 ? 6 : 4),
                 BorderThickness = new Thickness(0, depth == 0 ? 1 : 0, 0, 1),
                 Child = row,
+                Cursor = onFold == null ? null : Cursors.Hand,
+                Background = Brushes.Transparent,
             };
 
-            band.Tint(Border.BackgroundProperty, "Bg");
+            band.Tint(Border.BackgroundProperty, depth == 0 ? "Bg" : depth == 1 ? "Card2" : "Pane");
             band.Tint(Border.BorderBrushProperty, "Bd");
 
-            return band;
+            if (onFold != null)
+                band.MouseLeftButtonUp += (s, e) =>
+                {
+                    e.Handled = true;
+                    Ui.Safely(onFold);
+                };
+
+            if (depth == 0) return band;
+
+            // The rail: one line at the depth this band sits at, so a fold three deep still says
+            // where it belongs when its parents have scrolled off the top.
+            var rail = new Border
+            {
+                Padding = new Thickness(6 + ((depth - 1) * 20), 0, 0, 0),
+                BorderThickness = new Thickness(0, 0, 0, 0),
+                Child = band,
+            };
+
+            var line = new Border
+            {
+                Width = 2,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(6 + ((depth - 1) * 20), 0, 0, 0),
+            };
+
+            line.Tint(Border.BackgroundProperty, "Bd");
+
+            var stacked = new Grid();
+            stacked.Children.Add(rail);
+            stacked.Children.Add(line);
+
+            return stacked;
         }
 
         /// <summary>

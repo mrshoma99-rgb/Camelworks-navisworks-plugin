@@ -449,6 +449,26 @@ namespace CamelWorks.UI.Views
             /// view into real clash groups is a separate, named act.
             /// </summary>
             private readonly List<string> _bands = new List<string>();
+
+            /// <summary>
+            /// The bands folded away, keyed on the trail down to each rather than on its value.
+            ///
+            /// On the trail because "Steel" under one section and "Steel" under the next are
+            /// different bands, and folding one must not fold the other.
+            /// </summary>
+            private readonly HashSet<string> _shutBands =
+                new HashSet<string>(StringComparer.Ordinal);
+
+            /// <summary>
+            /// The results that some issue in the register already covers, keyed as the board
+            /// keys a row.
+            ///
+            /// <b>Read once, not once a row.</b> Answering "is this one raised?" per row means
+            /// walking every issue's attachments six hundred times over, inside the draw. It is
+            /// read when the board is drawn and when an issue is raised from it, which are the
+            /// only two moments the answer can change without a re-read.
+            /// </summary>
+            private HashSet<string>? _raised;
             private string _showing = BothKinds;
 
             /// <summary>
@@ -1292,6 +1312,7 @@ namespace CamelWorks.UI.Views
                 _status = null;
                 _party = null;
                 _bands.Clear();
+                _shutBands.Clear();
                 _showing = BothKinds;
                 _sameAs = null;
                 _byColumn.Clear();
@@ -1955,8 +1976,10 @@ namespace CamelWorks.UI.Views
             /// <param name="depth">How many levels are already above this one.</param>
             /// <param name="lines">The lines being built.</param>
             /// <param name="add">Puts one row, and its members when it is an open group, on screen.</param>
+            /// <param name="trail">What the bands above this one were called, for folding.</param>
             private void Sink(TestEntry entry, List<BoardRow> rows, int depth,
-                              List<BoardLine> lines, Action<BoardRow> add)
+                              List<BoardLine> lines, Action<BoardRow> add,
+                              string trail = "")
             {
                 if (depth >= _bands.Count)
                 {
@@ -1973,12 +1996,19 @@ namespace CamelWorks.UI.Views
                     var named = band.Key;
                     var at = depth;
 
+                    // Keyed on the trail rather than the value, so "Steel" under one section and
+                    // "Steel" under the next fold separately - they are different bands.
+                    var key = trail.Length == 0 ? named : trail + "\u001f" + named;
+                    var shut = _shutBands.Contains(key);
+
                     lines.Add(BoardLine.Banner(() => Parts.ViewBand(
                         at == 0 ? Glyphs.Columns : Glyphs.Layers, label, named,
                         Ui.Count(here.Sum(r => r.Rows.Count), "result"),
-                        () => PickAll(here), at)));
+                        () => PickAll(here), at, shut, () => Folded(key))));
 
-                    Sink(entry, here, depth + 1, lines, add);
+                    if (shut) continue;
+
+                    Sink(entry, here, depth + 1, lines, add, key);
                 }
             }
 
@@ -2417,6 +2447,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Act("No bands", Glyphs.Close, () =>
                     {
                         _bands.Clear();
+                        _shutBands.Clear();
                         RedrawBoard();
                     }));
                 }
@@ -2493,6 +2524,7 @@ namespace CamelWorks.UI.Views
                         _party = null;
                         _showing = BothKinds;
                         _bands.Clear();
+                        _shutBands.Clear();
                         _sameAs = null;
                         _byColumn.Clear();
                         _boardBox.Text = string.Empty;
@@ -3088,10 +3120,23 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, Tick(row.Id, on), 0);
 
+                // <b>One target, and all of it.</b> Opening a group was reported as working
+                // sometimes on the chevron, sometimes on the name, sometimes on neither. Three
+                // causes met here. The panel had no background, so every transparent gap between
+                // the glyphs and the text was a hole the click fell through to the row beneath -
+                // which picks rather than opens. The rename handled only the second MouseDown, so
+                // its MouseUp still reached the toggle and a double-click renamed and opened at
+                // once. And the toggle rebuilt the table, which sent the scroll back to the top,
+                // so a group that did open looked as though nothing had happened.
+                //
+                // Now: the whole strip is one hit target, a click anywhere on it opens or shuts
+                // the group, a double-click on the name renames and stops there, and the rows
+                // stay where they were.
                 var words = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Cursor = System.Windows.Input.Cursors.Hand,
+                    Background = System.Windows.Media.Brushes.Transparent,
                 };
 
                 words.Children.Add(Ui.Glyph(open ? Glyphs.Down : Glyphs.Right, 13, "Muted",
@@ -3108,17 +3153,31 @@ namespace CamelWorks.UI.Views
                     TextWrapping = TextWrapping.NoWrap,
                 };
 
-                name.ToolTip = row.Name + " — double-click to rename it.";
+                name.ToolTip = row.Name + " — click to open it, double-click to rename it.";
+
+                // Set on the Down of the second click and read on the Up that follows it. WPF
+                // sends Down, Up, Down(2), Up for a double-click, so handling only the Down let
+                // the last Up through to the toggle underneath.
+                var renaming = false;
 
                 name.MouseLeftButtonDown += (s, e) =>
                 {
                     if (e.ClickCount != 2) return;
 
+                    renaming = true;
                     e.Handled = true;
 
                     Prompt("Rename the clash group", row.Name, "Rename",
                            renamed => Regroup(row.Rows.Cast<object>().ToList(), renamed,
                                               "Renamed the clash group to"));
+                };
+
+                name.MouseLeftButtonUp += (s, e) =>
+                {
+                    if (!renaming) return;
+
+                    renaming = false;
+                    e.Handled = true;
                 };
 
                 words.Children.Add(name.Wearing("Body"));
@@ -3127,8 +3186,8 @@ namespace CamelWorks.UI.Views
 
                 words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
-                    if (!_open.Remove(row.Id)) _open.Add(row.Id);
-                    RedrawRows();
+                    e.Handled = true;
+                    Opened(row.Id);
                 });
 
                 Put(grid, words, 1);
@@ -3145,6 +3204,92 @@ namespace CamelWorks.UI.Views
                     Put(grid, Hint(Custom(row.Only, _columns[i])), 6 + i);
 
                 return Finish(grid, row, on, false);
+            }
+
+            /// <summary>
+            /// Open or shut one clash group, leaving the table where it was.
+            ///
+            /// The line count changes, so the list has to be given a new set of lines - and a
+            /// new set starts at the top unless the offset is carried across it.
+            /// </summary>
+            /// <param name="id">The group.</param>
+            private void Opened(string id)
+            {
+                if (!_open.Remove(id)) _open.Add(id);
+
+                Held(RedrawRows);
+            }
+
+            /// <summary>Whether an issue in the register already covers this result.</summary>
+            /// <param name="testId">Which test the result is in.</param>
+            /// <param name="resultId">The result.</param>
+            private bool Raised(string testId, string resultId) =>
+                (_raised ??= Register()).Contains(Where(testId, resultId));
+
+            /// <summary>
+            /// Which results the issue register covers, keyed the way the board keys a row.
+            ///
+            /// Both ways an issue can name a clash are read: the findings it has attached, which
+            /// is how one raised from this board is held, and the clash keys an older issue kept
+            /// before findings existed. Guarded whole - a register that will not open is a board
+            /// without two small marks on it, not a board that will not draw.
+            /// </summary>
+            private HashSet<string> Register()
+            {
+                var found = new HashSet<string>(StringComparer.Ordinal);
+
+                try
+                {
+                    var read = Current();
+
+                    if (read == null) return found;
+
+                    var register = IssueViews.Read(_session);
+
+                    var attached = new HashSet<string>(
+                        register.Issues.SelectMany(i => i.Findings), StringComparer.OrdinalIgnoreCase);
+
+                    var keyed = new HashSet<ClashKey>(register.Issues.SelectMany(i => i.Clashes));
+
+                    if (attached.Count == 0 && keyed.Count == 0) return found;
+
+                    foreach (var row in read.SelectMany(e => e.Rows))
+                    {
+                        var finding = Found(row);
+
+                        if ((finding != null && attached.Contains(finding.Id))
+                            || (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty
+                                && keyed.Contains(row.Info.Key())))
+                            found.Add(Where(row.TestId, row.Info.Id));
+                    }
+                }
+                catch (Exception)
+                {
+                    // A register that cannot be read is two marks missing, not a board that
+                    // will not draw.
+                }
+
+                return found;
+            }
+
+            /// <summary>Fold one band away, or open it, leaving the table where it was.</summary>
+            /// <param name="key">The trail down to the band.</param>
+            private void Folded(string key)
+            {
+                if (!_shutBands.Remove(key)) _shutBands.Add(key);
+
+                Held(RedrawRows);
+            }
+
+            /// <summary>Do something that rebuilds the table, and put the scroll back afterwards.</summary>
+            /// <param name="work">What rebuilds it.</param>
+            private void Held(Action work)
+            {
+                var at = _list?.Offset ?? 0;
+
+                work();
+
+                if (_list != null) _list.Offset = at;
             }
 
             /// <summary>One clash: loose on the board, or a member of an open group.</summary>
@@ -3181,8 +3326,51 @@ namespace CamelWorks.UI.Views
                            renamed => RenameOne(result, renamed));
                 };
 
-                Grid.SetColumn(name, 1);
-                grid.Children.Add(name);
+                // The two facts about a row that were only findable by opening it: whether
+                // anybody has said anything about it, and whether it has already been raised as
+                // an issue. Both are decisions somebody else made about this clash, and reading
+                // a board of six hundred to find them one at a time is not reading.
+                //
+                // Marks rather than columns: they are present-or-absent, they belong beside the
+                // name they are about, and two more columns on a table already nine wide would
+                // cost the name the width it has just been given back.
+                var marks = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0),
+                };
+
+                var said = result.Trail.Count > 0 ? result.Trail.Count : result.Comments;
+
+                if (said > 0)
+                {
+                    var talk = Ui.Glyph(Glyphs.Comment, 12, "Accent", new Thickness(0, 0, 4, 0));
+
+                    talk.ToolTip = Ui.Count(said, "comment") + " on this clash.";
+                    marks.Children.Add(talk);
+                }
+
+                if (Raised(result.TestId, result.Info.Id))
+                {
+                    var raised = Ui.Glyph(Glyphs.Issue, 12, "AmberTx", new Thickness(0, 0, 4, 0));
+
+                    raised.ToolTip = "Attached to an issue in the Issue Manager.";
+                    marks.Children.Add(raised);
+                }
+
+                var named = new DockPanel { LastChildFill = true };
+
+                if (marks.Children.Count > 0)
+                {
+                    DockPanel.SetDock(marks, Dock.Right);
+                    named.Children.Add(marks);
+                }
+
+                named.Children.Add(name);
+
+                Grid.SetColumn(named, 1);
+                grid.Children.Add(named);
 
                 var itemA = result.Info.NameA ?? string.Empty;
                 var itemB = result.Info.NameB ?? string.Empty;
@@ -3948,6 +4136,20 @@ namespace CamelWorks.UI.Views
 
                 right.Children.Add(Ui.Loose(read.Buttons));
 
+                // The second way in, beside the first, and only while there is no board.
+                //
+                // A clash manager with nothing read is a screen whose whole job is one of two
+                // presses: read this model's results, or open the file somebody sent back. The
+                // second was three steps down a settings page - switch the source, type a path,
+                // press read - which is not where anybody looks for it.
+                _openFile = Ui.Quiet("Open a clash file", OpenClashFile);
+                _openFile.VerticalAlignment = VerticalAlignment.Center;
+                _openFile.Margin = new Thickness(0, 0, 8, 0);
+                _openFile.ToolTip = "A baseline a Manage seat exported, or a markup coming back "
+                                    + "from review. Opens it and reads it in one press.";
+
+                right.Children.Add(Ui.Loose(_openFile));
+
                 _send.VerticalAlignment = VerticalAlignment.Center;
                 right.Children.Add(Ui.Loose(_send));
 
@@ -3993,10 +4195,29 @@ namespace CamelWorks.UI.Views
                 // Only before the first read. Once the results are on the screen the press that
                 // put them there is the least useful thing in the footer, and "Read the results
                 // again" is on the test's own menu, where somebody who wants it is looking.
+                // Two states, and each shows only what belongs to it.
+                //
+                // Nothing read: the two ways in, and nothing else. Save and Export used to sit
+                // there over an empty table offering to save nothing and export nothing, which
+                // is a footer of three buttons where two of them cannot do anything.
+                //
+                // Something read: the way in is the least useful thing in the footer, and
+                // "Read the results again" is on the test's own menu where somebody who wants it
+                // is already looking.
+                var empty = Current() == null;
+
                 if (_readButtons != null)
-                    _readButtons.Visibility = Current() == null
-                        ? Visibility.Visible
-                        : Visibility.Collapsed;
+                    _readButtons.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+
+                if (_openFile != null)
+                    _openFile.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+
+                if (_saveButton != null)
+                    _saveButton.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+
+                _send.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+
+                if (empty) return;
 
                 // Nothing on the left. What used to be there was four totals over every test in
                 // the document - how many were assigned out, how many were in groups - and a
@@ -4325,6 +4546,29 @@ namespace CamelWorks.UI.Views
 
             /// <summary>How many clashes are waiting for the document.</summary>
             private int WaitingCount => Waiting.Count();
+
+            /// <summary>
+            /// Open a clash file and read it, in one press.
+            ///
+            /// Everything the settings page does in three steps: point the source at a file, put
+            /// the path in the field the page shares, and run the same read. The page still
+            /// exists and still holds the path, so somebody who went that way finds what they
+            /// left there.
+            /// </summary>
+            private void OpenClashFile()
+            {
+                var path = Ui.AskToOpen("Open a clash file", ClashFile.Filter);
+
+                if (string.IsNullOrWhiteSpace(path)) return;
+
+                _source = FromFile;
+                _path.Text = path!;
+
+                Ui.Working("Reading the file...", Read);
+
+                Redraw();
+                ArmSync();
+            }
 
             private void ReadFile(Job job)
             {
@@ -5134,7 +5378,14 @@ namespace CamelWorks.UI.Views
             /// A status written, a regroup, a re-read. The filters have not moved but their answer
             /// has, and the signature above cannot see inside a row.
             /// </summary>
-            private void Moved() => _edits++;
+            private void Moved()
+            {
+                _edits++;
+
+                // Which results an issue covers can change with any of these, and it is read
+                // again the next time a row asks.
+                _raised = null;
+            }
 
             /// <summary>The clash groups the filters leave, each with the members they leave.</summary>
             /// <param name="entry">The test on the board.</param>
@@ -5770,6 +6021,7 @@ namespace CamelWorks.UI.Views
                 if (!OnFile) { KeepFindings(); ArmSync(); }
 
                 _bands.Clear();
+                _shutBands.Clear();
                 _picked.Clear();
                 _pickedFrom = null;
 
@@ -6716,6 +6968,11 @@ namespace CamelWorks.UI.Views
                     each ? rows.Count : 1);
 
                 if (problem != null) Warned(Ui.Problem(problem));
+
+                // Raising is the one act that changes which rows carry the issue mark without
+                // changing a row.
+                _raised = null;
+                RedrawRows();
             }
 
             /// <summary>
@@ -8755,6 +9012,9 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private System.Windows.Controls.Button? _saveButton;
 
+            /// <summary>The second way in, shown only while there is no board.</summary>
+            private System.Windows.Controls.Button? _openFile;
+
             /// <summary>
             /// Why this document cannot take the changes, or null when it can.
             ///
@@ -8883,20 +9143,30 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // Saying so, rather than saying nothing.
+                //
+                // The rule on this board is that a press that worked stays quiet, because forty
+                // confirmations in an afternoon is a thing to dismiss rather than feedback. Save
+                // is the one press that rule does not fit: it is deliberate, it is what somebody
+                // came to the footer to do, and a save that acknowledges nothing at all reads as
+                // a button that did not fire. It fades like every other confirmation.
                 if (why == null)
                 {
-                    Tell("Saved. Every change on this board is in the project and in the "
-                         + "document's own clash results.", null);
+                    Said(Ui.Done("Saved. Every decision on this board is in the project, and in "
+                                 + "the document's own clash results."));
                     return;
                 }
 
-                Tell("Saved to this project. " + Ui.Count(_shown.Count, "result")
-                     + " on this board carries what you decided, and it travels with the project "
-                     + "rather than with the file that is open.",
-                     new List<string>
-                     {
-                         "The document itself was not written into: " + Lowered(why),
-                     });
+                // A note, not a problem.
+                //
+                // This went out through the refusal path, so pressing Save - which saves to the
+                // project, and always could - answered with a red strip about the document that
+                // held until it was dismissed. The save worked. Where it also went is a fact
+                // about the seat, worth one line, and not an error to be cleared.
+                Said(Ui.Note("Saved to the project. " + Ui.Count(_shown.Count, "result")
+                             + " on this board carries what you decided, and it travels with the "
+                             + "project rather than with the file that is open. The document "
+                             + "itself was not written into: " + Lowered(why)));
             }
 
             /// <summary>The same sentence, joined onto one that has already started.</summary>
