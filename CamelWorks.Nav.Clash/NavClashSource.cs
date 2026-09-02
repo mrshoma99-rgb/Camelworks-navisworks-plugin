@@ -1119,7 +1119,7 @@ namespace CamelWorks.Nav.Clash
                         trail.Trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
                             CreationTicks(comment), comment.Body ?? string.Empty)
                         {
-                            HostId = comment.Id,
+                            HostId = HostCommentId(comment),
                         });
                 }
                 catch (Exception)
@@ -1132,6 +1132,22 @@ namespace CamelWorks.Nav.Clash
 
             return read;
         }
+
+        /// <summary>
+        /// A comment's id as this project carries it.
+        ///
+        /// <b>The host's own type for this is not the same everywhere.</b> The reference assembly
+        /// this repository builds against off-line declares <c>Comment.Id</c> as a signed 64-bit
+        /// integer; the one Navisworks actually ships declares it unsigned. Reading it straight
+        /// into a <c>long</c> therefore compiles here and fails on the real thing - which is
+        /// exactly how it got through.
+        ///
+        /// The cast is unchecked and so is exact either way: every bit pattern maps to one
+        /// <c>long</c> and back again, which is all an opaque handle needs. It also compiles
+        /// against both declarations, so this does not have to be guarded per Navisworks year.
+        /// </summary>
+        /// <param name="comment">The host's comment.</param>
+        private static long HostCommentId(Comment comment) => unchecked((long)comment.Id);
 
         /// <inheritdoc />
         public IReadOnlyList<Core.Clash.ClashComment> CommentsOn(string testId, string resultId)
@@ -1150,7 +1166,7 @@ namespace CamelWorks.Nav.Clash
                     trail.Add(new Core.Clash.ClashComment(Named(comment.Author),
                         CreationTicks(comment), comment.Body ?? string.Empty)
                     {
-                        HostId = comment.Id,
+                        HostId = HostCommentId(comment),
                     });
             }
             catch (Exception e)
@@ -1207,7 +1223,7 @@ namespace CamelWorks.Nav.Clash
 
                 foreach (Comment comment in result.Comments)
                 {
-                    if (comment.Id != commentId)
+                    if (HostCommentId(comment) != commentId)
                     {
                         rebuilt.Add(comment);
                         continue;
