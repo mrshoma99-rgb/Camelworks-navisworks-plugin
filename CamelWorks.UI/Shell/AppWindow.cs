@@ -31,6 +31,22 @@ namespace CamelWorks.UI.Shell
         private string? _toolId;
         private bool _hooked;
 
+        /// <summary>
+        /// Every tab this window has already built, so switching back is instant.
+        ///
+        /// <b>Switching a tab used to rebuild it.</b> Every visit to Manage built the rail again
+        /// - a row per test, a hundred and sixty of them - then the board, the columns and the
+        /// legend, from nothing. The state behind them survived a switch, because these screens
+        /// keep it; what did not survive was the several thousand elements drawn from it, and
+        /// rebuilding those is the lag. A tab that has been built once is kept and put back.
+        ///
+        /// <b>Thrown away when the document changes.</b> A surface built against one federation
+        /// is a surface full of another model's tests, sets and levels, so the whole cache goes
+        /// the moment the document does - which is the same rule the pickers already follow.
+        /// </summary>
+        private readonly Dictionary<string, UIElement> _built =
+            new Dictionary<string, UIElement>(StringComparer.OrdinalIgnoreCase);
+
         private AppWindow(App app)
         {
             _app = app;
@@ -191,17 +207,22 @@ namespace CamelWorks.UI.Shell
 
             BuildStrip();
 
-            UIElement surface;
+            if (!_built.TryGetValue(tool.Id, out var surface))
+            {
+                try
+                {
+                    surface = Surfaces.Build(tool.Id);
 
-            try
-            {
-                surface = Surfaces.Build(tool.Id);
-            }
-            catch (Exception e)
-            {
-                // A surface that throws while being built would otherwise take the app with it.
-                surface = Ui.Scroll(Ui.Stack(
-                    Ui.Problem("This tab could not be opened: " + Ui.Describe(e))));
+                    // Only a surface that built is worth keeping. One that threw is kept out, so
+                    // the next visit tries again rather than showing the same failure for ever.
+                    _built[tool.Id] = surface;
+                }
+                catch (Exception e)
+                {
+                    // A surface that throws while being built would otherwise take the app with it.
+                    surface = Ui.Scroll(Ui.Stack(
+                        Ui.Problem("This tab could not be opened: " + Ui.Describe(e))));
+                }
             }
 
             _surface.Content = surface;
@@ -261,6 +282,7 @@ namespace CamelWorks.UI.Shell
             {
                 Ui.Running += OnRunning;
                 Skin.Changed += OnSkinChanged;
+                Host.WhenDocumentChanges(Forget);
             }
             else
             {
@@ -281,7 +303,26 @@ namespace CamelWorks.UI.Shell
         /// </summary>
         private void OnSkinChanged(object? sender, EventArgs e)
         {
+            Forget();
+
             if (_toolId != null) Tab(_toolId);
+        }
+
+        /// <summary>
+        /// Throw every built tab away.
+        ///
+        /// The document changed, or the theme did. Either makes a kept surface a picture of
+        /// something that is no longer true - another federation's tests, or a pane of brushes
+        /// resolved against the old sheet - and showing one of those is worse than the second
+        /// somebody waits for it to be built again.
+        /// </summary>
+        private void Forget()
+        {
+            _built.Clear();
+
+            // The one on screen goes too, or the tab that is open stays stale until somebody
+            // leaves it and comes back.
+            if (_surface.Content != null && _toolId != null) Tab(_toolId);
         }
     }
 }

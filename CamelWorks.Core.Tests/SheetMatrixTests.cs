@@ -47,11 +47,11 @@ namespace CamelWorks.Core.Tests
         {
             var read = SheetMatrix.Read(Typical(), Mapping());
 
-            Assert.Equal(3, read.Grid.Categories.Count);
+            Assert.Equal(3, read.Grid.Rows.Count);
             Assert.Equal(new[] { "Foundations", "Frame", "Ductwork" },
-                         read.Grid.Categories.Select(c => c.Name));
-            Assert.Equal("ST_Found", read.Grid.Categories[0].SetName);
-            Assert.Equal("ST", read.Grid.Categories[0].Code);
+                         read.Grid.Rows.Select(c => c.Name));
+            Assert.Equal("ST_Found", read.Grid.Rows[0].Source.Name);
+            Assert.Equal("ST", read.Grid.Rows[0].Code);
         }
 
         [Fact]
@@ -61,9 +61,9 @@ namespace CamelWorks.Core.Tests
             // one category to the left of where it belongs; matching by content steps over it.
             var read = SheetMatrix.Read(Typical(), Mapping());
 
-            Assert.Equal("B", read.Grid.At(0, 1));   // Foundations vs Frame
-            Assert.Equal("C", read.Grid.At(1, 2));   // Frame vs Ductwork
-            Assert.Null(read.Grid.At(0, 2));         // Foundations vs Ductwork: nothing was written
+            Assert.Equal("B", At(read.Grid, 0, 1));   // Foundations vs Frame
+            Assert.Equal("C", At(read.Grid, 1, 2));   // Frame vs Ductwork
+            Assert.Null(At(read.Grid, 0, 2));         // Foundations vs Ductwork: nothing was written
         }
 
         [Fact]
@@ -71,9 +71,9 @@ namespace CamelWorks.Core.Tests
         {
             var read = SheetMatrix.Read(Typical(), Mapping());
 
-            Assert.Equal("A", read.Grid.At(0, 0));
-            Assert.Equal("A", read.Grid.At(1, 1));
-            Assert.Equal("A", read.Grid.At(2, 2));
+            Assert.Equal("A", At(read.Grid, 0, 0));
+            Assert.Equal("A", At(read.Grid, 1, 1));
+            Assert.Equal("A", At(read.Grid, 2, 2));
         }
 
         [Fact]
@@ -81,18 +81,24 @@ namespace CamelWorks.Core.Tests
         {
             var read = SheetMatrix.Read(Typical(), Mapping());
 
-            Assert.Equal(read.Grid.At(0, 1), read.Grid.At(1, 0));
-            Assert.Equal(5, read.Grid.Filled);
+            // Both halves carry it now: the board no longer mirrors on read, so a sheet that
+            // says one thing about a pair writes it into both cells that name that pair.
+            Assert.Equal(At(read.Grid, 0, 1), At(read.Grid, 1, 0));
+            Assert.Equal(5, MatrixPlanner.Plan(read.Grid,
+                new MatrixLegend().Covering(read.Grid)).Tests.Count);
         }
 
         [Fact]
         public void Every_pair_is_offered_once_not_twice()
         {
+            // A sheet fills both halves of the grid, the way a clash matrix is drawn, and the
+            // planner is what notices that a pair and its mirror are one test.
             var read = SheetMatrix.Read(Typical(), Mapping());
-            var pairs = read.Grid.Pairs().ToList();
 
-            Assert.Equal(5, pairs.Count);
-            Assert.All(pairs, p => Assert.True(p.A <= p.B));
+            var plan = MatrixPlanner.Plan(read.Grid, new MatrixLegend().Covering(read.Grid));
+
+            Assert.Equal(5, plan.Tests.Count);
+            Assert.All(plan.Skipped, s => Assert.Contains("already tested", s.Why));
         }
 
         [Fact]
@@ -112,8 +118,8 @@ namespace CamelWorks.Core.Tests
 
             var read = SheetMatrix.Read(sheet, Mapping());
 
-            Assert.Equal("B", read.Grid.At(0, 1));
-            Assert.Equal("C", read.Grid.At(1, 2));
+            Assert.Equal("B", At(read.Grid, 0, 1));
+            Assert.Equal("C", At(read.Grid, 1, 2));
         }
 
         [Fact]
@@ -131,8 +137,8 @@ namespace CamelWorks.Core.Tests
 
             var read = SheetMatrix.Read(sheet, Mapping());
 
-            Assert.Equal(2, read.Grid.Categories.Count);
-            Assert.True(read.Grid.Categories[1].IsUnbacked);
+            Assert.Equal(2, read.Grid.Rows.Count);
+            Assert.True(read.Grid.Rows[1].IsUnbacked);
             Assert.Contains(read.Warnings, w => w.Contains("Frame") && w.Contains("no saved set"));
         }
 
@@ -150,7 +156,7 @@ namespace CamelWorks.Core.Tests
 
             var read = SheetMatrix.Read(sheet, Mapping());
 
-            Assert.Equal("A", read.Grid.At(0, 0));
+            Assert.Equal("A", At(read.Grid, 0, 0));
             Assert.Contains(read.Warnings, w => w.Contains("matches no category"));
             Assert.DoesNotContain("Z", read.Grid.SymbolsUsed);
         }
@@ -173,8 +179,8 @@ namespace CamelWorks.Core.Tests
 
             var read = SheetMatrix.Read(sheet, Mapping());
 
-            Assert.Single(read.Grid.Categories);
-            Assert.Equal("Foundations", read.Grid.Categories[0].Name);
+            Assert.Single(read.Grid.Rows);
+            Assert.Equal("Foundations", read.Grid.Rows[0].Name);
         }
 
         [Fact]
@@ -196,5 +202,11 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Coordination matrix", preview[0][0]);
             Assert.Equal("01", preview[1][6]);
         }
-    }
+    
+        /// <summary>One cell of a board by index, the way the old square grid was addressed.</summary>
+        private static string? At(MatrixBoard board, int row, int column) =>
+            row < 0 || row >= board.Rows.Count || column < 0 || column >= board.Columns.Count
+                ? null
+                : board.At(board.Rows[row], board.Columns[column]);
+}
 }

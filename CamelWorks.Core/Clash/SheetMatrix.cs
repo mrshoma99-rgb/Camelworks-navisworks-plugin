@@ -54,15 +54,15 @@ namespace CamelWorks.Core.Clash
     /// <summary>What came out of a sheet, and everything that did not quite fit.</summary>
     public sealed class SheetMatrixResult
     {
-        internal SheetMatrixResult(MatrixGrid grid, IReadOnlyList<string> warnings, int cells)
+        internal SheetMatrixResult(MatrixBoard board, IReadOnlyList<string> warnings, int cells)
         {
-            Grid = grid;
+            Grid = board;
             Warnings = warnings;
             Cells = cells;
         }
 
         /// <summary>The matrix.</summary>
-        public MatrixGrid Grid { get; }
+        public MatrixBoard Grid { get; }
 
         /// <summary>
         /// Everything the read could not do cleanly, in the order it hit them.
@@ -77,14 +77,14 @@ namespace CamelWorks.Core.Clash
         public int Cells { get; }
 
         /// <summary>True when at least one pair came out.</summary>
-        public bool IsUsable => Grid.Categories.Count > 0 && Cells > 0;
+        public bool IsUsable => Grid.Rows.Count > 0 && Cells > 0;
 
         /// <summary>One line saying what happened.</summary>
         public string Explain()
         {
-            if (Grid.Categories.Count == 0) return "No categories were found where the mapping says they are.";
+            if (Grid.Rows.Count == 0) return "No categories were found where the mapping says they are.";
 
-            var line = Grid.Categories.Count.ToString(CultureInfo.InvariantCulture) + " categories and "
+            var line = Grid.Rows.Count.ToString(CultureInfo.InvariantCulture) + " categories and "
                        + Cells.ToString(CultureInfo.InvariantCulture) + " filled cells";
 
             if (Warnings.Count > 0)
@@ -142,11 +142,20 @@ namespace CamelWorks.Core.Clash
             if (sheet == null)
             {
                 warnings.Add("There is no sheet by that name in the workbook.");
-                return new SheetMatrixResult(new MatrixGrid(), warnings, 0);
+                return new SheetMatrixResult(new MatrixBoard(), warnings, 0);
             }
 
             var categories = ReadCategories(sheet, map, warnings);
-            var grid = new MatrixGrid(categories);
+
+            // A sheet is the square case: the same categories down the side and across the top,
+            // so the board is filled from one list and squared off. Rows and columns can diverge
+            // afterwards - that is what the editor is for - but nothing in a spreadsheet says
+            // they should start apart.
+            var grid = new MatrixBoard();
+
+            foreach (var category in categories) grid.AddRow(category);
+
+            grid.SquareOffRows();
 
             if (categories.Count == 0)
             {
@@ -171,7 +180,7 @@ namespace CamelWorks.Core.Clash
                     // The mirrored cell may already hold something. A sheet filled in on both sides
                     // of the diagonal usually agrees with itself; when it does not, the reader is
                     // told rather than one of the two silently winning.
-                    var already = grid.At(row, column.Value);
+                    var already = grid.At(grid.Rows[row], grid.Columns[column.Value]);
 
                     if (already != null && !string.Equals(already, symbol, StringComparison.OrdinalIgnoreCase))
                     {
@@ -182,17 +191,21 @@ namespace CamelWorks.Core.Clash
                     }
 
                     if (already == null) cells++;
-                    grid.Set(row, column.Value, symbol);
+
+                    // Both halves, because the board no longer mirrors for us: a sheet says one
+                    // thing about a pair, and both cells that name that pair have to show it.
+                    grid.Set(grid.Rows[row], grid.Columns[column.Value], symbol);
+                    grid.Set(grid.Rows[column.Value], grid.Columns[row], symbol);
                 }
             }
 
             return new SheetMatrixResult(grid, warnings, cells);
         }
 
-        private static List<MatrixCategory> ReadCategories(SheetTable sheet, SheetMapping map,
+        private static List<MatrixLine> ReadCategories(SheetTable sheet, SheetMapping map,
                                                            List<string> warnings)
         {
-            var categories = new List<MatrixCategory>();
+            var categories = new List<MatrixLine>();
             var blanks = 0;
             var row = map.FirstRow;
 
@@ -209,9 +222,11 @@ namespace CamelWorks.Core.Clash
                 if (set.Length == 0)
                     warnings.Add("\"" + name + "\" names no saved set, so no test on it can run.");
 
-                categories.Add(new MatrixCategory(name, set,
-                                                  Text(sheet, row, map.NumberColumn),
-                                                  Text(sheet, row, map.CodeColumn)));
+                categories.Add(new MatrixLine(
+                    name,
+                    Text(sheet, row, map.NumberColumn),
+                    set.Length == 0 ? MatrixSource.Nothing : MatrixSource.SelectionSet(set),
+                    Text(sheet, row, map.CodeColumn)));
                 row++;
             }
 
@@ -220,7 +235,7 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Body column number to the category index it belongs to.</summary>
         private static Dictionary<int, int> MatchColumns(SheetTable sheet, SheetMapping map,
-                                                         List<MatrixCategory> categories,
+                                                         List<MatrixLine> categories,
                                                          List<string> warnings)
         {
             var found = new Dictionary<int, int>();
@@ -272,7 +287,7 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>By number first, then by set name. Never by position.</summary>
-        private static int Index(List<MatrixCategory> categories, string number, string set)
+        private static int Index(List<MatrixLine> categories, string number, string set)
         {
             if (number.Length > 0)
             {
@@ -285,7 +300,8 @@ namespace CamelWorks.Core.Clash
             if (set.Length > 0)
             {
                 var bySet = categories.FindIndex(
-                    c => c.SetName.Length > 0 && string.Equals(c.SetName, set, StringComparison.OrdinalIgnoreCase));
+                    c => c.Source.Name.Length > 0
+                         && string.Equals(c.Source.Name, set, StringComparison.OrdinalIgnoreCase));
 
                 if (bySet >= 0) return bySet;
             }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace CamelWorks.Core.People
 {
@@ -152,6 +154,56 @@ namespace CamelWorks.Core.People
         /// <param name="left">One.</param>
         /// <param name="right">The other.</param>
         public static bool operator !=(Responsible left, Responsible right) => !left.Equals(right);
+
+        /// <summary>What sits between two responsibles sharing one field.</summary>
+        public const string Between = "; ";
+
+        /// <summary>
+        /// Several responsibles as the one string the host's field can hold.
+        ///
+        /// <b>Why a list at all.</b> A clash is often two people's problem - the architect who
+        /// drew the wall and the engineer who ran the duct through it - and a field that holds
+        /// one made somebody pick which of them it was going to chase. The host gives us one
+        /// string per result, so the list rides in it, separated the way a person would write it.
+        /// One name with no separator is one person, which is what every assignment written
+        /// before this was.
+        /// </summary>
+        /// <param name="all">Who it is assigned to.</param>
+        public static string Write(IEnumerable<Responsible>? all) =>
+            all == null
+                ? string.Empty
+                : string.Join(Between, all.Where(w => !w.IsEmpty).Select(w => w.Written));
+
+        /// <summary>Read a field back as everybody it names.</summary>
+        /// <param name="written">The field as it was stored.</param>
+        public static IReadOnlyList<Responsible> ReadAll(string? written)
+        {
+            var said = (written ?? string.Empty).Trim();
+
+            if (said.Length == 0) return Array.Empty<Responsible>();
+
+            var found = new List<Responsible>();
+
+            foreach (var part in said.Split(';'))
+            {
+                var one = Read(part);
+
+                if (!one.IsEmpty && !found.Contains(one)) found.Add(one);
+            }
+
+            return found;
+        }
+
+        /// <summary>How a field of several reads on a row: the first, and how many more.</summary>
+        /// <param name="written">The field as it was stored.</param>
+        public static string Shown(string? written)
+        {
+            var all = ReadAll(written);
+
+            return all.Count == 0 ? string.Empty
+                : all.Count == 1 ? all[0].Name
+                : all[0].Name + " +" + (all.Count - 1).ToString(CultureInfo.InvariantCulture);
+        }
 
         /// <summary>A stable spelling for a file, which is the written form.</summary>
         public string ToJsonString() => Written;

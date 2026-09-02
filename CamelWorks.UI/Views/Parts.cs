@@ -628,6 +628,283 @@ namespace CamelWorks.UI.Views
             return line;
         }
 
+        /// <summary>
+        /// A chip that opens something instead of dropping a list down.
+        ///
+        /// Same shape as <see cref="KindChip"/> so a row reads the same, but the choice it leads
+        /// to is a window - which is what a choice of several has to be.
+        /// </summary>
+        /// <param name="value">What it is set to now, or null for nothing.</param>
+        /// <param name="glyph">The symbol for what it is set to, or null.</param>
+        /// <param name="placeholder">What it says when it is set to nothing.</param>
+        /// <param name="onPress">What pressing it opens.</param>
+        public static UIElement Presser(string? value, string? glyph, string placeholder,
+                                        Action onPress)
+        {
+            var empty = string.IsNullOrEmpty(value);
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (!empty && glyph != null)
+                row.Children.Add(Ui.Glyph(glyph, 11, "Muted", new Thickness(0, 0, 4, 0)));
+
+            var label = new TextBlock
+            {
+                Text = empty ? placeholder : value,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 150,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+
+            row.Children.Add(label);
+
+            var chevron = Ui.Glyph(Glyphs.Down, 10, empty ? "Faint" : "Muted",
+                                   new Thickness(5, 0, 0, 0));
+
+            chevron.Opacity = empty ? 0.35 : 0.7;
+            row.Children.Add(chevron);
+
+            var chip = new Border
+            {
+                Height = 24,
+                CornerRadius = new CornerRadius(7),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(7, 0, 7, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Child = row,
+            };
+
+            if (empty)
+            {
+                chip.Background = Brushes.Transparent;
+                chip.BorderBrush = Brushes.Transparent;
+                label.Tint(TextBlock.ForegroundProperty, "Faint");
+
+                chip.MouseEnter += (s, e) =>
+                {
+                    chip.Tint(Border.BackgroundProperty, "Hover");
+                    chip.Tint(Border.BorderBrushProperty, "BdStrong");
+                };
+
+                chip.MouseLeave += (s, e) =>
+                {
+                    chip.Background = Brushes.Transparent;
+                    chip.BorderBrush = Brushes.Transparent;
+                };
+            }
+            else
+            {
+                chip.Tint(Border.BackgroundProperty, "Nav");
+                chip.Tint(Border.BorderBrushProperty, "Bd");
+                label.Tint(TextBlock.ForegroundProperty, "Muted");
+            }
+
+            chip.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                Ui.Safely(onPress);
+            };
+
+            return chip;
+        }
+
+        /// <summary>
+        /// Tick as many of a list as apply, and say so once.
+        ///
+        /// <b>Why a window and not a drop-down.</b> A drop-down closes on the first press, which
+        /// is right for a status and wrong for anything a row can be several of. A clash is often
+        /// two people's problem, so the list has to stay open while both are ticked - and the
+        /// window can then carry the way to add somebody who is not on it yet, which an empty
+        /// drop-down cannot.
+        /// </summary>
+        /// <param name="near">The screen it belongs to; the window is owned by the host.</param>
+        /// <param name="prompt">What the window says at the top.</param>
+        /// <param name="options">What can be ticked, each saying what kind of thing it is.</param>
+        /// <param name="chosen">What is ticked when it opens.</param>
+        /// <param name="more">The wording for the way to add another, or null for none.</param>
+        /// <param name="onMore">What that opens.</param>
+        /// <param name="onDone">Given everything ticked, once somebody commits.</param>
+        public static void Ticking(FrameworkElement near, string prompt,
+                                   IReadOnlyList<ChipOption> options,
+                                   IReadOnlyCollection<string>? chosen,
+                                   string? more, Action? onMore,
+                                   Action<IReadOnlyCollection<string>> onDone)
+        {
+            _ = near;
+
+            var ticked = new HashSet<string>(chosen ?? Array.Empty<string>(), StringComparer.Ordinal);
+            var said = false;
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                Width = 420,
+                Height = 520,
+                ResizeMode = ResizeMode.CanResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            var body = new DockPanel { Margin = new Thickness(18, 16, 18, 16), LastChildFill = true };
+
+            var head = new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+
+            DockPanel.SetDock(head.Wearing("Body"), Dock.Top);
+            body.Children.Add(head);
+
+            var box = Ui.Text(string.Empty, "narrow the list", null, 340);
+            box.Margin = new Thickness(0, 0, 0, 10);
+            DockPanel.SetDock(box, Dock.Top);
+            body.Children.Add(box);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 10, 0, 0),
+            };
+
+            var cancel = Ui.Quiet("Cancel", () => window.Close());
+            cancel.MinWidth = 92;
+            buttons.Children.Add(cancel);
+
+            var commit = Ui.Primary("Assign", () =>
+            {
+                said = true;
+                window.Close();
+            });
+
+            commit.MinWidth = 92;
+            commit.Margin = new Thickness(8, 0, 0, 0);
+            buttons.Children.Add(commit);
+
+            DockPanel.SetDock(buttons, Dock.Bottom);
+            body.Children.Add(buttons);
+
+            if (more != null && onMore != null)
+            {
+                var add = Ui.Quiet(more, () =>
+                {
+                    window.Close();
+                    Ui.Safely(onMore);
+                });
+
+                add.HorizontalAlignment = HorizontalAlignment.Left;
+                add.Margin = new Thickness(0, 8, 0, 0);
+
+                DockPanel.SetDock(add, Dock.Bottom);
+                body.Children.Add(add);
+            }
+
+            var none = Ui.Quiet("Nobody — clear it", () =>
+            {
+                ticked.Clear();
+                said = true;
+                window.Close();
+            });
+
+            none.HorizontalAlignment = HorizontalAlignment.Left;
+            none.Margin = new Thickness(0, 4, 0, 0);
+
+            DockPanel.SetDock(none, Dock.Bottom);
+            body.Children.Add(none);
+
+            var list = Ui.Stack();
+
+            void Fill()
+            {
+                var typed = box.Text.Trim();
+
+                list.Children.Clear();
+
+                foreach (var option in options ?? Array.Empty<ChipOption>())
+                {
+                    if (option.Value.Length == 0) continue;
+
+                    if (typed.Length > 0
+                        && option.Label.IndexOf(typed, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    var here = option;
+
+                    var line = new StackPanel { Orientation = Orientation.Horizontal };
+
+                    if (here.Glyph != null)
+                        line.Children.Add(Ui.Glyph(here.Glyph, 12, here.Key ?? "Muted",
+                                                   new Thickness(0, 0, 7, 0)));
+
+                    var words = new StackPanel();
+
+                    words.Children.Add(new TextBlock { Text = here.Label }.Wearing("Body"));
+
+                    if (!string.IsNullOrEmpty(here.Under))
+                        words.Children.Add(new TextBlock
+                        {
+                            Text = here.Under,
+                            FontSize = 10,
+                        }.Wearing("Hint"));
+
+                    line.Children.Add(words);
+
+                    var tick = new CheckBox
+                    {
+                        Content = line,
+                        IsChecked = ticked.Contains(here.Value),
+                        Margin = new Thickness(0, 0, 0, 6),
+                        VerticalContentAlignment = VerticalAlignment.Center,
+                    };
+
+                    tick.Checked += (s, e) => ticked.Add(here.Value);
+                    tick.Unchecked += (s, e) => ticked.Remove(here.Value);
+
+                    list.Children.Add(tick);
+                }
+
+                if (list.Children.Count == 0)
+                    list.Children.Add(Ui.Small(typed.Length > 0
+                        ? "Nothing on the team matches that."
+                        : "Nobody on the team yet."));
+            }
+
+            box.TextChanged += (s, e) => Ui.Safely(Fill);
+
+            Fill();
+
+            body.Children.Add(new ScrollViewer
+            {
+                Content = list,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            });
+
+            var ground = new Border { Child = body };
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+            window.Loaded += (s, e) => box.Focus();
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.ShowDialog();
+
+            if (said) onDone?.Invoke(ticked);
+        }
+
         /// <summary>One option inside a dropdown, marked when it is the one in force.</summary>
         /// <param name="text">What it says.</param>
         /// <param name="on">Whether it is the current value.</param>
@@ -1514,9 +1791,10 @@ namespace CamelWorks.UI.Views
         /// <param name="depth">How many bands are above this one, which is what indents it.</param>
         /// <param name="shut">True when this band is folded away, or null when it cannot fold.</param>
         /// <param name="onFold">Folds it, or unfolds it.</param>
+        /// <param name="onFoldAll">Folds or opens every band at once, or null.</param>
         public static UIElement ViewBand(string glyph, string label, string value, string count,
                                          Action? onPickAll, int depth = 0, bool? shut = null,
-                                         Action? onFold = null)
+                                         Action? onFold = null, Action? onFoldAll = null)
         {
             var row = new DockPanel { LastChildFill = true };
 
@@ -1526,6 +1804,20 @@ namespace CamelWorks.UI.Views
                 all.VerticalAlignment = VerticalAlignment.Center;
                 DockPanel.SetDock(all, Dock.Right);
                 row.Children.Add(all);
+            }
+
+            // Beside it, because folding one band at a time down a chain three deep is the
+            // reason somebody stops banding at all.
+            if (onFoldAll != null)
+            {
+                var every = Ui.Link(shut == true ? "Open them all" : "Fold them all",
+                                    onFoldAll);
+
+                every.VerticalAlignment = VerticalAlignment.Center;
+                every.Margin = new Thickness(0, 0, 12, 0);
+
+                DockPanel.SetDock(every, Dock.Right);
+                row.Children.Add(every);
             }
 
             var words = new StackPanel
@@ -1581,11 +1873,19 @@ namespace CamelWorks.UI.Views
             // outermost is a full-weight bar with a rule above it, and every level under it is
             // lighter, smaller and unruled, with a rail down its left edge marking where its
             // parent's ground ends.
+            // <b>One band, one line of it.</b> This wrapped every nested band in a second
+            // border carrying a rail down its left edge, inside a Grid - three elements and a
+            // stack of padding per band, which on a chain three deep left a tall empty gutter
+            // down the side of the table doing nothing. The depth is said by the indent, the
+            // weight and the left edge of the band itself, which costs one element.
+            //
+            // A smaller step per level, too: twenty pixels a level pushed a third-level band a
+            // third of the way across the table before its text started.
             var band = new Border
             {
-                Padding = new Thickness(12 + (depth * 20), depth == 0 ? 6 : 4, 12,
-                                        depth == 0 ? 6 : 4),
-                BorderThickness = new Thickness(0, depth == 0 ? 1 : 0, 0, 1),
+                Padding = new Thickness(12 + (depth * 14), depth == 0 ? 6 : 3, 12,
+                                        depth == 0 ? 6 : 3),
+                BorderThickness = new Thickness(depth == 0 ? 0 : 2, depth == 0 ? 1 : 0, 0, 1),
                 Child = row,
                 Cursor = onFold == null ? null : Cursors.Hand,
                 Background = Brushes.Transparent,
@@ -1601,31 +1901,7 @@ namespace CamelWorks.UI.Views
                     Ui.Safely(onFold);
                 };
 
-            if (depth == 0) return band;
-
-            // The rail: one line at the depth this band sits at, so a fold three deep still says
-            // where it belongs when its parents have scrolled off the top.
-            var rail = new Border
-            {
-                Padding = new Thickness(6 + ((depth - 1) * 20), 0, 0, 0),
-                BorderThickness = new Thickness(0, 0, 0, 0),
-                Child = band,
-            };
-
-            var line = new Border
-            {
-                Width = 2,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(6 + ((depth - 1) * 20), 0, 0, 0),
-            };
-
-            line.Tint(Border.BackgroundProperty, "Bd");
-
-            var stacked = new Grid();
-            stacked.Children.Add(rail);
-            stacked.Children.Add(line);
-
-            return stacked;
+            return band;
         }
 
         /// <summary>
@@ -1703,6 +1979,38 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
+        /// Hang a menu off anything, opened by whatever the caller decides opens it.
+        ///
+        /// <see cref="MoreMenu"/> and <see cref="MenuButton"/> both make a button and put a menu
+        /// on it. A grid's row headers and its cells are not buttons - they are the grid - and
+        /// giving each of four hundred of them a button chrome would be four hundred boxes
+        /// competing with the symbols they hold. So this attaches the same menu to an element
+        /// that already exists, built when it is opened rather than up front, because a cell's
+        /// menu depends on what is in the cell right now.
+        /// </summary>
+        /// <param name="on">What the menu hangs off.</param>
+        /// <param name="items">The menu, as it stands.</param>
+        public static void PopMenu(FrameworkElement on, IReadOnlyList<Entry> items)
+        {
+            if (on == null || items == null || items.Count == 0) return;
+
+            var popup = new Popup
+            {
+                PlacementTarget = on,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                HorizontalOffset = -8,
+                VerticalOffset = -8,
+                Child = Floating(Menu(items, false), 230),
+            };
+
+            // Parented into the same window as everything else on screen, so the skin reaches it
+            // and it closes when the pane it belongs to goes away.
+            popup.IsOpen = true;
+        }
+
+        /// <summary>
         /// The one popup card shape: the product's only shadow, on a bordered card.
         /// </summary>
         /// <param name="content">What is inside it.</param>
@@ -1729,6 +2037,15 @@ namespace CamelWorks.UI.Views
                     Color = Colors.Black,
                 },
             };
+
+            // <b>The skin, carried onto the card itself.</b> A popup's child is not in the
+            // window's logical tree - the popup is parented to nothing, only pointed at a
+            // placement target - so every SetResourceReference inside it walks up, finds no
+            // dictionary, and resolves to nothing. The card then paints transparent and the menu
+            // reads as bare text lying over whatever is behind it, which is exactly how the
+            // assign list and the filter menu were reported. Merging the sheet in here gives
+            // everything inside the card somewhere to look.
+            card.Resources.MergedDictionaries.Add(Skin.Sheet);
 
             card.Tint(Border.BackgroundProperty, "Card");
             card.Tint(Border.BorderBrushProperty, "Bd");

@@ -1732,10 +1732,19 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Everything on the right-hand side, from the title down to the footnote.</summary>
-            private void RedrawBoard()
+            /// <summary>
+            /// Draw the board again, leaving the table where the eye left it.
+            ///
+            /// <b>Every write comes through here.</b> Setting a status, assigning a row,
+            /// regrouping - all of them rebuild the table, and a rebuilt table starts at the top,
+            /// so a status set on row four hundred threw the reader back to row one. The offset
+            /// is carried across the rebuild, which is the same fix a group's chevron already
+            /// had; it belongs here instead, where everything that redraws will get it.
+            /// </summary>
+            private void RedrawBoard() => Held(() =>
             {
                 if (RedrawBoardHead()) RedrawRows();
-            }
+            });
 
             /// <summary>
             /// The board's head: the name, the counts, the search and the two menus.
@@ -1773,7 +1782,10 @@ namespace CamelWorks.UI.Views
                 // One control that names the whole state of the table and lights when any of it
                 // is in force. It was two - a funnel and a sort - and before that one symbol that
                 // named neither of the things behind it.
-                _view.Content = Parts.MoreMenu(Glyphs.Tune, WhatIsShown(entry),
+                // The funnel, which is what the rail's own filter uses. It was the tuning
+                // symbol, which is also what "this test's source and tolerance" a few pixels
+                // along uses - two different things behind one picture.
+                _view.Content = Parts.MoreMenu(Glyphs.Filter, WhatIsShown(entry),
                                                TableMenu(entry), on: Filtering || InAnOrder);
 
 
@@ -2016,7 +2028,8 @@ namespace CamelWorks.UI.Views
                     lines.Add(BoardLine.Banner(() => Parts.ViewBand(
                         at == 0 ? Glyphs.Columns : Glyphs.Layers, label, named,
                         Ui.Count(here.Sum(r => r.Rows.Count), "result"),
-                        () => PickAll(here), at, shut, () => Folded(key))));
+                        () => PickAll(here), at, shut, () => Folded(key),
+                        () => FoldEvery(!shut))));
 
                     if (shut) continue;
 
@@ -3292,9 +3305,6 @@ namespace CamelWorks.UI.Views
                 Held(RedrawRows);
             }
 
-            /// <summary>What the assign chip writes to mean "open the team window".</summary>
-            private const string TheTeam = "\u0001team";
-
             /// <summary>
             /// Everything a clash can be given to, each saying what kind of thing it is.
             ///
@@ -3363,10 +3373,6 @@ namespace CamelWorks.UI.Views
             private static string Tint(ResponsibleKind kind) =>
                 kind == ResponsibleKind.Person ? "Muted" : "Accent";
 
-            /// <summary>An assignment as the board prints it: the name, without its kind marker.</summary>
-            /// <param name="assigned">The field as it is stored.</param>
-            private static string Shown(string assigned) => Responsible.Read(assigned).Name;
-
             /// <summary>The symbol for what a row is assigned to, or null when it is nobody.</summary>
             /// <param name="assigned">The field as it is stored.</param>
             private static string? Marked(string assigned)
@@ -3426,6 +3432,52 @@ namespace CamelWorks.UI.Views
                 }
 
                 return found;
+            }
+
+            /// <summary>
+            /// Fold every band away, or open every one, in a single press.
+            ///
+            /// Folding a chain three deep one band at a time is the reason somebody stops
+            /// banding at all. The keys are the trails the draw would make, so this walks the
+            /// same shape the table does rather than keeping a second list of them.
+            /// </summary>
+            /// <param name="shut">True to fold them all away, false to open them all.</param>
+            private void FoldEvery(bool shut)
+            {
+                _shutBands.Clear();
+
+                if (shut)
+                {
+                    var entry = Entry();
+
+                    if (entry != null)
+                    {
+                        var shape = Shape(entry);
+
+                        Trails(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, string.Empty);
+                    }
+                }
+
+                Held(RedrawRows);
+            }
+
+            /// <summary>Every band's trail, which is what folding is keyed on.</summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="depth">How many levels are already above this one.</param>
+            /// <param name="trail">What the bands above this one were called.</param>
+            private void Trails(TestEntry entry, List<BoardRow> rows, int depth, string trail)
+            {
+                if (depth >= _bands.Count) return;
+
+                foreach (var band in Bands(entry, rows, _bands[depth]))
+                {
+                    var key = trail.Length == 0 ? band.Key : trail + "\u001f" + band.Key;
+
+                    _shutBands.Add(key);
+
+                    Trails(entry, band.Value, depth + 1, key);
+                }
             }
 
             /// <summary>Fold one band away, or open it, leaving the table where it was.</summary>
@@ -3565,10 +3617,8 @@ namespace CamelWorks.UI.Views
                         value => SetStatus(row, value), Reads(row.Status), "Set status"),
                     StatusColumn);
 
-                Put(grid, Parts.KindChip(Shown(row.Assigned), Giving(),
-                        value => SetAssignee(row, value), Marked(row.Assigned), "Assign",
-                        new Parts.ChipOption(TheTeam, "Add team members…", null, Glyphs.Add,
-                                             "Accent")),
+                Put(grid, Parts.Presser(Responsible.Shown(row.Assigned), Marked(row.Assigned),
+                        "Assign", () => Assigning(Reaching(row), row.Assigned)),
                     StatusColumn + 1);
 
                 var verbs = Verbs(row);
@@ -4087,10 +4137,8 @@ namespace CamelWorks.UI.Views
                     () => { _picked.Clear(); _pickedFrom = null; RedrawRows(); },
                     Parts.InlineChip(null, Statuses,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
-                    Parts.KindChip(null, Giving(),
-                        value => SetMany(picked, value, false), null, "Assign to",
-                        new Parts.ChipOption(TheTeam, "Add team members…", null, Glyphs.Add,
-                                             "Accent")),
+                    Parts.Presser(null, null, "Assign to",
+                        () => Assigning(picked, Common(rows))),
                     Grouping(rows),
                     Parts.Verb("Raise as issues", Glyphs.Issue, false,
                                () => RaiseIssue(picked, false)),
@@ -5925,31 +5973,45 @@ namespace CamelWorks.UI.Views
             private void SetStatus(BoardRow row, string status) =>
                 Mark(Reaching(row), status, _toast);
 
-            /// <summary>Set the assignee from the chip on a row, over everything picked.</summary>
-            /// <param name="row">The row the chip is on.</param>
-            /// <param name="who">Who it is with now.</param>
             /// <summary>
-            /// Give a row to somebody, or open the team window when there is nobody to give it to.
+            /// Give some rows to one or more people, roles, companies or teams.
             ///
-            /// The last line of the assign list is a way to build the team, so it arrives here
-            /// like any other value and is caught before it can be written as an assignment.
+            /// <b>Several, because a clash is often two people's problem</b> - the architect who
+            /// drew the wall and the engineer who ran the duct through it - and a list that took
+            /// one made somebody decide which of them was going to be chased. So it is a window
+            /// with ticks rather than a drop-down that closes on the first press, and it carries
+            /// a way to build the team for the case where there is nobody to tick yet.
             /// </summary>
-            /// <param name="row">The row.</param>
-            /// <param name="who">What was picked, written.</param>
-            private void SetAssignee(BoardRow row, string who)
+            /// <param name="picked">What is being assigned.</param>
+            /// <param name="already">What they are assigned to now, as stored.</param>
+            private void Assigning(IReadOnlyList<object> picked, string already)
             {
-                if (string.Equals(who, TheTeam, StringComparison.Ordinal))
-                {
-                    TeamWindow.Show(_board, _session, () =>
+                Parts.Ticking(_board,
+                    "Assign " + Ui.Count(Rows(picked).Count, "result") + " to",
+                    Giving(),
+                    Responsible.ReadAll(already).Select(w => w.Written).ToList(),
+                    "Add team members\u2026",
+                    () => TeamWindow.Show(_board, _session, () =>
                     {
                         _roster = null;
                         RedrawRows();
                         RedrawBoardHead();
-                    });
-                    return;
-                }
+                    }),
+                    chosen => AssignPicked(picked,
+                        Responsible.Write(chosen.Select(Responsible.Read)), _toast));
+            }
 
-                AssignPicked(Reaching(row), who == Nobody ? string.Empty : who, _toast);
+            /// <summary>What every picked row is already assigned to, when they agree.</summary>
+            /// <param name="rows">The picked results.</param>
+            private static string Common(IReadOnlyList<Row> rows)
+            {
+                if (rows.Count == 0) return string.Empty;
+
+                var first = rows[0].Assigned;
+
+                return rows.All(r => string.Equals(r.Assigned, first, StringComparison.Ordinal))
+                    ? first
+                    : string.Empty;
             }
 
             /// <summary>
@@ -5977,18 +6039,6 @@ namespace CamelWorks.UI.Views
             private void SetMany(IReadOnlyList<object> picked, string value, bool status)
             {
                 if (status) { Mark(picked, value, _toast); return; }
-
-                if (string.Equals(value, TheTeam, StringComparison.Ordinal))
-                {
-                    TeamWindow.Show(_board, _session, () =>
-                    {
-                        _roster = null;
-                        RedrawRows();
-                        RedrawBoardHead();
-                    });
-
-                    return;
-                }
 
                 AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
             }
