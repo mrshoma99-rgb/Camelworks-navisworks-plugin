@@ -155,13 +155,47 @@ holds grouped-or-loose, whose it is, and what the property columns say. The filt
 |---|---|
 | **Show** | Both, grouped only, or loose only |
 | **Assigned to** | Anyone, or one party |
-| **Arrange view by** | Nothing, assignee, status, or how bad |
+| **Narrow to a value** | One value of a property column, chosen by typing at it |
 
-**Arranging the view changes nothing in the model.** It draws bands across the table and
-re-orders what is on screen. No clash group is created, dissolved or touched by it — which is why
-a band looks nothing like a group row: no tick, no chevron, no colour bar. *How bad* splits on
-**this test's own tolerance**, not a fixed number, because a 50 mm drainage test and a 10 mm
-ceiling test do not share a definition of bad.
+A property column's values are not listed in the menu. Over a real federation a column carries
+hundreds of them, so the menu holds one entry — **Narrow to a value**, with how many there are —
+and it opens a window you type at. The list filters as you type and each value carries **how many
+results hold it**, which is what the choice actually turns on: narrowing to a value four results
+deep is a different act from narrowing to one four hundred deep. Enter takes the value when your
+typing has left exactly one.
+
+### Banding the view, in a chain
+
+The **sort** menu holds the bands. Press a facet to band by it, press another to band by that
+inside the first, and so on: the order you press them in is the order they nest in. **Assignee**,
+**status** and **how bad** are always there; every property column you have added joins them, so
+a chain of *Section*, then *Material*, then *Type* gives sections holding materials holding types,
+each band indented under the one above and carrying the number of results beneath it.
+
+Each level comes off where it stands — a chain of four that wants its second level gone does not
+have to be rebuilt from the third down.
+
+**Banding the view changes nothing in the model.** It draws bands across the table and re-orders
+what is on screen. No clash group is created, dissolved or touched by it — which is why a band
+looks nothing like a group row: no tick, no chevron, no colour bar. *How bad* splits on **this
+test's own tolerance**, not a fixed number, because a 50 mm drainage test and a 10 mm ceiling test
+do not share a definition of bad. Where a clash group holds results that disagree about the facet
+being banded — six clashes grouped as *Level 2 risers* sitting on four systems — the band says
+*Several values* rather than splitting the group, because splitting it would be the view editing
+the document.
+
+### Turning bands into clash groups
+
+**Make these the test's clash groups**, at the foot of the same menu, does the one thing banding
+never does on its own: it writes the bands into the document as real clash groups, one per leaf of
+the chain, each named for the trail down to it — `Level 02 · Steel · Beam`. It says first how many
+groups that is, how many results they hold, and how many of those are already in a clash group and
+will move out of it, because a result belongs to exactly one group and the host has no second
+place to put it. **Only what the filters leave is grouped**: a board narrowed to one discipline
+makes groups of that discipline and leaves the rest of the test alone.
+
+The bands come off once they are made. They have become the thing they were describing, and
+leaving them up would show every group twice.
 
 **A filter comes off where it went on**, exactly as on the rail: the lit status segment clears by
 pressing it again, the search box clears by emptying it, and the layers menu sets *Both*, *Anyone*

@@ -434,7 +434,21 @@ namespace CamelWorks.UI.Views
             /// <summary>The lines the board is showing, and the list that draws the visible ones.</summary>
             private List<BoardLine>? _lines;
             private BoardList? _list;
-            private string _arrange = ByNothing;
+            /// <summary>
+            /// The chain of facets the view is banded by, outermost first.
+            ///
+            /// <b>A chain, not one facet.</b> The question a coordinator asks of six hundred
+            /// results is rarely one facet deep: it is the steel by level, or every service by
+            /// discipline and then by system. One band at a time answered the first half of that
+            /// and left the second to the eye. Each level here buckets what the level above it
+            /// left, so the bands nest, and the trail down to a row reads as the sentence that
+            /// describes it.
+            ///
+            /// <b>These are views, not clash groups.</b> Nothing in this list creates,
+            /// dissolves or renames anything in the document; the bands say so, and turning a
+            /// view into real clash groups is a separate, named act.
+            /// </summary>
+            private readonly List<string> _bands = new List<string>();
             private string _showing = BothKinds;
 
             /// <summary>
@@ -477,11 +491,20 @@ namespace CamelWorks.UI.Views
             private const string JustLoose = "Loose";
 
             private const string ByNothing = "Nothing";
+
+            /// <summary>What a band key carries in front of a property column's id.</summary>
+            private const string ByColumn = "column:";
+
+            /// <summary>The band a row falls in when the property it is banded by is empty.</summary>
+            private const string Blank = "(not carried)";
             private const string ByAssignee = "Assignee";
             private const string ByStatus = "Status";
             private const string ByHowBad = "How bad";
 
             private const string Anyone = "Anyone";
+
+            /// <summary>What a column reads as when nothing is narrowing it.</summary>
+            private const string Anything = "Anything";
             private const string Nobody = "—";
 
             private const string FirstSide = "First item";
@@ -1255,7 +1278,7 @@ namespace CamelWorks.UI.Views
                 // "nothing matches" about a test nobody filtered, with a chip they did not set.
                 _status = null;
                 _party = null;
-                _arrange = ByNothing;
+                _bands.Clear();
                 _showing = BothKinds;
                 _sameAs = null;
                 _byColumn.Clear();
@@ -1907,21 +1930,9 @@ namespace CamelWorks.UI.Views
                         lines.Add(BoardLine.Result(member, Id(member), true));
                 }
 
-                if (_arrange != ByNothing)
+                if (_bands.Count > 0)
                 {
-                    foreach (var band in Bands(entry, shape.Groups, shape.Loose))
-                    {
-                        var rows = band.Value;
-
-                        var named = band.Key;
-
-                        lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                            Glyphs.Columns, "View · " + _arrange, named,
-                            Ui.Count(rows.Count, "row"), () => PickAll(rows))));
-
-                        foreach (var row in rows) Add(row);
-                    }
-
+                    Sink(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, lines, Add);
                     return lines;
                 }
 
@@ -1941,6 +1952,47 @@ namespace CamelWorks.UI.Views
                 }
 
                 return lines;
+            }
+
+            /// <summary>
+            /// Lay one level of the band chain out, then the level under it, then the rows.
+            ///
+            /// Depth is what draws the nesting: each band is indented by its level, so a chain
+            /// of Section then Material then Type reads as three widths of margin down to the
+            /// rows, the way a table of contents does. The count on a band is the results below
+            /// it in total, not the rows - a clash group is one row holding twelve results, and
+            /// "12 results" is the figure a coordinator is deciding against.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="depth">How many levels are already above this one.</param>
+            /// <param name="lines">The lines being built.</param>
+            /// <param name="add">Puts one row, and its members when it is an open group, on screen.</param>
+            private void Sink(TestEntry entry, List<BoardRow> rows, int depth,
+                              List<BoardLine> lines, Action<BoardRow> add)
+            {
+                if (depth >= _bands.Count)
+                {
+                    foreach (var row in rows) add(row);
+                    return;
+                }
+
+                var by = _bands[depth];
+                var label = (depth == 0 ? "View · " : string.Empty) + Facet(by);
+
+                foreach (var band in Bands(entry, rows, by))
+                {
+                    var here = band.Value;
+                    var named = band.Key;
+                    var at = depth;
+
+                    lines.Add(BoardLine.Banner(() => Parts.ViewBand(
+                        at == 0 ? Glyphs.Columns : Glyphs.Layers, label, named,
+                        Ui.Count(here.Sum(r => r.Rows.Count), "result"),
+                        () => PickAll(here), at)));
+
+                    Sink(entry, here, depth + 1, lines, add);
+                }
             }
 
             /// <summary>The row that one line shows, built when the list scrolls to it.</summary>
@@ -2202,23 +2254,15 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The property column.</param>
             private List<Parts.Entry> ColumnMenu(TestEntry entry, PropColumn column)
             {
-                const int Most = 20;
-
                 var wanted = _byColumn.TryGetValue(column.Id, out var value) ? value : null;
 
                 var items = new List<Parts.Entry>
                 {
                     Parts.Entry.Rule(),
-                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anyone)),
+                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anything)),
                 };
 
-                var values = entry.Rows
-                    .Select(r => Custom(r, column))
-                    .Where(v => v.Length > 0)
-                    .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
-                    .OrderByDescending(g => g.Count())
-                    .Select(g => g.Key)
-                    .ToList();
+                var values = Values(entry, column);
 
                 if (values.Count == 0)
                 {
@@ -2229,41 +2273,59 @@ namespace CamelWorks.UI.Views
                     return items;
                 }
 
-                items.Add(Parts.Entry.Act(Anyone, null, () =>
-                {
-                    _byColumn.Remove(column.Id);
-                    _picked.Clear();
-                    _pickedFrom = null;
-                    RedrawBoard();
-                }));
+                // One entry, not a list of them. This put the twenty commonest values into the
+                // filter menu itself and told you to type the rest into the search box: over a
+                // real federation a column carries hundreds, so the menu became a column of
+                // values hanging over the board, and the twenty it could fit were rarely the one
+                // being looked for. The window it opens is filtered by typing and shows how many
+                // results each value holds, which is what the choice actually turns on.
+                items.Add(Parts.Entry.Act(
+                    "Narrow to a value  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
+                    () => Parts.Search(_board, "Show only results whose " + column.Title + " is",
+                                       values, wanted,
+                                       wanted == null ? null : "Any " + column.Title,
+                                       pick =>
+                                       {
+                                           if (pick == null) _byColumn.Remove(column.Id);
+                                           else _byColumn[column.Id] = pick;
 
-                // The commonest first, then capped and put back in reading order. A column over a
-                // real federation carries two hundred distinct values, and a menu that long is a
-                // list nobody reaches the end of — the search box matches these columns too.
-                foreach (var one in values.Take(Most).OrderBy(v => v, StringComparer.CurrentCulture))
-                {
-                    var here = one;
+                                           _picked.Clear();
+                                           _pickedFrom = null;
+                                           RedrawBoard();
+                                       })));
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                if (wanted != null)
+                    items.Add(Parts.Entry.Act("Any " + column.Title, Glyphs.Close, () =>
                     {
-                        _byColumn[column.Id] = here;
+                        _byColumn.Remove(column.Id);
                         _picked.Clear();
                         _pickedFrom = null;
                         RedrawBoard();
                     }));
-                }
-
-                if (values.Count > Most)
-                    items.Add(Parts.Entry.Barred(
-                        Skin.Num(values.Count - Most) + " more values", null,
-                        "The twenty commonest are listed. Type one into the search box for the "
-                        + "rest — it matches these columns too."));
 
                 return items;
             }
 
+            /// <summary>
+            /// Every value a column carries on this test, commonest first, with how many carry it.
+            ///
+            /// Commonest first because the picker shows the head of the list before anything is
+            /// typed, and the values worth seeing unprompted are the ones most of the board is in.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="column">The column.</param>
+            private static List<KeyValuePair<string, int>> Values(TestEntry entry, PropColumn column) =>
+                entry.Rows
+                    .Select(r => Custom(r, column))
+                    .Where(v => v.Length > 0)
+                    .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(g => g.Count())
+                    .ThenBy(g => g.Key, StringComparer.CurrentCulture)
+                    .Select(g => new KeyValuePair<string, int>(g.Key, g.Count()))
+                    .ToList();
+
             /// <summary>Whether the board is in any order but the one the test holds.</summary>
-            private bool InAnOrder => _by != null || _arrange != ByNothing;
+            private bool InAnOrder => _by != null || _bands.Count > 0;
 
             /// <summary>What the sort control is doing, for the symbol that opens it.</summary>
             private string WhatIsSorted()
@@ -2271,7 +2333,8 @@ namespace CamelWorks.UI.Views
                 var said = new List<string>();
 
                 if (_by != null) said.Add("by " + _by + (_back ? ", backwards" : string.Empty));
-                if (_arrange != ByNothing) said.Add("arranged by " + _arrange.ToLowerInvariant());
+                if (_bands.Count > 0)
+                    said.Add("banded by " + string.Join(" then ", _bands.Select(Facet)));
 
                 return said.Count == 0
                     ? "Sort the results"
@@ -2317,17 +2380,65 @@ namespace CamelWorks.UI.Views
                 }
 
                 items.Add(Parts.Entry.Rule());
-                items.Add(Parts.Entry.Heading("Band the rows by: " + _arrange));
 
-                foreach (var by in new[] { ByNothing, ByAssignee, ByStatus, ByHowBad })
+                items.Add(Parts.Entry.Heading(_bands.Count == 0
+                    ? "Band the rows by: " + ByNothing
+                    : "Banded by: " + string.Join(" > ", _bands.Select(Facet))));
+
+                // The chain as it stands, each level removable where it is. Levels come off from
+                // any depth rather than only the last, because a chain of four that wants its
+                // second level gone should not have to be rebuilt from the third down.
+                for (var at = 0; at < _bands.Count; at++)
                 {
+                    var here = at;
+
+                    items.Add(Parts.Entry.Act(
+                        (here + 1).ToString(CultureInfo.InvariantCulture) + ". " + Facet(_bands[here]),
+                        Glyphs.Close,
+                        () =>
+                        {
+                            _bands.RemoveAt(here);
+                            RedrawBoard();
+                        }));
+                }
+
+                foreach (var by in Bandable())
+                {
+                    if (_bands.Contains(by, StringComparer.Ordinal)) continue;
+
                     var here = by;
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                    // Appended, so the order they are pressed in is the order they nest in. That
+                    // is the whole grammar of the chain: Section, then Material, then Type gives
+                    // sections holding materials holding types, and nothing else has to be said.
+                    items.Add(Parts.Entry.Act(
+                        (_bands.Count == 0 ? "Band by " : "Then by ") + Facet(here), Glyphs.Add,
+                        () =>
+                        {
+                            _bands.Add(here);
+                            RedrawBoard();
+                        }));
+                }
+
+                if (_bands.Count > 0)
+                {
+                    items.Add(Parts.Entry.Rule());
+
+                    items.Add(Parts.Entry.Act("Make these the test's clash groups", Glyphs.Group,
+                                              AskToRealise));
+
+                    items.Add(Parts.Entry.Act("No bands", Glyphs.Close, () =>
                     {
-                        _arrange = here;
+                        _bands.Clear();
                         RedrawBoard();
                     }));
+                }
+                else if (_columns.Count == 0)
+                {
+                    items.Add(Parts.Entry.Barred("Add a property column to band by one", null,
+                        "The board's own facets are here already. Banding by system, level or "
+                        + "fire rating means reading that property onto the board first, which "
+                        + "is what the Columns page does."));
                 }
 
                 return items;
@@ -2394,7 +2505,7 @@ namespace CamelWorks.UI.Views
                         _status = null;
                         _party = null;
                         _showing = BothKinds;
-                        _arrange = ByNothing;
+                        _bands.Clear();
                         _sameAs = null;
                         _byColumn.Clear();
                         _boardBox.Text = string.Empty;
@@ -4419,9 +4530,10 @@ namespace CamelWorks.UI.Views
             /// does not have — a property read off the clashing elements themselves, so a board
             /// can carry the system name, the workset or the fire rating beside the decision.
             ///
-            /// The grouping chain that used to live here is gone. It bucketed the results table by
-            /// a chain of values, which is what "Arrange view by" on the board does now — in one
-            /// press, on the rows themselves, and saying in the band that no clash group moved.
+            /// The grouping chain that used to live here is gone, but not the idea: the board's
+            /// own sort control bands the rows by a chain of these columns, nested in the order
+            /// they are pressed, saying in each band that no clash group moved — and turning the
+            /// bands into real clash groups when that is what is wanted.
             /// </summary>
             private UIElement ColumnsPage()
             {
@@ -4995,7 +5107,7 @@ namespace CamelWorks.UI.Views
                     _party ?? string.Empty,
                     _boardFind.Trim(),
                     _showing,
-                    _arrange,
+                    string.Join(">", _bands),
                     _by ?? string.Empty,
                     _back ? "1" : "0",
                     _sameAs == null ? string.Empty : Id(_sameAs),
@@ -5061,24 +5173,28 @@ namespace CamelWorks.UI.Views
             private int Counted(TestEntry entry) => Shape(entry).Counted;
 
             /// <summary>
-            /// The rows bucketed by whatever the view is arranged by, first seen first.
+            /// The rows bucketed by one facet, first seen first.
             ///
             /// A view arrangement and nothing else: no clash group is created, dissolved or
             /// touched by any of this, which is what the band above each bucket and the footnote
             /// under the table both say in as many words.
+            ///
+            /// First seen rather than sorted, because the rows arriving here are already in the
+            /// order the board's own sort put them in, and re-ordering the bands would throw that
+            /// away at every level.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
-            /// <param name="groups">The clash groups the filters left.</param>
-            /// <param name="loose">The loose results the filters left.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="by">The facet this level bands by.</param>
             private List<KeyValuePair<string, List<BoardRow>>> Bands(
-                TestEntry entry, List<BoardRow> groups, List<BoardRow> loose)
+                TestEntry entry, IEnumerable<BoardRow> rows, string by)
             {
                 var order = new List<string>();
                 var into = new Dictionary<string, List<BoardRow>>(StringComparer.Ordinal);
 
-                foreach (var row in groups.Concat(loose))
+                foreach (var row in rows)
                 {
-                    var key = Bucket(entry, row);
+                    var key = Bucket(entry, row, by);
 
                     if (!into.TryGetValue(key, out var list))
                     {
@@ -5095,12 +5211,21 @@ namespace CamelWorks.UI.Views
                     .ToList();
             }
 
-            /// <summary>Which band a row falls in.</summary>
+            /// <summary>
+            /// Which band a row falls in, at one level of the chain.
+            ///
+            /// <b>A clash group is one row here and can hold results that disagree.</b> Six
+            /// clashes grouped as "Level 2 risers" may sit on four different systems, and the
+            /// band cannot pretend otherwise: it says so. Splitting the group to satisfy the
+            /// view would be the view editing the document, which is the one thing banding must
+            /// never do.
+            /// </summary>
             /// <param name="entry">The test on the board.</param>
             /// <param name="row">The row.</param>
-            private string Bucket(TestEntry entry, BoardRow row)
+            /// <param name="by">The facet this level bands by.</param>
+            private string Bucket(TestEntry entry, BoardRow row, string by)
             {
-                switch (_arrange)
+                switch (by)
                 {
                     case ByAssignee:
                         return row.Assigned.Length == 0 ? "Nobody yet" : row.Assigned;
@@ -5115,11 +5240,44 @@ namespace CamelWorks.UI.Views
                         return Past(Deep(row))
                             ? "Worse than " + Tolerance(entry)
                             : "Within " + Tolerance(entry);
-
-                    default:
-                        return string.Empty;
                 }
+
+                var column = Column(by);
+
+                if (column == null) return string.Empty;
+
+                var values = row.Rows
+                    .Select(r => Custom(r, column))
+                    .Select(v => v.Length == 0 ? Blank : v)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                return values.Count == 0 ? Blank
+                    : values.Count == 1 ? values[0]
+                    : "Several values";
             }
+
+            /// <summary>The column a band key names, or null when it names a facet or nothing.</summary>
+            /// <param name="by">The facet this level bands by.</param>
+            private PropColumn? Column(string by) =>
+                by != null && by.StartsWith(ByColumn, StringComparison.Ordinal)
+                    ? _columns.FirstOrDefault(c => string.Equals(
+                          c.Id, by.Substring(ByColumn.Length), StringComparison.Ordinal))
+                    : null;
+
+            /// <summary>
+            /// What a band key is called on screen.
+            ///
+            /// Not "Named": that is already the results table's own first column.
+            /// </summary>
+            /// <param name="by">The facet a level bands by.</param>
+            private string Facet(string by) => Column(by)?.Title ?? by;
+
+            /// <summary>Every facet the view can be banded by, in the order the menu offers them.</summary>
+            private List<string> Bandable() =>
+                new[] { ByAssignee, ByStatus, ByHowBad }
+                    .Concat(_columns.Select(c => ByColumn + c.Id))
+                    .ToList();
 
             // -------------------------------------------------------------------------------
             // Identity, distance and tone
@@ -5431,6 +5589,205 @@ namespace CamelWorks.UI.Views
                 // seeing it land.
                 RedrawBoard();
                 RedrawFoot();
+            }
+
+            /// <summary>
+            /// Turn the bands the view is showing into the test's own clash groups.
+            ///
+            /// <b>Why the two are separate at all.</b> A band is ours and costs nothing: it
+            /// buckets what is on screen, moves nothing, and is gone the moment the chain is
+            /// cleared. A clash group is the host's - an item in the document, in the saved
+            /// results, in every export and in what the next person opens - and a result belongs
+            /// to exactly one. So the view is where the arranging is done and this is the one
+            /// place it becomes permanent, said out loud before it happens.
+            ///
+            /// <b>What the filters leave, not the whole test.</b> The leaves come off the shape
+            /// the board is showing, so a board narrowed to one discipline makes groups of that
+            /// discipline and leaves the rest of the test alone. The prompt says the figure.
+            /// </summary>
+            private void AskToRealise()
+            {
+                var entry = Entry();
+
+                if (entry == null)
+                {
+                    Warned(Ui.Problem("Pick a test on the left first."));
+                    return;
+                }
+
+                if (_bands.Count == 0)
+                {
+                    Warned(Ui.Problem("Band the view by something first. The chain of bands is "
+                                      + "what becomes the groups."));
+                    return;
+                }
+
+                var leaves = Leaves(entry);
+
+                if (leaves.Count == 0)
+                {
+                    Warned(Ui.Problem("The bands hold nothing to group. Widen the filters or "
+                                      + "read the results again."));
+                    return;
+                }
+
+                var moving = leaves.Sum(l => l.Value.Count(r => r.Group.Length > 0));
+
+                Parts.Sure(_board,
+                    "This makes " + Ui.Count(leaves.Count, "clash group") + " in "
+                    + Quoted(entry.Test.Name ?? "this test") + ", one for each band the view is "
+                    + "showing, holding " + Ui.Count(leaves.Sum(l => l.Value.Count), "result")
+                    + " between them. Each is named for the trail of bands above it, so "
+                    + Quoted(leaves[0].Key) + " is one of them."
+                    + (moving > 0
+                        ? " " + Ui.Count(moving, "result") + " already in a clash group will "
+                          + "move out of it into the new one; a result belongs to one group and "
+                          + "the host has no second place to put it."
+                        : string.Empty)
+                    + " Results the filters are hiding are not touched.",
+                    "Make the groups",
+                    () => Realise(entry, leaves));
+            }
+
+            /// <summary>
+            /// Every leaf of the band chain, named for the trail down to it.
+            ///
+            /// Joined with a middle dot rather than a slash or a backslash: a clash group's name
+            /// is written into the document and read back out of it, and both of those are
+            /// path separators to somebody.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<KeyValuePair<string, List<Row>>> Leaves(TestEntry entry)
+            {
+                var leaves = new List<KeyValuePair<string, List<Row>>>();
+                var shape = Shape(entry);
+
+                Walk(entry, shape.Groups.Concat(shape.Loose).ToList(), 0, string.Empty, leaves);
+
+                return leaves;
+            }
+
+            /// <summary>Walk one level of the chain, gathering the leaves under it.</summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="rows">The rows this level is banding.</param>
+            /// <param name="depth">How many levels are already above this one.</param>
+            /// <param name="trail">What the bands above this one were called.</param>
+            /// <param name="into">The leaves found so far.</param>
+            private void Walk(TestEntry entry, List<BoardRow> rows, int depth, string trail,
+                              List<KeyValuePair<string, List<Row>>> into)
+            {
+                if (depth >= _bands.Count)
+                {
+                    var members = rows.SelectMany(r => r.Rows).ToList();
+
+                    if (members.Count > 0 && trail.Length > 0)
+                        into.Add(new KeyValuePair<string, List<Row>>(trail, members));
+
+                    return;
+                }
+
+                foreach (var band in Bands(entry, rows, _bands[depth]))
+                    Walk(entry, band.Value, depth + 1,
+                         trail.Length == 0 ? band.Key : trail + " · " + band.Key, into);
+            }
+
+            /// <summary>
+            /// Write one clash group per leaf, and drop the bands that named them.
+            ///
+            /// <b>Its own loop rather than the board's usual write.</b> That one takes a set of
+            /// rows and one value to write to all of them; this writes a different name to each
+            /// bucket, and doing it by calling that once per bucket would be a toast, a redraw
+            /// and a rail pass for every group made - fifty of each on a real board.
+            ///
+            /// The bands come off at the end. They have become the thing they were describing,
+            /// and leaving them up would show every group twice: once as a band and once as the
+            /// group inside it.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            /// <param name="leaves">The leaves, each named for the trail down to it.</param>
+            private void Realise(TestEntry entry, List<KeyValuePair<string, List<Row>>> leaves)
+            {
+                var made = 0;
+                var held = 0;
+                var problems = new List<string>();
+
+                // The filters cannot see inside a row, and every one of these moves a row from
+                // one line of the board to another.
+                Moved();
+
+                foreach (var leaf in leaves)
+                {
+                    var name = leaf.Key;
+                    var rows = leaf.Value;
+
+                    var took = true;
+                    string? refused = null;
+
+                    if (!OnFile)
+                    {
+                        foreach (var byTest in rows.GroupBy(r => r.TestId, StringComparer.OrdinalIgnoreCase))
+                        {
+                            var ids = byTest.Select(r => r.Info.Id).ToList();
+
+                            if (_session.Clash.Regroup(byTest.Key, ids, name)) continue;
+
+                            took = false;
+                            refused = _session.Clash.LastProblem ?? "The host refused.";
+                        }
+
+                        if (refused != null && !problems.Contains(refused)) problems.Add(refused);
+                    }
+
+                    foreach (var row in rows)
+                    {
+                        if (!OnFile)
+                        {
+                            // The database is the record and the document a projection of it, so
+                            // the finding takes the name either way; what a refusal changes is
+                            // only that the field says it is still waiting.
+                            var finding = Found(row) ?? Raised(row);
+
+                            if (finding != null)
+                            {
+                                finding.Group = name;
+
+                                if (took)
+                                {
+                                    finding.Landed(FindingField.Group);
+                                }
+                                else
+                                {
+                                    finding.Hold(FindingField.Group);
+                                    finding.HostProblem = refused;
+                                }
+                            }
+                        }
+
+                        row.Group = name;
+                    }
+
+                    _made.Add(GroupId(name));
+
+                    if (took) made++; else held++;
+                }
+
+                if (!OnFile) { KeepFindings(); ArmSync(); }
+
+                _bands.Clear();
+                _picked.Clear();
+                _pickedFrom = null;
+
+                var what = Ui.Count(made + held, "clash group") + " made from the bands, holding "
+                           + Ui.Count(leaves.Sum(l => l.Value.Count), "result") + ".";
+
+                if (!OnFile) _session.Record(ActivityKind.Regroup, what);
+
+                RailChanged(new[] { entry.Test.Id });
+                RedrawBoard();
+                RedrawFoot();
+                ArmSync();
+
+                Tell(what + Trailer(held == 0 ? 0 : leaves.Sum(l => l.Value.Count)), problems);
             }
 
             /// <summary>Rename the test on the board.</summary>
