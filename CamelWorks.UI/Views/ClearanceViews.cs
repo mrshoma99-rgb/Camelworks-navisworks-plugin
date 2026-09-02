@@ -1823,7 +1823,7 @@ namespace CamelWorks.UI.Views
                     items.Add(item);
                 }
 
-                var named = 0;
+                var named = default(ClashIdentity.IdStamp);
 
                 Ui.Busy(() => named = ClashIdentity.Stamp(_session, items, null));
 
@@ -1866,7 +1866,7 @@ namespace CamelWorks.UI.Views
 
                 var about = ClashIdentity.Explain(items.Count, named);
 
-                if (about != null) _log.Children.Add(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+                if (about != null) _log.Children.Add(named.Read == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
 
                 Said(Ui.Info(written.Explain() + " Open it on Manage, under \"A file\", to mark it "
                              + "up the same way as a clash export.",

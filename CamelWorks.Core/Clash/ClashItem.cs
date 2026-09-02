@@ -124,6 +124,42 @@ namespace CamelWorks.Core.Clash
         /// <summary>Zone name, when zones were derived.</summary>
         public string? Zone { get; set; }
 
+        /// <summary>
+        /// How the document that wrote this file finds element A again, without searching for it.
+        ///
+        /// <b>Why a file carries this at all.</b> The element keys in this file are hashes, and a
+        /// hash cannot be turned back into the thing it names: the only way from a key to an
+        /// element is to hash every element in the federation until one matches, which on a real
+        /// job is the indexing pass. That is a search the writing seat never needed to do - it had
+        /// both elements in its hand when the clash was read - so it writes down where they were
+        /// instead, and the reading seat looks them up rather than hunting for them.
+        ///
+        /// Opaque here on purpose. This is the host's own handle for an element and Core neither
+        /// builds nor reads it; the adapter that wrote it is the only thing that understands it,
+        /// which is what lets the encoding change without a new file format.
+        ///
+        /// Null is ordinary: a file written before this existed, or one written from a file rather
+        /// than a model. <see cref="TreeA"/> is the fallback, and the keys are the fallback to that.
+        /// </summary>
+        public string? PathIdA { get; set; }
+
+        /// <summary>How the writing document finds element B again. See <see cref="PathIdA"/>.</summary>
+        public string? PathIdB { get; set; }
+
+        /// <summary>
+        /// Element A's path down the selection tree, as the names a person would read.
+        ///
+        /// The fallback for <see cref="PathIdA"/>, and the reason both are written rather than
+        /// one: a native handle is exact and fast where it resolves, and a path of display names
+        /// is something any document with the same tree can walk, including one this handle was
+        /// not made against. Walking it is a descent - depth times the children at each step - and
+        /// not a search of the whole model.
+        /// </summary>
+        public string? TreeA { get; set; }
+
+        /// <summary>Element B's path down the selection tree. See <see cref="TreeA"/>.</summary>
+        public string? TreeB { get; set; }
+
         /// <summary>Display name of the model owning item A.</summary>
         public string? ModelA { get; set; }
 

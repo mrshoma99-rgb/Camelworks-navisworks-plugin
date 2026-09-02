@@ -311,6 +311,227 @@ namespace CamelWorks.Nav
         }
 
         /// <summary>
+        /// The GlobalId this project's own IFC exporter would give an element, or null.
+        ///
+        /// <b>Why computing one is not forging one.</b> Writing a made-up GlobalId into a BCF is
+        /// the fault this codebase refuses everywhere else: a receiving tool looks the string up
+        /// verbatim, and a wrong one points the topic at nothing. This is different. The exporter
+        /// that ships inside CamelWorks derives an element's GlobalId from that element's instance
+        /// GUID by the standard IFC compression, so the value computed here is not a guess at what
+        /// the file says - it is the same function over the same input.
+        ///
+        /// <b>What it is worth.</b> A federation of Revit-sourced NWCs carries no GlobalId property
+        /// at all, so every component in a clash BCF written from it is unresolvable and the file
+        /// selects nothing in Revizto or Solibri. Where the IFC alongside it came from this
+        /// exporter, this closes that gap outright.
+        ///
+        /// <b>What it is not worth.</b> Against an IFC written by somebody else's exporter - Revit's
+        /// own, most often - the GlobalIds come from that tool's internal ids and this will match
+        /// nothing. That is exactly what happens today with no id at all, so it costs nothing to
+        /// try; but the export counts these separately from ids actually read off the model, and
+        /// says so, because "will select" and "will select in our IFC" are different promises.
+        /// </summary>
+        /// <param name="key">The element.</param>
+        public string? DerivedIfcGuidFor(ElementKey key)
+        {
+            if (key.IsEmpty) return null;
+
+            var item = Item(key);
+
+            if (item == null) return null;
+
+            var guid = NavKeys.InstanceGuidOf(item);
+
+            return guid == Guid.Empty ? null : CamelWorks.Core.OpenBim.IfcGuid.Compress(guid);
+        }
+
+        /// <summary>
+        /// The host's own handle for an element, to be written into a file it is exported in.
+        ///
+        /// <b>What this is for.</b> A key in an exported file is a hash, and a hash cannot be
+        /// turned back into what it names - the only way home is to hash every element in the
+        /// federation until one matches, which is the indexing pass. The seat writing the file
+        /// never needed that: the clash engine handed it both elements. So it writes down where
+        /// they were, and the seat reading the file asks the host for them by name.
+        ///
+        /// The model index is deliberately left out of the string. It is the position of the model
+        /// in this document's list, which the receiving document is under no obligation to match -
+        /// so it is derived there from the key's own model scope instead, which travels with the
+        /// key and is a fact about the file rather than about the order somebody appended things.
+        /// </summary>
+        /// <param name="key">The element.</param>
+        /// <returns>The handle, or null when the element is not in this document.</returns>
+        public string? PathIdFor(ElementKey key)
+        {
+            if (key.IsEmpty) return null;
+
+            var item = Item(key);
+
+            if (item == null) return null;
+
+            try
+            {
+                return Document.Models.CreatePathId(item)?.PathId;
+            }
+            catch (Exception)
+            {
+                // A node the host will not make a path for is a node this file carries no handle
+                // for. The tree path below still travels, and the key still travels.
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// An element's path down the selection tree, as one string, for the same file.
+        ///
+        /// The fallback for <see cref="PathIdFor"/>. A native handle is exact where it resolves;
+        /// a path of display names is something any document holding the same tree can walk, which
+        /// includes documents the handle was never made against.
+        /// </summary>
+        /// <param name="key">The element.</param>
+        public string? TreePathFor(ElementKey key)
+        {
+            if (key.IsEmpty) return null;
+
+            var item = Item(key);
+
+            if (item == null) return null;
+
+            var path = NavKeys.TreePathOf(item);
+
+            // The unit separator: a character no display name in a model has ever contained, so
+            // the join needs no escaping and the split cannot be wrong.
+            return path.Count == 0 ? null : string.Join("\u001F", path);
+        }
+
+        /// <summary>
+        /// Select the elements a file wrote down, without searching this document for them.
+        ///
+        /// <b>The whole point of the locators.</b> Handed only keys, the choice is between a walk
+        /// of the federation and doing nothing - which is why selecting from a file used to do
+        /// nothing at all when one key was not an instance GUID. Handed a handle or a tree path,
+        /// each element is a lookup or a descent, and the size of the model stops mattering.
+        ///
+        /// Three ways in, tried strongest first, per element: the host's own handle, then the tree
+        /// path, then the key itself for the rungs that resolve without an index. An element that
+        /// answers to none of them is counted rather than guessed at.
+        /// </summary>
+        /// <param name="found">The elements, as the file recorded them.</param>
+        /// <returns>How many were selected.</returns>
+        public int SelectByLocator(IReadOnlyList<ElementLocator> found)
+        {
+            if (found == null || found.Count == 0) return 0;
+
+            var items = new ModelItemCollection();
+
+            // The model each key belongs to, by the scope hash the key carries. Built once for the
+            // whole selection - it is one pass over the document's model list, not its elements.
+            var byScope = new Dictionary<string, int>(StringComparer.Ordinal);
+
+            for (var i = 0; i < Document.Models.Count; i++)
+            {
+                var scope = NavKeys.ScopeOf(Document.Models[i]);
+
+                if (!byScope.ContainsKey(scope)) byScope[scope] = i;
+            }
+
+            foreach (var one in found)
+            {
+                var item = ByPathId(one, byScope) ?? ByTreePath(one, byScope) ?? Cheap(one.Key);
+
+                if (item != null) items.Add(item);
+            }
+
+            Document.CurrentSelection.CopyFrom(items);
+
+            return items.Count;
+        }
+
+        /// <summary>The element a handle names, or null.</summary>
+        private ModelItem? ByPathId(ElementLocator one, IDictionary<string, int> byScope)
+        {
+            if (string.IsNullOrEmpty(one.PathId)
+                || !byScope.TryGetValue(one.Key.ModelScope, out var index))
+                return null;
+
+            try
+            {
+                return Document.Models.ResolvePathId(
+                    new Autodesk.Navisworks.Api.DocumentParts.ModelItemPathId
+                    {
+                        ModelIndex = index,
+                        PathId = one.PathId!,
+                    });
+            }
+            catch (Exception)
+            {
+                // A handle from a document whose tree this one does not share. The tree path is
+                // the next thing to try, and it is why both are written.
+                return null;
+            }
+        }
+
+        /// <summary>The element a path of display names names, walked down from the model root.</summary>
+        private ModelItem? ByTreePath(ElementLocator one, IDictionary<string, int> byScope)
+        {
+            if (string.IsNullOrEmpty(one.TreePath)
+                || !byScope.TryGetValue(one.Key.ModelScope, out var index))
+                return null;
+
+            var names = one.TreePath!.Split(new[] { '\u001F' });
+
+            if (names.Length == 0) return null;
+
+            try
+            {
+                var node = Document.Models[index].RootItem;
+
+                // The first name is the root itself, which is where the walk starts rather than
+                // something to look for underneath it.
+                for (var i = 1; i < names.Length && node != null; i++)
+                {
+                    ModelItem? next = null;
+
+                    foreach (var child in node.Children)
+                    {
+                        var name = string.IsNullOrEmpty(child.DisplayName)
+                            ? child.ClassDisplayName ?? string.Empty
+                            : child.DisplayName;
+
+                        if (!string.Equals(name, names[i], StringComparison.Ordinal)) continue;
+
+                        next = child;
+                        break;
+                    }
+
+                    node = next;
+                }
+
+                return node;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The element a key names, but only when that costs nothing.
+        ///
+        /// An instance GUID is a lookup the document answers straight away. Every other rung means
+        /// indexing the federation, and this is the path that exists precisely so that nobody has
+        /// to - so it declines rather than quietly paying for it.
+        /// </summary>
+        private ModelItem? Cheap(ElementKey key)
+        {
+            if (key.IsEmpty) return null;
+
+            if (key.Rung != KeyRung.InstanceGuid && !IsIndexed) return null;
+
+            return Item(key);
+        }
+
+        /// <summary>
         /// A host item this product's own code already has, as one of ours.
         ///
         /// For the readers that are handed elements rather than keys - the clash engine holds
