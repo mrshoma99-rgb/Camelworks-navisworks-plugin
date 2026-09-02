@@ -68,14 +68,32 @@ namespace CamelWorks.Core.Clash
     public sealed class ClashBcfDocument
     {
         internal ClashBcfDocument(byte[] bytes, IReadOnlyList<ClashXmlTest> tests, int results,
-                                  IReadOnlyList<string> warnings, int snapshots)
+                                  IReadOnlyList<string> warnings, int snapshots,
+                                  int blind, int partial)
         {
             Bytes = bytes; Tests = tests; Results = results; Warnings = warnings;
-            Snapshots = snapshots;
+            Snapshots = snapshots; Blind = blind; Partial = partial;
         }
 
         /// <summary>How many topics carry a picture.</summary>
         public int Snapshots { get; }
+
+        /// <summary>
+        /// Topics whose two elements can be found by no other tool.
+        ///
+        /// A component is resolvable only when it carries an IFC GlobalId, because that is the one
+        /// id another tool looks up. A federation assembled from RVT and DWG usually carries none,
+        /// and a BCF full of such topics opens in the receiving tool without complaint and selects
+        /// nothing - so this is counted and said out loud rather than left to be discovered by the
+        /// person the file was sent to.
+        /// </summary>
+        public int Blind { get; }
+
+        /// <summary>Topics where one of the two elements can be found, but not the other.</summary>
+        public int Partial { get; }
+
+        /// <summary>Topics whose two elements another tool can select.</summary>
+        public int Resolvable => Results - Blind - Partial;
 
         /// <summary>The .bcfzip.</summary>
         public byte[] Bytes { get; }
@@ -240,6 +258,12 @@ namespace CamelWorks.Core.Clash
             var tests = new List<ClashXmlTest>();
             var unkeyed = 0;
 
+            // How many topics the receiving tool will be able to point at something with. See
+            // ClashBcfDocument.Blind: this is the number that decides whether the file is usable
+            // in Revizto or Solibri, and it is not visible from anything else in the readout.
+            var blind = 0;
+            var partial = 0;
+
             foreach (var test in all
                          .GroupBy(i => i.TestName, StringComparer.Ordinal)
                          .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
@@ -272,6 +296,13 @@ namespace CamelWorks.Core.Clash
 
                     var topic = Topic(item, name, group, when, how);
 
+                    var found = topic.Viewpoints
+                                     .SelectMany(v => v.Selection)
+                                     .Count(c => c != null && c.IsResolvable);
+
+                    if (found == 0) blind++;
+                    else if (found == 1) partial++;
+
                     topics.Add(topic);
                     records.Add(Record(item, topic.Guid, name, group));
                 }
@@ -283,6 +314,34 @@ namespace CamelWorks.Core.Clash
                     + " by key, so " + (unkeyed == 1 ? "it was" : "they were")
                     + " left out: a topic that cannot be pointed at an element is a note rather "
                     + "than a clash.");
+
+            // The one thing a coordinator cannot see by opening the file they just wrote, and the
+            // thing they get told about by the person they sent it to. An IFC GlobalId is the only
+            // id another tool can look up; without one the topic still carries a camera and a
+            // picture, so it is worth sending - it just will not select anything.
+            if (blind > 0 || partial > 0)
+            {
+                var reach = topics.Count - blind;
+
+                warnings.Add(
+                    (blind == 0
+                        ? Measure.Count(partial) + (partial == 1 ? " topic names one element"
+                                                                 : " topics name one element")
+                          + " another tool cannot find"
+                        : Measure.Count(blind) + " of " + Measure.Count(topics.Count)
+                          + (topics.Count == 1 ? " topic names no element" : " topics name no elements")
+                          + " another tool can find"
+                          + (partial > 0
+                              ? ", and " + Measure.Count(partial) + " more name only one"
+                              : string.Empty))
+                    + ". Those topics still carry a camera and a picture, so the reviewer lands in "
+                    + "the right place - their tool just will not select the elements. Only an IFC "
+                    + "GlobalId can be looked up, and these elements carry none; exporting the "
+                    + "GlobalId into the NWCs, or federating from IFC, is what fixes it."
+                    + (reach > 0 && blind > 0
+                        ? " " + Measure.Count(reach) + " will select."
+                        : string.Empty));
+            }
 
             var extras = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -304,7 +363,8 @@ namespace CamelWorks.Core.Clash
 
             foreach (var note in written.Notes) warnings.Add(note);
 
-            return new ClashBcfDocument(bytes, tests, topics.Count, warnings, written.Snapshots);
+            return new ClashBcfDocument(bytes, tests, topics.Count, warnings, written.Snapshots,
+                                        blind, partial);
         }
 
         /// <summary>

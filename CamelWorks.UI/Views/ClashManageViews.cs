@@ -5660,28 +5660,60 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Select what these rows name, for a board that came out of a file rather than the
-            /// engine - and only from an index that has already been built.
+            /// How many of the last selection's elements needed an index nobody has built yet.
             ///
-            /// The keys are all a file leaves us. Resolving one that is not a GUID would build the
-            /// index here, inside the press, which is the freeze this verb exists on the other
-            /// side of. Read the results builds it; until then the camera goes and the selection
-            /// waits.
+            /// Zero after a selection that reached everything it was asked for. Read by the verbs
+            /// so they can say what they could not reach instead of quietly doing less.
+            /// </summary>
+            private int _outOfReach;
+
+            /// <summary>
+            /// Select what these rows name, for a board that came out of a file rather than the
+            /// engine.
+            ///
+            /// <b>Why this is not simply "select the two elements the result names".</b> From the
+            /// model, it is: the clash engine is holding the two items and hands them over, which
+            /// is what <see cref="FromEngine"/> asks it for. From a file there is no engine and no
+            /// result - the file leaves us the two element KEYS, and a key is a hash, not a
+            /// pointer. Turning one back into an element means finding the element it names.
+            ///
+            /// For a key made from an instance GUID that is a dictionary lookup the document
+            /// answers straight away. For a key made from a tree path or a geometry signature it
+            /// means walking the federation to find what matches - the indexing pass, which on a
+            /// large model is the freeze this verb exists on the other side of.
+            ///
+            /// So this reaches for what is free and leaves the rest, rather than giving up on all
+            /// of it because one key is expensive. Before, a single tree-path key among forty
+            /// GUIDs meant nothing at all was selected, and nothing said so - which is exactly
+            /// "why can't we just feed it the two elements". We can, for the ones the document can
+            /// find without being searched; the others need the index, and now the verb says so
+            /// rather than doing nothing quietly.
             /// </summary>
             /// <param name="rows">The picked rows, from a file.</param>
             /// <returns>How many elements were selected.</returns>
             private int FromKeys(IReadOnlyList<Row> rows)
             {
+                _outOfReach = 0;
+
                 var keys = Keys(rows);
 
                 if (keys.Count == 0) return 0;
 
-                if (!_session.Model.IsIndexed
-                    && keys.Any(k => k.Rung != KeyRung.InstanceGuid))
-                    return 0;
+                // Indexed already: every rung resolves, so ask for the lot.
+                if (_session.Model.IsIndexed)
+                {
+                    _session.Model.Select(keys);
+                    return keys.Count;
+                }
 
-                _session.Model.Select(keys);
-                return keys.Count;
+                var free = keys.Where(k => k.Rung == KeyRung.InstanceGuid).ToList();
+
+                _outOfReach = keys.Count - free.Count;
+
+                if (free.Count == 0) return 0;
+
+                _session.Model.Select(free);
+                return free.Count;
             }
 
             /// <summary>
@@ -5943,10 +5975,25 @@ namespace CamelWorks.UI.Views
 
                 if (keys.Count == 0)
                 {
-                    say.Children.Add(Ui.Problem("Those results name no elements this federation "
-                        + "has, so there is nothing to isolate."));
+                    // Two different failures, and telling them apart is the difference between
+                    // "this model does not have them" and "ask for them and they will come".
+                    Warned(_outOfReach > 0
+                        ? Ui.Problem("Those results name elements this document can only find by "
+                            + "searching it, and it has not been searched yet. Read the results "
+                            + "from the model once - that builds the index - and Isolate reaches "
+                            + "them from then on. Focus works either way: it moves the camera to "
+                            + "the recorded clash point and needs no elements at all.")
+                        : Ui.Problem("Those results name no elements this federation has, so "
+                            + "there is nothing to isolate."));
                     return;
                 }
+
+                // Some reached, some not. Isolating what was reached and saying nothing would show
+                // one side of a clash and look like the isolate had simply gone wrong.
+                if (_outOfReach > 0)
+                    Warned(Ui.Note(Ui.Count(_outOfReach, "element") + " could not be reached "
+                        + "without searching the document, so " + (_outOfReach == 1 ? "it is" : "they are")
+                        + " not in this isolate. Read the results from the model once to index it."));
 
                 // On the selection the engine just made, not on its keys. Handing keys over
                 // meant resolving each one back to the element it names, which for a key that is
@@ -7105,11 +7152,20 @@ namespace CamelWorks.UI.Views
                 _log.Children.Clear();
                 _log.Children.Add(Ui.Done("Wrote " + dialog.FileName + " - " + written.Explain()));
 
+                // What the file itself says about what it can and cannot do in somebody else's
+                // tool - chiefly how many topics name an element that tool can select. This was
+                // written and never read here, so the one fact a coordinator needs before sending
+                // the file was only ever visible on the other export screen.
+                foreach (var warning in written.Warnings) Said(Ui.Note(warning));
+
                 if (!OnFile)
                 {
+                    // Only the good news. The bad news is the warning above, which counts the
+                    // topics actually written rather than the ids read, and saying both is the
+                    // same fact twice in two different numbers.
                     var about = ClashIdentity.Explain(items.Count, named);
 
-                    if (about != null) Said(named == 0 ? Ui.Note(about) : Ui.Line(about, 0.8));
+                    if (about != null && named >= items.Count * 2) Said(Ui.Line(about, 0.8));
 
                     if (_pictures)
                         Said(written.Snapshots == 0
