@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using CamelWorks.Core.People;
 using CamelWorks.Core.Measurement;
 using CamelWorks.Core.Store;
 
@@ -30,6 +31,19 @@ namespace CamelWorks.Core.Project
         /// <summary>Which organisation, or null when nobody has said.</summary>
         public string? Party { get; set; }
 
+        /// <summary>What they do — fire engineer, BIM coordinator — or null when nobody has said.</summary>
+        public string? Role { get; set; }
+
+        /// <summary>
+        /// Which team on this job they are on — ARC, STR, MEP — or null.
+        ///
+        /// Not the same as the organisation. One company often staffs two teams, and two
+        /// companies often share one; a coordinator assigning a clash means the team, and
+        /// chasing it later means the company, so the roster holds both rather than making
+        /// somebody pick which one the single field is going to mean this month.
+        /// </summary>
+        public string? Team { get; set; }
+
         /// <summary>Where a BCF topic reaches them.</summary>
         public string? Email { get; set; }
 
@@ -53,12 +67,29 @@ namespace CamelWorks.Core.Project
         /// <summary>How they read on a row.</summary>
         public string Describe() => Party == null ? Name : Name + " (" + Party + ")";
 
+        /// <summary>What the assign list shows beneath their name.</summary>
+        public string Under()
+        {
+            var said = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(Role)) said.Add(Role!.Trim());
+            if (!string.IsNullOrWhiteSpace(Team)) said.Add(Team!.Trim());
+            if (!string.IsNullOrWhiteSpace(Party)) said.Add(Party!.Trim());
+
+            return string.Join(" · ", said);
+        }
+
+        /// <summary>Them, as something work can be assigned to.</summary>
+        public Responsible AsResponsible => Responsible.Person(Name);
+
         /// <summary>Write them down.</summary>
         public JsonValue ToJson()
         {
             var json = JsonValue.Object().Set("name", Name);
 
             if (Party != null) json.Set("party", Party);
+            if (Role != null) json.Set("role", Role);
+            if (Team != null) json.Set("team", Team);
             if (Email != null) json.Set("email", Email);
             if (Note != null) json.Set("note", Note);
             if (!IsActive) json.Set("active", false);
@@ -77,6 +108,8 @@ namespace CamelWorks.Core.Project
 
             return new TeamMember(name, json["party"].AsString(), json["email"].AsString())
             {
+                Role = Or(json["role"].AsString()),
+                Team = Or(json["team"].AsString()),
                 Note = json["note"].AsString(),
                 IsActive = json["active"].AsBool(true),
             };
@@ -224,6 +257,174 @@ namespace CamelWorks.Core.Project
                     .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
                     .Select(g => g.Key)
                     .ToList();
+
+        /// <summary>
+        /// Where this person's own roster lives, or null when the machine will not say.
+        ///
+        /// <b>Beside the person, not inside the project.</b> The same architect, the same fire
+        /// engineer and the same three companies turn up job after job, and typing them in again
+        /// for every model is the reason nobody assigns anything to anybody. Kept here it is
+        /// there the moment a new model is opened, and it survives closing one.
+        ///
+        /// The project keeps its own copy too, for anybody opening the job who has never met
+        /// this roster - so a job carries its team, and a person carries theirs, and opening a
+        /// job merges what it knows into what they already had.
+        /// </summary>
+        public static string? Carried
+        {
+            get
+            {
+                try
+                {
+                    var roaming = Environment.GetFolderPath(
+                        Environment.SpecialFolder.ApplicationData);
+
+                    return string.IsNullOrWhiteSpace(roaming)
+                        ? null
+                        : System.IO.Path.Combine(roaming, "CamelWorks", "team.json");
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>Why the last write did not reach the disk, or null.</summary>
+        public string? LastProblem { get; private set; }
+
+        /// <summary>Read the roster this person carries between jobs, or an empty one.</summary>
+        public static TeamRoster Mine() => ReadFrom(Carried);
+
+        /// <summary>Read a roster out of a named file, or an empty one.</summary>
+        /// <param name="path">The file, or null.</param>
+        public static TeamRoster ReadFrom(string? path)
+        {
+            if (path == null) return new TeamRoster();
+
+            try
+            {
+                return System.IO.File.Exists(path)
+                    ? FromJson(JsonReader.Parse(System.IO.File.ReadAllText(path)))
+                    : new TeamRoster();
+            }
+            catch (Exception)
+            {
+                // An unreadable roster is an empty one, which is what this would have been.
+                return new TeamRoster();
+            }
+        }
+
+        /// <summary>Write it where this person keeps it, between jobs.</summary>
+        /// <returns>True when it reached the disk.</returns>
+        public bool Keep() => KeepAt(Carried);
+
+        /// <summary>Write it to a named file, to hand to somebody else.</summary>
+        /// <param name="path">Where to write it.</param>
+        /// <returns>True when it reached the disk.</returns>
+        public bool KeepAt(string? path)
+        {
+            LastProblem = null;
+
+            if (path == null)
+            {
+                LastProblem = "This machine will not say where to keep it.";
+                return false;
+            }
+
+            try
+            {
+                var folder = System.IO.Path.GetDirectoryName(path);
+
+                if (!string.IsNullOrEmpty(folder)) System.IO.Directory.CreateDirectory(folder!);
+
+                System.IO.File.WriteAllText(path, ToJson().ToJson(true));
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = e.Message;
+                return false;
+            }
+        }
+
+        /// <summary>Every distinct role on the roster, in reading order.</summary>
+        public IReadOnlyList<string> Roles => Facet(m => m.Role);
+
+        /// <summary>Every distinct team on the roster, in reading order.</summary>
+        public IReadOnlyList<string> Teams => Facet(m => m.Team);
+
+        /// <summary>
+        /// Everything work can be assigned to: the people, then the roles, companies and teams
+        /// they make up.
+        ///
+        /// The groupings are not lists of their own - they are what the people say they are - so
+        /// there is nothing to keep in step. Adding an architect at Acme adds Acme; taking the
+        /// last one off takes it away. A role nobody holds cannot be assigned to, which is right
+        /// and needs no rule.
+        /// </summary>
+        public IReadOnlyList<Responsible> Responsibles()
+        {
+            var found = new List<Responsible>();
+
+            foreach (var member in _members.Where(m => m.IsActive)
+                                           .OrderBy(m => m.Name, StringComparer.CurrentCulture))
+                found.Add(member.AsResponsible);
+
+            foreach (var role in Roles) found.Add(new Responsible(ResponsibleKind.Role, role));
+            foreach (var party in Parties) found.Add(new Responsible(ResponsibleKind.Company, party));
+            foreach (var team in Teams) found.Add(new Responsible(ResponsibleKind.Team, team));
+
+            return found;
+        }
+
+        /// <summary>
+        /// Whether one assignment falls under what is being filtered for.
+        ///
+        /// <b>Why a role can be filtered at all.</b> Half a board is assigned to "Sam Reed" and
+        /// half to the architecture team, and somebody asking to see architecture's clashes means
+        /// both. So a person falls under a role, company or team when the roster says they are in
+        /// it - which is exactly why the roster has to be the one place that is known, rather
+        /// than every screen keeping its own idea of who is who.
+        ///
+        /// It does not run the other way. Work given to the whole ARC team is not any one
+        /// member's work, or filtering to your own name would hand you everything your team was
+        /// ever given.
+        /// </summary>
+        /// <param name="assigned">What the row is assigned to.</param>
+        /// <param name="wanted">What is being filtered for.</param>
+        public bool Covers(Responsible assigned, Responsible wanted)
+        {
+            if (wanted.IsEmpty) return true;
+            if (assigned.IsEmpty) return false;
+            if (assigned == wanted) return true;
+
+            if (wanted.Kind == ResponsibleKind.Person || assigned.Kind != ResponsibleKind.Person)
+                return false;
+
+            var person = Find(assigned.Name);
+
+            if (person == null) return false;
+
+            var said = wanted.Kind == ResponsibleKind.Role ? person.Role
+                     : wanted.Kind == ResponsibleKind.Company ? person.Party
+                     : person.Team;
+
+            return !string.IsNullOrWhiteSpace(said)
+                   && string.Equals(said!.Trim(), wanted.Name, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Every distinct value of one field across the active members.</summary>
+        /// <param name="of">Which field.</param>
+        private IReadOnlyList<string> Facet(Func<TeamMember, string?> of) =>
+            _members
+                .Where(m => m.IsActive)
+                .Select(of)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v!.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(v => v, StringComparer.CurrentCulture)
+                .ToList();
 
         /// <summary>Add somebody and hand them back for editing.</summary>
         /// <param name="name">What they are called.</param>
@@ -394,6 +595,8 @@ namespace CamelWorks.Core.Project
                 // than making every assignment to that name ambiguous.
                 var added = roster.Add(member.Name, member.Party, member.Email);
 
+                added.Role = member.Role ?? added.Role;
+                added.Team = member.Team ?? added.Team;
                 added.Note = member.Note ?? added.Note;
                 added.IsActive = member.IsActive;
             }
