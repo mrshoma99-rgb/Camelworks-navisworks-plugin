@@ -1021,15 +1021,20 @@ namespace CamelWorks.UI.Views
         /// holds four of six hundred results is a different act from narrowing to one that holds
         /// four hundred, and the only place that is knowable is here, next to the value.
         /// </summary>
+        /// <b>Many at once.</b> A column narrowed to one value answers "show me the ducts". What
+        /// a coordinator asks is "mechanical and electrical, not structural" - so the values tick,
+        /// the window stays open while several are ticked, and it reports the set when it closes.
+        /// </summary>
         /// <param name="near">The element this belongs to; the window is owned by the host.</param>
         /// <param name="prompt">What the window says at the top.</param>
         /// <param name="values">Every value and how many rows carry it, commonest first.</param>
-        /// <param name="current">The value in force, shown as where it stands.</param>
+        /// <param name="chosen">The values in force, which come back ticked.</param>
         /// <param name="any">The wording for taking the narrowing off, or null for no such button.</param>
-        /// <param name="onDone">Called with the picked value, or null when the narrowing came off.</param>
+        /// <param name="onDone">Called with the ticked values; an empty set means no narrowing.</param>
         public static void Search(FrameworkElement near, string prompt,
                                   IReadOnlyList<KeyValuePair<string, int>> values,
-                                  string? current, string? any, Action<string?> onDone)
+                                  IReadOnlyCollection<string>? chosen, string? any,
+                                  Action<IReadOnlyCollection<string>> onDone)
         {
             _ = near;
 
@@ -1047,15 +1052,9 @@ namespace CamelWorks.UI.Views
                 ShowInTaskbar = false,
             };
 
-            var picked = false;
-            string? said = null;
-
-            void Done(string? what)
-            {
-                picked = true;
-                said = what;
-                window.Close();
-            }
+            var ticked = new HashSet<string>(chosen ?? Array.Empty<string>(),
+                                             StringComparer.OrdinalIgnoreCase);
+            var changed = false;
 
             var body = new DockPanel
             {
@@ -1080,33 +1079,8 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(box, Dock.Top);
             body.Children.Add(box);
 
-            if (any != null)
-            {
-                var off = Ui.Quiet(any, () => Done(null));
-
-                off.HorizontalAlignment = HorizontalAlignment.Stretch;
-                off.HorizontalContentAlignment = HorizontalAlignment.Left;
-                off.Margin = new Thickness(0, 0, 0, 8);
-                off.IsEnabled = current != null;
-
-                DockPanel.SetDock(off, Dock.Top);
-                body.Children.Add(off);
-            }
-
-            var cancel = Ui.Quiet("Cancel", () => window.Close());
-
-            cancel.HorizontalAlignment = HorizontalAlignment.Right;
-            cancel.Margin = new Thickness(0, 12, 0, 0);
-
-            DockPanel.SetDock(cancel, Dock.Bottom);
-            body.Children.Add(cancel);
-
-            var note = Ui.Small(string.Empty);
-            note.Margin = new Thickness(0, 8, 0, 0);
-            DockPanel.SetDock(note, Dock.Bottom);
-            body.Children.Add(note);
-
             var list = new StackPanel();
+            var note = Ui.Small(string.Empty);
 
             void Fill()
             {
@@ -1124,9 +1098,6 @@ namespace CamelWorks.UI.Views
                 foreach (var one in matching.Take(Most))
                 {
                     var here = one.Key ?? string.Empty;
-                    var on = string.Equals(here, current, StringComparison.OrdinalIgnoreCase);
-
-                    var line = new DockPanel { LastChildFill = true };
 
                     var tally = new TextBlock
                     {
@@ -1136,25 +1107,31 @@ namespace CamelWorks.UI.Views
                     };
 
                     tally.Wearing("Hint");
+
+                    var line = new DockPanel { LastChildFill = true };
+
                     DockPanel.SetDock(tally, Dock.Right);
                     line.Children.Add(tally);
 
                     line.Children.Add(new TextBlock
                     {
-                        Text = on ? here + "  ·  where it stands" : here,
+                        Text = here,
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     }.Wearing("Body"));
 
-                    var press = Ui.Quiet(string.Empty, () => Done(here));
+                    var tick = new CheckBox
+                    {
+                        Content = line,
+                        IsChecked = ticked.Contains(here),
+                        Margin = new Thickness(0, 0, 0, 6),
+                        VerticalContentAlignment = VerticalAlignment.Center,
+                    };
 
-                    press.Content = line;
-                    press.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    press.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-                    press.Margin = new Thickness(0, 0, 0, 4);
-                    press.IsEnabled = !on;
+                    tick.Checked += (s, e) => { ticked.Add(here); changed = true; Say(); };
+                    tick.Unchecked += (s, e) => { ticked.Remove(here); changed = true; Say(); };
 
-                    list.Children.Add(press);
+                    list.Children.Add(tick);
                 }
 
                 note.Text = matching.Count == 0
@@ -1162,7 +1139,49 @@ namespace CamelWorks.UI.Views
                     : matching.Count > Most
                         ? Skin.Num(matching.Count - Most) + " more match. Keep typing to narrow it."
                         : Ui.Count(matching.Count, "value") + ", all of them shown.";
+
+                Say();
             }
+
+            var chose = Ui.Small(string.Empty);
+
+            void Say() =>
+                chose.Text = ticked.Count == 0
+                    ? "Nothing ticked, so every value is shown."
+                    : Ui.Count(ticked.Count, "value") + " ticked.";
+
+            if (any != null)
+            {
+                var off = Ui.Quiet(any, () =>
+                {
+                    ticked.Clear();
+                    changed = true;
+                    Fill();
+                });
+
+                off.HorizontalAlignment = HorizontalAlignment.Stretch;
+                off.HorizontalContentAlignment = HorizontalAlignment.Left;
+                off.Margin = new Thickness(0, 0, 0, 8);
+
+                DockPanel.SetDock(off, Dock.Top);
+                body.Children.Add(off);
+            }
+
+            var done = Ui.Primary("Show these", () => window.Close());
+
+            done.MinWidth = 110;
+            done.HorizontalAlignment = HorizontalAlignment.Right;
+            done.Margin = new Thickness(0, 10, 0, 0);
+
+            DockPanel.SetDock(done, Dock.Bottom);
+            body.Children.Add(done);
+
+            DockPanel.SetDock(chose, Dock.Bottom);
+            body.Children.Add(chose);
+
+            note.Margin = new Thickness(0, 8, 0, 0);
+            DockPanel.SetDock(note, Dock.Bottom);
+            body.Children.Add(note);
 
             box.TextChanged += (s, e) => Ui.Safely(Fill);
 
@@ -1170,10 +1189,11 @@ namespace CamelWorks.UI.Views
             {
                 if (e.Key != Key.Enter) return;
 
-                // Enter on a single match takes it: typing four letters and pressing Enter is how
-                // a filter is used when the value is already known.
-                if (list.Children.Count == 1 && list.Children[0] is Button only && only.IsEnabled)
-                    only.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                // Enter on a single match ticks it: typing four letters and pressing Enter is how
+                // a filter is used when the value is already known. The window stays open,
+                // because the next thing somebody does is type the second value.
+                if (list.Children.Count == 1 && list.Children[0] is CheckBox only)
+                    only.IsChecked = !(only.IsChecked ?? false);
             };
 
             Fill();
@@ -1199,7 +1219,7 @@ namespace CamelWorks.UI.Views
 
             window.ShowDialog();
 
-            if (picked) onDone?.Invoke(said);
+            if (changed) onDone?.Invoke(ticked);
         }
 
         // -----------------------------------------------------------------------------------

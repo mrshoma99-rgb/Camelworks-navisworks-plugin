@@ -486,8 +486,17 @@ namespace CamelWorks.UI.Views
             /// of them narrowing at once (System Name "CHW", Workset "L03 MEP") is the question a
             /// custom column exists to be able to ask.
             /// </summary>
-            private readonly Dictionary<string, string> _byColumn =
-                new Dictionary<string, string>(StringComparer.Ordinal);
+            /// <summary>
+            /// Which values each property column is narrowed to, or no entry for any of them.
+            ///
+            /// <b>A set per column, not one value.</b> One value answers "show me the ducts" and
+            /// nothing else. What a coordinator actually asks is "show me mechanical and
+            /// electrical, not structural" - three of eleven disciplines - and doing that one
+            /// value at a time means reading the board three times and holding the difference in
+            /// your head.
+            /// </summary>
+            private readonly Dictionary<string, HashSet<string>> _byColumn =
+                new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
             private readonly HashSet<string> _open = new HashSet<string>(StringComparer.Ordinal);
             private readonly HashSet<string> _picked = new HashSet<string>(StringComparer.Ordinal);
@@ -1649,11 +1658,6 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            private readonly ContentControl _sortBy = new ContentControl
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-
             /// <summary>
             /// The marker toggle, worded, and re-worded every time it is pressed.
             ///
@@ -1753,17 +1757,12 @@ namespace CamelWorks.UI.Views
 
                 _strip.Content = Strip(entry);
 
-                // Two controls, not one, and each says whether it is doing anything.
-                //
-                // All of this used to hide behind a single stack-of-layers symbol, which named
-                // neither of the two things it held. It was reported as "the clash results have
-                // no filtering options, only sorting" - the filtering was there, behind a symbol
-                // nobody reads as a filter, with nothing on screen saying it was in force.
-                _view.Content = Parts.MoreMenu(Glyphs.Filter, WhatIsShown(entry),
-                                               FilterMenu(entry), on: Filtering);
+                // One control that names the whole state of the table and lights when any of it
+                // is in force. It was two - a funnel and a sort - and before that one symbol that
+                // named neither of the things behind it.
+                _view.Content = Parts.MoreMenu(Glyphs.Tune, WhatIsShown(entry),
+                                               TableMenu(entry), on: Filtering || InAnOrder);
 
-                _sortBy.Content = Parts.MoreMenu(Glyphs.Sort, WhatIsSorted(),
-                                                 SortMenu(), on: InAnOrder);
 
                 return true;
             }
@@ -2057,7 +2056,14 @@ namespace CamelWorks.UI.Views
 
                 // Up here with the rest of the controls that open something, rather than beside
                 // the search box where it read as a button that did something to the board.
-                verbs.Children.Add(Ui.Loose(_sortBy));
+                // One control, not two.
+                //
+                // Sorting, narrowing and banding were a sort symbol and a filter symbol side by
+                // side, and which of the three a thing lived under was a rule nobody could learn:
+                // "band the rows by" was under sort, "what the columns say" was under filter, and
+                // both had to be opened to find out what the table was currently doing. They are
+                // one question - what is this table showing me, and in what shape - so they are
+                // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
@@ -2249,12 +2255,24 @@ namespace CamelWorks.UI.Views
                 foreach (var narrowed in _byColumn)
                 {
                     var column = _columns.FirstOrDefault(c => c.Id == narrowed.Key);
-                    if (column != null) said.Add(column.Title + " " + Quoted(narrowed.Value));
+
+                    if (column == null) continue;
+
+                    said.Add(narrowed.Value.Count == 1
+                        ? column.Title + " " + Quoted(narrowed.Value.First())
+                        : column.Title + " one of "
+                          + Ui.Count(narrowed.Value.Count, "value"));
                 }
                 _ = entry;
 
+                if (_by != null) said.Add("in " + _by + " order"
+                                          + (_back ? ", backwards" : string.Empty));
+
+                if (_bands.Count > 0)
+                    said.Add("banded by " + string.Join(" then ", _bands.Select(Facet)));
+
                 return said.Count == 0
-                    ? "Narrow this board — grouped or loose, whose it is, what its columns say"
+                    ? "What this table shows, and in what shape — narrow it, band it, order it"
                     : "Showing " + string.Join(", ", said) + ". Press to change it.";
             }
 
@@ -2271,12 +2289,17 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The property column.</param>
             private List<Parts.Entry> ColumnMenu(TestEntry entry, PropColumn column)
             {
-                var wanted = _byColumn.TryGetValue(column.Id, out var value) ? value : null;
+                var wanted = _byColumn.TryGetValue(column.Id, out var value)
+                    ? value
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 var items = new List<Parts.Entry>
                 {
                     Parts.Entry.Rule(),
-                    Parts.Entry.Heading(column.Title + ": " + (wanted ?? Anything)),
+                    Parts.Entry.Heading(column.Title + ": " + (
+                        wanted.Count == 0 ? Anything
+                        : wanted.Count == 1 ? wanted.First()
+                        : Ui.Count(wanted.Count, "value"))),
                 };
 
                 var values = Values(entry, column);
@@ -2297,21 +2320,22 @@ namespace CamelWorks.UI.Views
                 // being looked for. The window it opens is filtered by typing and shows how many
                 // results each value holds, which is what the choice actually turns on.
                 items.Add(Parts.Entry.Act(
-                    "Narrow to a value  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
-                    () => Parts.Search(_board, "Show only results whose " + column.Title + " is",
+                    "Narrow to values  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
+                    () => Parts.Search(_board, "Show results whose " + column.Title + " is any of",
                                        values, wanted,
-                                       wanted == null ? null : "Any " + column.Title,
+                                       wanted.Count == 0 ? null : "Any " + column.Title,
                                        pick =>
                                        {
-                                           if (pick == null) _byColumn.Remove(column.Id);
-                                           else _byColumn[column.Id] = pick;
+                                           if (pick.Count == 0) _byColumn.Remove(column.Id);
+                                           else _byColumn[column.Id] =
+                                               new HashSet<string>(pick, StringComparer.OrdinalIgnoreCase);
 
                                            _picked.Clear();
                                            _pickedFrom = null;
                                            RedrawBoard();
                                        })));
 
-                if (wanted != null)
+                if (wanted.Count > 0)
                     items.Add(Parts.Entry.Act("Any " + column.Title, Glyphs.Close, () =>
                     {
                         _byColumn.Remove(column.Id);
@@ -2359,34 +2383,23 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How the board is ordered: by a column, and banded by a facet.
+            /// How the board is banded, and the one thing about its order a header cannot say.
             ///
-            /// Its own control rather than a section of the filter menu, because sorting and
-            /// narrowing are different questions and a coordinator reaches for them at different
-            /// moments. The rail has had the two apart since it was built; the board had them in
-            /// one place behind a symbol that named neither.
+            /// <b>The list of columns to sort by is gone.</b> It named every column of the table
+            /// and did exactly what pressing that column's own header does, so it was a menu
+            /// restating the table underneath it - and the two could be read as different
+            /// features by anybody who had not noticed the headers were live. What is left is the
+            /// way back to the order the test holds, which no header press reaches: a header
+            /// turns an order round, it never takes one off.
             /// </summary>
             private List<Parts.Entry> SortMenu()
             {
-                var items = new List<Parts.Entry>
-                {
-                    Parts.Entry.Heading("Order: " + (_by ?? "as the test holds them")),
-                };
-
-                foreach (var column in Widths())
-                {
-                    var here = column.Name;
-
-                    items.Add(Parts.Entry.Act(
-                        here + (string.Equals(_by, here, StringComparison.Ordinal)
-                                    ? _back ? " (backwards)" : " (forwards)"
-                                    : string.Empty),
-                        null, () => SortBy(here)));
-                }
+                var items = new List<Parts.Entry>();
 
                 if (_by != null)
                 {
-                    items.Add(Parts.Entry.Rule());
+                    items.Add(Parts.Entry.Heading("Order: by " + _by
+                                                  + (_back ? ", backwards" : string.Empty)));
 
                     items.Add(Parts.Entry.Act("Back to the test's own order", Glyphs.Close, () =>
                     {
@@ -2394,9 +2407,9 @@ namespace CamelWorks.UI.Views
                         _back = false;
                         RedrawBoard();
                     }));
-                }
 
-                items.Add(Parts.Entry.Rule());
+                    items.Add(Parts.Entry.Rule());
+                }
 
                 items.Add(Parts.Entry.Heading(_bands.Count == 0
                     ? "Band the rows by: " + ByNothing
@@ -2512,22 +2525,46 @@ namespace CamelWorks.UI.Views
 
                 foreach (var column in _columns) items.AddRange(ColumnMenu(entry, column));
 
-                // Where the narrowing is set is where it comes off, including the two set
-                // elsewhere: the status segment above and the text in the search box.
-                if (Filtering)
+                return items;
+            }
+
+            /// <summary>
+            /// Everything about what this table is showing and in what shape, in one menu.
+            ///
+            /// Sorting, narrowing and banding were two symbols, and which of the three a thing
+            /// lived under was a rule nobody could learn - "band the rows by" sat under the sort
+            /// and "what the columns say" under the funnel, so both had to be opened to find out
+            /// what the table was currently doing. They are one question.
+            /// </summary>
+            /// <param name="entry">The test on the board.</param>
+            private List<Parts.Entry> TableMenu(TestEntry entry)
+            {
+                var items = FilterMenu(entry);
+
+                items.AddRange(SortMenu());
+
+                // Last, and only when there is something to undo. One press that puts the table
+                // back to how it opened - every narrowing, the order, the bands and the search
+                // box - because taking six of them off one at a time, from the places each was
+                // set, is how somebody ends up closing the app to clear a filter.
+                if (Filtering || InAnOrder)
                 {
                     items.Add(Parts.Entry.Rule());
 
-                    items.Add(Parts.Entry.Act("Show everything again", Glyphs.EyeOff, () =>
+                    items.Add(Parts.Entry.Act("Reset the table", Glyphs.Round, () =>
                     {
                         _status = null;
                         _party = null;
                         _showing = BothKinds;
+                        _by = null;
+                        _back = false;
                         _bands.Clear();
                         _shutBands.Clear();
                         _sameAs = null;
                         _byColumn.Clear();
                         _boardBox.Text = string.Empty;
+                        _picked.Clear();
+                        _pickedFrom = null;
                         RedrawBoard();
                     }));
                 }
@@ -5247,8 +5284,7 @@ namespace CamelWorks.UI.Views
                     // every result of the test on every keystroke.
                     if (!_columnsById.TryGetValue(narrowed.Key, out var column)) continue;
 
-                    if (!string.Equals(Custom(row, column), narrowed.Value,
-                                       StringComparison.OrdinalIgnoreCase))
+                    if (narrowed.Value.Count > 0 && !narrowed.Value.Contains(Custom(row, column)))
                         return false;
                 }
 
@@ -5351,7 +5387,8 @@ namespace CamelWorks.UI.Views
                     _by ?? string.Empty,
                     _back ? "1" : "0",
                     _sameAs == null ? string.Empty : Id(_sameAs),
-                    string.Join(",", _byColumn.Select(n => n.Key + "=" + n.Value)),
+                    string.Join(",", _byColumn.Select(
+                        n => n.Key + "=" + string.Join("|", n.Value.OrderBy(v => v, StringComparer.Ordinal)))),
                     entry.Rows.Count.ToString(CultureInfo.InvariantCulture),
                     _edits.ToString(CultureInfo.InvariantCulture),
                 });
