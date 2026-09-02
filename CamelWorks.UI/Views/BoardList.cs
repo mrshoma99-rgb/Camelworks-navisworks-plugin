@@ -103,13 +103,25 @@ namespace CamelWorks.UI.Views
 
                 if (scroll == null || value <= 0) return;
 
-                // After the new items have been measured, or there is nothing to scroll within
-                // yet and the offset is clamped to zero - which is the bug this exists to fix.
+                // Twice, and the first one is what stops the flicker.
+                //
+                // Immediately, so a rebuild that has already been measured - the common case -
+                // never renders a frame at the top. Then again after layout, because folding a
+                // band away shortens the content and the offset has to be re-clamped against a
+                // height that did not exist yet. Doing only the second gave a list that visibly
+                // jumped to the top and back, which is what "it jumps up and down" was.
+                scroll.ScrollToVerticalOffset(Math.Min(value, Math.Max(0, scroll.ScrollableHeight)));
+
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     var to = Scroller();
 
-                    if (to != null) to.ScrollToVerticalOffset(Math.Min(value, to.ScrollableHeight));
+                    if (to == null) return;
+
+                    var wanted = Math.Min(value, Math.Max(0, to.ScrollableHeight));
+
+                    if (Math.Abs(to.VerticalOffset - wanted) > 0.5)
+                        to.ScrollToVerticalOffset(wanted);
                 }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
