@@ -1845,6 +1845,40 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Redraw the rows whose picked state changed, and nothing else.
+            ///
+            /// <b>Why not just redraw the rows.</b> Rebuilding the table throws the list away and
+            /// makes a new one, and a new list starts at the top - so clicking a result forty rows
+            /// down took the board back to the first row and left the thing that had just been
+            /// clicked off the screen. A press that moves the view away from what it pressed is
+            /// the board arguing with the person using it.
+            ///
+            /// Ticking a box already worked this way. Clicking a row did not, and the difference
+            /// was that a plain click also un-picks everything else - so it is not one row that
+            /// changed, it is one row and whatever was picked before.
+            /// </summary>
+            /// <param name="ids">The rows to draw again.</param>
+            private void Repainted(ICollection<string> ids)
+            {
+                if (ids.Count == 0) return;
+
+                if (_lines != null && _list != null)
+                    foreach (var line in _lines)
+                        if (ids.Contains(line.Id))
+                            _list.Redraw(line);
+
+                var entry = Entry();
+
+                if (entry != null)
+                {
+                    var shape = Shape(entry);
+                    _head.Content = Header(shape.Groups, shape.Loose);
+                }
+
+                RedrawSelection();
+            }
+
+            /// <summary>
             /// Every line the board is showing, in order, as plain objects.
             ///
             /// The visuals are made by <see cref="BoardList"/> for the lines that reach the
@@ -3275,6 +3309,10 @@ namespace CamelWorks.UI.Views
                 var adding = (keys & System.Windows.Input.ModifierKeys.Control) != 0;
                 var run = (keys & System.Windows.Input.ModifierKeys.Shift) != 0;
 
+                // What was picked before, so afterwards the rows that changed can be told from
+                // the rows that did not.
+                var was = new HashSet<string>(_picked, StringComparer.Ordinal);
+
                 if (run && _pickedFrom != null)
                 {
                     var between = Between(_pickedFrom, id);
@@ -3288,7 +3326,7 @@ namespace CamelWorks.UI.Views
 
                         foreach (var one in between) _picked.Add(one);
 
-                        RedrawRows();
+                        Repainted(Flipped(was));
                         return;
                     }
                 }
@@ -3301,11 +3339,28 @@ namespace CamelWorks.UI.Views
                 // be stretched and shrunk from the same end rather than walking away from it.
                 _pickedFrom = id;
 
-                RedrawRows();
+                Repainted(Flipped(was));
 
                 // Last, and only on a plain press of one row. A run or a Ctrl-press is somebody
                 // building a selection, not asking to be taken somewhere.
                 if (_focusOnClick && !adding && !run) Look(id);
+            }
+
+            /// <summary>
+            /// Which rows are picked now that were not, or were and are not.
+            ///
+            /// Named apart from <see cref="Moved()"/>, which is the edit counter and has nothing
+            /// to do with this: two methods called the same thing meaning two different things is
+            /// how the next person reading this loses ten minutes.
+            /// </summary>
+            /// <param name="was">What was picked before.</param>
+            private HashSet<string> Flipped(HashSet<string> was)
+            {
+                var changed = new HashSet<string>(_picked, StringComparer.Ordinal);
+
+                changed.SymmetricExceptWith(was);
+
+                return changed;
             }
 
             /// <summary>Put the camera on one picked row, for focus-on-click.</summary>
@@ -3439,8 +3494,7 @@ namespace CamelWorks.UI.Views
                 else
                 {
                     rest.Add(Parts.Entry.Act("Group with the picked rows", Glyphs.Group,
-                        () => Prompt("Name the clash group", Suggested(), "Group",
-                                     name => Regroup(WithPicked(picked), name, "Grouped {0} into"))));
+                        () => GroupInto(WithPicked(picked), "Grouped {0} into")));
                 }
 
                 if (!row.IsGroup)
@@ -3665,8 +3719,7 @@ namespace CamelWorks.UI.Views
 
                 if (loose.Count > 1)
                     return Parts.Entry.Danger("Group", Glyphs.Group,
-                        () => Prompt("Name the clash group", Suggested(), "Group",
-                                     name => Regroup(picked, name, "Grouped {0} into")));
+                        () => GroupInto(picked, "Grouped {0} into"));
 
                 return Parts.Entry.Barred("Group", Glyphs.Group,
                     "Grouping takes two or more loose results. One on its own is already as "
@@ -5226,6 +5279,41 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>The next unused "New group N" for this test.</summary>
+            /// <summary>
+            /// Ask which clash group these results go in, offering the ones this test has.
+            ///
+            /// The same fault the folders had: a box to type a name into, for a name that is on
+            /// the board a few rows away. Typing it again risks "Level 3 riser" beside "Level 03
+            /// riser", which is two groups where the coordinator meant one - and on a board that
+            /// can sort, filter and collapse by group, two names is two places to look.
+            ///
+            /// The box for a new one is still there, starting at the name that would have been
+            /// suggested anyway, because the first group on a test has nothing to pick from.
+            /// </summary>
+            /// <param name="picked">The results to group.</param>
+            /// <param name="did">What the outcome line says, with a slot for the count.</param>
+            private void GroupInto(IReadOnlyList<object> picked, string did)
+            {
+                var entry = Entry();
+
+                var known = (entry?.Rows ?? new List<Row>())
+                    .Select(r => r.Group)
+                    .Where(g => g.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(g => g, StringComparer.CurrentCulture)
+                    .ToList();
+
+                Parts.Choose(
+                    _board,
+                    "Group " + Ui.Count(Rows(picked).Count, "result"),
+                    known,
+                    null,
+                    "Or a new group, named",
+                    null,
+                    name => Regroup(picked, name, did),
+                    Suggested());
+            }
+
             private string Suggested()
             {
                 var entry = Entry();

@@ -809,9 +809,11 @@ namespace CamelWorks.UI.Views
         /// <param name="fresh">What the "something new" line says, or null to leave it out.</param>
         /// <param name="none">What the "none of them" line says, or null to leave it out.</param>
         /// <param name="onDone">Given the chosen name, or the empty string for none.</param>
+        /// <param name="starting">What the new-one box starts with, when there is a sensible guess.</param>
         public static void Choose(FrameworkElement near, string prompt,
                                   IReadOnlyList<string> known, string? current,
-                                  string? fresh, string? none, Action<string> onDone)
+                                  string? fresh, string? none, Action<string> onDone,
+                                  string? starting = null)
         {
             _ = near;
 
@@ -875,7 +877,7 @@ namespace CamelWorks.UI.Views
 
             if (fresh != null)
             {
-                var box = Ui.Text(string.Empty, null, 300);
+                var box = Ui.Text(starting ?? string.Empty, null, 300);
                 box.Margin = new Thickness(0, 10, 0, 0);
 
                 void Make()
