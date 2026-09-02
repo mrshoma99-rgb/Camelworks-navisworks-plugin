@@ -413,6 +413,221 @@ namespace CamelWorks.UI.Views
             return chip;
         }
 
+        /// <summary>One thing a chip can be set to, with what it is and what it is under.</summary>
+        public readonly struct ChipOption
+        {
+            /// <summary>Describe one option.</summary>
+            /// <param name="value">What setting it writes.</param>
+            /// <param name="label">What it says.</param>
+            /// <param name="under">A quieter second line, or null.</param>
+            /// <param name="glyph">The symbol that says what kind of thing it is, or null.</param>
+            /// <param name="key">The skin key the symbol is tinted with, or null.</param>
+            public ChipOption(string value, string label, string? under = null,
+                              string? glyph = null, string? key = null)
+            {
+                _value = value ?? string.Empty;
+                _label = label ?? string.Empty;
+                Under = under;
+                Glyph = glyph;
+                Key = key;
+            }
+
+            private readonly string? _value;
+            private readonly string? _label;
+
+            /// <summary>
+            /// What setting it writes.
+            ///
+            /// Read through the field so <c>default(ChipOption)</c> answers with an empty string
+            /// rather than null: a struct promising a string its own default would not give is a
+            /// null reference waiting for the first array somebody sizes before filling.
+            /// </summary>
+            public string Value => _value ?? string.Empty;
+
+            /// <summary>What it says.</summary>
+            public string Label => _label ?? string.Empty;
+
+            /// <summary>A quieter second line, or null.</summary>
+            public string? Under { get; }
+
+            /// <summary>The symbol that says what kind of thing it is, or null.</summary>
+            public string? Glyph { get; }
+
+            /// <summary>The skin key the symbol is tinted with, or null.</summary>
+            public string? Key { get; }
+        }
+
+        /// <summary>
+        /// A chip whose options are things of different kinds, each saying which kind it is.
+        ///
+        /// <b>Why the symbol matters.</b> A list holding Sam Reed, the fire engineer, Acme and
+        /// the ARC team is four different kinds of thing spelled the same way, and a coordinator
+        /// reading a board has to know at a glance whether a row is one person's or a whole
+        /// team's - those are different amounts of work and different conversations. So the kind
+        /// travels with the name, in the list and on the chip.
+        ///
+        /// <b>And a way to add one.</b> An assign list with nobody on it used to be an empty
+        /// dropdown, which is a dead end at exactly the moment somebody wants to build the team.
+        /// The last line always offers it.
+        /// </summary>
+        /// <param name="value">What it is set to now.</param>
+        /// <param name="options">What it can be set to.</param>
+        /// <param name="onChange">Called with the new value.</param>
+        /// <param name="glyph">The symbol for what it is set to now, or null.</param>
+        /// <param name="placeholder">What it says when it is set to nothing.</param>
+        /// <param name="last">One more line under the options, or null.</param>
+        public static UIElement KindChip(string? value, IReadOnlyList<ChipOption> options,
+                                         Action<string> onChange, string? glyph = null,
+                                         string placeholder = "Set", ChipOption? last = null)
+        {
+            var empty = string.IsNullOrEmpty(value) || value == "—";
+
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            if (!empty && glyph != null)
+                row.Children.Add(Ui.Glyph(glyph, 11, "Muted", new Thickness(0, 0, 4, 0)));
+
+            var label = new TextBlock
+            {
+                Text = empty ? placeholder : value,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = 140,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            };
+
+            row.Children.Add(label);
+
+            var chevron = Ui.Glyph(Glyphs.Down, 10, empty ? "Faint" : "Muted",
+                                   new Thickness(5, 0, 0, 0));
+
+            chevron.Opacity = empty ? 0.35 : 0.7;
+            row.Children.Add(chevron);
+
+            var chip = new Border
+            {
+                Height = 24,
+                CornerRadius = new CornerRadius(7),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(7, 0, 7, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Child = row,
+            };
+
+            if (empty)
+            {
+                chip.Background = Brushes.Transparent;
+                chip.BorderBrush = Brushes.Transparent;
+                label.Tint(TextBlock.ForegroundProperty, "Faint");
+
+                chip.MouseEnter += (s, e) =>
+                {
+                    chip.Tint(Border.BackgroundProperty, "Hover");
+                    chip.Tint(Border.BorderBrushProperty, "BdStrong");
+                };
+
+                chip.MouseLeave += (s, e) =>
+                {
+                    chip.Background = Brushes.Transparent;
+                    chip.BorderBrush = Brushes.Transparent;
+                };
+            }
+            else
+            {
+                chip.Tint(Border.BackgroundProperty, "Nav");
+                chip.Tint(Border.BorderBrushProperty, "Bd");
+                label.Tint(TextBlock.ForegroundProperty, "Muted");
+            }
+
+            var list = Ui.Stack();
+
+            foreach (var option in options ?? Array.Empty<ChipOption>())
+            {
+                var here = option;
+
+                list.Children.Add(Kinded(here,
+                                         string.Equals(here.Value, value, StringComparison.Ordinal),
+                                         () => onChange?.Invoke(here.Value)));
+            }
+
+            if (last.HasValue)
+            {
+                if (list.Children.Count > 0) list.Children.Add(Ui.Rule());
+
+                var one = last.Value;
+
+                list.Children.Add(Kinded(one, false, () => onChange?.Invoke(one.Value)));
+            }
+
+            Opens(chip, Floating(list, 210), PlacementMode.Bottom);
+
+            return chip;
+        }
+
+        /// <summary>One option of a kind chip: its symbol, its name, and what it is under.</summary>
+        /// <param name="option">The option.</param>
+        /// <param name="on">Whether it is the one in force.</param>
+        /// <param name="onAct">What picking it does.</param>
+        private static UIElement Kinded(ChipOption option, bool on, Action onAct)
+        {
+            var words = new StackPanel { Orientation = Orientation.Horizontal };
+
+            if (option.Glyph != null)
+                words.Children.Add(Ui.Glyph(option.Glyph, 12, option.Key ?? "Muted",
+                                            new Thickness(0, 0, 7, 0)));
+
+            var stacked = new StackPanel();
+
+            var label = new TextBlock
+            {
+                Text = option.Label,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            label.Tint(TextBlock.ForegroundProperty, "Text");
+            stacked.Children.Add(label);
+
+            if (!string.IsNullOrEmpty(option.Under))
+                stacked.Children.Add(new TextBlock
+                {
+                    Text = option.Under,
+                    FontSize = 10,
+                    Margin = new Thickness(0, 1, 0, 0),
+                }.Wearing("Hint"));
+
+            words.Children.Add(stacked);
+
+            var line = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 6, 8, 6),
+                Cursor = Cursors.Hand,
+                Background = Brushes.Transparent,
+                Child = words,
+            };
+
+            if (on) line.Tint(Border.BackgroundProperty, "NavActive");
+
+            line.MouseEnter += (s, e) => { if (!on) line.Tint(Border.BackgroundProperty, "Hover"); };
+            line.MouseLeave += (s, e) => { if (!on) line.Background = Brushes.Transparent; };
+
+            line.MouseLeftButtonUp += (s, e) =>
+            {
+                e.Handled = true;
+                Ui.Safely(onAct);
+            };
+
+            return line;
+        }
+
         /// <summary>One option inside a dropdown, marked when it is the one in force.</summary>
         /// <param name="text">What it says.</param>
         /// <param name="on">Whether it is the current value.</param>

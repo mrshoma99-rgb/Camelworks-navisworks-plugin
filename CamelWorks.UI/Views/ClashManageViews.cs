@@ -9,6 +9,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
+using CamelWorks.Core.People;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Report;
 using CamelWorks.Core.Store;
@@ -469,6 +470,18 @@ namespace CamelWorks.UI.Views
             /// only two moments the answer can change without a re-read.
             /// </summary>
             private HashSet<string>? _raised;
+
+            /// <summary>
+            /// The team, read once per draw rather than once per row.
+            ///
+            /// Filtering asks "does this row's assignee fall under what I picked?" of every row
+            /// on the board, and the answer needs the roster. Reading it per row would be a file
+            /// read six hundred times inside one press.
+            /// </summary>
+            private TeamRoster? _roster;
+
+            /// <summary>The team as it stands, read once and held until something changes it.</summary>
+            private TeamRoster Roster() => _roster ??= TeamWindow.Read(_session);
             private string _showing = BothKinds;
 
             /// <summary>
@@ -2249,7 +2262,14 @@ namespace CamelWorks.UI.Views
                 var said = new List<string>();
 
                 if (_showing != BothKinds) said.Add(_showing.ToLowerInvariant() + " only");
-                if (_party != null) said.Add("assigned to " + _party);
+                if (_party != null)
+                {
+                    var who = Responsible.Read(_party);
+
+                    said.Add(who.Kind == ResponsibleKind.Person
+                        ? "assigned to " + who.Name
+                        : "assigned to the " + who.Name + " " + who.Kinded);
+                }
                 if (_sameAs != null) said.Add("sharing an item with " + Both(_sameAs));
 
                 foreach (var narrowed in _byColumn)
@@ -2508,15 +2528,30 @@ namespace CamelWorks.UI.Views
                 }
 
                 items.Add(Parts.Entry.Rule());
-                items.Add(Parts.Entry.Heading("Assigned to: " + (_party ?? Anyone)));
 
-                foreach (var who in new[] { Anyone }.Concat(Assignees(entry)))
+                items.Add(Parts.Entry.Heading("Assigned to: "
+                    + (_party == null ? Anyone : Responsible.Read(_party).Name)));
+
+                items.Add(Parts.Entry.Act(Anyone, null, () =>
                 {
-                    var here = who;
+                    _party = null;
+                    _picked.Clear();
+                    _pickedFrom = null;
+                    RedrawBoard();
+                }));
 
-                    items.Add(Parts.Entry.Act(here, null, () =>
+                // Roles, companies and teams as well as people - and narrowing to one of those
+                // takes in everybody the roster says is in it, so "show me structures" answers
+                // with the rows given to the STR team and the rows given to the people on it.
+                foreach (var option in Giving())
+                {
+                    if (option.Value.Length == 0) continue;
+
+                    var here = option;
+
+                    items.Add(Parts.Entry.Act(here.Label, here.Glyph, () =>
                     {
-                        _party = here == Anyone ? null : here;
+                        _party = here.Value;
                         _picked.Clear();
                         _pickedFrom = null;
                         RedrawBoard();
@@ -3257,6 +3292,90 @@ namespace CamelWorks.UI.Views
                 Held(RedrawRows);
             }
 
+            /// <summary>What the assign chip writes to mean "open the team window".</summary>
+            private const string TheTeam = "\u0001team";
+
+            /// <summary>
+            /// Everything a clash can be given to, each saying what kind of thing it is.
+            ///
+            /// People first, then the roles, companies and teams they make up, then whatever
+            /// names the board itself already carries that the roster has never heard of - an
+            /// assignment made before the team existed is still an assignment, and dropping it
+            /// off the list would make it unreachable from the row that holds it.
+            /// </summary>
+            private List<Parts.ChipOption> Giving()
+            {
+                var roster = TeamWindow.Read(_session);
+                var options = new List<Parts.ChipOption>();
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                void Offer(Responsible who, string? under)
+                {
+                    if (who.IsEmpty || !seen.Add(who.Written)) return;
+
+                    options.Add(new Parts.ChipOption(who.Written, who.Name, under,
+                                                     Symbol(who.Kind), Tint(who.Kind)));
+                }
+
+                foreach (var member in roster.Members.Where(m => m.IsActive)
+                                             .OrderBy(m => m.Name, StringComparer.CurrentCulture))
+                {
+                    var under = member.Under();
+
+                    Offer(member.AsResponsible, under.Length == 0 ? null : under);
+                }
+
+                foreach (var role in roster.Roles)
+                    Offer(new Responsible(ResponsibleKind.Role, role), "everyone in this role");
+
+                foreach (var party in roster.Parties)
+                    Offer(new Responsible(ResponsibleKind.Company, party), "everyone at this company");
+
+                foreach (var team in roster.Teams)
+                    Offer(new Responsible(ResponsibleKind.Team, team), "everyone on this team");
+
+                // Names already on the board that the roster has never met.
+                var read = Current();
+
+                if (read != null)
+                    foreach (var row in read.SelectMany(e => e.Rows))
+                        if (row.Assigned.Length > 0)
+                            Offer(Responsible.Read(row.Assigned), null);
+
+                foreach (var party in _session.Profile.Parties)
+                    Offer(Responsible.Person(party), null);
+
+                options.Add(new Parts.ChipOption(string.Empty, Nobody, null, Glyphs.Close, "Faint"));
+
+                return options;
+            }
+
+            /// <summary>The symbol that says what kind of thing an assignment is to.</summary>
+            /// <param name="kind">The kind.</param>
+            private static string Symbol(ResponsibleKind kind) =>
+                kind == ResponsibleKind.Role ? Glyphs.Tune
+                : kind == ResponsibleKind.Company ? Glyphs.Boxed
+                : kind == ResponsibleKind.Team ? Glyphs.Group
+                : Glyphs.Person;
+
+            /// <summary>What the symbol is tinted with, so a grouping reads as wider than a person.</summary>
+            /// <param name="kind">The kind.</param>
+            private static string Tint(ResponsibleKind kind) =>
+                kind == ResponsibleKind.Person ? "Muted" : "Accent";
+
+            /// <summary>An assignment as the board prints it: the name, without its kind marker.</summary>
+            /// <param name="assigned">The field as it is stored.</param>
+            private static string Shown(string assigned) => Responsible.Read(assigned).Name;
+
+            /// <summary>The symbol for what a row is assigned to, or null when it is nobody.</summary>
+            /// <param name="assigned">The field as it is stored.</param>
+            private static string? Marked(string assigned)
+            {
+                var who = Responsible.Read(assigned);
+
+                return who.IsEmpty ? null : Symbol(who.Kind);
+            }
+
             /// <summary>Whether an issue in the register already covers this result.</summary>
             /// <param name="testId">Which test the result is in.</param>
             /// <param name="resultId">The result.</param>
@@ -3446,8 +3565,10 @@ namespace CamelWorks.UI.Views
                         value => SetStatus(row, value), Reads(row.Status), "Set status"),
                     StatusColumn);
 
-                Put(grid, Parts.InlineChip(row.Assigned, Assignees(Entry()),
-                        value => SetAssignee(row, value), Tone.Plain, "Assign"),
+                Put(grid, Parts.KindChip(Shown(row.Assigned), Giving(),
+                        value => SetAssignee(row, value), Marked(row.Assigned), "Assign",
+                        new Parts.ChipOption(TheTeam, "Add team members…", null, Glyphs.Add,
+                                             "Accent")),
                     StatusColumn + 1);
 
                 var verbs = Verbs(row);
@@ -3966,8 +4087,10 @@ namespace CamelWorks.UI.Views
                     () => { _picked.Clear(); _pickedFrom = null; RedrawRows(); },
                     Parts.InlineChip(null, Statuses,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
-                    Parts.InlineChip(null, Assignees(Entry()),
-                        value => SetMany(picked, value, false), Tone.Plain, "Assign to"),
+                    Parts.KindChip(null, Giving(),
+                        value => SetMany(picked, value, false), null, "Assign to",
+                        new Parts.ChipOption(TheTeam, "Add team members…", null, Glyphs.Add,
+                                             "Accent")),
                     Grouping(rows),
                     Parts.Verb("Raise as issues", Glyphs.Issue, false,
                                () => RaiseIssue(picked, false)),
@@ -5272,7 +5395,8 @@ namespace CamelWorks.UI.Views
                     return false;
 
                 if (_party != null
-                    && !string.Equals(row.Assigned, _party, StringComparison.OrdinalIgnoreCase))
+                    && !Roster().Covers(Responsible.Read(row.Assigned),
+                                        Responsible.Read(_party)))
                     return false;
 
                 if (_sameAs != null && !Shares(row, _sameAs)) return false;
@@ -5422,6 +5546,7 @@ namespace CamelWorks.UI.Views
                 // Which results an issue covers can change with any of these, and it is read
                 // again the next time a row asks.
                 _raised = null;
+                _roster = null;
             }
 
             /// <summary>The clash groups the filters leave, each with the members they leave.</summary>
@@ -5803,8 +5928,29 @@ namespace CamelWorks.UI.Views
             /// <summary>Set the assignee from the chip on a row, over everything picked.</summary>
             /// <param name="row">The row the chip is on.</param>
             /// <param name="who">Who it is with now.</param>
-            private void SetAssignee(BoardRow row, string who) =>
+            /// <summary>
+            /// Give a row to somebody, or open the team window when there is nobody to give it to.
+            ///
+            /// The last line of the assign list is a way to build the team, so it arrives here
+            /// like any other value and is caught before it can be written as an assignment.
+            /// </summary>
+            /// <param name="row">The row.</param>
+            /// <param name="who">What was picked, written.</param>
+            private void SetAssignee(BoardRow row, string who)
+            {
+                if (string.Equals(who, TheTeam, StringComparison.Ordinal))
+                {
+                    TeamWindow.Show(_board, _session, () =>
+                    {
+                        _roster = null;
+                        RedrawRows();
+                        RedrawBoardHead();
+                    });
+                    return;
+                }
+
                 AssignPicked(Reaching(row), who == Nobody ? string.Empty : who, _toast);
+            }
 
             /// <summary>
             /// What a verb pressed on one row actually acts on.
@@ -5830,8 +5976,21 @@ namespace CamelWorks.UI.Views
             /// <param name="status">True for a status, false for an assignee.</param>
             private void SetMany(IReadOnlyList<object> picked, string value, bool status)
             {
-                if (status) Mark(picked, value, _toast);
-                else AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
+                if (status) { Mark(picked, value, _toast); return; }
+
+                if (string.Equals(value, TheTeam, StringComparison.Ordinal))
+                {
+                    TeamWindow.Show(_board, _session, () =>
+                    {
+                        _roster = null;
+                        RedrawRows();
+                        RedrawBoardHead();
+                    });
+
+                    return;
+                }
+
+                AssignPicked(picked, value == Nobody ? string.Empty : value, _toast);
             }
 
             /// <summary>
