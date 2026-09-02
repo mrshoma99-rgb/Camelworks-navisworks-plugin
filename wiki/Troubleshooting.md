@@ -93,8 +93,8 @@ nothing at all.
 ## The marker spheres do not appear
 
 They are drawn by a render plug-in that loads with the rest of CamelWorks, so if nothing appears the
-usual cause is size rather than the markers. *Marker size* is in **millimetres across**, on the
-*Markers and the view* page — 300 by default. A size of a few millimetres on a site-sized model is a
+usual cause is size rather than the markers. *Diameter* is in **millimetres across**, under
+**Settings** in the board's header — 300 by default. A size of a few millimetres on a site-sized model is a
 ball you would have to be standing on to see.
 
 They are also drawn where the *result* says the clash is. A result the engine recorded with no

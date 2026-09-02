@@ -144,26 +144,33 @@ namespace CamelWorks.UI.Shell
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
+            // The app's name and the suite's, in one line of text rather than two blocks side by
+            // side. Two blocks are two boxes, and centring two boxes of different font sizes
+            // against each other lines up their middles, not their letters: "CamelWorks" sat
+            // visibly low against "Clash Manager". One block with two runs sits them on the same
+            // baseline, which is what the eye reads as level.
             var name = new TextBlock
             {
-                Text = _app.Title,
                 FontSize = 17,
-                FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
             name.Tint(TextBlock.ForegroundProperty, "Text");
-            titles.Children.Add(name);
 
-            var suite = new TextBlock
+            name.Inlines.Add(new System.Windows.Documents.Run(_app.Title)
             {
-                Text = "CamelWorks",
-                Margin = new Thickness(10, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
+                FontWeight = FontWeights.SemiBold,
+            });
+
+            var suite = new System.Windows.Documents.Run("   CamelWorks")
+            {
+                FontSize = 12,
             };
 
-            suite.Wearing("Hint");
-            titles.Children.Add(suite);
+            suite.SetResourceReference(System.Windows.Documents.Run.ForegroundProperty, "Faint");
+            name.Inlines.Add(suite);
+
+            titles.Children.Add(name);
 
             // The tabs sit on the title row rather than in a band under it.
             //

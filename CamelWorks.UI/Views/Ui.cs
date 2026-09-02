@@ -2393,6 +2393,16 @@ namespace CamelWorks.UI.Views
         /// Drawn from path data rather than loaded from a file because these appear inside panes
         /// the user can theme: a PNG is one colour for ever, and a grey glyph on a dark card is
         /// the detail that makes a plug-in look unfinished.
+        ///
+        /// <b>Every glyph is drawn on its whole 24-unit grid</b>, not on the part of it the path
+        /// happens to touch. A path with no stretch reports the box from the origin out to its
+        /// far edge as its size, so a chevron living between y 9 and y 15 was measured as 18 wide
+        /// by 15 tall: the box around it was not square, the empty top-left counted and the empty
+        /// bottom-right did not, and scaling that to fit left the mark low in its button. It was
+        /// reported on the export button's arrow and it was true of every glyph in the product,
+        /// each off by a different amount because each path covers a different part of the grid.
+        /// Sitting the path on a 24 by 24 canvas gives them all the same box, which is the box
+        /// they were drawn in.
         /// </summary>
         /// <param name="data">Path data, in a 24-unit box. One of <see cref="Glyphs"/>.</param>
         /// <param name="size">How big to draw it.</param>
@@ -2400,6 +2410,15 @@ namespace CamelWorks.UI.Views
         /// <param name="margin">Space around it.</param>
         public static Viewbox Glyph(string data, double size, string key, Thickness margin = default)
         {
+            var grid = new Canvas
+            {
+                Width = 24,
+                Height = 24,
+                Background = System.Windows.Media.Brushes.Transparent,
+            };
+
+            grid.Children.Add(Arrow(data, key));
+
             return new Viewbox
             {
                 Width = size,
@@ -2407,7 +2426,7 @@ namespace CamelWorks.UI.Views
                 Margin = margin,
                 VerticalAlignment = VerticalAlignment.Center,
                 Stretch = Stretch.Uniform,
-                Child = Arrow(data, key),
+                Child = grid,
             };
         }
 

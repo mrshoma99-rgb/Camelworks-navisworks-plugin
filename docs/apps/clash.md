@@ -56,7 +56,9 @@ because the board does what they set up where it happens: the filter page is the
 the chips; "what the status, assign and group verbs write" is the value picked on the chip itself;
 and the grouping chain became the sort menu's band chain, on the rows, saying that nothing moved —
 and able to say the word that makes it move, once the arrangement is the one wanted.
-Two are left, and the board's own header names each: **Source and tolerance** and **Columns**.
+Two are left, and the board's own header names each: **Settings** and **Columns**. Settings was
+"Source and tolerance" and was neither: it held where the results come from, how far the camera
+stands back, how big a marker is and what colour it is drawn, under a title naming one of them.
 The review round moved into the footer's *Export* menu, with the rest of the ways work
 leaves the product.
 

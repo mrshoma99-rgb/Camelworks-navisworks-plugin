@@ -330,6 +330,33 @@ namespace CamelWorks.UI.Views
             private bool _focusOnClick;
 
             /// <summary>
+            /// What colour the markers are drawn: the status palette, or one colour throughout.
+            ///
+            /// By status is the resting answer, because the ball then says how far along the
+            /// clash is as well as where it is. One colour is for the model that fights it - a
+            /// federation of red services makes red markers hard to pick out, and being able to
+            /// say "draw them all in magenta" is the difference between seeing the marks and
+            /// hunting for them.
+            /// </summary>
+            private string _markerColour = MarkerByStatus;
+
+            /// <summary>The marker colour that means "take it from the status".</summary>
+            private const string MarkerByStatus = "By status";
+
+            /// <summary>The colours a marker can be drawn in, beyond the status palette.</summary>
+            private static readonly (string Name, byte R, byte G, byte B)[] MarkerColours =
+            {
+                ("Red", 0xC8, 0x10, 0x2E),
+                ("Orange", 0xE8, 0x8B, 0x00),
+                ("Yellow", 0xF2, 0xC8, 0x1E),
+                ("Green", 0x2E, 0x8B, 0x3D),
+                ("Blue", 0x1F, 0x6F, 0xB2),
+                ("Magenta", 0xC0, 0x27, 0xA8),
+                ("White", 0xF5, 0xF5, 0xF5),
+                ("Black", 0x1A, 0x1A, 0x1A),
+            };
+
+            /// <summary>
             /// What this person chose last time, read once when the screen is built.
             ///
             /// Static, so switching tab and coming back does not re-read the file, and so the
@@ -341,6 +368,7 @@ namespace CamelWorks.UI.Views
             private const string ChoiceMarkerAcross = "clash.markerAcrossMm";
             private const string ChoiceMarkOnFocus = "clash.markOnFocus";
             private const string ChoiceFocusOnClick = "clash.focusOnClick";
+            private const string ChoiceMarkerColour = "clash.markerColour";
 
             /// <summary>Take up what this person chose the last time they were here.</summary>
             private void Remembered()
@@ -349,6 +377,7 @@ namespace CamelWorks.UI.Views
                 _markerAcross = Choices.Get(ChoiceMarkerAcross, _markerAcross);
                 _markOnFocus = Choices.Get(ChoiceMarkOnFocus, _markOnFocus);
                 _focusOnClick = Choices.Get(ChoiceFocusOnClick, _focusOnClick);
+                _markerColour = Choices.Get(ChoiceMarkerColour, _markerColour);
             }
 
             /// <summary>
@@ -364,6 +393,7 @@ namespace CamelWorks.UI.Views
                 Choices.Set(ChoiceMarkerAcross, _markerAcross);
                 Choices.Set(ChoiceMarkOnFocus, _markOnFocus);
                 Choices.Set(ChoiceFocusOnClick, _focusOnClick);
+                Choices.Set(ChoiceMarkerColour, _markerColour);
 
                 Choices.Save();
             }
@@ -1170,25 +1200,13 @@ namespace CamelWorks.UI.Views
                 name.Wearing("Hint");
                 row.Children.Add(name);
 
-                // Renaming it, where it is. A folder here is made by moving a test into a name
-                // that does not exist yet, so it could be created and filled but never corrected
-                // - a typo in a folder name was permanent short of moving every test in it out
-                // and back again.
-                var rename = Ui.Icon(Glyphs.Pencil, "Rename this folder",
-                                     () => Prompt("Rename this folder", folder, "Rename",
-                                                  named => RenameFolder(folder, named)));
-
-                rename.VerticalAlignment = VerticalAlignment.Center;
-                rename.Margin = new Thickness(6, 0, 0, 0);
-                DockPanel.SetDock(rename, Dock.Right);
-                row.Children.Insert(0, rename);
-
                 var band = new Border
                 {
                     Padding = new Thickness(12, 6, 14, 5),
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     ToolTip = folder + " — a CamelWorks folder, kept in this project. "
-                              + (shut ? "Click to open it." : "Click to fold it away."),
+                              + (shut ? "Click to open it." : "Click to fold it away.")
+                              + " Double-click to rename it.",
                     Child = row,
                     Cursor = System.Windows.Input.Cursors.Hand,
                 };
@@ -1198,9 +1216,32 @@ namespace CamelWorks.UI.Views
 
                 band.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
+                    // Not on the second press of a double-click, which is a rename and not a
+                    // fold. Without this the folder shut itself on the way to its own rename box.
+                    if (e.ClickCount > 1) return;
+
                     if (!_shutFolders.Remove(folder)) _shutFolders.Add(folder);
                     RedrawRailList();
                 });
+
+                // Renaming it, where it is, by the gesture that renames a test and a clash and a
+                // clash group - double-click the thing and type.
+                //
+                // It was a pencil on the row, which is a symbol competing with the folder's own
+                // name for the same few pixels and a second thing to learn for something every
+                // other name on this screen does the same way. A folder here is made by moving a
+                // test into a name that does not exist yet, so before either it could be created
+                // and filled but never corrected: a typo was permanent short of moving every test
+                // in it out and back again.
+                band.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount != 2) return;
+
+                    e.Handled = true;
+
+                    Prompt("Rename this folder", folder, "Rename",
+                           named => RenameFolder(folder, named));
+                };
 
                 return band;
             }
@@ -1223,9 +1264,13 @@ namespace CamelWorks.UI.Views
 
                 var when = When(entry);
 
+                // The kind of test beside the tolerance. "5 mm" alone says nothing about what
+                // was measured at 5 mm: a hard clash at 5 mm and a clearance at 5 mm are
+                // different questions with different answers, and which one a test asked was
+                // only findable by opening its settings.
                 var hint = new TextBlock
                 {
-                    Text = Tolerance(entry)
+                    Text = Kinded(entry) + " · " + Tolerance(entry)
                            + (when.Length == 0 || when == common ? string.Empty : " · run " + when),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
@@ -1263,8 +1308,8 @@ namespace CamelWorks.UI.Views
                 {
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Cursor = System.Windows.Input.Cursors.Hand,
-                    ToolTip = entry.Test.Name + " — " + Sides(entry) + ", hard clash at "
-                              + Tolerance(entry)
+                    ToolTip = entry.Test.Name + " — " + Sides(entry) + ", "
+                              + Kinded(entry).ToLowerInvariant() + " at " + Tolerance(entry)
                               + (when.Length == 0 ? string.Empty : ", run " + when),
                     Child = tone,
                 };
@@ -1987,11 +2032,18 @@ namespace CamelWorks.UI.Views
                 {
                     // Never behind a tab. Grouping the loose results is the job, so the rows it is
                     // done to have to be on screen without anybody finding them first.
-                    lines.Add(BoardLine.Banner(() => Parts.ViewBand(
-                        Glyphs.Clash, "Not grouped",
-                        Ui.Count(shape.Loose.Count, "loose result"),
-                        "of " + Skin.Num(shape.LooseTotal) + " — tick two or more and press Group",
-                        () => PickAll(shape.Loose))));
+                    //
+                    // <b>Unless there is nothing to tell it apart from.</b> A test whose results
+                    // have never been grouped is a board of loose rows with one band over all of
+                    // them saying so, which is a heading that divides nothing from nothing. The
+                    // band is worth a line of the screen only when there are groups above it for
+                    // these rows to be "not" part of.
+                    if (shape.Groups.Count > 0)
+                        lines.Add(BoardLine.Banner(() => Parts.ViewBand(
+                            Glyphs.Clash, "Not grouped",
+                            Ui.Count(shape.Loose.Count, "loose result"),
+                            "of " + Skin.Num(shape.LooseTotal) + " — tick two or more and press Group",
+                            () => PickAll(shape.Loose))));
 
                     foreach (var row in shape.Loose) Add(row);
                 }
@@ -2105,7 +2157,7 @@ namespace CamelWorks.UI.Views
                 // one menu, and it says the whole answer in its tooltip.
                 verbs.Children.Add(Ui.Loose(_view));
 
-                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance",
+                verbs.Children.Add(Ui.Icon(Glyphs.Tune, "Settings",
                     () => Configure("source")));
 
                 DockPanel.SetDock(verbs, Dock.Right);
@@ -2690,39 +2742,48 @@ namespace CamelWorks.UI.Views
 
                 Fixed(26);
 
-                // The name takes twice what either item does, and all three give ground before
-                // the table starts scrolling sideways.
-                //
-                // The design fixes Item 1 and Item 2 at 118 apiece and lets only the name flex,
-                // which adds up to 862 — wider than the board is at the window's own default
-                // size. The picture that came back was a table scrolled off its own status and
-                // assignee columns, which are the two things this screen was rebuilt to put on
-                // the row. Horizontal scroll is meant to be the last resort here, not the
-                // resting state.
                 // The three that give ground give more of it once there are property columns to
                 // make room for. One custom column at the window's own width is the difference
                 // between a board that fits and a board scrolled off its row verbs, and a column
                 // somebody added on purpose should not cost them the verbs.
+                //
+                // The name takes twice what either item does, and all three give ground before
+                // the table starts scrolling sideways. The design fixes Item 1 and Item 2 at 118
+                // apiece and lets only the name flex, which adds up to 862 - wider than the board
+                // is at the window's own default size. The picture that came back was a table
+                // scrolled off its own status and assignee columns, which are the two things this
+                // screen was rebuilt to put on the row. Horizontal scroll is meant to be the last
+                // resort here, not the resting state.
                 var tight = _columns.Count > 0;
 
-                Named2(Named, 2, tight ? 110 : 130);
-                Named2(ItemA, 1, tight ? 58 : 74);
-                Named2(ItemB, 1, tight ? 58 : 74);
-
-                columns.Add((Clashes, new GridLength(Wide(Clashes, tight ? 44 : 48)), 0));
-                columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
-
-                // The property columns land between Worst and Status, where the eye is already
-                // reading facts about the elements rather than decisions about them.
-                // Flexible, like the name and the two items, and for the same reason: a fixed
-                // width adds itself to the table, and a table that grows by 95 pixels every time
-                // somebody adds a column is a table that scrolls sideways off its own row verbs
-                // on the second one. A property column takes a share of what there is and
-                // ellipsises, with the whole value on the cell's tooltip.
-                foreach (var column in _columns) Named2(column.Title, 1, 60);
-
-                columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
-                columns.Add((Assigned, new GridLength(Wide(Assigned, 104)), 0));
+                // Walked in the order the columns are drawn in rather than written out in a fixed
+                // sequence, so a column that has been dragged somewhere else takes its width with
+                // it. Two lists that both claim to say what order the columns are in is how a
+                // table ends up with the Status header over the Worst figures.
+                foreach (var name in Order())
+                {
+                    if (string.Equals(name, Named, StringComparison.Ordinal))
+                        Named2(Named, 2, tight ? 110 : 130);
+                    else if (string.Equals(name, ItemA, StringComparison.Ordinal))
+                        Named2(ItemA, 1, tight ? 58 : 74);
+                    else if (string.Equals(name, ItemB, StringComparison.Ordinal))
+                        Named2(ItemB, 1, tight ? 58 : 74);
+                    else if (string.Equals(name, Clashes, StringComparison.Ordinal))
+                        columns.Add((Clashes, new GridLength(Wide(Clashes, tight ? 44 : 48)), 0));
+                    else if (string.Equals(name, Worst, StringComparison.Ordinal))
+                        columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
+                    else if (string.Equals(name, Status, StringComparison.Ordinal))
+                        columns.Add((Status, new GridLength(Wide(Status, 104)), 0));
+                    else if (string.Equals(name, Assigned, StringComparison.Ordinal))
+                        columns.Add((Assigned, new GridLength(Wide(Assigned, 104)), 0));
+                    else
+                        // A property column. Flexible, like the name and the two items, and for
+                        // the same reason: a fixed width adds itself to the table, and a table
+                        // that grows by 95 pixels every time somebody adds a column scrolls
+                        // sideways off its own row verbs on the second one. It takes a share of
+                        // what there is and ellipsises, with the whole value on the tooltip.
+                        Named2(name, 1, 60);
+                }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
                 // design's 92 holds three and cuts the fourth, which in the picture read as a
@@ -2748,8 +2809,98 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(cell);
             }
 
-            /// <summary>Where Status, Assigned and the verbs sit once the custom columns are in.</summary>
-            private int StatusColumn => 6 + _columns.Count;
+            /// <summary>
+            /// The columns across the board, in the order they are drawn.
+            ///
+            /// <b>Arranged, not fixed.</b> Which columns matter is the job's business, not this
+            /// screen's: a fabrication review reads Item 1, Item 2 and the worst penetration and
+            /// barely looks at who it is with, and a Friday coordination call is the other way
+            /// round. The order somebody drags their headers into is the order the table keeps.
+            ///
+            /// A column nobody has moved sits where it always did, and a column added after an
+            /// arrangement was made lands beside the column it was added next to rather than at
+            /// the end - so adding a property column does not silently undo the arrangement, and
+            /// removing one does not leave a hole in it.
+            ///
+            /// The tick box and the row verbs are not in here. They are the table's own furniture
+            /// rather than columns of it, and a board whose ticks were in the middle and whose
+            /// verbs were on the left would be a board nobody could work.
+            /// </summary>
+            private List<string> Order()
+            {
+                var natural = new List<string> { Named, ItemA, ItemB, Clashes, Worst };
+
+                natural.AddRange(_columns.Select(c => c.Title));
+                natural.Add(Status);
+                natural.Add(Assigned);
+
+                if (_arranged.Count == 0) return natural;
+
+                var order = _arranged
+                    .Where(name => natural.Contains(name, StringComparer.Ordinal))
+                    .ToList();
+
+                foreach (var name in natural)
+                {
+                    if (order.Contains(name, StringComparer.Ordinal)) continue;
+
+                    // Behind whichever of its natural neighbours is already placed, so a new
+                    // property column arrives among the property columns.
+                    var after = natural
+                        .Take(natural.IndexOf(name))
+                        .LastOrDefault(one => order.Contains(one, StringComparer.Ordinal));
+
+                    order.Insert(after == null ? 0 : order.IndexOf(after) + 1, name);
+                }
+
+                return order;
+            }
+
+            /// <summary>Which cell of a row a named column is drawn in.</summary>
+            /// <param name="column">The column.</param>
+            private int Where(string column)
+            {
+                var at = Order().FindIndex(
+                    one => string.Equals(one, column, StringComparison.Ordinal));
+
+                // Column zero is the tick box, so every column is one to the right of its place.
+                return at < 0 ? 1 : at + 1;
+            }
+
+            /// <summary>The last cell of a row, which holds the verbs.</summary>
+            private int VerbsColumn => Order().Count + 1;
+
+            /// <summary>
+            /// The order the headers have been dragged into, or empty while nobody has moved one.
+            /// </summary>
+            private readonly List<string> _arranged = new List<string>();
+
+            /// <summary>
+            /// Put one column where another one is, and draw the board that way from now on.
+            /// </summary>
+            /// <param name="moved">The column being dragged.</param>
+            /// <param name="onto">The column it was dropped on.</param>
+            private void Rearrange(string moved, string onto)
+            {
+                if (string.Equals(moved, onto, StringComparison.Ordinal)) return;
+
+                var order = Order();
+
+                var from = order.FindIndex(one => string.Equals(one, moved, StringComparison.Ordinal));
+                var to = order.FindIndex(one => string.Equals(one, onto, StringComparison.Ordinal));
+
+                if (from < 0 || to < 0) return;
+
+                order.RemoveAt(from);
+                order.Insert(to, moved);
+
+                _arranged.Clear();
+                _arranged.AddRange(order);
+
+                // Head and rows both: the header is where the names are and the rows are where
+                // the values are, and moving one without the other is the worst of all outcomes.
+                RedrawBoard();
+            }
 
             // ---- The columns, and what somebody has done to them ----
 
@@ -2992,17 +3143,17 @@ namespace CamelWorks.UI.Views
                 });
 
                 Put(grid, all, 0);
-                Put(grid, Head(Named, false), 1);
-                Put(grid, Head(ItemA, false), 2);
-                Put(grid, Head(ItemB, false), 3);
-                Put(grid, Head(Clashes, true), 4);
-                Put(grid, Head(Worst, true), 5);
+                Put(grid, Head(Named, false), Where(Named));
+                Put(grid, Head(ItemA, false), Where(ItemA));
+                Put(grid, Head(ItemB, false), Where(ItemB));
+                Put(grid, Head(Clashes, true), Where(Clashes));
+                Put(grid, Head(Worst, true), Where(Worst));
 
-                for (var i = 0; i < _columns.Count; i++)
-                    Put(grid, Head(_columns[i].Title, false), 6 + i);
+                foreach (var column in _columns)
+                    Put(grid, Head(column.Title, false), Where(column.Title));
 
-                Put(grid, Head(Status, false), StatusColumn);
-                Put(grid, Head(Assigned, false), StatusColumn + 1);
+                Put(grid, Head(Status, false), Where(Status));
+                Put(grid, Head(Assigned, false), Where(Assigned));
 
                 var band = new Border
                 {
@@ -3064,10 +3215,11 @@ namespace CamelWorks.UI.Views
                 {
                     Background = System.Windows.Media.Brushes.Transparent,
                     Cursor = System.Windows.Input.Cursors.Hand,
-                    ToolTip = !on ? "Sort by " + column
-                            : _back ? "Sorted by " + column + ", the other way round. Press again "
-                                      + "for the order the test holds."
-                            : "Sorted by " + column + ". Press again to turn it round.",
+                    ToolTip = (!on ? "Sort by " + column
+                              : _back ? "Sorted by " + column + ", the other way round. Press "
+                                        + "again for the order the test holds."
+                              : "Sorted by " + column + ". Press again to turn it round.")
+                              + " Drag it to move the column, or its right edge to resize it.",
                     Child = words,
                 };
 
@@ -3112,12 +3264,90 @@ namespace CamelWorks.UI.Views
 
                 grip.DragCompleted += (s, e) => Ui.Safely(() => _dragging = null);
 
+                // The line the grip is on, drawn rather than left to be found.
+                //
+                // The handle was five transparent pixels at the right edge of a header, and the
+                // only way to learn it was there was to sweep the pointer along the row until it
+                // changed shape. A table says where its columns end; this one now does, and the
+                // line under the pointer lights so the edge about to move is the edge being
+                // pointed at.
+                var edge = new Border
+                {
+                    Width = 1,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+
+                    // Out through the cell's own gutter and the header band's padding, so the
+                    // line lands on the column boundary and runs the full height of the band
+                    // rather than floating eight pixels short of both.
+                    Margin = new Thickness(0, -8, -4, -8),
+                };
+
+                edge.Tint(Border.BackgroundProperty, "Bd");
+
+                grip.MouseEnter += (s, e) => edge.Tint(Border.BackgroundProperty, "Accent");
+                grip.MouseLeave += (s, e) => edge.Tint(Border.BackgroundProperty, "Bd");
+
+                // Dragging the header itself - not its edge - moves the column.
+                //
+                // Which columns matter is the job's business: the same board is read one way for
+                // a fabrication review and another way on a Friday call, and the answer to "I
+                // want the assignee next to the name" should be to drag it there.
+                press.AllowDrop = true;
+
+                var from = new Point();
+
+                press.PreviewMouseLeftButtonDown += (s, e) => from = e.GetPosition(_head);
+
+                press.MouseMove += (s, e) => Ui.Safely(() =>
+                {
+                    if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+
+                    var at = e.GetPosition(_head);
+
+                    // The same discriminator the rows use: without it a header could no longer
+                    // simply be pressed to sort by it, because every press wobbles a pixel.
+                    if (Math.Abs(at.X - from.X) < SystemParameters.MinimumHorizontalDragDistance
+                        && Math.Abs(at.Y - from.Y) < SystemParameters.MinimumVerticalDragDistance)
+                        return;
+
+                    DragDrop.DoDragDrop(press, new DataObject(ColumnFormat, column),
+                                        DragDropEffects.Move);
+                });
+
+                press.DragOver += (s, e) => Ui.Safely(() =>
+                {
+                    var carried = e.Data.GetData(ColumnFormat) as string;
+                    var take = carried != null
+                               && !string.Equals(carried, column, StringComparison.Ordinal);
+
+                    e.Effects = take ? DragDropEffects.Move : DragDropEffects.None;
+                    e.Handled = true;
+
+                    if (take) edge.Tint(Border.BackgroundProperty, "Accent");
+                });
+
+                press.DragLeave += (s, e) => Ui.Safely(
+                    () => edge.Tint(Border.BackgroundProperty, "Bd"));
+
+                press.Drop += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+                    edge.Tint(Border.BackgroundProperty, "Bd");
+
+                    if (e.Data.GetData(ColumnFormat) is string carried)
+                        Rearrange(carried, column);
+                });
+
                 var cell = new Grid();
                 cell.Children.Add(press);
+                cell.Children.Add(edge);
                 cell.Children.Add(grip);
 
                 return cell;
             }
+
+            /// <summary>What a dragged column header carries, so nothing else answers the drop.</summary>
+            private const string ColumnFormat = "CamelWorks.Clash.Column";
 
             /// <summary>
             /// Set one column to the width the drag has reached.
@@ -3288,18 +3518,18 @@ namespace CamelWorks.UI.Views
                     Opened(row.Id);
                 });
 
-                Put(grid, words, 1);
+                Put(grid, words, Where(Named));
 
                 // Em-dashes, not the first member's items. A group aggregates many different item
                 // pairs and has no pair of its own; borrowing one member's would be a lie the eye
                 // reads as fact.
-                Put(grid, Right(Hint("—")), 2);
-                Put(grid, Right(Hint("—")), 3);
-                Put(grid, Figure(Skin.Num(row.Rows.Count), false), 4);
-                Put(grid, Figure(Deepest(row), Bad(row)), 5);
+                Put(grid, Right(Hint("—")), Where(ItemA));
+                Put(grid, Right(Hint("—")), Where(ItemB));
+                Put(grid, Figure(Skin.Num(row.Rows.Count), false), Where(Clashes));
+                Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
 
                 for (var i = 0; i < _columns.Count; i++)
-                    Put(grid, Hint(Custom(row.Only, _columns[i])), 6 + i);
+                    Put(grid, Hint(Custom(row.Only, _columns[i])), Where(_columns[i].Title));
 
                 return Finish(grid, row, on, false);
             }
@@ -3590,22 +3820,22 @@ namespace CamelWorks.UI.Views
 
                 named.Children.Add(name);
 
-                Grid.SetColumn(named, 1);
+                Grid.SetColumn(named, Where(Named));
                 grid.Children.Add(named);
 
                 var itemA = result.Info.NameA ?? string.Empty;
                 var itemB = result.Info.NameB ?? string.Empty;
 
-                Put(grid, Item(itemA), 2);
-                Put(grid, Item(itemB), 3);
+                Put(grid, Item(itemA), Where(ItemA));
+                Put(grid, Item(itemB), Where(ItemB));
 
                 // A loose clash is not a count of anything, so the column that counts is empty
                 // rather than showing one.
-                Put(grid, Right(Hint("—")), 4);
-                Put(grid, Figure(Millimetres(result), Bad(result)), 5);
+                Put(grid, Right(Hint("—")), Where(Clashes));
+                Put(grid, Figure(Millimetres(result), Bad(result)), Where(Worst));
 
                 for (var i = 0; i < _columns.Count; i++)
-                    Put(grid, Hint(Custom(result, _columns[i])), 6 + i);
+                    Put(grid, Hint(Custom(result, _columns[i])), Where(_columns[i].Title));
 
                 var wrapper = new BoardRow(id, result.Info.Name ?? "this clash", false,
                                            new List<Row> { result });
@@ -3628,15 +3858,21 @@ namespace CamelWorks.UI.Views
             {
                 Put(grid, Parts.InlineChip(row.Status, Statuses,
                         value => SetStatus(row, value), Reads(row.Status), "Set status"),
-                    StatusColumn);
+                    Where(Status));
 
                 Put(grid, Parts.Presser(Responsible.Shown(row.Assigned), Marked(row.Assigned),
                         "Assign", () => Assigning(Reaching(row), row.Assigned)),
-                    StatusColumn + 1);
+                    Where(Assigned));
+
+                // The row being read shows its verbs too: it is the one somebody is looking at,
+                // and making them hover a row they have already pressed to act on it is a step
+                // for nothing.
+                var here = _reading != null
+                           && string.Equals(_reading, row.Id, StringComparison.Ordinal);
 
                 var verbs = Verbs(row);
-                verbs.Visibility = on ? Visibility.Visible : Visibility.Hidden;
-                Put(grid, verbs, StatusColumn + 2);
+                verbs.Visibility = on || here ? Visibility.Visible : Visibility.Hidden;
+                Put(grid, verbs, VerbsColumn);
 
                 // No gutter on the last column. There is nothing to its right to be kept away
                 // from, and the eight pixels were taken off the first symbol in the row.
@@ -3666,7 +3902,11 @@ namespace CamelWorks.UI.Views
 
                 void Paint()
                 {
+                    // Ticked and being-read are two different marks, and they look different: a
+                    // ticked row is washed in the accent because something is about to happen to
+                    // it, and the row being read is only lifted off the ones around it.
                     if (on) line.Tint(Border.BackgroundProperty, "NavActive");
+                    else if (here) line.Tint(Border.BackgroundProperty, "Hover");
                     else if (inside) line.Tint(Border.BackgroundProperty, "Card2");
                     else line.Background = System.Windows.Media.Brushes.Transparent;
                 }
@@ -3778,12 +4018,12 @@ namespace CamelWorks.UI.Views
                 line.MouseEnter += (s, e) =>
                 {
                     verbs.Visibility = Visibility.Visible;
-                    if (!on) line.Tint(Border.BackgroundProperty, "Hover");
+                    if (!on && !here) line.Tint(Border.BackgroundProperty, "Hover");
                 };
 
                 line.MouseLeave += (s, e) =>
                 {
-                    if (!on) verbs.Visibility = Visibility.Hidden;
+                    if (!on && !here) verbs.Visibility = Visibility.Hidden;
                     Paint();
                 };
 
@@ -3816,6 +4056,26 @@ namespace CamelWorks.UI.Views
                 var adding = (keys & System.Windows.Input.ModifierKeys.Control) != 0;
                 var run = (keys & System.Windows.Input.ModifierKeys.Shift) != 0;
 
+                // A plain press moves the eye, not the selection. Nothing is ticked, the bar
+                // stays down, and the row that was being read stops being the row being read.
+                if (!adding && !run)
+                {
+                    var leaving = _reading;
+
+                    _reading = id;
+                    _pickedFrom = id;
+
+                    var moved = new HashSet<string>(StringComparer.Ordinal) { id };
+
+                    if (leaving != null) moved.Add(leaving);
+
+                    Repainted(moved);
+
+                    if (_focusOnClick) Look(id);
+
+                    return;
+                }
+
                 // What was picked before, so afterwards the rows that changed can be told from
                 // the rows that did not.
                 var was = new HashSet<string>(_picked, StringComparer.Ordinal);
@@ -3838,19 +4098,21 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                if (!adding) _picked.Clear();
-
                 if (!_picked.Add(id) && adding) _picked.Remove(id);
 
                 // Where the next run is measured from. Not moved by a Shift press, so a run can
                 // be stretched and shrunk from the same end rather than walking away from it.
                 _pickedFrom = id;
 
-                Repainted(Flipped(was));
+                var against = Flipped(was);
 
-                // Last, and only on a plain press of one row. A run or a Ctrl-press is somebody
-                // building a selection, not asking to be taken somewhere.
-                if (_focusOnClick && !adding && !run) Look(id);
+                // The row pressed is also the row being read, so the two marks do not disagree.
+                if (_reading != null) against.Add(_reading);
+
+                _reading = id;
+                against.Add(id);
+
+                Repainted(against);
             }
 
             /// <summary>
@@ -3914,6 +4176,21 @@ namespace CamelWorks.UI.Views
             /// The row a run of them is measured from, or null before anything has been pressed.
             /// </summary>
             private string? _pickedFrom;
+
+            /// <summary>
+            /// The row being looked at, which is not the same as the rows being acted on.
+            ///
+            /// <b>Pressing a row is not ticking it.</b> A press said "this one" and a tick says
+            /// "these ones", and the board was treating them as one thing: pressing a clash to
+            /// read it put a tick in its box and raised the bar that says how many rows are
+            /// picked, so looking at four clashes in a row left the product convinced four rows
+            /// were about to be acted on. The test list on the left never did this - pressing a
+            /// test puts it on the board and its tick box is its own control - and this is the
+            /// board doing the same.
+            ///
+            /// Ctrl and Shift still build a selection, because that is what they are for.
+            /// </summary>
+            private string? _reading;
 
             /// <summary>The three verbs on a row, and the menu holding the rest.</summary>
             /// <param name="row">What the verbs act on.</param>
@@ -4944,7 +5221,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private IReadOnlyList<Section> Pages() => new[]
             {
-                new Section("source", new Ui.Page("Source and tolerance", SourcePage)),
+                new Section("source", new Ui.Page("Settings", SettingsPage)),
                 new Section("columns", new Ui.Page("Columns", ColumnsPage)),
                 new Section("round", new Ui.Page("The review round", RoundPage)),
             };
@@ -4963,34 +5240,155 @@ namespace CamelWorks.UI.Views
                 internal Ui.Page Page { get; }
             }
 
-            private UIElement SourcePage() => Ui.Stack(
+            /// <summary>
+            /// Everything about how this screen behaves, in one window with one section per
+            /// subject.
+            ///
+            /// <b>It was called "Source and tolerance" and was neither.</b> It carried where the
+            /// results come from, how far the camera stands back, how big a marker is and whether
+            /// one is dropped on focus - four subjects under a title naming one of them, in
+            /// sentences written to a friend rather than to a user. A settings window says what
+            /// each setting does, in order, in the words the rest of the product uses.
+            /// </summary>
+            private UIElement SettingsPage() => Ui.Stack(
                 _session.Clash.IsAvailable
-                    ? Bench.Group("Where the results come from",
-                        Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
-                        {
-                            _source = pick;
-                            Ui.Told(Shell.AppWindow.Show("clash", "manage"));
-                        }),
-                        Ui.Small("From the model, every edit writes into the model's own clash "
-                                 + "data. From a file, the same verbs mark up an exported "
-                                 + "baseline — which is what a seat with no clash engine does."))
-                    : Ui.Info("This Navisworks edition has no clash engine, so there is one "
-                              + "source: a file. " + (_session.ClashProblem ?? string.Empty)),
+                    ? Bench.Group("Results",
+                        Ui.Field("Read from",
+                            Ui.Segmented(new[] { FromModel, FromFile }, _source, pick =>
+                            {
+                                _source = pick;
+                                Ui.Told(Shell.AppWindow.Show("clash", "manage"));
+                            }),
+                            "the model's own clash data, or an exported baseline"),
+                        Ui.Small("Read from the model and every change is written into the "
+                                 + "model's clash data. Read from a file and the same verbs mark "
+                                 + "up an exported baseline instead, which is how a seat without "
+                                 + "a clash engine takes part in the review."))
+                    : Ui.Info("This Navisworks edition has no clash engine, so results can only "
+                              + "be read from a file. " + (_session.ClashProblem ?? string.Empty)),
+
                 OnFile
-                    ? Bench.Group("The file",
+                    ? Bench.Group("The baseline file",
                         Ui.PathField("Open", _path, PathKind.Open,
                                      ClashFile.Filter,
                                      "the baseline a Manage seat exported, or a saved markup"),
                         Ui.Actions(Ui.Primary("Save markup", SaveMarkup)),
-                        Ui.Small("The markup lands in a \"markups\" folder beside the file, named "
-                                 + "after you — it never touches the baseline or anyone else's "
-                                 + "markup."))
+                        Ui.Small("The markup is written to a \"markups\" folder beside the "
+                                 + "baseline, named after you. It does not change the baseline "
+                                 + "and it does not touch anyone else's markup."))
                     : null,
 
-                // The marker size, which had a settings page of its own with one field on it. A
-                // page per field is how an action row ends up with six symbols, each opening a
-                // window holding one control.
-                ModelPage());
+                Bench.Group("Focus",
+                    Ui.Field("Stand back", Ui.Text(
+                        _focusBack.ToString(CultureInfo.InvariantCulture), text =>
+                        {
+                            if (double.TryParse(text, NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                            {
+                                _focusBack = mm;
+                                Remember();
+                            }
+                        }, 90), "millimetres between the camera and the clash"),
+
+                    Ui.Check("Focus the camera when a row is selected", _focusOnClick,
+                             v => { _focusOnClick = v; Remember(); }),
+
+                    Ui.Small("With this off the camera stays where it is when a row is selected, "
+                             + "and Focus - on the row or in its menu - is what moves it. "
+                             + "Focusing from an orthographic view switches the view to "
+                             + "perspective, because a parallel projection has no vanishing "
+                             + "point and standing closer to a clash in one changes nothing on "
+                             + "screen.")),
+
+                Bench.Group("Markers",
+                    Ui.Field("Diameter", Ui.Text(
+                        _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
+                        {
+                            if (double.TryParse(text, NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
+                            {
+                                _markerAcross = mm;
+                                Remember();
+                            }
+                        }, 90), "millimetres across"),
+
+                    Ui.Field("Colour", ColourChoice(),
+                             "by status, or one colour for every marker"),
+
+                    Ui.Check("Place a marker at the clash when the camera focuses on it",
+                             _markOnFocus, v => { _markOnFocus = v; Remember(); }),
+
+                    // A switch, not a button whose words are its state. It was a text button that
+                    // said "Hide the markers", and after pressing it the only thing telling you
+                    // what it would do next was the same words.
+                    Ui.Loose(_markerToggle),
+
+                    Ui.Small("A marker is a coloured ball drawn over the model where the two "
+                             + "elements meet. It is a temporary graphic, not geometry: nothing "
+                             + "is added to the document and nothing appears in the selection "
+                             + "tree. Export \u25b8 Marker spheres as .obj writes the same balls "
+                             + "to a file, for somebody who has neither this plug-in nor "
+                             + "Navisworks.")));
+
+            /// <summary>
+            /// The marker colour, as a list with the colour itself beside each name.
+            ///
+            /// A drop-down of colour words is a drop-down somebody has to try one at a time.
+            /// </summary>
+            private UIElement ColourChoice()
+            {
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                var swatch = new Border
+                {
+                    Width = 16,
+                    Height = 16,
+                    CornerRadius = new CornerRadius(8),
+                    BorderThickness = new Thickness(1),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                swatch.Tint(Border.BorderBrushProperty, "Bd");
+
+                void Show()
+                {
+                    var colour = Tinted("New");
+
+                    swatch.Background = new System.Windows.Media.SolidColorBrush(
+                        System.Windows.Media.Color.FromRgb(colour.R, colour.G, colour.B));
+
+                    swatch.ToolTip = string.Equals(_markerColour, MarkerByStatus,
+                                                   StringComparison.OrdinalIgnoreCase)
+                        ? "New is red, Active amber, Reviewed blue, Approved grey and Resolved "
+                          + "green."
+                        : "Every marker is drawn in this colour, whatever the status.";
+                }
+
+                Show();
+                row.Children.Add(swatch);
+
+                var names = new List<string> { MarkerByStatus };
+
+                names.AddRange(MarkerColours.Select(one => one.Name));
+
+                row.Children.Add(Ui.Choice(names, _markerColour, pick =>
+                {
+                    _markerColour = pick;
+                    Remember();
+                    Show();
+
+                    // The markers already hanging in the view are the ones being looked at, so
+                    // they change now rather than at the next focus.
+                    Remarked();
+                }, 150));
+
+                return row;
+            }
 
             /// <summary>
             /// Which columns the board shows, behind the board's own columns symbol.
@@ -4998,12 +5396,12 @@ namespace CamelWorks.UI.Views
             /// The nine columns the board draws are not configurable and are not meant to be: they
             /// are the clash, both its items, how bad it is and what has been decided about it,
             /// which is the whole of what a result is. What this page adds is the column the host
-            /// does not have — a property read off the clashing elements themselves, so a board
+            /// does not have - a property read off the clashing elements themselves, so a board
             /// can carry the system name, the workset or the fire rating beside the decision.
             ///
             /// The grouping chain that used to live here is gone, but not the idea: the board's
             /// own sort control bands the rows by a chain of these columns, nested in the order
-            /// they are pressed, saying in each band that no clash group moved — and turning the
+            /// they are pressed, saying in each band that no clash group moved - and turning the
             /// bands into real clash groups when that is what is wanted.
             /// </summary>
             private UIElement ColumnsPage()
@@ -5016,60 +5414,10 @@ namespace CamelWorks.UI.Views
                     Ui.Small("A column belongs to the board, not to one test: it lands on every "
                              + "test's results, and the names offered are what the clashing "
                              + "elements of every test actually carry. Each column reads that "
-                             + "property off the clashing elements themselves, and lands "
-                             + "between Worst and Status - "
-                             + "where the eye is already reading facts about the elements rather "
-                             + "than decisions about them. "
+                             + "property off the clashing elements themselves, and can be dragged "
+                             + "into any order by its header. "
                              + "The values are read when you close this page."));
             }
-
-            private UIElement ModelPage()
-            {
-                RedrawMarkerToggle();
-                return ModelPageBody();
-            }
-
-            private UIElement ModelPageBody() => Ui.Stack(
-                Bench.Group("Focus",
-                    Ui.Field("Stand back", Ui.Text(
-                        _focusBack.ToString(CultureInfo.InvariantCulture), text =>
-                        {
-                            if (double.TryParse(text, NumberStyles.Float,
-                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
-                            {
-                                _focusBack = mm;
-                                Remember();
-                            }
-                        }, 90), "mm from the clash"),
-                    Ui.Check("Focus the camera when a row is clicked", _focusOnClick,
-                             v => { _focusOnClick = v; Remember(); }),
-                    Ui.Small("With this off, clicking a row picks it and the camera stays where "
-                             + "it is - Focus, on the row or in its menu, is what moves it.")),
-
-                Bench.Group("Markers",
-                    Ui.Field("How big", Ui.Text(
-                        _markerAcross.ToString(CultureInfo.InvariantCulture), text =>
-                        {
-                            if (double.TryParse(text, NumberStyles.Float,
-                                    CultureInfo.InvariantCulture, out var mm) && mm > 0)
-                            {
-                                _markerAcross = mm;
-                                Remember();
-                            }
-                        }, 90), "mm across"),
-                    Ui.Check("Drop one where the camera lands on Focus", _markOnFocus,
-                             v => { _markOnFocus = v; Remember(); }),
-
-                    // A switch, not a button whose words are its state. It was a text button that
-                    // said "Hide the markers", and after pressing it the only thing telling you
-                    // what it would do next was the same words.
-                    Ui.Loose(_markerToggle),
-
-                    Ui.Small("A marker is a status-coloured ball drawn over the model where the "
-                             + "two elements met. It is not geometry: nothing is added to the "
-                             + "document and nothing joins the selection tree. Export ▸ Marker "
-                             + "spheres as .obj writes the same balls as a file, for somebody who "
-                             + "has neither this plug-in nor Navisworks.")));
 
             private UIElement RoundPage() => OnFile
                 ? Bench.Group("The review round",
@@ -5343,6 +5691,17 @@ namespace CamelWorks.UI.Views
                      : both.Count == 1 ? both[0] + " against a selection this test does not name"
                      : "two selections this test does not name";
             }
+
+            /// <summary>
+            /// What kind of test this is, in the words the matrix legend uses for it.
+            ///
+            /// Read off the host's own test type rather than assumed. The rail said "hard clash"
+            /// about every test on it, which was wrong for every clearance and duplicate test
+            /// anybody had ever run.
+            /// </summary>
+            /// <param name="entry">The test.</param>
+            private static string Kinded(TestEntry entry) =>
+                MatrixNaming.Worded(MatrixDiff.Kinded(entry.Shape?.Kind));
 
             /// <summary>This test's tolerance, in the units somebody set it in.</summary>
             /// <param name="entry">The test.</param>
@@ -7024,7 +7383,20 @@ namespace CamelWorks.UI.Views
 
                 if (radius <= 0) return;
 
+                // Kept, so a colour changed in Settings can redraw what is already hanging in the
+                // view rather than only what is drawn next.
+                _marked = rows;
+
                 _session.View.ShowMarkers(Marks(rows, OnFile ? 1.0 / perUnit : 1.0, radius));
+            }
+
+            /// <summary>The rows the markers on screen are about, or null when there are none.</summary>
+            private IReadOnlyList<Row>? _marked;
+
+            /// <summary>Draw the markers already up again, in whatever colour is set now.</summary>
+            private void Remarked()
+            {
+                if (_marked != null && _marked.Count > 0 && MarkerOverlay.Any) MarkFocused(_marked);
             }
 
             private static (double X, double Y, double Z)? Middle(IReadOnlyList<Row> rows)
@@ -7981,14 +8353,26 @@ namespace CamelWorks.UI.Views
             /// <param name="scale">What a row's stored coordinate is multiplied by.</param>
             /// <param name="radius">How big each ball is, in document units.</param>
             /// <returns>One marker per row.</returns>
-            private static List<SceneMarker> Marks(IReadOnlyList<Row> rows, double scale,
-                                                   double radius) =>
+            private List<SceneMarker> Marks(IReadOnlyList<Row> rows, double scale,
+                                            double radius) =>
                 rows.Select(r => new SceneMarker(
                         r.Info.PointX * scale, r.Info.PointY * scale, r.Info.PointZ * scale, radius,
-                        ClashMarkers.Colour(Enum.TryParse<FindingStatus>(r.Status, true, out var s)
-                            ? s
-                            : FindingStatus.New)))
+                        Tinted(r.Status)))
                     .ToList();
+
+            /// <summary>What colour one row's marker is drawn.</summary>
+            /// <param name="status">The row's status.</param>
+            private Colour Tinted(string? status)
+            {
+                foreach (var one in MarkerColours)
+                    if (string.Equals(one.Name, _markerColour, StringComparison.OrdinalIgnoreCase))
+                        return new Colour(one.R, one.G, one.B);
+
+                return ClashMarkers.Colour(
+                    Enum.TryParse<FindingStatus>(status, true, out var known)
+                        ? known
+                        : FindingStatus.New);
+            }
 
             // -------------------------------------------------------------------------------
             // Property columns and the grouping chain

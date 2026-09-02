@@ -568,7 +568,7 @@ namespace CamelWorks.Studio
 
             verbs.Children.Add(layers);
 
-            verbs.Children.Add(Ui.Icon(Glyphs.Tune, "This test's source and tolerance", () => { }));
+            verbs.Children.Add(Ui.Icon(Glyphs.Tune, "Settings", () => { }));
 
             DockPanel.SetDock(verbs, Dock.Right);
             row.Children.Add(verbs);
