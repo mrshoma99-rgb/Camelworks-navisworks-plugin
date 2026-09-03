@@ -101,30 +101,38 @@ grouping them is the job.
 
 **Status and assignee are edited on the row.** Click the chip and pick. There is no window.
 
-**Double-click to rename** — a test in the rail or in the title, a clash group on its row. A single
-clash renames too, though the host has no rename for one result: it takes a prefix and numbers what
-is picked from it, so renaming one makes `Corridor1`. The message says so.
+**Double-click to rename** — a test in the rail or in the title, a folder band in the rail, a clash
+group on its row. A single clash renames too, though the host has no rename for one result: it
+takes a prefix and numbers what is picked from it, so renaming one makes `Corridor1`. The message
+says so.
 
-**The columns sort and resize.** Press a header to sort by it, press again to turn it round, press a
-third time for the order the test itself holds. Drag a header's right edge to resize. The rail's
-four figures sort it the same way — press *New*, *Active*, *Rev.* or *Res.*, or *Test* for name
-order; the sort menu holds the same six and says which is on.
+**The columns sort, resize and move.** Press a header to sort by it, press again to turn it round,
+press a third time for the order the test itself holds. Every column boundary is drawn in the
+header: drag the line to resize the column to its left, and drag the header itself onto another
+header to move the column there. The order is the board's, so it holds while you move between
+tests. The rail's four figures sort the same way — press *New*, *Active*, *Rev.* or *Res.*, or
+*Test* for name order; the sort menu holds the same six and says which is on.
 
-**Click a row to pick it.** **Ctrl-click** adds one row or takes it back out; **Shift-click** picks
-the whole run between the last row you pressed and this one, and Ctrl with Shift adds that run to
-what is already picked. The run is what is on the screen in the order it is on the screen, so a run
+**Click a row to read it; tick it to act on it.** A press lifts the row off the ones around it,
+shows its verbs and — if you have asked for it — takes the camera there. It does not tick the row,
+because reading four clashes in a row is not asking to change four clashes. **The tick box is the
+selection**, and **Ctrl-click** adds a row to it or takes it back out; **Shift-click** picks the
+whole run between the last row you pressed and this one, and Ctrl with Shift adds that run to what
+is already picked. The run is what is on the screen in the order it is on the screen, so a run
 across an opened clash group takes the group and the members it is showing, and one over a closed
 group takes the group alone. Drag rows onto a clash group to move them into it. **Row verbs appear when you hover a row or tick it**, and are invisible otherwise: focus, isolate,
 comment, and a menu with snapshot, marker sphere, clear the markers, raise as an issue, attach to an
 existing issue, copy, and — depending on which kind of row it is — rename or ungroup the clash
 group, or group it with what is picked and move it into an existing one.
 
-**Marker spheres are drawn over the model, not added to it.** A marker is a status-coloured ball
-hanging at the point where the two elements met, so a clash between a duct and a beam stops looking
-like a duct and a beam. It appears on the next frame, it costs nothing, and it is gone the moment
-you press *Clear the markers* or close Navisworks — nothing joins the selection tree and there is no
-file to unload afterwards. **Focus drops one too**, which you can turn off, and their size is set,
-on the *Markers and the view* page under the ball symbol in the header.
+**Marker spheres are drawn over the model, not added to it.** A marker is a coloured ball hanging
+at the point where the two elements met, so a clash between a duct and a beam stops looking like a
+duct and a beam. It appears on the next frame, it costs nothing, and it is gone the moment you
+press *Clear the markers* or close Navisworks — nothing joins the selection tree and there is no
+file to unload afterwards. **Focus places one too**, which you can turn off, and its size and
+colour are set under **Settings** in the board's header. Markers are coloured by status by
+default — new red, active amber, reviewed blue, approved grey, resolved green — and can be set to
+one colour throughout, for the federation where the status palette disappears into the model.
 
 **Export the markers as .obj** is the other half — the same balls as a file, for somebody who has
 neither this plug-in nor Navisworks. It is under the results, over whatever you have picked, and on
@@ -530,9 +538,11 @@ Click a header for everything that can be done to it: name it, number it, code i
 something, move it, add another, take it out. **Or drag it** — a row onto another row, a column onto
 another column — and the line under the pointer shows where it will land. Its cells travel with it.
 
-Where both axes hold the same thing, the cell at (Ducts, Steel) and the cell at (Steel, Ducts) name
-**one test**. The first is built and the second is skipped, saying so, rather than giving the job two
-identical tests with two sets of results to review.
+**A matrix is mirrored about its diagonal**, because Ducts against Steel is the same check as Steel
+against Ducts. Where both axes hold the same thing, putting a symbol in one of those two cells puts
+it in the other, and taking it out takes both out — the grid cannot hold two different answers about
+one pair. The half below the diagonal is drawn quieter and says in its tip which cell it is the
+other side of, and the pair is built **once**: one test, one set of results to review.
 
 ### What a row points at
 

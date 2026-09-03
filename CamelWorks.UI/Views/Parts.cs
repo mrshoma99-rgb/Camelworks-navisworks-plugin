@@ -1798,16 +1798,19 @@ namespace CamelWorks.UI.Views
         {
             var row = new DockPanel { LastChildFill = true };
 
-            if (onPickAll != null)
+            // The two links live on a strip that appears under the pointer.
+            //
+            // They were on every band all the time, which on a chain three deep is two links per
+            // band down the whole table saying the same two things, competing with the values
+            // they sit beside. The rows already work this way - their verbs arrive on hover and
+            // leave with the pointer - and a band is a row.
+            var links = new StackPanel
             {
-                var all = Ui.Link("Pick all of them", onPickAll);
-                all.VerticalAlignment = VerticalAlignment.Center;
-                DockPanel.SetDock(all, Dock.Right);
-                row.Children.Add(all);
-            }
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Hidden,
+            };
 
-            // Beside it, because folding one band at a time down a chain three deep is the
-            // reason somebody stops banding at all.
             if (onFoldAll != null)
             {
                 var every = Ui.Link(shut == true ? "Open them all" : "Fold them all",
@@ -1816,8 +1819,20 @@ namespace CamelWorks.UI.Views
                 every.VerticalAlignment = VerticalAlignment.Center;
                 every.Margin = new Thickness(0, 0, 12, 0);
 
-                DockPanel.SetDock(every, Dock.Right);
-                row.Children.Add(every);
+                links.Children.Add(every);
+            }
+
+            if (onPickAll != null)
+            {
+                var all = Ui.Link("Pick all of them", onPickAll);
+                all.VerticalAlignment = VerticalAlignment.Center;
+                links.Children.Add(all);
+            }
+
+            if (links.Children.Count > 0)
+            {
+                DockPanel.SetDock(links, Dock.Right);
+                row.Children.Add(links);
             }
 
             var words = new StackPanel
@@ -1900,6 +1915,12 @@ namespace CamelWorks.UI.Views
                     e.Handled = true;
                     Ui.Safely(onFold);
                 };
+
+            if (links.Children.Count > 0)
+            {
+                band.MouseEnter += (s, e) => links.Visibility = Visibility.Visible;
+                band.MouseLeave += (s, e) => links.Visibility = Visibility.Hidden;
+            }
 
             return band;
         }

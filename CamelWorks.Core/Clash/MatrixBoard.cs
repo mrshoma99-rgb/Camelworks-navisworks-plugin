@@ -157,7 +157,14 @@ namespace CamelWorks.Core.Clash
         /// <param name="to">Where it should go.</param>
         public void MoveColumn(int from, int to) => Move(_columns, from, to);
 
-        /// <summary>Put a symbol where a row meets a column, or clear it with null.</summary>
+        /// <summary>
+        /// Put a symbol where a row meets a column, or clear it with null. The mirror follows.
+        ///
+        /// <b>A clash matrix is mirrored about its diagonal</b>, because A against B is the same
+        /// test as B against A. So where both axes carry the same two things, writing one cell
+        /// writes the other: the grid cannot hold two different answers about one pair, and a
+        /// person filling in the half they were given never has to fill the other.
+        /// </summary>
         /// <param name="row">The row.</param>
         /// <param name="column">The column.</param>
         /// <param name="symbol">The symbol, or null to clear.</param>
@@ -165,6 +172,74 @@ namespace CamelWorks.Core.Clash
         {
             if (row == null || column == null) return;
 
+            Write(row, column, symbol);
+
+            var mirror = MirrorOf(row, column);
+
+            if (mirror != null) Write(mirror.Value.Row, mirror.Value.Column, symbol);
+        }
+
+        /// <summary>
+        /// The cell that names the same pair the other way round, or null when there is none.
+        ///
+        /// There is one only where both axes carry both things - the square matrix everybody
+        /// draws. A grid of packages down the side against disciplines across the top has no
+        /// diagonal and no mirror, and every cell in it is its own pair.
+        ///
+        /// A cell on the diagonal is its own mirror, and is reported as such rather than as
+        /// nothing: a source against itself is a real test, and it is written once.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public (MatrixLine Row, MatrixLine Column)? MirrorOf(MatrixLine? row, MatrixLine? column)
+        {
+            if (row == null || column == null) return null;
+
+            var mirrorRow = _rows.FirstOrDefault(r => Same(r, column));
+            var mirrorColumn = _columns.FirstOrDefault(c => Same(c, row));
+
+            if (mirrorRow == null || mirrorColumn == null) return null;
+
+            if (ReferenceEquals(mirrorRow, row) && ReferenceEquals(mirrorColumn, column))
+                return null;
+
+            return (mirrorRow, mirrorColumn);
+        }
+
+        /// <summary>
+        /// Whether this cell is the half of a mirrored pair that the grid draws.
+        ///
+        /// The earlier of the two in reading order. Nothing about a matrix says which triangle
+        /// somebody fills in, so the one above the diagonal is kept for no reason but that one of
+        /// them has to be, and every drawing of a clash matrix keeps one.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public bool IsKeptHalf(MatrixLine? row, MatrixLine? column)
+        {
+            if (row == null || column == null) return false;
+
+            var mirror = MirrorOf(row, column);
+
+            if (mirror == null) return true;
+
+            var here = (_rows.IndexOf(row), _columns.IndexOf(column));
+            var there = (_rows.IndexOf(mirror.Value.Row), _columns.IndexOf(mirror.Value.Column));
+
+            return here.Item1 < there.Item1
+                   || (here.Item1 == there.Item1 && here.Item2 <= there.Item2);
+        }
+
+        /// <summary>Whether a row and a column stand for the same thing.</summary>
+        private static bool Same(MatrixLine one, MatrixLine other) =>
+            !one.Source.IsEmpty
+                ? string.Equals(one.Source.Fingerprint(), other.Source.Fingerprint(),
+                                StringComparison.Ordinal)
+                : other.Source.IsEmpty
+                  && string.Equals(one.Name, other.Name, StringComparison.OrdinalIgnoreCase);
+
+        private void Write(MatrixLine row, MatrixLine column, string? symbol)
+        {
             var text = symbol == null ? string.Empty : symbol.Trim();
 
             if (text.Length == 0) _cells.Remove((row, column));
@@ -179,12 +254,20 @@ namespace CamelWorks.Core.Clash
                 ? symbol
                 : null;
 
-        /// <summary>Every filled cell, in reading order.</summary>
+        /// <summary>
+        /// Every filled cell that names a pair, in reading order - each pair once.
+        ///
+        /// The mirror half is not yielded. It holds the same symbol about the same pair, so a
+        /// planner reading both would ask the host for two identical tests, and a planner that
+        /// noticed and skipped one would report a skip on every square matrix ever drawn.
+        /// </summary>
         public IEnumerable<(MatrixLine Row, MatrixLine Column, string Symbol)> Cells()
         {
             foreach (var row in _rows)
                 foreach (var column in _columns)
                 {
+                    if (!IsKeptHalf(row, column)) continue;
+
                     var symbol = At(row, column);
 
                     if (symbol != null) yield return (row, column, symbol);

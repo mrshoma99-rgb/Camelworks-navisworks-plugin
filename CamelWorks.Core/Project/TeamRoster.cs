@@ -47,6 +47,15 @@ namespace CamelWorks.Core.Project
         /// <summary>Where a BCF topic reaches them.</summary>
         public string? Email { get; set; }
 
+        /// <summary>
+        /// The folder their BCF files are written to, or null.
+        ///
+        /// A job that issues clashes by folder rather than by email - a shared drive with a
+        /// folder per consultant - has nowhere to put that otherwise, and typing the path again
+        /// for every issue is how the wrong consultant gets somebody else's clashes.
+        /// </summary>
+        public string? Folder { get; set; }
+
         /// <summary>Whether they are still on the job.</summary>
         public bool IsActive { get; set; } = true;
 
@@ -89,6 +98,7 @@ namespace CamelWorks.Core.Project
 
             if (Party != null) json.Set("party", Party);
             if (Role != null) json.Set("role", Role);
+            if (Folder != null) json.Set("folder", Folder);
             if (Team != null) json.Set("team", Team);
             if (Email != null) json.Set("email", Email);
             if (Note != null) json.Set("note", Note);
@@ -110,6 +120,7 @@ namespace CamelWorks.Core.Project
             {
                 Role = Or(json["role"].AsString()),
                 Team = Or(json["team"].AsString()),
+                Folder = Or(json["folder"].AsString()),
                 Note = json["note"].AsString(),
                 IsActive = json["active"].AsBool(true),
             };
@@ -348,8 +359,42 @@ namespace CamelWorks.Core.Project
             }
         }
 
+        /// <summary>
+        /// The roles a job usually has, offered before anybody has typed one.
+        ///
+        /// <b>A starting list, not a fixed one.</b> Nobody wants to type "BIM Coordinator" on
+        /// every job, and nobody wants a product that insists their discipline is one of eleven
+        /// somebody else chose. So these are offered, the roster's own roles are offered beside
+        /// them, and anything can be typed.
+        /// </summary>
+        public static IReadOnlyList<string> UsualRoles { get; } = new[]
+        {
+            "Architect",
+            "BIM Coordinator",
+            "BIM Manager",
+            "Building services engineer",
+            "Civil engineer",
+            "Contractor",
+            "Electrical engineer",
+            "Fire engineer",
+            "Mechanical engineer",
+            "Project manager",
+            "Public health engineer",
+            "Structural engineer",
+        };
+
         /// <summary>Every distinct role on the roster, in reading order.</summary>
         public IReadOnlyList<string> Roles => Facet(m => m.Role);
+
+        /// <summary>
+        /// Every role worth offering: the usual ones and the ones this roster already uses.
+        ///
+        /// The roster's own first, because a job that has settled on its own words for things
+        /// wants those at the top rather than eleven generic ones above them.
+        /// </summary>
+        public IReadOnlyList<string> RolesOffered =>
+            Roles.Concat(UsualRoles.Where(r => !Roles.Contains(r, StringComparer.OrdinalIgnoreCase)))
+                 .ToList();
 
         /// <summary>Every distinct team on the roster, in reading order.</summary>
         public IReadOnlyList<string> Teams => Facet(m => m.Team);
@@ -597,6 +642,7 @@ namespace CamelWorks.Core.Project
 
                 added.Role = member.Role ?? added.Role;
                 added.Team = member.Team ?? added.Team;
+                added.Folder = member.Folder ?? added.Folder;
                 added.Note = member.Note ?? added.Note;
                 added.IsActive = member.IsActive;
             }

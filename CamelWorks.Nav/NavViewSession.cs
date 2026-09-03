@@ -347,33 +347,29 @@ namespace CamelWorks.Nav
                 var target = new Point3D(x, y, z);
                 var viewpoint = Host.CurrentViewpoint.CreateCopy();
 
+                // <b>Focus leaves an orthographic camera.</b> An ortho view has no vanishing
+                // point, so standing the eye closer to something changes nothing on screen: what
+                // it shows is its extent at the focal distance, and moving along the view
+                // direction leaves that where the last zoom left it. Focusing a clash in ortho
+                // therefore aimed the camera perfectly and still showed the whole federation.
+                //
+                // Framing a box around the point instead - the previous attempt at this - put the
+                // clash in the middle of the screen and no closer, which is being centred rather
+                // than being focused, and is what came back from the seat. There is no third
+                // answer: a focus in a parallel projection is a zoom, and the view somebody wants
+                // when they press Focus is the one standing in front of the junction. So the
+                // projection is switched and the camera then moves the way it does everywhere
+                // else.
+                if (viewpoint.Projection == ViewpointProjection.Orthographic)
+                    viewpoint.Projection = ViewpointProjection.Perspective;
+
                 // Stood back along -Y and up in Z, which is the three-quarter view a coordinator
                 // draws on a whiteboard when they say "look at this junction". Keeping the current
-                // viewpoint's other settings - the render mode, the lighting, whether it is
-                // orthographic - because this is a move of the camera, not a new view.
+                // viewpoint's other settings - the render mode, the lighting - because this is a
+                // move of the camera, not a new view.
                 viewpoint.Position = new Point3D(target.X, target.Y - back, target.Z + back);
                 viewpoint.Rotation = new Rotation3D();
                 viewpoint.PointAt(target);
-
-                // Orthographic cameras have no vanishing point, so standing one closer changes
-                // nothing at all on screen: what an ortho view shows is its extent at the focal
-                // distance, and moving the eye along the view direction leaves that exactly where
-                // the last zoom left it. Focusing a clash in ortho therefore pointed the camera
-                // perfectly and still showed the whole federated model - which is "focus doesn't
-                // work when it is ortho mode in camera".
-                //
-                // So in ortho the framing is asked for outright, with a box the size of the step
-                // back centred on the point. ZoomBox is the host's own fit: it knows the aspect
-                // ratio, the projection and the near plane, all three of which are easy to get
-                // wrong by hand and yield a view aimed correctly at nothing.
-                if (viewpoint.Projection == ViewpointProjection.Orthographic)
-                {
-                    var half = back / 2.0;
-
-                    viewpoint.ZoomBox(new BoundingBox3D(
-                        new Point3D(target.X - half, target.Y - half, target.Z - half),
-                        new Point3D(target.X + half, target.Y + half, target.Z + half)));
-                }
 
                 Host.CurrentViewpoint.CopyFrom(viewpoint);
             }

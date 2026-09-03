@@ -91,14 +91,15 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void Every_pair_is_offered_once_not_twice()
         {
-            // A sheet fills both halves of the grid, the way a clash matrix is drawn, and the
-            // planner is what notices that a pair and its mirror are one test.
+            // A sheet fills both halves of the grid, the way a clash matrix is drawn. The board
+            // holds both and offers each pair once, so nothing is skipped and nothing is doubled:
+            // three diagonals and two off-diagonal pairs.
             var read = SheetMatrix.Read(Typical(), Mapping());
 
             var plan = MatrixPlanner.Plan(read.Grid, new MatrixLegend().Covering(read.Grid));
 
             Assert.Equal(5, plan.Tests.Count);
-            Assert.All(plan.Skipped, s => Assert.Contains("already tested", s.Why));
+            Assert.Empty(plan.Skipped);
         }
 
         [Fact]

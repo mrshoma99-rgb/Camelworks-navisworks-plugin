@@ -369,11 +369,23 @@ namespace CamelWorks.UI.Views
                 return cell;
             }
 
-            /// <summary>Draw what is in one cell. The only thing a symbol change touches.</summary>
+            /// <summary>
+            /// Draw what is in one cell. The only thing a symbol change touches.
+            ///
+            /// <b>The mirror half is drawn quieter.</b> A clash matrix is mirrored about its
+            /// diagonal — A against B is the same test as B against A — so the grid holds each
+            /// pair twice and the job must not. The half below the diagonal carries the same
+            /// symbol, faintly, and says in its tip which cell it is the other side of; putting a
+            /// symbol in either half still writes both, because somebody filling in the triangle
+            /// they were handed should not have to know which one this drawing kept.
+            /// </summary>
             private void Paint(Border cell, MatrixLine row, MatrixLine column)
             {
                 var symbol = _board.At(row, column);
                 var meaning = symbol == null ? null : _legend.Meaning(symbol);
+                var mirrored = !_board.IsKeptHalf(row, column);
+
+                cell.Opacity = mirrored ? 0.45 : 1.0;
 
                 var text = new TextBlock
                 {
@@ -407,6 +419,17 @@ namespace CamelWorks.UI.Views
                                    + (meaning.Enabled ? string.Empty : ", turned off");
                 }
 
+                if (mirrored)
+                {
+                    var mirror = _board.MirrorOf(row, column);
+
+                    if (mirror != null)
+                        cell.ToolTip = "The same test as " + mirror.Value.Row.Titled + " against "
+                                       + mirror.Value.Column.Titled
+                                       + ", which is the cell above the diagonal. A matrix is"
+                                       + " mirrored, so this pair is only ever run once.";
+                }
+
                 cell.Child = text;
             }
 
@@ -414,6 +437,14 @@ namespace CamelWorks.UI.Views
             private void Repaint(MatrixLine row, MatrixLine column)
             {
                 if (_cells.TryGetValue((row, column), out var cell)) Paint(cell, row, column);
+
+                // And the cell on the other side of the diagonal, which the board just wrote the
+                // same symbol into. Leaving it alone showed one pair saying two different things.
+                var mirror = _board.MirrorOf(row, column);
+
+                if (mirror != null
+                    && _cells.TryGetValue((mirror.Value.Row, mirror.Value.Column), out var other))
+                    Paint(other, mirror.Value.Row, mirror.Value.Column);
 
                 Recount();
             }
