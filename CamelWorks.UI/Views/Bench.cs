@@ -267,7 +267,14 @@ namespace CamelWorks.UI.Views
                 named.Children.Add(say);
             }
 
-            head.Children.Add(named);
+            // Clipped, so a long "say" cannot draw over the verbs.
+            //
+            // A DockPanel does not clip its children: the verbs dock right and the rest fills
+            // what is left, but a wider thing in that fill simply paints on past its edge and
+            // over the buttons - which is what "the option buttons overlap each other" was.
+            var left = new Border { Child = named, ClipToBounds = true };
+
+            head.Children.Add(left);
 
             var header = new Border
             {

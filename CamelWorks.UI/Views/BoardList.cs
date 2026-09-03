@@ -103,14 +103,24 @@ namespace CamelWorks.UI.Views
 
                 if (scroll == null || value <= 0) return;
 
-                // Twice, and the first one is what stops the flicker.
+                // Laid out first, then scrolled, then laid out again - all before this returns.
                 //
-                // Immediately, so a rebuild that has already been measured - the common case -
-                // never renders a frame at the top. Then again after layout, because folding a
-                // band away shortens the content and the offset has to be re-clamped against a
-                // height that did not exist yet. Doing only the second gave a list that visibly
-                // jumped to the top and back, which is what "it jumps up and down" was.
+                // <b>Why the frame at the top happened anyway.</b> A list handed a new set of
+                // items has not been measured yet, so its ScrollableHeight is still zero: the
+                // restore clamped the offset to zero, scrolled there, and the deferred pass a
+                // moment later put it back. That is the table jumping to the top and returning
+                // "a second later" - the restore was not losing the offset, it was scrolling to
+                // the top with it in hand.
+                //
+                // Measuring first costs one layout of a screenful of rows, which is what
+                // virtualising this list bought, and it means the scroll lands on a real height.
+                // Laying out again after applies the offset in this same pass, so the first
+                // frame anybody sees is already in the right place.
+                scroll.UpdateLayout();
+
                 scroll.ScrollToVerticalOffset(Math.Min(value, Math.Max(0, scroll.ScrollableHeight)));
+
+                scroll.UpdateLayout();
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {

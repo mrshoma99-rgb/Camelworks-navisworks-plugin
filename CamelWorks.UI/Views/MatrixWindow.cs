@@ -60,7 +60,19 @@ namespace CamelWorks.UI.Views
 
             private readonly Border _grid = new Border();
             private readonly StackPanel _legendRows = Ui.Stack();
-            private readonly StackPanel _said = Ui.Stack();
+            /// <summary>
+            /// What the last act had to say, in a strip that can be put away.
+            ///
+            /// <b>It used to be an open-ended stack.</b> A sanity check on a real matrix says
+            /// twenty things, a spreadsheet read says five, a build says one per test it could
+            /// not write - and each of them was another line pushed into the top of the screen,
+            /// with nothing to close them and the grid squeezed into whatever was left. So the
+            /// notes live in a bordered strip with a fixed height, they scroll inside it, and
+            /// the cross puts the whole strip away.
+            /// </summary>
+            private readonly StackPanel _notes = Ui.Stack();
+
+            private readonly Border _said = new Border();
             private readonly TextBlock _count = new TextBlock();
 
             // Every painted cell, so setting a symbol repaints one border rather than the grid.
@@ -75,7 +87,12 @@ namespace CamelWorks.UI.Views
 
                 Load();
 
-                View = Bench.Pane("Clash matrix", Head(), Body(), Tools());
+                // The notices go in the body, not beside the title.
+                //
+                // A pane's header is a name on the left and its verbs hard right; anything else
+                // put on that line shares the space with the verbs and, since the header does
+                // not clip, paints across them. A strip of notes is not a subtitle.
+                View = Bench.Pane("Clash matrix", null, Body(), Tools());
 
                 Redraw();
             }
@@ -87,6 +104,7 @@ namespace CamelWorks.UI.Views
             // The frame
             // ---------------------------------------------------------------------------
 
+            /// <summary>The strip over the matrix: what this seat cannot do, and what was said.</summary>
             private UIElement Head()
             {
                 var say = Ui.Stack();
@@ -98,18 +116,64 @@ namespace CamelWorks.UI.Views
                         + "has one. "
                         + (_session.ClashProblem ?? string.Empty).Trim()));
 
+                var close = Ui.Icon(Glyphs.Close, "Put these away", Quiet);
+
+                close.VerticalAlignment = VerticalAlignment.Top;
+                close.Margin = new Thickness(6, 0, 0, 0);
+
+                var inside = new DockPanel { LastChildFill = true };
+
+                DockPanel.SetDock(close, Dock.Right);
+                inside.Children.Add(close);
+
+                inside.Children.Add(new ScrollViewer
+                {
+                    Content = Ui.Loose(_notes),
+
+                    // Enough for a handful of lines. A check that finds forty things is a
+                    // scrollbar, not a screen of notes over the matrix it is about.
+                    MaxHeight = 150,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                });
+
+                _said.Padding = new Thickness(10, 8, 8, 8);
+                _said.Margin = new Thickness(0, 0, 0, 8);
+                _said.BorderThickness = new Thickness(1);
+                _said.CornerRadius = new CornerRadius(8);
+                _said.Child = inside;
+                _said.Visibility = Visibility.Collapsed;
+
+                _said.Tint(Border.BackgroundProperty, "Card2");
+                _said.Tint(Border.BorderBrushProperty, "Bd");
+
                 say.Children.Add(Ui.Loose(_said));
 
                 return say;
+            }
+
+            /// <summary>Put the notices away, leaving the screen to the matrix.</summary>
+            private void Quiet()
+            {
+                _notes.Children.Clear();
+                _said.Visibility = Visibility.Collapsed;
             }
 
             private UIElement Tools()
             {
                 var row = new StackPanel { Orientation = Orientation.Horizontal };
 
-                row.Children.Add(Ui.Loose(Parts.MenuButton("Start from", Glyphs.Read, Starting())));
-                row.Children.Add(Ui.Loose(Parts.MenuButton("Naming", Glyphs.Pencil, Naming())));
-                row.Children.Add(Ui.Loose(Parts.MenuButton("Out", Glyphs.Onward, Sending())));
+                void Add(UIElement button)
+                {
+                    if (button is FrameworkElement held)
+                        held.Margin = new Thickness(0, 0, 6, 0);
+
+                    row.Children.Add(Ui.Loose(button));
+                }
+
+                Add(Parts.MenuButton("Start from", Glyphs.Read, Starting()));
+                Add(Parts.MenuButton("Naming", Glyphs.Pencil, Naming()));
+                Add(Parts.MenuButton("Out", Glyphs.Onward, Sending()));
 
                 var build = Ui.Primary("Build the tests", Build);
 
@@ -150,6 +214,11 @@ namespace CamelWorks.UI.Views
                              + "changing one here changes every cell that uses it.")));
 
                 var stack = new DockPanel { LastChildFill = true };
+
+                var top = Head();
+
+                DockPanel.SetDock(top, Dock.Top);
+                stack.Children.Add(top);
 
                 DockPanel.SetDock(under, Dock.Bottom);
                 stack.Children.Add(under);
@@ -911,14 +980,39 @@ namespace CamelWorks.UI.Views
                 foreach (var symbol in _legend.Symbols)
                 {
                     var one = symbol;
-                    var row = new WrapPanel { Margin = new Thickness(0, 2, 0, 2) };
+
+                    // A grid of fixed columns, not a wrap panel.
+                    //
+                    // A wrap panel lays its children out at their own sizes and tops them out on
+                    // each line, so the symbol, the kind, the tolerance, the switch and the bin
+                    // all sat at different heights - and the tolerance sat lower still, because
+                    // it was in a field, which puts a label over the box. One row, one line, one
+                    // set of columns every row shares.
+                    var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+
+                    foreach (var width in new[] { 26.0, 160.0, 76.0, 30.0, 60.0, 30.0 })
+                        row.ColumnDefinitions.Add(new ColumnDefinition
+                        {
+                            Width = new GridLength(width),
+                        });
+
+                    void At(UIElement cell, int column, double right = 8)
+                    {
+                        if (cell is FrameworkElement held)
+                        {
+                            held.VerticalAlignment = VerticalAlignment.Center;
+                            held.HorizontalAlignment = HorizontalAlignment.Stretch;
+                            held.Margin = new Thickness(0, 0, right, 0);
+                        }
+
+                        Grid.SetColumn(cell, column);
+                        row.Children.Add(cell);
+                    }
 
                     var mark = new Border
                     {
-                        Width = 26,
-                        Height = 22,
+                        Height = 24,
                         CornerRadius = new CornerRadius(5),
-                        Margin = new Thickness(0, 0, 8, 0),
                         Child = new TextBlock
                         {
                             Text = one.Symbol,
@@ -930,12 +1024,12 @@ namespace CamelWorks.UI.Views
 
                     mark.Tint(Border.BackgroundProperty, one.Enabled ? "AccentWash" : "Nav");
 
-                    row.Children.Add(mark);
+                    At(mark, 0);
 
-                    row.Children.Add(Ui.Choice(
+                    At(Ui.Choice(
                         new[] { "Hard", "Hard conservative", "Clearance", "Duplicate" },
                         MatrixNaming.Worded(one.Test),
-                        picked => Reset(one, Kinded(picked), one.Tolerance, one.Enabled), 150));
+                        picked => Reset(one, Kinded(picked), one.Tolerance, one.Enabled), 90), 1);
 
                     var tolerance = Ui.Text(Millimetres(one.Tolerance).Replace(" mm", string.Empty),
                         typed =>
@@ -943,18 +1037,20 @@ namespace CamelWorks.UI.Views
                             if (double.TryParse(typed, NumberStyles.Float,
                                                 CultureInfo.InvariantCulture, out var mm) && mm >= 0)
                                 Reset(one, one.Test, mm / 1000, one.Enabled);
-                        }, 70);
+                        }, 60);
 
-                    row.Children.Add(Ui.Field("mm", tolerance));
+                    At(tolerance, 2, right: 6);
 
-                    row.Children.Add(Ui.Check("On", one.Enabled,
-                        on => Reset(one, one.Test, one.Tolerance, on)));
+                    // The unit beside the box rather than a label over it, so the row stays one
+                    // line high and the number is read with what it is measured in.
+                    At(new TextBlock { Text = "mm" }.Wearing("Hint"), 3);
 
-                    row.Children.Add(Ui.Icon(Glyphs.Bin, "Take this symbol out of the legend",
-                        () => Reset(one, one.Test, one.Tolerance, one.Enabled, drop: true)));
+                    At(Ui.Check("On", one.Enabled,
+                        on => Reset(one, one.Test, one.Tolerance, on)), 4);
 
-                    foreach (var child in row.Children.OfType<FrameworkElement>())
-                        child.Margin = new Thickness(0, 0, 8, 0);
+                    At(Ui.Icon(Glyphs.Bin, "Take this symbol out of the legend",
+                        () => Reset(one, one.Test, one.Tolerance, one.Enabled, drop: true)), 5,
+                       right: 0);
 
                     _legendRows.Children.Add(row);
                 }
@@ -1249,7 +1345,7 @@ namespace CamelWorks.UI.Views
             {
                 var faults = MatrixSanity.Check(_board, _legend, SetNames(), Models());
 
-                _said.Children.Clear();
+                Quiet();
 
                 if (faults.Count == 0)
                 {
@@ -1282,7 +1378,7 @@ namespace CamelWorks.UI.Views
 
                 var lines = Compare();
 
-                _said.Children.Clear();
+                Quiet();
 
                 Said(Ui.Eyebrow("What building this would do"), hold: true);
 
@@ -1403,7 +1499,7 @@ namespace CamelWorks.UI.Views
                     }
                 });
 
-                _said.Children.Clear();
+                Quiet();
 
                 if (made > 0)
                 {
@@ -1565,18 +1661,20 @@ namespace CamelWorks.UI.Views
                 }
             }
 
+            /// <summary>Add a line to the notices, opening the strip if it was away.</summary>
+            /// <param name="note">The line.</param>
+            /// <param name="hold">True to keep the lines already there.</param>
             private void Said(UIElement note, bool hold = false)
             {
-                if (!hold) _said.Children.Clear();
+                if (!hold) _notes.Children.Clear();
 
-                _said.Children.Add(note);
+                _notes.Children.Add(note);
+                _said.Visibility = Visibility.Visible;
             }
 
-            private void Warned(UIElement problem)
-            {
-                _said.Children.Clear();
-                _said.Children.Add(problem);
-            }
+            /// <summary>Say one thing that went wrong, in place of everything else.</summary>
+            /// <param name="problem">What went wrong.</param>
+            private void Warned(UIElement problem) => Said(problem);
 
             private UIElement Adding(string what, Action onAdd)
             {

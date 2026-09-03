@@ -1111,7 +1111,24 @@ namespace CamelWorks.UI.Views
         public static Panel PathField(string label, TextBox box, PathKind kind,
                                       string filter = "All files|*.*", string? hint = null)
         {
-            var row = new Grid();
+            return Field(label, PathRow(box, kind, filter), hint);
+        }
+
+        /// <summary>
+        /// A path box and its Browse, and nothing else.
+        ///
+        /// <see cref="PathField"/> puts a label over it and a gap under it, which is right in a
+        /// stacked form and wrong in a row of a table: the label - even an empty one - is a line
+        /// of height the cells beside it do not have, so the box sits lower than everything on
+        /// its row. A table cell wants the control alone.
+        /// </summary>
+        /// <param name="box">The text box holding the path.</param>
+        /// <param name="kind">Whether it is a file to open, a file to write, or a folder.</param>
+        /// <param name="filter">A dialog filter, as "What it is|*.ext". Ignored for a folder.</param>
+        public static Grid PathRow(TextBox box, PathKind kind, string filter = "All files|*.*")
+        {
+            var row = new Grid { VerticalAlignment = VerticalAlignment.Center };
+
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -1119,14 +1136,15 @@ namespace CamelWorks.UI.Views
             // button beside it there is no such width, and a MinWidth the column cannot honour
             // pushes the button off the edge.
             box.MinWidth = 90;
-            row.Children.Add(box);
+            row.Children.Add(Loose(box));
 
             var browse = Button("Browse", () => Pick(box, kind, filter));
             browse.Margin = new Thickness(6, 0, 0, 0);
+            browse.VerticalAlignment = VerticalAlignment.Center;
             Grid.SetColumn(browse, 1);
             row.Children.Add(browse);
 
-            return Field(label, row, hint);
+            return row;
         }
 
         /// <summary>
