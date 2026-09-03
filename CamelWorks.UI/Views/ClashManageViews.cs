@@ -634,7 +634,9 @@ namespace CamelWorks.UI.Views
                 _typing.Tick += (s, e) => Ui.Safely(() =>
                 {
                     _typing.Stop();
-                    RedrawRows();
+
+                    // A search is a different set of rows, so it starts at the first of them.
+                    RedrawRowsAfresh();
                 });
 
                 _boardBox.MaxWidth = 128;
@@ -1434,7 +1436,8 @@ namespace CamelWorks.UI.Views
                     if (!string.Equals(_current, testId, StringComparison.OrdinalIgnoreCase))
                         return;
 
-                    RedrawRows();
+                    // Another test's results: nothing on the old board is on this one.
+                    RedrawRowsAfresh();
                 });
             }
 
@@ -1860,7 +1863,32 @@ namespace CamelWorks.UI.Views
             /// The rows, the chips over them and the bar under them — everything a keystroke or a
             /// tick moves, and nothing it does not.
             /// </summary>
-            private void RedrawRows()
+            /// <summary>
+            /// The rows again, leaving the table where the eye left it.
+            ///
+            /// <b>Staying put is the default now.</b> Every write on this board goes through
+            /// here, and a dozen callers reached it directly - a comment window closing, a band's
+            /// "pick all of them", the selection bar's Clear, an issue raised, the team edited -
+            /// each of them rebuilding the list and, with it, dropping the reader back at row one
+            /// from row four hundred. Two callers genuinely want the top, and they say so; the
+            /// rest get what they always meant.
+            /// </summary>
+            private void RedrawRows() => Held(RedrawRowsNow);
+
+            /// <summary>
+            /// The rows again, from the top, because what the table is showing has changed.
+            ///
+            /// A different test, a different search, a different order: the row that was under
+            /// the pointer is not in the same place - or on the board at all - so holding the
+            /// offset would land somebody in the middle of a list they have not seen the start of.
+            /// </summary>
+            private void RedrawRowsAfresh()
+            {
+                RedrawRowsNow();
+                _list?.Top();
+            }
+
+            private void RedrawRowsNow()
             {
                 _board.Children.Clear();
                 _cells.Clear();
@@ -2970,7 +2998,8 @@ namespace CamelWorks.UI.Views
                     _back = false;
                 }
 
-                RedrawRows();
+                // A new order puts different rows under the same offset, so it reads from the top.
+                RedrawRowsAfresh();
             }
 
             /// <summary>The rows in whatever order the column headers ask for.</summary>

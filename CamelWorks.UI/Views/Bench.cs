@@ -225,7 +225,17 @@ namespace CamelWorks.UI.Views
         /// <param name="say">A live line beside the label — what is picked, how many are shown.</param>
         /// <param name="body">The table, scrolled by the pane.</param>
         /// <param name="tools">The icon row under it.</param>
-        public static UIElement Pane(string label, UIElement? say, UIElement body, UIElement? tools)
+        /// <param name="scrolls">
+        /// False when the body scrolls itself.
+        ///
+        /// A scroller inside a scroller is given unbounded height to measure in, so it is never
+        /// shorter than its own content and therefore never has anything to scroll: the wheel
+        /// falls through to the outer one and the inner scrollbars never appear. A pane whose
+        /// body is one big table - the clash matrix - has to keep its own scroller and be given
+        /// the height of the pane to work in.
+        /// </param>
+        public static UIElement Pane(string label, UIElement? say, UIElement body, UIElement? tools,
+                                     bool scrolls = true)
         {
             if (body == null) throw new ArgumentNullException(nameof(body));
 
@@ -287,13 +297,28 @@ namespace CamelWorks.UI.Views
             header.Tint(Border.BorderBrushProperty, "Bd");
             grid.Children.Add(header);
 
-            var scroll = new ScrollViewer
+            FrameworkElement under;
+
+            if (scrolls)
             {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = body,
-                Padding = new Thickness(10, 4, 10, 8),
-            };
+                under = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = body,
+                    Padding = new Thickness(10, 4, 10, 8),
+                };
+            }
+            else
+            {
+                under = new Border
+                {
+                    Child = body,
+                    Padding = new Thickness(10, 4, 10, 8),
+                };
+            }
+
+            var scroll = under;
 
             Grid.SetRow(scroll, 1);
             grid.Children.Add(scroll);

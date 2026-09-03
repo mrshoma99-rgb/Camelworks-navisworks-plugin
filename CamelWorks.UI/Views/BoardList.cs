@@ -136,6 +136,14 @@ namespace CamelWorks.UI.Views
             }
         }
 
+        /// <summary>
+        /// Put the list back at the first row, for a rebuild that changed what it is showing.
+        ///
+        /// The counterpart to <see cref="Offset"/>: holding the place is the default, so the
+        /// handful of rebuilds that are a different set of rows entirely have to ask for the top.
+        /// </summary>
+        public void Top() => Scroller()?.ScrollToVerticalOffset(0);
+
         /// <summary>The scroll viewer inside the template, once the template has been applied.</summary>
         private ScrollViewer? Scroller()
         {
