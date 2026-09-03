@@ -712,9 +712,15 @@ namespace CamelWorks.UI.Views
 
                 var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth);
 
-                // After the footer, not before: the button it arms is built in there, and arming
-                // a button that does not exist yet is how it came up saying "Save the changes"
-                // on a published NWD that cannot take one.
+                // After the footer, not before: the buttons it dresses are built in there.
+                //
+                // <b>The Redraw above cannot do it.</b> It runs while the footer is still a
+                // method that has not been called, so every "if the button exists" test in
+                // RedrawFoot answers no and the footer keeps whatever it was constructed with -
+                // which is Save and Export, over an empty board, before anything has been read.
+                // The screen's own rule is the other way round: with nothing read the two ways
+                // in are the whole footer, and Save and Export arrive with the results.
+                RedrawFoot();
                 ArmSync();
 
                 return tab;
@@ -3861,7 +3867,7 @@ namespace CamelWorks.UI.Views
                     Where(Status));
 
                 Put(grid, Parts.Presser(Responsible.Shown(row.Assigned), Marked(row.Assigned),
-                        "Assign", () => Assigning(Reaching(row), row.Assigned)),
+                        "Assign", chip => Assigning(chip, Reaching(row), row.Assigned)),
                     Where(Assigned));
 
                 // The row being read shows its verbs too: it is the one somebody is looking at,
@@ -4428,7 +4434,7 @@ namespace CamelWorks.UI.Views
                     Parts.InlineChip(null, Statuses,
                         value => SetMany(picked, value, true), Tone.Plain, "Set status"),
                     Parts.Presser(null, null, "Assign to",
-                        () => Assigning(picked, Common(rows))),
+                        chip => Assigning(chip, picked, Common(rows))),
                     Grouping(rows),
                     Parts.Verb("Raise as issues", Glyphs.Issue, false,
                                () => RaiseIssue(picked, false)),
@@ -6355,15 +6361,21 @@ namespace CamelWorks.UI.Views
             ///
             /// <b>Several, because a clash is often two people's problem</b> - the architect who
             /// drew the wall and the engineer who ran the duct through it - and a list that took
-            /// one made somebody decide which of them was going to be chased. So it is a window
-            /// with ticks rather than a drop-down that closes on the first press, and it carries
-            /// a way to build the team for the case where there is nobody to tick yet.
+            /// one made somebody decide which of them was going to be chased. So the list ticks
+            /// and stays open while several are ticked, and it carries a way to build the team
+            /// for the case where there is nobody to tick yet.
+            ///
+            /// <b>In a menu under the chip</b>, not a window in the middle of the screen. It is
+            /// a chip on a row beside another chip that drops a list down, and two controls on
+            /// one row cannot behave as two different kinds of thing.
             /// </summary>
+            /// <param name="from">The chip that was pressed, which the menu hangs off.</param>
             /// <param name="picked">What is being assigned.</param>
             /// <param name="already">What they are assigned to now, as stored.</param>
-            private void Assigning(IReadOnlyList<object> picked, string already)
+            private void Assigning(FrameworkElement from, IReadOnlyList<object> picked,
+                                   string already)
             {
-                Parts.Ticking(_board,
+                Parts.TickMenu(from,
                     "Assign " + Ui.Count(Rows(picked).Count, "result") + " to",
                     Giving(),
                     Responsible.ReadAll(already).Select(w => w.Written).ToList(),

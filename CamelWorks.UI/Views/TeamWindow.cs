@@ -168,6 +168,7 @@ namespace CamelWorks.UI.Views
 
             headings.Margin = new Thickness(0, 12, 0, 4);
 
+
             Put(headings, Ui.Eyebrow("Name"), 0);
             Put(headings, Ui.Eyebrow("Role"), 1);
             Put(headings, Ui.Eyebrow("Team"), 2);
@@ -270,29 +271,46 @@ namespace CamelWorks.UI.Views
             if (changed) onChanged?.Invoke();
         }
 
-        /// <summary>The one column layout the headings and every row share.</summary>
+        /// <summary>
+        /// The one column layout the headings and every row share.
+        ///
+        /// <b>Shares, never fixed widths.</b> Six columns at their old fixed widths came to more
+        /// than the window and the last of them - the folder and its Browse - was simply cut off
+        /// at the right edge, with no scrollbar to say so. Shares cannot do that: a narrow window
+        /// squeezes every column a little instead of losing one whole, and a wide one spends the
+        /// room on the fields that hold long text rather than on the end of the row.
+        /// </summary>
         private static Grid Columns()
         {
             var grid = new Grid();
 
-            foreach (var width in new[] { 150.0, 150.0, 90.0, 140.0, 180.0, 1.0 })
+            // Name, Role, Team, Company, Email, BCF folder.
+            foreach (var share in new[] { 1.3, 1.1, 0.9, 1.1, 1.3, 1.6 })
                 grid.ColumnDefinitions.Add(new ColumnDefinition
                 {
-                    Width = width > 2
-                        ? new GridLength(width)
-                        : new GridLength(1, GridUnitType.Star),
-                    MinWidth = width > 2 ? width : 120,
+                    Width = new GridLength(share, GridUnitType.Star),
+                    MinWidth = 74,
                 });
 
-            // The bin, hard right.
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            // The bin, hard right. A fixed width rather than Auto: every row is a grid of its
+            // own, so an Auto column is as wide as that row's own bin and the headings - which
+            // have no bin - would be a column narrower than everything under them.
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
 
             return grid;
         }
 
         private static void Put(Grid grid, UIElement child, int column)
         {
-            if (child is FrameworkElement held) held.Margin = new Thickness(0, 0, 6, 0);
+            if (child is FrameworkElement held)
+            {
+                held.Margin = new Thickness(0, 0, 6, 0);
+
+                // Every cell centred on the row's own line. A box, an editable combo and a path
+                // with a Browse beside it are three different heights, and left to themselves
+                // they stretch to the tallest and sit at the top of it.
+                held.VerticalAlignment = VerticalAlignment.Center;
+            }
 
             Grid.SetColumn(child, column);
             grid.Children.Add(child);
@@ -320,7 +338,7 @@ namespace CamelWorks.UI.Views
 
             // The name is the identity, so changing it is a remove and an add rather than an
             // edit in place - and the list is drawn again because the order may have moved.
-            var name = Ui.Text(member.Name, null, 140);
+            var name = Ui.Text(member.Name, null, 74);
 
             name.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -356,7 +374,7 @@ namespace CamelWorks.UI.Views
             Put(grid, Suggesting(roster.Parties, member.Party,
                                  typed => { member.Party = Or(typed); onEdit(); }), 3);
 
-            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, 170);
+            var email = Ui.Text(member.Email ?? string.Empty, "nobody@", null, 74);
 
             email.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -369,7 +387,7 @@ namespace CamelWorks.UI.Views
             // A folder, with a Browse, because a job that issues clashes by folder rather than
             // by email has nowhere else to put it - and typing a share path by hand is how the
             // wrong consultant gets somebody else's clashes.
-            var folder = Ui.Text(member.Folder ?? string.Empty, "where their BCFs go", null, 150);
+            var folder = Ui.Text(member.Folder ?? string.Empty, "where they go", null, 74);
 
             folder.LostFocus += (s, e) => Ui.Safely(() =>
             {
@@ -377,9 +395,10 @@ namespace CamelWorks.UI.Views
                 onEdit();
             });
 
-            var path = Ui.PathField(string.Empty, folder, PathKind.Folder);
-
-            Put(grid, path, 5);
+            // The row, not the field: a field puts a label over the box and a gap under it,
+            // which in a table is a cell taller than the ones beside it holding a box that sits
+            // lower than all of them.
+            Put(grid, Ui.PathRow(folder, PathKind.Folder), 5);
 
             var off = Ui.Icon(Glyphs.Bin, "Take them off the team", () =>
             {
@@ -407,8 +426,12 @@ namespace CamelWorks.UI.Views
             {
                 IsEditable = true,
                 Text = current ?? string.Empty,
-                MinWidth = 80,
+                MinWidth = 74,
+
+                // The same height a text box takes, so a row of both reads as one line.
+                MinHeight = 31,
                 VerticalAlignment = VerticalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
             };
 

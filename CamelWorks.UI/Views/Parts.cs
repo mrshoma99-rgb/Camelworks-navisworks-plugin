@@ -637,9 +637,12 @@ namespace CamelWorks.UI.Views
         /// <param name="value">What it is set to now, or null for nothing.</param>
         /// <param name="glyph">The symbol for what it is set to, or null.</param>
         /// <param name="placeholder">What it says when it is set to nothing.</param>
-        /// <param name="onPress">What pressing it opens.</param>
+        /// <param name="onPress">
+        /// What pressing it opens, given the chip itself so a menu can hang off it rather than
+        /// opening in the middle of the screen.
+        /// </param>
         public static UIElement Presser(string? value, string? glyph, string placeholder,
-                                        Action onPress)
+                                        Action<FrameworkElement> onPress)
         {
             var empty = string.IsNullOrEmpty(value);
 
@@ -710,199 +713,158 @@ namespace CamelWorks.UI.Views
             chip.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
-                Ui.Safely(onPress);
+                Ui.Safely(() => onPress(chip));
             };
 
             return chip;
         }
 
         /// <summary>
-        /// Tick as many of a list as apply, and say so once.
+        /// Tick as many of a short list as apply, in a menu under the thing that opened it.
         ///
-        /// <b>Why a window and not a drop-down.</b> A drop-down closes on the first press, which
-        /// is right for a status and wrong for anything a row can be several of. A clash is often
-        /// two people's problem, so the list has to stay open while both are ticked - and the
-        /// window can then carry the way to add somebody who is not on it yet, which an empty
-        /// drop-down cannot.
+        /// <b>A menu, because it is a chip on a row.</b> This was a window: a modal, in the
+        /// middle of the screen, over the row it was about, for a choice that belongs beside the
+        /// choice next to it - and the status chip a few pixels away drops a list down. Two
+        /// controls on one row behaving as two different kinds of thing is the fault.
+        ///
+        /// <b>It still takes several.</b> A clash is often two people's problem - the architect
+        /// who drew the wall and the engineer who ran the duct through it - so the ticks stay,
+        /// the menu stays open while several are ticked, and the set is reported when it closes.
+        /// That is the one thing a plain drop-down cannot do and the reason this is not one.
         /// </summary>
-        /// <param name="near">The screen it belongs to; the window is owned by the host.</param>
-        /// <param name="prompt">What the window says at the top.</param>
+        /// <param name="on">What the menu hangs off.</param>
+        /// <param name="prompt">What the menu says at the top.</param>
         /// <param name="options">What can be ticked, each saying what kind of thing it is.</param>
         /// <param name="chosen">What is ticked when it opens.</param>
         /// <param name="more">The wording for the way to add another, or null for none.</param>
         /// <param name="onMore">What that opens.</param>
-        /// <param name="onDone">Given everything ticked, once somebody commits.</param>
-        public static void Ticking(FrameworkElement near, string prompt,
-                                   IReadOnlyList<ChipOption> options,
-                                   IReadOnlyCollection<string>? chosen,
-                                   string? more, Action? onMore,
-                                   Action<IReadOnlyCollection<string>> onDone)
+        /// <param name="onDone">Given everything ticked, once the menu closes on a change.</param>
+        public static void TickMenu(FrameworkElement on, string prompt,
+                                    IReadOnlyList<ChipOption> options,
+                                    IReadOnlyCollection<string>? chosen,
+                                    string? more, Action? onMore,
+                                    Action<IReadOnlyCollection<string>> onDone)
         {
-            _ = near;
+            if (on == null) return;
 
             var ticked = new HashSet<string>(chosen ?? Array.Empty<string>(), StringComparer.Ordinal);
-            var said = false;
+            var changed = false;
 
-            var window = new Window
-            {
-                Title = "CamelWorks",
-                Width = 420,
-                Height = 520,
-                ResizeMode = ResizeMode.CanResize,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                ShowInTaskbar = false,
-            };
+            var card = new StackPanel { Margin = new Thickness(4, 4, 4, 4) };
 
-            var body = new DockPanel { Margin = new Thickness(18, 16, 18, 16), LastChildFill = true };
-
-            var head = new TextBlock
+            card.Children.Add(new TextBlock
             {
                 Text = prompt ?? string.Empty,
                 FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 10),
-            };
+                Margin = new Thickness(8, 4, 8, 8),
+            }.Wearing("Body"));
 
-            DockPanel.SetDock(head.Wearing("Body"), Dock.Top);
-            body.Children.Add(head);
+            var list = new StackPanel();
 
-            var box = Ui.Text(string.Empty, "narrow the list", null, 340);
-            box.Margin = new Thickness(0, 0, 0, 10);
-            DockPanel.SetDock(box, Dock.Top);
-            body.Children.Add(box);
-
-            var buttons = new StackPanel
+            foreach (var option in options ?? Array.Empty<ChipOption>())
             {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 10, 0, 0),
-            };
+                if (option.Value.Length == 0) continue;
 
-            var cancel = Ui.Quiet("Cancel", () => window.Close());
-            cancel.MinWidth = 92;
-            buttons.Children.Add(cancel);
+                var here = option;
 
-            var commit = Ui.Primary("Assign", () =>
-            {
-                said = true;
-                window.Close();
-            });
-
-            commit.MinWidth = 92;
-            commit.Margin = new Thickness(8, 0, 0, 0);
-            buttons.Children.Add(commit);
-
-            DockPanel.SetDock(buttons, Dock.Bottom);
-            body.Children.Add(buttons);
-
-            if (more != null && onMore != null)
-            {
-                var add = Ui.Quiet(more, () =>
+                var line = new StackPanel
                 {
-                    window.Close();
-                    Ui.Safely(onMore);
-                });
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
 
-                add.HorizontalAlignment = HorizontalAlignment.Left;
-                add.Margin = new Thickness(0, 8, 0, 0);
+                if (here.Glyph != null)
+                    line.Children.Add(Ui.Glyph(here.Glyph, 12, here.Key ?? "Muted",
+                                               new Thickness(0, 0, 7, 0)));
 
-                DockPanel.SetDock(add, Dock.Bottom);
-                body.Children.Add(add);
+                var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+                words.Children.Add(new TextBlock { Text = here.Label }.Wearing("Body"));
+
+                if (!string.IsNullOrEmpty(here.Under))
+                    words.Children.Add(new TextBlock { Text = here.Under, FontSize = 10 }
+                        .Wearing("Hint"));
+
+                line.Children.Add(words);
+
+                var tick = new CheckBox
+                {
+                    Content = line,
+                    IsChecked = ticked.Contains(here.Value),
+                    Padding = new Thickness(6, 0, 0, 0),
+                    Margin = new Thickness(8, 3, 8, 3),
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                };
+
+                tick.Checked += (s, e) => { ticked.Add(here.Value); changed = true; };
+                tick.Unchecked += (s, e) => { ticked.Remove(here.Value); changed = true; };
+
+                list.Children.Add(tick);
             }
 
-            var none = Ui.Quiet("Nobody — clear it", () =>
+            if (list.Children.Count == 0)
             {
-                ticked.Clear();
-                said = true;
-                window.Close();
-            });
+                var none = Ui.Small("Nobody on the team yet.");
 
-            none.HorizontalAlignment = HorizontalAlignment.Left;
-            none.Margin = new Thickness(0, 4, 0, 0);
-
-            DockPanel.SetDock(none, Dock.Bottom);
-            body.Children.Add(none);
-
-            var list = Ui.Stack();
-
-            void Fill()
-            {
-                var typed = box.Text.Trim();
-
-                list.Children.Clear();
-
-                foreach (var option in options ?? Array.Empty<ChipOption>())
-                {
-                    if (option.Value.Length == 0) continue;
-
-                    if (typed.Length > 0
-                        && option.Label.IndexOf(typed, StringComparison.OrdinalIgnoreCase) < 0)
-                        continue;
-
-                    var here = option;
-
-                    var line = new StackPanel { Orientation = Orientation.Horizontal };
-
-                    if (here.Glyph != null)
-                        line.Children.Add(Ui.Glyph(here.Glyph, 12, here.Key ?? "Muted",
-                                                   new Thickness(0, 0, 7, 0)));
-
-                    var words = new StackPanel();
-
-                    words.Children.Add(new TextBlock { Text = here.Label }.Wearing("Body"));
-
-                    if (!string.IsNullOrEmpty(here.Under))
-                        words.Children.Add(new TextBlock
-                        {
-                            Text = here.Under,
-                            FontSize = 10,
-                        }.Wearing("Hint"));
-
-                    line.Children.Add(words);
-
-                    var tick = new CheckBox
-                    {
-                        Content = line,
-                        IsChecked = ticked.Contains(here.Value),
-                        Margin = new Thickness(0, 0, 0, 6),
-                        VerticalContentAlignment = VerticalAlignment.Center,
-                    };
-
-                    tick.Checked += (s, e) => ticked.Add(here.Value);
-                    tick.Unchecked += (s, e) => ticked.Remove(here.Value);
-
-                    list.Children.Add(tick);
-                }
-
-                if (list.Children.Count == 0)
-                    list.Children.Add(Ui.Small(typed.Length > 0
-                        ? "Nothing on the team matches that."
-                        : "Nobody on the team yet."));
+                none.Margin = new Thickness(8, 4, 8, 6);
+                list.Children.Add(none);
             }
 
-            box.TextChanged += (s, e) => Ui.Safely(Fill);
-
-            Fill();
-
-            body.Children.Add(new ScrollViewer
+            card.Children.Add(new ScrollViewer
             {
                 Content = list,
+                MaxHeight = 260,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             });
 
-            var ground = new Border { Child = body };
-            ground.Tint(Border.BackgroundProperty, "Bg");
+            var popup = new Popup
+            {
+                PlacementTarget = on,
+                Placement = PlacementMode.Bottom,
+                StaysOpen = false,
+                AllowsTransparency = true,
+                HorizontalOffset = -8,
+                VerticalOffset = -8,
+            };
 
-            window.Content = ground;
-            window.Loaded += (s, e) => box.Focus();
+            var foot = Menu(new List<Entry?>
+            {
+                Entry.Rule(),
+                Entry.Act("Nobody \u2014 clear it", Glyphs.Close, () =>
+                {
+                    ticked.Clear();
+                    changed = true;
+                    popup.IsOpen = false;
+                }),
+                more == null || onMore == null
+                    ? null
+                    : Entry.Act(more, Glyphs.Add, () =>
+                    {
+                        // The menu goes first, so what it opens is not fighting a popup that is
+                        // still closing - and nothing is reported, because adding somebody is
+                        // not the same act as assigning to them.
+                        changed = false;
+                        popup.IsOpen = false;
+                        Ui.Safely(onMore);
+                    }),
+                Entry.Act("Done", Glyphs.Tick, () => popup.IsOpen = false),
+            }.Where(e => e != null).Select(e => e!).ToList(), false);
 
-            Skin.Apply(window);
-            Shell.HostWindow.Own(window);
+            card.Children.Add(foot);
 
-            window.ShowDialog();
+            popup.Child = Floating(card, 250);
 
-            if (said) onDone?.Invoke(ticked);
+            popup.Closed += (s, e) =>
+            {
+                if (!changed) return;
+
+                changed = false;
+                Ui.Safely(() => onDone?.Invoke(ticked));
+            };
+
+            popup.IsOpen = true;
         }
 
         /// <summary>One option inside a dropdown, marked when it is the one in force.</summary>
