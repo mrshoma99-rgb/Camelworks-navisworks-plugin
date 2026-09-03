@@ -92,7 +92,9 @@ namespace CamelWorks.UI.Views
                 // A pane's header is a name on the left and its verbs hard right; anything else
                 // put on that line shares the space with the verbs and, since the header does
                 // not clip, paints across them. A strip of notes is not a subtitle.
-                View = Bench.Pane("Clash matrix", null, Body(), Tools());
+                // The body keeps its own scroller, so the grid scrolls both ways inside the
+                // pane rather than being handed unbounded height and never scrolling at all.
+                View = Bench.Pane("Clash matrix", null, Body(), Tools(), scrolls: false);
 
                 Redraw();
             }
@@ -231,11 +233,21 @@ namespace CamelWorks.UI.Views
             // The grid
             // ---------------------------------------------------------------------------
 
-            /// <summary>Cell sizes, fixed, so nothing measures itself out of existence.</summary>
-            private const double CellWide = 104;
+            /// <summary>
+            /// Cell sizes, fixed, so nothing measures itself out of existence.
+            ///
+            /// <b>A column is as wide as a symbol, not as wide as a name.</b> The names went
+            /// across the top and were cut off anyway - "WSC_Process st..." - while every column
+            /// paid a hundred pixels for a letter. Stood on their end they cost height once, and
+            /// eighteen columns fit on a screen instead of six.
+            /// </summary>
+            private const double CellWide = 44;
             private const double CellHigh = 30;
-            private const double HeaderWide = 240;
-            private const double HeaderHigh = 62;
+            private const double HeaderWide = 250;
+            private const double HeaderHigh = 168;
+
+            /// <summary>How wide the index gutter down the left is.</summary>
+            private const double IndexWide = 26;
 
             /// <summary>
             /// Build the grid again. Only for a change of shape - a row added, removed or moved.
@@ -249,6 +261,8 @@ namespace CamelWorks.UI.Views
 
                 var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
 
+                // Column 0 is the index gutter, column 1 the row headers, then one per column.
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(IndexWide) });
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HeaderWide) });
 
                 foreach (var _ in _board.Columns)
@@ -256,6 +270,8 @@ namespace CamelWorks.UI.Views
 
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+                // Row 0 is the letters, row 1 the column headers, then one per row.
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
                 grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderHigh) });
 
                 foreach (var _ in _board.Rows)
@@ -264,17 +280,23 @@ namespace CamelWorks.UI.Views
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
                 Put(grid, Corner(), 0, 0);
+                Grid.SetRowSpan(grid.Children[grid.Children.Count - 1], 2);
+                Grid.SetColumnSpan(grid.Children[grid.Children.Count - 1], 2);
 
                 for (var c = 0; c < _board.Columns.Count; c++)
-                    Put(grid, ColumnHead(_board.Columns[c], c), 0, c + 1);
+                {
+                    Put(grid, Marker(Letter(c), _board.Columns[c].Titled), 0, c + 2);
+                    Put(grid, ColumnHead(_board.Columns[c], c), 1, c + 2);
+                }
 
-                Put(grid, Adding("Add a column", AddColumn), 0, _board.Columns.Count + 1);
+                Put(grid, Adding("Add a column", AddColumn), 1, _board.Columns.Count + 2);
 
                 for (var r = 0; r < _board.Rows.Count; r++)
                 {
                     var row = _board.Rows[r];
 
-                    Put(grid, RowHead(row, r), r + 1, 0);
+                    Put(grid, Marker(Number(r), row.Titled), r + 2, 0);
+                    Put(grid, RowHead(row, r), r + 2, 1);
 
                     for (var c = 0; c < _board.Columns.Count; c++)
                     {
@@ -282,11 +304,11 @@ namespace CamelWorks.UI.Views
                         var cell = Cell(row, column);
 
                         _cells[(row, column)] = cell;
-                        Put(grid, cell, r + 1, c + 1);
+                        Put(grid, cell, r + 2, c + 2);
                     }
                 }
 
-                Put(grid, Adding("Add a row", AddRow), _board.Rows.Count + 1, 0);
+                Put(grid, Adding("Add a row", AddRow), _board.Rows.Count + 2, 1);
 
                 _grid.Child = _board.Rows.Count == 0 && _board.Columns.Count == 0
                     ? Empty()
@@ -323,11 +345,96 @@ namespace CamelWorks.UI.Views
                 corner.Tint(Border.BorderBrushProperty, "Bd");
                 corner.Tint(Border.BackgroundProperty, "Pane");
 
-                corner.Child = Ui.Stack(
-                    Ui.Eyebrow("Rows are side A"),
-                    Ui.Small("Columns are side B"));
+                corner.Child = new StackPanel
+                {
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                    Children =
+                    {
+                        Ui.Eyebrow("Rows 1, 2, 3 are side A"),
+                        Ui.Small("Columns A, B, C are side B"),
+                    },
+                };
 
                 return corner;
+            }
+
+            /// <summary>
+            /// A row's number or a column's letter, in the gutter beside it.
+            ///
+            /// <b>A matrix of twenty by twenty needs coordinates.</b> Without them the only way
+            /// to say which cell is wrong is to read two long names off two edges of the screen
+            /// and hope the eye tracked the right line across - which on a grid this size it does
+            /// not. Numbers down and letters across is what every spreadsheet does and what a
+            /// coordination meeting already says out loud: "C7 should be a clearance".
+            /// </summary>
+            /// <param name="mark">The number or letter.</param>
+            /// <param name="what">What it stands for, for the tip.</param>
+            private static UIElement Marker(string mark, string what)
+            {
+                var cell = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    ToolTip = mark + " — " + what,
+                    Child = new TextBlock
+                    {
+                        Text = mark,
+                        FontSize = 10,
+                        FontWeight = FontWeights.SemiBold,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Hint"),
+                };
+
+                cell.Tint(Border.BorderBrushProperty, "Bd");
+                cell.Tint(Border.BackgroundProperty, "Pane");
+
+                return cell;
+            }
+
+            /// <summary>Where a cell is, as a spreadsheet would say it: the column, then the row.</summary>
+            /// <param name="row">The row.</param>
+            /// <param name="column">The column.</param>
+            private string Where(MatrixLine row, MatrixLine column)
+            {
+                var down = At(_board.Rows, row);
+                var across = At(_board.Columns, column);
+
+                return down < 0 || across < 0
+                    ? string.Empty
+                    : Letter(across) + Number(down);
+            }
+
+            /// <summary>Where one line sits in its list, or -1.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            /// <param name="line">The one being looked for.</param>
+            private static int At(IReadOnlyList<MatrixLine> lines, MatrixLine line)
+            {
+                for (var i = 0; i < lines.Count; i++)
+                    if (ReferenceEquals(lines[i], line))
+                        return i;
+
+                return -1;
+            }
+
+            /// <summary>A row's number, one-based.</summary>
+            /// <param name="at">Which row.</param>
+            private static string Number(int at) =>
+                (at + 1).ToString(CultureInfo.InvariantCulture);
+
+            /// <summary>
+            /// A column's letter: A to Z, then AA, AB, and so on, the way a spreadsheet counts.
+            /// </summary>
+            /// <param name="at">Which column.</param>
+            private static string Letter(int at)
+            {
+                var name = string.Empty;
+
+                for (var left = at; left >= 0; left = (left / 26) - 1)
+                {
+                    name = (char)('A' + (left % 26)) + name;
+                }
+
+                return name;
             }
 
             /// <summary>One row's header: what it is, where it points, and its own menu.</summary>
@@ -339,7 +446,8 @@ namespace CamelWorks.UI.Views
                     Padding = new Thickness(8, 3, 6, 3),
                     Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
-                    ToolTip = line.Source.Kinded() + " — " + line.Source.Describe()
+                    ToolTip = "Row " + Number(at) + ": " + line.Titled + " — "
+                              + line.Source.Kinded() + ", " + line.Source.Describe()
                               + ". Click for what can be done to this row.",
                 };
 
@@ -384,32 +492,52 @@ namespace CamelWorks.UI.Views
                 var head = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(6, 4, 6, 4),
+                    Padding = new Thickness(2, 6, 2, 6),
                     Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
-                    ToolTip = line.Source.Kinded() + " — " + line.Source.Describe()
+                    ToolTip = "Column " + Letter(at) + ": " + line.Titled + " — "
+                              + line.Source.Kinded() + ", " + line.Source.Describe()
                               + ". Click for what can be done to this column.",
                 };
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
                 head.Tint(Border.BackgroundProperty, "Pane");
 
-                var stacked = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
-
-                // Wrapped rather than turned on its side. A vertical header is unreadable at a
-                // glance and this product has already shipped one column of single letters.
-                stacked.Children.Add(new TextBlock
+                // Stood on its end, reading upwards.
+                //
+                // <b>Wrapping did not work.</b> A column had to be a hundred pixels wide to hold
+                // two words of a name, six columns filled the screen, and the names were cut off
+                // anyway - "WSC_Process st...". Turned through ninety degrees the whole name
+                // fits, a column costs what a symbol costs, and three times as many of them are
+                // on screen at once. It is what every coordination matrix ever drawn does.
+                //
+                // A LayoutTransform, not a RenderTransform: the header has to be measured
+                // rotated, or the grid gives it the width of the unturned text and the row is
+                // one line tall with the names hanging out of it.
+                var name = new TextBlock
                 {
                     Text = line.Titled,
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    MaxHeight = 32,
-                }.Wearing("Body"));
+                    TextWrapping = TextWrapping.NoWrap,
+
+                    // As long as the header is tall, so a very long name ellipsises rather than
+                    // pushing the whole top of the grid down.
+                    MaxWidth = HeaderHigh - 26,
+                    LayoutTransform = new System.Windows.Media.RotateTransform(-90),
+                };
+
+                var stacked = new StackPanel
+                {
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                };
 
                 if (line.IsUnbacked)
-                    stacked.Children.Add(Ui.Glyph(Glyphs.Warn, 10, "RedTx", new Thickness(0, 2, 0, 0)));
+                    stacked.Children.Add(Ui.Glyph(Glyphs.Warn, 10, "RedTx", new Thickness(0, 0, 0, 4)));
+
+                stacked.Children.Add(name.Wearing("Body"));
 
                 head.Child = stacked;
 
@@ -454,6 +582,11 @@ namespace CamelWorks.UI.Views
                 var meaning = symbol == null ? null : _legend.Meaning(symbol);
                 var mirrored = !_board.IsKeptHalf(row, column);
 
+                // The cell's coordinates first, so a tip answers "which one is this" before it
+                // answers "what is in it" - which is the question somebody has when they are
+                // reading a wrong symbol off a grid twenty wide.
+                var at = Where(row, column);
+
                 cell.Opacity = mirrored ? 0.45 : 1.0;
 
                 var text = new TextBlock
@@ -469,20 +602,20 @@ namespace CamelWorks.UI.Views
                 if (symbol == null)
                 {
                     cell.Background = System.Windows.Media.Brushes.Transparent;
-                    cell.ToolTip = row.Titled + " against " + column.Titled
+                    cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled
                                    + " — not tested. Click to put a symbol in it.";
                 }
                 else if (meaning == null)
                 {
                     cell.Tint(Border.BackgroundProperty, "RedBg");
                     text.Tint(TextBlock.ForegroundProperty, "RedTx");
-                    cell.ToolTip = "The legend does not say what " + Quoted(symbol)
+                    cell.ToolTip = at + " · the legend does not say what " + Quoted(symbol)
                                    + " means, so this cell makes no test.";
                 }
                 else
                 {
                     cell.Tint(Border.BackgroundProperty, meaning.Enabled ? "AccentWash" : "Nav");
-                    cell.ToolTip = row.Titled + " against " + column.Titled + " — "
+                    cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled + " — "
                                    + MatrixNaming.Worded(meaning.Test) + " at "
                                    + Millimetres(meaning.Tolerance)
                                    + (meaning.Enabled ? string.Empty : ", turned off");
@@ -911,7 +1044,8 @@ namespace CamelWorks.UI.Views
 
                 var items = new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading(row.Titled + " × " + column.Titled),
+                    Parts.Entry.Heading(Where(row, column) + "  ·  "
+                                        + row.Titled + " × " + column.Titled),
                 };
 
                 if (_legend.IsEmpty)
