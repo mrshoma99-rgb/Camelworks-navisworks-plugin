@@ -1643,13 +1643,16 @@ namespace CamelWorks.UI.Views
                     row++;
                 }
 
-                // <b>Centred, like everything else in the header.</b> Flushed to the end that
-                // meets the grid, every name ended on one line - which is a tidy edge and a
-                // header that does not agree with itself, because the letter above it, the
-                // number and the code are all centred in the column. One rule for the four of
-                // them: whatever a header holds sits in the middle of the column it names.
+                // <b>Centred across the column, flush along it.</b> Two axes, and they do not
+                // want the same answer. Across the column - the direction the letters are thick
+                // in - everything in a header is centred, which is what the letter above, the
+                // number and the code all do. Along the column, a name centred floats: twenty-two
+                // of them at twenty-two different lengths start and end in twenty-two different
+                // places, and the top edge of the grid stops being an edge. Flushed to the end
+                // that meets the grid they all finish on one line, and what ellipsises is the far
+                // end rather than the end that matters.
                 var turned = Turned(line.Name, HeaderHigh - Above, 11, FontWeights.SemiBold,
-                                    at: TextAlignment.Center).Wearing("Body");
+                                    at: TextAlignment.Left).Wearing("Body");
 
                 Grid.SetRow(turned, row);
                 stacked.Children.Add(turned);
