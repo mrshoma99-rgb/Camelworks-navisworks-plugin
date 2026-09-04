@@ -58,6 +58,30 @@ namespace CamelWorks.UI.Views
         {
             private readonly Session _session;
 
+            /// <summary>
+            /// The symbol on the brush, or null while there is none.
+            ///
+            /// <b>A cell at a time was the whole cost of a matrix.</b> Twenty disciplines is two
+            /// hundred and ten cells to fill, and every one of them was a click, a menu, and a
+            /// press on a line of that menu. Armed from the legend, a symbol is painted by
+            /// clicking a cell or dragging across a run of them, and a whole row or column by
+            /// clicking its number or its letter - which is how a person fills in a grid with a
+            /// pen, and how every spreadsheet has worked for forty years.
+            ///
+            /// The menu is still there on the right button, and on the left one whenever nothing
+            /// is armed, so nothing has been taken away.
+            /// </summary>
+            private MatrixSymbol? _brush;
+
+            /// <summary>The strip over the grid: what is armed, and how to put it down.</summary>
+            private readonly Border _armed = new Border();
+
+            /// <summary>The count and the brush strip, over the grid.</summary>
+            private readonly StackPanel _over = new StackPanel();
+
+            /// <summary>The key at the foot of the screen.</summary>
+            private readonly StackPanel _key = new StackPanel();
+
             private readonly Border _grid = new Border();
             private readonly StackPanel _legendRows = Ui.Stack();
             /// <summary>
@@ -201,19 +225,55 @@ namespace CamelWorks.UI.Views
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
                 };
 
-                var under = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+                // The legend, at the foot, as one block rather than a heading with prose under
+                // it. It is a key to the grid above it, so it is read across in a glance and not
+                // studied - and the sentence explaining what a symbol is belongs beside the
+                // symbols, once, not under every draw of them.
+                _key.Margin = new Thickness(0, 10, 0, 0);
 
+                var key = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 4) };
+
+                var adding = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                var another = Ui.Quiet("Add a symbol", AddSymbol);
+
+                another.Margin = new Thickness(0, 0, 6, 0);
+                adding.Children.Add(another);
+                adding.Children.Add(Ui.Quiet("Cover every symbol in the grid", CoverSymbols));
+
+                DockPanel.SetDock(adding, Dock.Right);
+                key.Children.Add(adding);
+
+                var titled = Ui.Eyebrow("The legend");
+
+                titled.VerticalAlignment = VerticalAlignment.Center;
+                key.Children.Add(titled);
+
+                _key.Children.Add(key);
+
+                DockPanel.SetDock(_key, Dock.Bottom);
+
+                // The count sits with the grid it counts, over it, not below the legend where it
+                // read as a footnote to the key.
                 _count.Margin = new Thickness(0, 0, 0, 6);
-                under.Children.Add(Ui.Loose(_count.Wearing("Hint")));
 
-                under.Children.Add(Bench.Group("The legend",
-                    Ui.Loose(_legendRows),
-                    Ui.Actions(
-                        Ui.Icon(Glyphs.Add, "Add a symbol", AddSymbol),
-                        Ui.Quiet("Cover every symbol in the grid", CoverSymbols)),
-                    Ui.Small("Each symbol is a setting: a kind of test and a tolerance. A cell "
-                             + "carrying that symbol becomes a test with those settings, so "
-                             + "changing one here changes every cell that uses it.")));
+                _armed.Padding = new Thickness(10, 6, 8, 6);
+                _armed.Margin = new Thickness(0, 0, 0, 6);
+                _armed.BorderThickness = new Thickness(1);
+                _armed.CornerRadius = new CornerRadius(8);
+                _armed.Visibility = Visibility.Collapsed;
+
+                _armed.Tint(Border.BackgroundProperty, "AccentWash");
+                _armed.Tint(Border.BorderBrushProperty, "Accent");
+
+                _over.Children.Add(Ui.Loose(_armed));
+                _over.Children.Add(Ui.Loose(_count.Wearing("Hint")));
+
+                _key.Children.Add(Ui.Loose(_legendRows));
 
                 var stack = new DockPanel { LastChildFill = true };
 
@@ -222,8 +282,10 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(top, Dock.Top);
                 stack.Children.Add(top);
 
-                DockPanel.SetDock(under, Dock.Bottom);
-                stack.Children.Add(under);
+                DockPanel.SetDock(_over, Dock.Top);
+                stack.Children.Add(Ui.Loose(_over));
+
+                stack.Children.Add(Ui.Loose(_key));
                 stack.Children.Add(scrolled);
 
                 return stack;
@@ -248,6 +310,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>How wide the index gutter down the left is.</summary>
             private const double IndexWide = 26;
+
 
             /// <summary>
             /// Build the grid again. Only for a change of shape - a row added, removed or moved.
@@ -285,7 +348,8 @@ namespace CamelWorks.UI.Views
 
                 for (var c = 0; c < _board.Columns.Count; c++)
                 {
-                    Put(grid, Marker(Letter(c), _board.Columns[c].Titled), 0, c + 2);
+                    Put(grid, Marker(Letter(c), _board.Columns[c].Titled,
+                                     _board.Columns[c], rows: false), 0, c + 2);
                     Put(grid, ColumnHead(_board.Columns[c], c), 1, c + 2);
                 }
 
@@ -295,7 +359,7 @@ namespace CamelWorks.UI.Views
                 {
                     var row = _board.Rows[r];
 
-                    Put(grid, Marker(Number(r), row.Titled), r + 2, 0);
+                    Put(grid, Marker(Number(r), row.Titled, row, rows: true), r + 2, 0);
                     Put(grid, RowHead(row, r), r + 2, 1);
 
                     for (var c = 0; c < _board.Columns.Count; c++)
@@ -310,10 +374,17 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, Adding("Add a row", AddRow), _board.Rows.Count + 2, 1);
 
-                _grid.Child = _board.Rows.Count == 0 && _board.Columns.Count == 0
-                    ? Empty()
-                    : (UIElement)grid;
+                var bare = _board.Rows.Count == 0 && _board.Columns.Count == 0;
 
+                _grid.Child = bare ? Empty() : (UIElement)grid;
+
+                // Nothing drawn yet is a screen about starting, so the count of an empty grid
+                // and a key to symbols nothing is using are two lines of furniture in the way of
+                // it. They arrive with the matrix.
+                _over.Visibility = bare ? Visibility.Collapsed : Visibility.Visible;
+                _key.Visibility = bare ? Visibility.Collapsed : Visibility.Visible;
+
+                RedrawArmed();
                 RedrawLegend();
                 Recount();
             }
@@ -325,14 +396,152 @@ namespace CamelWorks.UI.Views
                 grid.Children.Add(child);
             }
 
-            private UIElement Empty() => Ui.Stack(
-                Bench.Ready("Nothing drawn yet",
-                    "A clash matrix is the disciplines down one side and across the top, with a "
-                    + "symbol where two of them have to be checked against each other."),
-                Ui.Actions(
-                    Ui.Primary("Add a row", AddRow),
-                    Ui.Quiet("Read the model's tests", FromModel),
-                    Ui.Quiet("Open a spreadsheet", FromSheet)));
+            /// <summary>
+            /// The screen before there is a matrix: the four ways in, as things to press.
+            ///
+            /// <b>What it replaced.</b> A sentence in the top corner and three buttons, over an
+            /// empty white screen the height of the window. The question this screen has to
+            /// answer is "where does a matrix come from", and the answer is four different
+            /// places - so it says all four, says what each one gives you, and leaves the one
+            /// that costs nothing and finds the most until last.
+            /// </summary>
+            private UIElement Empty()
+            {
+                var ways = new StackPanel { MaxWidth = 560 };
+
+                ways.Children.Add(Bench.Ready("Draw the coordination matrix",
+                    "The disciplines down one side and across the top, with a symbol where two "
+                    + "of them have to be checked against each other. Every symbol in the grid "
+                    + "becomes a clash test."));
+
+                var sets = Sets().Count;
+
+                ways.Children.Add(Ui.Row(
+                    "The model's saved sets",
+                    sets == 0
+                        ? "This model has no saved selection or search sets yet."
+                        : Ui.Count(sets, "set") + " to choose from. Tick the ones that are the "
+                          + "disciplines and each becomes a row, named after the set and already "
+                          + "pointed at it.",
+                    sets == 0 ? null : "Pick the sets",
+                    sets == 0 ? (Action)(() => Warned(Ui.Problem(
+                        "This model has no saved selection or search sets. Make them in "
+                        + "Navisworks - or draw the matrix by hand and point the rows at "
+                        + "something else."))) : FromSets));
+
+                ways.Children.Add(Ui.Row(
+                    "The tests this model already has",
+                    "Every clash test says what it is between, so the matrix is already there - "
+                    + "read it back and see it whole.",
+                    "Read the tests",
+                    FromModel));
+
+                ways.Children.Add(Ui.Row(
+                    "A spreadsheet",
+                    "The client's own workbook, with its own symbols and a key in the corner. "
+                    + "The legend is built from what it uses.",
+                    "Open a workbook",
+                    FromSheet));
+
+                ways.Children.Add(Ui.Row(
+                    "By hand",
+                    "One row at a time, pointed at whatever each one is: a set, whole models, "
+                    + "what is selected, a branch of the tree.",
+                    "Add the first row",
+                    AddRow));
+
+                return ways;
+            }
+
+            /// <summary>
+            /// One row per saved set, named after it, numbered, and already pointing at it.
+            ///
+            /// <b>The four presses a row used to cost.</b> Add a row, name it, number it, point
+            /// it at something - each its own dialogue, times twenty disciplines. But the
+            /// disciplines are already in the document, as the saved sets somebody made to run
+            /// the tests with: WSC_Pipes, CIV_C_Concrete, FGT_Ducts. Ticking them is the whole
+            /// job, and the columns follow from the rows.
+            ///
+            /// <b>Nothing is overwritten.</b> A set already on the matrix is left where it is,
+            /// so this can be pressed again after a set is added without disturbing the grid
+            /// that has been filled in.
+            /// </summary>
+            private void FromSets()
+            {
+                var sets = Sets();
+
+                if (sets.Count == 0)
+                {
+                    Warned(Ui.Problem("This model has no saved selection or search sets."));
+                    return;
+                }
+
+                var already = new HashSet<string>(
+                    _board.Rows.Where(r => r.Source.IsSet).Select(r => r.Source.Name),
+                    StringComparer.OrdinalIgnoreCase);
+
+                Parts.Search(_grid, "Which sets are the disciplines?",
+                    sets.Select(s => new KeyValuePair<string, int>(s.Name, s.Members)).ToList(),
+                    already, null,
+                    picked =>
+                    {
+                        var wanted = new HashSet<string>(picked, StringComparer.OrdinalIgnoreCase);
+                        var made = 0;
+
+                        // In the order the model lists them, not the order they were ticked, so
+                        // the matrix comes out alphabetical like the picker was.
+                        foreach (var set in sets)
+                        {
+                            if (!wanted.Contains(set.Name) || already.Contains(set.Name)) continue;
+
+                            _board.AddRow(new MatrixLine(
+                                set.Name,
+                                Next(_board.Rows),
+                                set.IsSearch
+                                    ? MatrixSource.SearchSet(set.Name)
+                                    : MatrixSource.SelectionSet(set.Name)));
+
+                            made++;
+                        }
+
+                        if (made == 0)
+                        {
+                            Said(Ui.Note("Every set you ticked is already on the matrix."));
+                            return;
+                        }
+
+                        // A matrix of disciplines is square: everything against everything, and
+                        // the half nobody fills in is the mirror of the half they do.
+                        _board.SquareOffRows();
+
+                        Seed();
+                        Redraw();
+
+                        Said(Ui.Done(Ui.Count(made, "row") + " added, and the columns to match. "
+                                     + "Put a symbol in the cells that have to be checked - or "
+                                     + "arm one in the legend and drag across them."));
+                    });
+            }
+
+            /// <summary>
+            /// Two symbols to begin with, so the first cell somebody clicks has somewhere to go.
+            ///
+            /// A new matrix had an empty legend, and the first click on a cell answered "the
+            /// legend is empty, make one first" - a dead end on the first gesture anybody makes.
+            /// A hard clash and a clearance are what a matrix is nearly always made of; both are
+            /// editable like any other symbol, and this never touches a legend that already has
+            /// something in it.
+            /// </summary>
+            private void Seed()
+            {
+                if (!_legend.IsEmpty) return;
+
+                _legend = new MatrixLegend(new[]
+                {
+                    new MatrixSymbol("A", MatrixTest.Hard, 0.010, true),
+                    new MatrixSymbol("B", MatrixTest.Clearance, 0.050, true),
+                });
+            }
 
             private UIElement Corner()
             {
@@ -369,12 +578,20 @@ namespace CamelWorks.UI.Views
             /// </summary>
             /// <param name="mark">The number or letter.</param>
             /// <param name="what">What it stands for, for the tip.</param>
-            private static UIElement Marker(string mark, string what)
+            /// <param name="line">The row or column it indexes.</param>
+            /// <param name="rows">True when it indexes a row.</param>
+            private UIElement Marker(string mark, string what, MatrixLine line, bool rows)
             {
                 var cell = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    ToolTip = mark + " — " + what,
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    Cursor = Cursors.Hand,
+                    ToolTip = mark + " — " + what
+                              + (_brush == null
+                                  ? string.Empty
+                                  : ". Click to put " + Quoted(_brush.Symbol) + " down the whole "
+                                    + (rows ? "row." : "column.")),
                     Child = new TextBlock
                     {
                         Text = mark,
@@ -387,6 +604,12 @@ namespace CamelWorks.UI.Views
 
                 cell.Tint(Border.BorderBrushProperty, "Bd");
                 cell.Tint(Border.BackgroundProperty, "Pane");
+
+                cell.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+                    Sweep(line, rows);
+                });
 
                 return cell;
             }
@@ -561,9 +784,120 @@ namespace CamelWorks.UI.Views
 
                 Paint(cell, row, column);
 
-                Opens(cell, () => CellMenu(row, column));
+                // Painting takes the press; the menu takes the release, and only when nothing is
+                // armed. Two gestures on one cell, and which one is live is said by the strip
+                // over the grid rather than left to be discovered.
+                cell.MouseLeftButtonDown += (s, e) => Ui.Safely(() =>
+                {
+                    if (_brush == null) return;
+
+                    e.Handled = true;
+                    Daub(row, column);
+                });
+
+                cell.MouseEnter += (s, e) => Ui.Safely(() =>
+                {
+                    if (_brush == null
+                        || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                        return;
+
+                    Daub(row, column);
+                });
+
+                cell.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+
+                    if (_brush == null) Parts.PopMenu(cell, CellMenu(row, column));
+                });
+
+                // The whole menu is still one right-click away while a brush is armed.
+                cell.ContextMenu = Parts.Context(() => CellMenu(row, column), null);
 
                 return cell;
+            }
+
+            /// <summary>Put the armed symbol in one cell, if it is not already there.</summary>
+            /// <param name="row">The row.</param>
+            /// <param name="column">The column.</param>
+            private void Daub(MatrixLine row, MatrixLine column)
+            {
+                var brush = _brush;
+
+                if (brush == null) return;
+
+                // Dragging crosses the same cell many times; only a change is worth a repaint.
+                if (string.Equals(_board.At(row, column), brush.Symbol, StringComparison.Ordinal))
+                    return;
+
+                _board.Set(row, column, brush.Symbol);
+                Repaint(row, column);
+            }
+
+            /// <summary>Put the armed symbol down the whole of one row or across one column.</summary>
+            /// <param name="line">The row or the column.</param>
+            /// <param name="rows">True for a row, false for a column.</param>
+            private void Sweep(MatrixLine line, bool rows)
+            {
+                if (_brush == null) return;
+
+                if (rows) foreach (var column in _board.Columns) Daub(line, column);
+                else foreach (var row in _board.Rows) Daub(row, line);
+            }
+
+            /// <summary>Arm a symbol, or put the one already armed down.</summary>
+            /// <param name="symbol">The symbol, or null for none.</param>
+            private void Arm(MatrixSymbol? symbol)
+            {
+                _brush = symbol != null && _brush != null
+                         && string.Equals(_brush.Symbol, symbol.Symbol, StringComparison.Ordinal)
+                    ? null
+                    : symbol;
+
+                RedrawArmed();
+                RedrawLegend();
+            }
+
+            /// <summary>Say what is armed, over the grid, with the way to put it down.</summary>
+            private void RedrawArmed()
+            {
+                if (_brush == null)
+                {
+                    _armed.Visibility = Visibility.Collapsed;
+                    _armed.Child = null;
+                    return;
+                }
+
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                row.Children.Add(Ui.Glyph(Glyphs.Pencil, 12, "Accent", new Thickness(0, 0, 8, 0)));
+
+                row.Children.Add(new TextBlock
+                {
+                    Text = Quoted(_brush.Symbol) + " is on the brush",
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.Wearing("Body"));
+
+                row.Children.Add(new TextBlock
+                {
+                    Text = "Click a cell or drag across a run of them. "
+                           + "Click a row's number or a column's letter for the whole line.",
+                    Margin = new Thickness(10, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                }.Wearing("Hint"));
+
+                var down = Ui.Quiet("Put it down", () => Arm(null));
+
+                down.VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(down);
+
+                _armed.Child = row;
+                _armed.Visibility = Visibility.Visible;
             }
 
             /// <summary>
@@ -794,12 +1128,16 @@ namespace CamelWorks.UI.Views
             private void AddRow()
             {
                 _board.AddRow(new MatrixLine("New row", Next(_board.Rows)));
+
+                Seed();
                 Redraw();
             }
 
             private void AddColumn()
             {
                 _board.AddColumn(new MatrixLine("New column", Next(_board.Columns)));
+
+                Seed();
                 Redraw();
             }
 
@@ -1111,6 +1449,10 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                _legendRows.Children.Add(Ui.Small(
+                    "Press a symbol to put it on the brush, then click or drag across the cells "
+                    + "it belongs in. Changing a symbol here changes every cell that uses it."));
+
                 foreach (var symbol in _legend.Symbols)
                 {
                     var one = symbol;
@@ -1143,10 +1485,22 @@ namespace CamelWorks.UI.Views
                         row.Children.Add(cell);
                     }
 
+                    var on = _brush != null
+                             && string.Equals(_brush.Symbol, one.Symbol, StringComparison.Ordinal);
+
+                    // The swatch is the brush. Pressing it arms the symbol, pressing it again
+                    // puts it down, and while it is armed it says so rather than looking like
+                    // every other swatch in the list.
                     var mark = new Border
                     {
                         Height = 24,
                         CornerRadius = new CornerRadius(5),
+                        BorderThickness = new Thickness(on ? 2 : 0),
+                        Cursor = Cursors.Hand,
+                        ToolTip = on
+                            ? Quoted(one.Symbol) + " is on the brush. Press to put it down."
+                            : "Press to put " + Quoted(one.Symbol) + " on the brush, then click "
+                              + "or drag across the cells it belongs in.",
                         Child = new TextBlock
                         {
                             Text = one.Symbol,
@@ -1157,6 +1511,13 @@ namespace CamelWorks.UI.Views
                     };
 
                     mark.Tint(Border.BackgroundProperty, one.Enabled ? "AccentWash" : "Nav");
+                    mark.Tint(Border.BorderBrushProperty, "Accent");
+
+                    mark.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                    {
+                        e.Handled = true;
+                        Arm(one);
+                    });
 
                     At(mark, 0);
 
@@ -1277,6 +1638,10 @@ namespace CamelWorks.UI.Views
 
             private List<Parts.Entry> Starting() => new List<Parts.Entry>
             {
+                Parts.Entry.Saying("The model's saved sets", Glyphs.Folder,
+                    "A row per set you tick, named after it and pointed at it",
+                    FromSets),
+
                 Parts.Entry.Saying("The model's own tests", Glyphs.Model,
                     "Every test says what it is between, so the matrix is already there",
                     FromModel),
