@@ -3854,49 +3854,10 @@ namespace CamelWorks.UI.Views
                     + live.ToString(CultureInfo.InvariantCulture) + " of this " + what
                     + "'s pairs decided");
 
-                count.Margin = new Thickness(0, 10, 0, 5);
+                count.Margin = new Thickness(0, 10, 0, 6);
                 _inspector.Children.Add(count);
 
-                // <b>The whole line, in words, whichever half of the grid it lives in.</b> A
-                // mirrored matrix keeps each pair once, so half of what a discipline is checked
-                // against sits on the other axis - and "what is ARC_Ceilings checked against" is
-                // the question a coordination meeting actually asks. Reading it off the grid
-                // means following a line that bends at the diagonal, across two scroll axes, in
-                // front of a client. Here it is a list.
-                var against = Ui.Stack();
-
-                foreach (var other in rows ? _board.Columns : _board.Rows)
-                {
-                    var held = _board.At(rows ? line : other, rows ? other : line);
-
-                    if (held == null || MatrixBoard.IsNotRequired(held)) continue;
-
-                    var meaning = _legend.Meaning(held);
-
-                    against.Children.Add(Ui.Small(
-                        "· " + other.Titled + "  " + Quoted(held)
-                        + (meaning == null
-                            ? string.Empty
-                            : " — " + MatrixNaming.Worded(meaning.Test).ToLowerInvariant()
-                              + " at " + Millimetres(meaning.Tolerance))));
-                }
-
-                if (against.Children.Count > 0)
-                {
-                    var titled = Ui.Small("Checked against");
-
-                    titled.Margin = new Thickness(0, 4, 0, 3);
-                    _inspector.Children.Add(titled);
-
-                    _inspector.Children.Add(new ScrollViewer
-                    {
-                        Content = Ui.Loose(against),
-                        MaxHeight = 132,
-                        Margin = new Thickness(0, 0, 0, 6),
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    });
-                }
+                Against(line, rows);
 
                 filling = Doable(Glyphs.Sweep,
                     _brush == null
@@ -3995,6 +3956,210 @@ namespace CamelWorks.UI.Views
                 }, danger: true);
 
                 Verbs("Do to this " + what, elsewhere, filling, copying, null, clearing, removing);
+            }
+
+            /// <summary>
+            /// What a row or column is checked against, gathered under the test that checks it.
+            ///
+            /// <b>A mirrored matrix keeps each pair once</b>, so half of what a discipline is
+            /// checked against sits on the other axis, and "what is ARC_Ceilings checked against"
+            /// - the question a coordination meeting actually asks - means following a line that
+            /// bends at the diagonal, across two scroll axes, in front of a client. So it is said
+            /// here in words.
+            ///
+            /// <b>But twenty-one bullets in one weight is not an answer.</b> Every line said the
+            /// same four things in the same type - a name, a symbol, a kind, a tolerance - so
+            /// nothing stood out, nothing could be counted, and the shape of the row was buried
+            /// in its own detail. The question is not "list the pairs"; it is "how is this
+            /// checked, and against what". Grouped under the test, each group says what the test
+            /// is once and then names its disciplines, so a row reads as three or four facts -
+            /// seven hard, five clearances, three ruled out, three still open - instead of
+            /// twenty-one sentences.
+            ///
+            /// And the two states it used to drop are here: a pair ruled out and a pair nobody
+            /// has decided are both things somebody wants to see on this panel, and the open
+            /// group is the one that says what is left to do on this line.
+            /// </summary>
+            /// <param name="line">The row or the column.</param>
+            /// <param name="rows">True for a row.</param>
+            private void Against(MatrixLine line, bool rows)
+            {
+                var held = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                var open = new List<string>();
+
+                foreach (var other in rows ? _board.Columns : _board.Rows)
+                {
+                    var symbol = _board.At(rows ? line : other, rows ? other : line);
+
+                    if (symbol == null) { open.Add(other.Titled); continue; }
+
+                    if (!held.TryGetValue(symbol, out var names))
+                        held[symbol] = names = new List<string>();
+
+                    names.Add(other.Titled);
+                }
+
+                if (held.Count == 0 && open.Count == 0) return;
+
+                var titled = Ui.Small("Checked against");
+
+                titled.Margin = new Thickness(0, 2, 0, 4);
+                _inspector.Children.Add(titled);
+
+                var groups = Ui.Stack();
+
+                // The legend's own order, so the groups come out in the order the palette lists
+                // them however the row happens to run - and a row read twice reads the same way.
+                for (var at = 0; at < _legend.Symbols.Count; at++)
+                {
+                    var symbol = _legend.Symbols[at];
+
+                    if (!held.TryGetValue(symbol.Symbol, out var names)) continue;
+
+                    held.Remove(symbol.Symbol);
+
+                    groups.Children.Add(Gathered(
+                        symbol.Symbol, at, symbol.Enabled,
+                        MatrixNaming.Worded(symbol.Test),
+                        Millimetres(symbol.Tolerance)
+                        + (symbol.Enabled ? string.Empty : " · turned off, so these build nothing"),
+                        names));
+                }
+
+                // Whatever the legend has nothing to say about, including the reserved mark.
+                foreach (var pair in held)
+                {
+                    var ruled = MatrixBoard.IsNotRequired(pair.Key);
+
+                    groups.Children.Add(Gathered(
+                        ruled ? MatrixBoard.NotRequired : pair.Key, -1, false,
+                        ruled ? "Not required" : Quoted(pair.Key),
+                        ruled ? "agreed, and no test is made"
+                              : "not in the legend, so these make no test",
+                        pair.Value));
+                }
+
+                if (open.Count > 0)
+                    groups.Children.Add(Gathered("", -1, false, "Nobody has ruled on these",
+                                                 "no test either way, yet", open));
+
+                // <b>No scroller of its own.</b> The list used to be capped and scrolled inside
+                // the panel that was already scrolling, so a wheel over it moved one of two
+                // things depending on where the pointer happened to be and the list could hide
+                // its own last group. The panel scrolls; the verbs, the palette and the progress
+                // are docked out of its way and cannot be pushed off by anything in it.
+                groups.Margin = new Thickness(0, 0, 0, 6);
+
+                _inspector.Children.Add(groups);
+            }
+
+            /// <summary>
+            /// One group of that list: the test, how many, and which disciplines.
+            ///
+            /// The names run on rather than one to a line. Twenty-one names down a panel is a
+            /// column of text nobody reads to the end; the same names as a run are three lines,
+            /// and the eye is looking for one of them rather than reading all of them.
+            /// </summary>
+            /// <param name="mark">The symbol, or empty for the pairs nobody has decided.</param>
+            /// <param name="hue">Where it sits in the legend, or -1 for anything not in it.</param>
+            /// <param name="live">False for a symbol that builds nothing, and for the two marks.</param>
+            /// <param name="title">What the test is.</param>
+            /// <param name="under">The tolerance, or what the mark means.</param>
+            /// <param name="names">The disciplines on the other side of each pair.</param>
+            private static UIElement Gathered(string mark, int hue, bool live, string title,
+                                              string under, IReadOnlyList<string> names)
+            {
+                var card = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(8, 6, 8, 7),
+                    Margin = new Thickness(0, 0, 0, 5),
+                };
+
+                card.Tint(Border.BorderBrushProperty, "Bd");
+                card.Tint(Border.BackgroundProperty, "Card");
+
+                var head = new DockPanel { LastChildFill = true };
+
+                var letter = new TextBlock
+                {
+                    Text = mark,
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 11,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                if (!live && hue >= 0) letter.TextDecorations = TextDecorations.Strikethrough;
+
+                var swatch = new Border
+                {
+                    Width = 22,
+                    Height = 20,
+                    CornerRadius = new CornerRadius(4),
+                    Margin = new Thickness(0, 0, 7, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Child = letter,
+                };
+
+                // The same wash the cells carry, so the group and the grid are one key. A group
+                // with no symbol - the open one - is drawn as the empty cells it stands for.
+                if (live && hue >= 0) swatch.Background = Skin.Symbol(hue);
+                else if (mark.Length == 0) swatch.Tint(Border.BackgroundProperty, "Card");
+                else swatch.Tint(Border.BackgroundProperty, "Nav");
+
+                if (mark.Length == 0) swatch.Tint(Border.BorderBrushProperty, "BdStrong");
+                if (mark.Length == 0) swatch.BorderThickness = new Thickness(1);
+
+                DockPanel.SetDock(swatch, Dock.Left);
+                head.Children.Add(swatch);
+
+                var tally = new TextBlock
+                {
+                    Text = names.Count.ToString(CultureInfo.InvariantCulture),
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12,
+                    Margin = new Thickness(6, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                }.Wearing("Muted");
+
+                DockPanel.SetDock(tally, Dock.Right);
+                head.Children.Add(tally);
+
+                var says = Ui.Stack();
+
+                says.Children.Add(new TextBlock
+                {
+                    Text = title,
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                }.Wearing("Body"));
+
+                var meant = Ui.Small(under);
+
+                meant.TextWrapping = TextWrapping.Wrap;
+                says.Children.Add(meant);
+
+                head.Children.Add(says);
+
+                var all = Ui.Stack();
+
+                all.Children.Add(head);
+
+                var listed = Ui.Small(string.Join(" · ", names));
+
+                listed.TextWrapping = TextWrapping.Wrap;
+                listed.Margin = new Thickness(0, 5, 0, 0);
+                listed.Wearing("Body");
+                listed.Opacity = 0.85;
+
+                all.Children.Add(listed);
+
+                card.Child = all;
+
+                return card;
             }
 
             /// <summary>One symbol: what it means, which every cell carrying it follows.</summary>
