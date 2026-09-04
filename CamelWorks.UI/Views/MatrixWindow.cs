@@ -123,6 +123,14 @@ namespace CamelWorks.UI.Views
             /// <summary>The ring round the cell the keyboard is on.</summary>
             private readonly Border _ring = new Border();
 
+            /// <summary>The corner and the left band, whose width follows what the rows carry.</summary>
+            private readonly Border _corner = new Border();
+
+            private readonly Border _side = new Border();
+
+            /// <summary>The band across the top, whose height follows what the columns carry.</summary>
+            private readonly Border _band = new Border();
+
             /// <summary>
             /// The box under the last row that makes a row out of every name typed into it.
             ///
@@ -461,38 +469,43 @@ namespace CamelWorks.UI.Views
                 _across.HorizontalAlignment = HorizontalAlignment.Left;
                 _across.RenderTransform = _slidX;
 
-                var band = new Border
-                {
-                    Child = Ui.Loose(_across),
-                    ClipToBounds = true,
-                    Height = IndexHigh + HeaderHigh,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                };
+                _band.Child = Ui.Loose(_across);
+                _band.ClipToBounds = true;
+                _band.Height = IndexHigh + HeaderHigh;
+                _band.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-                Grid.SetRow(band, 0);
-                Grid.SetColumn(band, 1);
-                frame.Children.Add(band);
+                _band.Tint(Border.BackgroundProperty, "Bg");
+
+                Grid.SetRow(_band, 0);
+                Grid.SetColumn(_band, 1);
+                frame.Children.Add(Ui.Loose(_band));
 
                 _down.VerticalAlignment = VerticalAlignment.Top;
                 _down.RenderTransform = _slidY;
 
-                var side = new Border
-                {
-                    Child = Ui.Loose(_down),
-                    ClipToBounds = true,
-                    Width = IndexWide + HeaderWide,
-                    VerticalAlignment = VerticalAlignment.Stretch,
-                };
+                _side.Child = Ui.Loose(_down);
+                _side.ClipToBounds = true;
+                _side.Tint(Border.BackgroundProperty, "Bg");
+                _side.Width = IndexWide + HeaderWide;
+                _side.VerticalAlignment = VerticalAlignment.Stretch;
 
-                Grid.SetRow(side, 1);
-                Grid.SetColumn(side, 0);
-                frame.Children.Add(side);
+                Grid.SetRow(_side, 1);
+                Grid.SetColumn(_side, 0);
+                frame.Children.Add(Ui.Loose(_side));
 
                 _scroll.Content = Ui.Loose(_sheet);
                 _scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
                 _scroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
                 _scroll.Focusable = true;
                 _scroll.FocusVisualStyle = null;
+
+                // <b>The white below the last row was the pane, not the sheet.</b> A grid of six
+                // rows in a window that holds thirty left two thirds of the screen the same
+                // colour as the cells, with no edge anywhere, so the matrix looked like a table
+                // that had failed to finish drawing rather than a small matrix. The desk behind
+                // it is the app's own background: the sheet now has an edge and stops where it
+                // stops, and the space beneath it reads as space.
+                _scroll.Tint(Control.BackgroundProperty, "Bg");
 
                 _scroll.ScrollChanged += (s, e) =>
                 {
@@ -533,8 +546,54 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private const double CellHigh = 30;
 
-            private const double HeaderWide = 200;
-            private const double HeaderHigh = 130;
+            /// <summary>How wide the name itself gets, before the gutters beside it.</summary>
+            private const double NameWide = 150;
+
+            /// <summary>The number gutter, and the code gutter, when anything is using them.</summary>
+            private const double NumberWide = 32;
+            private const double CodeWide = 36;
+
+            /// <summary>
+            /// How wide the row headers are: the name, plus a gutter for whatever is in use.
+            ///
+            /// <b>The number used to be glued to the front of the name.</b> "04 ARC_Walls" is
+            /// one string to a reader and two facts to the job, and run down twenty rows the
+            /// names started at four different places because the numbers were not all the same
+            /// width. Its own column lines them up and gives the name back its own left edge -
+            /// and the code, which the test names are built out of, was not on the screen at
+            /// all. A gutter nothing is using is not drawn, so a matrix without numbers or codes
+            /// is as narrow as it was.
+            /// </summary>
+            private double HeaderWide =>
+                NameWide + (Numbered(_board.Rows) ? NumberWide : 0)
+                         + (Coded(_board.Rows) ? CodeWide : 0);
+
+            /// <summary>Whether any of these lines carries a number of its own.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private static bool Numbered(IReadOnlyList<MatrixLine> lines)
+            {
+                foreach (var line in lines) if (line.Number.Length > 0) return true;
+
+                return false;
+            }
+
+            /// <summary>Whether any of these lines carries a discipline code.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private static bool Coded(IReadOnlyList<MatrixLine> lines)
+            {
+                foreach (var line in lines) if (line.Code.Length > 0) return true;
+
+                return false;
+            }
+            /// <summary>
+            /// How tall the column band is: the turned name, plus what sits under it.
+            ///
+            /// The number and the code are drawn the right way up beneath each name, so the band
+            /// has to be as tall as the tallest of those or the chip eats the name it belongs
+            /// to. A matrix using neither pays for neither.
+            /// </summary>
+            private double HeaderHigh =>
+                130 + (Numbered(_board.Columns) ? 15 : 0) + (Coded(_board.Columns) ? 17 : 0);
 
             /// <summary>How wide the index gutter down the left is, and how tall the one across.</summary>
             private const double IndexWide = 24;
@@ -579,6 +638,10 @@ namespace CamelWorks.UI.Views
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(IndexHigh) });
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderHigh) });
 
+                // The corner and the band it heads are as tall as the headers turned out to be.
+                _corner.Height = IndexHigh + HeaderHigh;
+                _band.Height = IndexHigh + HeaderHigh;
+
                 for (var c = 0; c <= _board.Columns.Count; c++)
                     _across.ColumnDefinitions.Add(new ColumnDefinition
                     {
@@ -605,6 +668,10 @@ namespace CamelWorks.UI.Views
 
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(IndexWide) });
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HeaderWide) });
+
+                // The corner and the band it heads are as wide as the headers turned out to be.
+                _corner.Width = IndexWide + HeaderWide;
+                _side.Width = IndexWide + HeaderWide;
 
                 for (var r = 0; r <= _board.Rows.Count; r++)
                     _down.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellHigh) });
@@ -883,13 +950,12 @@ namespace CamelWorks.UI.Views
 
             private UIElement Corner()
             {
-                var corner = new Border
-                {
-                    BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(8, 6, 8, 6),
-                    Width = IndexWide + HeaderWide,
-                    Height = IndexHigh + HeaderHigh,
-                };
+                var corner = _corner;
+
+                corner.BorderThickness = new Thickness(0, 0, 1, 1);
+                corner.Padding = new Thickness(8, 6, 8, 6);
+                corner.Width = IndexWide + HeaderWide;
+                corner.Height = IndexHigh + HeaderHigh;
 
                 corner.Tint(Border.BorderBrushProperty, "Bd");
                 corner.Tint(Border.BackgroundProperty, "Pane");
@@ -904,7 +970,7 @@ namespace CamelWorks.UI.Views
                     },
                 };
 
-                return corner;
+                return Ui.Loose(corner);
             }
 
             /// <summary>
@@ -1013,7 +1079,7 @@ namespace CamelWorks.UI.Views
                 var head = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(8, 0, 6, 0),
+                    Padding = new Thickness(0),
                     Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                     ToolTip = "Row " + Number(at) + ": " + line.Titled + " — "
@@ -1024,23 +1090,97 @@ namespace CamelWorks.UI.Views
                 head.Tint(Border.BackgroundProperty,
                           ReferenceEquals(_picked, line) && _pickedRows ? "NavActive" : "Pane");
 
-                var words = new DockPanel { LastChildFill = true, VerticalAlignment = VerticalAlignment.Center };
+                var words = new Grid();
+
+                var numbered = Numbered(_board.Rows);
+                var coded = Coded(_board.Rows);
+
+                if (numbered)
+                    words.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(NumberWide),
+                    });
+
+                if (coded)
+                    words.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(CodeWide),
+                    });
+
+                words.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                });
+
+                var column = 0;
+
+                if (numbered)
+                {
+                    var number = new TextBlock
+                    {
+                        Text = line.Number,
+                        FontSize = 11,
+                        TextAlignment = TextAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    }.Wearing("Hint");
+
+                    Grid.SetColumn(number, column++);
+                    words.Children.Add(number);
+                }
+
+                if (coded)
+                {
+                    // A chip, not another word: the code is what the test names are built out
+                    // of, and it wants to be told apart from the name at a glance.
+                    var chip = new Border
+                    {
+                        CornerRadius = new CornerRadius(4),
+                        Margin = new Thickness(2, 5, 6, 5),
+                        Padding = new Thickness(0, 0, 0, 1),
+                        Child = new TextBlock
+                        {
+                            Text = line.Code,
+                            FontSize = 10,
+                            FontWeight = FontWeights.SemiBold,
+                            TextAlignment = TextAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                        }.Wearing("Lbl"),
+                    };
+
+                    if (line.Code.Length > 0) chip.Tint(Border.BackgroundProperty, "Nav");
+
+                    Grid.SetColumn(chip, column++);
+                    words.Children.Add(chip);
+                }
+
+                var named = new DockPanel
+                {
+                    LastChildFill = true,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(numbered || coded ? 0 : 8, 0, 6, 0),
+                };
 
                 var mark = Ui.Glyph(line.IsUnbacked ? Glyphs.Warn : Glyphs.Layers, 12,
                                     line.IsUnbacked ? "RedTx" : "Muted", new Thickness(0, 0, 6, 0));
 
                 mark.VerticalAlignment = VerticalAlignment.Center;
-                words.Children.Add(mark);
+                named.Children.Add(mark);
 
-                words.Children.Add(new TextBlock
+                named.Children.Add(new TextBlock
                 {
-                    Text = line.Titled,
+                    Text = line.Name,
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 12,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                 }.Wearing("Body"));
+
+                Grid.SetColumn(named, column);
+                words.Children.Add(named);
 
                 head.Child = words;
 
@@ -1083,13 +1223,13 @@ namespace CamelWorks.UI.Views
                 // drawing only.
                 var name = new TextBlock
                 {
-                    Text = line.Titled,
+                    Text = line.Name,
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 11,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
 
-                    Width = HeaderHigh - (line.IsUnbacked ? 26 : 12),
+                    Width = HeaderHigh - Under(line) - (line.IsUnbacked ? 14 : 0),
                     Height = CellWide - 6,
 
                     // Read up towards the grid, so every name ends where its column begins
@@ -1103,17 +1243,66 @@ namespace CamelWorks.UI.Views
 
                 var stacked = new Grid();
 
-                stacked.Children.Add(name.Wearing("Body"));
+                // The name is turned; the number and the code are not. Two characters read
+                // perfectly well the right way up, and stood on their end beside a name they
+                // were three more letters of the same vertical smear.
+                stacked.RowDefinitions.Add(new RowDefinition
+                {
+                    Height = new GridLength(1, GridUnitType.Star),
+                });
+
+                stacked.RowDefinitions.Add(new RowDefinition
+                {
+                    Height = new GridLength(Under(line)),
+                });
+
+                var turned = name.Wearing("Body");
+
+                Grid.SetRow(turned, 0);
+                stacked.Children.Add(turned);
+
+                var beneath = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
+
+                if (line.Number.Length > 0)
+                    beneath.Children.Add(new TextBlock
+                    {
+                        Text = line.Number,
+                        FontSize = 10,
+                        TextAlignment = TextAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                    }.Wearing("Hint"));
+
+                if (line.Code.Length > 0)
+                {
+                    var chip = new Border
+                    {
+                        CornerRadius = new CornerRadius(4),
+                        Margin = new Thickness(3, 2, 3, 0),
+                        Child = new TextBlock
+                        {
+                            Text = line.Code,
+                            FontSize = 10,
+                            FontWeight = FontWeights.SemiBold,
+                            TextAlignment = TextAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                        }.Wearing("Lbl"),
+                    };
+
+                    chip.Tint(Border.BackgroundProperty, "Nav");
+                    beneath.Children.Add(chip);
+                }
 
                 if (line.IsUnbacked)
                 {
-                    var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx");
+                    var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx", new Thickness(0, 2, 0, 0));
 
                     warn.HorizontalAlignment = HorizontalAlignment.Center;
-                    warn.VerticalAlignment = VerticalAlignment.Bottom;
-
-                    stacked.Children.Add(warn);
+                    beneath.Children.Add(warn);
                 }
+
+                Grid.SetRow(beneath, 1);
+                stacked.Children.Add(beneath);
 
                 head.Child = stacked;
 
@@ -1122,6 +1311,13 @@ namespace CamelWorks.UI.Views
 
                 return head;
             }
+
+            /// <summary>How much of a column header is taken by what is drawn the right way up.</summary>
+            /// <param name="line">The column.</param>
+            private static double Under(MatrixLine line) =>
+                (line.Number.Length > 0 ? 15.0 : 0)
+                + (line.Code.Length > 0 ? 17.0 : 0)
+                + (line.IsUnbacked ? 14.0 : 0);
 
             /// <summary>
             /// A header press puts its line in the inspector; the right button keeps the menu.
