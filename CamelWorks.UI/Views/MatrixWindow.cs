@@ -5239,17 +5239,26 @@ namespace CamelWorks.UI.Views
                     ? "taking " + Quoted(symbol.Symbol) + " out of the legend"
                     : "changing what " + Quoted(symbol.Symbol) + " means");
 
-                var kept = _legend.Symbols
-                    .Where(s => !string.Equals(s.Symbol, symbol.Symbol,
-                                               StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                // <b>In its own place, not at the end.</b> The legend keeps the order its symbols
+                // were made in, because that order is the number key beside each one on the
+                // palette and the wash its cells are drawn in. Built by filtering the symbol out
+                // and appending the new one, correcting a tolerance moved it to the bottom of the
+                // list: its keystroke changed, every symbol under it shifted up one, and every
+                // cell drawn in a colour nobody had chosen changed colour. In the middle of a
+                // workshop, on a projector.
+                var kept = _legend.Symbols.ToList();
+
+                var at = kept.FindIndex(one => string.Equals(one.Symbol, symbol.Symbol,
+                                                             StringComparison.OrdinalIgnoreCase));
 
                 var made = drop
                     ? null
                     : new MatrixSymbol(symbol.Symbol, test, tolerance, enabled,
                                        colour ?? symbol.Colour);
 
-                if (made != null) kept.Add(made);
+                if (made == null) { if (at >= 0) kept.RemoveAt(at); }
+                else if (at >= 0) kept[at] = made;
+                else kept.Add(made);
 
                 _legend = new MatrixLegend(kept);
 
@@ -5328,15 +5337,17 @@ namespace CamelWorks.UI.Views
 
                 Remember(what: "renaming " + Quoted(symbol.Symbol) + " to " + Quoted(wanted));
 
-                var kept = _legend.Symbols
-                    .Where(one => !string.Equals(one.Symbol, symbol.Symbol,
-                                                 StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                // Where it already sat, for the same reason: a renamed symbol that jumped to the
+                // end of the legend renumbered every key under it.
+                var kept = _legend.Symbols.ToList();
+
+                var at = kept.FindIndex(one => string.Equals(one.Symbol, symbol.Symbol,
+                                                             StringComparison.OrdinalIgnoreCase));
 
                 var made = new MatrixSymbol(wanted, symbol.Test, symbol.Tolerance,
                                             symbol.Enabled, symbol.Colour);
 
-                kept.Add(made);
+                if (at >= 0) kept[at] = made; else kept.Add(made);
 
                 _legend = new MatrixLegend(kept);
 
