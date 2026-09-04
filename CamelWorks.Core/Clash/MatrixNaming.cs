@@ -55,6 +55,8 @@ namespace CamelWorks.Core.Clash
             new NameToken("{columnTitle}", "Column, numbered", "The column's number and name together."),
             new NameToken("{rowCode}", "Row code", "The row's discipline code, when it has one."),
             new NameToken("{columnCode}", "Column code", "The column's discipline code, when it has one."),
+            new NameToken("{rowFolder}", "Row folder", "The folder the row is filed in, when it is in one."),
+            new NameToken("{columnFolder}", "Column folder", "The folder the column is filed in."),
             new NameToken("{symbol}", "Symbol", "What is in the cell — A, B, the sheet's own mark."),
             new NameToken("{test}", "Test kind", "Hard, Clearance, Duplicate — what the symbol means."),
             new NameToken("{tolerance}", "Tolerance", "The symbol's tolerance, in millimetres."),
@@ -92,6 +94,8 @@ namespace CamelWorks.Core.Clash
                 .Replace("{columnNumber}", column.Number)
                 .Replace("{rowCode}", row.Code)
                 .Replace("{columnCode}", column.Code)
+                .Replace("{rowFolder}", row.Folder)
+                .Replace("{columnFolder}", column.Folder)
                 .Replace("{rowTitle}", row.Titled)
                 .Replace("{columnTitle}", column.Titled)
                 .Replace("{symbol}", symbol?.Symbol ?? string.Empty)

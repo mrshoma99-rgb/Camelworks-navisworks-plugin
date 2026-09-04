@@ -188,16 +188,48 @@ namespace CamelWorks.Core.Report
             return sb.ToString();
         }
 
-        // Two cell formats: 0 = normal, 1 = bold. Enough for a header row and nothing more.
+        /// <summary>
+        /// Two cell formats: 0 = normal, 1 = bold. Enough for a header row and nothing more.
+        ///
+        /// <b>Small, but not as small as it will go.</b> Three of the things here look like
+        /// padding and are not, because Excel treats a stylesheet missing them as a damaged
+        /// workbook and offers to repair it rather than open it:
+        ///
+        /// <list type="bullet">
+        /// <item>Two fills. Index 1 has to be <c>gray125</c> whether or not anything uses it -
+        /// it is the reserved second entry, and one fill is the shape Excel rejects.</item>
+        /// <item>A <c>cellStyles</c> entry naming the Normal style. Without it the workbook has
+        /// no default style for anything to inherit from.</item>
+        /// <item>Every <c>xf</c> stating its numFmtId, fontId, fillId and borderId outright.
+        /// Left off they are not defaulted, they are absent.</item>
+        /// </list>
+        ///
+        /// No theme part is shipped, so nothing here may name one: <c>color theme="1"</c> and
+        /// <c>scheme val="minor"</c> both point at a part that is not in the package, which is
+        /// its own kind of broken.
+        /// </summary>
         private const string Styles =
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
             "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">" +
-            "<fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font>" +
-            "<font><b/><sz val=\"11\"/><name val=\"Calibri\"/></font></fonts>" +
-            "<fills count=\"1\"><fill><patternFill patternType=\"none\"/></fill></fills>" +
-            "<borders count=\"1\"><border/></borders>" +
-            "<cellStyleXfs count=\"1\"><xf/></cellStyleXfs>" +
-            "<cellXfs count=\"2\"><xf xfId=\"0\"/><xf xfId=\"0\" fontId=\"1\" applyFont=\"1\"/></cellXfs>" +
+            "<fonts count=\"2\">" +
+            "<font><sz val=\"11\"/><color rgb=\"FF000000\"/><name val=\"Calibri\"/><family val=\"2\"/></font>" +
+            "<font><b/><sz val=\"11\"/><color rgb=\"FF000000\"/><name val=\"Calibri\"/><family val=\"2\"/></font>" +
+            "</fonts>" +
+            "<fills count=\"2\">" +
+            "<fill><patternFill patternType=\"none\"/></fill>" +
+            "<fill><patternFill patternType=\"gray125\"/></fill>" +
+            "</fills>" +
+            "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>" +
+            "<cellStyleXfs count=\"1\">" +
+            "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/>" +
+            "</cellStyleXfs>" +
+            "<cellXfs count=\"2\">" +
+            "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>" +
+            "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>" +
+            "</cellXfs>" +
+            "<cellStyles count=\"1\">" +
+            "<cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/>" +
+            "</cellStyles>" +
             "</styleSheet>";
 
         private static string Sheet(XlsxSheet sheet)
@@ -206,12 +238,18 @@ namespace CamelWorks.Core.Report
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
             sb.Append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
 
-            AppendColumnWidths(sb, sheet);
-
+            // <b>Order is part of the format.</b> A worksheet's children are a sequence, not a
+            // set: sheetViews, then cols, then sheetData. Written the other way round the file
+            // is still well-formed XML and every parser will read it - and Excel throws the
+            // whole part away and opens a repaired workbook with the sheet replaced. Which is
+            // exactly what it did, on every export of more than one row, because the frozen
+            // header is on by default and a one-row sheet was the only shape that escaped it.
             if (sheet.FreezeHeader && sheet.Rows.Count > 1)
                 sb.Append("<sheetViews><sheetView workbookViewId=\"0\">")
                   .Append("<pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/>")
                   .Append("</sheetView></sheetViews>");
+
+            AppendColumnWidths(sb, sheet);
 
             sb.Append("<sheetData>");
 

@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Xml.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Report;
 using Xunit;
 
 namespace CamelWorks.Core.Tests
@@ -1292,6 +1295,616 @@ namespace CamelWorks.Core.Tests
 
             Assert.Contains(again.Rows, r => r.Count > 1 && r[0] == "Q"
                                              && r[1]!.Contains("Not in the legend"));
+        }
+    }
+
+    /// <summary>
+    /// Both axes are one list of disciplines, which is what makes it a clash matrix.
+    /// </summary>
+    public class MatrixPairedTests
+    {
+        [Fact]
+        public void AddingACategoryPutsItOnBothAxes()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure", "10"));
+            board.AddPair(new MatrixLine("Services", "20"));
+
+            Assert.Equal(2, board.Rows.Count);
+            Assert.Equal(2, board.Columns.Count);
+            Assert.Equal(new[] { "Structure", "Services" }, board.Rows.Select(r => r.Name));
+            Assert.Equal(new[] { "Structure", "Services" }, board.Columns.Select(c => c.Name));
+            Assert.Equal(new[] { "10", "20" }, board.Columns.Select(c => c.Number));
+        }
+
+        [Fact]
+        public void TheColumnItAddsIsTheRowsTwin()
+        {
+            var board = new MatrixBoard();
+            var row = board.AddPair(new MatrixLine("Structure"));
+
+            var twin = board.TwinOf(row);
+
+            Assert.NotNull(twin);
+            Assert.Same(board.Columns[0], twin);
+            Assert.NotSame(row, twin);
+        }
+
+        [Fact]
+        public void APairAddedIsAPairOnTheDiagonal()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure"));
+            board.AddPair(new MatrixLine("Services"));
+
+            Assert.True(board.IsSelfPair(board.Rows[0], board.Columns[0]));
+            Assert.False(board.IsSelfPair(board.Rows[0], board.Columns[1]));
+        }
+
+        [Fact]
+        public void WritingOneCellWritesItsMirror()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure"));
+            board.AddPair(new MatrixLine("Services"));
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[0]));
+        }
+
+        [Fact]
+        public void RemovingACategoryTakesBothAxes()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure"));
+            board.AddPair(new MatrixLine("Services"));
+
+            board.RemovePair(board.Rows[0]);
+
+            Assert.Single(board.Rows);
+            Assert.Single(board.Columns);
+            Assert.Equal("Services", board.Rows[0].Name);
+            Assert.Equal("Services", board.Columns[0].Name);
+        }
+
+        [Fact]
+        public void RemovingByTheColumnTakesTheRowToo()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure"));
+            board.AddPair(new MatrixLine("Services"));
+
+            board.RemovePair(board.Columns[1]);
+
+            Assert.Single(board.Rows);
+            Assert.Single(board.Columns);
+            Assert.Equal("Structure", board.Rows[0].Name);
+        }
+
+        [Fact]
+        public void KeptApartTheAxesDoNotFollowEachOther()
+        {
+            var board = new MatrixBoard { Paired = false };
+
+            board.AddPair(new MatrixLine("Structure"));
+
+            Assert.Single(board.Rows);
+            Assert.Empty(board.Columns);
+        }
+
+        [Fact]
+        public void KeptApartRemovingOneLeavesTheOther()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure"));
+            board.AddPair(new MatrixLine("Services"));
+
+            board.Paired = false;
+            board.RemovePair(board.Rows[0]);
+
+            Assert.Single(board.Rows);
+            Assert.Equal(2, board.Columns.Count);
+        }
+
+        [Fact]
+        public void RenamingACategoryRenamesBothAxes()
+        {
+            var board = new MatrixBoard();
+            var row = board.AddPair(new MatrixLine("Structure"));
+
+            board.Rename(row, "Structural");
+
+            Assert.Equal("Structural", board.Rows[0].Name);
+            Assert.Equal("Structural", board.Columns[0].Name);
+        }
+
+        [Fact]
+        public void PointingACategoryPointsBothAxes()
+        {
+            var board = new MatrixBoard();
+            var row = board.AddPair(new MatrixLine("Structure"));
+
+            board.Point(row, MatrixSource.SelectionSet("STR"));
+
+            Assert.Equal("STR", board.Columns[0].Source.Name);
+        }
+
+        [Fact]
+        public void WhetherTheAxesArePairedSurvivesASaveAndRead()
+        {
+            var board = new MatrixBoard { Paired = false };
+
+            board.AddRow(new MatrixLine("Structure"));
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.False(read.Paired);
+        }
+
+        [Fact]
+        public void APairedBoardIsPairedWhenItComesBack()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure"));
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.True(read.Paired);
+            Assert.Single(read.Rows);
+            Assert.Single(read.Columns);
+        }
+    }
+
+    /// <summary>
+    /// The exported workbook has to be a workbook Excel will open.
+    ///
+    /// Every one of these writes the real file and parses the real part out of the real zip,
+    /// because "it produced bytes" is not the claim - the claim is that a spreadsheet opens it,
+    /// and the only cheap stand-in for that is an XML parser refusing what Excel would refuse.
+    /// </summary>
+    public class MatrixSheetTests
+    {
+        private static string Part(byte[] book, string path)
+        {
+            using var stream = new MemoryStream(book);
+            using var zip = new System.IO.Compression.ZipArchive(
+                stream, System.IO.Compression.ZipArchiveMode.Read);
+
+            var entry = zip.GetEntry(path);
+
+            Assert.NotNull(entry);
+
+            using var held = entry!.Open();
+            using var text = new StreamReader(held);
+
+            return text.ReadToEnd();
+        }
+
+        private static MatrixBoard Peopled()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Structure", "10", MatrixSource.SelectionSet("STR")));
+            board.AddPair(new MatrixLine("Services", "20", MatrixSource.SelectionSet("MEP")));
+            board.AddPair(new MatrixLine("Architecture", "30"));
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[0], board.Columns[2], MatrixBoard.NotRequired);
+
+            return board;
+        }
+
+        [Fact]
+        public void TheSheetIsWellFormedXml()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            XDocument.Parse(Part(book, "xl/worksheets/sheet1.xml"));
+        }
+
+        [Fact]
+        public void EveryPartOfTheWorkbookIsWellFormedXml()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            using var stream = new MemoryStream(book);
+            using var zip = new System.IO.Compression.ZipArchive(
+                stream, System.IO.Compression.ZipArchiveMode.Read);
+
+            foreach (var entry in zip.Entries)
+            {
+                if (!entry.FullName.EndsWith(".xml", StringComparison.Ordinal)
+                    && !entry.FullName.EndsWith(".rels", StringComparison.Ordinal)) continue;
+
+                using var held = entry.Open();
+                using var text = new StreamReader(held);
+
+                XDocument.Parse(text.ReadToEnd());
+            }
+        }
+
+        [Fact]
+        public void AnEmptyMatrixStillWritesASheetThatOpens()
+        {
+            var book = XlsxWriter.Write(
+                new[] { MatrixSanity.AsSheet(new MatrixBoard(), new MatrixLegend()) });
+
+            XDocument.Parse(Part(book, "xl/worksheets/sheet1.xml"));
+        }
+
+        [Fact]
+        public void ANameWithMarkupInItDoesNotBreakTheSheet()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Pipes <2\" & fittings>", "1"));
+            board.AddPair(new MatrixLine("Ducts", "2"));
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(board, new MatrixLegend()) });
+
+            var sheet = XDocument.Parse(Part(book, "xl/worksheets/sheet1.xml"));
+
+            var text = sheet.Descendants()
+                            .Where(e => e.Name.LocalName == "t")
+                            .Select(e => e.Value);
+
+            Assert.Contains("Pipes <2\" & fittings>", text);
+        }
+
+        /// <summary>
+        /// <b>A worksheet's children are a sequence, not a set.</b> sheetViews, then cols, then
+        /// sheetData. Out of order the file parses perfectly and Excel throws the part away,
+        /// which is a corruption no XML check can see - so it is checked here by name.
+        /// </summary>
+        [Fact]
+        public void TheWorksheetsChildrenAreInTheOrderTheSchemaWants()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            var sheet = XDocument.Parse(Part(book, "xl/worksheets/sheet1.xml"));
+
+            var order = sheet.Root!.Elements().Select(e => e.Name.LocalName).ToList();
+
+            Assert.Equal(new[] { "sheetViews", "cols", "sheetData" }, order);
+        }
+
+        /// <summary>
+        /// <b>Three things in the stylesheet that look like padding and are not.</b> Excel treats
+        /// a stylesheet without them as a damaged workbook and offers to repair it - which is
+        /// what it did - and no XML check can see any of it, so they are named here.
+        /// </summary>
+        [Fact]
+        public void TheStylesheetHasWhatExcelRefusesToOpenWithout()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            var styles = XDocument.Parse(Part(book, "xl/styles.xml"));
+
+            string Local(string name) => name;
+
+            var fills = styles.Descendants().First(e => e.Name.LocalName == "fills");
+
+            // The reserved second fill, whether or not anything uses it.
+            Assert.Equal("2", fills.Attribute("count")!.Value);
+            Assert.Contains(fills.Descendants(),
+                e => e.Name.LocalName == "patternFill"
+                     && e.Attribute("patternType")?.Value == "gray125");
+
+            // A default style for everything else to inherit from.
+            Assert.Contains(styles.Descendants(),
+                e => e.Name.LocalName == "cellStyle" && e.Attribute("name")?.Value == "Normal");
+
+            // Every format saying what it is outright: left off, they are absent, not defaulted.
+            foreach (var xf in styles.Descendants().Where(e => e.Name.LocalName == Local("xf")))
+            {
+                Assert.NotNull(xf.Attribute("numFmtId"));
+                Assert.NotNull(xf.Attribute("fontId"));
+                Assert.NotNull(xf.Attribute("fillId"));
+                Assert.NotNull(xf.Attribute("borderId"));
+            }
+        }
+
+        /// <summary>Nothing may name the theme part, because no theme part is shipped.</summary>
+        [Fact]
+        public void NothingPointsAtAThemeThatIsNotInThePackage()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            using var stream = new MemoryStream(book);
+            using var zip = new System.IO.Compression.ZipArchive(
+                stream, System.IO.Compression.ZipArchiveMode.Read);
+
+            Assert.DoesNotContain(zip.Entries, e => e.FullName.Contains("theme"));
+
+            var styles = Part(book, "xl/styles.xml");
+
+            Assert.DoesNotContain("theme=", styles, StringComparison.Ordinal);
+            Assert.DoesNotContain("scheme", styles, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void EverySheetThisProductWritesPutsThemInThatOrder()
+        {
+            // The frozen header is on by default and a one-row sheet was the only shape that
+            // escaped the fault, so both shapes are checked.
+            var one = new XlsxSheet("One");
+
+            one.Row("Only");
+
+            var many = new XlsxSheet("Many");
+
+            many.Row("Head");
+            many.Row("Body");
+
+            foreach (var made in new[] { one, many })
+            {
+                var book = XlsxWriter.Write(new[] { made });
+                var sheet = XDocument.Parse(Part(book, "xl/worksheets/sheet1.xml"));
+
+                var order = sheet.Root!.Elements().Select(e => e.Name.LocalName).ToList();
+                var wanted = order.Where(n => n == "sheetViews" || n == "cols" || n == "sheetData");
+
+                Assert.Equal(wanted, order);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Folders: a name several lines share, kept together, and mirrored like everything else.
+    /// </summary>
+    public class MatrixFolderTests
+    {
+        private static MatrixBoard Peopled(params string[] names)
+        {
+            var board = new MatrixBoard();
+
+            foreach (var name in names) board.AddPair(new MatrixLine(name));
+
+            return board;
+        }
+
+        [Fact]
+        public void ALineFiledInAFolderTakesItsTwinWithIt()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+
+            Assert.Equal("Services", board.Rows[0].Folder);
+            Assert.Equal("Services", board.Columns.Single(c => c.Name == "Pipes").Folder);
+        }
+
+        [Fact]
+        public void KeptApartOnlyTheLineFiledIsFiled()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.Paired = false;
+            board.File(board.Rows[0], "Services");
+
+            Assert.Equal("Services", board.Rows[0].Folder);
+            Assert.Equal(string.Empty, board.Columns[0].Folder);
+        }
+
+        [Fact]
+        public void FilingMovesTheLineNextToTheRestOfItsFolder()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[2], "Services");
+
+            Assert.Equal(new[] { "Pipes", "Ducts", "Walls" }, board.Rows.Select(r => r.Name));
+            Assert.Equal(new[] { "Pipes", "Ducts", "Walls" }, board.Columns.Select(c => c.Name));
+        }
+
+        [Fact]
+        public void FoldersComeBackInTheOrderTheirFirstMemberAppears()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts", "Doors");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows.Single(r => r.Name == "Walls"), "Fabric");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Services");
+
+            Assert.Equal(new[] { "Services", "Fabric" }, board.Folders(rows: true));
+        }
+
+        [Fact]
+        public void AFolderKnowsWhatIsInIt()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Services");
+
+            Assert.Equal(new[] { "Pipes", "Ducts" },
+                         board.InFolder(rows: true, "Services").Select(l => l.Name));
+        }
+
+        [Fact]
+        public void TakingALineOutOfAFolderClearsItOnBothAxes()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[0], null);
+
+            Assert.Equal(string.Empty, board.Rows[0].Folder);
+            Assert.All(board.Columns, c => Assert.Equal(string.Empty, c.Folder));
+        }
+
+        [Fact]
+        public void RenamingAFolderRenamesItOnBothAxes()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[1], "Services");
+
+            Assert.Equal(4, board.RenameFolder("Services", "MEP"));
+            Assert.All(board.Rows, r => Assert.Equal("MEP", r.Folder));
+            Assert.All(board.Columns, c => Assert.Equal("MEP", c.Folder));
+        }
+
+        [Fact]
+        public void DissolvingAFolderKeepsItsLines()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[1], "Services");
+
+            Assert.Equal(4, board.DissolveFolder("Services"));
+            Assert.Equal(2, board.Rows.Count);
+            Assert.Equal(2, board.Columns.Count);
+            Assert.All(board.Rows, r => Assert.Equal(string.Empty, r.Folder));
+            Assert.Empty(board.Folders(rows: true));
+        }
+
+        [Fact]
+        public void RemovingAFolderTakesItsLinesToo()
+        {
+            var board = Peopled("Pipes", "Ducts", "Walls");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Services");
+
+            Assert.Equal(2, board.RemoveFolder("Services"));
+            Assert.Single(board.Rows);
+            Assert.Single(board.Columns);
+            Assert.Equal("Walls", board.Rows[0].Name);
+        }
+
+        [Fact]
+        public void MergingFoldersPutsThemUnderOneName()
+        {
+            var board = Peopled("Pipes", "Ducts", "Cables");
+
+            board.File(board.Rows[0], "Wet");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Air");
+            board.File(board.Rows.Single(r => r.Name == "Cables"), "Power");
+
+            Assert.Equal(6, board.MergeFolders(new[] { "Wet", "Air", "Power" }, "Services"));
+            Assert.Equal(new[] { "Services" }, board.Folders(rows: true));
+            Assert.All(board.Rows, r => Assert.Equal("Services", r.Folder));
+        }
+
+        [Fact]
+        public void MergingIntoOneOfThemIsAllowed()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Wet");
+            board.File(board.Rows[1], "Air");
+
+            board.MergeFolders(new[] { "Wet", "Air" }, "Wet");
+
+            Assert.Equal(new[] { "Wet" }, board.Folders(rows: true));
+        }
+
+        [Fact]
+        public void TidyingPutsEachFoldersMembersTogetherAndLeavesLooseLinesLast()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts", "Doors");
+
+            // Filed without moving, so the axes are deliberately interleaved.
+            board.Rows[0].Folder = "Services";
+            board.Rows[2].Folder = "Services";
+            board.Rows[1].Folder = "Fabric";
+
+            board.Tidy();
+
+            Assert.Equal(new[] { "Pipes", "Ducts", "Walls", "Doors" },
+                         board.Rows.Select(r => r.Name));
+        }
+
+        [Fact]
+        public void AFolderSurvivesASaveAndRead()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.Equal("Services", read.Rows[0].Folder);
+            Assert.Equal(new[] { "Services" }, read.Folders(rows: true));
+        }
+
+        [Fact]
+        public void AddingADisciplineToAFolderGivesTheColumnTheSameFolder()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Pipes") { Folder = "Services" });
+
+            Assert.Equal("Services", board.Columns[0].Folder);
+        }
+
+        [Fact]
+        public void TheFolderIsATokenATestNameCanUse()
+        {
+            var row = new MatrixLine("Pipes") { Folder = "Services" };
+            var column = new MatrixLine("Walls") { Folder = "Fabric" };
+
+            Assert.Equal("Services/Pipes vs Fabric/Walls",
+                         MatrixNaming.Fill("{rowFolder}/{row} vs {columnFolder}/{column}",
+                                           row, column, null, 1));
+        }
+
+        [Fact]
+        public void ALineInNoFolderLeavesTheTokenEmptyRatherThanTheWordEmpty()
+        {
+            var row = new MatrixLine("Pipes");
+            var column = new MatrixLine("Walls");
+
+            Assert.Equal("Pipes vs Walls",
+                         MatrixNaming.Fill("{rowFolder} {row} vs {columnFolder} {column}",
+                                           row, column, null, 1));
+        }
+
+        /// <summary>
+        /// Removing a folder removes what is in it, and on axes kept apart only one axis was
+        /// ever filed - so only that one loses anything.
+        /// </summary>
+        [Fact]
+        public void RemovingAFolderOnAnUnpairedBoardTakesOnlyWhatWasFiled()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.Paired = false;
+            board.File(board.Rows[0], "Services");
+
+            Assert.Equal(string.Empty, board.Columns[0].Folder);
+
+            board.RemoveFolder("Services");
+
+            Assert.Single(board.Rows);
+            Assert.Equal(2, board.Columns.Count);
+        }
+
+        /// <summary>And on a paired board it takes the discipline off both, which is the point.</summary>
+        [Fact]
+        public void RemovingAFolderTakesTheDisciplineOffBothAxes()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.RemoveFolder("Services");
+
+            Assert.Single(board.Rows);
+            Assert.Single(board.Columns);
+            Assert.Equal("Ducts", board.Rows[0].Name);
         }
     }
 }

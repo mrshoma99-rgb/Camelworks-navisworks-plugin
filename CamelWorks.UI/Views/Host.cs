@@ -5,6 +5,7 @@ using System.Reflection;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Sets;
 using CamelWorks.Core.Store;
@@ -19,8 +20,9 @@ namespace CamelWorks.UI.Views
     /// cheap — the expensive part, the element index inside <see cref="NavDocument"/>, is built on
     /// first use and kept — so a screen never has to decide whether to cache anything itself.
     /// </summary>
-    public sealed class Session
+    public sealed class Session : ISeat
     {
+
         internal Session(Document document, NavDocument model, ProjectStore store, ProjectProfile profile,
                          IClashSource clash, string? clashProblem)
         {
@@ -53,6 +55,60 @@ namespace CamelWorks.UI.Views
         /// keys, and the project file is rewritten whenever any tool remembers a textbox.
         /// </summary>
         public SetBaselineStore Baselines { get; }
+
+        /// <summary>
+        /// Every saved set the document holds, as a screen reads them.
+        ///
+        /// A search set is one the host keeps as a query rather than as a fixed list of items,
+        /// and the difference matters enough to carry: a search set re-runs every time the test
+        /// on it does, and a selection set holds whatever was in it when somebody saved it.
+        /// </summary>
+        public IReadOnlyList<SeatSet> Sets()
+        {
+            var found = new List<SeatSet>();
+
+            foreach (var held in Model.SetsInFolders())
+                found.Add(new SeatSet(held.Set.DisplayName ?? string.Empty, held.Folder,
+                                      !held.Set.HasExplicitModelItems,
+                                      held.Set.HasExplicitModelItems
+                                          ? held.Set.ExplicitModelItems.Count
+                                          : 0));
+
+            return found;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<string> Models()
+        {
+            var found = new List<string>();
+
+            foreach (var one in Model.Models)
+                if (!string.IsNullOrWhiteSpace(one.DisplayName))
+                    found.Add(one.DisplayName);
+
+            return found;
+        }
+
+        /// <inheritdoc />
+        public IReadOnlyList<ElementKey> Selected()
+        {
+            var keys = new List<ElementKey>();
+            var seen = new HashSet<ElementKey>();
+
+            foreach (var item in Model.Traverse(TraversalScope.CurrentSelection))
+                if (!item.Key.IsEmpty && seen.Add(item.Key))
+                    keys.Add(item.Key);
+
+            return keys;
+        }
+
+        /// <inheritdoc />
+        public IEnumerable<ElementKey> Visible()
+        {
+            foreach (var item in Model.Traverse(TraversalScope.WholeDocument))
+                if (!item.IsHidden && item.HasGeometry && !item.Key.IsEmpty)
+                    yield return item.Key;
+        }
 
         /// <summary>The host document.</summary>
         public Document Document { get; }
@@ -364,6 +420,16 @@ namespace CamelWorks.UI.Views
                 return new NoClash();
             }
         }
+
+        /// <summary>
+        /// A clash engine for a host that has none, for anybody who needs one outside a document.
+        ///
+        /// The render harness needs an <see cref="ISeat"/>, and a seat needs a clash engine that
+        /// answers rather than throws. That engine already existed here, for the Navisworks
+        /// editions that ship without one; it was private because until now nothing outside this
+        /// file had ever been able to run without a document.
+        /// </summary>
+        public static IClashSource WithoutClash() => new NoClash();
 
         /// <summary>Stands in for the clash engine when there is not one. Answers, rather than throwing.</summary>
         private sealed class NoClash : IClashSource
