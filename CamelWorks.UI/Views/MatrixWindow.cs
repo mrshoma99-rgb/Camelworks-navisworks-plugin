@@ -708,19 +708,19 @@ namespace CamelWorks.UI.Views
                     foreach (var line in _board.Columns)
                         longest = Math.Max(longest, Measured(line.Name));
 
-                    return Math.Max(64, Math.Min(200, longest + 14)) + Beneath;
+                    return Math.Max(64, Math.Min(200, longest + 14)) + Above;
                 }
             }
 
             /// <summary>
-            /// How much of every column header is the number and code drawn the right way up.
+            /// How much of every column header is taken by the number, the code and the mark.
             ///
             /// <b>The same for every column, not each one's own.</b> Sized per line, a column
-            /// without a code got its fifteen pixels back and its name ended fifteen pixels
-            /// lower than its neighbours' - which is precisely the ragged bottom edge the
-            /// turning was meant to fix. The space is reserved for all of them or for none.
+            /// without a code got its fifteen pixels back and its name started fifteen pixels
+            /// higher than its neighbours' - which is precisely the ragged edge the turning was
+            /// meant to fix. The space is reserved for all of them or for none.
             /// </summary>
-            private double Beneath =>
+            private double Above =>
                 (Numbered(_board.Columns) ? NumberTall : 0)
                 + (Coded(_board.Columns) ? CodeTall : 0)
                 + (Unbacked(_board.Columns) ? WarnTall : 0);
@@ -1394,23 +1394,19 @@ namespace CamelWorks.UI.Views
                 head.Tint(Border.BackgroundProperty,
                           ReferenceEquals(_picked, line) && !_pickedRows ? "NavActive" : "Pane");
 
-                // <b>Everything in a column header is turned, and it reads in the order the row
-                // reads.</b> A turned name over an upright number was two writing directions in
-                // one cell forty pixels wide, and the two axes stopped matching each other. A
-                // column header is a row header stood on its end, so what is leftmost in the row
-                // is lowest in the column: the number, then the code, then the name running up
-                // to the grid.
+                // <b>A column header is a row header turned, and it has to turn the same way
+                // round.</b> Everything in it is stood on its end - a turned name over an
+                // upright number was two writing directions in one cell forty pixels wide - and
+                // the pieces come in the order the row puts them in. Turned clockwise, what is
+                // leftmost in the row is uppermost in the column, so both read number, code,
+                // name: across in the row, down in the column. Turned the other way they came
+                // out backwards against the rows they belong to, which is what this was.
                 var stacked = new Grid();
 
-                stacked.RowDefinitions.Add(new RowDefinition
-                {
-                    Height = new GridLength(1, GridUnitType.Star),
-                });
-
-                if (Unbacked(_board.Columns))
+                if (Numbered(_board.Columns))
                     stacked.RowDefinitions.Add(new RowDefinition
                     {
-                        Height = new GridLength(WarnTall),
+                        Height = new GridLength(NumberTall),
                     });
 
                 if (Coded(_board.Columns))
@@ -1419,32 +1415,28 @@ namespace CamelWorks.UI.Views
                         Height = new GridLength(CodeTall),
                     });
 
-                if (Numbered(_board.Columns))
+                if (Unbacked(_board.Columns))
                     stacked.RowDefinitions.Add(new RowDefinition
                     {
-                        Height = new GridLength(NumberTall),
+                        Height = new GridLength(WarnTall),
                     });
 
-                var name = Turned(line.Name, HeaderHigh - Beneath, 11, FontWeights.SemiBold);
-
-                var turned = name.Wearing("Body");
-
-                Grid.SetRow(turned, 0);
-                stacked.Children.Add(turned);
-
-                var row = 1;
-
-                if (Unbacked(_board.Columns))
+                stacked.RowDefinitions.Add(new RowDefinition
                 {
-                    if (line.IsUnbacked)
+                    Height = new GridLength(1, GridUnitType.Star),
+                });
+
+                var row = 0;
+
+                if (Numbered(_board.Columns))
+                {
+                    if (line.Number.Length > 0)
                     {
-                        var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx");
+                        var number = Turned(line.Number, NumberTall - 6, 11, FontWeights.Normal)
+                                         .Wearing("Hint");
 
-                        warn.HorizontalAlignment = HorizontalAlignment.Center;
-                        warn.VerticalAlignment = VerticalAlignment.Center;
-
-                        Grid.SetRow(warn, row);
-                        stacked.Children.Add(warn);
+                        Grid.SetRow(number, row);
+                        stacked.Children.Add(number);
                     }
 
                     row++;
@@ -1471,14 +1463,27 @@ namespace CamelWorks.UI.Views
                     row++;
                 }
 
-                if (Numbered(_board.Columns) && line.Number.Length > 0)
+                if (Unbacked(_board.Columns))
                 {
-                    var number = Turned(line.Number, NumberTall - 6, 11, FontWeights.Normal)
-                                     .Wearing("Hint");
+                    if (line.IsUnbacked)
+                    {
+                        var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx");
 
-                    Grid.SetRow(number, row);
-                    stacked.Children.Add(number);
+                        warn.HorizontalAlignment = HorizontalAlignment.Center;
+                        warn.VerticalAlignment = VerticalAlignment.Center;
+
+                        Grid.SetRow(warn, row);
+                        stacked.Children.Add(warn);
+                    }
+
+                    row++;
                 }
+
+                var turned = Turned(line.Name, HeaderHigh - Above, 11, FontWeights.SemiBold)
+                                 .Wearing("Body");
+
+                Grid.SetRow(turned, row);
+                stacked.Children.Add(turned);
 
                 head.Child = stacked;
 
@@ -1520,13 +1525,18 @@ namespace CamelWorks.UI.Views
                     Width = Math.Max(0, along),
                     Height = Math.Max(0, across > 0 ? across : CellWide - 6),
 
-                    // Read up towards the grid, so every one of them ends where its column
-                    // begins rather than each starting at a different height.
+                    // <b>Turned clockwise, and flushed to the end that meets the grid.</b>
+                    // Counter-clockwise, a box's right-hand edge lands at the top - so a name
+                    // set to its right sat at the top of the band with the gap between it and
+                    // the grid, and the pieces of a header came out in the reverse of the order
+                    // the row puts them in. Clockwise, the right edge lands at the bottom: every
+                    // name ends where its column begins, and the header reads downwards in the
+                    // same order the row reads across.
                     TextAlignment = TextAlignment.Right,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     RenderTransformOrigin = new Point(0.5, 0.5),
-                    RenderTransform = new System.Windows.Media.RotateTransform(-90),
+                    RenderTransform = new System.Windows.Media.RotateTransform(90),
                 };
 
             /// <summary>
