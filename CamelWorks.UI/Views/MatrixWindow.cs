@@ -757,7 +757,7 @@ namespace CamelWorks.UI.Views
 
                 _band.Child = Ui.Loose(_across);
                 _band.ClipToBounds = true;
-                _band.Height = IndexHigh + HeaderHigh;
+                _band.Height = FrameHigh;
                 _band.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 _band.Tint(Border.BackgroundProperty, "Bg");
@@ -772,7 +772,7 @@ namespace CamelWorks.UI.Views
                 _side.Child = Ui.Loose(_down);
                 _side.ClipToBounds = true;
                 _side.Tint(Border.BackgroundProperty, "Bg");
-                _side.Width = IndexWide + HeaderWide;
+                _side.Width = FrameWide;
                 _side.VerticalAlignment = VerticalAlignment.Stretch;
 
                 Grid.SetRow(_side, 1);
@@ -1269,6 +1269,23 @@ namespace CamelWorks.UI.Views
 
             private double FolderHigh => _board.Folders(rows: false).Count == 0 ? 0 : 22;
 
+            /// <summary>
+            /// How wide the frozen band down the side is, and how tall the one across the top.
+            ///
+            /// <b>Four places worked this out and two of them learned about the folder band.</b>
+            /// The corner, the top band and the side band are one frame: they have to agree to
+            /// the pixel or the headers stop sitting over the cells they name. Adding a strip for
+            /// the folders taught the two that redraw and left the two that are built once with
+            /// the old sum, so the frame disagreed with itself by exactly the band - and a row
+            /// band twenty-four pixels short of its own contents clips the names off the rows.
+            ///
+            /// One sum, named, used by all four. A part added to the frame is added here and
+            /// nothing else has to be found and told.
+            /// </summary>
+            private double FrameWide => FolderWide + IndexWide + HeaderWide;
+
+            private double FrameHigh => FolderHigh + IndexHigh + HeaderHigh;
+
             /// <summary>The folders shut, by name. Both axes at once, because a folder is one thing.</summary>
             private readonly HashSet<string> _shut =
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1377,8 +1394,8 @@ namespace CamelWorks.UI.Views
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderHigh) });
 
                 // The corner and the band it heads are as tall as the headers turned out to be.
-                _corner.Height = band + IndexHigh + HeaderHigh;
-                _band.Height = band + IndexHigh + HeaderHigh;
+                _corner.Height = FrameHigh;
+                _band.Height = FrameHigh;
 
                 for (var c = 0; c <= _board.Columns.Count; c++)
                     _across.ColumnDefinitions.Add(new ColumnDefinition
@@ -1440,8 +1457,8 @@ namespace CamelWorks.UI.Views
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HeaderWide) });
 
                 // The corner and the band it heads are as wide as the headers turned out to be.
-                _corner.Width = band + IndexWide + HeaderWide;
-                _side.Width = band + IndexWide + HeaderWide;
+                _corner.Width = FrameWide;
+                _side.Width = FrameWide;
 
                 for (var r = 0; r <= _board.Rows.Count; r++)
                     _down.RowDefinitions.Add(new RowDefinition
@@ -2134,8 +2151,8 @@ namespace CamelWorks.UI.Views
 
                 corner.BorderThickness = new Thickness(0, 0, 1, 1);
                 corner.Padding = new Thickness(8, 6, 8, 6);
-                corner.Width = IndexWide + HeaderWide;
-                corner.Height = IndexHigh + HeaderHigh;
+                corner.Width = FrameWide;
+                corner.Height = FrameHigh;
 
                 corner.Tint(Border.BorderBrushProperty, "Bd");
                 corner.Tint(Border.BackgroundProperty, "Pane");
