@@ -140,6 +140,66 @@ namespace CamelWorks.Core.Clash
             _cells.Values.Distinct(StringComparer.OrdinalIgnoreCase)
                   .OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
 
+        /// <summary>
+        /// Whether the two axes are one list of categories, kept in step.
+        ///
+        /// <b>A clash matrix is a list of disciplines against itself.</b> Structure against
+        /// services is the same agreement as services against structure, which is the whole
+        /// reason the grid mirrors about its diagonal and half of it is dead. Two axes that can
+        /// be added to separately are not that: they are two lists that happen to overlap, and
+        /// the mirroring, the dead half and the diagonal all become coincidences of what somebody
+        /// typed twice.
+        ///
+        /// So one act adds a category and it lands on both axes, one act takes it away and it
+        /// leaves both, and naming, numbering, coding and pointing already carry across.
+        ///
+        /// It can be turned off, because a matrix of one trade's sets against another's is a
+        /// real thing somebody builds and the grid is allowed to be it. Off is the exception a
+        /// person chooses, not the shape everybody starts in.
+        /// </summary>
+        public bool Paired { get; set; } = true;
+
+        /// <summary>
+        /// Add a category: a row, and the column standing for the same thing.
+        ///
+        /// The column is its own line rather than the same object on both axes - everything here
+        /// asks which list a line is in to know which axis it is - but it is made from the row,
+        /// so the two agree from the moment they exist and every edit that follows takes its twin
+        /// with it.
+        /// </summary>
+        /// <param name="line">The category, which becomes the row.</param>
+        /// <returns>The row, so the caller can pick it.</returns>
+        public MatrixLine AddPair(MatrixLine line)
+        {
+            if (line == null) throw new ArgumentNullException(nameof(line));
+
+            _rows.Add(line);
+
+            if (Paired) _columns.Add(new MatrixLine(line.Name, line.Number, line.Source, line.Code));
+
+            return line;
+        }
+
+        /// <summary>
+        /// Take a category out, both axes at once.
+        ///
+        /// Half a category left behind is a line whose every cell is dead - it names a discipline
+        /// the matrix no longer has - and it is the shape that made "remove this row" quietly
+        /// leave a column nobody could account for.
+        /// </summary>
+        /// <param name="line">A row or a column of this board.</param>
+        public void RemovePair(MatrixLine? line)
+        {
+            if (line == null) return;
+
+            // Found first, because dropping the line is what stops them being twins.
+            var twin = Paired ? TwinOf(line) : null;
+
+            Drop(_rows.Contains(line) ? _rows : _columns, line);
+
+            if (twin != null) Drop(_rows.Contains(twin) ? _rows : _columns, twin);
+        }
+
         /// <summary>Add a row, and hand it back.</summary>
         /// <param name="line">The row.</param>
         public MatrixLine AddRow(MatrixLine line)
@@ -633,6 +693,7 @@ namespace CamelWorks.Core.Clash
             json.Set("cells", cells);
 
             if (!UpperIsLive) json.Set("lower", true);
+            if (!Paired) json.Set("apart", true);
 
             return json;
         }
@@ -646,6 +707,7 @@ namespace CamelWorks.Core.Clash
             if (json == null || json.Kind != JsonKind.Object) return board;
 
             board.UpperIsLive = !json["lower"].AsBool(false);
+            board.Paired = !json["apart"].AsBool(false);
 
             foreach (var held in json["rows"].Items)
             {

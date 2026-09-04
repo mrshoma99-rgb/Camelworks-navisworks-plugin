@@ -1295,7 +1295,8 @@ namespace CamelWorks.UI.Views
                     Put(_across, ColumnHead(_board.Columns[c], c), 1, c);
                 }
 
-                Put(_across, Adding("Add a column", AddColumn, column: true),
+                Put(_across, Adding("Add a discipline — a column and the row that matches it",
+                                    AddColumn, column: true),
                     1, _board.Columns.Count);
             }
 
@@ -1424,13 +1425,12 @@ namespace CamelWorks.UI.Views
 
                         if (name.Length == 0) return;
 
-                        Remember(what: "adding the row " + Quoted(name));
+                        Remember(what: "adding " + Quoted(name));
 
-                        _board.AddRow(new MatrixLine(name, Next(_board.Rows)));
-
-                        // The first name typed brings a column with it, for the same reason the
-                        // first row does: until there is one there are no pairs and no grid.
-                        if (_board.Columns.Count == 0) _board.SquareOffRows();
+                        // A name and a Return makes a discipline, which is a row and the column
+                        // that stands for it. Typing twenty names builds a twenty by twenty
+                        // matrix, which is what somebody typing twenty names is doing.
+                        _board.AddPair(new MatrixLine(name, Next(_board.Rows)));
 
                         Seed();
 
@@ -1649,7 +1649,7 @@ namespace CamelWorks.UI.Views
                         {
                             if (!wanted.Contains(set.Trail) || already.Contains(set.Trail)) continue;
 
-                            _board.AddRow(new MatrixLine(
+                            _board.AddPair(new MatrixLine(
                                 set.Name,
                                 Next(_board.Rows),
                                 set.IsSearch
@@ -1665,10 +1665,9 @@ namespace CamelWorks.UI.Views
                             return;
                         }
 
-                        // A matrix of disciplines is square: everything against everything, and
-                        // the half nobody fills in is the mirror of the half they do.
-                        _board.SquareOffRows();
-
+                        // Each set brought its own column as it went on, so there is nothing
+                        // left to square off - unless somebody has deliberately taken the two
+                        // axes apart, and then squaring them would be overruling them.
                         Seed();
                         Redraw();
 
@@ -3476,33 +3475,25 @@ namespace CamelWorks.UI.Views
             // ---------------------------------------------------------------------------
 
             /// <summary>
-            /// Make a row, and put the cursor where its name goes.
+            /// Add a category: a row, the column standing for it, and the cursor where its name
+            /// goes.
             ///
-            /// The empty state's "add the first row" left a row called "New row" and nothing
-            /// else - no panel, no focus - unlike adding a column, which opens the inspector.
-            /// The whole trick of this screen is that a row is a name and a Return, so the first
-            /// one lands in the box the next nineteen are typed into.
+            /// <b>There were two of these and they behaved differently.</b> "Add a row" made a
+            /// row and left the columns alone; "add a column" made a column and left the rows
+            /// alone; and they even ended differently, one in the typing box and one in the
+            /// inspector. So a person building a twenty-discipline matrix set every discipline
+            /// up twice and the two halves agreed only as long as they typed the same thing
+            /// both times - and the moment they did not, the pair stopped being mirrored, both
+            /// its cells went live, and the dead half grew a hole.
+            ///
+            /// A clash matrix is a list of disciplines against itself. One act, both axes, and
+            /// the same ending wherever it is pressed from.
             /// </summary>
             private void AddRow()
             {
-                Remember(what: "adding a row");
+                Remember(what: "adding a category");
 
-                var made = new MatrixLine("New row", Next(_board.Rows));
-
-                _board.AddRow(made);
-
-                // <b>The first row by hand landed on a screen with no editor on it.</b> A row
-                // with nothing across the top is the "nothing across the top yet" state, and that
-                // state is two buttons - so the header you would press to name the row, the panel
-                // that would name it and the box you type the next nineteen into were all in the
-                // frame, and the frame was not on the screen. There was no way to edit the one
-                // thing the press had just made.
-                //
-                // A matrix needs both axes before it is a matrix, so the first row brings its
-                // column. After that the two lists go their own way again: adding row two leaves
-                // the columns alone, and "make the columns match the rows" squares them off when
-                // the names are settled.
-                if (_board.Columns.Count == 0) _board.SquareOffRows();
+                var made = _board.AddPair(new MatrixLine(Fresh, Next(_board.Rows)));
 
                 Seed();
                 Redraw();
@@ -3512,21 +3503,21 @@ namespace CamelWorks.UI.Views
                 _naming.Focus();
             }
 
+            /// <summary>
+            /// The same act, from the other end of the grid.
+            ///
+            /// It is kept as its own press because the plus that starts it sits past the last
+            /// column, which is where a hand already is when the thought arrives - not because
+            /// there is a second kind of thing to add.
+            /// </summary>
             private void AddColumn()
             {
-                Remember(what: "adding a column");
-
-                var made = new MatrixLine("New column", Next(_board.Columns));
-
-                _board.AddColumn(made);
-
-                Seed();
-                Redraw();
-
-                // Straight into the inspector, where its name is: a column called "New column"
-                // is a column somebody has to go and find before they can say what it is.
-                Pick(made, rows: false);
+                AddRow();
+                _scroll.ScrollToRightEnd();
             }
+
+            /// <summary>What a category is called before anybody has said what it is.</summary>
+            private const string Fresh = "New category";
 
             /// <summary>The next number in a list, when the list is numbered at all.</summary>
             private static string Next(IReadOnlyList<MatrixLine> lines)
@@ -3595,7 +3586,9 @@ namespace CamelWorks.UI.Views
                 {
                     Remember(what: "taking out that " + what);
 
-                    if (rows) _board.RemoveRow(line); else _board.RemoveColumn(line);
+                    // Both axes: half a category left behind is a line naming a discipline
+                    // the matrix no longer has, and every cell on it is dead.
+                    _board.RemovePair(line);
                     Redraw();
                 }));
 
@@ -4180,7 +4173,7 @@ namespace CamelWorks.UI.Views
                 // Everything from here is a control, and every one of them goes on the right.
                 // The box that makes rows is under the last one, which on a matrix of any size
                 // is off the bottom of the screen. This is how you get to it.
-                Does(Ui.Quiet("Add rows", () =>
+                Does(Ui.Quiet("Add disciplines", () =>
                 {
                     _scroll.ScrollToBottom();
                     _naming.Focus();
@@ -4190,11 +4183,7 @@ namespace CamelWorks.UI.Views
                 // last column of the band, which on any matrix wide enough to scroll is off the
                 // right-hand edge of the screen - the same fault the rows were given this link
                 // to fix.
-                Does(Ui.Quiet("Add a column", () =>
-                {
-                    AddColumn();
-                    _scroll.ScrollToRightEnd();
-                }), 4);
+                Does(Ui.Quiet("Add one", AddColumn), 4);
 
                 // <b>Most of the keyboard was folklore.</b> The palette chips teach the digits
                 // and the cell page mentions shift and an arrow; Alt with an arrow to move a
@@ -4672,19 +4661,14 @@ namespace CamelWorks.UI.Views
                         Code = line.Code,
                     };
 
-                    if (rows)
-                    {
-                        _board.AddRow(copy);
-                        _board.MoveRow(_board.Rows.Count - 1, at + 1);
-                    }
-                    else
-                    {
-                        _board.AddColumn(copy);
-                        _board.MoveColumn(_board.Columns.Count - 1, at + 1);
-                    }
+                    // A duplicated discipline is a discipline: it lands on both axes and moves
+                    // on both, next to the one it was copied from. Copying a row into the rows
+                    // alone left a matrix one row taller than it was wide.
+                    _board.AddPair(copy);
+                    _board.MoveLine(copy, at + 1);
 
                     Redraw();
-                    Pick(copy, rows);
+                    Pick(copy, rows: true);
                 });
 
                 var removing = Doable(Glyphs.Bin, "Take this " + what + " out", () =>
@@ -4696,7 +4680,9 @@ namespace CamelWorks.UI.Views
                     foreach (var other in rows ? _board.Columns : _board.Rows)
                         if (_board.At(rows ? line : other, rows ? other : line) != null) went++;
 
-                    if (rows) _board.RemoveRow(line); else _board.RemoveColumn(line);
+                    // Both axes: half a category left behind is a line naming a discipline
+                    // the matrix no longer has, and every cell on it is dead.
+                    _board.RemovePair(line);
 
                     _picked = null;
 
@@ -6077,6 +6063,35 @@ namespace CamelWorks.UI.Views
                     Grouped),
 
                 Parts.Entry.Rule(),
+
+                // <b>The shape of the thing, said out loud.</b> Both axes being one list is
+                // what makes a clash matrix a clash matrix - it is why the grid mirrors, why
+                // half of it is dead and why the diagonal is not a pair. It is the default and
+                // it stays out of the way, but a matrix of one trade's sets against another's
+                // is a real thing somebody builds, and this is where they say so.
+                Parts.Entry.Saying(
+                    _board.Paired
+                        ? "Let the two axes differ"
+                        : "Make the two axes one list again",
+                    Glyphs.Columns,
+                    _board.Paired
+                        ? "Adding a discipline adds it to both axes, and removing it takes it "
+                          + "off both. Turn this off to add to one axis without the other."
+                        : "The axes are kept apart: a row is added without a column, and neither "
+                          + "follows the other.",
+                    () =>
+                    {
+                        Remember(what: _board.Paired ? "letting the axes differ"
+                                                     : "making the axes one list");
+
+                        _board.Paired = !_board.Paired;
+
+                        // Squared off as it goes back to being one list, because a matrix that
+                        // diverged while it was allowed to has to be made whole to be one again.
+                        if (_board.Paired) _board.SquareOffRows();
+
+                        Redraw();
+                    }),
 
                 Parts.Entry.Act("Make the columns match the rows", Glyphs.Columns, () =>
                 {

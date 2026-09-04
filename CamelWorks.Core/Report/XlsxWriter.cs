@@ -206,12 +206,18 @@ namespace CamelWorks.Core.Report
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
             sb.Append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
 
-            AppendColumnWidths(sb, sheet);
-
+            // <b>Order is part of the format.</b> A worksheet's children are a sequence, not a
+            // set: sheetViews, then cols, then sheetData. Written the other way round the file
+            // is still well-formed XML and every parser will read it - and Excel throws the
+            // whole part away and opens a repaired workbook with the sheet replaced. Which is
+            // exactly what it did, on every export of more than one row, because the frozen
+            // header is on by default and a one-row sheet was the only shape that escaped it.
             if (sheet.FreezeHeader && sheet.Rows.Count > 1)
                 sb.Append("<sheetViews><sheetView workbookViewId=\"0\">")
                   .Append("<pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/>")
                   .Append("</sheetView></sheetViews>");
+
+            AppendColumnWidths(sb, sheet);
 
             sb.Append("<sheetData>");
 
