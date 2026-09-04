@@ -2366,7 +2366,11 @@ namespace CamelWorks.UI.Views
                     // grid that mean opposite things, drawn as the least separable pair on it.
                     // A flat grey ground and a full-weight dash make the scan work the way the
                     // job does: white is what is left to do.
-                    cell.Tint(Border.BackgroundProperty, "Nav");
+                    //
+                    // Down the diagonal the spine's colour wins, because the line has to be
+                    // followable through whatever state one of its cells happens to be in - and
+                    // the dash on it says the rest.
+                    cell.Tint(Border.BackgroundProperty, self ? "Spine" : "Nav");
 
                     cell.Child = new TextBlock
                     {
@@ -2410,8 +2414,10 @@ namespace CamelWorks.UI.Views
                     // fill to another one two per cent away from it: forty cells stopped meaning
                     // anything, the grid still read as handled, and nothing said so. Struck
                     // through, on the grey that carries every other "this makes no test", it is
-                    // the same fact the tick in the inspector states.
-                    cell.Tint(Border.BackgroundProperty, "Nav");
+                    // the same fact the tick in the inspector states - and on the spine's own
+                    // colour where the spine runs, so the line stays one line. The strike is
+                    // what says it builds nothing, on either ground.
+                    cell.Tint(Border.BackgroundProperty, self ? "Spine" : "Nav");
 
                     text.TextDecorations = TextDecorations.Strikethrough;
                     text.Wearing("Muted");
