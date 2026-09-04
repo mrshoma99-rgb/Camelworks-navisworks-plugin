@@ -15,11 +15,20 @@ getting a name wrong are silent:
 
 Neither is a compiler error. The XAML compiles either way, and the C# is passing strings.
 
+  A key that exists but is the wrong kind of thing is quieter still, and it throws where the user
+  is standing rather than where the mistake is. Wearing(key) assigns the resource to the Style
+  property, so Wearing("Muted") - a brush - throws "'#FF5C646F' is not a valid value for property
+  'Style'" the first time that control is drawn. That took Navisworks down three ways in one
+  afternoon: picking a colour, toggling the echo, and reading a matrix out of the model, all of
+  which redraw a cell whose ink was set that way. Both spellings look identical in review, and the
+  compiler is passing strings either way.
+
 What is checked:
 
   * every x:Key in the sheet is unique
   * every key the C# asks for by literal - Wearing, Tint, SetResourceReference, Skin.Of, Ui.Glyph
     and the tone banners - is defined, either in the sheet or in Skin.cs's palette table
+  * every key handed to Wearing names a Style, and not a brush
   * every {DynamicResource}/{StaticResource} inside the sheet resolves within it
 
 Keys built at run time (Fam. plus a workspace id) cannot be checked from here and are listed as
@@ -45,6 +54,8 @@ LOOKUP = re.compile(r'\{(?:Dynamic|Static)Resource\s+([^{}\s]+)\s*\}')
 
 # How the C# asks for one. Each of these takes the key as a plain string, which is exactly why
 # none of them can be checked by the compiler.
+WEARS = re.compile(r'\.Wearing\(\s*"([^"]+)"\s*\)')
+
 ASKS = [
     re.compile(r'\.Wearing\(\s*"([^"]+)"\s*\)'),
     re.compile(r'\.Tint\([^,()]+,\s*"([^"]+)"\s*\)'),
@@ -95,6 +106,10 @@ def main():
         print(f"FAIL: the skin looks up {name!r}, which nothing defines", file=sys.stderr)
         problems = 1
 
+    # Which keys the sheet declares as styles, so a Wearing can be told from a Tint.
+    styled = set(re.findall(r'<Style\s+x:Key="([^"]+)"', sheet))
+
+    worn = collections.defaultdict(list)
     asked = collections.defaultdict(list)
 
     for project in SOURCES:
@@ -106,12 +121,27 @@ def main():
                     for name in (found if isinstance(found, tuple) else (found,)):
                         asked[name].append(path.relative_to(ROOT))
 
+            for name in WEARS.findall(text):
+                worn[name].append(path.relative_to(ROOT))
+
     for name in sorted(asked):
         if name in known or name.startswith(PREFIXES):
             continue
 
         where = ", ".join(sorted({str(p) for p in asked[name]}))
         print(f"FAIL: {where} asks for skin key {name!r}, which nothing defines", file=sys.stderr)
+        problems = 1
+
+    for name in sorted(worn):
+        if name in styled:
+            continue
+
+        where = ", ".join(sorted({str(p) for p in worn[name]}))
+
+        print(f"FAIL: {where} wears skin key {name!r}, which is not a Style. Wearing sets the "
+              f"Style property, so this throws \"is not a valid value for property 'Style'\" the "
+              f"first time the control is drawn. For a colour, use "
+              f".Tint(TextBlock.ForegroundProperty, {name!r}) instead.", file=sys.stderr)
         problems = 1
 
     if problems:
