@@ -1634,8 +1634,8 @@ namespace CamelWorks.UI.Views
                     StringComparer.OrdinalIgnoreCase);
 
                 Parts.Search(_grid, "Which sets are the disciplines?",
-                    sets.Select(s => new KeyValuePair<string, int>(s.Trail, s.Members)).ToList(),
-                    already, null,
+                    sets.Select(s => new KeyValuePair<string, int>(Labelled(s), s.Members)).ToList(),
+                    sets.Where(s => already.Contains(s.Trail)).Select(Labelled).ToList(), null,
                     picked =>
                     {
                         var wanted = new HashSet<string>(picked, StringComparer.OrdinalIgnoreCase);
@@ -1647,7 +1647,8 @@ namespace CamelWorks.UI.Views
 
                         foreach (var set in sets)
                         {
-                            if (!wanted.Contains(set.Trail) || already.Contains(set.Trail)) continue;
+                            if (!wanted.Contains(Labelled(set)) || already.Contains(set.Trail))
+                                continue;
 
                             _board.AddPair(new MatrixLine(
                                 set.Name,
@@ -3622,15 +3623,16 @@ namespace CamelWorks.UI.Views
                     : Parts.Entry.Act("A saved set  ·  " + Ui.Count(sets.Count, "of them"),
                         Glyphs.Folder,
                         () => Parts.Search(_grid, "Which set is " + line.Name + "?",
-                            sets.Select(s => new KeyValuePair<string, int>(s.Trail, s.Members))
+                            sets.Select(s => new KeyValuePair<string, int>(Labelled(s), s.Members))
                                 .ToList(),
                             line.Source.IsSet
-                                ? new[]
-                                {
-                                    line.Source.Folder.Length == 0
-                                        ? line.Source.Name
-                                        : line.Source.Folder + "/" + line.Source.Name,
-                                }
+                                ? sets.Where(s => string.Equals(
+                                          s.Trail,
+                                          line.Source.Folder.Length == 0
+                                              ? line.Source.Name
+                                              : line.Source.Folder + "/" + line.Source.Name,
+                                          StringComparison.OrdinalIgnoreCase))
+                                      .Select(Labelled).ToArray()
                                 : null,
                             null,
                             picked =>
@@ -3640,7 +3642,7 @@ namespace CamelWorks.UI.Views
                                 if (trail == null) return;
 
                                 var found = sets.FirstOrDefault(s => string.Equals(
-                                    s.Trail, trail, StringComparison.OrdinalIgnoreCase));
+                                    Labelled(s), trail, StringComparison.OrdinalIgnoreCase));
 
                                 if (found == null) return;
 
@@ -3785,14 +3787,65 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>What goes in one cell.</summary>
+            /// <summary>
+            /// The cells one press of the menu acts on: the marked block, or the one under it.
+            ///
+            /// <b>A block was marked and the menu wrote one cell.</b> Marking thirty pairs and
+            /// choosing a symbol for them put it in one - the one under the pointer - and left
+            /// the other twenty-nine as they were, silently, with the block still drawn round
+            /// them. The keyboard has always written the whole block; the menu is the same act
+            /// with a different hand, and it has to mean the same thing.
+            ///
+            /// Only when the press is inside the block, because a right-click somewhere else is
+            /// somebody asking about that cell, not about a selection they left behind.
+            /// </summary>
+            /// <param name="row">The row pressed on.</param>
+            /// <param name="column">The column pressed on.</param>
+            private List<(MatrixLine Row, MatrixLine Column)> Reached(MatrixLine row,
+                                                                     MatrixLine column)
+            {
+                if (Blocked)
+                {
+                    var held = Block().ToList();
+
+                    if (held.Any(c => ReferenceEquals(c.Row, row)
+                                      && ReferenceEquals(c.Column, column)))
+                        return held;
+                }
+
+                return new List<(MatrixLine, MatrixLine)> { (row, column) };
+            }
+
+            /// <summary>Put one symbol, or nothing, in every cell the menu reaches.</summary>
+            /// <param name="cells">The cells.</param>
+            /// <param name="symbol">The symbol, or null to clear them.</param>
+            /// <param name="what">What to call the act in the undo history.</param>
+            private void Laid(IReadOnlyList<(MatrixLine Row, MatrixLine Column)> cells,
+                              string? symbol, string what)
+            {
+                Remember(what: what);
+
+                foreach (var (row, column) in cells) _board.Set(row, column, symbol);
+
+                // The mirror of a cell inside the block can sit outside it, so anything larger
+                // than one cell is drawn again rather than repainted pair by pair.
+                if (cells.Count > 1) RepaintAll();
+                else Repaint(cells[0].Row, cells[0].Column);
+
+                Recount();
+            }
+
             private List<Parts.Entry> CellMenu(MatrixLine row, MatrixLine column)
             {
                 var here = _board.At(row, column);
+                var reach = Reached(row, column);
+                var many = reach.Count > 1;
 
                 var items = new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading(Where(row, column) + "  ·  "
-                                        + row.Titled + " × " + column.Titled),
+                    Parts.Entry.Heading(many
+                        ? Ui.Count(reach.Count, "cell") + " selected"
+                        : Where(row, column) + "  ·  " + row.Titled + " × " + column.Titled),
                 };
 
                 if (_legend.IsEmpty)
@@ -3810,32 +3863,36 @@ namespace CamelWorks.UI.Views
                         Glyphs.Tick,
                         MatrixNaming.Worded(one.Test) + " at " + Millimetres(one.Tolerance)
                         + (one.Enabled ? string.Empty : ", turned off"),
-                        () =>
-                        {
-                            Remember(what: "putting " + Quoted(one.Symbol) + " in a cell");
-                            _board.Set(row, column, one.Symbol);
-                            Repaint(row, column);
-                        }));
+                        () => Laid(reach, one.Symbol,
+                                   "putting " + Quoted(one.Symbol)
+                                   + (many ? " in " + Ui.Count(reach.Count, "cell")
+                                           : " in a cell"))));
                 }
 
                 items.Add(Parts.Entry.Rule());
 
                 items.Add(Parts.Entry.Saying("Not required", Glyphs.Close,
                     "Agreed, and no test is made. Different from a cell nobody has got to yet.",
-                    () =>
-                    {
-                        Remember(what: "ruling out a pair");
-                        _board.Set(row, column, MatrixBoard.NotRequired);
-                        Repaint(row, column);
-                    }));
+                    () => Laid(reach, MatrixBoard.NotRequired,
+                               many ? "ruling out " + Ui.Count(reach.Count, "pair")
+                                    : "ruling out a pair")));
 
-                if (here != null)
-                    items.Add(Parts.Entry.Act("Back to undecided", Glyphs.Close, () =>
-                    {
-                        Remember(what: "clearing a cell");
-                        _board.Set(row, column, null);
-                        Repaint(row, column);
-                    }));
+                if (many || here != null)
+                    items.Add(Parts.Entry.Act("Back to undecided", Glyphs.Close,
+                        () => Laid(reach, null,
+                                   many ? "clearing " + Ui.Count(reach.Count, "cell")
+                                        : "clearing a cell")));
+
+                items.Add(Parts.Entry.Rule());
+
+                items.Add(Parts.Entry.Saying(
+                    many ? "Copy these " + Ui.Count(reach.Count, "cell") : "Copy this cell",
+                    Glyphs.Copy, "Ctrl+C. Paste it anywhere on the grid, or into a spreadsheet.",
+                    () => Copy()));
+
+                items.Add(Parts.Entry.Saying("Paste from here", Glyphs.Changes,
+                    "Ctrl+V. What was copied goes down with this cell as its top left.",
+                    Paste));
 
                 items.Add(Parts.Entry.Rule());
 
@@ -4273,6 +4330,8 @@ namespace CamelWorks.UI.Views
                     ("PageUp and PageDown", "a windowful of rows"),
                     ("Ctrl+Home and Ctrl+End", "the first and last cell of the grid"),
                     ("Alt and an arrow", "move this row or column, and its twin with it"),
+                    ("Ctrl+C and Ctrl+X", "copy what is selected, or cut it"),
+                    ("Ctrl+V", "paste it back from the cursor, as far as the grid allows"),
                     ("Ctrl+Z and Ctrl+Y", "take back, and put back"),
                     ("Return, in the box under the last row", "make a row and stay in the box"),
                 };
@@ -5324,6 +5383,142 @@ namespace CamelWorks.UI.Views
                     yield return (_board.Rows[r], _board.Columns[c]);
             }
 
+            /// <summary>
+            /// Copy what is in the selected cells, and paste it somewhere else.
+            ///
+            /// <b>Half a matrix is the same answer as the other half.</b> Six disciplines that
+            /// treat services the way the last six do is six columns of the same twelve marks,
+            /// and typing them again is the work this screen exists to remove - the same
+            /// argument that gave the grid a brush and a block in the first place.
+            ///
+            /// Tab-separated text, so it is the clipboard the rest of the world uses: a block
+            /// lifted out of here drops into Excel as cells, and a block of letters copied out
+            /// of somebody's own spreadsheet drops in here. An empty cell is an empty field,
+            /// which is what keeps a paste aligned with the shape it was cut from.
+            /// </summary>
+            /// <param name="cut">True to empty the cells after taking what was in them.</param>
+            private void Copy(bool cut = false)
+            {
+                var held = Block().ToList();
+
+                if (held.Count == 0) return;
+
+                var fromRow = Blocked ? Math.Min(_atRow, _markRow) : _atRow;
+                var fromColumn = Blocked ? Math.Min(_atColumn, _markColumn) : _atColumn;
+                var toRow = Blocked ? Math.Max(_atRow, _markRow) : _atRow;
+                var toColumn = Blocked ? Math.Max(_atColumn, _markColumn) : _atColumn;
+
+                var text = new System.Text.StringBuilder();
+
+                for (var r = fromRow; r <= toRow; r++)
+                {
+                    if (r > fromRow) text.Append('\n');
+
+                    for (var c = fromColumn; c <= toColumn; c++)
+                    {
+                        if (c > fromColumn) text.Append('\t');
+
+                        text.Append(_board.At(_board.Rows[r], _board.Columns[c]) ?? string.Empty);
+                    }
+                }
+
+                // The clipboard is another process's to refuse - a program holding it open, a
+                // remote session with none at all - and a screen that dies because a copy did
+                // not work is worse than a copy that did not work.
+                try
+                {
+                    Clipboard.SetText(text.ToString());
+                }
+                catch (Exception)
+                {
+                    Warned(Ui.Problem("Windows would not give up the clipboard. Try again."));
+                    return;
+                }
+
+                if (cut) Laid(held, null, "cutting " + Ui.Count(held.Count, "cell"));
+
+                Said(Ui.Done(Ui.Count(held.Count, "cell") + (cut ? " cut" : " copied")
+                             + ". Put the cursor where it goes and press Ctrl+V."));
+            }
+
+            /// <summary>
+            /// Put what was copied down from the cursor.
+            ///
+            /// <b>What was copied is a shape, and the cursor is its top left.</b> It stops at
+            /// the edges of the grid rather than wrapping or refusing - a block copied from the
+            /// middle and pasted near the end puts down as much as fits, and says how much that
+            /// was, which is more use than an error about a rectangle that does not fit.
+            /// </summary>
+            private void Paste()
+            {
+                if (_atRow < 0 || _atColumn < 0) return;
+
+                string held;
+
+                try
+                {
+                    if (!Clipboard.ContainsText()) { Warned(Ui.Problem("There is nothing to paste.")); return; }
+
+                    held = Clipboard.GetText();
+                }
+                catch (Exception)
+                {
+                    Warned(Ui.Problem("Windows would not give up the clipboard. Try again."));
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(held)) return;
+
+                var lines = held.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
+                var known = new HashSet<string>(_legend.Symbols.Select(sym => sym.Symbol),
+                                                StringComparer.OrdinalIgnoreCase);
+
+                var laid = 0;
+                var strange = new List<string>();
+
+                Remember(what: "pasting cells");
+
+                for (var r = 0; r < lines.Length; r++)
+                {
+                    var at = _atRow + r;
+
+                    if (at >= _board.Rows.Count) break;
+
+                    var fields = lines[r].Split('\t');
+
+                    for (var c = 0; c < fields.Length; c++)
+                    {
+                        var into = _atColumn + c;
+
+                        if (into >= _board.Columns.Count) break;
+
+                        var said = fields[c].Trim();
+
+                        // A symbol nobody has given a meaning to would build a test with no kind
+                        // and no tolerance, so it is put in and named rather than dropped: the
+                        // legend can be told what it means, and until it is, the pre-flight says
+                        // so in the words it already uses for a symbol with no meaning.
+                        if (said.Length > 0 && !known.Contains(said)
+                            && !MatrixBoard.IsNotRequired(said) && !strange.Contains(said))
+                            strange.Add(said);
+
+                        _board.Set(_board.Rows[at], _board.Columns[into],
+                                   said.Length == 0 ? null : said);
+                        laid++;
+                    }
+                }
+
+                RepaintAll();
+                Recount();
+
+                Said(Ui.Done(Ui.Count(laid, "cell") + " pasted"
+                             + (strange.Count == 0
+                                 ? "."
+                                 : ", and " + Ui.Count(strange.Count, "symbol")
+                                   + " nothing in the legend explains: "
+                                   + string.Join(", ", strange.Select(Quoted)) + ".")));
+            }
+
             /// <summary>Scroll until the cursor is on the screen.</summary>
             private void Bring()
             {
@@ -5365,6 +5560,9 @@ namespace CamelWorks.UI.Views
                     if (e.Key == Key.Z) { Undo(); e.Handled = true; }
                     else if (e.Key == Key.Y) { Redo(); e.Handled = true; }
                     else if (e.Key == Key.A) { Everything(); e.Handled = true; }
+                    else if (e.Key == Key.C) { Copy(); e.Handled = true; }
+                    else if (e.Key == Key.X) { Copy(cut: true); e.Handled = true; }
+                    else if (e.Key == Key.V) { Paste(); e.Handled = true; }
                     else if (e.Key == Key.Home) { Step(-_board.Rows.Count, -_board.Columns.Count); e.Handled = true; }
                     else if (e.Key == Key.End) { Step(_board.Rows.Count, _board.Columns.Count); e.Handled = true; }
 
@@ -7172,6 +7370,20 @@ namespace CamelWorks.UI.Views
                 internal string Trail =>
                     Folder.Length == 0 ? Name : Folder + "/" + Name;
             }
+
+            /// <summary>
+            /// One saved set as the picker lists it: where it lives, and which kind it is.
+            ///
+            /// <b>A search set and a selection set are not the same thing and the list said
+            /// neither.</b> One holds the elements that were in it when somebody saved it; the
+            /// other holds whatever answers a query today. Pointing a discipline at the wrong one
+            /// is the difference between a test that follows the model and a test that quietly
+            /// stops seeing new work - and the two are told apart nowhere on a list of names
+            /// where both kinds sit together, often under the same name in different folders.
+            /// </summary>
+            /// <param name="set">The set.</param>
+            private static string Labelled(SetLine set) =>
+                set.Trail + "  \u00b7  " + (set.IsSearch ? "search set" : "selection set");
 
             private List<SetLine> Sets()
             {
