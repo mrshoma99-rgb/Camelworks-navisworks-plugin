@@ -507,10 +507,24 @@ namespace CamelWorks.UI.Views
                 // stops, and the space beneath it reads as space.
                 _scroll.Tint(Control.BackgroundProperty, "Bg");
 
+                // <b>The bands have no scrollbars and the cells do.</b> A vertical bar takes
+                // seventeen pixels off the right of the cells' viewport and nothing off the
+                // band's, so the band went on showing a strip of a column whose cells had
+                // already been cut off - a header with no rows under it, hard against the right
+                // edge. The horizontal bar did the same thing at the bottom to the row names.
+                // Whatever the cells lose to a bar, the band beside them gives back.
                 _scroll.ScrollChanged += (s, e) =>
                 {
                     _slidX.X = -_scroll.HorizontalOffset;
                     _slidY.Y = -_scroll.VerticalOffset;
+
+                    _band.Margin = new Thickness(0, 0,
+                        _scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible
+                            ? SystemParameters.VerticalScrollBarWidth : 0, 0);
+
+                    _side.Margin = new Thickness(0, 0, 0,
+                        _scroll.ComputedHorizontalScrollBarVisibility == Visibility.Visible
+                            ? SystemParameters.HorizontalScrollBarHeight : 0);
                 };
 
                 _scroll.PreviewKeyDown += (s, e) => Ui.Safely(() => Typed(e));
@@ -586,14 +600,69 @@ namespace CamelWorks.UI.Views
                 return false;
             }
             /// <summary>
-            /// How tall the column band is: the turned name, plus what sits under it.
+            /// How tall the column band is: the longest name in it, and what sits under them.
             ///
-            /// The number and the code are drawn the right way up beneath each name, so the band
-            /// has to be as tall as the tallest of those or the chip eats the name it belongs
-            /// to. A matrix using neither pays for neither.
+            /// <b>A hundred and thirty pixels was a guess, and a guess is white space.</b> The
+            /// names are turned and they end at the grid, so a band taller than the longest of
+            /// them is empty across the whole width of the screen - forty or sixty pixels of
+            /// nothing over every column, every time, on a matrix whose names happen to be
+            /// short. Measured, the band is as tall as it has to be and no taller: nine
+            /// characters cost nine characters. It is floored so a one-word matrix still reads
+            /// as a header, and capped so one absurd name cannot take a third of the window.
             /// </summary>
-            private double HeaderHigh =>
-                130 + (Numbered(_board.Columns) ? 15 : 0) + (Coded(_board.Columns) ? 17 : 0);
+            private double HeaderHigh
+            {
+                get
+                {
+                    var longest = 0.0;
+
+                    foreach (var line in _board.Columns)
+                        longest = Math.Max(longest, Measured(line.Name));
+
+                    return Math.Max(64, Math.Min(200, longest + 14)) + Beneath;
+                }
+            }
+
+            /// <summary>
+            /// How much of every column header is the number and code drawn the right way up.
+            ///
+            /// <b>The same for every column, not each one's own.</b> Sized per line, a column
+            /// without a code got its fifteen pixels back and its name ended fifteen pixels
+            /// lower than its neighbours' - which is precisely the ragged bottom edge the
+            /// turning was meant to fix. The space is reserved for all of them or for none.
+            /// </summary>
+            private double Beneath =>
+                (Numbered(_board.Columns) ? 15.0 : 0)
+                + (Coded(_board.Columns) ? 17.0 : 0)
+                + (Unbacked(_board.Columns) ? 14.0 : 0);
+
+            /// <summary>
+            /// A text block kept aside to measure a name with, at the size the headers use.
+            ///
+            /// Measuring the real one is no good: it is given the box it has to fit and reports
+            /// that box back. This one is never drawn and is asked for its natural width.
+            /// </summary>
+            private static readonly TextBlock Ruler =
+                new TextBlock { FontSize = 11, FontWeight = FontWeights.SemiBold };
+
+            /// <summary>How wide one name is, laid out in a line.</summary>
+            /// <param name="text">The name.</param>
+            private static double Measured(string text)
+            {
+                Ruler.Text = text ?? string.Empty;
+                Ruler.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+                return Ruler.DesiredSize.Width;
+            }
+
+            /// <summary>Whether any of these lines points at nothing.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private static bool Unbacked(IReadOnlyList<MatrixLine> lines)
+            {
+                foreach (var line in lines) if (line.IsUnbacked) return true;
+
+                return false;
+            }
 
             /// <summary>How wide the index gutter down the left is, and how tall the one across.</summary>
             private const double IndexWide = 24;
@@ -1229,7 +1298,7 @@ namespace CamelWorks.UI.Views
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
 
-                    Width = HeaderHigh - Under(line) - (line.IsUnbacked ? 14 : 0),
+                    Width = HeaderHigh - Beneath,
                     Height = CellWide - 6,
 
                     // Read up towards the grid, so every name ends where its column begins
@@ -1253,7 +1322,7 @@ namespace CamelWorks.UI.Views
 
                 stacked.RowDefinitions.Add(new RowDefinition
                 {
-                    Height = new GridLength(Under(line)),
+                    Height = new GridLength(Beneath),
                 });
 
                 var turned = name.Wearing("Body");
@@ -1311,13 +1380,6 @@ namespace CamelWorks.UI.Views
 
                 return head;
             }
-
-            /// <summary>How much of a column header is taken by what is drawn the right way up.</summary>
-            /// <param name="line">The column.</param>
-            private static double Under(MatrixLine line) =>
-                (line.Number.Length > 0 ? 15.0 : 0)
-                + (line.Code.Length > 0 ? 17.0 : 0)
-                + (line.IsUnbacked ? 14.0 : 0);
 
             /// <summary>
             /// A header press puts its line in the inspector; the right button keeps the menu.
