@@ -89,6 +89,17 @@ namespace CamelWorks.UI.Views
             private readonly Border _grid = new Border();
 
             /// <summary>
+            /// The blue button, kept so it can say what stands between here and a build.
+            ///
+            /// <b>It said "Build the tests" over a matrix with fifty-two pairs nobody had ruled
+            /// on and two rows pointing at nothing.</b> Neither is a reason to stop somebody
+            /// building - a matrix half decided is a matrix worth building the decided half of -
+            /// but both are things they would want to know before they did, and the screen knew
+            /// them and said neither.
+            /// </summary>
+            private readonly System.Windows.Controls.Button _build;
+
+            /// <summary>
             /// The palette rail: the symbols, as keys to paint with.
             ///
             /// <b>A legend under the grid was the wrong thing in the wrong place.</b> It was a
@@ -197,6 +208,22 @@ namespace CamelWorks.UI.Views
             private int _atRow = -1;
             private int _atColumn = -1;
 
+            /// <summary>
+            /// The other corner of the block, or -1 when the cursor is on its own.
+            ///
+            /// <b>The real work is blocks.</b> "Every MEP row against every structural column is
+            /// a clearance" is one decision and thirty cells, and the only sizes this screen had
+            /// were one cell, one whole line and the whole grid - so a decision that is neither
+            /// was thirty presses, or a line fill and then corrections. Shift and an arrow, or a
+            /// shift-click, take the block from the cursor to here; a symbol then goes in all of
+            /// it at once.
+            /// </summary>
+            private int _markRow = -1;
+            private int _markColumn = -1;
+
+            /// <summary>The wash over the block, drawn over the cells like the cursor's ring.</summary>
+            private readonly Border _range = new Border();
+
             /// <summary>What the inspector is showing: a line, a symbol, or the cell.</summary>
             private MatrixLine? _picked;
             private bool _pickedRows;
@@ -283,6 +310,8 @@ namespace CamelWorks.UI.Views
             internal Editor(Session session)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
+
+                _build = Ui.Primary("Build the tests", Build);
 
                 Load();
 
@@ -382,11 +411,20 @@ namespace CamelWorks.UI.Views
                 Add(Parts.MenuButton("Naming", Glyphs.Pencil, Naming()));
                 Add(Parts.MenuButton("Out", Glyphs.Onward, Sending()));
 
-                var build = Ui.Primary("Build the tests", Build);
+                // <b>The two things to do before building were filed under "Out".</b> Checking
+                // every source against the model and seeing what would change are the pre-flight
+                // for the blue button beside them - and they were the top two lines of a menu
+                // every user reads as "export", which is where things go when the work is over.
+                // Beside the button they are for, they are what they are.
+                Add(Ui.Icon(Glyphs.Find, "Check it against the model — every row and column, "
+                                         + "against what this model actually has", Sanity));
 
-                build.Margin = new Thickness(8, 0, 0, 0);
+                Add(Ui.Icon(Glyphs.Compare, "See what would change — this matrix against the "
+                                            + "tests already in the document", Difference));
 
-                row.Children.Add(Ui.Loose(build));
+                _build.Margin = new Thickness(8, 0, 0, 0);
+
+                row.Children.Add(Ui.Loose(_build));
 
                 return row;
             }
@@ -691,6 +729,17 @@ namespace CamelWorks.UI.Views
                 _ring.Visibility = Visibility.Collapsed;
                 _ring.Tint(Border.BorderBrushProperty, "Accent");
 
+                // Over the cells rather than in them: a block is a shape, and a shape drawn by
+                // tinting thirty backgrounds one at a time is thirty repaints and a border that
+                // stops at every cell edge. One translucent pane spanning the rows and columns
+                // it covers is one element, and the cells underneath keep the fills that say
+                // what is in them.
+                _range.BorderThickness = new Thickness(2);
+                _range.IsHitTestVisible = false;
+                _range.Visibility = Visibility.Collapsed;
+                _range.Tint(Border.BorderBrushProperty, "Accent");
+                _range.Tint(Border.BackgroundProperty, "Hover");
+
                 return frame;
             }
 
@@ -901,10 +950,18 @@ namespace CamelWorks.UI.Views
                 + (Coded(_board.Columns) ? CodeTall : 0)
                 + (Unbacked(_board.Columns) ? WarnTall : 0);
 
-            /// <summary>How far up a column header the number, the code and the mark reach.</summary>
-            private double NumberTall => Widest(_board.Columns, 11, false) + 10;
+            /// <summary>
+            /// How far down from the top of a column header the number, the code and the mark
+            /// reach.
+            ///
+            /// <b>A line of type, not the length of a word.</b> They were measured to the longest
+            /// number and the longest code because they were turned, so their length ran down the
+            /// column; upright they are one line each, whatever they say, and a matrix whose codes
+            /// are four letters stops paying forty pixels off the top of every column for it.
+            /// </summary>
+            private const double NumberTall = 16;
 
-            private double CodeTall => Widest(_board.Columns, 10, true, code: true) + 14;
+            private const double CodeTall = 18;
 
             private const double WarnTall = 16;
 
@@ -959,9 +1016,17 @@ namespace CamelWorks.UI.Views
                 return false;
             }
 
-            /// <summary>How wide the index gutter down the left is, and how tall the one across.</summary>
-            private const double IndexWide = 24;
-            private const double IndexHigh = 20;
+            /// <summary>
+            /// How wide the index gutter down the left is, and how tall the one across.
+            ///
+            /// <b>Twenty pixels, and a click in it writes twenty-two cells.</b> The band beside
+            /// it is two hundred pixels of header that only selects, so the smallest target on
+            /// the screen was the one with the largest consequence, flush against the largest
+            /// target with the smallest. Twenty-four is a target, and the gutter is drawn on its
+            /// own ground so the eye can see where one band stops and the other starts.
+            /// </summary>
+            private const double IndexWide = 26;
+            private const double IndexHigh = 24;
 
             /// <summary>
             /// Build the grid again. Only for a change of shape - a row added, removed or moved.
@@ -1090,6 +1155,7 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                _sheet.Children.Add(Ui.Loose(_range));
                 _sheet.Children.Add(Ui.Loose(_ring));
 
                 RedrawRing();
@@ -1163,6 +1229,46 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Whether the typing box has been given its Return handler yet.</summary>
             private bool _wired;
+
+            /// <summary>The find box in the corner, and whether it has been wired yet.</summary>
+            private readonly TextBox _finder = Ui.Text(string.Empty, null, 60);
+            private bool _finding;
+
+            /// <summary>
+            /// Take the cursor to a row whose name, number or code holds what was typed.
+            ///
+            /// Never a filter. A matrix with rows hidden is a different matrix, and the one thing
+            /// somebody wants from a search on a grid is to be looking at the row they named with
+            /// everything around it still in place.
+            /// </summary>
+            /// <param name="text">What was typed. Nothing at all puts the search away.</param>
+            /// <param name="onward">True to start from the row after the one already found.</param>
+            private void Found(string? text, bool onward = false)
+            {
+                var wanted = (text ?? string.Empty).Trim();
+
+                if (wanted.Length == 0 || _board.Rows.Count == 0) return;
+
+                var from = onward && _atRow >= 0 ? _atRow + 1 : Math.Max(0, _atRow);
+
+                for (var step = 0; step < _board.Rows.Count; step++)
+                {
+                    var at = ((from + step) % _board.Rows.Count + _board.Rows.Count)
+                             % _board.Rows.Count;
+
+                    var row = _board.Rows[at];
+
+                    if (row.Name.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) < 0
+                        && row.Number.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) < 0
+                        && row.Code.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    Go(at, Math.Max(0, _atColumn));
+                    Pick(row, rows: true);
+
+                    return;
+                }
+            }
 
             /// <summary>
             /// The screen before there is a matrix: the four ways in, as things to press.
@@ -1329,15 +1435,57 @@ namespace CamelWorks.UI.Views
                 corner.Tint(Border.BorderBrushProperty, "Bd");
                 corner.Tint(Border.BackgroundProperty, "Pane");
 
-                corner.Child = new StackPanel
+                var inside = new DockPanel { LastChildFill = false };
+
+                // <b>The largest empty space on the screen, holding two lines of eight words.</b>
+                // A hundred and ninety by two hundred and thirty pixels of corner, and the thing
+                // a matrix of forty rows most needs - a way of getting to one of them by name -
+                // did not exist anywhere. It does now, in the room that was already there.
+                var find = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
+
+                var glass = Ui.Glyph(Glyphs.Find, 12, "Muted", new Thickness(0, 0, 5, 0));
+
+                glass.VerticalAlignment = VerticalAlignment.Center;
+                DockPanel.SetDock(glass, Dock.Left);
+                find.Children.Add(glass);
+
+                _finder.Tag = "Find a row";
+                _finder.VerticalAlignment = VerticalAlignment.Center;
+                _finder.FontSize = 11;
+
+                if (!_finding)
                 {
-                    VerticalAlignment = VerticalAlignment.Bottom,
-                    Children =
+                    _finding = true;
+
+                    _finder.TextChanged += (s, e) => Ui.Safely(() => Found(_finder.Text));
+
+                    // Return walks on to the next row that matches, so a name shared by four
+                    // rows is four presses rather than a search that always lands on the first.
+                    _finder.KeyDown += (s, e) => Ui.Safely(() =>
                     {
-                        Ui.Eyebrow("Side A  ↓"),
-                        Ui.Small("Side B  →"),
-                    },
-                };
+                        if (e.Key != Key.Return) return;
+
+                        e.Handled = true;
+                        Found(_finder.Text, onward: true);
+                    });
+                }
+
+                find.Children.Add(Ui.Loose(_finder));
+
+                DockPanel.SetDock(find, Dock.Top);
+                inside.Children.Add(find);
+
+                // The two axes, in one weight rather than two: they are one fact said twice, and
+                // an eyebrow over a small line read as a heading over a caption.
+                var axes = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
+
+                axes.Children.Add(Ui.Small("Side A  ↓"));
+                axes.Children.Add(Ui.Small("Side B  →"));
+
+                DockPanel.SetDock(axes, Dock.Bottom);
+                inside.Children.Add(axes);
+
+                corner.Child = inside;
 
                 return Ui.Loose(corner);
             }
@@ -1378,13 +1526,17 @@ namespace CamelWorks.UI.Views
                 };
 
                 cell.Tint(Border.BorderBrushProperty, "Bd");
-                cell.Tint(Border.BackgroundProperty, "Pane");
+                cell.Tint(Border.BackgroundProperty, "Nav");
 
                 cell.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
                     e.Handled = true;
                     Sweep(line, rows);
                 });
+
+                Reachable(cell, (rows ? "Row " : "Column ") + mark + ", " + what
+                                + ". Fills its empty cells with the armed symbol.",
+                          () => Sweep(line, rows));
 
                 return cell;
             }
@@ -1532,11 +1684,31 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(numbered || coded ? 0 : 8, 0, 6, 0),
                 };
 
-                var mark = Ui.Glyph(line.IsUnbacked ? Glyphs.Warn : Glyphs.Layers, 12,
-                                    line.IsUnbacked ? "RedTx" : "Muted", new Thickness(0, 0, 6, 0));
+                // <b>A mark on every row marked nothing.</b> Twenty-two identical glyphs down
+                // the left edge said "this one is normal" twenty-two times, and the one that
+                // meant something - a row pointing at nothing - was a shape change inside a
+                // column of shapes. The warning is drawn and the ordinary row is not; the room
+                // is reserved for the whole axis whenever any row needs it, so the names still
+                // start on one line.
+                if (Unbacked(_board.Rows))
+                {
+                    UIElement mark;
 
-                mark.VerticalAlignment = VerticalAlignment.Center;
-                named.Children.Add(mark);
+                    if (line.IsUnbacked)
+                    {
+                        var warn = Ui.Glyph(Glyphs.Warn, 12, "RedTx", new Thickness(0, 0, 6, 0));
+
+                        warn.VerticalAlignment = VerticalAlignment.Center;
+                        mark = warn;
+                    }
+                    else
+                    {
+                        mark = new Border { Width = 18 };
+                    }
+
+                    DockPanel.SetDock(mark, Dock.Left);
+                    named.Children.Add(mark);
+                }
 
                 // Left, and staying left. Twenty-two names centred share no edge to scan down,
                 // which is the whole of what a column of names in a table is for.
@@ -1614,12 +1786,26 @@ namespace CamelWorks.UI.Views
 
                 var row = 0;
 
+                // <b>Two characters and three do not need turning.</b> The name does - a name
+                // turned is the whole reason twenty-two columns fit on a screen - but "10" and
+                // "ME" fit upright inside a column thirty-eight pixels wide, which the row header
+                // proves by drawing them that way. Turned, they cost legibility for a symmetry
+                // nobody perceives: a reader tips their head to read a number they could have
+                // read straight.
                 if (Numbered(_board.Columns))
                 {
                     if (line.Number.Length > 0)
                     {
-                        var number = Turned(line.Number, NumberTall - 6, 11, FontWeights.Normal)
-                                         .Wearing("Hint");
+                        var number = new TextBlock
+                        {
+                            Text = line.Number,
+                            FontSize = 11,
+                            TextAlignment = TextAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            TextWrapping = TextWrapping.NoWrap,
+                        }.Wearing("Hint");
 
                         Grid.SetRow(number, row);
                         stacked.Children.Add(number);
@@ -1632,23 +1818,26 @@ namespace CamelWorks.UI.Views
                 {
                     if (line.Code.Length > 0)
                     {
-                        // <b>A turn changes what is drawn, not what is laid out.</b> The chip
-                        // sized itself to the text's own box - long and thin the way the text
-                        // was typed - while the drawing of it came out short and tall, so the
-                        // code was painted across a pill that was the wrong way round and stuck
-                        // out of both ends of it. The pill is given the size the turned words
-                        // actually occupy, and the words sit in the middle of it.
-                        var wide = Math.Min(CellWide - 14, 30);
-
+                        // Upright too, and the pill is now simply the size of the words in it
+                        // rather than the size a turned box happened to occupy.
                         var chip = new Border
                         {
                             CornerRadius = new CornerRadius(4),
-                            Width = wide,
-                            Height = CodeTall - 6,
+                            Padding = new Thickness(4, 0, 4, 1),
+                            MaxWidth = Math.Max(16, CellWide - 6),
                             HorizontalAlignment = HorizontalAlignment.Center,
                             VerticalAlignment = VerticalAlignment.Center,
-                            Child = Turned(line.Code, CodeTall - 12, 10, FontWeights.SemiBold)
-                                        .Wearing("Lbl"),
+                            Child = new TextBlock
+                            {
+                                Text = line.Code,
+                                FontSize = 10,
+                                FontWeight = FontWeights.SemiBold,
+                                TextAlignment = TextAlignment.Center,
+                                HorizontalAlignment = HorizontalAlignment.Center,
+                                VerticalAlignment = VerticalAlignment.Center,
+                                TextTrimming = TextTrimming.CharacterEllipsis,
+                                TextWrapping = TextWrapping.NoWrap,
+                            }.Wearing("Lbl"),
                         };
 
                         chip.Tint(Border.BackgroundProperty, "Nav");
@@ -1760,6 +1949,37 @@ namespace CamelWorks.UI.Views
                 };
 
             /// <summary>
+            /// Make one part of the grid reachable without a mouse, and nameable by a reader.
+            ///
+            /// <b>Every header, every gutter mark and every key on the palette was a Border with
+            /// a mouse handler.</b> A Border is not focusable, takes no part in the tab order and
+            /// reports no name, so the keyboard model this screen is proud of stopped dead at the
+            /// edge of the cells: you could type symbols into the grid all afternoon and never
+            /// reach the palette to change which one, or press a row to say what it points at.
+            /// And a narrator had nothing to read out but the tips, which need a hover the
+            /// keyboard cannot produce.
+            /// </summary>
+            /// <param name="on">The part.</param>
+            /// <param name="name">What it is, said as a reader would say it.</param>
+            /// <param name="onPress">What Space or Return does, which is what a click does.</param>
+            private static void Reachable(UIElement on, string name, Action? onPress)
+            {
+                System.Windows.Automation.AutomationProperties.SetName(on, name);
+
+                if (onPress == null) return;
+
+                on.Focusable = true;
+
+                on.KeyDown += (s, e) => Ui.Safely(() =>
+                {
+                    if (e.Key != Key.Space && e.Key != Key.Return && e.Key != Key.Enter) return;
+
+                    e.Handled = true;
+                    onPress();
+                });
+            }
+
+            /// <summary>
             /// A header press puts its line in the inspector; the right button keeps the menu.
             /// </summary>
             /// <param name="head">The header.</param>
@@ -1775,6 +1995,12 @@ namespace CamelWorks.UI.Views
                 };
 
                 head.ContextMenu = Parts.Context(() => LineMenu(line, at, rows), null);
+
+                Reachable(head,
+                          (rows ? "Row " + Number(at) : "Column " + Letter(at)) + ", "
+                          + line.Titled + ". " + line.Source.Kinded()
+                          + ". Alt and an arrow moves it.",
+                          () => Pick(line, rows));
             }
 
             /// <summary>Show one row or column in the inspector.</summary>
@@ -1785,6 +2011,8 @@ namespace CamelWorks.UI.Views
                 _picked = line;
                 _pickedRows = rows;
                 _pickedSymbol = null;
+
+                Lighting(null);
 
                 RedrawAcross();
                 RedrawDown();
@@ -1810,6 +2038,17 @@ namespace CamelWorks.UI.Views
                 // over the grid rather than left to be discovered.
                 cell.MouseLeftButtonDown += (s, e) => Ui.Safely(() =>
                 {
+                    // Shift takes the block from wherever the cursor already is to here, which
+                    // is the one gesture every sheet shares and the fastest way to say "these
+                    // thirty pairs".
+                    if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                    {
+                        e.Handled = true;
+                        _scroll.Focus();
+                        Reach(down, across);
+                        return;
+                    }
+
                     Land(down, across);
 
                     if (_brush == null) return;
@@ -1907,6 +2146,10 @@ namespace CamelWorks.UI.Views
 
                 _picked = null;
                 _pickedSymbol = null;
+                _markRow = -1;
+                _markColumn = -1;
+
+                Lighting(null);
 
                 _scroll.Focus();
 
@@ -2044,17 +2287,19 @@ namespace CamelWorks.UI.Views
                 // drawing kept.
                 if (mirrored)
                 {
-                    // <b>The echo is back, quietly.</b> Drawn at full strength it was four
-                    // hundred and eighty letters on a screen holding two hundred and thirty-one
-                    // decisions, every one of them reading as something to check. Drawn not at
-                    // all - which is what this was - a row could no longer be read across, and
-                    // reading a row is what a matrix is for in front of a client: "what is
-                    // ARC_Ceilings checked against" is a question about a whole line, and half
-                    // of that line lives on the other axis. So: the mark, in the faintest ink
-                    // the palette has, on no fill at all. Colour alone still marks the half that
-                    // is live, and the shape of the grid is still one triangle to work in.
+                    // <b>The echo is back, quietly - but not so quietly it is not there.</b>
+                    // Drawn at full strength it was four hundred and eighty letters on a screen
+                    // holding two hundred and thirty-one decisions, every one of them reading as
+                    // something to check. Drawn not at all - which is what this was - a row could
+                    // no longer be read across, and reading a row is what a matrix is for in
+                    // front of a client. It was then drawn in the faintest ink the palette has,
+                    // at fifty-five per cent on top of that: two to one against the sheet, which
+                    // is a mark that survives neither a projector nor a laptop at an angle nor a
+                    // printed page - so the argument for it and the drawing of it disagreed. The
+                    // ink alone, at its own strength, is four and a half to one: subordinate to
+                    // the semibold letters of the live half without being invisible.
                     cell.Background = System.Windows.Media.Brushes.Transparent;
-                    cell.Opacity = 1.0;
+                    cell.Opacity = Dimmed(symbol);
 
                     cell.Child = symbol == null
                         ? null
@@ -2064,7 +2309,6 @@ namespace CamelWorks.UI.Views
                             FontSize = 11,
                             HorizontalAlignment = HorizontalAlignment.Center,
                             VerticalAlignment = VerticalAlignment.Center,
-                            Opacity = 0.55,
                         }.Wearing("Faint");
 
                     var pair = _board.MirrorOf(row, column);
@@ -2076,10 +2320,11 @@ namespace CamelWorks.UI.Views
                           + "A matrix is mirrored, so this pair is only ever run once. Putting a "
                           + "symbol here still puts it in both.";
 
+                    Named(cell);
                     return;
                 }
 
-                cell.Opacity = 1.0;
+                cell.Opacity = Dimmed(symbol);
 
                 var text = new TextBlock
                 {
@@ -2110,17 +2355,21 @@ namespace CamelWorks.UI.Views
 
                 if (MatrixBoard.IsNotRequired(symbol))
                 {
-                    // No fill, muted ink, one glyph. Three states on two channels, so it still
-                    // reads on a projector, in greyscale and on the printed sheet - where a cell
-                    // told apart only by its colour is a cell told apart by nothing.
-                    cell.Background = System.Windows.Media.Brushes.Transparent;
+                    // <b>A closed decision must not look like an open one.</b> This was a white
+                    // cell carrying a five-pixel dash in the faintest ink on the screen, beside
+                    // undecided cells that are white and carry nothing - the two states in the
+                    // grid that mean opposite things, drawn as the least separable pair on it.
+                    // A flat grey ground and a full-weight dash make the scan work the way the
+                    // job does: white is what is left to do.
+                    cell.Tint(Border.BackgroundProperty, "Nav");
 
                     cell.Child = new TextBlock
                     {
                         Text = MatrixBoard.NotRequired,
+                        FontWeight = FontWeights.SemiBold,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
-                    }.Wearing("Hint");
+                    }.Wearing("Muted");
 
                     cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled
                                    + " — not required, agreed. No test is made. Delete empties "
@@ -2149,9 +2398,34 @@ namespace CamelWorks.UI.Views
                     cell.ToolTip = at + " · the legend does not say what " + Quoted(symbol)
                                    + " means, so this cell makes no test.";
                 }
+                else if (!meaning.Enabled)
+                {
+                    // <b>A symbol that builds nothing is the most dangerous state on the
+                    // screen, and it was the least visible.</b> Off, a cell went from one pale
+                    // fill to another one two per cent away from it: forty cells stopped meaning
+                    // anything, the grid still read as handled, and nothing said so. Struck
+                    // through, on the grey that carries every other "this makes no test", it is
+                    // the same fact the tick in the inspector states.
+                    cell.Tint(Border.BackgroundProperty, "Nav");
+
+                    text.TextDecorations = TextDecorations.Strikethrough;
+                    text.Wearing("Muted");
+
+                    cell.ToolTip = at + " · "
+                                   + (self
+                                       ? row.Titled + " against itself"
+                                       : row.Titled + " against " + column.Titled)
+                                   + " — " + Quoted(symbol) + " is turned off in the legend, so "
+                                   + "this pair builds no test. Tick “Build tests from this "
+                                   + "symbol” to bring it back.";
+                }
                 else
                 {
-                    cell.Tint(Border.BackgroundProperty, meaning.Enabled ? "AccentWash" : "Nav");
+                    // Its own wash, by where it sits in the legend. The letter stays, so the
+                    // cell reads in greyscale, on a projector and to anybody who does not see
+                    // these hues apart - colour is the channel that makes the pattern scannable,
+                    // never the one that carries the meaning.
+                    cell.Background = Skin.Symbol(Hue(symbol));
 
                     if (self) text.FontStyle = FontStyles.Italic;
 
@@ -2160,12 +2434,61 @@ namespace CamelWorks.UI.Views
                                        ? row.Titled + " against itself"
                                        : row.Titled + " against " + column.Titled)
                                    + " — " + MatrixNaming.Worded(meaning.Test) + " at "
-                                   + Millimetres(meaning.Tolerance)
-                                   + (meaning.Enabled ? string.Empty : ", turned off");
+                                   + Millimetres(meaning.Tolerance);
                 }
 
                 cell.Child = text;
+
+                Named(cell);
             }
+
+            /// <summary>
+            /// What a cell is, for anything reading the screen out loud.
+            ///
+            /// The tip already says it, in the words somebody would want; a tip needs a hover,
+            /// and a hover is the one thing a narrator's user cannot do.
+            /// </summary>
+            /// <param name="cell">The cell.</param>
+            private static void Named(Border cell) =>
+                System.Windows.Automation.AutomationProperties.SetName(
+                    cell, cell.ToolTip as string ?? string.Empty);
+
+            /// <summary>
+            /// Where one symbol sits in the legend, which is the wash it is drawn on.
+            ///
+            /// A symbol the legend has never heard of is drawn in the red of an unexplained
+            /// cell rather than on a wash, so it never reaches here; -1 is the safe answer for
+            /// the reserved mark, which is not a legend entry either.
+            /// </summary>
+            /// <param name="symbol">The symbol in the cell.</param>
+            private int Hue(string? symbol)
+            {
+                if (symbol == null) return 0;
+
+                for (var at = 0; at < _legend.Symbols.Count; at++)
+                    if (string.Equals(_legend.Symbols[at].Symbol, symbol, StringComparison.OrdinalIgnoreCase))
+                        return at;
+
+                return 0;
+            }
+
+            /// <summary>
+            /// How strongly a cell is drawn while one symbol is being looked for.
+            ///
+            /// <b>"Eighteen cells carrying it" and no way to see them.</b> Pressing a symbol said
+            /// how many cells used it and then left the reader to find them by eye on a grid of
+            /// two hundred. Everything that is not the symbol on the panel drops back while it is
+            /// showing, so the eighteen are the only thing at full strength - and nothing is
+            /// hidden, moved or filtered out, so the shape of the matrix is still the matrix.
+            /// </summary>
+            /// <param name="symbol">What is in the cell.</param>
+            private double Dimmed(string? symbol) =>
+                _lit == null || string.Equals(_lit, symbol, StringComparison.OrdinalIgnoreCase)
+                    ? 1.0
+                    : 0.22;
+
+            /// <summary>The symbol being looked for, or null when none is.</summary>
+            private string? _lit;
 
             /// <summary>Repaint one cell where it stands, and nothing else.</summary>
             private void Repaint(MatrixLine row, MatrixLine column)
@@ -2213,7 +2536,29 @@ namespace CamelWorks.UI.Views
                     ? null
                     : "First one: " + Quoted(plan.Tests[0].Name);
 
+                Warnings();
                 RedrawProgress();
+            }
+
+            /// <summary>
+            /// What the blue button has to say for itself before it is pressed.
+            ///
+            /// Counted from the lines themselves rather than from a full sanity check, because
+            /// this runs on every keystroke and a sanity check asks the document what it holds.
+            /// A row pointing at nothing is the fault that check finds most often and the only
+            /// one that is free to spot from here.
+            /// </summary>
+            private void Warnings()
+            {
+                var lost = 0;
+
+                foreach (var line in _board.Rows) if (line.IsUnbacked) lost++;
+                foreach (var line in _board.Columns) if (line.IsUnbacked) lost++;
+
+                _build.ToolTip = lost == 0
+                    ? "Write the tests this matrix asks for into the document."
+                    : Ui.Count(lost, "row or column") + " points at nothing this model has, so "
+                      + "their cells build no tests. Press the magnifier to see which.";
             }
 
             /// <summary>
@@ -2234,6 +2579,7 @@ namespace CamelWorks.UI.Views
                 var live = 0;
                 var done = 0;
                 var ruled = 0;
+                var mute = 0;
 
                 foreach (var row in _board.Rows)
                 foreach (var column in _board.Columns)
@@ -2251,7 +2597,15 @@ namespace CamelWorks.UI.Views
                     // every pair has been given a test.
                     done++;
 
-                    if (MatrixBoard.IsNotRequired(held)) ruled++;
+                    if (MatrixBoard.IsNotRequired(held)) { ruled++; continue; }
+
+                    // <b>Counted apart, because the bar cannot tell the truth about them.</b> A
+                    // cell whose symbol is turned off is decided - somebody put it there - and
+                    // builds nothing, so a bar that counts it as done says the matrix is finished
+                    // while forty pairs go untested. It stays in "decided" and is named here.
+                    var meaning = _legend.Meaning(held);
+
+                    if (meaning != null && !meaning.Enabled) mute++;
                 }
 
                 _progress.Children.Add(Ui.Eyebrow("Decided"));
@@ -2287,6 +2641,17 @@ namespace CamelWorks.UI.Views
                 if (ruled > 0)
                     _progress.Children.Add(Ui.Small(Ui.Count(ruled, "of them ruled out")));
 
+                if (mute > 0)
+                {
+                    var off = Ui.Small(Ui.Count(mute, "of them")
+                        + " carry a symbol that is turned off, so they build no test");
+
+                    off.TextWrapping = TextWrapping.Wrap;
+                    off.Tint(TextBlock.ForegroundProperty, "AmberTx");
+
+                    _progress.Children.Add(off);
+                }
+
                 if (left > 0)
                 {
                     var go = Ui.Quiet("Go to the first open one", Undecided);
@@ -2296,6 +2661,59 @@ namespace CamelWorks.UI.Views
 
                     _progress.Children.Add(go);
                 }
+            }
+
+            /// <summary>
+            /// Walk the cursor to the next cell carrying one symbol, wrapping at the end.
+            ///
+            /// It does not touch what the inspector is showing, so the symbol stays on the panel
+            /// and its cells stay lit while somebody walks them - which is the whole gesture:
+            /// "show me every clearance" is asked once and answered as many times as there are
+            /// clearances.
+            /// </summary>
+            /// <param name="symbol">The symbol to look for.</param>
+            private void Stepping(string symbol)
+            {
+                var cells = _board.Rows.Count * _board.Columns.Count;
+
+                if (cells == 0) return;
+
+                var from = Math.Max(0, _atRow) * _board.Columns.Count + Math.Max(0, _atColumn);
+
+                for (var step = 1; step <= cells; step++)
+                {
+                    var at = (from + step) % cells;
+                    var r = at / _board.Columns.Count;
+                    var c = at % _board.Columns.Count;
+
+                    if (!string.Equals(_board.At(_board.Rows[r], _board.Columns[c]), symbol,
+                                       StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    Go(r, c);
+                    return;
+                }
+            }
+
+            /// <summary>
+            /// Move the cursor without disturbing what the inspector is showing.
+            ///
+            /// <see cref="Land"/> is what a press on a cell does and it clears the panel, which
+            /// is right for a press and wrong for a tool that is walking the grid on the panel's
+            /// behalf.
+            /// </summary>
+            /// <param name="down">Which row.</param>
+            /// <param name="across">Which column.</param>
+            private void Go(int down, int across)
+            {
+                _atRow = down;
+                _atColumn = across;
+                _markRow = -1;
+                _markColumn = -1;
+
+                RedrawRing();
+                Bring();
+                RedrawStrip();
             }
 
             /// <summary>Put the cursor on the first pair nobody has ruled on.</summary>
@@ -2450,10 +2868,16 @@ namespace CamelWorks.UI.Views
             {
                 Remember(what: "adding a column");
 
-                _board.AddColumn(new MatrixLine("New column", Next(_board.Columns)));
+                var made = new MatrixLine("New column", Next(_board.Columns));
+
+                _board.AddColumn(made);
 
                 Seed();
                 Redraw();
+
+                // Straight into the inspector, where its name is: a column called "New column"
+                // is a column somebody has to go and find before they can say what it is.
+                Pick(made, rows: false);
             }
 
             /// <summary>The next number in a list, when the list is numbered at all.</summary>
@@ -2836,7 +3260,8 @@ namespace CamelWorks.UI.Views
                         at < 9 ? (at + 1).ToString(CultureInfo.InvariantCulture) : one.Symbol,
                         armed,
                         one.Enabled,
-                        () => { Arm(one); Show(one); }));
+                        () => { Arm(one); Show(one); },
+                        hue: at));
                 }
 
                 // The two marks that are not symbols: one rules a pair out on purpose, the
@@ -2860,8 +3285,9 @@ namespace CamelWorks.UI.Views
             /// <param name="armed">True while it is the one on the brush.</param>
             /// <param name="live">False for a symbol that is turned off, and for the cross.</param>
             /// <param name="onPress">Arms it.</param>
+            /// <param name="hue">Where it sits in the legend, or -1 for the marks that are not in it.</param>
             private UIElement Swatch(string mark, string kind, string says, string stroke,
-                                     bool armed, bool live, Action onPress)
+                                     bool armed, bool live, Action onPress, int hue = -1)
             {
                 var key = new Border
                 {
@@ -2883,6 +3309,14 @@ namespace CamelWorks.UI.Views
 
                 var line = new DockPanel { LastChildFill = true };
 
+                var letter = new TextBlock
+                {
+                    Text = mark,
+                    FontWeight = FontWeights.SemiBold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
                 var swatch = new Border
                 {
                     Width = 24,
@@ -2890,16 +3324,21 @@ namespace CamelWorks.UI.Views
                     CornerRadius = new CornerRadius(5),
                     Margin = new Thickness(0, 0, 8, 0),
                     VerticalAlignment = VerticalAlignment.Center,
-                    Child = new TextBlock
-                    {
-                        Text = mark,
-                        FontWeight = FontWeights.SemiBold,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                    },
+                    Child = letter,
                 };
 
-                swatch.Tint(Border.BackgroundProperty, live ? "AccentWash" : "Nav");
+                // The key carries the same wash the cells do, because a key that is not drawn
+                // the way the thing it explains is drawn is not a key.
+                if (live && hue >= 0) swatch.Background = Skin.Symbol(hue);
+                else swatch.Tint(Border.BackgroundProperty, live ? "AccentWash" : "Nav");
+
+                // And a symbol that is turned off is struck through here as well as in the grid,
+                // so the palette and the cells agree about what builds nothing.
+                if (!live && hue >= 0)
+                {
+                    letter.TextDecorations = TextDecorations.Strikethrough;
+                    letter.Wearing("Muted");
+                }
 
                 DockPanel.SetDock(swatch, Dock.Left);
                 line.Children.Add(swatch);
@@ -2955,6 +3394,11 @@ namespace CamelWorks.UI.Views
                     onPress();
                 });
 
+                Reachable(key, mark + ", " + kind + ", " + says
+                               + (stroke.Length == 0 ? string.Empty : ". Key " + stroke)
+                               + (armed ? ". On the brush." : string.Empty),
+                          onPress);
+
                 return key;
             }
 
@@ -2975,7 +3419,22 @@ namespace CamelWorks.UI.Views
 
                 if (symbol != null) _picked = null;
 
+                Lighting(symbol == null || MatrixBoard.IsNotRequired(symbol.Symbol)
+                    ? null
+                    : symbol.Symbol);
+
                 RedrawInspector();
+            }
+
+            /// <summary>Light every cell carrying one symbol, and drop the rest back.</summary>
+            /// <param name="symbol">The symbol, or null to put them all back to full strength.</param>
+            private void Lighting(string? symbol)
+            {
+                if (string.Equals(_lit, symbol, StringComparison.Ordinal)) return;
+
+                _lit = symbol;
+
+                RepaintAll();
             }
 
             // ---------------------------------------------------------------------------
@@ -3021,7 +3480,13 @@ namespace CamelWorks.UI.Views
 
                 if (_atRow >= 0 && _atRow < _board.Rows.Count
                     && _atColumn >= 0 && _atColumn < _board.Columns.Count)
-                    Say(Ui.Small("Cursor " + Where(_board.Rows[_atRow], _board.Columns[_atColumn])), 16);
+                    Say(Ui.Small(Blocked
+                        ? "Block " + Where(_board.Rows[Math.Min(_atRow, _markRow)],
+                                           _board.Columns[Math.Min(_atColumn, _markColumn)])
+                          + " to " + Where(_board.Rows[Math.Max(_atRow, _markRow)],
+                                           _board.Columns[Math.Max(_atColumn, _markColumn)])
+                          + " — type a symbol for all of it"
+                        : "Cursor " + Where(_board.Rows[_atRow], _board.Columns[_atColumn])), 16);
 
                 Say(Ui.Loose(_count.Wearing("Hint")), 16);
 
@@ -3032,6 +3497,16 @@ namespace CamelWorks.UI.Views
                     _scroll.ScrollToBottom();
                     _naming.Focus();
                 }), 16);
+
+                // <b>The twin the columns never got.</b> The plus that adds one sits past the
+                // last column of the band, which on any matrix wide enough to scroll is off the
+                // right-hand edge of the screen - the same fault the rows were given this link
+                // to fix.
+                Say(Ui.Quiet("Add a column", () =>
+                {
+                    AddColumn();
+                    _scroll.ScrollToRightEnd();
+                }), 4);
 
                 Say(Saying(), 16);
 
@@ -3120,9 +3595,19 @@ namespace CamelWorks.UI.Views
                     idle.Margin = new Thickness(0, 4, 0, 0);
 
                     _inspector.Children.Add(idle);
+
+                    Verbs("Do to the matrix",
+                        Doable(Glyphs.Onward, "Go to the first pair nobody has ruled on",
+                               Undecided));
                 }
 
-                // A strip with nothing on it is a line across the panel for no reason.
+                // <b>It used to collapse when it had nothing on it, and that moved the
+                // palette.</b> The panel docks the palette above the progress and below this,
+                // so a strip that comes and going between a cell and a row shifted the keys
+                // thirty pixels every time somebody moved between the two - and the palette's
+                // whole argument for living there is that the hand finds it in the same place.
+                // Every page carries verbs now, so it is always there; the guard stays for the
+                // one frame before the first draw.
                 _actsPane.Visibility = _acts.Children.Count == 0
                     ? Visibility.Collapsed
                     : Visibility.Visible;
@@ -3165,6 +3650,36 @@ namespace CamelWorks.UI.Views
                                                                  Action? onPress,
                                                                  bool danger = false) =>
                 Ui.Icon(glyph, tip, onPress, danger ? "RedTx" : "Muted");
+
+            /// <summary>
+            /// The verbs for whatever the panel is showing, in one row that never rearranges.
+            ///
+            /// <b>The strip used to reorder itself under the hand.</b> The fill only appeared
+            /// while a symbol was armed and the row skipped whatever was not there, so arming a
+            /// brush moved clear, duplicate and - the one that matters - the bin one place to
+            /// the right. A verb that is not available now is drawn in its own place, greyed;
+            /// nothing shuffles, and the destroyer is behind a gap of its own so the press that
+            /// misses it does nothing rather than something.
+            ///
+            /// And the row says what it acts on. Sitting between a hairline and the palette it
+            /// read as palette furniture, which is the wrong owner for five verbs about a row.
+            /// </summary>
+            /// <param name="label">What these verbs act on.</param>
+            /// <param name="buttons">The verbs, with null wherever a gap belongs.</param>
+            private void Verbs(string label, params UIElement?[] buttons)
+            {
+                var said = Ui.Small(label);
+
+                said.Margin = new Thickness(0, 0, 0, 2);
+                _acts.Children.Add(said);
+
+                var row = new UIElement[buttons.Length];
+
+                for (var at = 0; at < buttons.Length; at++)
+                    row[at] = buttons[at] ?? new Border { Width = 12 };
+
+                _acts.Children.Add(Ui.Across(row));
+            }
 
             /// <summary>A row or a column: what it is called, and what it points at.</summary>
             /// <param name="line">The row or column.</param>
@@ -3360,10 +3875,13 @@ namespace CamelWorks.UI.Views
                     });
                 }
 
-                if (_brush != null)
-                    filling = Doable(Glyphs.Add,
-                        "Fill the rest of this " + what + " with " + Quoted(_brush.Symbol), () =>
+                filling = Doable(Glyphs.Sweep,
+                    _brush == null
+                        ? "Fill the rest of this " + what + " — arm a symbol on the palette first"
+                        : "Fill the rest of this " + what + " with " + Quoted(_brush.Symbol), () =>
                     {
+                        if (_brush == null) return;
+
                         Remember(what: "filling the rest of that " + what);
 
                         var laid = 0;
@@ -3380,11 +3898,18 @@ namespace CamelWorks.UI.Views
                             laid++;
                         }
 
-                        Reported(laid, Quoted(_brush.Symbol) + " put in",
+                        Reported(laid, Quoted(_brush!.Symbol) + " put in",
                                  "empty cell of this " + what);
                     });
 
-                var clearing = Doable(Glyphs.Close, "Clear the whole " + what, () =>
+                // Its own place in the row whether or not there is anything to fill with, so
+                // arming a symbol does not move the four buttons beside it.
+                filling.IsEnabled = _brush != null;
+
+                // <b>Red, because it is the button that takes an afternoon back.</b> Clearing a
+                // whole line wipes every decision on it and was drawn as a neutral grey cross,
+                // indistinguishable from duplicate beside it.
+                var clearing = Doable(Glyphs.Eraser, "Clear every cell of this " + what, () =>
                 {
                     Remember(what: "clearing that " + what);
 
@@ -3403,7 +3928,7 @@ namespace CamelWorks.UI.Views
                     }
 
                     Reported(cleared, "Cleared", "cell of this " + what);
-                });
+                }, danger: true);
 
                 // <b>Twenty disciplines are rarely twenty different things.</b> Half a matrix is
                 // the same package split by level or by area, and typing the whole row again to
@@ -3446,10 +3971,7 @@ namespace CamelWorks.UI.Views
                     Redraw();
                 }, danger: true);
 
-                // Across, which is the house way of laying a row out and skips whatever is not
-                // there - so the fill appears only when something is on the brush, without the
-                // row being built two different ways.
-                _acts.Children.Add(Ui.Across(elsewhere, filling, clearing, copying, removing));
+                Verbs("Do to this " + what, elsewhere, filling, copying, null, clearing, removing);
             }
 
             /// <summary>One symbol: what it means, which every cell carrying it follows.</summary>
@@ -3491,7 +4013,10 @@ namespace CamelWorks.UI.Views
                     if (string.Equals(cell.Symbol, symbol.Symbol, StringComparison.OrdinalIgnoreCase))
                         using_++;
 
-                _inspector.Children.Add(Ui.Small(Ui.Count(using_, "cell") + " carrying it"));
+                _inspector.Children.Add(Ui.Small(Ui.Count(using_, "cell") + " carrying it"
+                    + (using_ == 0
+                        ? "."
+                        : ", lit in the grid while this is showing.")));
 
                 var gap = new Border { Height = 8 };
 
@@ -3512,11 +4037,20 @@ namespace CamelWorks.UI.Views
                                          + ". Undo takes it back."));
                         }));
 
-                _acts.Children.Add(Ui.Across(everywhere,
+                // <b>"Eighteen cells carrying it" was a number and a dead end.</b> Every cell
+                // that has it is already lit; this walks the cursor from one to the next, which
+                // is the other half of finding something on a grid too big to see at once.
+                var stepping = Doable(Glyphs.Find,
+                    "Go to the next cell carrying " + Quoted(symbol.Symbol),
+                    () => Stepping(symbol.Symbol));
+
+                stepping.IsEnabled = using_ > 0;
+
+                Verbs("Do to this symbol", stepping, everywhere, null,
                     Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol) + " out of the legend",
                         () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
                                     drop: true),
-                        danger: true)));
+                        danger: true));
             }
 
             /// <summary>One cell, and the symbols that can go in it without a menu.</summary>
@@ -3544,71 +4078,176 @@ namespace CamelWorks.UI.Views
                     _inspector.Children.Add(mirrored);
                 }
 
-                _inspector.Children.Add(Ui.Small("What is in it"));
-
-                var gap = new Border { Height = 5 };
-
-                _inspector.Children.Add(gap);
-
-                foreach (var symbol in _legend.Symbols)
+                // <b>The palette was drawn twice, two hundred pixels apart.</b> This page built
+                // the same six keys, out of the same component, above the real palette that was
+                // still on the screen underneath it - and the two behaved differently, one
+                // setting this cell and one arming the brush. One key, one meaning: the palette
+                // below is the palette, and this says what is in the cell and how to change it.
+                var held = new Border
                 {
-                    var one = symbol;
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(9, 7, 9, 8),
+                    Margin = new Thickness(0, 0, 0, 8),
+                };
 
-                    _inspector.Children.Add(Swatch(
-                        one.Symbol,
-                        MatrixNaming.Worded(one.Test),
-                        Millimetres(one.Tolerance)
-                        + (string.Equals(one.Symbol, here, StringComparison.OrdinalIgnoreCase)
-                            ? " · in this cell" : string.Empty),
-                        string.Empty,
-                        string.Equals(one.Symbol, here, StringComparison.OrdinalIgnoreCase),
-                        one.Enabled,
-                        () =>
-                        {
-                            Remember(what: "putting " + Quoted(one.Symbol) + " in a cell");
-                            _board.Set(row, column, one.Symbol);
-                            Repaint(row, column);
-                            RedrawInspector();
-                        }));
-                }
+                held.Tint(Border.BorderBrushProperty, "Bd");
+                held.Tint(Border.BackgroundProperty, "Card");
 
-                _inspector.Children.Add(Swatch(MatrixBoard.NotRequired, "Not required",
-                    "agreed, and no test is made", string.Empty,
-                    MatrixBoard.IsNotRequired(here), false, () =>
-                    {
-                        Remember(what: "ruling out a pair");
-                        _board.Set(row, column, MatrixBoard.NotRequired);
-                        Repaint(row, column);
-                        RedrawInspector();
-                    }));
+                var meaning = here == null ? null : _legend.Meaning(here);
 
-                _inspector.Children.Add(Swatch("×", "Not decided", "empties the cell",
-                    string.Empty, here == null, false, () =>
-                    {
-                        Remember(what: "clearing a cell");
-                        _board.Set(row, column, null);
-                        Repaint(row, column);
-                        RedrawInspector();
-                    }));
+                var says = Ui.Stack();
+
+                says.Children.Add(new TextBlock
+                {
+                    Text = here == null
+                        ? "Nothing yet"
+                        : MatrixBoard.IsNotRequired(here)
+                            ? "Not required"
+                            : Quoted(here) + (meaning == null
+                                ? " — not in the legend"
+                                : " — " + MatrixNaming.Worded(meaning.Test)),
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                }.Wearing("Body"));
+
+                var under = Ui.Small(here == null
+                    ? "Nobody has ruled on this pair."
+                    : MatrixBoard.IsNotRequired(here)
+                        ? "Agreed, and no test is made."
+                        : meaning == null
+                            ? "Give it a meaning on the palette, or this cell makes no test."
+                            : Millimetres(meaning.Tolerance)
+                              + (meaning.Enabled ? string.Empty : " · turned off, so it builds nothing"));
+
+                under.TextWrapping = TextWrapping.Wrap;
+                says.Children.Add(under);
+
+                held.Child = says;
+                _inspector.Children.Add(held);
+
+                var how = Ui.Small("Type its key with the cursor in the grid, or press it on the "
+                                   + "palette below and click. Shift and an arrow takes a block.");
+
+                how.TextWrapping = TextWrapping.Wrap;
+                _inspector.Children.Add(how);
+
+                var ruling = Doable(Glyphs.Compact, "Rule this pair out — agreed, and no test", () =>
+                {
+                    Remember(what: "ruling out a pair");
+                    _board.Set(row, column, MatrixBoard.NotRequired);
+                    Repaint(row, column);
+                    RedrawInspector();
+                    Recount();
+                });
+
+                ruling.IsEnabled = !MatrixBoard.IsNotRequired(here);
+
+                var emptying = Doable(Glyphs.Eraser, "Empty it back to undecided", () =>
+                {
+                    Remember(what: "clearing a cell");
+                    _board.Set(row, column, null);
+                    Repaint(row, column);
+                    RedrawInspector();
+                    Recount();
+                }, danger: true);
+
+                emptying.IsEnabled = here != null;
+
+                var onward = Doable(Glyphs.Onward, "Go to the next pair nobody has ruled on",
+                                    Undecided);
+
+                Verbs("Do to this cell", ruling, onward, null, emptying);
             }
 
             // ---------------------------------------------------------------------------
             // The keyboard
             // ---------------------------------------------------------------------------
 
-            /// <summary>Draw the ring where the cursor is.</summary>
+            /// <summary>Draw the ring where the cursor is, and the pane over the block.</summary>
             private void RedrawRing()
             {
                 if (_atRow < 0 || _atColumn < 0
                     || _atRow >= _board.Rows.Count || _atColumn >= _board.Columns.Count)
                 {
                     _ring.Visibility = Visibility.Collapsed;
+                    _range.Visibility = Visibility.Collapsed;
                     return;
                 }
 
                 Grid.SetRow(_ring, _atRow);
                 Grid.SetColumn(_ring, _atColumn);
                 _ring.Visibility = Visibility.Visible;
+
+                if (!Blocked)
+                {
+                    _range.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                Grid.SetRow(_range, Math.Min(_atRow, _markRow));
+                Grid.SetColumn(_range, Math.Min(_atColumn, _markColumn));
+                Grid.SetRowSpan(_range, Math.Abs(_atRow - _markRow) + 1);
+                Grid.SetColumnSpan(_range, Math.Abs(_atColumn - _markColumn) + 1);
+                _range.Visibility = Visibility.Visible;
+            }
+
+            /// <summary>Whether a block of more than one cell is marked out.</summary>
+            private bool Blocked =>
+                _markRow >= 0 && _markColumn >= 0
+                && _markRow < _board.Rows.Count && _markColumn < _board.Columns.Count
+                && (_markRow != _atRow || _markColumn != _atColumn);
+
+            /// <summary>Let go of the block, if one is held.</summary>
+            private void Unblock()
+            {
+                if (_markRow < 0 && _markColumn < 0) return;
+
+                _markRow = -1;
+                _markColumn = -1;
+
+                RedrawRing();
+            }
+
+            /// <summary>
+            /// Take the block from wherever the cursor is to wherever it is being dragged to.
+            ///
+            /// The anchor is set once, on the first shifted press or arrow, and stays put while
+            /// the other corner moves - which is how a range behaves in every sheet there has
+            /// ever been.
+            /// </summary>
+            /// <param name="down">The row the other corner is on.</param>
+            /// <param name="across">The column it is on.</param>
+            private void Reach(int down, int across)
+            {
+                if (_markRow < 0 || _markColumn < 0)
+                {
+                    _markRow = _atRow < 0 ? down : _atRow;
+                    _markColumn = _atColumn < 0 ? across : _atColumn;
+                }
+
+                _atRow = Math.Max(0, Math.Min(_board.Rows.Count - 1, down));
+                _atColumn = Math.Max(0, Math.Min(_board.Columns.Count - 1, across));
+
+                Settled();
+            }
+
+            /// <summary>Every cell of the block, or the one under the cursor when there is none.</summary>
+            private IEnumerable<(MatrixLine Row, MatrixLine Column)> Block()
+            {
+                if (_atRow < 0 || _atColumn < 0
+                    || _atRow >= _board.Rows.Count || _atColumn >= _board.Columns.Count)
+                    yield break;
+
+                var fromRow = Blocked ? Math.Min(_atRow, _markRow) : _atRow;
+                var toRow = Blocked ? Math.Max(_atRow, _markRow) : _atRow;
+                var fromColumn = Blocked ? Math.Min(_atColumn, _markColumn) : _atColumn;
+                var toColumn = Blocked ? Math.Max(_atColumn, _markColumn) : _atColumn;
+
+                for (var r = fromRow; r <= toRow; r++)
+                for (var c = fromColumn; c <= toColumn; c++)
+                    yield return (_board.Rows[r], _board.Columns[c]);
             }
 
             /// <summary>Scroll until the cursor is on the screen.</summary>
@@ -3651,11 +4290,48 @@ namespace CamelWorks.UI.Views
                 {
                     if (e.Key == Key.Z) { Undo(); e.Handled = true; }
                     else if (e.Key == Key.Y) { Redo(); e.Handled = true; }
+                    else if (e.Key == Key.A) { Everything(); e.Handled = true; }
+                    else if (e.Key == Key.Home) { Step(-_board.Rows.Count, -_board.Columns.Count); e.Handled = true; }
+                    else if (e.Key == Key.End) { Step(_board.Rows.Count, _board.Columns.Count); e.Handled = true; }
 
                     return;
                 }
 
                 if (_atRow < 0 || _atColumn < 0) { _atRow = 0; _atColumn = 0; }
+
+                // <b>Alt and an arrow move the row itself.</b> Reordering was a drag and only a
+                // drag, so the one gesture that changes what the matrix is rather than what is in
+                // it was the one gesture nobody without a mouse could make.
+                if ((Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
+                {
+                    switch (e.Key)
+                    {
+                        case Key.Up: Shift(rows: true, by: -1); e.Handled = true; return;
+                        case Key.Down: Shift(rows: true, by: 1); e.Handled = true; return;
+                        case Key.Left: Shift(rows: false, by: -1); e.Handled = true; return;
+                        case Key.Right: Shift(rows: false, by: 1); e.Handled = true; return;
+                    }
+
+                    return;
+                }
+
+                // <b>Shift and an arrow take the block out.</b> The cursor moves as it always
+                // did; the corner it started from stays where it was, and everything between
+                // them is what the next symbol goes into.
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                {
+                    switch (e.Key)
+                    {
+                        case Key.Left: Reach(_atRow, _atColumn - 1); e.Handled = true; return;
+                        case Key.Right: Reach(_atRow, _atColumn + 1); e.Handled = true; return;
+                        case Key.Up: Reach(_atRow - 1, _atColumn); e.Handled = true; return;
+                        case Key.Down: Reach(_atRow + 1, _atColumn); e.Handled = true; return;
+                        case Key.Home: Reach(_atRow, 0); e.Handled = true; return;
+                        case Key.End: Reach(_atRow, _board.Columns.Count - 1); e.Handled = true; return;
+                        case Key.PageUp: Reach(_atRow - Screenful, _atColumn); e.Handled = true; return;
+                        case Key.PageDown: Reach(_atRow + Screenful, _atColumn); e.Handled = true; return;
+                    }
+                }
 
                 switch (e.Key)
                 {
@@ -3664,12 +4340,15 @@ namespace CamelWorks.UI.Views
                     case Key.Up: Step(-1, 0); e.Handled = true; return;
                     case Key.Down: Step(1, 0); e.Handled = true; return;
 
-                    case Key.Home: _atColumn = 0; Settled(); e.Handled = true; return;
-                    case Key.End:
-                        _atColumn = _board.Columns.Count - 1;
-                        Settled();
-                        e.Handled = true;
-                        return;
+                    // A grid built to be bigger than the window had no way of moving a
+                    // windowful at a time, which on a matrix of forty rows is forty presses.
+                    case Key.PageUp: Step(-Screenful, 0); e.Handled = true; return;
+                    case Key.PageDown: Step(Screenful, 0); e.Handled = true; return;
+
+                    case Key.Escape: Unblock(); e.Handled = true; return;
+
+                    case Key.Home: Step(0, -_board.Columns.Count); e.Handled = true; return;
+                    case Key.End: Step(0, _board.Columns.Count); e.Handled = true; return;
 
                     case Key.Delete:
                     case Key.Back:
@@ -3735,36 +4414,135 @@ namespace CamelWorks.UI.Views
             /// <param name="across">Columns to move.</param>
             private void Step(int down, int across)
             {
+                _markRow = -1;
+                _markColumn = -1;
+
                 _atRow = Math.Max(0, Math.Min(_board.Rows.Count - 1, _atRow + down));
                 _atColumn = Math.Max(0, Math.Min(_board.Columns.Count - 1, _atColumn + across));
 
                 Settled();
             }
 
-            /// <summary>The cursor has moved: draw it, scroll to it, and say where it is.</summary>
+            /// <summary>How many rows a page key moves, which is however many are on the screen.</summary>
+            private int Screenful =>
+                Math.Max(1, (int)Math.Floor(Math.Max(1, _scroll.ViewportHeight) / CellHigh) - 1);
+
+            /// <summary>Take the whole grid as one block.</summary>
+            private void Everything()
+            {
+                if (_board.Rows.Count == 0 || _board.Columns.Count == 0) return;
+
+                _atRow = 0;
+                _atColumn = 0;
+                _markRow = _board.Rows.Count - 1;
+                _markColumn = _board.Columns.Count - 1;
+
+                Settled();
+            }
+
+            /// <summary>
+            /// Move the row or column the cursor is on, one place, and follow it.
+            ///
+            /// The cursor moves with the line rather than staying where it was, so holding the
+            /// keys walks one row up a list the way dragging it does.
+            /// </summary>
+            /// <param name="rows">True to move the row, false the column.</param>
+            /// <param name="by">-1 for up or left, 1 for down or right.</param>
+            private void Shift(bool rows, int by)
+            {
+                var at = rows ? _atRow : _atColumn;
+                var count = rows ? _board.Rows.Count : _board.Columns.Count;
+                var to = at + by;
+
+                if (at < 0 || to < 0 || to >= count) return;
+
+                Remember(what: "moving that " + (rows ? "row" : "column"));
+
+                if (rows) { _board.MoveRow(at, to); _atRow = to; }
+                else { _board.MoveColumn(at, to); _atColumn = to; }
+
+                _markRow = -1;
+                _markColumn = -1;
+
+                Redraw();
+                Settled();
+            }
+
+            /// <summary>
+            /// The cursor has moved: draw it, scroll to it, and say where it is.
+            ///
+            /// <b>The panel follows the cursor, because there is only one selection.</b> It used
+            /// to refuse to redraw while a row was picked, so pressing ROW 4 and then arrowing
+            /// about the grid left the panel answering about row 4 while symbols went into cells
+            /// four rows away - two cursors disagreeing, with eleven-pixel type on the strip as
+            /// the only thing that knew. Moving the cursor is a touch like pressing a cell is,
+            /// and it lets go of whatever was held.
+            /// </summary>
             private void Settled()
             {
+                if (_picked != null || _pickedSymbol != null)
+                {
+                    _picked = null;
+                    _pickedSymbol = null;
+
+                    Lighting(null);
+
+                    RedrawAcross();
+                    RedrawDown();
+                }
+
                 RedrawRing();
                 Bring();
                 RedrawStrip();
-
-                if (_picked == null && _pickedSymbol == null) RedrawInspector();
+                RedrawInspector();
             }
 
-            /// <summary>Put a symbol in the cell under the cursor and step right, as a sheet does.</summary>
+            /// <summary>
+            /// Put a symbol in the cell under the cursor and step right, as a sheet does - or in
+            /// every cell of the block, which is the same gesture at the size the job works at.
+            /// </summary>
             /// <param name="symbol">The symbol, or null to empty it.</param>
             private void Lay(string? symbol)
             {
                 if (_atRow < 0 || _atColumn < 0
                     || _atRow >= _board.Rows.Count || _atColumn >= _board.Columns.Count) return;
 
-                var row = _board.Rows[_atRow];
-                var column = _board.Columns[_atColumn];
+                if (Blocked)
+                {
+                    var laid = 0;
+
+                    Remember(what: symbol == null
+                        ? "clearing a block of cells"
+                        : "putting " + Quoted(symbol) + " in a block of cells");
+
+                    foreach (var (row, column) in Block())
+                    {
+                        // The diagonal is left out of a block the way it is left out of every
+                        // other fill: a discipline against itself is a decision somebody makes
+                        // deliberately, one cell at a time.
+                        if (_board.IsSelfPair(row, column)) continue;
+                        if (string.Equals(_board.At(row, column), symbol, StringComparison.Ordinal)) continue;
+
+                        _board.Set(row, column, symbol);
+                        Repaint(row, column);
+                        laid++;
+                    }
+
+                    Reported(laid, symbol == null ? "Cleared" : Quoted(symbol) + " put in",
+                             "cell of the block");
+
+                    // The block stays, so a wrong symbol is one keystroke to correct rather than
+                    // a selection to make again.
+                    return;
+                }
+
+                var one = _board.Rows[_atRow];
+                var against = _board.Columns[_atColumn];
 
                 Remember(what: symbol == null ? "clearing a cell" : "putting " + Quoted(symbol) + " in a cell");
 
-                _board.Set(row, column, symbol);
-                Repaint(row, column);
+                _board.Set(one, against, symbol);
+                Repaint(one, against);
 
                 Step(0, 1);
             }
@@ -4113,14 +4891,6 @@ namespace CamelWorks.UI.Views
 
             private List<Parts.Entry> Sending() => new List<Parts.Entry>
             {
-                Parts.Entry.Saying("Check it against the model", Glyphs.Find,
-                    "Every source, against what this model actually has", Sanity),
-
-                Parts.Entry.Saying("See what would change", Glyphs.Compare,
-                    "The difference between this matrix and the tests already built", Difference),
-
-                Parts.Entry.Rule(),
-
                 Parts.Entry.Saying("Save it in this project", Glyphs.Save,
                     "So it is here next time this model is opened", Keep),
 
@@ -4357,6 +5127,12 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var open = 0;
+
+                foreach (var row in _board.Rows)
+                foreach (var column in _board.Columns)
+                    if (_board.IsKeptHalf(row, column) && _board.At(row, column) == null) open++;
+
                 Parts.Sure(_grid,
                     MatrixDiff.Count(lines, MatrixChange.Added) + " tests to write into this "
                     + "document, and "
@@ -4368,6 +5144,11 @@ namespace CamelWorks.UI.Views
                         ? string.Empty
                         : " " + Ui.Count(stopping, "row or column") + " points at something this "
                           + "model does not have, so its cells are skipped — check it first.")
+                    + (open == 0
+                        ? string.Empty
+                        : " " + Ui.Count(open, "pair") + " still has nobody's decision on it and "
+                          + "makes no test either way — building now builds the rest, and it can "
+                          + "be built again when they are settled.")
                     + (_folder.Length == 0 ? string.Empty : " They go in " + Quoted(_folder) + "."),
                     "Build them",
                     () => Write(making));

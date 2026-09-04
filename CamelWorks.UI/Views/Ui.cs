@@ -3960,6 +3960,12 @@ namespace CamelWorks.UI.Views
         /// <summary>Two crossing pairs: number them again.</summary>
         public const string Number = "M9,4 L7,20 M17,4 L15,20 M4,9 L20,9 M3,15 L19,15";
 
+        /// <summary>Pour it into what is empty: a fill, not another plus.</summary>
+        public const string Sweep = "M12,3 L12,13 M8,9 L12,13 L16,9 M4,17 L20,17 L20,20 L4,20 Z";
+
+        /// <summary>Rub it out: a clear, not another cross.</summary>
+        public const string Eraser = "M6.5,19 L3.5,15.5 L14,5 L19.5,11 L11,19 Z M9.5,19 L20.5,19";
+
         /// <summary>A folder with something going into it: move it there.</summary>
         public const string MoveIn = "M3,6.5 L9.5,6.5 L11.5,9 L21,9 L21,19 L3,19 Z M12,16 L12,10.5 M9.8,12.7 L12,10.5 L14.2,12.7";
 

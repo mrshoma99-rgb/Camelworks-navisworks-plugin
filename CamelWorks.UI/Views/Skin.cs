@@ -200,6 +200,23 @@ namespace CamelWorks.UI.Views
             return Sheet["Fam." + family] is Brush brush ? brush : Of("Muted");
         }
 
+        /// <summary>
+        /// The wash one symbol of a legend is drawn on, by where it sits in that legend.
+        ///
+        /// Position rather than a colour stored on the symbol: the legend's order is already
+        /// stable, already saved and already what the palette lists, so nothing new has to be
+        /// persisted, exported or reconciled when a client's workbook comes back. Eight of them,
+        /// wrapping - a legend of more than eight symbols is not a key anybody reads anyway, and
+        /// two symbols sharing a wash still carry different letters.
+        /// </summary>
+        /// <param name="at">Where the symbol sits in the legend, from zero.</param>
+        public static Brush Symbol(int at)
+        {
+            var letter = (char)('A' + (((at % 8) + 8) % 8));
+
+            return Sheet["Sym." + letter] is Brush brush ? brush : Of("Nav");
+        }
+
         /// <summary>The text colour for a tone.</summary>
         /// <param name="tone">The tone.</param>
         public static Brush Ink(Tone tone) => tone switch
@@ -297,6 +314,22 @@ namespace CamelWorks.UI.Views
 
             ("ConsoleBg",   "#0E1116", "#0A0C10"),
             ("ConsoleTx",   "#CFE3D5", "#BFE0C8"),
+
+            // <b>Eight washes for the legend's symbols, in the order the legend lists them.</b>
+            // Every symbol in the grid was drawn on the same pale blue, so the only thing telling
+            // a hard clash from a clearance anywhere on a matrix of two hundred cells was the
+            // shape of one letter. A matrix exists to be read as a pattern - all of MEP against
+            // structure is a clearance, and you should see that without reading - and a single
+            // fill made that impossible. Pale enough to carry the letter at full contrast, and
+            // separated by hue rather than by lightness so the letter is never the only channel.
+            ("Sym.A",       "#DCEAF8", "#1E2E3F"),
+            ("Sym.B",       "#DDF2E4", "#17311F"),
+            ("Sym.C",       "#FBEFD3", "#3A2F12"),
+            ("Sym.D",       "#EAE2F8", "#2A2340"),
+            ("Sym.E",       "#D6F0EF", "#12312F"),
+            ("Sym.F",       "#FADCE8", "#38202B"),
+            ("Sym.G",       "#E9F2CE", "#29331A"),
+            ("Sym.H",       "#E2E6EC", "#2B3138"),
 
             // The family hues lift in dark rather than staying put: a #0F766E teal that reads as a
             // considered green on white is a smudge on #23272E.
