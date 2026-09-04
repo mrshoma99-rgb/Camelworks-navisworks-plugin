@@ -400,7 +400,15 @@ namespace CamelWorks.Core.Tests
         public void ATestNoCellAsksForIsExtraRatherThanDeleted()
         {
             var lines = MatrixDiff.Between(Plan("A"),
-                new[] { Read("Steel vs Ducts", 0.01), Read("Something else", 0.01, "OTH", "XYZ") });
+                new[]
+                {
+                    Read("Steel vs Ducts", 0.01),
+
+                    // Its own id. A document never gives two tests the same one, and the
+                    // difference claims a test by its id so that one test can only ever answer
+                    // for one cell.
+                    Read("Something else", 0.01, "OTH", "XYZ", id: "t2"),
+                });
 
             Assert.Equal(1, MatrixDiff.Count(lines, MatrixChange.Unchanged));
             Assert.Equal(1, MatrixDiff.Count(lines, MatrixChange.Extra));
@@ -420,7 +428,105 @@ namespace CamelWorks.Core.Tests
             Assert.Contains("will not say", extra.What);
         }
 
-        private static MatrixPlan Plan(string symbol)
+        [Fact]
+        public void ChangingTheKindAltersTheTestRatherThanStrandingIt()
+        {
+            // The one that cost the most. A symbol moved from a hard clash to a clearance used
+            // to match nothing: the test carrying a fortnight of statuses fell into Extra and
+            // was never touched again, and a second test was made beside it.
+            var lines = MatrixDiff.Between(
+                Plan("A", MatrixTest.Clearance, 0.05),
+                new[] { Read("Steel vs Ducts", 0.01) });
+
+            var line = Assert.Single(lines);
+
+            Assert.Equal(MatrixChange.Altered, line.Change);
+            Assert.Equal("t1", line.TestId);
+            Assert.True(line.Reshapes);
+            Assert.Contains("clearance", line.What);
+            Assert.Equal(0, MatrixDiff.Count(lines, MatrixChange.Extra));
+        }
+
+        [Fact]
+        public void ARenameSaysItIsOnlyARename()
+        {
+            var line = Assert.Single(
+                MatrixDiff.Between(Plan("A"), new[] { Read("STR-01 vs MEP-02", 0.01) }));
+
+            Assert.True(line.Renames);
+            Assert.False(line.Reshapes);
+        }
+
+        [Fact]
+        public void ARetuneSaysItIsNotARename()
+        {
+            var line = Assert.Single(
+                MatrixDiff.Between(Plan("A"), new[] { Read("Steel vs Ducts", 0.05) }));
+
+            Assert.False(line.Renames);
+            Assert.True(line.Reshapes);
+        }
+
+        [Fact]
+        public void TwoKindsBetweenTheSameSetsAreStillTwoTests()
+        {
+            // The reason the exact match runs first. A hard clash and a clearance between the
+            // same two disciplines are two tests somebody meant to have, and the looser match
+            // must not collapse them into one.
+            var board = new MatrixBoard();
+
+            var row = board.AddRow(new MatrixLine("Steel", null, MatrixSource.SelectionSet("STR")));
+            var one = board.AddColumn(new MatrixLine("Ducts", null, MatrixSource.SelectionSet("MEP")));
+            var two = board.AddColumn(new MatrixLine("Ducts again", null, MatrixSource.SelectionSet("MEP")));
+
+            board.Set(row, one, "A");
+            board.Set(row, two, "B");
+
+            var plan = MatrixPlanner.Plan(board, new MatrixLegend(new[]
+            {
+                new MatrixSymbol("A", MatrixTest.Hard, 0.01, true),
+                new MatrixSymbol("B", MatrixTest.Clearance, 0.05, true),
+            }));
+
+            var lines = MatrixDiff.Between(plan, new[]
+            {
+                Read("Steel vs Ducts", 0.01),
+                Read("Steel vs Ducts again", 0.05, kind: "Clearance", id: "t2"),
+            });
+
+            Assert.Equal(2, MatrixDiff.Count(lines, MatrixChange.Unchanged));
+            Assert.Equal(0, MatrixDiff.Count(lines, MatrixChange.Extra));
+        }
+
+        [Fact]
+        public void OneDocumentTestIsOnlyEverClaimedOnce()
+        {
+            // Two cells asking for the same pair with different kinds, and one test in the
+            // document. The looser match may take it for one of them, never for both.
+            var board = new MatrixBoard();
+
+            var row = board.AddRow(new MatrixLine("Steel", null, MatrixSource.SelectionSet("STR")));
+            var one = board.AddColumn(new MatrixLine("Ducts", null, MatrixSource.SelectionSet("MEP")));
+            var two = board.AddColumn(new MatrixLine("Ducts again", null, MatrixSource.SelectionSet("MEP")));
+
+            board.Set(row, one, "A");
+            board.Set(row, two, "B");
+
+            var plan = MatrixPlanner.Plan(board, new MatrixLegend(new[]
+            {
+                new MatrixSymbol("A", MatrixTest.Hard, 0.01, true),
+                new MatrixSymbol("B", MatrixTest.Clearance, 0.05, true),
+            }));
+
+            var lines = MatrixDiff.Between(plan, new[] { Read("Steel vs Ducts", 0.01) });
+
+            Assert.Equal(1, MatrixDiff.Count(lines, MatrixChange.Unchanged));
+            Assert.Equal(1, MatrixDiff.Count(lines, MatrixChange.Added));
+            Assert.Equal(0, MatrixDiff.Count(lines, MatrixChange.Extra));
+        }
+
+        private static MatrixPlan Plan(string symbol, MatrixTest kind = MatrixTest.Hard,
+                                       double tolerance = 0.01)
         {
             var board = new MatrixBoard();
 
@@ -429,15 +535,19 @@ namespace CamelWorks.Core.Tests
 
             board.Set(row, column, symbol);
 
-            return MatrixPlanner.Plan(board, new MatrixLegend(new[] { new MatrixSymbol(symbol) }));
+            return MatrixPlanner.Plan(board, new MatrixLegend(new[]
+            {
+                new MatrixSymbol(symbol, kind, tolerance, true),
+            }));
         }
 
         private static ClashTestRead Read(string name, double tolerance,
-                                          string setA = "STR", string setB = "MEP") =>
+                                          string setA = "STR", string setB = "MEP",
+                                          string kind = "Hard", string id = "t1") =>
             new ClashTestRead(
-                new ClashTestInfo("t1", name, null, 0, 0),
+                new ClashTestInfo(id, name, null, 0, 0),
                 new ClashTestSides(setA, setB, Array.Empty<string>(), Array.Empty<string>(),
-                                   "Hard", tolerance),
+                                   kind, tolerance),
                 Array.Empty<ClashResultInfo>());
     }
 

@@ -251,6 +251,19 @@ namespace CamelWorks.Core.Abstractions
         /// <param name="name">Its new name, exactly.</param>
         bool RenameResult(string testId, string resultId, string name);
 
+        /// <summary>
+        /// Change an existing test's tolerance and kind, keeping the test and its results.
+        ///
+        /// <b>Why this is not delete-and-remake.</b> A matrix is edited all year and the results
+        /// are the work: statuses, assignments, comment trails, groups, a fortnight of review by
+        /// four people. Moving a legend from a hard clash at 10 mm to a clearance at 50 mm has
+        /// to reach the test that is already carrying that and change it where it stands.
+        /// </summary>
+        /// <param name="testId">The test.</param>
+        /// <param name="toleranceMetres">The tolerance it should now have, in metres.</param>
+        /// <param name="kind">The kind of test it should now be.</param>
+        bool Retune(string testId, double toleranceMetres, Clash.MatrixTest kind);
+
         /// <summary>Rename one test.</summary>
         /// <param name="testId">Which test.</param>
         /// <param name="name">The new name.</param>

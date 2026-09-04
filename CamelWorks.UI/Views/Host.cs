@@ -403,6 +403,9 @@ namespace CamelWorks.UI.Views
 
             public bool RenameResults(string testId, string prefix) => false;
 
+            public bool Retune(string testId, double toleranceMetres,
+                               CamelWorks.Core.Clash.MatrixTest kind) => false;
+
             public bool RenameTest(string testId, string name) => false;
 
             public bool DeleteTests(System.Collections.Generic.IReadOnlyList<string> testIds) => false;

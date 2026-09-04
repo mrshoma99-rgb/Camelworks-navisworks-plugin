@@ -3740,9 +3740,10 @@ namespace CamelWorks.UI.Views
                 }
 
                 Parts.Sure(_grid,
-                    Ui.Count(making.Count, "test") + " to write into this document — "
-                    + MatrixDiff.Count(lines, MatrixChange.Added) + " new and "
-                    + MatrixDiff.Count(lines, MatrixChange.Altered) + " changed. "
+                    MatrixDiff.Count(lines, MatrixChange.Added) + " tests to write into this "
+                    + "document, and "
+                    + MatrixDiff.Count(lines, MatrixChange.Altered) + " already there to change "
+                    + "where they stand, keeping their results. "
                     + MatrixDiff.Count(lines, MatrixChange.Unchanged) + " are already right and "
                     + "are left exactly as they are, with their results."
                     + (stopping == 0
@@ -3754,12 +3755,35 @@ namespace CamelWorks.UI.Views
                     () => Write(making));
             }
 
+            /// <summary>
+            /// Apply the difference: make what is new, and alter what is only different.
+            ///
+            /// <b>This used to make everything.</b> Every line the difference called Altered went
+            /// through Create, so changing one word of the naming pattern on a built matrix
+            /// wrote two hundred and thirty-one second tests beside the ones already carrying a
+            /// fortnight of statuses, assignments and comment trails - and nothing said so. The
+            /// whole reason the difference exists is to protect that work, and the button at the
+            /// end of it was throwing the difference away.
+            ///
+            /// A line that only needs renaming is renamed. A line whose tolerance or kind has
+            /// moved is changed where it stands, results and all. Only a line the document has
+            /// nothing for is made.
+            /// </summary>
+            /// <param name="making">The lines to act on.</param>
             private void Write(IReadOnlyList<MatrixLineChange> making)
             {
                 var made = 0;
+                var altered = 0;
                 var refused = new List<string>();
 
-                Ui.Working("Making the tests...", job =>
+                void Refused(string name, string what)
+                {
+                    if (refused.Count < 3)
+                        refused.Add(name + ": " + what + " — "
+                                    + (_session.Clash.LastProblem ?? "the host refused it"));
+                }
+
+                Ui.Working("Building the matrix...", job =>
                 {
                     var at = 0;
 
@@ -3769,29 +3793,63 @@ namespace CamelWorks.UI.Views
 
                         if (line.Plan == null) continue;
 
-                        var spec = line.Plan.Spec(_folder.Length == 0 ? null : _folder);
+                        if (line.Change == MatrixChange.Added)
+                        {
+                            var spec = line.Plan.Spec(_folder.Length == 0 ? null : _folder);
 
-                        if (_session.Clash.Create(spec) != null) made++;
-                        else if (refused.Count < 3)
-                            refused.Add(line.Name + ": "
-                                        + (_session.Clash.LastProblem ?? "the host refused it"));
+                            if (_session.Clash.Create(spec) != null) made++;
+                            else Refused(line.Name, "could not be made");
+
+                            continue;
+                        }
+
+                        if (line.TestId == null) continue;
+
+                        var done = true;
+
+                        if (line.Reshapes
+                            && !_session.Clash.Retune(line.TestId, line.Plan.Symbol.Tolerance,
+                                                      line.Plan.Symbol.Test))
+                        {
+                            Refused(line.Name, "its tolerance could not be changed");
+                            done = false;
+                        }
+
+                        // The rename last, so a test that could not be retuned still carries the
+                        // name it had while it is wrong, rather than the name of what it is not.
+                        if (done && line.Renames
+                            && !_session.Clash.RenameTest(line.TestId, line.Plan.Name))
+                        {
+                            Refused(line.Name, "could not be renamed");
+                            done = false;
+                        }
+
+                        if (done) altered++;
                     }
                 });
 
                 Quiet();
 
-                if (made > 0)
+                if (made + altered > 0)
                 {
                     _session.Record(ActivityKind.Regroup,
-                                    "built " + Ui.Count(made, "clash test") + " from the matrix");
+                                    "built " + Ui.Count(made, "clash test") + " from the matrix"
+                                    + (altered == 0
+                                        ? string.Empty
+                                        : " and changed " + Ui.Count(altered, "more")));
 
-                    Said(Ui.Done(Ui.Count(made, "test") + " written into the document. Open the "
-                                 + "Clash Manager to run them."), hold: true);
+                    Said(Ui.Done(
+                        (made == 0 ? string.Empty : Ui.Count(made, "test") + " written")
+                        + (made > 0 && altered > 0 ? ", and " : string.Empty)
+                        + (altered == 0
+                            ? string.Empty
+                            : Ui.Count(altered, "test") + " changed in place, results and all")
+                        + ". Open the Clash Manager to run them."), hold: true);
                 }
 
                 foreach (var problem in refused) Said(Ui.Problem(problem), hold: true);
 
-                if (made == 0 && refused.Count == 0)
+                if (made + altered == 0 && refused.Count == 0)
                     Said(Ui.Problem("Nothing was written."), hold: true);
             }
 

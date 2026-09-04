@@ -34,7 +34,22 @@ namespace CamelWorks.Core.Clash
         /// and a diff that thought it was would delete and remake every test on the job the
         /// first time somebody changed the naming pattern.
         /// </summary>
-        public string Pairing()
+        public string Pairing() => Sides() + "\u001f" + (int)Symbol.Test;
+
+        /// <summary>
+        /// What this test is between, and nothing else.
+        ///
+        /// <b>The kind is not part of what a test is between.</b> A pair tested hard and the
+        /// same pair tested as a clearance are the same two things being checked, so a legend
+        /// changed from one to the other has to find the test that already exists and alter it.
+        /// Folded into the fingerprint, as it was, the old test matched nothing, sat in the
+        /// document untouched with a fortnight of statuses on it, and a second test was made
+        /// beside it.
+        ///
+        /// The pairing above still carries the kind, because two cells asking for a hard test
+        /// and a clearance between the same two sets are two tests somebody meant to have.
+        /// </summary>
+        public string Sides()
         {
             var one = Row.Source.Fingerprint();
             var two = Column.Source.Fingerprint();
@@ -42,7 +57,7 @@ namespace CamelWorks.Core.Clash
             var first = string.CompareOrdinal(one, two) <= 0 ? one : two;
             var second = string.CompareOrdinal(one, two) <= 0 ? two : one;
 
-            return first + "\u001f" + second + "\u001f" + (int)Symbol.Test;
+            return first + "\u001f" + second;
         }
 
         /// <summary>What to hand the host.</summary>
