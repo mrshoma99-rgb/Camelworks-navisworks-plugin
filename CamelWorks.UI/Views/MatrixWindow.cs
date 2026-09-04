@@ -101,7 +101,19 @@ namespace CamelWorks.UI.Views
             /// undo, redo and - worst - "hide the options" off the right, which is the one control
             /// that gives the grid its width back.
             /// </summary>
+            /// <summary>
+            /// The band over the grid: what is going on, and what can be done about it.
+            ///
+            /// <b>Two panels, because they answer to different things.</b> One strip meant every
+            /// control sat wherever the sentence in front of it happened to end - so arming a
+            /// symbol, moving the cursor or picking a row slid Undo, Redo and the rest sideways
+            /// under the hand that was already reaching for them. What the screen is saying
+            /// changes; where a button is must not. The state reads from the left, the controls
+            /// are held against the right-hand edge, and neither moves the other.
+            /// </summary>
             private readonly WrapPanel _strip = new WrapPanel { Orientation = Orientation.Horizontal };
+
+            private readonly WrapPanel _verbs = new WrapPanel { Orientation = Orientation.Horizontal };
 
             private readonly Border _grid = new Border();
 
@@ -659,7 +671,7 @@ namespace CamelWorks.UI.Views
                 {
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     Padding = new Thickness(10, 5, 8, 5),
-                    Child = Ui.Loose(_strip),
+                    Child = Bar(),
                 };
 
                 bar.Tint(Border.BackgroundProperty, "Card2");
@@ -680,6 +692,22 @@ namespace CamelWorks.UI.Views
             /// the cells' own scroll slides them - so the columns stay over the cells they name
             /// and the rows stay beside them, however far either goes.
             /// </summary>
+            private UIElement Bar()
+            {
+                var bar = new DockPanel { LastChildFill = true };
+
+                _verbs.HorizontalAlignment = HorizontalAlignment.Right;
+                _verbs.VerticalAlignment = VerticalAlignment.Center;
+                _verbs.Margin = new Thickness(12, 0, 0, 0);
+
+                DockPanel.SetDock(_verbs, Dock.Right);
+                bar.Children.Add(Ui.Loose(_verbs));
+
+                bar.Children.Add(Ui.Loose(_strip));
+
+                return bar;
+            }
+
             private UIElement Frozen()
             {
                 var frame = new Grid();
@@ -1314,6 +1342,21 @@ namespace CamelWorks.UI.Views
 
                 _sheet.HorizontalAlignment = HorizontalAlignment.Left;
                 _sheet.VerticalAlignment = VerticalAlignment.Top;
+
+                // <b>The last row could not be scrolled clear of the horizontal bar.</b> The bar
+                // is drawn inside the viewport and takes its seventeen pixels off the bottom of
+                // it, so a sheet whose content ends exactly at its own last row has nowhere left
+                // to scroll to: wound fully down, the row nearest the bar is still sitting under
+                // it, cut in half. It is the box that makes rows that ends up there on a matrix
+                // of any size, which is the one thing on that band somebody needs to reach.
+                //
+                // A bar's worth of room past the end, always. The cells and the band beside them
+                // are slid by the same offset, so the extra range carries both: the row names
+                // and the typing box come up with the cells rather than lagging a bar behind
+                // them. Kept even when no bar is showing, because a grid wants a little space
+                // after its last row anyway, and a margin that appears and disappears with the
+                // bar is a layout pass that can ask for itself again.
+                _sheet.Margin = new Thickness(0, 0, 0, SystemParameters.HorizontalScrollBarHeight);
 
                 for (var c = 0; c <= _board.Columns.Count; c++)
                     _sheet.ColumnDefinitions.Add(new ColumnDefinition
@@ -4059,10 +4102,11 @@ namespace CamelWorks.UI.Views
             private void RedrawStrip()
             {
                 _strip.Children.Clear();
+                _verbs.Children.Clear();
 
                 if (_board.Rows.Count == 0 && _board.Columns.Count == 0) return;
 
-                void Say(UIElement said, double left = 0)
+                void Into(Panel panel, UIElement said, double left)
                 {
                     if (said is FrameworkElement held)
                     {
@@ -4070,8 +4114,14 @@ namespace CamelWorks.UI.Views
                         held.Margin = new Thickness(left, 0, 0, 0);
                     }
 
-                    _strip.Children.Add(said);
+                    panel.Children.Add(said);
                 }
+
+                // What is going on, on the left, where a sentence is read from.
+                void Say(UIElement said, double left = 0) => Into(_strip, said, left);
+
+                // What can be done, against the right-hand edge, in the same place every time.
+                void Does(UIElement said, double left = 12) => Into(_verbs, said, left);
 
                 // <b>A strip that narrates every press is a strip nobody reads.</b> It carried
                 // running commentary - how to use the brush, which row is in the panel, where
@@ -4122,40 +4172,42 @@ namespace CamelWorks.UI.Views
                                                   _board.Columns[Math.Max(_atColumn, _markColumn)])
                                  + " — type a symbol for all of it"), 16);
 
+                // The tally and whether it is saved are both state, and both belong with the
+                // rest of the state - on the left, where a sentence is read from.
                 Say(Ui.Loose(_count.Wearing("Hint")), 16);
+                Say(Saying(), 16);
 
+                // Everything from here is a control, and every one of them goes on the right.
                 // The box that makes rows is under the last one, which on a matrix of any size
                 // is off the bottom of the screen. This is how you get to it.
-                Say(Ui.Quiet("Add rows", () =>
+                Does(Ui.Quiet("Add rows", () =>
                 {
                     _scroll.ScrollToBottom();
                     _naming.Focus();
-                }), 16);
+                }), 0);
 
                 // <b>The twin the columns never got.</b> The plus that adds one sits past the
                 // last column of the band, which on any matrix wide enough to scroll is off the
                 // right-hand edge of the screen - the same fault the rows were given this link
                 // to fix.
-                Say(Ui.Quiet("Add a column", () =>
+                Does(Ui.Quiet("Add a column", () =>
                 {
                     AddColumn();
                     _scroll.ScrollToRightEnd();
                 }), 4);
-
-                Say(Saying(), 16);
 
                 // <b>Most of the keyboard was folklore.</b> The palette chips teach the digits
                 // and the cell page mentions shift and an arrow; Alt with an arrow to move a
                 // line existed only inside an accessibility name, so a screen reader taught it
                 // and a sighted user never learned it. For a screen whose speed argument is that
                 // a grid is filled from the keyboard, there was no reference anywhere.
-                Say(Ui.Quiet("Keys", Keys), 16);
+                Does(Ui.Quiet("Keys", Keys));
 
-                Say(Ui.Quiet(_sideOpen ? "Hide the options" : "Options", () =>
+                Does(Ui.Quiet(_sideOpen ? "Hide the options" : "Options", () =>
                 {
                     _sideOpen = !_sideOpen;
                     RedrawPanes();
-                }), 16);
+                }));
 
                 var back = Ui.Quiet("Undo", Undo);
 
@@ -4164,7 +4216,7 @@ namespace CamelWorks.UI.Views
                     ? "Nothing to take back yet"
                     : "Take back " + _past.Peek().What;
 
-                Say(back, 16);
+                Does(back);
 
                 var on = Ui.Quiet("Redo", Redo);
 
@@ -4173,7 +4225,7 @@ namespace CamelWorks.UI.Views
                     ? "Nothing to put back"
                     : "Put back " + _future.Peek().What;
 
-                Say(on, 4);
+                Does(on, 4);
             }
 
             /// <summary>Everything the keyboard does over the grid, in one place.</summary>
