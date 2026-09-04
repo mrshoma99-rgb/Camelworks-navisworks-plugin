@@ -95,6 +95,20 @@ namespace CamelWorks.UI.Views
             /// <summary>What the last thing pressed has to say, down the right.</summary>
             private readonly StackPanel _inspector = Ui.Stack();
 
+            /// <summary>
+            /// What can be done to it, on a strip of its own at the foot of the panel.
+            ///
+            /// <b>They used to sit wherever the page ended.</b> A row with three pairs decided
+            /// put them high, a row with twenty put them low, and a row whose list of what it is
+            /// checked against ran long put them off the bottom - so the five things you do to a
+            /// row were in a different place on the screen for every row. Pinned above the
+            /// palette they are one target, always the same distance from the hand, and the
+            /// reading above them can be as long as it likes.
+            /// </summary>
+            private readonly StackPanel _acts = Ui.Stack();
+
+            private readonly Border _actsPane = new Border();
+
             /// <summary>How much of the matrix is decided, at the foot of the palette.</summary>
             private readonly StackPanel _progress = Ui.Stack();
 
@@ -516,6 +530,15 @@ namespace CamelWorks.UI.Views
 
                 DockPanel.SetDock(band, Dock.Bottom);
                 panel.Children.Add(band);
+
+                _actsPane.BorderThickness = new Thickness(0, 1, 0, 0);
+                _actsPane.Padding = new Thickness(10, 4, 10, 4);
+                _actsPane.Child = Ui.Loose(_acts);
+
+                _actsPane.Tint(Border.BorderBrushProperty, "Bd");
+
+                DockPanel.SetDock(_actsPane, Dock.Bottom);
+                panel.Children.Add(Ui.Loose(_actsPane));
 
                 panel.Children.Add(new ScrollViewer
                 {
@@ -3069,26 +3092,30 @@ namespace CamelWorks.UI.Views
             private void RedrawInspector()
             {
                 _inspector.Children.Clear();
+                _acts.Children.Clear();
 
-                if (_pickedSymbol != null) { SymbolPage(_pickedSymbol); return; }
-                if (_picked != null) { LinePage(_picked, _pickedRows); return; }
-
-                if (_atRow >= 0 && _atRow < _board.Rows.Count
-                    && _atColumn >= 0 && _atColumn < _board.Columns.Count)
-                {
+                if (_pickedSymbol != null) SymbolPage(_pickedSymbol);
+                else if (_picked != null) LinePage(_picked, _pickedRows);
+                else if (_atRow >= 0 && _atRow < _board.Rows.Count
+                         && _atColumn >= 0 && _atColumn < _board.Columns.Count)
                     CellPage(_board.Rows[_atRow], _board.Columns[_atColumn]);
-                    return;
+                else
+                {
+                    _inspector.Children.Add(Ui.Eyebrow("Nothing picked"));
+
+                    var idle = Ui.Small("Press a row, a column, a symbol or a cell, and what it "
+                                        + "is and what can be done to it are here.");
+
+                    idle.TextWrapping = TextWrapping.Wrap;
+                    idle.Margin = new Thickness(0, 4, 0, 0);
+
+                    _inspector.Children.Add(idle);
                 }
 
-                _inspector.Children.Add(Ui.Eyebrow("Nothing picked"));
-
-                var idle = Ui.Small("Press a row, a column, a symbol or a cell, and what it is "
-                                    + "and what can be done to it are here.");
-
-                idle.TextWrapping = TextWrapping.Wrap;
-                idle.Margin = new Thickness(0, 4, 0, 0);
-
-                _inspector.Children.Add(idle);
+                // A strip with nothing on it is a line across the panel for no reason.
+                _actsPane.Visibility = _acts.Children.Count == 0
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
             }
 
             /// <summary>A titled box in the inspector, label over control, tight.</summary>
@@ -3412,7 +3439,7 @@ namespace CamelWorks.UI.Views
                 // Across, which is the house way of laying a row out and skips whatever is not
                 // there - so the fill appears only when something is on the brush, without the
                 // row being built two different ways.
-                _inspector.Children.Add(Ui.Across(elsewhere, filling, clearing, copying, removing));
+                _acts.Children.Add(Ui.Across(elsewhere, filling, clearing, copying, removing));
             }
 
             /// <summary>One symbol: what it means, which every cell carrying it follows.</summary>
@@ -3475,7 +3502,7 @@ namespace CamelWorks.UI.Views
                                          + ". Undo takes it back."));
                         }));
 
-                _inspector.Children.Add(Ui.Across(everywhere,
+                _acts.Children.Add(Ui.Across(everywhere,
                     Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol) + " out of the legend",
                         () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
                                     drop: true),
