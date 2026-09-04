@@ -396,7 +396,7 @@ namespace CamelWorks.UI.Views
                         + "has one. "
                         + (_session.ClashProblem ?? string.Empty).Trim()));
 
-                var close = Ui.Icon(Glyphs.Close, "Put these away", Quiet);
+                var close = Ui.Icon(Glyphs.Close, "Dismiss", Quiet);
 
                 close.VerticalAlignment = VerticalAlignment.Top;
                 close.Margin = new Thickness(6, 0, 0, 0);
@@ -418,13 +418,21 @@ namespace CamelWorks.UI.Views
                 });
 
                 _said.Padding = new Thickness(10, 8, 8, 8);
-                _said.Margin = new Thickness(0, 0, 0, 8);
                 _said.BorderThickness = new Thickness(1);
                 _said.CornerRadius = new CornerRadius(8);
+
+                // Floating over the grid rather than above it, so it carries its own edge.
+                _said.Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 14,
+                    ShadowDepth = 2,
+                    Opacity = 0.18,
+                    Direction = 270,
+                };
                 _said.Child = inside;
                 _said.Visibility = Visibility.Collapsed;
 
-                _said.Tint(Border.BackgroundProperty, "Card2");
+                _said.Tint(Border.BackgroundProperty, "Card");
                 _said.Tint(Border.BorderBrushProperty, "Bd");
 
                 say.Children.Add(Ui.Loose(_said));
@@ -510,12 +518,29 @@ namespace CamelWorks.UI.Views
 
                 var stack = new DockPanel { LastChildFill = true };
 
+                // <b>A notice must never move the work.</b> Docked over the grid, every report
+                // pushed the whole matrix down by its own height and pulled it back up when it
+                // was dismissed - so the cell somebody was aiming at moved out from under the
+                // pointer, twice, for a sentence they did not ask for. It floats now: same
+                // place, over the top-right of the grid, with its own ground and a shadow, and
+                // the matrix underneath does not know it is there.
+                var over = new Grid();
+
+                over.Children.Add(Ui.Loose(_grid));
+
                 var top = Head();
 
-                DockPanel.SetDock(top, Dock.Top);
-                stack.Children.Add(top);
+                if (top is FrameworkElement floated)
+                {
+                    floated.VerticalAlignment = VerticalAlignment.Top;
+                    floated.HorizontalAlignment = HorizontalAlignment.Right;
+                    floated.Margin = new Thickness(0, 8, 14, 0);
+                    floated.MaxWidth = 460;
+                }
 
-                stack.Children.Add(Ui.Loose(_grid));
+                over.Children.Add(top);
+
+                stack.Children.Add(over);
 
                 // <b>Undo belongs to the screen, not to the grid.</b> It was bound to the cells'
                 // own scroller, so it worked while the pointer had last touched a cell and did
@@ -1439,7 +1464,7 @@ namespace CamelWorks.UI.Views
 
                 if (band > 0) Bands(_across, rows: false);
 
-                Put(_across, Adding("Add a discipline — type its name in the box under the rows",
+                Put(_across, Adding("Add a discipline",
                                     Adding, column: true),
                     top + 1, _board.Columns.Count);
             }
@@ -1976,7 +2001,7 @@ namespace CamelWorks.UI.Views
                     "One column per row, named, numbered and pointed at the same thing. This is "
                     + "what nearly every matrix is, and it can be pressed again later after rows "
                     + "are added or renamed.",
-                    "Copy the rows to the columns",
+                    "Copy rows to columns",
                     () =>
                     {
                         Remember(what: "squaring the columns off to the rows");
@@ -1993,7 +2018,7 @@ namespace CamelWorks.UI.Views
                     "A grid of packages down the side against disciplines across the top is a "
                     + "real matrix too, and it has no diagonal and no mirror. Add the columns one "
                     + "at a time and name them as you go.",
-                    "Add the first column",
+                    "Add the first discipline",
                     AddColumn));
 
                 return ways;
@@ -2026,7 +2051,7 @@ namespace CamelWorks.UI.Views
                         : Ui.Count(sets, "set") + " to choose from. Tick the ones that are the "
                           + "disciplines and each becomes a row, named after the set and already "
                           + "pointed at it.",
-                    sets == 0 ? null : "Pick the sets",
+                    sets == 0 ? null : "Choose the sets",
                     sets == 0 ? (Action)(() => Warned(Ui.Problem(
                         "This model has no saved selection or search sets. Make them in "
                         + "Navisworks - or draw the matrix by hand and point the rows at "
@@ -2048,10 +2073,10 @@ namespace CamelWorks.UI.Views
                     FromSheet));
 
                 ways.Children.Add(Ui.Row(
-                    "By hand",
+                    "Start from scratch",
                     "One row at a time, pointed at whatever each one is: a set, whole models, "
                     + "what is selected, a branch of the tree.",
-                    "Add the first row",
+                    "Add the first discipline",
                     AddRow));
 
                 return ways;
@@ -3735,7 +3760,7 @@ namespace CamelWorks.UI.Views
 
                 if (left > 0)
                 {
-                    var go = Ui.Quiet("Go to the first open one", Undecided);
+                    var go = Ui.Quiet("Go to the first undecided pair", Undecided);
 
                     go.HorizontalAlignment = HorizontalAlignment.Left;
                     go.Margin = new Thickness(0, 6, 0, 0);
@@ -3941,7 +3966,7 @@ namespace CamelWorks.UI.Views
             /// Add a category: a row, the column standing for it, and the cursor where its name
             /// goes.
             ///
-            /// <b>There were two of these and they behaved differently.</b> "Add a row" made a
+            /// <b>There were two of these and they behaved differently.</b> "Add a discipline" made a
             /// row and left the columns alone; "add a column" made a column and left the rows
             /// alone; and they even ended differently, one in the typing box and one in the
             /// inspector. So a person building a twenty-discipline matrix set every discipline
@@ -4018,10 +4043,10 @@ namespace CamelWorks.UI.Views
                 {
                     Parts.Entry.Heading(line.Titled),
 
-                    Parts.Entry.Saying("Edit its details", Glyphs.Pencil,
+                    Parts.Entry.Saying("Edit details", Glyphs.Pencil,
                         "Name, number and code, in the panel", () => Pick(line, rows)),
 
-                    Parts.Entry.Saying("Rename it", Glyphs.Pencil,
+                    Parts.Entry.Saying("Rename", Glyphs.Pencil,
                         "The same as double-clicking its header",
                         () => Parts.Ask(_grid, rows ? "Name this row" : "Name this column",
                                         line.Name, "Rename", typed =>
@@ -4037,7 +4062,7 @@ namespace CamelWorks.UI.Views
                         })),
 
                     Parts.Entry.Rule(),
-                    Parts.Entry.Heading("Points at: " + line.Source.Kinded()),
+                    Parts.Entry.Heading("Source: " + line.Source.Kinded()),
                 };
 
                 items.AddRange(SourceMenu(line));
@@ -4078,7 +4103,7 @@ namespace CamelWorks.UI.Views
 
                 items.Add(Parts.Entry.Rule());
 
-                items.Add(Parts.Entry.Danger("Delete it", Glyphs.Bin, () =>
+                items.Add(Parts.Entry.Danger("Delete", Glyphs.Bin, () =>
                 {
                     Remember(what: "taking out that " + what);
 
@@ -4164,7 +4189,7 @@ namespace CamelWorks.UI.Views
                     () => Capture(line, MatrixSourceKind.CurrentSelection)));
 
                 items.Add(Parts.Entry.Saying("A pick from the selection tree", Glyphs.Layers,
-                    "Pick the branches in Navisworks' tree, then choose this",
+                    "Select the branches in the Navisworks tree, then choose this",
                     () => Capture(line, MatrixSourceKind.TreePick)));
 
                 // The one source on this screen that costs a pass of the model, which is why it
@@ -4175,7 +4200,7 @@ namespace CamelWorks.UI.Views
                     () => CaptureVisible(line)));
 
                 if (!line.Source.IsEmpty)
-                    items.Add(Parts.Entry.Act("Point it at nothing", Glyphs.Close, () =>
+                    items.Add(Parts.Entry.Act("Clear its source", Glyphs.Close, () =>
                     {
                         Remember(what: "pointing " + Quoted(line.Titled) + " at nothing");
                         Pointed(line, MatrixSource.Nothing);
@@ -4193,7 +4218,7 @@ namespace CamelWorks.UI.Views
 
                     if (keys.Count == 0)
                     {
-                        Warned(Ui.Problem("Nothing is selected. Pick it in Navisworks first, "
+                        Warned(Ui.Problem("Nothing is selected. Select it in Navisworks first, "
                                           + "then choose this again."));
                         return;
                     }
@@ -4215,7 +4240,7 @@ namespace CamelWorks.UI.Views
             {
                 var keys = new List<ElementKey>();
 
-                Ui.Working("Reading what is visible...", job =>
+                Ui.Working("Reading what is visible…", job =>
                 {
                     var seen = 0;
 
@@ -4339,13 +4364,13 @@ namespace CamelWorks.UI.Views
                 {
                     Parts.Entry.Heading(folder + "  ·  " + Ui.Count(held, "discipline")),
 
-                    Parts.Entry.Act(shut ? "Expand it" : "Collapse it",
+                    Parts.Entry.Act(shut ? "Expand" : "Collapse",
                                     shut ? Glyphs.Down : Glyphs.Up, () => Shut(folder)),
 
                     Parts.Entry.Rule(),
                     Parts.Entry.Heading("Folder"),
 
-                    Parts.Entry.Act("Rename it", Glyphs.Pencil,
+                    Parts.Entry.Act("Rename", Glyphs.Pencil,
                         () => Parts.Ask(_grid, "What is this folder called?", folder, "Rename",
                             typed =>
                             {
@@ -4360,7 +4385,7 @@ namespace CamelWorks.UI.Views
                 };
 
                 if (others.Count > 0)
-                    items.Add(Parts.Entry.Act("Merge other folders into this one  ·  "
+                    items.Add(Parts.Entry.Act("Merge folders  ·  "
                                               + Ui.Count(others.Count, "other"), Glyphs.Layers,
                         () => Parts.Search(_grid, "Which folders go into " + folder + "?",
                             others.Select(f => new KeyValuePair<string, int>(
@@ -4387,7 +4412,7 @@ namespace CamelWorks.UI.Views
                 items.Add(Parts.Entry.Rule());
                 items.Add(Parts.Entry.Heading("Remove"));
 
-                items.Add(Parts.Entry.Act("Ungroup, keeping the disciplines", Glyphs.Eraser,
+                items.Add(Parts.Entry.Act("Ungroup", Glyphs.Eraser,
                     () =>
                     {
                         Remember(what: "dissolving a folder");
@@ -4400,12 +4425,12 @@ namespace CamelWorks.UI.Views
                                      + Ui.Count(held, "discipline") + " stayed."));
                     }));
 
-                items.Add(Parts.Entry.Danger("Delete the folder and its disciplines", Glyphs.Bin,
+                items.Add(Parts.Entry.Danger("Delete folder and disciplines", Glyphs.Bin,
                     () => Parts.Sure(_grid,
                         "This takes " + Ui.Count(held, "discipline") + " off the matrix, both "
                         + "axes, and every decision on them with it. Nothing in the document "
                         + "changes - the tests already built stay as they are.",
-                        "Delete them", () =>
+                        "Delete", () =>
                         {
                             Remember(what: "deleting a folder and its disciplines");
 
@@ -4450,7 +4475,7 @@ namespace CamelWorks.UI.Views
 
                 items.Add(Parts.Entry.Act("New folder…", Glyphs.Add,
                     () => Parts.Ask(_grid, "What is the new folder called?", string.Empty,
-                                    "Make it",
+                                    "Create",
                         typed =>
                         {
                             if (string.IsNullOrWhiteSpace(typed)) return;
@@ -4519,7 +4544,7 @@ namespace CamelWorks.UI.Views
                                     : "ruling out a pair")));
 
                 if (many || here != null)
-                    items.Add(Parts.Entry.Act("Clear it", Glyphs.Close,
+                    items.Add(Parts.Entry.Act("Clear", Glyphs.Close,
                         () => Laid(reach, null,
                                    many ? "clearing " + Ui.Count(reach.Count, "cell")
                                         : "clearing a cell")));
@@ -4528,18 +4553,18 @@ namespace CamelWorks.UI.Views
                 items.Add(Parts.Entry.Heading("Clipboard"));
 
                 items.Add(Parts.Entry.Saying(
-                    many ? "Copy these " + Ui.Count(reach.Count, "cell") : "Copy the cell",
+                    many ? "Copy these " + Ui.Count(reach.Count, "cell") : "Copy",
                     Glyphs.Copy, "Ctrl+C. Paste it anywhere on the grid, or into a spreadsheet.",
                     () => Copy()));
 
-                items.Add(Parts.Entry.Saying("Paste here", Glyphs.Changes,
+                items.Add(Parts.Entry.Saying("Paste", Glyphs.Changes,
                     "Ctrl+V. What was copied goes down with this cell as its top left.",
                     Paste));
 
                 items.Add(Parts.Entry.Rule());
                 items.Add(Parts.Entry.Heading("Whole grid"));
 
-                items.Add(Parts.Entry.Danger("Fill every cell with this symbol", Glyphs.SelectAll, () =>
+                items.Add(Parts.Entry.Danger("Fill every cell", Glyphs.SelectAll, () =>
                 {
                     if (here == null) return;
 
@@ -4550,7 +4575,7 @@ namespace CamelWorks.UI.Views
                         "This puts " + Quoted(here) + " in every cell of the matrix, over "
                         + "everything already decided. The diagonal is left alone - a discipline "
                         + "against itself is a test somebody chooses, not one a fill makes.",
-                        "Fill it", () =>
+                        "Fill", () =>
                         {
                             Remember(what: "filling the whole grid with " + Quoted(here));
                             _board.Fill(here);
@@ -4645,7 +4670,7 @@ namespace CamelWorks.UI.Views
                     Background = System.Windows.Media.Brushes.Transparent,
                     ToolTip = armed
                         ? Quoted(mark) + " is on the brush. Press to put it down."
-                        : "Press to paint with " + Quoted(mark) + ", or type " + stroke
+                        : "Apply " + Quoted(mark) + ", or type " + stroke
                           + " with the cursor in the grid.",
                 };
 
@@ -4876,7 +4901,7 @@ namespace CamelWorks.UI.Views
                         FontWeight = FontWeights.SemiBold,
                     }.Wearing("Body"));
 
-                    Say(Ui.Quiet("Clear the selection", () => Arm(null)), 10);
+                    Say(Ui.Quiet("Clear selection", () => Arm(null)), 10);
                 }
 
                 // <b>Two of the five modes said nothing at all.</b> The picked line and the lit
@@ -4888,7 +4913,7 @@ namespace CamelWorks.UI.Views
                 if (_lit != null)
                 {
                     Say(Ui.Small("Showing only " + Quoted(_lit)), 16);
-                    Say(Ui.Quiet("Show all cells", () => Lighting(null)), 6);
+                    Say(Ui.Quiet("Show all", () => Lighting(null)), 6);
                 }
 
                 // The cursor's own address went with the rest: it is drawn in the cell it is
@@ -4917,7 +4942,7 @@ namespace CamelWorks.UI.Views
                 // category" and left you to find it. Both add the same thing, so there is one of
                 // them, and it goes to the box - which is the editor, and the only place a
                 // discipline gets a name at the moment it is made.
-                Does(Ui.Quiet("Add a discipline", Adding), 0);
+                Does(Ui.Quiet("Add discipline", Adding), 0);
 
                 // <b>The twin the columns never got.</b> The plus that adds one sits past the
                 // last column of the band, which on any matrix wide enough to scroll is off the
@@ -4940,7 +4965,7 @@ namespace CamelWorks.UI.Views
 
                 back.IsEnabled = _past.Count > 0;
                 back.ToolTip = _past.Count == 0
-                    ? "Nothing to take back yet"
+                    ? "Nothing to undo"
                     : "Take back " + _past.Peek().What;
 
                 Does(back);
@@ -4949,8 +4974,8 @@ namespace CamelWorks.UI.Views
 
                 on.IsEnabled = _future.Count > 0;
                 on.ToolTip = _future.Count == 0
-                    ? "Nothing to put back"
-                    : "Put back " + _future.Peek().What;
+                    ? "Nothing to redo"
+                    : "Redo " + _future.Peek().What;
 
                 Does(on, 4);
             }
@@ -5064,7 +5089,7 @@ namespace CamelWorks.UI.Views
                     CellPage(_board.Rows[_atRow], _board.Columns[_atColumn]);
                 else
                 {
-                    _inspector.Children.Add(Ui.Eyebrow("Nothing picked"));
+                    _inspector.Children.Add(Ui.Eyebrow("Nothing selected"));
 
                     var idle = Ui.Small("Press a row, a column, a symbol or a cell, and what it "
                                         + "is and what can be done to it are here.");
@@ -5074,8 +5099,8 @@ namespace CamelWorks.UI.Views
 
                     _inspector.Children.Add(idle);
 
-                    Verbs("Do to the matrix",
-                        Doable(Glyphs.Next, "Go to the first pair nobody has ruled on",
+                    Verbs("Matrix actions",
+                        Doable(Glyphs.Next, "Go to the first undecided pair",
                                Undecided));
                 }
 
@@ -5265,7 +5290,7 @@ namespace CamelWorks.UI.Views
                 pair.Margin = new Thickness(0, 0, 0, 9);
                 _inspector.Children.Add(pair);
 
-                _inspector.Children.Add(Ui.Small("Points at"));
+                _inspector.Children.Add(Ui.Small("Source"));
 
                 var source = new Border
                 {
@@ -5301,7 +5326,7 @@ namespace CamelWorks.UI.Views
                 // The button is its own anchor: a menu hung off the panel would open somewhere
                 // else on the screen entirely. It can be, now that the primitive admits a
                 // handler added after the fact rather than demanding one it then null-checks.
-                var elsewhere = Doable(Glyphs.Layers, "Point it at something else", null);
+                var elsewhere = Doable(Glyphs.Layers, "Change its source", null);
 
                 elsewhere.Click += (s, e) =>
                     Ui.Safely(() => Parts.PopMenu(elsewhere, SourceMenu(line)));
@@ -5449,7 +5474,7 @@ namespace CamelWorks.UI.Views
                                  + " Undo takes it back."));
                 }, danger: true);
 
-                Verbs("Do to this " + what, elsewhere, filling, copying, null, clearing, removing);
+                Verbs("Actions for this " + what, elsewhere, filling, copying, null, clearing, removing);
             }
 
             /// <summary>
@@ -5542,7 +5567,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (open.Count > 0)
-                    groups.Children.Add(Gathered("", null, false, "Nobody has ruled on these",
+                    groups.Children.Add(Gathered("", null, false, "Undecided",
                                                  "no test either way, yet", open));
 
                 // <b>No scroller of its own.</b> The list used to be capped and scrolled inside
@@ -5769,7 +5794,7 @@ namespace CamelWorks.UI.Views
                 // everything already decided. Twenty gutter clicks was the answer and it is not
                 // an answer. Empty pairs only, so it cannot take a decision back.
                 var rest = Doable(Glyphs.Sweep,
-                    "Put it in every pair nobody has ruled on yet", () =>
+                    "Apply to every undecided pair", () =>
                 {
                     Remember(what: "filling every undecided pair with " + Quoted(symbol.Symbol));
 
@@ -5782,11 +5807,11 @@ namespace CamelWorks.UI.Views
                     Reported(laid, Quoted(symbol.Symbol) + " put in", "undecided pair");
                 });
 
-                var everywhere = Doable(Glyphs.SelectAll, "Put it in every cell of the matrix", () =>
+                var everywhere = Doable(Glyphs.SelectAll, "Apply to every cell", () =>
                     Parts.Sure(_grid,
                         "This puts " + Quoted(symbol.Symbol) + " in every cell of the matrix, "
                         + "over everything already decided. The diagonal is left alone.",
-                        "Fill it", () =>
+                        "Fill", () =>
                         {
                             Remember(what: "filling the whole grid with "
                                              + Quoted(symbol.Symbol));
@@ -5806,8 +5831,8 @@ namespace CamelWorks.UI.Views
 
                 stepping.IsEnabled = using_ > 0;
 
-                Verbs("Do to this symbol",
-                    Doable(Glyphs.Pencil, "Change what it is called, its colour, its kind and "
+                Verbs("Symbol actions",
+                    Doable(Glyphs.Pencil, "Change its mark, colour, kind and "
                                           + "its tolerance", EditSymbol),
                     stepping, rest, everywhere, null,
                     Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol) + " out of the legend",
@@ -5828,7 +5853,7 @@ namespace CamelWorks.UI.Views
                                 + ". Taking it out of the legend leaves them saying something the "
                                 + "legend does not explain, and they build no tests. Rename it "
                                 + "instead and the cells follow it.",
-                                "Delete it",
+                                "Delete",
                                 () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
                                             drop: true));
                         },
@@ -5895,11 +5920,11 @@ namespace CamelWorks.UI.Views
                 }.Wearing("Body"));
 
                 var under = Ui.Small(here == null
-                    ? "Nobody has ruled on this pair."
+                    ? "This pair is undecided."
                     : MatrixBoard.IsNotRequired(here)
                         ? "Agreed, and no test is made."
                         : meaning == null
-                            ? "Give it a meaning on the palette, or this cell makes no test."
+                            ? "Define it in the palette, or this cell builds no test."
                             : Millimetres(meaning.Tolerance)
                               + (meaning.Enabled ? string.Empty : " · turned off, so it builds nothing"));
 
@@ -5926,7 +5951,7 @@ namespace CamelWorks.UI.Views
 
                 ruling.IsEnabled = !MatrixBoard.IsNotRequired(here);
 
-                var emptying = Doable(Glyphs.Eraser, "Empty it back to undecided", () =>
+                var emptying = Doable(Glyphs.Eraser, "Clear the cell", () =>
                 {
                     Remember(what: "clearing a cell");
                     _board.Set(row, column, null);
@@ -5937,10 +5962,10 @@ namespace CamelWorks.UI.Views
 
                 emptying.IsEnabled = here != null;
 
-                var onward = Doable(Glyphs.Next, "Go to the next pair nobody has ruled on",
+                var onward = Doable(Glyphs.Next, "Go to the next undecided pair",
                                     Undecided);
 
-                Verbs("Do to this cell", ruling, onward, null, emptying);
+                Verbs("Cell actions", ruling, onward, null, emptying);
             }
 
             // ---------------------------------------------------------------------------
@@ -6950,7 +6975,7 @@ namespace CamelWorks.UI.Views
                     "A row per set you tick, named after it and pointed at it",
                     FromSets),
 
-                Parts.Entry.Saying("From the existing clash tests", Glyphs.Model,
+                Parts.Entry.Saying("From existing clash tests", Glyphs.Model,
                     "Every test says what it is between, so the matrix is already there",
                     FromModel),
 
@@ -6958,7 +6983,7 @@ namespace CamelWorks.UI.Views
                     "The client's own workbook: choose the tab and where the matrix starts on it",
                     FromSheet),
 
-                Parts.Entry.Saying("Reload the saved matrix", Glyphs.Folder,
+                Parts.Entry.Saying("Reload saved matrix", Glyphs.Folder,
                     "The matrix as it was left last time",
                     () =>
                     {
@@ -6981,11 +7006,11 @@ namespace CamelWorks.UI.Views
 
                 Parts.Entry.Rule(),
 
-                Parts.Entry.Danger("Clear the matrix", Glyphs.Bin, () =>
+                Parts.Entry.Danger("Clear matrix", Glyphs.Bin, () =>
                     Parts.Sure(_grid,
                         "This clears the grid and the legend. Nothing in the document changes - "
                         + "the tests already built stay exactly as they are.",
-                        "Clear it", () =>
+                        "Clear", () =>
                         {
                             Remember(what: "starting again");
 
@@ -7015,7 +7040,7 @@ namespace CamelWorks.UI.Views
                 {
                     Parts.Entry.Heading("All rows and columns"),
 
-                    Parts.Entry.Saying("Match rows to saved sets", Glyphs.Layers,
+                    Parts.Entry.Saying("Match rows to sets", Glyphs.Layers,
                         "Tick the sets; each one finds the row of the same name that is still "
                         + "pointing at nothing", PointRows),
 
@@ -7031,7 +7056,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Rule());
                     items.Add(Parts.Entry.Heading(Ui.Count(folders.Count, "folder")));
 
-                    items.Add(Parts.Entry.Saying("Regroup folder members", Glyphs.Sort,
+                    items.Add(Parts.Entry.Saying("Regroup folders", Glyphs.Sort,
                         "Put every folder's members back together, keeping the order they are in",
                         () =>
                         {
@@ -7084,7 +7109,7 @@ namespace CamelWorks.UI.Views
                     }));
 
                 if (!_board.Paired)
-                    items.Add(Parts.Entry.Act("Copy the rows to the columns", Glyphs.Columns,
+                    items.Add(Parts.Entry.Act("Copy rows to columns", Glyphs.Columns,
                         () =>
                         {
                             Remember(what: "squaring the columns off to the rows");
@@ -7147,7 +7172,7 @@ namespace CamelWorks.UI.Views
                             Recount();
                         })),
 
-                Parts.Entry.Act("Reset to the default", Glyphs.Close, () =>
+                Parts.Entry.Act("Reset", Glyphs.Close, () =>
                 {
                     _pattern = MatrixNaming.Default;
 
@@ -7375,7 +7400,7 @@ namespace CamelWorks.UI.Views
 
                 MatrixReading? reading = null;
 
-                Ui.Working("Reading the document's tests...", job =>
+                Ui.Working("Reading the document's tests…", job =>
                 {
                     var tests = _session.Clash.Tests();
                     var read = new List<ClashTestRead>();
@@ -7673,7 +7698,7 @@ namespace CamelWorks.UI.Views
 
                 if (plan.Skipped.Count == 0) return;
 
-                Said(Ui.Eyebrow("Cells that make no test"), hold: true);
+                Said(Ui.Eyebrow("Cells that build no test"), hold: true);
 
                 foreach (var skip in plan.Skipped.Take(20))
                     Said(Ui.Small(skip.Cell + " — " + skip.Why), hold: true);
@@ -7762,7 +7787,7 @@ namespace CamelWorks.UI.Views
                     + "pairs this matrix no longer asks for — a pair ruled out, or a row taken "
                     + "away. Nothing else in the document is touched, and this cannot be undone "
                     + "from here.",
-                    "Delete them",
+                    "Delete",
                     () =>
                     {
                         var gone = _session.Clash.DeleteTests(ids);
@@ -7805,7 +7830,7 @@ namespace CamelWorks.UI.Views
                 MatrixChange.Added => "New",
                 MatrixChange.Altered => "Changed",
                 MatrixChange.Extra => "Only in the document",
-                _ => "Already right",
+                _ => "No change needed",
             };
 
             /// <summary>
@@ -7873,7 +7898,7 @@ namespace CamelWorks.UI.Views
                           + "makes no test either way — building now builds the rest, and it can "
                           + "be built again when they are settled.")
                     + (_folder.Length == 0 ? string.Empty : " They go in " + Quoted(_folder) + "."),
-                    "Build them",
+                    "Build",
                     () => Write(making));
             }
 
@@ -7912,7 +7937,7 @@ namespace CamelWorks.UI.Views
                                     + (_session.Clash.LastProblem ?? "the host refused it"));
                 }
 
-                Ui.Working("Building the matrix...", job =>
+                Ui.Working("Building the matrix…", job =>
                 {
                     var at = 0;
 

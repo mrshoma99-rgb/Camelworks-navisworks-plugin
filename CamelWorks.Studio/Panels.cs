@@ -259,7 +259,7 @@ namespace CamelWorks.Studio
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            var runner = Ui.Runner("Read again", Ui.Stack(), _ => { }, primary: false);
+            var runner = Ui.Runner("Refresh", Ui.Stack(), _ => { }, primary: false);
             runner.Margin = new Thickness(0, 0, 10, 0);
             runner.VerticalAlignment = VerticalAlignment.Center;
             right.Children.Add(runner);
@@ -277,7 +277,7 @@ namespace CamelWorks.Studio
             // The caption the product declares. Its counted form — "Save 14 changes into the
             // document" — is built at run time from what the document refused, and a picture
             // cannot claim a caption no panel contains.
-            var save = Ui.Primary("Save the changes", () => { });
+            var save = Ui.Primary("Save changes", () => { });
             save.Margin = new Thickness(8, 0, 0, 0);
             save.VerticalAlignment = VerticalAlignment.Center;
             right.Children.Add(save);

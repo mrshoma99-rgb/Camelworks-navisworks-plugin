@@ -112,7 +112,7 @@ namespace CamelWorks.UI.Views
 
                 if (held.Symbol.Length == 0)
                 {
-                    trouble.Children.Add(Ui.Problem("Give it something to say in a cell."));
+                    trouble.Children.Add(Ui.Problem("Enter the mark it shows in a cell."));
                     return;
                 }
 
