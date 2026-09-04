@@ -1492,16 +1492,19 @@ namespace CamelWorks.UI.Views
         {
             _ = near;
 
-            // As many as a person scans before they start typing instead. The rest are reachable
-            // by typing, and the note under the list says how many they are.
-            const int Most = 60;
+            // Enough rows that a job's whole set library is on one list. The old sixty was a
+            // scanning limit borrowed from a menu, and it made "select all" a lie: a filter
+            // matching two hundred showed sixty of them, so the only reachable answer was the
+            // sixty. Selecting acts on every match now, shown or not, and the note says so.
+            const int Most = 400;
 
             var window = new Window
             {
                 Title = "CamelWorks",
-                SizeToContent = SizeToContent.Width,
-                Height = 460,
-                ResizeMode = ResizeMode.NoResize,
+                Width = 620,
+                Height = 560,
+                MinWidth = 460,
+                MinHeight = 360,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ShowInTaskbar = false,
             };
@@ -1510,12 +1513,16 @@ namespace CamelWorks.UI.Views
                                              StringComparer.OrdinalIgnoreCase);
             var changed = false;
 
-            var body = new DockPanel
-            {
-                Margin = new Thickness(18, 16, 18, 16),
-                MinWidth = 380,
-                LastChildFill = true,
-            };
+            var all = values ?? new List<KeyValuePair<string, int>>();
+            var showing = new List<KeyValuePair<string, int>>();
+            var matching = new List<KeyValuePair<string, int>>();
+
+            // Where the last row was ticked, so shift and a click take everything between. This
+            // is the gesture every list of anything has had since 1984, and twenty-five saved
+            // sets ticked one at a time is what its absence costs.
+            var anchor = -1;
+
+            var body = new DockPanel { Margin = new Thickness(18, 16, 18, 16), LastChildFill = true };
 
             var label = new TextBlock
             {
@@ -1528,43 +1535,132 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(label.Wearing("Body"), Dock.Top);
             body.Children.Add(label);
 
-            var box = Ui.Text(string.Empty, null, 340);
+            var box = Ui.Text(string.Empty, "Search", null, 0);
             box.Margin = new Thickness(0, 0, 0, 10);
+            box.HorizontalAlignment = HorizontalAlignment.Stretch;
             DockPanel.SetDock(box, Dock.Top);
             body.Children.Add(box);
 
             var list = new StackPanel();
             var note = Ui.Small(string.Empty);
+            var chose = Ui.Small(string.Empty);
+
+            // ---- the header, which is also the select-all ---------------------------------
+            var master = new CheckBox
+            {
+                IsThreeState = true,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+            };
+
+            var head = new DockPanel { LastChildFill = true, Margin = new Thickness(2, 0, 2, 4) };
+
+            var heading = new TextBlock
+            {
+                Text = "Count",
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0),
+                MinWidth = 54,
+                TextAlignment = TextAlignment.Right,
+            };
+
+            DockPanel.SetDock(master, Dock.Left);
+            head.Children.Add(master);
+
+            DockPanel.SetDock(heading.Wearing("Caps"), Dock.Right);
+            head.Children.Add(heading);
+
+            head.Children.Add(new TextBlock
+            {
+                Text = "Name",
+                VerticalAlignment = VerticalAlignment.Center,
+            }.Wearing("Caps"));
+
+            var rule = new Border { Height = 1, Margin = new Thickness(0, 0, 0, 4) };
+
+            rule.Tint(Border.BackgroundProperty, "Bd");
+
+            var header = new StackPanel();
+
+            header.Children.Add(head);
+            header.Children.Add(rule);
+
+            DockPanel.SetDock(header, Dock.Top);
+            body.Children.Add(header);
+
+            void Say()
+            {
+                chose.Text = ticked.Count == 0
+                    ? "Nothing selected."
+                    : Ui.Count(ticked.Count, "selected");
+
+                // The header box says what the matching rows are, which is what pressing it acts
+                // on - not what the whole library is, which nobody can see from here.
+                var on = matching.Count(v => ticked.Contains(v.Key ?? string.Empty));
+
+                master.IsChecked = matching.Count == 0 || on == 0 ? false
+                    : on == matching.Count ? true
+                    : (bool?)null;
+            }
+
+            void Paint()
+            {
+                foreach (var child in list.Children)
+                    if (child is Border row && row.Tag is string key && row.Child is DockPanel line
+                        && line.Children.Count > 0 && line.Children[0] is CheckBox tick)
+                    {
+                        var on = ticked.Contains(key);
+
+                        tick.IsChecked = on;
+                        row.Background = on ? Skin.Of("NavActive") : Brushes.Transparent;
+                    }
+
+                Say();
+            }
 
             void Fill()
             {
                 var typed = box.Text.Trim();
 
                 list.Children.Clear();
+                anchor = -1;
 
-                var matching = values == null
-                    ? new List<KeyValuePair<string, int>>()
-                    : values.Where(v => typed.Length == 0
-                                        || (v.Key ?? string.Empty).IndexOf(
-                                               typed, StringComparison.OrdinalIgnoreCase) >= 0)
-                            .ToList();
+                matching = all.Where(v => typed.Length == 0
+                                          || (v.Key ?? string.Empty).IndexOf(
+                                                 typed, StringComparison.OrdinalIgnoreCase) >= 0)
+                              .ToList();
 
-                foreach (var one in matching.Take(Most))
+                showing = matching.Take(Most).ToList();
+
+                for (var at = 0; at < showing.Count; at++)
                 {
-                    var here = one.Key ?? string.Empty;
+                    var here = showing[at].Key ?? string.Empty;
+                    var mine = at;
+
+                    var tick = new CheckBox
+                    {
+                        IsChecked = ticked.Contains(here),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 8, 0),
+                        Focusable = false,
+                        IsHitTestVisible = false,
+                    };
 
                     var tally = new TextBlock
                     {
-                        Text = Skin.Num(one.Value),
+                        Text = Skin.Num(showing[at].Value),
                         VerticalAlignment = VerticalAlignment.Center,
                         Margin = new Thickness(10, 0, 0, 0),
+                        MinWidth = 54,
+                        TextAlignment = TextAlignment.Right,
                     };
-
-                    tally.Wearing("Hint");
 
                     var line = new DockPanel { LastChildFill = true };
 
-                    DockPanel.SetDock(tally, Dock.Right);
+                    DockPanel.SetDock(tick, Dock.Left);
+                    line.Children.Add(tick);
+
+                    DockPanel.SetDock(tally.Wearing("Hint"), Dock.Right);
                     line.Children.Add(tally);
 
                     line.Children.Add(new TextBlock
@@ -1574,54 +1670,149 @@ namespace CamelWorks.UI.Views
                         TextTrimming = TextTrimming.CharacterEllipsis,
                     }.Wearing("Body"));
 
-                    var tick = new CheckBox
+                    // The whole row, not a twelve-pixel box on the end of it. A list somebody is
+                    // going to work down twenty-five times is a list where the target is the row.
+                    var row = new Border
                     {
-                        Content = line,
-                        IsChecked = ticked.Contains(here),
-                        Margin = new Thickness(0, 0, 0, 6),
-                        VerticalContentAlignment = VerticalAlignment.Center,
+                        Child = line,
+                        Tag = here,
+                        Padding = new Thickness(2, 5, 2, 5),
+                        CornerRadius = new CornerRadius(4),
+                        Background = ticked.Contains(here) ? Skin.Of("NavActive") : Brushes.Transparent,
+                        Cursor = Cursors.Hand,
                     };
 
-                    tick.Checked += (s, e) => { ticked.Add(here); changed = true; Say(); };
-                    tick.Unchecked += (s, e) => { ticked.Remove(here); changed = true; Say(); };
+                    row.MouseEnter += (s, e) =>
+                    {
+                        if (!ticked.Contains(here)) row.Tint(Border.BackgroundProperty, "Hover");
+                    };
 
-                    list.Children.Add(tick);
+                    row.MouseLeave += (s, e) =>
+                    {
+                        row.Background = ticked.Contains(here)
+                            ? Skin.Of("NavActive") : Brushes.Transparent;
+                    };
+
+                    row.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                    {
+                        e.Handled = true;
+                        changed = true;
+
+                        // Shift takes the run from the last row touched to this one, and gives
+                        // every row in it whatever this one is about to become.
+                        if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift
+                            && anchor >= 0 && anchor < showing.Count)
+                        {
+                            var wanted = !ticked.Contains(here);
+                            var from = Math.Min(anchor, mine);
+                            var to = Math.Max(anchor, mine);
+
+                            for (var i = from; i <= to; i++)
+                            {
+                                var one = showing[i].Key ?? string.Empty;
+
+                                if (wanted) ticked.Add(one); else ticked.Remove(one);
+                            }
+                        }
+                        else
+                        {
+                            if (!ticked.Remove(here)) ticked.Add(here);
+
+                            anchor = mine;
+                        }
+
+                        Paint();
+                    });
+
+                    list.Children.Add(row);
                 }
 
                 note.Text = matching.Count == 0
-                    ? "Nothing carries that."
+                    ? "Nothing matches."
                     : matching.Count > Most
-                        ? Skin.Num(matching.Count - Most) + " more match. Keep typing to narrow it."
-                        : Ui.Count(matching.Count, "value") + ", all of them shown.";
+                        ? Ui.Count(matching.Count, "match") + ", the first "
+                          + Skin.Num(Most) + " shown. Selecting all takes every match."
+                        : Ui.Count(matching.Count, "match") + ".";
 
                 Say();
             }
 
-            var chose = Ui.Small(string.Empty);
+            // ---- selecting in bulk, which is what the list is for -------------------------
+            master.Click += (s, e) => Ui.Safely(() =>
+            {
+                var on = matching.Count(v => ticked.Contains(v.Key ?? string.Empty));
+                var wanted = on < matching.Count;
 
-            void Say() =>
-                chose.Text = ticked.Count == 0
-                    ? "Nothing ticked, so every value is shown."
-                    : Ui.Count(ticked.Count, "value") + " ticked.";
+                changed = true;
+
+                foreach (var one in matching)
+                {
+                    var key = one.Key ?? string.Empty;
+
+                    if (wanted) ticked.Add(key); else ticked.Remove(key);
+                }
+
+                Paint();
+            });
+
+            var verbs = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+
+            void Verb(string said, Action did)
+            {
+                var one = Ui.Quiet(said, () => Ui.Safely(did));
+
+                one.Margin = new Thickness(0, 0, 14, 0);
+                verbs.Children.Add(one);
+            }
+
+            Verb("Select all", () =>
+            {
+                changed = true;
+
+                foreach (var one in matching) ticked.Add(one.Key ?? string.Empty);
+
+                Paint();
+            });
+
+            Verb("Select none", () =>
+            {
+                changed = true;
+
+                foreach (var one in matching) ticked.Remove(one.Key ?? string.Empty);
+
+                Paint();
+            });
+
+            Verb("Invert", () =>
+            {
+                changed = true;
+
+                foreach (var one in matching)
+                {
+                    var key = one.Key ?? string.Empty;
+
+                    if (!ticked.Remove(key)) ticked.Add(key);
+                }
+
+                Paint();
+            });
 
             if (any != null)
-            {
-                var off = Ui.Quiet(any, () =>
+                Verb(any, () =>
                 {
                     ticked.Clear();
                     changed = true;
                     Fill();
                 });
 
-                off.HorizontalAlignment = HorizontalAlignment.Stretch;
-                off.HorizontalContentAlignment = HorizontalAlignment.Left;
-                off.Margin = new Thickness(0, 0, 0, 8);
+            DockPanel.SetDock(verbs, Dock.Top);
+            body.Children.Add(verbs);
 
-                DockPanel.SetDock(off, Dock.Top);
-                body.Children.Add(off);
-            }
-
-            var done = Ui.Primary("Show these", () => window.Close());
+            var done = Ui.Primary("Done", () => window.Close());
 
             done.MinWidth = 110;
             done.HorizontalAlignment = HorizontalAlignment.Right;
@@ -1639,16 +1830,18 @@ namespace CamelWorks.UI.Views
 
             box.TextChanged += (s, e) => Ui.Safely(Fill);
 
-            box.KeyDown += (s, e) =>
+            box.KeyDown += (s, e) => Ui.Safely(() =>
             {
                 if (e.Key != Key.Enter) return;
 
-                // Enter on a single match ticks it: typing four letters and pressing Enter is how
-                // a filter is used when the value is already known. The window stays open,
-                // because the next thing somebody does is type the second value.
-                if (list.Children.Count == 1 && list.Children[0] is CheckBox only)
-                    only.IsChecked = !(only.IsChecked ?? false);
-            };
+                // Enter after typing takes everything the filter matched, which is the fast path
+                // this list exists for: type "WSC", press Enter, and the twelve are selected.
+                changed = true;
+
+                foreach (var one in matching) ticked.Add(one.Key ?? string.Empty);
+
+                Paint();
+            });
 
             Fill();
 
