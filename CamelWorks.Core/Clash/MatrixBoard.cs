@@ -23,6 +23,25 @@ namespace CamelWorks.Core.Clash
             Code = (code ?? string.Empty).Trim();
         }
 
+        /// <summary>
+        /// What this line is, as against what it is called.
+        ///
+        /// <b>Two lines were judged the same thing by their names.</b> A row and the column
+        /// standing for it had to be recognised as one discipline - that is what mirrors the
+        /// grid, what makes the diagonal the diagonal, and what stops a pair being asked twice -
+        /// and with nothing else to go on the test was the name. Which is fine until somebody
+        /// adds six disciplines and names none of them yet: six rows called "New category" are
+        /// then all the same line as each other, every pair among them is a pair with itself,
+        /// the whole block is diagonal, and the grid quietly refuses to hold anything.
+        ///
+        /// A discipline knows what it is. The pair is made together and says so here, so identity
+        /// survives being unnamed, being renamed, and being named the same as its neighbour.
+        ///
+        /// Empty on a line read from a board saved before this existed, and the older test by
+        /// source and name still answers for those.
+        /// </summary>
+        public string Key { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
+
         /// <summary>How it reads.</summary>
         public string Name { get; set; }
 
@@ -62,6 +81,7 @@ namespace CamelWorks.Core.Clash
             if (Number.Length > 0) json.Set("number", Number);
             if (Code.Length > 0) json.Set("code", Code);
             if (Folder.Length > 0) json.Set("folder", Folder);
+            if (Key.Length > 0) json.Set("key", Key);
 
             json.Set("source", Source.ToJson());
 
@@ -83,6 +103,7 @@ namespace CamelWorks.Core.Clash
                                   json["code"].AsString())
             {
                 Folder = (json["folder"].AsString() ?? string.Empty).Trim(),
+                Key = (json["key"].AsString() ?? string.Empty).Trim(),
             };
         }
 
@@ -196,6 +217,7 @@ namespace CamelWorks.Core.Clash
                 _columns.Add(new MatrixLine(line.Name, line.Number, line.Source, line.Code)
                 {
                     Folder = line.Folder,
+                    Key = line.Key,
                 });
 
             return line;
@@ -655,11 +677,29 @@ namespace CamelWorks.Core.Clash
         /// </summary>
         /// <param name="one">One line.</param>
         /// <param name="other">The other.</param>
-        private static bool Same(MatrixLine one, MatrixLine other) =>
-            one.Source.IsEmpty || other.Source.IsEmpty
-                ? string.Equals(one.Name, other.Name, StringComparison.OrdinalIgnoreCase)
-                : string.Equals(one.Source.Fingerprint(), other.Source.Fingerprint(),
-                                StringComparison.Ordinal);
+        private static bool Same(MatrixLine one, MatrixLine other)
+        {
+            var keyed = one.Key.Length > 0 && other.Key.Length > 0;
+
+            // Made together, so known to be one discipline however either has been renamed since.
+            if (keyed && string.Equals(one.Key, other.Key, StringComparison.Ordinal)) return true;
+
+            // Pointed at the same elements, so one discipline however they were made - which is
+            // what a matrix read out of a sheet or the model relies on, and what lets a stray
+            // column be joined to a row by pointing it at that row's set.
+            if (!one.Source.IsEmpty && !other.Source.IsEmpty)
+                return string.Equals(one.Source.Fingerprint(), other.Source.Fingerprint(),
+                                     StringComparison.Ordinal);
+
+            // Both know what they are and they are not each other. This is the case a name could
+            // never settle: six disciplines nobody has named yet are all called the same thing,
+            // and by name every one of them was every other - so every pair among them was a pair
+            // with itself, the whole block was diagonal, and the grid would hold nothing.
+            if (keyed) return false;
+
+            // A board saved before a line knew what it was. Its name is all there is to go on.
+            return string.Equals(one.Name, other.Name, StringComparison.OrdinalIgnoreCase);
+        }
 
         /// <summary>
         /// The line on the other axis that stands for the same thing, or null.
@@ -895,7 +935,11 @@ namespace CamelWorks.Core.Clash
             _columns.Clear();
 
             foreach (var row in _rows)
-                _columns.Add(new MatrixLine(row.Name, row.Number, row.Source, row.Code));
+                _columns.Add(new MatrixLine(row.Name, row.Number, row.Source, row.Code)
+                {
+                    Folder = row.Folder,
+                    Key = row.Key,
+                });
 
             _cells.Clear();
 

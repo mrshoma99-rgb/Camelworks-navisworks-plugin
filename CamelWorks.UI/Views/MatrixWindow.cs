@@ -1439,8 +1439,8 @@ namespace CamelWorks.UI.Views
 
                 if (band > 0) Bands(_across, rows: false);
 
-                Put(_across, Adding("Add a discipline — a column and the row that matches it",
-                                    AddColumn, column: true),
+                Put(_across, Adding("Add a discipline — type its name in the box under the rows",
+                                    Adding, column: true),
                     top + 1, _board.Columns.Count);
             }
 
@@ -3967,17 +3967,21 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The same act, from the other end of the grid.
+            /// Go to the box that makes a discipline, and put the caret in it.
             ///
-            /// It is kept as its own press because the plus that starts it sits past the last
-            /// column, which is where a hand already is when the thought arrives - not because
-            /// there is a second kind of thing to add.
+            /// Every way of adding one arrives here, so there is one shape to the act wherever it
+            /// is started from: the strip over the grid, the plus past the last column, and the
+            /// box itself. A discipline gets its name as it is made rather than being made called
+            /// "New category" and left to be found again.
             /// </summary>
-            private void AddColumn()
+            private void Adding()
             {
-                AddRow();
-                _scroll.ScrollToRightEnd();
+                _scroll.ScrollToBottom();
+                _naming.Focus();
             }
+
+            /// <summary>A discipline, made and picked, for the menu that inserts one in place.</summary>
+            private void AddColumn() => AddRow();
 
             /// <summary>What a category is called before anybody has said what it is.</summary>
             private const string Fresh = "New category";
@@ -4908,18 +4912,17 @@ namespace CamelWorks.UI.Views
                 // Everything from here is a control, and every one of them goes on the right.
                 // The box that makes rows is under the last one, which on a matrix of any size
                 // is off the bottom of the screen. This is how you get to it.
-                Does(Ui.Quiet("Add disciplines", () =>
-                {
-                    _scroll.ScrollToBottom();
-                    _naming.Focus();
-                }), 0);
+                // <b>There were two of these and they were different shapes.</b> One scrolled to
+                // the box that names a discipline as you type it; the other made one called "New
+                // category" and left you to find it. Both add the same thing, so there is one of
+                // them, and it goes to the box - which is the editor, and the only place a
+                // discipline gets a name at the moment it is made.
+                Does(Ui.Quiet("Add a discipline", Adding), 0);
 
                 // <b>The twin the columns never got.</b> The plus that adds one sits past the
                 // last column of the band, which on any matrix wide enough to scroll is off the
                 // right-hand edge of the screen - the same fault the rows were given this link
                 // to fix.
-                Does(Ui.Quiet("Add one", AddColumn), 4);
-
                 // <b>Most of the keyboard was folklore.</b> The palette chips teach the digits
                 // and the cell page mentions shift and an arrow; Alt with an arrow to move a
                 // line existed only inside an accessibility name, so a screen reader taught it
@@ -4957,22 +4960,22 @@ namespace CamelWorks.UI.Views
             {
                 var said = new[]
                 {
-                    ("Arrows", "move the cursor a cell"),
-                    ("Shift and an arrow", "take a block from the cursor"),
-                    ("Ctrl+A", "take the whole grid; Escape lets go"),
-                    ("A digit, or a symbol's letter", "put that symbol in and step right"),
-                    ("With a block held", "put it in every cell of the block at once"),
-                    ("Space", "put the armed symbol in"),
-                    ("Delete, Backspace or 0", "empty the cell back to undecided"),
-                    ("The minus key", "rule the pair out — agreed, and no test"),
-                    ("Home and End", "the first and last column of the row"),
-                    ("PageUp and PageDown", "a windowful of rows"),
-                    ("Ctrl+Home and Ctrl+End", "the first and last cell of the grid"),
-                    ("Alt and an arrow", "move this row or column, and its twin with it"),
-                    ("Ctrl+C and Ctrl+X", "copy what is selected, or cut it"),
-                    ("Ctrl+V", "paste it back from the cursor, as far as the grid allows"),
-                    ("Ctrl+Z and Ctrl+Y", "take back, and put back"),
-                    ("Return, in the box under the last row", "make a row and stay in the box"),
+                    ("Arrows", "Move the cursor one cell"),
+                    ("Shift + arrow", "Extend the selection from the cursor"),
+                    ("Ctrl+A", "Select the whole grid; Escape deselects"),
+                    ("A digit or a symbol's letter", "Enter that symbol and move right"),
+                    ("With cells selected", "Enter it in every selected cell"),
+                    ("Space", "Enter the selected symbol"),
+                    ("Delete, Backspace, 0", "Clear the cell"),
+                    ("Minus", "Mark the pair as not required"),
+                    ("Home, End", "First and last column of the row"),
+                    ("PageUp, PageDown", "Scroll one screen of rows"),
+                    ("Ctrl+Home, Ctrl+End", "First and last cell of the grid"),
+                    ("Alt + arrow", "Move this row or column, and its pair"),
+                    ("Ctrl+C, Ctrl+X", "Copy or cut the selection"),
+                    ("Ctrl+V", "Paste from the cursor"),
+                    ("Ctrl+Z, Ctrl+Y", "Undo and redo"),
+                    ("Return, in the box under the rows", "Add a discipline and keep typing"),
                 };
 
                 var rows = Ui.Stack();
@@ -5006,8 +5009,8 @@ namespace CamelWorks.UI.Views
                     rows.Children.Add(line);
                 }
 
-                Ui.Configure("The keys over the grid", null,
-                    new Ui.Page("The keys over the grid", () => Ui.Loose(rows)));
+                Ui.Configure("Keyboard shortcuts", null,
+                    new Ui.Page("Keyboard shortcuts", () => Ui.Loose(rows)));
             }
 
             /// <summary>Show or hide the options panel, and say so on the strip.</summary>
@@ -5178,14 +5181,21 @@ namespace CamelWorks.UI.Views
                 // of.</b> Renaming one band and leaving the other alone drew the old shape over
                 // the new matrix: the twin followed the name, the mirror moved with it, and the
                 // cells went on being painted as they were before the edit.
+                // <b>It redrew the whole screen on every letter.</b> Renaming rebuilt the grid
+                // and then rebuilt the panel - including this very box - so the caret was thrown
+                // out after each character and the name had to be re-clicked to type the next
+                // one. The name shows in two places, the row header and the column header, and
+                // those are what a rename has to repaint. The panel is already right: it is
+                // where the letters are being typed.
                 Told("Name", Ui.Text(line.Name, typed =>
                 {
                     Remember("name " + at + rows);
 
                     _board.Rename(line, typed);
 
-                    Redraw();
-                    Pick(line, rows);
+                    RedrawDown();
+                    RedrawAcross();
+                    Recount();
                 }, 100));
 
                 var pair = new Grid();
