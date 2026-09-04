@@ -294,6 +294,66 @@ namespace CamelWorks.Core.Tests
     }
 
     /// <summary>How a test name is built out of what a cell knows.</summary>
+    /// <summary>What makes two sources the same source, and what does not.</summary>
+    public class MatrixSourceTests
+    {
+        [Fact]
+        public void TwoCapturesOfTheSameCountAreNotTheSameSource()
+        {
+            // The one that was wrong. Two tree picks holding the same number of elements
+            // fingerprinted identically, so the planner dropped the second pair as a duplicate,
+            // the difference matched it against the first one's test, and the mirror wrote one
+            // row's cells into another's - none of it said out loud.
+            var one = MatrixSource.Captured(MatrixSourceKind.TreePick, Keys("a", "b", "c"));
+            var two = MatrixSource.Captured(MatrixSourceKind.TreePick, Keys("x", "y", "z"));
+
+            Assert.NotEqual(one.Fingerprint(), two.Fingerprint());
+        }
+
+        [Fact]
+        public void TheSameElementsInAnotherOrderAreTheSameSource()
+        {
+            var one = MatrixSource.Captured(MatrixSourceKind.TreePick, Keys("a", "b", "c"));
+            var two = MatrixSource.Captured(MatrixSourceKind.TreePick, Keys("c", "a", "b"));
+
+            Assert.Equal(one.Fingerprint(), two.Fingerprint());
+        }
+
+        [Fact]
+        public void TwoKeysRunTogetherDoNotLookLikeOneLongerKey()
+        {
+            var one = MatrixSource.Captured(MatrixSourceKind.TreePick, Keys("ab", "c"));
+            var two = MatrixSource.Captured(MatrixSourceKind.TreePick, Keys("a", "bc"));
+
+            Assert.NotEqual(one.Fingerprint(), two.Fingerprint());
+        }
+
+        [Fact]
+        public void ACaptureSurvivesBeingWrittenDownAndReadBack()
+        {
+            // The fingerprint has to be the same tomorrow, in another process, or a matrix saved
+            // today matches nothing in the document it built.
+            var source = MatrixSource.Captured(MatrixSourceKind.CurrentSelection, Keys("a", "b"));
+
+            Assert.Equal(source.Fingerprint(),
+                         MatrixSource.FromJson(source.ToJson()).Fingerprint());
+        }
+
+        [Fact]
+        public void TheSameKindWithNoElementsIsStillTheSameSource()
+        {
+            Assert.Equal(
+                MatrixSource.Captured(MatrixSourceKind.TreePick, Keys()).Fingerprint(),
+                MatrixSource.Captured(MatrixSourceKind.TreePick, Keys()).Fingerprint());
+        }
+
+        // A real model scope, which is an eight-character hash. A shorter one makes a key that
+        // will not parse back out of the project file, which is a fault in the test rather than
+        // in the key.
+        private static List<Identity.ElementKey> Keys(params string[] names) =>
+            names.Select(n => Identity.ElementKey.FromTreePath("a1b2c3d4", null, n)).ToList();
+    }
+
     public class MatrixNamingTests
     {
         [Fact]

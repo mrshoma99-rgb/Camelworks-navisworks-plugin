@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Identity;
@@ -163,8 +164,47 @@ namespace CamelWorks.Core.Clash
             MatrixSourceKind.Models => "models:" + string.Join("|",
                 Scopes.Select(s => s.ToLowerInvariant()).OrderBy(s => s, StringComparer.Ordinal)),
             MatrixSourceKind.None => "none",
-            _ => "captured:" + (int)Kind + ":" + Keys.Count,
+            _ => "captured:" + (int)Kind + ":" + Keys.Count + ":" + Digest(Keys),
         };
+
+        /// <summary>
+        /// A fingerprint of the elements a captured source actually holds.
+        ///
+        /// <b>It used to be the count of them.</b> Two rows pointing at two different tree picks
+        /// that happened to hold the same number of elements were, to everything downstream, the
+        /// same source - and three separate things went wrong at once, all of them silently. The
+        /// planner drops a pair whose fingerprint it has already seen, so the second row's tests
+        /// were never built at all: a cell showing a symbol, counted in the total, producing
+        /// nothing, and no test reads exactly like no clashes. The difference matched the second
+        /// pair against the first one's test. And the mirror wrote one row's cells into another's.
+        ///
+        /// Sorted, so the same elements captured in a different order are the same source.
+        /// FNV-1a rather than the string hash, because that one is seeded per process in modern
+        /// .NET: a fingerprint that changed every time Navisworks restarted would match nothing
+        /// in a document saved yesterday.
+        /// </summary>
+        /// <param name="keys">The captured elements.</param>
+        private static string Digest(IReadOnlyList<ElementKey> keys)
+        {
+            var hash = 14695981039346656037UL;
+
+            foreach (var word in keys.Select(k => k.ToString())
+                                     .OrderBy(w => w, StringComparer.Ordinal))
+            {
+                foreach (var letter in word)
+                {
+                    hash ^= letter;
+                    hash *= 1099511628211UL;
+                }
+
+                // A break between one key and the next, so two keys running together cannot
+                // fingerprint the same as one longer one.
+                hash ^= 0x1F;
+                hash *= 1099511628211UL;
+            }
+
+            return hash.ToString("x16", CultureInfo.InvariantCulture);
+        }
 
         /// <summary>Write it down.</summary>
         public JsonValue ToJson()
