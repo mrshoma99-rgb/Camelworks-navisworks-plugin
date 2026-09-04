@@ -27,25 +27,63 @@ namespace CamelWorks.UI.Views
         private readonly StackPanel _preview = Ui.Stack();
         private readonly StackPanel _trouble = Ui.Stack();
 
+        private readonly int _rows;
+        private readonly int _columns;
+
         private WorkbookTables? _book;
+        private Action? _opened;
 
         /// <summary>Create one.</summary>
         /// <param name="onOpened">Called when a workbook has been read and a sheet chosen.</param>
-        internal SheetSource(Action? onOpened = null)
+        /// <param name="rows">How many rows of the corner to show.</param>
+        /// <param name="columns">How many columns of the corner to show.</param>
+        internal SheetSource(Action? onOpened = null, int rows = 12, int columns = 10)
         {
             _file = Ui.Text(string.Empty, "The workbook it is in", _ => { }, 320);
+            _rows = Math.Max(1, rows);
+            _columns = Math.Max(1, columns);
+            _opened = onOpened;
 
-            _sheets.SelectionChanged += (s, e) => { ShowPreview(); onOpened?.Invoke(); };
-            Opened = onOpened;
+            _sheets.SelectionChanged += (s, e) => { ShowPreview(); _opened?.Invoke(); };
         }
 
-        private Action? Opened { get; }
+        /// <summary>
+        /// Also call this when a workbook has been read and a sheet chosen.
+        ///
+        /// A screen whose handler needs the picker - one that reads the chosen sheet the moment it
+        /// changes - cannot pass that handler to the constructor, because the handler does not
+        /// exist until the picker does.
+        /// </summary>
+        /// <param name="onOpened">What to call. Added to whatever is already there.</param>
+        internal void WhenOpened(Action? onOpened)
+        {
+            if (onOpened == null) return;
+
+            var already = _opened;
+            _opened = already == null ? onOpened : (Action)(() => { already(); onOpened(); });
+        }
 
         /// <summary>The sheet the user has chosen, or null when none is open.</summary>
         internal SheetTable? Chosen =>
             _book == null ? null
                 : _sheets.SelectedItem is string name ? _book.Sheet(name)
                 : _book.First;
+
+        /// <summary>
+        /// Open a workbook the caller already has the path to.
+        ///
+        /// A tool that asked for the file before it opened this - the matrix does, because the
+        /// press that starts it is "open a spreadsheet" - would otherwise show an empty path field
+        /// beside a file the user has already chosen, and ask them to choose it again.
+        /// </summary>
+        /// <param name="path">The workbook's path. Anything empty is ignored.</param>
+        internal void Load(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            _file.Text = path!.Trim();
+            Open();
+        }
 
         /// <summary>The picker: the path, the button, and the sheet.</summary>
         internal UIElement Picker()
@@ -107,7 +145,7 @@ namespace CamelWorks.UI.Views
             _sheets.SelectedIndex = 0;
 
             ShowPreview();
-            Opened?.Invoke();
+            _opened?.Invoke();
         }
 
         /// <summary>
@@ -117,8 +155,11 @@ namespace CamelWorks.UI.Views
         /// coordinates off the sheet, and a tool that shows the cells but not their positions has
         /// sent the user back to Excel to do the one thing it asked them for.
         /// </summary>
-        private void ShowPreview(int rows = 12, int columns = 10)
+        private void ShowPreview()
         {
+            var rows = _rows;
+            var columns = _columns;
+
             _preview.Children.Clear();
 
             var sheet = Chosen;

@@ -59,6 +59,15 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
 
             /// <summary>
+            /// Where a matrix sits on a worksheet, as it was last answered.
+            ///
+            /// Held rather than made fresh per open, because a practice lays its matrices out one
+            /// way: the second workbook of the afternoon is the same shape as the first, and the
+            /// ten coordinates that were right for that one open ready for this one.
+            /// </summary>
+            private readonly SheetMapping _shape = new SheetMapping();
+
+            /// <summary>
             /// The symbol on the brush, or null while there is none.
             ///
             /// <b>A cell at a time was the whole cost of a matrix.</b> Twenty disciplines is two
@@ -1198,7 +1207,8 @@ namespace CamelWorks.UI.Views
                 ways.Children.Add(Ui.Row(
                     "A spreadsheet",
                     "The client's own workbook, with its own symbols and a key in the corner. "
-                    + "The legend is built from what it uses.",
+                    + "You say which tab it is on and where on the sheet it starts; the legend is "
+                    + "built from what it uses.",
                     "Open a workbook",
                     FromSheet));
 
@@ -4010,7 +4020,7 @@ namespace CamelWorks.UI.Views
                     FromModel),
 
                 Parts.Entry.Saying("A spreadsheet", Glyphs.Table,
-                    "The client's own workbook, with its own symbols and a key in the corner",
+                    "The client's own workbook: choose the tab and where the matrix starts on it",
                     FromSheet),
 
                 Parts.Entry.Saying("What was saved in this project", Glyphs.Folder,
@@ -4167,25 +4177,29 @@ namespace CamelWorks.UI.Views
                 foreach (var warning in reading.Warnings.Take(5)) Said(Ui.Note(warning), hold: true);
             }
 
-            /// <summary>Open a matrix out of the workbook it lives in.</summary>
+            /// <summary>
+            /// Open a matrix out of the workbook it lives in.
+            ///
+            /// The file is asked for first and the layout second, because the press that gets here
+            /// says "open a spreadsheet" and the person making it has a file in mind, not a set of
+            /// coordinates. The window that follows shows the sheet with its own row and column
+            /// numbers and says what it would read while the numbers are still free to change.
+            /// </summary>
             private void FromSheet()
             {
-                var path = Ui.AskToOpen("Open the matrix", "Excel|*.xlsx");
+                var path = Ui.AskToOpen("Open the matrix", "Excel workbook|*.xlsx;*.xlsm|All files|*.*");
 
                 if (string.IsNullOrWhiteSpace(path)) return;
 
                 try
                 {
-                    var book = XlsxReader.Read(System.IO.File.ReadAllBytes(path!));
-                    var sheet = book.First;
+                    // The mapping is kept between opens. A practice's matrices are laid out the
+                    // practice's way, so the second workbook of the afternoon is almost always the
+                    // same shape as the first, and being asked the same ten numbers again is a tax
+                    // on having answered them once.
+                    var read = SheetOrigin.Ask(path, _shape);
 
-                    if (sheet == null)
-                    {
-                        Warned(Ui.Problem("There is nothing in that workbook."));
-                        return;
-                    }
-
-                    var read = SheetMatrix.Read(sheet, new SheetMapping());
+                    if (read == null) return;
 
                     if (!read.IsUsable)
                     {

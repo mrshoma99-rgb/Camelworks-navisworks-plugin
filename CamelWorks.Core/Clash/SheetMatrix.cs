@@ -317,7 +317,6 @@ namespace CamelWorks.Core.Clash
             return -1;
         }
 
-        /// <summary>One cell by 1-based row and column, or null past the edge.</summary>
         /// <summary>Whether a cell of a workbook says "we agreed not to check this pair".</summary>
         /// <param name="said">What the cell held, trimmed.</param>
         private static bool Ruled(string said) =>
@@ -325,6 +324,7 @@ namespace CamelWorks.Core.Clash
             || string.Equals(said, "n/a", StringComparison.OrdinalIgnoreCase)
             || string.Equals(said, "na", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>One cell by 1-based row and column, or null past the edge.</summary>
         private static string? Text(SheetTable sheet, int row, int column)
         {
             if (row <= 0 || column <= 0 || row > sheet.Rows.Count) return null;
