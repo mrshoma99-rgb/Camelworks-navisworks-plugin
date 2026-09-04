@@ -645,9 +645,16 @@ namespace CamelWorks.UI.Views
             /// <summary>How wide the name itself gets, before the gutters beside it.</summary>
             private const double NameWide = 150;
 
-            /// <summary>The number gutter, and the code gutter, when anything is using them.</summary>
-            private const double NumberWide = 32;
-            private const double CodeWide = 36;
+            /// <summary>
+            /// The number gutter and the code gutter, each as wide as its longest entry.
+            ///
+            /// <b>Thirty-six pixels was a guess and it cut "ARC" down to "A...".</b> Every one of
+            /// these is a short string whose length is known, so none of them is worth guessing
+            /// at: measured, "01" costs what "01" costs and a four-digit number still fits.
+            /// </summary>
+            private double NumberWide => Widest(_board.Rows, 11, false) + 12;
+
+            private double CodeWide => Widest(_board.Rows, 10, true, code: true) + 18;
 
             /// <summary>
             /// How wide the row headers are: the name, plus a gutter for whatever is in use.
@@ -719,9 +726,27 @@ namespace CamelWorks.UI.Views
                 + (Unbacked(_board.Columns) ? WarnTall : 0);
 
             /// <summary>How far up a column header the number, the code and the mark reach.</summary>
-            private const double NumberTall = 22;
-            private const double CodeTall = 28;
+            private double NumberTall => Widest(_board.Columns, 11, false) + 10;
+
+            private double CodeTall => Widest(_board.Columns, 10, true, code: true) + 14;
+
             private const double WarnTall = 16;
+
+            /// <summary>The longest number, or code, in one axis - at the size it is drawn.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            /// <param name="size">The type size it is drawn at.</param>
+            /// <param name="bold">Whether it is drawn semibold.</param>
+            /// <param name="code">True for the codes, false for the numbers.</param>
+            private static double Widest(IReadOnlyList<MatrixLine> lines, double size, bool bold,
+                                         bool code = false)
+            {
+                var widest = 0.0;
+
+                foreach (var line in lines)
+                    widest = Math.Max(widest, Measured(code ? line.Code : line.Number, size, bold));
+
+                return Math.Max(12, Math.Min(80, widest));
+            }
 
             /// <summary>
             /// A text block kept aside to measure a name with, at the size the headers use.
@@ -729,14 +754,21 @@ namespace CamelWorks.UI.Views
             /// Measuring the real one is no good: it is given the box it has to fit and reports
             /// that box back. This one is never drawn and is asked for its natural width.
             /// </summary>
-            private static readonly TextBlock Ruler =
-                new TextBlock { FontSize = 11, FontWeight = FontWeights.SemiBold };
+            private static readonly TextBlock Ruler = new TextBlock();
 
-            /// <summary>How wide one name is, laid out in a line.</summary>
-            /// <param name="text">The name.</param>
-            private static double Measured(string text)
+            /// <summary>How wide one piece of text is, laid out in a line at the size it is drawn.</summary>
+            /// <param name="text">The text.</param>
+            /// <param name="size">The type size.</param>
+            /// <param name="bold">Whether it is semibold.</param>
+            private static double Measured(string text, double size = 11, bool bold = true)
             {
+                Ruler.FontSize = size;
+                Ruler.FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal;
                 Ruler.Text = text ?? string.Empty;
+
+                // A block that has been measured once reports the same answer to the same
+                // constraint however its text changed, so it is asked again from scratch.
+                Ruler.InvalidateMeasure();
                 Ruler.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
                 return Ruler.DesiredSize.Width;
@@ -1426,7 +1458,7 @@ namespace CamelWorks.UI.Views
                         {
                             CornerRadius = new CornerRadius(4),
                             Margin = new Thickness(4, 1, 4, 2),
-                            Child = Turned(line.Code, CodeTall - 7, 10, FontWeights.SemiBold,
+                            Child = Turned(line.Code, CodeTall - 8, 10, FontWeights.SemiBold,
                                            CellWide - 14).Wearing("Lbl"),
                         };
 
@@ -1441,7 +1473,7 @@ namespace CamelWorks.UI.Views
 
                 if (Numbered(_board.Columns) && line.Number.Length > 0)
                 {
-                    var number = Turned(line.Number, NumberTall - 4, 11, FontWeights.Normal)
+                    var number = Turned(line.Number, NumberTall - 6, 11, FontWeights.Normal)
                                      .Wearing("Hint");
 
                     Grid.SetRow(number, row);
