@@ -1505,13 +1505,14 @@ namespace CamelWorks.UI.Views
                 mark.VerticalAlignment = VerticalAlignment.Center;
                 named.Children.Add(mark);
 
+                // Left, and staying left. Twenty-two names centred share no edge to scan down,
+                // which is the whole of what a column of names in a table is for.
                 named.Children.Add(new TextBlock
                 {
                     Text = line.Name,
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 12,
                     VerticalAlignment = VerticalAlignment.Center,
-                    TextAlignment = TextAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                 }.Wearing("Body"));
@@ -1613,8 +1614,8 @@ namespace CamelWorks.UI.Views
                             Height = CodeTall - 6,
                             HorizontalAlignment = HorizontalAlignment.Center,
                             VerticalAlignment = VerticalAlignment.Center,
-                            Child = Turned(line.Code, CodeTall - 12, 10, FontWeights.SemiBold,
-                                           wide - 6).Wearing("Lbl"),
+                            Child = Turned(line.Code, CodeTall - 12, 10, FontWeights.SemiBold)
+                                        .Wearing("Lbl"),
                         };
 
                         chip.Tint(Border.BackgroundProperty, "Nav");
@@ -1681,11 +1682,10 @@ namespace CamelWorks.UI.Views
             /// <param name="along">How far up the column it may run.</param>
             /// <param name="size">The type size.</param>
             /// <param name="weight">The weight.</param>
-            /// <param name="across">How thick it is, or 0 for the whole column.</param>
             /// <param name="at">Which end of its run the words sit at.</param>
-            private TextBlock Turned(string text, double along, double size, FontWeight weight,
-                                     double across = 0,
-                                     TextAlignment at = TextAlignment.Center) =>
+            private static TextBlock Turned(string text, double along, double size,
+                                            FontWeight weight,
+                                            TextAlignment at = TextAlignment.Center) =>
                 new TextBlock
                 {
                     Text = text,
@@ -1695,7 +1695,14 @@ namespace CamelWorks.UI.Views
                     TextWrapping = TextWrapping.NoWrap,
 
                     Width = Math.Max(0, along),
-                    Height = Math.Max(0, across > 0 ? across : CellWide - 6),
+
+                    // <b>No height.</b> Given one, the words sat at the top of the box it made
+                    // and everything below them was empty - and the top of a box turned
+                    // anti-clockwise is the left-hand edge of the column, so the name and the
+                    // number were pinned to one side of a header whose box was centred to the
+                    // half pixel. Left to be as thick as its own line and centred, the letters
+                    // land in the middle of the column, which is where they were always meant to
+                    // be.
 
                     // <b>Turned the way a column heading is turned everywhere else</b> -
                     // counter-clockwise, reading upwards, which is what a spreadsheet does and
