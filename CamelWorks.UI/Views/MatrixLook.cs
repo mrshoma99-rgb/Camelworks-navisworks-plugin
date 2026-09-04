@@ -48,16 +48,29 @@ namespace CamelWorks.UI.Views
         {
             if (style == null || onChanged == null) return;
 
+            // <b>Modeless, and out of the way.</b> Every choice in here is judged by looking at
+            // the grid behind it - which is the reason it has no Cancel - and it was then opened
+            // modal and centred on the owner, parked on top of the one thing it wants you to
+            // see. It sits to the right of the window it changes, and the grid stays live under
+            // it, so a colour is chosen by watching two hundred cells take it.
             var window = new Window
             {
                 Title = "CamelWorks - How the matrix is drawn",
-                Width = 560,
-                Height = 640,
-                MinWidth = 420,
-                MinHeight = 380,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Width = 480,
+                Height = 620,
+                MinWidth = 400,
+                MinHeight = 360,
+                WindowStartupLocation = WindowStartupLocation.Manual,
                 ShowInTaskbar = false,
             };
+
+            // Off to the right of whatever screen it opened on, so the grid it changes stays in
+            // view. Its own size is not known until it is measured, so this is worked from the
+            // work area rather than from the window.
+            var room = SystemParameters.WorkArea;
+
+            window.Left = Math.Max(room.Left, room.Right - window.Width - 32);
+            window.Top = room.Top + 72;
 
             var pages = Ui.Stack();
 
@@ -106,7 +119,9 @@ namespace CamelWorks.UI.Views
             Skin.Apply(window);
             Shell.HostWindow.Own(window);
 
-            window.ShowDialog();
+            // Shown, not shown as a dialogue: a modal window disables the frame behind it, and
+            // the frame behind it is the matrix these choices are about.
+            window.Show();
         }
 
         /// <summary>Draw the whole window's contents, which happens again after every change.</summary>
@@ -275,6 +290,19 @@ namespace CamelWorks.UI.Views
                 swatch, swatch.ToolTip as string ?? colour);
 
             swatch.Focusable = true;
+
+            // A Border has no style, so it draws nothing at all when the keyboard reaches it.
+            swatch.GotKeyboardFocus += (s, e) =>
+            {
+                swatch.BorderThickness = new Thickness(2);
+                swatch.Tint(Border.BorderBrushProperty, "Accent");
+            };
+
+            swatch.LostKeyboardFocus += (s, e) =>
+            {
+                swatch.BorderThickness = new Thickness(on ? 2 : 1);
+                swatch.Tint(Border.BorderBrushProperty, on ? "Accent" : "BdStrong");
+            };
 
             swatch.KeyDown += (s, e) => Ui.Safely(() =>
             {

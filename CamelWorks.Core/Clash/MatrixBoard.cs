@@ -398,6 +398,43 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
+        /// Rename a line, and rename the one standing for it on the other axis with it.
+        ///
+        /// <b>What makes two lines twins is what they are called, until somebody says what they
+        /// are.</b> So on a matrix typed out by hand - where nothing points anywhere yet - fixing
+        /// a typo in a row broke it away from its own column: the pair stopped being mirrored,
+        /// both its cells went live, and the triangle became a square for that discipline. Which
+        /// is the same fault pointing a row had, and the most likely act anybody performs.
+        /// </summary>
+        /// <param name="line">The row or column being renamed.</param>
+        /// <param name="name">What it is called now.</param>
+        /// <returns>The twin that was renamed with it, or null when there was none.</returns>
+        public MatrixLine? Rename(MatrixLine? line, string? name)
+        {
+            if (line == null) return null;
+
+            var wanted = (name ?? string.Empty).Trim();
+
+            if (wanted.Length == 0 || string.Equals(wanted, line.Name, StringComparison.Ordinal))
+            {
+                if (line != null && wanted.Length > 0) line.Name = wanted;
+
+                return null;
+            }
+
+            // Found before the change, because a name is what makes them twins.
+            var twin = TwinOf(line);
+
+            line.Name = wanted;
+
+            if (twin == null) return null;
+
+            twin.Name = wanted;
+
+            return twin;
+        }
+
+        /// <summary>
         /// Put a symbol in every empty cell of the half that is worked in.
         ///
         /// <b>The press that was missing.</b> A matrix is nearly always "this one thing, except

@@ -80,11 +80,18 @@ namespace CamelWorks.UI.Views
 
             var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), 70);
 
+            // <b>A cell is thirty-eight pixels wide and nothing was clipping it.</b> The field
+            // invites "a letter, a mark or a word", and a word overdrew its neighbours in the
+            // grid and in the twenty-four pixel chip on the palette. Four characters is a mark;
+            // longer than that is a name, and a name belongs in the legend line beside it.
+            name.MaxLength = 4;
+
             var mm = Ui.Text(
                 (held.Tolerance * 1000).ToString("0.###", CultureInfo.CurrentCulture), null, 80);
 
             body.Children.Add(Ui.Field("What the cells say", name,
-                "A letter, a mark or a word — whatever the sheet this matrix came from uses."));
+                "A letter or a short mark — whatever the sheet this matrix came from uses. Four "
+                + "characters at most, because it has to read inside a cell."));
 
             body.Children.Add(Ui.Field("Colour",
                 MatrixLook.Colours(held.Colour, colour =>
@@ -193,6 +200,23 @@ namespace CamelWorks.UI.Views
         {
             while (body.Children.Count > 2) body.Children.RemoveAt(2);
 
+            // A duplicate test has no tolerance to give: it is the same thing modelled twice, and
+            // the field sat there live and meaningful-looking with nothing to mean. Set from here
+            // rather than by rebuilding the form, because the dropdown that changes it is one of
+            // the things a rebuild would take away while its own event is still running.
+            var tolerance = Ui.Small(string.Empty);
+
+            void Kinded()
+            {
+                var duplicate = held.Test == MatrixTest.Duplicate;
+
+                mm.IsEnabled = !duplicate;
+                tolerance.Text = duplicate
+                    ? "A duplicate is the same thing modelled twice, so there is no tolerance to set."
+                    : string.Empty;
+                tolerance.Visibility = duplicate ? Visibility.Visible : Visibility.Collapsed;
+            }
+
             body.Children.Add(Ui.Field("Kind of test",
                 Ui.Choice(new[] { "Hard", "Hard conservative", "Clearance", "Duplicate" },
                     MatrixNaming.Worded(held.Test),
@@ -202,9 +226,21 @@ namespace CamelWorks.UI.Views
                             : picked == "Clearance" ? MatrixTest.Clearance
                             : picked == "Duplicate" ? MatrixTest.Duplicate
                             : MatrixTest.Hard;
-                    }, 160)));
+
+                        Kinded();
+                    }, 160),
+                "Hard is solids overlapping. Hard conservative tests the triangles instead — "
+                + "slower, and it catches more. Clearance is closer than they are allowed to be. "
+                + "Duplicate is the same thing modelled twice."));
 
             body.Children.Add(Ui.Field("Tolerance, in millimetres", mm));
+
+            tolerance.TextWrapping = TextWrapping.Wrap;
+            tolerance.Margin = new Thickness(0, -6, 0, 9);
+
+            body.Children.Add(tolerance);
+
+            Kinded();
 
             var live = Ui.Check("Build tests from this symbol", held.Enabled,
                                 on => held.Enabled = on);

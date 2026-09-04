@@ -315,6 +315,12 @@ namespace CamelWorks.UI.Views
             ("ConsoleBg",   "#0E1116", "#0A0C10"),
             ("ConsoleTx",   "#CFE3D5", "#BFE0C8"),
 
+            // The two inks for writing on a colour somebody chose. Fixed rather than theme-led,
+            // because the colour under them is fixed: a wash that does not change with the theme
+            // needs a letter that does not either.
+            ("Ink.OnLight",  "#1F2329", "#1F2329"),
+            ("Ink.OnDark",   "#F2F5F8", "#F2F5F8"),
+
             // <b>Eight washes for the legend's symbols, in the order the legend lists them.</b>
             // Every symbol in the grid was drawn on the same pale blue, so the only thing telling
             // a hard clash from a clearance anywhere on a matrix of two hundred cells was the
@@ -322,12 +328,18 @@ namespace CamelWorks.UI.Views
             // structure is a clearance, and you should see that without reading - and a single
             // fill made that impossible. Pale enough to carry the letter at full contrast, and
             // separated by hue rather than by lightness so the letter is never the only channel.
+            //
+            // <b>Ordered so the first four are the four that separate best.</b> Hue alone is not
+            // separation: simulated for a deuteranope, the blue and the lavender were 1.2 apart
+            // in CIELAB - and they were positions one and four, which on a legend of four symbols
+            // is the shipped default. Blue, amber, green and pink lead; lavender, teal, lime and
+            // slate follow, where a legend has grown past the size anybody reads as a key anyway.
             ("Sym.A",       "#DCEAF8", "#1E2E3F"),
-            ("Sym.B",       "#DDF2E4", "#17311F"),
-            ("Sym.C",       "#FBEFD3", "#3A2F12"),
-            ("Sym.D",       "#EAE2F8", "#2A2340"),
-            ("Sym.E",       "#D6F0EF", "#12312F"),
-            ("Sym.F",       "#FADCE8", "#38202B"),
+            ("Sym.B",       "#FBEFD3", "#3A2F12"),
+            ("Sym.C",       "#DDF2E4", "#17311F"),
+            ("Sym.D",       "#FADCE8", "#38202B"),
+            ("Sym.E",       "#EAE2F8", "#2A2340"),
+            ("Sym.F",       "#D6F0EF", "#12312F"),
             ("Sym.G",       "#E9F2CE", "#29331A"),
             ("Sym.H",       "#E2E6EC", "#2B3138"),
 

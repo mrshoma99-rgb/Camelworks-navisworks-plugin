@@ -1403,7 +1403,7 @@ namespace CamelWorks.UI.Views
             {
                 // Through Glyph, not Arrow: a raw path draws at its own 24-unit size, which inside
                 // a 26-pixel button is a cross that fills the row it is meant to sit beside.
-                Content = Glyph(glyph, 15, tint),
+                Content = Glyph(glyph, 17, tint),
                 ToolTip = tip,
             };
 
@@ -2460,7 +2460,12 @@ namespace CamelWorks.UI.Views
             var path = new System.Windows.Shapes.Path
             {
                 Data = Geometry.Parse(data),
-                StrokeThickness = 2,
+
+                // <b>Two units on a twenty-four unit canvas is a hairline.</b> Drawn at thirteen
+                // pixels that is 1.08 device pixels, anti-aliased to about half coverage - so a
+                // row of symbols came out visibly lighter than the twelve-pixel type beside it,
+                // and Muted's five and a half to one arrived on the screen as about three.
+                StrokeThickness = 2.4,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
                 StrokeLineJoin = PenLineJoin.Round,
@@ -2496,7 +2501,7 @@ namespace CamelWorks.UI.Views
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            row.Children.Add(Glyph(glyph, 13, "Muted", new Thickness(0, 0, 6, 0)));
+            row.Children.Add(Glyph(glyph, 15, "Muted", new Thickness(0, 0, 6, 0)));
 
             row.Children.Add(new TextBlock
             {
@@ -3871,6 +3876,30 @@ namespace CamelWorks.UI.Views
 
         // -----------------------------------------------------------------------------------
 
+        /// <summary>
+        /// The ink to write on a colour somebody chose, rather than on one the theme picked.
+        ///
+        /// <b>A chosen colour does not change with the theme and the theme's ink does.</b> The
+        /// washes a symbol can be given are fixed - they are the matrix's, not the seat's - so in
+        /// the dark palette the letter on top of one was near-white on a pale pastel: one to one.
+        /// Every cell of a coloured symbol was a blank tile. Which ink to use is a property of
+        /// the colour underneath, and nothing else.
+        /// </summary>
+        /// <param name="on">The colour being written on.</param>
+        public static Brush InkOn(Brush? on)
+        {
+            if (!(on is SolidColorBrush solid)) return Skin.Of("Text");
+
+            var colour = solid.Color;
+
+            // Rec. 709 luminance on the raw channels. Not gamma-correct, and it does not need to
+            // be: the question is only "is this light or dark", and every wash on offer is far
+            // from the middle.
+            var light = ((0.2126 * colour.R) + (0.7152 * colour.G) + (0.0722 * colour.B)) / 255.0;
+
+            return light > 0.55 ? Skin.Of("Ink.OnLight") : Skin.Of("Ink.OnDark");
+        }
+
         /// <summary>The text colour for a tone.</summary>
         /// <param name="tone">The tone.</param>
         public static Brush Ink(Tone tone) => Skin.Ink(tone);
@@ -3938,7 +3967,7 @@ namespace CamelWorks.UI.Views
         public const string Model = "M12,3 L21,7.5 L12,12 L3,7.5 Z M3,12 L12,16.5 L21,12 M3,16.5 L12,21 L21,16.5";
 
         /// <summary>Overlapping panes: appearance layers.</summary>
-        public const string Layers = "M4,9 L11,9 L11,20 L4,20 Z M13,4 L20,4 L20,15 L13,15 Z";
+        public const string Layers = "M3.5,10 L12,10 L12,20.5 L3.5,20.5 Z M8,10 L8,4.5 L20.5,4.5 L20.5,15.5 L12,15.5";
 
         /// <summary>Two shapes meeting: a clash.</summary>
         public const string Clash = "M4,12 L11,12 M13,12 L20,12 M12,4 L12,11 M12,13 L12,20 M9,9 L15,15 M15,9 L9,15";
@@ -4027,7 +4056,7 @@ namespace CamelWorks.UI.Views
         public const string Palette = "M12,3.5 C6.8,3.5 3,7.4 3,12 C3,16.7 6.9,20.5 12,20.5 C13.4,20.5 14.1,19.7 14.1,18.8 C14.1,18 13.4,17.6 13.4,16.8 C13.4,16 14.1,15.4 14.9,15.4 L16.6,15.4 C19.1,15.4 21,13.4 21,10.9 C21,6.8 16.9,3.5 12,3.5 M7.6,10.6 L7.61,10.6 M10.6,7.6 L10.61,7.6 M14.4,7.6 L14.41,7.6 M17,10.6 L17.01,10.6";
 
         /// <summary>Pour it into what is empty: a fill, not another plus.</summary>
-        public const string Sweep = "M12,3 L12,13 M8,9 L12,13 L16,9 M4,17 L20,17 L20,20 L4,20 Z";
+        public const string Sweep = "M4,4 L20,4 L20,8 L4,8 Z M12,8 L12,11 M8.5,11 L15.5,11 L15.5,20.5 L8.5,20.5 Z M8.5,15.5 L15.5,15.5";
 
         /// <summary>Rub it out: a clear, not another cross.</summary>
         public const string Eraser = "M6.5,19 L3.5,15.5 L14,5 L19.5,11 L11,19 Z M9.5,19 L20.5,19";

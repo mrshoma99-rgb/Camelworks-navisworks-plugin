@@ -126,8 +126,10 @@
   </Style>
 
   <!-- The section eyebrow: small, spaced, upper. Carries a title without spending a heading on it. -->
+  <!-- Muted, not Faint. Faint is reasoned about against the large-text floor and this is eleven
+       pixels: 3.86:1 on a pane, which is every eyebrow on every panel in the product. -->
   <Style x:Key="Caps" TargetType="TextBlock">
-    <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Caption}"/>
     <Setter Property="FontWeight" Value="Bold"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
@@ -147,8 +149,10 @@
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
 
+  <!-- And the same for the hint under a field: eleven pixels carrying every field label, every
+       tolerance line and every count in the options panel. -->
   <Style x:Key="Hint" TargetType="TextBlock">
-    <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+    <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
     <Setter Property="FontSize" Value="{DynamicResource Size.Caption}"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
     <Setter Property="LineHeight" Value="16"/>
@@ -493,22 +497,31 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="Button">
-          <Border x:Name="b" Background="Transparent" CornerRadius="7">
+          <Border x:Name="b" Background="Transparent" CornerRadius="7" BorderThickness="0">
             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="b" Property="Background" Value="{DynamicResource Hover}"/>
-              <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+            </Trigger>
+            <!-- Pressed, which this had none of: the one row of buttons on the screen that
+                 includes two destroyers looked identical held down and hovered. -->
+            <Trigger Property="IsPressed" Value="True">
+              <Setter TargetName="b" Property="Background" Value="{DynamicResource Press}"/>
+            </Trigger>
+            <!-- The keyboard can reach these, so it has to be able to see where it is. -->
+            <Trigger Property="IsKeyboardFocused" Value="True">
+              <Setter TargetName="b" Property="BorderThickness" Value="2"/>
+              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Accent}"/>
             </Trigger>
             <!-- Off, not pressed. This style draws a plate for hover, so painting a solid one
                  for disabled says the opposite of what it means: a row of unavailable symbols
                  read as a row of held-down buttons. The plate stays out of it and the symbol
-                 fades, which is what off looks like. -->
+                 fades, which is what off looks like - but at four tenths a 1.08-pixel stroke
+                 came to 1.75:1, which is not faded, it is gone. -->
             <Trigger Property="IsEnabled" Value="False">
               <Setter TargetName="b" Property="Background" Value="Transparent"/>
-              <Setter TargetName="b" Property="Opacity" Value="0.4"/>
-              <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
+              <Setter TargetName="b" Property="Opacity" Value="0.55"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
           </ControlTemplate.Triggers>
