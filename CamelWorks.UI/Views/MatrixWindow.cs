@@ -1511,6 +1511,7 @@ namespace CamelWorks.UI.Views
                     FontWeight = FontWeights.SemiBold,
                     FontSize = 12,
                     VerticalAlignment = VerticalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                 }.Wearing("Body"));
@@ -1641,8 +1642,13 @@ namespace CamelWorks.UI.Views
                     row++;
                 }
 
+                // <b>Centred, like everything else in the header.</b> Flushed to the end that
+                // meets the grid, every name ended on one line - which is a tidy edge and a
+                // header that does not agree with itself, because the letter above it, the
+                // number and the code are all centred in the column. One rule for the four of
+                // them: whatever a header holds sits in the middle of the column it names.
                 var turned = Turned(line.Name, HeaderHigh - Above, 11, FontWeights.SemiBold,
-                                    at: TextAlignment.Left).Wearing("Body");
+                                    at: TextAlignment.Center).Wearing("Body");
 
                 Grid.SetRow(turned, row);
                 stacked.Children.Add(turned);
