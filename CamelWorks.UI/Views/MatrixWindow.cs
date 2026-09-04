@@ -157,24 +157,18 @@ namespace CamelWorks.UI.Views
             private UIElement? _frame;
 
             /// <summary>
-            /// The two side panels, which give their width back when there is not enough.
+            /// The options panel, which gives its width back when it is asked to.
             ///
-            /// <b>Four hundred and forty pixels of them, and they never moved.</b> Docked beside
-            /// the Clash Detective at eleven or twelve hundred, that left about a third of the
-            /// window for the grid the panels are there to serve - so the frozen headers, whose
-            /// whole job is to keep the names beside the cells, were keeping them beside seven
-            /// columns. The inspector goes first because it is about one line at a time and the
-            /// grid is about all of them; the palette holds on longer because it is what the
-            /// hand is using.
+            /// <b>There were two panels, one down each side.</b> Four hundred and fifty pixels
+            /// of them on a screen whose whole subject is a grid that never has enough width.
+            /// One panel now, and it does not stand aside on its own any more: it holds the
+            /// palette, and a window that hides the tools because it got narrow is a window
+            /// arguing with the person using it. It goes when somebody says so and not before.
             /// </summary>
-            private readonly Border _railPane = new Border();
-
             private readonly Border _sidePane = new Border();
 
-            /// <summary>Whether each is open, and whether somebody said so themselves.</summary>
-            private bool _railOpen = true;
+            /// <summary>Whether it is open.</summary>
             private bool _sideOpen = true;
-            private bool _byHand;
 
             /// <summary>Where the keyboard is, or -1 for nowhere.</summary>
             private int _atRow = -1;
@@ -417,86 +411,52 @@ namespace CamelWorks.UI.Views
             {
                 if (_frame != null) return _frame;
 
-                var three = new Grid();
+                var both = new Grid();
 
-                three.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                three.ColumnDefinitions.Add(new ColumnDefinition
+                both.ColumnDefinitions.Add(new ColumnDefinition
                 {
                     Width = new GridLength(1, GridUnitType.Star),
                 });
-                three.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                _railPane.Width = 190;
-                _railPane.BorderThickness = new Thickness(0, 0, 1, 0);
-                _railPane.Child = Rail();
-
-                _railPane.Tint(Border.BackgroundProperty, "Pane");
-                _railPane.Tint(Border.BorderBrushProperty, "Bd");
-
-                Grid.SetColumn(_railPane, 0);
-                three.Children.Add(Ui.Loose(_railPane));
+                both.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 var middle = Middle();
 
-                Grid.SetColumn(middle, 1);
-                three.Children.Add(middle);
+                Grid.SetColumn(middle, 0);
+                both.Children.Add(middle);
 
-                _sidePane.Width = 252;
+                _sidePane.Width = 264;
                 _sidePane.BorderThickness = new Thickness(1, 0, 0, 0);
-                _sidePane.Child = new ScrollViewer
-                {
-                    Content = Ui.Loose(_inspector),
-                    Padding = new Thickness(10, 8, 10, 10),
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                };
+                _sidePane.Child = Options();
 
                 _sidePane.Tint(Border.BackgroundProperty, "Pane");
                 _sidePane.Tint(Border.BorderBrushProperty, "Bd");
 
-                Grid.SetColumn(_sidePane, 2);
-                three.Children.Add(Ui.Loose(_sidePane));
+                Grid.SetColumn(_sidePane, 1);
+                both.Children.Add(Ui.Loose(_sidePane));
 
-                // Narrow enough and the inspector stands aside on its own, until somebody says
-                // otherwise - after which it is theirs and the window stops arguing about it.
-                three.SizeChanged += (s, e) => Ui.Safely(() =>
-                {
-                    if (_byHand || e.NewSize.Width <= 0) return;
+                _frame = both;
 
-                    var room = e.NewSize.Width >= 1200;
-
-                    if (room == _sideOpen) return;
-
-                    _sideOpen = room;
-                    RedrawPanes();
-                });
-
-                _frame = three;
-
-                return three;
+                return both;
             }
 
-            /// <summary>The palette rail: what to paint with, and how much is left to do.</summary>
-            private UIElement Rail()
+            /// <summary>
+            /// One panel, down the right, holding everything that is not the grid.
+            ///
+            /// <b>There were two of them, one down each side.</b> Four hundred and fifty pixels
+            /// of options on a screen whose whole subject is a grid that never has enough width -
+            /// and the two were doing one job between them, because choosing a symbol and saying
+            /// what a row is are the same kind of act. Together they cost one panel instead of
+            /// two, the grid gets the other side of the window back, and the eye stops crossing
+            /// the matrix to get from a symbol to the row it is going in.
+            ///
+            /// Whatever was last pressed is at the top, where it changes; the palette is
+            /// underneath it, where the hand can find it in the same place every time; and how
+            /// much is left to decide is at the foot.
+            /// </summary>
+            private UIElement Options()
             {
-                var rail = new DockPanel { LastChildFill = true };
-
-                var said = Ui.Stack();
-
-                var titled = Ui.Eyebrow("Palette");
-
-                titled.Margin = new Thickness(10, 9, 10, 3);
-                said.Children.Add(titled);
-
-                var how = Ui.Small("Press one, then click or drag over the cells. Or put the "
-                                   + "cursor in the grid and type its key.");
-
-                how.TextWrapping = TextWrapping.Wrap;
-                how.Margin = new Thickness(10, 0, 10, 7);
-                said.Children.Add(how);
-
-                DockPanel.SetDock(said, Dock.Top);
-                rail.Children.Add(said);
+                var panel = new DockPanel { LastChildFill = true };
 
                 var foot = new Border
                 {
@@ -508,17 +468,68 @@ namespace CamelWorks.UI.Views
                 foot.Tint(Border.BorderBrushProperty, "Bd");
 
                 DockPanel.SetDock(foot, Dock.Bottom);
-                rail.Children.Add(foot);
+                panel.Children.Add(foot);
 
-                rail.Children.Add(new ScrollViewer
+                var keys = Ui.Stack();
+
+                // No paragraph explaining how to use it. The strip over the grid already says
+                // what is on the brush and what to do with it, in the place somebody is looking
+                // while they do it - and three lines of the same thing here is three lines the
+                // panel takes off whatever the inspector is showing.
+                var titled = Ui.Eyebrow("Palette");
+
+                titled.Margin = new Thickness(10, 9, 10, 5);
+                keys.Children.Add(titled);
+
+                // Capped, and scrolling inside itself: a job with a dozen symbols must not push
+                // whatever the inspector is showing off the top of the panel.
+                keys.Children.Add(new ScrollViewer
                 {
                     Content = Ui.Loose(_palette),
-                    Padding = new Thickness(6, 0, 6, 8),
+                    MaxHeight = 240,
+                    Padding = new Thickness(6, 0, 6, 4),
                     VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                     HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 });
 
-                return rail;
+                // Outside the capped list, not in it. A job with a dozen symbols scrolls the
+                // symbols; the two things you do to the legend itself must not scroll away with
+                // them, because "add a symbol" is what somebody reaches for when the one they
+                // want is not in the list they are looking at.
+                var add = Ui.Quiet("Add a symbol", AddSymbol);
+
+                add.HorizontalAlignment = HorizontalAlignment.Left;
+                add.Margin = new Thickness(10, 2, 10, 0);
+
+                keys.Children.Add(add);
+
+                var cover = Ui.Quiet("Cover every symbol in the grid", CoverSymbols);
+
+                cover.HorizontalAlignment = HorizontalAlignment.Left;
+                cover.Margin = new Thickness(10, 0, 10, 8);
+
+                keys.Children.Add(cover);
+
+                var band = new Border
+                {
+                    BorderThickness = new Thickness(0, 1, 0, 0),
+                    Child = keys,
+                };
+
+                band.Tint(Border.BorderBrushProperty, "Bd");
+
+                DockPanel.SetDock(band, Dock.Bottom);
+                panel.Children.Add(band);
+
+                panel.Children.Add(new ScrollViewer
+                {
+                    Content = Ui.Loose(_inspector),
+                    Padding = new Thickness(10, 8, 10, 10),
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                });
+
+                return panel;
             }
 
             /// <summary>The strip, and the sheet under it.</summary>
@@ -2794,19 +2805,6 @@ namespace CamelWorks.UI.Views
                 _palette.Children.Add(Swatch("×", "Not decided", "empties the cell", "Del",
                                           false, false, () => { Arm(null); Show(null); }));
 
-                var add = Ui.Quiet("Add a symbol", AddSymbol);
-
-                add.HorizontalAlignment = HorizontalAlignment.Left;
-                add.Margin = new Thickness(4, 6, 0, 0);
-
-                _palette.Children.Add(add);
-
-                var cover = Ui.Quiet("Cover every symbol in the grid", CoverSymbols);
-
-                cover.HorizontalAlignment = HorizontalAlignment.Left;
-                cover.Margin = new Thickness(4, 2, 0, 0);
-
-                _palette.Children.Add(cover);
             }
 
             /// <summary>One key on the palette, or one choice in the inspector.</summary>
@@ -2992,19 +2990,11 @@ namespace CamelWorks.UI.Views
 
                 Say(Saying(), 16);
 
-                Say(Ui.Quiet(_railOpen ? "Hide the palette" : "Palette", () =>
+                Say(Ui.Quiet(_sideOpen ? "Hide the options" : "Options", () =>
                 {
-                    _byHand = true;
-                    _railOpen = !_railOpen;
-                    RedrawPanes();
-                }), 16);
-
-                Say(Ui.Quiet(_sideOpen ? "Hide the inspector" : "Inspector", () =>
-                {
-                    _byHand = true;
                     _sideOpen = !_sideOpen;
                     RedrawPanes();
-                }), 4);
+                }), 16);
 
                 var back = Ui.Quiet("Undo", Undo);
 
@@ -3025,10 +3015,9 @@ namespace CamelWorks.UI.Views
                 Say(on, 4);
             }
 
-            /// <summary>Show or hide the two side panels, and say so on the strip.</summary>
+            /// <summary>Show or hide the options panel, and say so on the strip.</summary>
             private void RedrawPanes()
             {
-                _railPane.Visibility = _railOpen ? Visibility.Visible : Visibility.Collapsed;
                 _sidePane.Visibility = _sideOpen ? Visibility.Visible : Visibility.Collapsed;
 
                 RedrawStrip();
