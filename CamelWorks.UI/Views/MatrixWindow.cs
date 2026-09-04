@@ -1446,12 +1446,23 @@ namespace CamelWorks.UI.Views
                 {
                     if (line.Code.Length > 0)
                     {
+                        // <b>A turn changes what is drawn, not what is laid out.</b> The chip
+                        // sized itself to the text's own box - long and thin the way the text
+                        // was typed - while the drawing of it came out short and tall, so the
+                        // code was painted across a pill that was the wrong way round and stuck
+                        // out of both ends of it. The pill is given the size the turned words
+                        // actually occupy, and the words sit in the middle of it.
+                        var wide = Math.Min(CellWide - 14, 30);
+
                         var chip = new Border
                         {
                             CornerRadius = new CornerRadius(4),
-                            Margin = new Thickness(4, 1, 4, 2),
-                            Child = Turned(line.Code, CodeTall - 8, 10, FontWeights.SemiBold,
-                                           CellWide - 14).Wearing("Lbl"),
+                            Width = wide,
+                            Height = CodeTall - 6,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Child = Turned(line.Code, CodeTall - 12, 10, FontWeights.SemiBold,
+                                           wide - 6).Wearing("Lbl"),
                         };
 
                         chip.Tint(Border.BackgroundProperty, "Nav");
@@ -1479,8 +1490,8 @@ namespace CamelWorks.UI.Views
                     row++;
                 }
 
-                var turned = Turned(line.Name, HeaderHigh - Above, 11, FontWeights.SemiBold)
-                                 .Wearing("Body");
+                var turned = Turned(line.Name, HeaderHigh - Above, 11, FontWeights.SemiBold,
+                                    at: TextAlignment.Left).Wearing("Body");
 
                 Grid.SetRow(turned, row);
                 stacked.Children.Add(turned);
@@ -1512,8 +1523,10 @@ namespace CamelWorks.UI.Views
             /// <param name="size">The type size.</param>
             /// <param name="weight">The weight.</param>
             /// <param name="across">How thick it is, or 0 for the whole column.</param>
+            /// <param name="at">Which end of its run the words sit at.</param>
             private TextBlock Turned(string text, double along, double size, FontWeight weight,
-                                     double across = 0) =>
+                                     double across = 0,
+                                     TextAlignment at = TextAlignment.Center) =>
                 new TextBlock
                 {
                     Text = text,
@@ -1525,18 +1538,23 @@ namespace CamelWorks.UI.Views
                     Width = Math.Max(0, along),
                     Height = Math.Max(0, across > 0 ? across : CellWide - 6),
 
-                    // <b>Turned clockwise, and flushed to the end that meets the grid.</b>
-                    // Counter-clockwise, a box's right-hand edge lands at the top - so a name
-                    // set to its right sat at the top of the band with the gap between it and
-                    // the grid, and the pieces of a header came out in the reverse of the order
-                    // the row puts them in. Clockwise, the right edge lands at the bottom: every
-                    // name ends where its column begins, and the header reads downwards in the
-                    // same order the row reads across.
-                    TextAlignment = TextAlignment.Right,
+                    // <b>Turned the way a column heading is turned everywhere else</b> -
+                    // counter-clockwise, reading upwards, which is what a spreadsheet does and
+                    // what anybody who has read a matrix before expects. Clockwise it was
+                    // legible but upside down against every other tool they use.
+                    //
+                    // Which end the words sit at is then set by hand rather than by the turn.
+                    // Counter-clockwise a box's left-hand edge lands at the bottom, so a name
+                    // set to its left starts at the grid and runs up away from it, and what
+                    // ellipsises is the far end rather than the end that matters. The order of
+                    // the pieces is the grid's business, not the rotation's: number, code and
+                    // name are three rows down the header, so they read downwards in the same
+                    // order the row reads across whichever way the letters face.
+                    TextAlignment = at,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     RenderTransformOrigin = new Point(0.5, 0.5),
-                    RenderTransform = new System.Windows.Media.RotateTransform(90),
+                    RenderTransform = new System.Windows.Media.RotateTransform(-90),
                 };
 
             /// <summary>
