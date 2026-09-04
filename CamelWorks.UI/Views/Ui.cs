@@ -1550,14 +1550,17 @@ namespace CamelWorks.UI.Views
             ground.Tint(Border.BackgroundProperty, "Bg");
             window.Content = ground;
 
-            Skin.Apply(window);
-            Shell.HostWindow.Own(window);
-
             // Closing it is asking to stop, not a way to leave the work running unwatched.
             window.Closing += (s, e) => job.IsCancelled = true;
 
             try
             {
+                // Inside the guard with the work. Owning a window and applying a skin both talk
+                // to the host's own frame, and either can refuse - which left the two lines that
+                // are hardest to reason about as the two lines with nothing around them.
+                Skin.Apply(window);
+                Shell.HostWindow.Own(window);
+
                 window.Show();
                 work(job);
             }
@@ -2103,8 +2106,35 @@ namespace CamelWorks.UI.Views
             }
             catch (Exception e)
             {
-                Told("Something went wrong: " + Describe(e));
+                // <b>Named, not just described.</b> A message on its own - "the given key was not
+                // present" - says nothing about where to look, and a crash report from the host
+                // carries the type and nothing else. Both halves together are what makes a fault
+                // somebody can send in and somebody else can find.
+                Told("Something went wrong: " + Describe(e)
+                     + "\n\n" + e.GetType().Name + Where(e));
             }
+        }
+
+        /// <summary>The first frame of a fault that is ours, so a report says where to look.</summary>
+        /// <param name="error">What was thrown.</param>
+        private static string Where(Exception error)
+        {
+            var trace = error.StackTrace;
+
+            if (string.IsNullOrEmpty(trace)) return string.Empty;
+
+            foreach (var line in trace!.Split('\n'))
+            {
+                var said = line.Trim();
+
+                if (said.IndexOf("CamelWorks", StringComparison.Ordinal) < 0) continue;
+
+                var at = said.IndexOf(" in ", StringComparison.Ordinal);
+
+                return "  ·  " + (at > 0 ? said.Substring(0, at) : said);
+            }
+
+            return string.Empty;
         }
 
         /// <summary>
@@ -2185,7 +2215,14 @@ namespace CamelWorks.UI.Views
             };
 
             card.Wearing("RowCard");
-            card.Click += (s, e) => onOpen?.Invoke();
+
+            // <b>Through Safely, like every menu line in the product.</b> This is the card an
+            // empty screen offers its ways in on - "read the tests", "open a workbook", "pick the
+            // sets" - so it is the first thing anybody presses, and it ran its action with no net
+            // at all. Every menu entry goes through Safely; these did not, and an exception
+            // anywhere under one of them was an unhandled dispatcher exception, which does not
+            // show a message: it takes Navisworks down with a CLR error naming only the type.
+            card.Click += (s, e) => Safely(onOpen);
 
             return card;
         }

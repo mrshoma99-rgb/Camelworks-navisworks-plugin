@@ -6141,6 +6141,24 @@ namespace CamelWorks.UI.Views
                              + "block now covers one discipline against another."));
             }
 
+            /// <summary>
+            /// Take a board that came from somewhere else, drawn the way this matrix is drawn.
+            ///
+            /// Which half is worked in lives on the board as well as in the style, so that undo
+            /// and the saved grid keep it - and a board that arrives from a read or an import
+            /// carries the default. Every one of the three ways in set the field directly and
+            /// none of them said so, so reading a matrix out of the model silently flipped the
+            /// drawing back on anybody who had asked for the other triangle.
+            /// </summary>
+            /// <param name="board">The board that came back.</param>
+            private void Taken(MatrixBoard board)
+            {
+                _board = board;
+                _board.UpperIsLive = _style.UpperIsLive;
+
+                _found.Clear();
+            }
+
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
             private void FromModel()
             {
@@ -6180,7 +6198,8 @@ namespace CamelWorks.UI.Views
 
                 Remember(what: "reading the matrix out of the model's tests");
 
-                _board = reading.Board;
+                Taken(reading.Board);
+
                 _legend = reading.Legend;
 
                 Redraw();
@@ -6222,7 +6241,7 @@ namespace CamelWorks.UI.Views
 
                     Remember(what: "opening that spreadsheet");
 
-                    _board = read.Grid;
+                    Taken(read.Grid);
 
                     // The legend the sheet's own symbols ask for, kept where it already says
                     // something. What arrives unexplained arrives as an ordinary hard clash,
