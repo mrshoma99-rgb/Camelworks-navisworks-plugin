@@ -94,14 +94,11 @@ namespace CamelWorks.UI.Views
                 + "characters at most, because it has to read inside a cell."));
 
             body.Children.Add(Ui.Field("Colour",
-                MatrixLook.Colours(held.Colour, colour =>
-                {
-                    held.Colour = colour;
-
-                    // Redrawn rather than re-tinted: the strip marks which one is chosen with a
-                    // border, and the one that was chosen a moment ago has to lose it.
-                    Fill(body, held, mm);
-                }),
+                // The strip marks what is chosen itself. It used to be left to this to redraw
+                // it, and this cannot: Fill keeps the first two children of the form, and the
+                // colour field is the second of them - so the ring never moved and choosing a
+                // colour looked like pressing a dead control.
+                MatrixLook.Colours(held.Colour, colour => held.Colour = colour),
                 "Automatic gives it one from where it sits in the legend, which is what a matrix "
                 + "nobody has coloured looks like."));
 

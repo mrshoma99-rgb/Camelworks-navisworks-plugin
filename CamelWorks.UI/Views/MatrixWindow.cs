@@ -4073,10 +4073,16 @@ namespace CamelWorks.UI.Views
                     _strip.Children.Add(said);
                 }
 
+                // <b>A strip that narrates every press is a strip nobody reads.</b> It carried
+                // running commentary - how to use the brush, which row is in the panel, where
+                // the cursor is - rewritten on every click, in the one band of the screen that
+                // is supposed to be glanceable. All three said something already on the screen:
+                // the panel is titled with the row, the cursor is drawn in the cell it is in,
+                // and the brush is the chip that is lit on the palette. What stays here is
+                // state that has a control attached to it, and nothing that is a lesson.
                 if (_brush == null)
                 {
-                    Say(Ui.Small("Nothing on the brush — press a symbol on the left, or put the "
-                                 + "cursor in a cell and type its key."));
+                    Say(Ui.Small("Nothing on the brush"));
                 }
                 else
                 {
@@ -4088,34 +4094,33 @@ namespace CamelWorks.UI.Views
                         FontWeight = FontWeights.SemiBold,
                     }.Wearing("Body"));
 
-                    Say(Ui.Small("Click, drag, or click a row's number to fill what it has left "
-                                 + "undecided."), 10);
                     Say(Ui.Quiet("Put it down", () => Arm(null)), 10);
                 }
 
                 // <b>Two of the five modes said nothing at all.</b> The picked line and the lit
                 // symbol were both invisible - and the lit one greys nine cells in ten, which
                 // with nothing to explain it reads as a fault rather than as a search.
+                // Kept, alone of the three, because it is the one state that is not visible in
+                // the thing it describes: nine cells in ten drawn faint reads as a fault unless
+                // something says it is a search, and the way out of it is the button beside it.
                 if (_lit != null)
                 {
-                    Say(Ui.Small("Showing every " + Quoted(_lit) + " — the rest is dropped back"), 16);
+                    Say(Ui.Small("Showing every " + Quoted(_lit)), 16);
                     Say(Ui.Quiet("Show them all", () => Lighting(null)), 6);
                 }
-                else if (_picked != null)
-                {
-                    Say(Ui.Small((_pickedRows ? "Row " : "Column ") + _picked.Name
-                                 + " is in the panel"), 16);
-                }
 
-                if (_atRow >= 0 && _atRow < _board.Rows.Count
+                // The cursor's own address went with the rest: it is drawn in the cell it is
+                // in, and repeating it in words on every arrow press was the noisiest of them.
+                // A marked block stays, because it is a mode - what the next key typed will do
+                // is different, and nothing else on the screen says so.
+                if (Blocked
+                    && _atRow >= 0 && _atRow < _board.Rows.Count
                     && _atColumn >= 0 && _atColumn < _board.Columns.Count)
-                    Say(Ui.Small(Blocked
-                        ? "Block " + Where(_board.Rows[Math.Min(_atRow, _markRow)],
-                                           _board.Columns[Math.Min(_atColumn, _markColumn)])
-                          + " to " + Where(_board.Rows[Math.Max(_atRow, _markRow)],
-                                           _board.Columns[Math.Max(_atColumn, _markColumn)])
-                          + " — type a symbol for all of it"
-                        : "Cursor " + Where(_board.Rows[_atRow], _board.Columns[_atColumn])), 16);
+                    Say(Ui.Small("Block " + Where(_board.Rows[Math.Min(_atRow, _markRow)],
+                                                  _board.Columns[Math.Min(_atColumn, _markColumn)])
+                                 + " to " + Where(_board.Rows[Math.Max(_atRow, _markRow)],
+                                                  _board.Columns[Math.Max(_atColumn, _markColumn)])
+                                 + " — type a symbol for all of it"), 16);
 
                 Say(Ui.Loose(_count.Wearing("Hint")), 16);
 

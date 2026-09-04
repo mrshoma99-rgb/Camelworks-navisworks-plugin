@@ -224,11 +224,40 @@ namespace CamelWorks.UI.Views
         {
             var row = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };
 
-            row.Children.Add(One(string.Empty, chosen.Length == 0, onPicked));
+            // <b>The strip marks what is chosen, so the strip is what has to move the mark.</b>
+            // It was left to whoever opened it to redraw the form afterwards, and neither of the
+            // two callers did it: the legend's form rebuilds itself from its third child down and
+            // keeps this one, and the drawing window rebuilds the whole page - from inside this
+            // swatch's own click, which takes the swatch away while its event is still running.
+            // Between them a press moved the ring in neither, which is a strip of colours that
+            // reads as dead. It keeps its own swatches now and re-marks them itself.
+            var swatches = new System.Collections.Generic.List<Action<string>>();
+
+            void Press(string colour)
+            {
+                foreach (var mark in swatches) mark(colour);
+
+                // After this click has finished routing, not during it. A caller is free to
+                // rebuild its whole page in response - the drawing window does - and a rebuild
+                // that runs inside the handler removes the element the handler belongs to.
+                row.Dispatcher.BeginInvoke(
+                    System.Windows.Threading.DispatcherPriority.Background,
+                    (Action)(() => Ui.Safely(() => onPicked(colour))));
+            }
+
+            var first = One(string.Empty, chosen.Length == 0, Press, out var marked);
+
+            swatches.Add(marked);
+            row.Children.Add(first);
 
             foreach (var wash in Washes)
-                row.Children.Add(One(wash,
-                    string.Equals(wash, chosen, StringComparison.OrdinalIgnoreCase), onPicked));
+            {
+                var one = One(wash, string.Equals(wash, chosen, StringComparison.OrdinalIgnoreCase),
+                              Press, out var mark);
+
+                swatches.Add(mark);
+                row.Children.Add(one);
+            }
 
             return row;
         }
@@ -237,7 +266,9 @@ namespace CamelWorks.UI.Views
         /// <param name="colour">The colour, or empty for the automatic one.</param>
         /// <param name="on">True when it is the one in use.</param>
         /// <param name="onPicked">Called when it is pressed.</param>
-        private static UIElement One(string colour, bool on, Action<string> onPicked)
+        /// <param name="marked">Given back: call it with the colour now chosen to re-mark this one.</param>
+        private static UIElement One(string colour, bool on, Action<string> onPicked,
+                                     out Action<string> marked)
         {
             var swatch = new Border
             {
@@ -252,7 +283,21 @@ namespace CamelWorks.UI.Views
                     : colour,
             };
 
-            swatch.Tint(Border.BorderBrushProperty, on ? "Accent" : "BdStrong");
+            var chosen = on;
+
+            void Ring()
+            {
+                swatch.BorderThickness = new Thickness(chosen ? 2 : 1);
+                swatch.Tint(Border.BorderBrushProperty, chosen ? "Accent" : "BdStrong");
+            }
+
+            marked = now =>
+            {
+                chosen = string.Equals(now, colour, StringComparison.OrdinalIgnoreCase);
+                Ring();
+            };
+
+            Ring();
 
             if (colour.Length == 0)
             {
@@ -298,11 +343,7 @@ namespace CamelWorks.UI.Views
                 swatch.Tint(Border.BorderBrushProperty, "Accent");
             };
 
-            swatch.LostKeyboardFocus += (s, e) =>
-            {
-                swatch.BorderThickness = new Thickness(on ? 2 : 1);
-                swatch.Tint(Border.BorderBrushProperty, on ? "Accent" : "BdStrong");
-            };
+            swatch.LostKeyboardFocus += (s, e) => Ring();
 
             swatch.KeyDown += (s, e) => Ui.Safely(() =>
             {
