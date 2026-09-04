@@ -1232,6 +1232,47 @@ namespace CamelWorks.UI.Views
             private const double IndexHigh = 24;
 
             /// <summary>
+            /// How much of each band a folder's own label takes, when there are any.
+            ///
+            /// <b>Perpendicular to the names it gathers.</b> A row's name reads across, so the
+            /// folder holding eight rows reads down the band beside them, its length spanning
+            /// exactly the rows it holds. A column's name reads down, so its folder reads across
+            /// the top of them. Either way the label runs the length of what it covers, which is
+            /// the whole of how a band says "these ones, and not those".
+            ///
+            /// Zero when nothing is filed, so a matrix that has never used a folder pays no width
+            /// for the idea.
+            /// </summary>
+            private double FolderWide => _board.Folders(rows: true).Count == 0 ? 0 : 24;
+
+            private double FolderHigh => _board.Folders(rows: false).Count == 0 ? 0 : 22;
+
+            /// <summary>The folders shut, by name. Both axes at once, because a folder is one thing.</summary>
+            private readonly HashSet<string> _shut =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>Whether a line is inside a folder somebody has shut.</summary>
+            /// <param name="line">The row or column.</param>
+            private bool Hidden(MatrixLine line) =>
+                line.Folder.Length > 0 && _shut.Contains(line.Folder);
+
+            /// <summary>Open a folder, or shut it, on both axes at once.</summary>
+            /// <param name="folder">The folder.</param>
+            private void Shut(string folder)
+            {
+                if (folder.Length == 0) return;
+
+                if (!_shut.Remove(folder)) _shut.Add(folder);
+
+                // <b>Shut is a drawing state, not a change to the matrix.</b> The lines are still
+                // there, still in the same order, still carrying their symbols - they are given
+                // no height and no width, so every index, every cell and every count stays what
+                // it was and nothing that reads them has to learn about folders. Only the
+                // keyboard needs telling, so the cursor steps over what it cannot see.
+                Redraw();
+            }
+
+            /// <summary>
             /// Build the grid again. Only for a change of shape - a row added, removed or moved.
             ///
             /// Painting a symbol into a cell does not come through here: that is one border,
@@ -1275,29 +1316,43 @@ namespace CamelWorks.UI.Views
                 _across.ColumnDefinitions.Clear();
                 _across.RowDefinitions.Clear();
 
+                var band = FolderHigh;
+
+                if (band > 0)
+                    _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(band) });
+
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(IndexHigh) });
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderHigh) });
 
                 // The corner and the band it heads are as tall as the headers turned out to be.
-                _corner.Height = IndexHigh + HeaderHigh;
-                _band.Height = IndexHigh + HeaderHigh;
+                _corner.Height = band + IndexHigh + HeaderHigh;
+                _band.Height = band + IndexHigh + HeaderHigh;
 
                 for (var c = 0; c <= _board.Columns.Count; c++)
                     _across.ColumnDefinitions.Add(new ColumnDefinition
                     {
-                        Width = new GridLength(CellWide),
+                        // A column inside a shut folder is given no width. It is still there,
+                        // still in order, still holding its symbols - it is simply not drawn.
+                        Width = new GridLength(c < _board.Columns.Count
+                                               && Hidden(_board.Columns[c]) ? 0 : CellWide),
                     });
+
+                var top = band > 0 ? 1 : 0;
 
                 for (var c = 0; c < _board.Columns.Count; c++)
                 {
+                    if (Hidden(_board.Columns[c])) continue;
+
                     Put(_across, Marker(Letter(c), _board.Columns[c].Titled,
-                                        _board.Columns[c], rows: false), 0, c);
-                    Put(_across, ColumnHead(_board.Columns[c], c), 1, c);
+                                        _board.Columns[c], rows: false), top, c);
+                    Put(_across, ColumnHead(_board.Columns[c], c), top + 1, c);
                 }
+
+                if (band > 0) Bands(_across, rows: false);
 
                 Put(_across, Adding("Add a discipline — a column and the row that matches it",
                                     AddColumn, column: true),
-                    1, _board.Columns.Count);
+                    top + 1, _board.Columns.Count);
             }
 
             /// <summary>The band down the left: the numbers, the names, and the box that adds one.</summary>
@@ -1308,31 +1363,205 @@ namespace CamelWorks.UI.Views
                 _down.ColumnDefinitions.Clear();
                 _down.RowDefinitions.Clear();
 
+                var band = FolderWide;
+
+                if (band > 0)
+                    _down.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(band),
+                    });
+
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(IndexWide) });
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HeaderWide) });
 
                 // The corner and the band it heads are as wide as the headers turned out to be.
-                _corner.Width = IndexWide + HeaderWide;
-                _side.Width = IndexWide + HeaderWide;
+                _corner.Width = band + IndexWide + HeaderWide;
+                _side.Width = band + IndexWide + HeaderWide;
 
                 for (var r = 0; r <= _board.Rows.Count; r++)
-                    _down.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellHigh) });
+                    _down.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(r < _board.Rows.Count && Hidden(_board.Rows[r])
+                                                ? 0 : CellHigh),
+                    });
+
+                var left = band > 0 ? 1 : 0;
 
                 for (var r = 0; r < _board.Rows.Count; r++)
                 {
                     var row = _board.Rows[r];
 
-                    Put(_down, Marker(Number(r), row.Titled, row, rows: true), r, 0);
-                    Put(_down, RowHead(row, r), r, 1);
+                    if (Hidden(row)) continue;
+
+                    Put(_down, Marker(Number(r), row.Titled, row, rows: true), r, left);
+                    Put(_down, RowHead(row, r), r, left + 1);
                 }
+
+                if (band > 0) Bands(_down, rows: true);
 
                 var typing = Typing();
 
                 Grid.SetRow(typing, _board.Rows.Count);
-                Grid.SetColumnSpan(typing, 2);
+                Grid.SetColumnSpan(typing, left + 2);
                 Grid.SetColumn(typing, 0);
                 _down.Children.Add(typing);
             }
+
+            /// <summary>
+            /// The folder labels, laid over the band they gather.
+            ///
+            /// One block per run of lines answering to the same name, spanning exactly those
+            /// lines - so a folder whose members have been separated shows as two blocks, which
+            /// is a truthful drawing of a matrix somebody has pulled apart, and the tidy on the
+            /// menu is what puts it back.
+            /// </summary>
+            /// <param name="into">The band grid.</param>
+            /// <param name="rows">True for the rows.</param>
+            private void Bands(Grid into, bool rows)
+            {
+                var lines = rows ? (IReadOnlyList<MatrixLine>)_board.Rows : _board.Columns;
+                var at = 0;
+
+                while (at < lines.Count)
+                {
+                    var folder = lines[at].Folder;
+
+                    if (folder.Length == 0) { at++; continue; }
+
+                    var run = at;
+
+                    while (run + 1 < lines.Count
+                           && string.Equals(lines[run + 1].Folder, folder,
+                                            StringComparison.OrdinalIgnoreCase))
+                        run++;
+
+                    var block = Banded(folder, run - at + 1, rows);
+
+                    if (rows)
+                    {
+                        Grid.SetColumn(block, 0);
+                        Grid.SetRow(block, at);
+                        Grid.SetRowSpan(block, run - at + 1);
+                    }
+                    else
+                    {
+                        Grid.SetRow(block, 0);
+                        Grid.SetColumn(block, at);
+                        Grid.SetColumnSpan(block, run - at + 1);
+                    }
+
+                    into.Children.Add(block);
+
+                    at = run + 1;
+                }
+            }
+
+            /// <summary>One folder's label, drawn along the lines it holds.</summary>
+            /// <param name="folder">Its name.</param>
+            /// <param name="held">How many lines it holds here.</param>
+            /// <param name="rows">True down the side, false across the top.</param>
+            private UIElement Banded(string folder, int held, bool rows)
+            {
+                var shut = _shut.Contains(folder);
+
+                var block = new Border
+                {
+                    BorderThickness = rows
+                        ? new Thickness(0, 0, 1, 1)
+                        : new Thickness(0, 0, 1, 1),
+                    Cursor = Cursors.Hand,
+                    ToolTip = folder + " — " + Ui.Count(held, rows ? "row" : "column")
+                              + ". Click to " + (shut ? "open it" : "shut it")
+                              + ", right-click for what else it can do.",
+                };
+
+                block.Tint(Border.BorderBrushProperty, "Bd");
+                block.Tint(Border.BackgroundProperty, shut ? "Nav" : "Card2");
+
+                // Along the band, which is down it for the rows and across it for the columns.
+                // The room a name has is the length of its own block, not the width of the strip.
+                var room = Math.Max(16, (rows ? CellHigh : CellWide) * held - 10);
+
+                UIElement said = rows
+                    ? Turned(Shown(folder, shut), room, 10, FontWeights.SemiBold,
+                             at: TextAlignment.Center)
+                    : new TextBlock
+                    {
+                        Text = Shown(folder, shut),
+                        FontSize = 10,
+                        FontWeight = FontWeights.SemiBold,
+                        TextAlignment = TextAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                        MaxWidth = room,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    };
+
+                if (said is FrameworkElement inked) inked.Wearing("Body");
+
+                block.Child = said;
+
+                block.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+                    Shut(folder);
+                });
+
+                block.ContextMenu = Parts.Context(() => FolderMenu(folder), null);
+
+                // <b>Dropping a line on a folder files it.</b> The bands already carry a line
+                // from one place in the order to another; a folder is a place in the order too,
+                // and a hand that has just dragged a row past a band expects the band to take it.
+                // Either axis, because the folder is one thing across both.
+                block.AllowDrop = true;
+
+                block.DragOver += (s, e) =>
+                {
+                    var taking = e.Data.GetDataPresent(RowCarried)
+                                 || e.Data.GetDataPresent(ColumnCarried);
+
+                    e.Effects = taking ? DragDropEffects.Move : DragDropEffects.None;
+                    e.Handled = true;
+
+                    block.BorderThickness = taking
+                        ? new Thickness(2, 2, 2, 2)
+                        : new Thickness(0, 0, 1, 1);
+                };
+
+                block.DragLeave += (s, e) => block.BorderThickness = new Thickness(0, 0, 1, 1);
+
+                block.Drop += (s, e) => Ui.Safely(() =>
+                {
+                    block.BorderThickness = new Thickness(0, 0, 1, 1);
+                    e.Handled = true;
+
+                    var carried = e.Data.GetData(RowCarried) as MatrixLine
+                                  ?? e.Data.GetData(ColumnCarried) as MatrixLine;
+
+                    if (carried == null) return;
+                    if (string.Equals(carried.Folder, folder, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    Remember(what: "filing " + Quoted(carried.Titled) + " in " + Quoted(folder));
+
+                    _board.File(carried, folder);
+                    Redraw();
+                });
+
+                Reachable(block,
+                          "Folder " + folder + ", " + Ui.Count(held, rows ? "row" : "column")
+                          + (shut ? ", shut." : ", open."),
+                          () => Shut(folder));
+
+                return block;
+            }
+
+            /// <summary>A folder's name, with a mark on it while it is shut.</summary>
+            /// <param name="folder">The name.</param>
+            /// <param name="shut">Whether it is shut.</param>
+            private static string Shown(string folder, bool shut) =>
+                shut ? folder + "  \u25b8" : folder;
 
             /// <summary>The cells themselves, which are all that scrolls.</summary>
             private void RedrawCells()
@@ -1362,18 +1591,27 @@ namespace CamelWorks.UI.Views
                 for (var c = 0; c <= _board.Columns.Count; c++)
                     _sheet.ColumnDefinitions.Add(new ColumnDefinition
                     {
-                        Width = new GridLength(CellWide),
+                        Width = new GridLength(c < _board.Columns.Count
+                                               && Hidden(_board.Columns[c]) ? 0 : CellWide),
                     });
 
                 for (var r = 0; r <= _board.Rows.Count; r++)
-                    _sheet.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CellHigh) });
+                    _sheet.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(r < _board.Rows.Count && Hidden(_board.Rows[r])
+                                                ? 0 : CellHigh),
+                    });
 
                 for (var r = 0; r < _board.Rows.Count; r++)
                 {
                     var row = _board.Rows[r];
 
+                    if (Hidden(row)) continue;
+
                     for (var c = 0; c < _board.Columns.Count; c++)
                     {
+                        if (Hidden(_board.Columns[c])) continue;
+
                         var column = _board.Columns[c];
                         var cell = Cell(row, column, r, c);
 
@@ -3566,6 +3804,13 @@ namespace CamelWorks.UI.Views
                 items.AddRange(SourceMenu(line));
 
                 items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading(line.Folder.Length == 0
+                    ? "File it in a folder"
+                    : "Filed in: " + line.Folder));
+
+                items.AddRange(FilingMenu(line));
+
+                items.Add(Parts.Entry.Rule());
 
                 if (at > 0)
                     items.Add(Parts.Entry.Act("Move it earlier", Glyphs.Up, () =>
@@ -3833,6 +4078,162 @@ namespace CamelWorks.UI.Views
                 else Repaint(cells[0].Row, cells[0].Column);
 
                 Recount();
+            }
+
+            /// <summary>
+            /// Everything a folder can have done to it, from the band that draws it.
+            ///
+            /// <b>Dissolve and delete are the two that have to be told apart.</b> A folder holds
+            /// no source, no symbol and no decision of its own, so taking the folder away can
+            /// never cost anybody a decision they made - and taking its disciplines away costs
+            /// them every decision on eight rows and eight columns at once. One is tidying and
+            /// one is destruction, and a menu that words them alike will have somebody press the
+            /// wrong one.
+            /// </summary>
+            /// <param name="folder">The folder.</param>
+            private List<Parts.Entry> FolderMenu(string folder)
+            {
+                var held = _board.InFolder(rows: true, folder).Count;
+                var shut = _shut.Contains(folder);
+                var others = _board.Folders(rows: true)
+                                   .Where(f => !string.Equals(f, folder, StringComparison.OrdinalIgnoreCase))
+                                   .ToList();
+
+                var items = new List<Parts.Entry>
+                {
+                    Parts.Entry.Heading(folder + "  ·  " + Ui.Count(held, "discipline")),
+
+                    Parts.Entry.Act(shut ? "Open it" : "Shut it",
+                                    shut ? Glyphs.Down : Glyphs.Up, () => Shut(folder)),
+
+                    Parts.Entry.Rule(),
+
+                    Parts.Entry.Act("Rename it", Glyphs.Pencil,
+                        () => Parts.Ask(_grid, "What is this folder called?", folder, "Rename",
+                            typed =>
+                            {
+                                if (string.IsNullOrWhiteSpace(typed)) return;
+
+                                Remember(what: "renaming a folder");
+
+                                _shut.Remove(folder);
+                                _board.RenameFolder(folder, typed.Trim());
+                                Redraw();
+                            })),
+                };
+
+                if (others.Count > 0)
+                    items.Add(Parts.Entry.Act("Merge others into it  ·  "
+                                              + Ui.Count(others.Count, "other"), Glyphs.Layers,
+                        () => Parts.Search(_grid, "Which folders go into " + folder + "?",
+                            others.Select(f => new KeyValuePair<string, int>(
+                                              f, _board.InFolder(rows: true, f).Count)).ToList(),
+                            null, null,
+                            picked =>
+                            {
+                                if (picked.Count == 0) return;
+
+                                Remember(what: "merging folders");
+
+                                foreach (var gone in picked) _shut.Remove(gone);
+
+                                var moved = _board.MergeFolders(picked.Concat(new[] { folder }),
+                                                                folder);
+
+                                Redraw();
+
+                                Said(Ui.Done(Ui.Count(picked.Count, "folder") + " merged into "
+                                             + Quoted(folder) + ", "
+                                             + Ui.Count(moved, "line") + " in all."));
+                            })));
+
+                items.Add(Parts.Entry.Rule());
+
+                items.Add(Parts.Entry.Act("Dissolve it, and keep the disciplines", Glyphs.Eraser,
+                    () =>
+                    {
+                        Remember(what: "dissolving a folder");
+
+                        _shut.Remove(folder);
+                        _board.DissolveFolder(folder);
+                        Redraw();
+
+                        Said(Ui.Done(Quoted(folder) + " is gone. Its "
+                                     + Ui.Count(held, "discipline") + " stayed."));
+                    }));
+
+                items.Add(Parts.Entry.Danger("Delete it, and its disciplines", Glyphs.Bin,
+                    () => Parts.Sure(_grid,
+                        "This takes " + Ui.Count(held, "discipline") + " off the matrix, both "
+                        + "axes, and every decision on them with it. Nothing in the document "
+                        + "changes - the tests already built stay as they are.",
+                        "Delete them", () =>
+                        {
+                            Remember(what: "deleting a folder and its disciplines");
+
+                            _shut.Remove(folder);
+
+                            var went = _board.RemoveFolder(folder);
+
+                            Seed();
+                            Redraw();
+
+                            Said(Ui.Done(Ui.Count(went, "discipline") + " taken out. "
+                                         + "Undo puts them back."));
+                        })));
+
+                return items;
+            }
+
+            /// <summary>
+            /// Put one line in a folder, offering the ones that exist and the making of a new one.
+            /// </summary>
+            /// <param name="line">The row or column.</param>
+            private List<Parts.Entry> FilingMenu(MatrixLine line)
+            {
+                var items = new List<Parts.Entry>();
+
+                foreach (var folder in _board.Folders(rows: true))
+                {
+                    var one = folder;
+
+                    if (string.Equals(one, line.Folder, StringComparison.OrdinalIgnoreCase)) continue;
+
+                    items.Add(Parts.Entry.Act(one, Glyphs.Folder, () =>
+                    {
+                        Remember(what: "filing " + Quoted(line.Titled) + " in " + Quoted(one));
+
+                        _board.File(line, one);
+                        Redraw();
+                    }));
+                }
+
+                if (items.Count > 0) items.Add(Parts.Entry.Rule());
+
+                items.Add(Parts.Entry.Act("A new folder…", Glyphs.Add,
+                    () => Parts.Ask(_grid, "What is the new folder called?", string.Empty,
+                                    "Make it",
+                        typed =>
+                        {
+                            if (string.IsNullOrWhiteSpace(typed)) return;
+
+                            Remember(what: "filing " + Quoted(line.Titled) + " in a new folder");
+
+                            _board.File(line, typed.Trim());
+                            Redraw();
+                        })));
+
+                if (line.Folder.Length > 0)
+                    items.Add(Parts.Entry.Act("Take it out of " + Quoted(line.Folder),
+                                              Glyphs.Close, () =>
+                    {
+                        Remember(what: "taking " + Quoted(line.Titled) + " out of its folder");
+
+                        _board.File(line, null);
+                        Redraw();
+                    }));
+
+                return items;
             }
 
             private List<Parts.Entry> CellMenu(MatrixLine row, MatrixLine column)
@@ -5689,10 +6090,43 @@ namespace CamelWorks.UI.Views
                 _markRow = -1;
                 _markColumn = -1;
 
-                _atRow = Math.Max(0, Math.Min(_board.Rows.Count - 1, _atRow + down));
-                _atColumn = Math.Max(0, Math.Min(_board.Columns.Count - 1, _atColumn + across));
+                _atRow = Onward(_board.Rows, _atRow, down);
+                _atColumn = Onward(_board.Columns, _atColumn, across);
 
                 Settled();
+            }
+
+            /// <summary>
+            /// Where the cursor lands, stepping over anything a shut folder is hiding.
+            ///
+            /// A shut folder keeps its lines - they are given no height and no width rather than
+            /// taken out - so every index and every cell stays what it was and nothing else has
+            /// to know about folders. The cursor is the one thing that does: walked into a line
+            /// nobody can see it would sit on a cell that is not on the screen, and the next
+            /// arrow would look like it did nothing.
+            /// </summary>
+            /// <param name="lines">The rows or the columns.</param>
+            /// <param name="from">Where the cursor is.</param>
+            /// <param name="by">How far, and which way.</param>
+            private int Onward(IReadOnlyList<MatrixLine> lines, int from, int by)
+            {
+                if (lines.Count == 0) return 0;
+
+                var at = Math.Max(0, Math.Min(lines.Count - 1, from + by));
+
+                if (!Hidden(lines[at])) return at;
+
+                // On past it, the way it was already going; and if that runs out of grid, back
+                // the other way, so the last visible line is never a place the cursor cannot leave.
+                var way = by >= 0 ? 1 : -1;
+
+                for (var tried = at; tried >= 0 && tried < lines.Count; tried += way)
+                    if (!Hidden(lines[tried])) return tried;
+
+                for (var tried = at; tried >= 0 && tried < lines.Count; tried -= way)
+                    if (!Hidden(lines[tried])) return tried;
+
+                return Math.Max(0, Math.Min(lines.Count - 1, from));
             }
 
             /// <summary>How many rows a page key moves, which is however many are on the screen.</summary>
@@ -6570,10 +7004,30 @@ namespace CamelWorks.UI.Views
 
                 for (var at = 0; at < order.Count; at++) _board.MoveLine(order[at], at);
 
+                // <b>Grouping and folders were the same idea twice.</b> This put the rows in code
+                // order and drew nothing to say why they were in that order; a folder says it,
+                // and every one of them can then be named, shut, merged and used in a test name.
+                // A line with no code stays loose rather than being filed under an empty name.
+                var made = 0;
+
+                foreach (var line in _board.Rows.ToList())
+                {
+                    if (line.Code.Length == 0 || line.Folder.Length > 0) continue;
+
+                    _board.File(line, line.Code);
+                    made++;
+                }
+
+                _board.Tidy();
+
                 Redraw();
 
-                Said(Ui.Done("Grouped by discipline code, down the side and across the top. A "
-                             + "block now covers one discipline against another."));
+                Said(Ui.Done("Grouped by discipline code, down the side and across the top"
+                             + (made == 0
+                                 ? ". A block now covers one discipline against another."
+                                 : ", in " + Ui.Count(_board.Folders(rows: true).Count, "folder")
+                                   + ". Rename one, shut it, or merge two together from the band "
+                                   + "beside the names.")));
             }
 
             /// <summary>
