@@ -35,13 +35,18 @@ namespace CamelWorks.Core.Clash
         /// <param name="test">Which test to make.</param>
         /// <param name="tolerance">Its tolerance, in metres.</param>
         /// <param name="enabled">False to read the symbol but make no test for it.</param>
+        /// <param name="colour">
+        /// What its cells are washed with, as <c>#RRGGBB</c>, or empty to let the drawing choose.
+        /// </param>
         public MatrixSymbol(string symbol, MatrixTest test = MatrixTest.Hard,
-                            double tolerance = MatrixOptions.DefaultTolerance, bool enabled = true)
+                            double tolerance = MatrixOptions.DefaultTolerance, bool enabled = true,
+                            string? colour = null)
         {
             Symbol = (symbol ?? string.Empty).Trim();
             Test = test;
             Tolerance = tolerance < 0 ? 0 : tolerance;
             Enabled = enabled;
+            Colour = Hexed(colour);
         }
 
         /// <summary>The cell's text.</summary>
@@ -56,6 +61,45 @@ namespace CamelWorks.Core.Clash
         /// <summary>False to read the symbol but make no test for it.</summary>
         public bool Enabled { get; }
 
+        /// <summary>
+        /// What its cells are washed with, as <c>#RRGGBB</c>, or empty for the drawing's choice.
+        ///
+        /// <b>Held here rather than in the screen that draws it</b>, because a matrix's colours
+        /// are the matrix's: a practice that has always drawn clearances green expects them green
+        /// tomorrow, on the seat next to them, and in the copy they send out. Empty is not a
+        /// missing value - it means "whatever the tool would pick", which is what every matrix
+        /// starts as and most of them stay.
+        /// </summary>
+        public string Colour { get; }
+
+        /// <summary>
+        /// A colour that is safe to hand to a drawing, or empty.
+        ///
+        /// Nothing here parses it into a colour - Core has no idea what one is - but a string
+        /// that is not six or three hex digits behind a hash is not one either, and letting it
+        /// through means every screen that reads this has to guard against the same thing.
+        /// </summary>
+        /// <param name="said">What was given.</param>
+        private static string Hexed(string? said)
+        {
+            var text = (said ?? string.Empty).Trim();
+
+            if (text.Length != 4 && text.Length != 7) return string.Empty;
+            if (text[0] != '#') return string.Empty;
+
+            for (var at = 1; at < text.Length; at++)
+            {
+                var one = text[at];
+
+                var hex = (one >= '0' && one <= '9') || (one >= 'a' && one <= 'f')
+                          || (one >= 'A' && one <= 'F');
+
+                if (!hex) return string.Empty;
+            }
+
+            return text.ToUpperInvariant();
+        }
+
         /// <inheritdoc />
         public override string ToString() =>
             Symbol + " = " + Test + " at "
@@ -67,20 +111,44 @@ namespace CamelWorks.Core.Clash
     public sealed class MatrixLegend
     {
         private readonly Dictionary<string, MatrixSymbol> _byText;
+        private readonly List<MatrixSymbol> _inOrder;
 
         /// <summary>Create a legend.</summary>
         /// <param name="symbols">The entries. Later entries win on a repeated symbol.</param>
         public MatrixLegend(IEnumerable<MatrixSymbol>? symbols = null)
         {
             _byText = new Dictionary<string, MatrixSymbol>(StringComparer.OrdinalIgnoreCase);
+            _inOrder = new List<MatrixSymbol>();
 
             foreach (var symbol in symbols ?? Enumerable.Empty<MatrixSymbol>())
-                if (symbol != null && symbol.Symbol.Length > 0) _byText[symbol.Symbol] = symbol;
+            {
+                if (symbol == null || symbol.Symbol.Length == 0) continue;
+
+                // A repeated symbol replaces the one before it where it already sat, rather than
+                // being appended: an edit is a new legend built out of the old one, and an edited
+                // symbol that jumped to the end would renumber every key under it.
+                var at = _inOrder.FindIndex(
+                    one => string.Equals(one.Symbol, symbol.Symbol, StringComparison.OrdinalIgnoreCase));
+
+                if (at >= 0) _inOrder[at] = symbol;
+                else _inOrder.Add(symbol);
+
+                _byText[symbol.Symbol] = symbol;
+            }
         }
 
-        /// <summary>The entries, ordered by symbol.</summary>
-        public IReadOnlyList<MatrixSymbol> Symbols =>
-            _byText.Values.OrderBy(s => s.Symbol, StringComparer.OrdinalIgnoreCase).ToList();
+        /// <summary>
+        /// The entries, in the order they were put in.
+        ///
+        /// <b>Not alphabetical.</b> This order is the palette's order, and the palette's order is
+        /// the number key that puts each symbol in a cell - so sorted by text, adding a symbol
+        /// that sorts early silently renumbered every key under it. A pair of hands that has
+        /// learned "2 is the fifty-millimetre clearance" over a two-hour workshop is a real thing
+        /// to break, and it breaks across every cell typed after it without a word on the screen.
+        /// Made in the order somebody made them, a new symbol lands at the end and nothing that
+        /// was learned stops being true.
+        /// </summary>
+        public IReadOnlyList<MatrixSymbol> Symbols => _inOrder.ToList();
 
         /// <summary>True when nothing has been defined.</summary>
         public bool IsEmpty => _byText.Count == 0;
@@ -106,7 +174,8 @@ namespace CamelWorks.Core.Clash
             var filled = new List<MatrixSymbol>(_byText.Values);
 
             foreach (var symbol in board.SymbolsUsed)
-                if (Meaning(symbol) == null) filled.Add(new MatrixSymbol(symbol));
+                if (!MatrixBoard.IsNotRequired(symbol) && Meaning(symbol) == null)
+                    filled.Add(new MatrixSymbol(symbol));
 
             return new MatrixLegend(filled);
         }
@@ -117,7 +186,12 @@ namespace CamelWorks.Core.Clash
         {
             if (board == null) throw new ArgumentNullException(nameof(board));
 
-            return board.SymbolsUsed.Where(s => Meaning(s) == null).ToList();
+            // The reserved mark is never unexplained: it is the one thing in the grid whose
+            // meaning is fixed, and offering to give it a tolerance is offering to turn every
+            // pair somebody ruled out into a test.
+            return board.SymbolsUsed
+                .Where(s => !MatrixBoard.IsNotRequired(s) && Meaning(s) == null)
+                .ToList();
         }
     }
 }

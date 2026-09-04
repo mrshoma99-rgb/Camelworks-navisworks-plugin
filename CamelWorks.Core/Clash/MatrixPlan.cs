@@ -34,16 +34,45 @@ namespace CamelWorks.Core.Clash
         /// and a diff that thought it was would delete and remake every test on the job the
         /// first time somebody changed the naming pattern.
         /// </summary>
-        public string Pairing()
-        {
-            var one = Row.Source.Fingerprint();
-            var two = Column.Source.Fingerprint();
+        public string Pairing() => Sides() + "\u001f" + (int)Symbol.Test;
 
-            var first = string.CompareOrdinal(one, two) <= 0 ? one : two;
-            var second = string.CompareOrdinal(one, two) <= 0 ? two : one;
+        /// <summary>
+        /// What this test is between, and nothing else.
+        ///
+        /// <b>The kind is not part of what a test is between.</b> A pair tested hard and the
+        /// same pair tested as a clearance are the same two things being checked, so a legend
+        /// changed from one to the other has to find the test that already exists and alter it.
+        /// Folded into the fingerprint, as it was, the old test matched nothing, sat in the
+        /// document untouched with a fortnight of statuses on it, and a second test was made
+        /// beside it.
+        ///
+        /// The pairing above still carries the kind, because two cells asking for a hard test
+        /// and a clearance between the same two sets are two tests somebody meant to have.
+        /// </summary>
+        public string Sides() => Both(Row.Source.Matched(), Column.Source.Matched());
 
-            return first + "\u001f" + second + "\u001f" + (int)Symbol.Test;
-        }
+        /// <summary>
+        /// What this test is between and how, told apart exactly rather than as the document
+        /// would report it.
+        ///
+        /// <b>Two questions that are not the same question.</b> Matching a plan against a test
+        /// the document holds has to happen on what the document can say, which for a set is its
+        /// name and not the folder it lives in. Telling two cells of the same matrix apart has
+        /// to happen on everything known about them, or two rows pointed at two different sets
+        /// that happen to share a name are one row, and the second one's tests are dropped as
+        /// duplicates of the first's.
+        /// </summary>
+        public string Exact() =>
+            Both(Row.Source.Fingerprint(), Column.Source.Fingerprint())
+            + "\u001f" + (int)Symbol.Test;
+
+        /// <summary>Two sides in a fixed order, so a pair reads the same from either end.</summary>
+        /// <param name="one">One side.</param>
+        /// <param name="two">The other.</param>
+        private static string Both(string one, string two) =>
+            string.CompareOrdinal(one, two) <= 0
+                ? one + "\u001f" + two
+                : two + "\u001f" + one;
 
         /// <summary>What to hand the host.</summary>
         /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
@@ -126,6 +155,12 @@ namespace CamelWorks.Core.Clash
             foreach (var cell in board.Cells())
             {
                 var where = cell.Row.Titled + " x " + cell.Column.Titled;
+
+                // A pair ruled out on purpose is not a test and is not a fault either. It is the
+                // one mark in the grid that means "no test here", said deliberately, so it
+                // passes through without a word.
+                if (MatrixBoard.IsNotRequired(cell.Symbol)) continue;
+
                 var meaning = legend.Meaning(cell.Symbol);
 
                 if (meaning == null)
@@ -152,7 +187,7 @@ namespace CamelWorks.Core.Clash
 
                 var plan = new MatrixTestPlan(cell.Row, cell.Column, string.Empty, meaning);
 
-                if (!paired.Add(plan.Pairing()))
+                if (!paired.Add(plan.Exact()))
                 {
                     skipped.Add(new MatrixSkip(where,
                         "the same pair is already tested by another cell"));

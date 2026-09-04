@@ -175,9 +175,16 @@ namespace CamelWorks.Nav.Clash
                     return null;
                 }
 
+                // <b>The folder the caller asked for, not the root.</b> The spec has carried a
+                // folder since it was written and this dropped it on the floor, so a matrix told
+                // to put two hundred tests in "Matrix" put them all beside everything else.
+                var into = Destination(clash, root, spec.Folder);
+
+                if (into == null) return null;
+
                 // AddCopy, not Add: the host takes a copy of the test and owns it from then on, so
                 // the object built above is not the one in the document and must not be run.
-                clash.TestsData.TestsAddCopy(root, test);
+                clash.TestsData.TestsAddCopy(into, test);
 
                 var made = AllTests(clash)
                     .Select(t => t.Test)
@@ -800,6 +807,89 @@ namespace CamelWorks.Nav.Clash
             return true;
         }
 
+        /// <summary>
+        /// The folder a test should land in, made if it is not there yet, or the root.
+        /// </summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="root">Where the tests live.</param>
+        /// <param name="folder">The folder's name, or nothing for the root.</param>
+        private GroupItem? Destination(DocumentClash clash, GroupItem root, string? folder)
+        {
+            if (string.IsNullOrWhiteSpace(folder)) return root;
+
+            var found = FolderIn(root, folder!.Trim());
+
+            if (found == null)
+            {
+                try
+                {
+                    clash.TestsData.TestsAddCopy(
+                        root, new ClashTestFolder { DisplayName = folder.Trim() });
+
+                    found = FolderIn(root, folder.Trim());
+                }
+                catch (Exception e)
+                {
+                    LastProblem = "The host refused to make the folder: " + e.Message;
+                    return null;
+                }
+            }
+
+            if (found == null)
+                LastProblem = "The host accepted the folder but it cannot be found again.";
+
+            return found;
+        }
+
+        /// <inheritdoc />
+        public bool Retune(string testId, double toleranceMetres, Core.Clash.MatrixTest kind)
+        {
+            LastProblem = null;
+
+            var clash = Writable();
+            if (clash == null) return false;
+
+            var test = FindTest(clash, testId);
+
+            if (test == null)
+            {
+                LastProblem = "That test is no longer in the document.";
+                return false;
+            }
+
+            try
+            {
+                // Edited from a copy, which is how this document lets a test be changed without
+                // being replaced: the results are the copy's own children and come through
+                // untouched, so a fortnight of statuses and comments survives a tolerance change.
+                var copy = test.CreateCopy() as ClashTest;
+
+                if (copy == null)
+                {
+                    LastProblem = "That test could not be copied to edit.";
+                    return false;
+                }
+
+                copy.Tolerance = toleranceMetres * NavUnits.UnitsPerMetre(_document.Document.Units);
+
+                copy.TestType = kind switch
+                {
+                    Core.Clash.MatrixTest.HardConservative => ClashTestType.HardConservative,
+                    Core.Clash.MatrixTest.Clearance => ClashTestType.Clearance,
+                    Core.Clash.MatrixTest.Duplicate => ClashTestType.Duplicate,
+                    _ => ClashTestType.Hard,
+                };
+
+                clash.TestsData.TestsEditTestFromCopy(test, copy);
+                return true;
+            }
+            catch (Exception e)
+            {
+                LastProblem = "The host refused the change: " + e.Message;
+                return false;
+            }
+        }
+
         /// <inheritdoc />
         public bool RenameTest(string testId, string name)
         {
@@ -891,38 +981,9 @@ namespace CamelWorks.Nav.Clash
                 return false;
             }
 
-            GroupItem destination;
+            var destination = Destination(clash, root, folder);
 
-            if (string.IsNullOrWhiteSpace(folder))
-            {
-                destination = root;
-            }
-            else
-            {
-                var found = FolderIn(root, folder!.Trim());
-
-                if (found == null)
-                {
-                    try
-                    {
-                        clash.TestsData.TestsAddCopy(root, new ClashTestFolder { DisplayName = folder.Trim() });
-                        found = FolderIn(root, folder.Trim());
-                    }
-                    catch (Exception e)
-                    {
-                        LastProblem = "The host refused to make the folder: " + e.Message;
-                        return false;
-                    }
-                }
-
-                if (found == null)
-                {
-                    LastProblem = "The host accepted the folder but it cannot be found again.";
-                    return false;
-                }
-
-                destination = found;
-            }
+            if (destination == null) return false;
 
             foreach (var id in testIds ?? Array.Empty<string>())
             {
@@ -2098,11 +2159,15 @@ namespace CamelWorks.Nav.Clash
                 case ClashSideKind.Set:
                 {
                     var sets = _document.Document.SelectionSets;
-                    var found = Find(sets.Value, side.Name);
+                    var found = Find(sets.Value, side.Name, side.Path);
 
                     if (found == null)
                     {
-                        LastProblem = "There is no set called \"" + side.Name + "\" in this document.";
+                        LastProblem = string.IsNullOrEmpty(side.Path)
+                            ? "There is no set called \"" + side.Name + "\" in this document."
+                            : "There is no set called \"" + side.Name + "\" in \"" + side.Path
+                              + "\" any more. It has been renamed, moved or deleted.";
+
                         return false;
                     }
 
@@ -2132,6 +2197,61 @@ namespace CamelWorks.Nav.Clash
             }
         }
 
+        /// <summary>
+        /// The set a side means, by the folders it was recorded in and then by its name.
+        ///
+        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
+        /// inside Level 02, and two more under a package folder somebody made in March. This
+        /// used to walk the tree and take the first thing that matched, so a matrix carefully
+        /// pointed at four different disciplines quietly tested one of them four times, and
+        /// nothing anywhere said so.
+        ///
+        /// A side that knows its folders is resolved there and nowhere else: if the set has been
+        /// moved or renamed, that is worth being told about rather than papering over with
+        /// whichever same-named set is still standing. A side recorded before folders were kept
+        /// falls back to the old walk, so a matrix drawn last year still builds.
+        /// </summary>
+        /// <param name="items">Where to look.</param>
+        /// <param name="name">The set's name.</param>
+        /// <param name="path">The folders it was in, innermost last, or null.</param>
+        private static SavedItem? Find(SavedItemCollection? items, string? name, string? path)
+        {
+            if (items == null || string.IsNullOrWhiteSpace(name)) return null;
+
+            if (string.IsNullOrWhiteSpace(path)) return Find(items, name);
+
+            var trail = path!.Split('/');
+            var here = items;
+
+            foreach (var step in trail)
+            {
+                SavedItemCollection? next = null;
+
+                foreach (SavedItem item in here)
+                    if (item is GroupItem folder
+                        && string.Equals(folder.DisplayName, step,
+                                         StringComparison.OrdinalIgnoreCase))
+                    {
+                        next = folder.Children;
+                        break;
+                    }
+
+                if (next == null) return null;
+
+                here = next;
+            }
+
+            foreach (SavedItem item in here)
+                if (!(item is GroupItem)
+                    && string.Equals(item.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+                    return item;
+
+            return null;
+        }
+
+        /// <summary>The old walk: the first set of that name anywhere in the tree.</summary>
+        /// <param name="items">Where to look.</param>
+        /// <param name="name">The set's name.</param>
         private static SavedItem? Find(SavedItemCollection? items, string? name)
         {
             if (items == null || string.IsNullOrWhiteSpace(name)) return null;

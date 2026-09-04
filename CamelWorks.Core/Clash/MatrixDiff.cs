@@ -26,10 +26,24 @@ namespace CamelWorks.Core.Clash
     public sealed class MatrixLineChange
     {
         internal MatrixLineChange(MatrixChange change, string name, string what,
-                                  MatrixTestPlan? plan, string? testId)
+                                  MatrixTestPlan? plan, string? testId,
+                                  bool renames = false, bool reshapes = false)
         {
             Change = change; Name = name; What = what; Plan = plan; TestId = testId;
+            Renames = renames; Reshapes = reshapes;
         }
+
+        /// <summary>
+        /// True when building this line only has to rename the test the document already has.
+        ///
+        /// <b>Said here rather than worked out again by whoever builds.</b> The difference is
+        /// computed once, and what has to be done about it is part of the difference: a caller
+        /// that re-derives it from the words in <see cref="What"/> will get it wrong.
+        /// </summary>
+        public bool Renames { get; }
+
+        /// <summary>True when the test's tolerance or its kind has to change.</summary>
+        public bool Reshapes { get; }
 
         /// <summary>What has to happen.</summary>
         public MatrixChange Change { get; }
@@ -83,56 +97,103 @@ namespace CamelWorks.Core.Clash
             var found = already ?? Array.Empty<ClashTestRead>();
             var lines = new List<MatrixLineChange>();
 
+            // Two ways of asking "is this test already here", tried in that order.
+            //
+            // First by what it is between and how it is tested, which is the exact match. Then,
+            // for whatever is left, by what it is between alone - so a symbol changed from a
+            // hard clash to a clearance finds the test that has been carrying the review and
+            // alters it, instead of leaving it behind and making a second one.
             var byPairing = new Dictionary<string, ClashTestRead>(StringComparer.Ordinal);
+            var bySides = new Dictionary<string, List<ClashTestRead>>(StringComparer.Ordinal);
 
             foreach (var read in found)
             {
                 var pairing = Pairing(read.Shape);
 
-                if (pairing != null && !byPairing.ContainsKey(pairing)) byPairing[pairing] = read;
+                if (pairing == null) continue;
+
+                if (!byPairing.ContainsKey(pairing)) byPairing[pairing] = read;
+
+                var sides = Sided(read.Shape);
+
+                if (sides == null) continue;
+
+                if (!bySides.TryGetValue(sides, out var kept))
+                    bySides[sides] = kept = new List<ClashTestRead>();
+
+                kept.Add(read);
             }
 
             var claimed = new HashSet<string>(StringComparer.Ordinal);
+            var matched = new Dictionary<MatrixTestPlan, ClashTestRead>();
+
+            foreach (var test in plan.Tests)
+                if (byPairing.TryGetValue(test.Pairing(), out var read) && claimed.Add(read.Test.Id))
+                    matched[test] = read;
 
             foreach (var test in plan.Tests)
             {
-                var pairing = test.Pairing();
+                if (matched.ContainsKey(test)) continue;
+                if (!bySides.TryGetValue(test.Sides(), out var kept)) continue;
 
-                if (!byPairing.TryGetValue(pairing, out var read))
+                foreach (var read in kept)
+                    if (claimed.Add(read.Test.Id)) { matched[test] = read; break; }
+            }
+
+            foreach (var test in plan.Tests)
+            {
+                if (!matched.TryGetValue(test, out var read))
                 {
                     lines.Add(new MatrixLineChange(MatrixChange.Added, test.Name,
                         "not in the document yet", test, null));
                     continue;
                 }
 
-                claimed.Add(pairing);
-
                 var differences = new List<string>();
 
-                if (!string.Equals(read.Test.Name, test.Name, StringComparison.Ordinal))
+                var renames = !string.Equals(read.Test.Name, test.Name, StringComparison.Ordinal);
+
+                if (renames)
                     differences.Add("named " + Quoted(read.Test.Name) + " in the document");
 
-                if (read.Shape != null
-                    && Math.Abs(read.Shape.ToleranceMetres - test.Symbol.Tolerance) > 0.0000005)
-                    differences.Add("tolerance is "
-                        + Millimetres(read.Shape.ToleranceMetres) + " rather than "
-                        + Millimetres(test.Symbol.Tolerance));
+                var reshapes = false;
+
+                if (read.Shape != null)
+                {
+                    var kind = Kinded(read.Shape.Kind);
+
+                    if (kind != test.Symbol.Test)
+                    {
+                        reshapes = true;
+
+                        differences.Add("a " + MatrixNaming.Worded(kind).ToLowerInvariant()
+                            + " test in the document rather than "
+                            + MatrixNaming.Worded(test.Symbol.Test).ToLowerInvariant());
+                    }
+
+                    if (Math.Abs(read.Shape.ToleranceMetres - test.Symbol.Tolerance) > 0.0000005)
+                    {
+                        reshapes = true;
+
+                        differences.Add("tolerance is "
+                            + Millimetres(read.Shape.ToleranceMetres) + " rather than "
+                            + Millimetres(test.Symbol.Tolerance));
+                    }
+                }
 
                 lines.Add(differences.Count == 0
                     ? new MatrixLineChange(MatrixChange.Unchanged, test.Name,
                         "already there, as asked", test, read.Test.Id)
                     : new MatrixLineChange(MatrixChange.Altered, test.Name,
-                        string.Join("; ", differences), test, read.Test.Id));
+                        string.Join("; ", differences), test, read.Test.Id, renames, reshapes));
             }
 
             foreach (var read in found)
             {
-                var pairing = Pairing(read.Shape);
-
-                if (pairing != null && claimed.Contains(pairing)) continue;
+                if (claimed.Contains(read.Test.Id)) continue;
 
                 lines.Add(new MatrixLineChange(MatrixChange.Extra, read.Test.Name,
-                    pairing == null
+                    Pairing(read.Shape) == null
                         ? "the document will not say what it is between"
                         : "in the document, but no cell asks for it",
                     null, read.Test.Id));
@@ -166,6 +227,20 @@ namespace CamelWorks.Core.Clash
             var second = string.CompareOrdinal(one, two) <= 0 ? two : one;
 
             return first + "\u001f" + second + "\u001f" + (int)Kinded(shape.Kind);
+        }
+
+        /// <summary>What a test the document holds is between, without its kind.</summary>
+        /// <param name="shape">What the test is between, or null.</param>
+        private static string? Sided(ClashTestSides? shape)
+        {
+            if (shape == null || !shape.KnowsA || !shape.KnowsB) return null;
+
+            var one = Side(shape.SetA, shape.ScopesA);
+            var two = Side(shape.SetB, shape.ScopesB);
+
+            return string.CompareOrdinal(one, two) <= 0
+                ? one + "\u001f" + two
+                : two + "\u001f" + one;
         }
 
         private static string Side(string? set, IReadOnlyList<string> scopes) =>

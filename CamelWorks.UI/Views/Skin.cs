@@ -200,6 +200,23 @@ namespace CamelWorks.UI.Views
             return Sheet["Fam." + family] is Brush brush ? brush : Of("Muted");
         }
 
+        /// <summary>
+        /// The wash one symbol of a legend is drawn on, by where it sits in that legend.
+        ///
+        /// Position rather than a colour stored on the symbol: the legend's order is already
+        /// stable, already saved and already what the palette lists, so nothing new has to be
+        /// persisted, exported or reconciled when a client's workbook comes back. Eight of them,
+        /// wrapping - a legend of more than eight symbols is not a key anybody reads anyway, and
+        /// two symbols sharing a wash still carry different letters.
+        /// </summary>
+        /// <param name="at">Where the symbol sits in the legend, from zero.</param>
+        public static Brush Symbol(int at)
+        {
+            var letter = (char)('A' + (((at % 8) + 8) % 8));
+
+            return Sheet["Sym." + letter] is Brush brush ? brush : Of("Nav");
+        }
+
         /// <summary>The text colour for a tone.</summary>
         /// <param name="tone">The tone.</param>
         public static Brush Ink(Tone tone) => tone switch
@@ -297,6 +314,42 @@ namespace CamelWorks.UI.Views
 
             ("ConsoleBg",   "#0E1116", "#0A0C10"),
             ("ConsoleTx",   "#CFE3D5", "#BFE0C8"),
+
+            // The two inks for writing on a colour somebody chose. Fixed rather than theme-led,
+            // because the colour under them is fixed: a wash that does not change with the theme
+            // needs a letter that does not either.
+            ("Ink.OnLight",  "#1F2329", "#1F2329"),
+            ("Ink.OnDark",   "#F2F5F8", "#F2F5F8"),
+
+            // <b>Eight washes for the legend's symbols, in the order the legend lists them.</b>
+            // Every symbol in the grid was drawn on the same pale blue, so the only thing telling
+            // a hard clash from a clearance anywhere on a matrix of two hundred cells was the
+            // shape of one letter. A matrix exists to be read as a pattern - all of MEP against
+            // structure is a clearance, and you should see that without reading - and a single
+            // fill made that impossible. Pale enough to carry the letter at full contrast, and
+            // separated by hue rather than by lightness so the letter is never the only channel.
+            //
+            // <b>Ordered so the first four are the four that separate best.</b> Hue alone is not
+            // separation: simulated for a deuteranope, the blue and the lavender were 1.2 apart
+            // in CIELAB - and they were positions one and four, which on a legend of four symbols
+            // is the shipped default. Blue, amber, green and pink lead; lavender, teal, lime and
+            // slate follow, where a legend has grown past the size anybody reads as a key anyway.
+            ("Sym.A",       "#DCEAF8", "#1E2E3F"),
+            ("Sym.B",       "#FBEFD3", "#3A2F12"),
+            ("Sym.C",       "#DDF2E4", "#17311F"),
+            ("Sym.D",       "#FADCE8", "#38202B"),
+            ("Sym.E",       "#EAE2F8", "#2A2340"),
+            ("Sym.F",       "#D6F0EF", "#12312F"),
+            ("Sym.G",       "#E9F2CE", "#29331A"),
+            ("Sym.H",       "#E2E6EC", "#2B3138"),
+
+            // <b>The diagonal is not a symbol and must not be drawn as one.</b> A discipline
+            // against itself is the spine of the grid - the line every pair is mirrored about -
+            // and it was drawn on the same grey that now means "this makes no test", which is
+            // the one thing a live self-pair is not. Deeper than any symbol wash and neutral
+            // against all of them, so it reads as structure rather than as a decision.
+            ("Spine",       "#CBD5E3", "#33404F"),
+            ("SpineBd",     "#9FB0C4", "#4A5A6D"),
 
             // The family hues lift in dark rather than staying put: a #0F766E teal that reads as a
             // considered green on white is a smudge on #23272E.

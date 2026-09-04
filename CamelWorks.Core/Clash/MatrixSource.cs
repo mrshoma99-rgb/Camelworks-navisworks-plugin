@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Identity;
@@ -49,9 +50,11 @@ namespace CamelWorks.Core.Clash
     public sealed class MatrixSource
     {
         private MatrixSource(MatrixSourceKind kind, string? name,
-                             IReadOnlyList<string>? scopes, IReadOnlyList<ElementKey>? keys)
+                             IReadOnlyList<string>? scopes, IReadOnlyList<ElementKey>? keys,
+                             string? folder = null)
         {
             Kind = kind;
+            Folder = (folder ?? string.Empty).Trim().Trim('/');
             Name = (name ?? string.Empty).Trim();
             Scopes = scopes ?? Array.Empty<string>();
             Keys = keys ?? Array.Empty<ElementKey>();
@@ -62,6 +65,12 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>The set's name, for the two set kinds. Empty otherwise.</summary>
         public string Name { get; }
+
+        /// <summary>
+        /// The folders the set sits in, innermost last, joined with slashes. Empty when the set
+        /// is at the top or when a matrix written before this was recorded is being read.
+        /// </summary>
+        public string Folder { get; }
 
         /// <summary>The model file names, for <see cref="MatrixSourceKind.Models"/>.</summary>
         public IReadOnlyList<string> Scopes { get; }
@@ -93,13 +102,15 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>A saved selection set.</summary>
         /// <param name="name">The set's name in the host.</param>
-        public static MatrixSource SelectionSet(string name) =>
-            new MatrixSource(MatrixSourceKind.SelectionSet, name, null, null);
+        /// <param name="folder">The folders it sits in, innermost last, or null.</param>
+        public static MatrixSource SelectionSet(string name, string? folder = null) =>
+            new MatrixSource(MatrixSourceKind.SelectionSet, name, null, null, folder);
 
         /// <summary>A saved search set, which re-runs its search on every run.</summary>
         /// <param name="name">The set's name in the host.</param>
-        public static MatrixSource SearchSet(string name) =>
-            new MatrixSource(MatrixSourceKind.SearchSet, name, null, null);
+        /// <param name="folder">The folders it sits in, innermost last, or null.</param>
+        public static MatrixSource SearchSet(string name, string? folder = null) =>
+            new MatrixSource(MatrixSourceKind.SearchSet, name, null, null, folder);
 
         /// <summary>Whole loaded models.</summary>
         /// <param name="scopes">Their file names.</param>
@@ -115,8 +126,8 @@ namespace CamelWorks.Core.Clash
         /// <summary>What this reads as on a header and in the sanity check.</summary>
         public string Describe() => Kind switch
         {
-            MatrixSourceKind.SelectionSet => Name.Length == 0 ? "a selection set" : Name,
-            MatrixSourceKind.SearchSet => Name.Length == 0 ? "a search set" : Name,
+            MatrixSourceKind.SelectionSet => Name.Length == 0 ? "a selection set" : Named(true),
+            MatrixSourceKind.SearchSet => Name.Length == 0 ? "a search set" : Named(true),
             MatrixSourceKind.Models => Scopes.Count == 0 ? "models"
                 : Scopes.Count == 1 ? Scopes[0]
                 : Scopes.Count + " models",
@@ -141,8 +152,8 @@ namespace CamelWorks.Core.Clash
         /// <summary>This source as the side of a clash test.</summary>
         public ClashSide AsSide() => Kind switch
         {
-            MatrixSourceKind.SelectionSet => ClashSide.Set(Name),
-            MatrixSourceKind.SearchSet => ClashSide.Set(Name),
+            MatrixSourceKind.SelectionSet => ClashSide.Set(Name, Folder),
+            MatrixSourceKind.SearchSet => ClashSide.Set(Name, Folder),
             MatrixSourceKind.Models => ClashSide.Models(Scopes),
             _ => ClashSide.Elements(Keys),
         };
@@ -158,12 +169,82 @@ namespace CamelWorks.Core.Clash
         /// </summary>
         public string Fingerprint() => Kind switch
         {
-            MatrixSourceKind.SelectionSet => "set:" + Name.ToLowerInvariant(),
-            MatrixSourceKind.SearchSet => "set:" + Name.ToLowerInvariant(),
+            MatrixSourceKind.SelectionSet => "set:" + Named(),
+            MatrixSourceKind.SearchSet => "set:" + Named(),
             MatrixSourceKind.Models => "models:" + string.Join("|",
                 Scopes.Select(s => s.ToLowerInvariant()).OrderBy(s => s, StringComparer.Ordinal)),
             MatrixSourceKind.None => "none",
-            _ => "captured:" + (int)Kind + ":" + Keys.Count,
+            _ => "captured:" + (int)Kind + ":" + Keys.Count + ":" + Digest(Keys),
+        };
+
+        /// <summary>
+        /// A fingerprint of the elements a captured source actually holds.
+        ///
+        /// <b>It used to be the count of them.</b> Two rows pointing at two different tree picks
+        /// that happened to hold the same number of elements were, to everything downstream, the
+        /// same source - and three separate things went wrong at once, all of them silently. The
+        /// planner drops a pair whose fingerprint it has already seen, so the second row's tests
+        /// were never built at all: a cell showing a symbol, counted in the total, producing
+        /// nothing, and no test reads exactly like no clashes. The difference matched the second
+        /// pair against the first one's test. And the mirror wrote one row's cells into another's.
+        ///
+        /// Sorted, so the same elements captured in a different order are the same source.
+        /// FNV-1a rather than the string hash, because that one is seeded per process in modern
+        /// .NET: a fingerprint that changed every time Navisworks restarted would match nothing
+        /// in a document saved yesterday.
+        /// </summary>
+        /// <param name="keys">The captured elements.</param>
+        private static string Digest(IReadOnlyList<ElementKey> keys)
+        {
+            var hash = 14695981039346656037UL;
+
+            foreach (var word in keys.Select(k => k.ToString())
+                                     .OrderBy(w => w, StringComparer.Ordinal))
+            {
+                foreach (var letter in word)
+                {
+                    hash ^= letter;
+                    hash *= 1099511628211UL;
+                }
+
+                // A break between one key and the next, so two keys running together cannot
+                // fingerprint the same as one longer one.
+                hash ^= 0x1F;
+                hash *= 1099511628211UL;
+            }
+
+            return hash.ToString("x16", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// The set as this source names it: its folders and its name when both are known.
+        ///
+        /// Used for telling two sources apart, which has to be exact. What a test in the
+        /// document is matched against is <see cref="Matched"/>, because the document only ever
+        /// reports a set's name.
+        /// </summary>
+        /// <param name="read">True to keep it as it is written, for somebody to read.</param>
+        private string Named(bool read = false)
+        {
+            var said = Folder.Length == 0 ? Name : Folder + "/" + Name;
+
+            return read ? said : said.ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// The form of this source that can be compared with a test the document already holds.
+        ///
+        /// <b>The document does not say which folder a test's set came from.</b> It reports a
+        /// name, so matching a plan against it has to happen on names - while telling one row
+        /// from another has to happen on the whole path. Two different questions, two answers,
+        /// and folding them into one is what made a matrix either lose its tests or lose its
+        /// results depending on which way it was folded.
+        /// </summary>
+        public string Matched() => Kind switch
+        {
+            MatrixSourceKind.SelectionSet => "set:" + Name.ToLowerInvariant(),
+            MatrixSourceKind.SearchSet => "set:" + Name.ToLowerInvariant(),
+            _ => Fingerprint(),
         };
 
         /// <summary>Write it down.</summary>
@@ -172,6 +253,8 @@ namespace CamelWorks.Core.Clash
             var json = JsonValue.Object().Set("kind", (double)(int)Kind);
 
             if (Name.Length > 0) json.Set("name", Name);
+
+            if (Folder.Length > 0) json.Set("folder", Folder);
 
             if (Scopes.Count > 0)
                 json.Set("scopes", JsonValue.Array(Scopes.Select(JsonValue.String)));
@@ -203,7 +286,8 @@ namespace CamelWorks.Core.Clash
                     if (ElementKey.TryParse(held.AsString(), out var key) && !key.IsEmpty)
                         keys.Add(key);
 
-            return new MatrixSource(kind, json["name"].AsString(), scopes, keys);
+            return new MatrixSource(kind, json["name"].AsString(), scopes, keys,
+                                    json["folder"].AsString());
         }
 
         /// <inheritdoc />

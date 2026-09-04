@@ -36,11 +36,126 @@ namespace CamelWorks.Core.Tests
             new string?[] { "",   "02",   "ST",  "",   "Frame",       "ST_Frame", "",         "",  "A",        "C" },
             new string?[] { "",   "03",   "ME",  "",   "Ductwork",    "ME_Duct",  "",         "",  "",         "A" });
 
+        [Fact]
+        public void A_dash_in_a_workbook_means_the_pair_was_ruled_out()
+        {
+            // A client's workbook says "not required" with whichever dash their font gave them,
+            // or with the letters. Read as anything else it becomes a symbol with no meaning,
+            // and the reader is asked to give a tolerance to a decision not to test.
+            foreach (var said in new[] { "-", "\u2013", "\u2014", "N/A", "na" })
+            {
+                var read = SheetMatrix.Read(Sheet(
+                    new string?[] { "Coordination matrix" },
+                    new string?[] { "", "", "", "", "", "", "01", "", "02", "03" },
+                    new string?[] { "" },
+                    new string?[] { "" },
+                    new string?[] { "" },
+                    new string?[] { "", "", "", "", "", "", "ST_Found", "", "ST_Frame", "ME_Duct" },
+                    new string?[] { "", "01", "ST", "", "Foundations", "ST_Found", "A", "", said, "" },
+                    new string?[] { "", "02", "ST", "", "Frame", "ST_Frame", said, "", "A", "C" },
+                    new string?[] { "", "03", "ME", "", "Ductwork", "ME_Duct", "", "", "", "A" }),
+                    Mapping());
+
+                Assert.Equal(MatrixBoard.NotRequired,
+                             read.Grid.At(read.Grid.Rows[0], read.Grid.Columns[1]));
+
+                Assert.Empty(new MatrixLegend(new[] { new MatrixSymbol("A") })
+                                 .Unexplained(read.Grid)
+                                 .Where(MatrixBoard.IsNotRequired));
+            }
+        }
+
         private static SheetMapping Mapping() => new SheetMapping
         {
             NumberColumn = 2, CodeColumn = 3, NameColumn = 5, SetColumn = 6, FirstRow = 7,
             HeaderNumberRow = 2, HeaderSetRow = 6, FirstBodyColumn = 7, BlankRowStop = 3,
         };
+
+        /// <summary>
+        /// The same matrix, laid out the way a smaller practice lays it out: no title block, no
+        /// spacer, no code column, and the grid starting in column B. Nothing about it is unusual
+        /// except that it is not the shape the defaults describe.
+        /// </summary>
+        private static SheetTable Compact() => Sheet(
+            new string?[] { "",            "Foundations", "Frame", "Ductwork" },
+            new string?[] { "Foundations", "A",           "B",     ""         },
+            new string?[] { "Frame",       "B",           "A",     "C"        },
+            new string?[] { "Ductwork",    "",            "C",     "A"        });
+
+        [Fact]
+        public void A_matrix_that_starts_somewhere_else_is_read_from_where_it_starts()
+        {
+            // The whole reason the mapping is asked for. Every coordinate below differs from the
+            // default, and none of them is strange: this is a sheet somebody typed in a hurry.
+            var read = SheetMatrix.Read(Compact(), new SheetMapping
+            {
+                NumberColumn = 0, CodeColumn = 0, NameColumn = 1, SetColumn = 1, FirstRow = 2,
+                HeaderNumberRow = 0, HeaderSetRow = 1, FirstBodyColumn = 2, BlankRowStop = 1,
+            });
+
+            Assert.True(read.IsUsable);
+            Assert.Equal(new[] { "Foundations", "Frame", "Ductwork" },
+                         read.Grid.Rows.Select(r => r.Name).ToArray());
+
+            Assert.Equal("A", read.Grid.At(read.Grid.Rows[0], read.Grid.Columns[0]));
+            Assert.Equal("B", read.Grid.At(read.Grid.Rows[0], read.Grid.Columns[1]));
+            Assert.Equal("C", read.Grid.At(read.Grid.Rows[1], read.Grid.Columns[2]));
+        }
+
+        [Fact]
+        public void The_defaults_find_nothing_on_a_sheet_laid_out_differently()
+        {
+            // Which is what made this worth asking about rather than guessing at: handed the
+            // defaults, that sheet reads as an empty workbook, and the tool that only ever passed
+            // the defaults could say nothing more useful than "no categories were found".
+            var read = SheetMatrix.Read(Compact(), new SheetMapping());
+
+            Assert.False(read.IsUsable);
+            Assert.Empty(read.Grid.Rows);
+        }
+
+        [Fact]
+        public void The_matrix_can_be_on_any_tab_of_the_workbook()
+        {
+            var cover = new XlsxSheet("Cover");
+            cover.Row(new string?[] { "Project", "Something" });
+
+            var matrix = new XlsxSheet("Matrix");
+            matrix.Row(new string?[] { "", "Foundations", "Frame" });
+            matrix.Row(new string?[] { "Foundations", "A", "B" });
+            matrix.Row(new string?[] { "Frame", "B", "A" });
+
+            var book = XlsxReader.Read(XlsxWriter.Write(new[] { cover, matrix }));
+
+            var compact = new SheetMapping
+            {
+                SheetName = "Matrix",
+                NumberColumn = 0, CodeColumn = 0, NameColumn = 1, SetColumn = 1, FirstRow = 2,
+                HeaderNumberRow = 0, HeaderSetRow = 1, FirstBodyColumn = 2, BlankRowStop = 1,
+            };
+
+            // The first tab is a cover sheet, as it usually is. Read as the first tab, there is
+            // no matrix in this workbook at all.
+            Assert.False(SheetMatrix.Read(book.First, compact).IsUsable);
+            Assert.True(SheetMatrix.Read(book.Sheet(compact.SheetName), compact).IsUsable);
+        }
+
+        [Fact]
+        public void The_corner_of_a_sheet_can_be_shown_with_its_own_coordinates()
+        {
+            // What the mapping is filled in against. Every cell of the box comes back, empty ones
+            // included, because the shape is the information: a hole in the top left is what says
+            // the labels start on row two.
+            var corner = SheetMatrix.Preview(Compact(), 4, 4);
+
+            Assert.Equal(4, corner.Count);
+            Assert.All(corner, line => Assert.Equal(4, line.Count));
+
+            Assert.Equal(string.Empty, corner[0][0]);
+            Assert.Equal("Foundations", corner[0][1]);
+            Assert.Equal("Foundations", corner[1][0]);
+            Assert.Equal("A", corner[1][1]);
+        }
 
         [Fact]
         public void The_categories_come_off_the_side_of_the_sheet()

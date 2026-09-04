@@ -1390,13 +1390,20 @@ namespace CamelWorks.UI.Views
         /// <param name="glyph">One of <see cref="Glyphs"/>.</param>
         /// <param name="tip">What it does, as a tooltip. Row buttons have no caption to read.</param>
         /// <param name="onClick">What it does.</param>
-        public static System.Windows.Controls.Button Icon(string glyph, string tip, Action onClick)
+        /// <param name="tint">
+        /// Which ink the symbol is drawn in. Muted for nearly all of them - a row of icons is a
+        /// row of equals - and a warning colour for the one that takes something away, because a
+        /// row of identical symbols where one of them deletes is a row where the wrong one gets
+        /// pressed, and a tip only helps somebody who waited for it.
+        /// </param>
+        public static System.Windows.Controls.Button Icon(string glyph, string tip,
+                                                          Action? onClick, string tint = "Muted")
         {
             var button = new System.Windows.Controls.Button
             {
                 // Through Glyph, not Arrow: a raw path draws at its own 24-unit size, which inside
                 // a 26-pixel button is a cross that fills the row it is meant to sit beside.
-                Content = Glyph(glyph, 15, "Muted"),
+                Content = Glyph(glyph, 17, tint),
                 ToolTip = tip,
             };
 
@@ -2453,7 +2460,12 @@ namespace CamelWorks.UI.Views
             var path = new System.Windows.Shapes.Path
             {
                 Data = Geometry.Parse(data),
-                StrokeThickness = 2,
+
+                // <b>Two units on a twenty-four unit canvas is a hairline.</b> Drawn at thirteen
+                // pixels that is 1.08 device pixels, anti-aliased to about half coverage - so a
+                // row of symbols came out visibly lighter than the twelve-pixel type beside it,
+                // and Muted's five and a half to one arrived on the screen as about three.
+                StrokeThickness = 2.4,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
                 StrokeLineJoin = PenLineJoin.Round,
@@ -2467,6 +2479,48 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
         // Tables
         // -----------------------------------------------------------------------------------
+
+        /// <summary>
+        /// A button with a symbol and the word for it, for a strip where there is room to say it.
+        ///
+        /// <b>A symbol alone is a guess.</b> On a row where every button is a symbol they are at
+        /// least a set to be learned; on the top strip, beside three buttons that all carry their
+        /// own word, an unlabelled one reads as something that failed to draw. The tip still
+        /// carries the sentence.
+        /// </summary>
+        /// <param name="glyph">The symbol.</param>
+        /// <param name="caption">The word.</param>
+        /// <param name="tip">The sentence, for the tip.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Verb(string glyph, string caption, string tip,
+                                                          Action? onClick)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            row.Children.Add(Glyph(glyph, 15, "Muted", new Thickness(0, 0, 6, 0)));
+
+            row.Children.Add(new TextBlock
+            {
+                Text = caption ?? string.Empty,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            var button = new System.Windows.Controls.Button
+            {
+                Content = row,
+                ToolTip = tip,
+                Padding = new Thickness(9, 4, 10, 5),
+            };
+
+            if (onClick != null) button.Click += (s, e) => Busy(onClick);
+
+            return button;
+        }
 
         /// <summary>
         /// Set on a container whose tables are the whole of it, so they grow to the room they get.
@@ -3822,6 +3876,30 @@ namespace CamelWorks.UI.Views
 
         // -----------------------------------------------------------------------------------
 
+        /// <summary>
+        /// The ink to write on a colour somebody chose, rather than on one the theme picked.
+        ///
+        /// <b>A chosen colour does not change with the theme and the theme's ink does.</b> The
+        /// washes a symbol can be given are fixed - they are the matrix's, not the seat's - so in
+        /// the dark palette the letter on top of one was near-white on a pale pastel: one to one.
+        /// Every cell of a coloured symbol was a blank tile. Which ink to use is a property of
+        /// the colour underneath, and nothing else.
+        /// </summary>
+        /// <param name="on">The colour being written on.</param>
+        public static Brush InkOn(Brush? on)
+        {
+            if (!(on is SolidColorBrush solid)) return Skin.Of("Text");
+
+            var colour = solid.Color;
+
+            // Rec. 709 luminance on the raw channels. Not gamma-correct, and it does not need to
+            // be: the question is only "is this light or dark", and every wash on offer is far
+            // from the middle.
+            var light = ((0.2126 * colour.R) + (0.7152 * colour.G) + (0.0722 * colour.B)) / 255.0;
+
+            return light > 0.55 ? Skin.Of("Ink.OnLight") : Skin.Of("Ink.OnDark");
+        }
+
         /// <summary>The text colour for a tone.</summary>
         /// <param name="tone">The tone.</param>
         public static Brush Ink(Tone tone) => Skin.Ink(tone);
@@ -3889,7 +3967,7 @@ namespace CamelWorks.UI.Views
         public const string Model = "M12,3 L21,7.5 L12,12 L3,7.5 Z M3,12 L12,16.5 L21,12 M3,16.5 L12,21 L21,16.5";
 
         /// <summary>Overlapping panes: appearance layers.</summary>
-        public const string Layers = "M4,9 L11,9 L11,20 L4,20 Z M13,4 L20,4 L20,15 L13,15 Z";
+        public const string Layers = "M3.5,10 L12,10 L12,20.5 L3.5,20.5 Z M8,10 L8,4.5 L20.5,4.5 L20.5,15.5 L12,15.5";
 
         /// <summary>Two shapes meeting: a clash.</summary>
         public const string Clash = "M4,12 L11,12 M13,12 L20,12 M12,4 L12,11 M12,13 L12,20 M9,9 L15,15 M15,9 L9,15";
@@ -3952,6 +4030,36 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Two crossing pairs: number them again.</summary>
         public const string Number = "M9,4 L7,20 M17,4 L15,20 M4,9 L20,9 M3,15 L19,15";
+
+        /// <summary>A ring with a bar through it: ruled out, on purpose.</summary>
+        public const string Barred = "M12,4 A8,8 0 1 0 12.01,4 M6.3,6.3 L17.7,17.7";
+
+        /// <summary>Corners and a filled middle: all of it, every cell.</summary>
+        public const string SelectAll = "M4,7.5 L4,4 L7.5,4 M16.5,4 L20,4 L20,7.5 M20,16.5 L20,20 L16.5,20 M7.5,20 L4,20 L4,16.5 M9,9 L15,9 L15,15 L9,15 Z";
+
+        /// <summary>A list with a tick against it: every one of them accounted for.</summary>
+        public const string Checklist = "M4,7 L13,7 M4,12 L11,12 M4,17 L10,17 M13.5,16.5 L16,19 L20.5,13.5";
+
+        /// <summary>An arrow up against a bar: on to the next one.</summary>
+        public const string Next = "M6.5,5.5 L13.5,12 L6.5,18.5 M17.5,5.5 L17.5,18.5";
+
+        /// <summary>A sheet with a tick on it: checked, and against something.</summary>
+        public const string Verify = "M5,5 L19,5 L19,20.5 L5,20.5 Z M9.5,3.5 L14.5,3.5 M8.5,12.5 L11,15 L15.5,9.5";
+
+        /// <summary>Two arrows passing: what is different between them.</summary>
+        public const string Changes = "M3,9 L16,9 M13,6 L16,9 L13,12 M21,15 L8,15 M11,12 L8,15 L11,18";
+
+        /// <summary>An arrow leaving a tray: out of here, into a file.</summary>
+        public const string Export = "M12,3 L12,14 M8.5,6.5 L12,3 L15.5,6.5 M5,13 L5,20 L19,20 L19,13";
+
+        /// <summary>A painter's board with its colours on it: how the thing looks.</summary>
+        public const string Palette = "M12,3.5 C6.8,3.5 3,7.4 3,12 C3,16.7 6.9,20.5 12,20.5 C13.4,20.5 14.1,19.7 14.1,18.8 C14.1,18 13.4,17.6 13.4,16.8 C13.4,16 14.1,15.4 14.9,15.4 L16.6,15.4 C19.1,15.4 21,13.4 21,10.9 C21,6.8 16.9,3.5 12,3.5 M7.6,10.6 L7.61,10.6 M10.6,7.6 L10.61,7.6 M14.4,7.6 L14.41,7.6 M17,10.6 L17.01,10.6";
+
+        /// <summary>Pour it into what is empty: a fill, not another plus.</summary>
+        public const string Sweep = "M4,4 L20,4 L20,8 L4,8 Z M12,8 L12,11 M8.5,11 L15.5,11 L15.5,20.5 L8.5,20.5 Z M8.5,15.5 L15.5,15.5";
+
+        /// <summary>Rub it out: a clear, not another cross.</summary>
+        public const string Eraser = "M6.5,19 L3.5,15.5 L14,5 L19.5,11 L11,19 Z M9.5,19 L20.5,19";
 
         /// <summary>A folder with something going into it: move it there.</summary>
         public const string MoveIn = "M3,6.5 L9.5,6.5 L11.5,9 L21,9 L21,19 L3,19 Z M12,16 L12,10.5 M9.8,12.7 L12,10.5 L14.2,12.7";
