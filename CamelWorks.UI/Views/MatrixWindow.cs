@@ -523,6 +523,14 @@ namespace CamelWorks.UI.Views
                 _sidePane.BorderThickness = new Thickness(1, 0, 0, 0);
                 _sidePane.Child = Options();
 
+                // <b>Said, not inherited.</b> Whether the panel is on the screen was written
+                // down in one place - the press that toggles it - so until somebody pressed
+                // that, the panel's state was whatever a Border happens to default to rather
+                // than what this screen believes. A screen that keeps a flag and never states
+                // it is a screen that can disagree with itself, and the flag is what the strip
+                // reports to the reader.
+                _sidePane.Visibility = _sideOpen ? Visibility.Visible : Visibility.Collapsed;
+
                 _sidePane.Tint(Border.BackgroundProperty, "Pane");
                 _sidePane.Tint(Border.BorderBrushProperty, "Bd");
 
@@ -1021,14 +1029,19 @@ namespace CamelWorks.UI.Views
                 {
                     // Upright, a name costs one line however long it is, and the band gives a
                     // small matrix a hundred and thirty pixels of height back.
-                    if (Upright) return 26 + Above;
+                    // The header's own padding is part of what it costs. Left out of this sum,
+                    // the band was ten pixels smaller than the thing standing in it and the
+                    // words at the end were cut off - upright and turned alike.
+                    var padding = HeadPadTop + HeadPadFoot;
+
+                    if (Upright) return padding + NameTall + Above;
 
                     var longest = 0.0;
 
                     foreach (var line in _board.Columns)
                         longest = Math.Max(longest, Measured(line.Name));
 
-                    return Math.Max(64, Math.Min(200, longest + 14)) + Above;
+                    return Math.Max(64, Math.Min(200, longest + 14)) + Above + padding;
                 }
             }
 
@@ -1122,6 +1135,52 @@ namespace CamelWorks.UI.Views
 
                 return Ruler.DesiredSize.Width;
             }
+
+            /// <summary>
+            /// How tall one line of type is, at the size a header draws it.
+            ///
+            /// <b>Measured, because the last guess at it was four pixels short.</b> A header's
+            /// height was a constant that had been read off a screenshot, and a line of eleven
+            /// point type is not eleven pixels tall - so every upright name was drawn into a
+            /// space too small for it and lost its feet. The ruler that already measures how
+            /// wide a name is measures how tall a line is, and neither is guessed again.
+            /// </summary>
+            /// <param name="size">The type size.</param>
+            /// <param name="bold">Whether it is drawn semibold.</param>
+            private static double LineHigh(double size = 11, bool bold = true)
+            {
+                Ruler.FontSize = size;
+                Ruler.FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal;
+
+                // Ascender and descender both, so a band sized off this holds a name with a
+                // "g" in it as well as one without.
+                Ruler.Text = "Hg";
+
+                Ruler.InvalidateMeasure();
+                Ruler.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+                return Math.Ceiling(Ruler.DesiredSize.Height);
+            }
+
+            /// <summary>The column header's own padding, over the words and under them.</summary>
+            /// <remarks>
+            /// Named rather than written into the Thickness alone, because the band's height is
+            /// worked out from them and the two drifted apart: the header reserved ten pixels
+            /// for its own padding and the height that was supposed to cover it did not know
+            /// they existed. Every name in every column came out short by exactly this.
+            /// </remarks>
+            private const double HeadPadTop = 6;
+
+            private const double HeadPadFoot = 4;
+
+            /// <summary>The gap between an upright name and the grid under it.</summary>
+            private const double NameGap = 5;
+
+            /// <summary>How much height one upright name needs, gap included.</summary>
+            private static double NameTall => LineHigh() + NameGap;
+
+            /// <summary>How much of the band is left for the name once everything else has had its share.</summary>
+            private double NameRoom => HeaderHigh - Above - HeadPadTop - HeadPadFoot;
 
             /// <summary>Whether any of these lines points at nothing.</summary>
             /// <param name="lines">The rows or the columns.</param>
@@ -1914,7 +1973,7 @@ namespace CamelWorks.UI.Views
                 var head = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(2, 6, 2, 4),
+                    Padding = new Thickness(2, HeadPadTop, 2, HeadPadFoot),
                     Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                     ToolTip = "Column " + Letter(at) + ": " + line.Titled + " — "
@@ -2073,12 +2132,15 @@ namespace CamelWorks.UI.Views
 
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Bottom,
-                        Margin = new Thickness(2, 0, 2, 5),
+                        Margin = new Thickness(2, 0, 2, NameGap),
                     }.Wearing("Body");
                 }
                 else
                 {
-                    named = Turned(line.Name, HeaderHigh - Above, 11, FontWeights.SemiBold,
+                    // The room left after the padding, not the room before it. Given the
+                    // larger number the turned name ran ten pixels past the end of its own
+                    // header and the tail was clipped by the border.
+                    named = Turned(line.Name, NameRoom, 11, FontWeights.SemiBold,
                                    at: TextAlignment.Left).Wearing("Body");
                 }
 
@@ -2222,12 +2284,41 @@ namespace CamelWorks.UI.Views
                     Ui.Safely(() => Pick(line, rows));
                 };
 
+                // <b>Renaming was reachable from exactly one place.</b> The name of a row lived
+                // in the inspector and nowhere else, so a panel that is shut - or, as it turned
+                // out, one that is not on the screen at all - takes the only way of naming a row
+                // with it, and the first row of a new matrix stays called "New row" with nothing
+                // a person can press. The name is on the header; the header is what somebody
+                // aims at to change it. It is how a test folder is already renamed here.
+                head.MouseLeftButtonDown += (s, e) =>
+                {
+                    if (e.ClickCount != 2) return;
+
+                    e.Handled = true;
+
+                    Ui.Safely(() => Parts.Ask(
+                        head, rows ? "Name this row" : "Name this column", line.Name, "Rename",
+                        typed =>
+                        {
+                            if (string.IsNullOrWhiteSpace(typed)) return;
+
+                            Remember(what: "renaming a " + (rows ? "row" : "column"));
+
+                            // The same full redraw the inspector's own box does: a name is part
+                            // of the grid's shape, and the twin across the diagonal follows it.
+                            _board.Rename(line, typed.Trim());
+
+                            Redraw();
+                            Pick(line, rows);
+                        }));
+                };
+
                 head.ContextMenu = Parts.Context(() => LineMenu(line, at, rows), null);
 
                 Reachable(head,
                           (rows ? "Row " + Number(at) : "Column " + Letter(at)) + ", "
                           + line.Titled + ". " + line.Source.Kinded()
-                          + ". Alt and an arrow moves it.",
+                          + ". Double-click to rename it. Alt and an arrow moves it.",
                           () => Pick(line, rows));
             }
 
