@@ -1270,7 +1270,37 @@ namespace CamelWorks.UI.Views
             /// <summary>Whether a line is inside a folder somebody has shut.</summary>
             /// <param name="line">The row or column.</param>
             private bool Hidden(MatrixLine line) =>
-                line.Folder.Length > 0 && _shut.Contains(line.Folder);
+                line.Folder.Length > 0 && _shut.Contains(line.Folder) && !Folded(line);
+
+            /// <summary>
+            /// The one line a shut folder collapses to, and the line that speaks for it.
+            ///
+            /// <b>Every member given no height is a folder with no height, and a folder with no
+            /// height cannot be pressed to open it again.</b> Shutting one made it vanish - band,
+            /// name, chevron and all - and the only way back was undo, which does not take back a
+            /// drawing state. A drawer that shuts has to leave its handle out.
+            ///
+            /// So the first member keeps its place and carries the folder on it: the name across
+            /// the row, where a row's name goes, at the width a row header has - rather than
+            /// turned inside a band twenty-four pixels wide and thirty tall, which is a name with
+            /// three letters of it showing. Across the top the same line keeps its column and the
+            /// name stays turned, because a column header is tall and that is where the room is.
+            /// </summary>
+            /// <param name="line">The row or column.</param>
+            private bool Folded(MatrixLine line)
+            {
+                if (line.Folder.Length == 0 || !_shut.Contains(line.Folder)) return false;
+
+                var lines = _board.Rows.Contains(line)
+                    ? (IReadOnlyList<MatrixLine>)_board.Rows
+                    : _board.Columns;
+
+                foreach (var one in lines)
+                    if (string.Equals(one.Folder, line.Folder, StringComparison.OrdinalIgnoreCase))
+                        return ReferenceEquals(one, line);
+
+                return false;
+            }
 
             /// <summary>Open a folder, or shut it, on both axes at once.</summary>
             /// <param name="folder">The folder.</param>
@@ -1357,11 +1387,24 @@ namespace CamelWorks.UI.Views
 
                 for (var c = 0; c < _board.Columns.Count; c++)
                 {
-                    if (Hidden(_board.Columns[c])) continue;
+                    var column = _board.Columns[c];
 
-                    Put(_across, Marker(Letter(c), _board.Columns[c].Titled,
-                                        _board.Columns[c], rows: false), top, c);
-                    Put(_across, ColumnHead(_board.Columns[c], c), top + 1, c);
+                    if (Hidden(column)) continue;
+
+                    if (Folded(column))
+                    {
+                        var drawer = Drawer(column.Folder, rows: false);
+
+                        Grid.SetColumn(drawer, c);
+                        Grid.SetRow(drawer, top);
+                        Grid.SetRowSpan(drawer, 2);
+                        _across.Children.Add(drawer);
+
+                        continue;
+                    }
+
+                    Put(_across, Marker(Letter(c), column.Titled, column, rows: false), top, c);
+                    Put(_across, ColumnHead(column, c), top + 1, c);
                 }
 
                 if (band > 0) Bands(_across, rows: false);
@@ -1408,6 +1451,18 @@ namespace CamelWorks.UI.Views
                     var row = _board.Rows[r];
 
                     if (Hidden(row)) continue;
+
+                    if (Folded(row))
+                    {
+                        var drawer = Drawer(row.Folder, rows: true);
+
+                        Grid.SetRow(drawer, r);
+                        Grid.SetColumn(drawer, left);
+                        Grid.SetColumnSpan(drawer, 2);
+                        _down.Children.Add(drawer);
+
+                        continue;
+                    }
 
                     Put(_down, Marker(Number(r), row.Titled, row, rows: true), r, left);
                     Put(_down, RowHead(row, r), r, left + 1);
@@ -1498,7 +1553,18 @@ namespace CamelWorks.UI.Views
                 // The room a name has is the length of its own block, not the width of the strip.
                 var room = Math.Max(16, (rows ? CellHigh : CellWide) * held - 10);
 
-                UIElement said = rows
+                // While it is shut the name is on the folder's own line, at the size that line
+                // gives it - so the band beside it is a mark, not the same words a second time
+                // squeezed into twenty-four pixels by thirty.
+                UIElement said = shut
+                    ? new TextBlock
+                    {
+                        Text = "\u25b8",
+                        FontSize = 10,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }
+                    : rows
                     ? Turned(Shown(folder, shut), room, 10, FontWeights.SemiBold,
                              at: TextAlignment.Center)
                     : new TextBlock
@@ -1573,6 +1639,79 @@ namespace CamelWorks.UI.Views
                 return block;
             }
 
+            /// <summary>
+            /// A shut folder, on the one line it collapses to.
+            ///
+            /// Down the side it is a row, so the name reads across it at the width a row header
+            /// has. Across the top it is a column, so the name stays turned and uses the height a
+            /// column header has. Either way it is the folder's own line, not a band beside it -
+            /// which is what makes it big enough to read and big enough to press.
+            /// </summary>
+            /// <param name="folder">The folder.</param>
+            /// <param name="rows">True down the side, false across the top.</param>
+            private UIElement Drawer(string folder, bool rows)
+            {
+                var held = _board.InFolder(rows, folder).Count;
+                var says = folder + "  ·  " + Ui.Count(held, "shut");
+
+                var drawer = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    Cursor = Cursors.Hand,
+                    Padding = rows ? new Thickness(8, 0, 6, 0) : new Thickness(2, 6, 2, 5),
+                    ToolTip = says + ". Click to open it, right-click for what else it can do.",
+                };
+
+                drawer.Tint(Border.BorderBrushProperty, "Bd");
+                drawer.Tint(Border.BackgroundProperty, "Nav");
+
+                if (rows)
+                {
+                    var line = new DockPanel { LastChildFill = true };
+
+                    var mark = new TextBlock
+                    {
+                        Text = "\u25b8",
+                        FontSize = 10,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 7, 0),
+                    }.Wearing("Body");
+
+                    DockPanel.SetDock(mark, Dock.Left);
+                    line.Children.Add(mark);
+
+                    line.Children.Add(new TextBlock
+                    {
+                        Text = says,
+                        FontSize = 11,
+                        FontWeight = FontWeights.SemiBold,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Body"));
+
+                    drawer.Child = line;
+                }
+                else
+                {
+                    drawer.Child = Turned(says, Math.Max(24, HeaderHigh - Above - 12), 11,
+                                          FontWeights.SemiBold, at: TextAlignment.Left)
+                                   .Wearing("Body");
+                }
+
+                drawer.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+                    Shut(folder);
+                });
+
+                drawer.ContextMenu = Parts.Context(() => FolderMenu(folder), null);
+
+                Reachable(drawer, says + ". Press to open it.", () => Shut(folder));
+
+                return drawer;
+            }
+
             /// <summary>A folder's name, with a mark on it while it is shut.</summary>
             /// <param name="folder">The name.</param>
             /// <param name="shut">Whether it is shut.</param>
@@ -1624,9 +1763,40 @@ namespace CamelWorks.UI.Views
 
                     if (Hidden(row)) continue;
 
+                    // <b>A shut folder's line is the folder, not one of its members.</b> Drawing
+                    // that member's own cells there would put one discipline's decisions on a
+                    // line labelled with the folder's name, which is eight disciplines - so what
+                    // sits across it is a closed strip, and no symbol on it is anybody's.
+                    if (Folded(row))
+                    {
+                        var strip = new Border();
+
+                        strip.Tint(Border.BackgroundProperty, "Nav");
+
+                        Grid.SetRow(strip, r);
+                        Grid.SetColumn(strip, 0);
+                        Grid.SetColumnSpan(strip, Math.Max(1, _board.Columns.Count));
+                        _sheet.Children.Add(strip);
+
+                        continue;
+                    }
+
                     for (var c = 0; c < _board.Columns.Count; c++)
                     {
                         if (Hidden(_board.Columns[c])) continue;
+
+                        if (Folded(_board.Columns[c]))
+                        {
+                            var down = new Border();
+
+                            down.Tint(Border.BackgroundProperty, "Nav");
+
+                            Grid.SetColumn(down, c);
+                            Grid.SetRow(down, r);
+                            _sheet.Children.Add(down);
+
+                            continue;
+                        }
 
                         var column = _board.Columns[c];
                         var cell = Cell(row, column, r, c);
@@ -6158,17 +6328,21 @@ namespace CamelWorks.UI.Views
 
                 var at = Math.Max(0, Math.Min(lines.Count - 1, from + by));
 
-                if (!Hidden(lines[at])) return at;
+                // Folded as well as hidden: the line a shut folder collapses to draws the
+                // folder, not its own cells, so there is nothing on it for a cursor to sit in.
+                bool Past(MatrixLine line) => Hidden(line) || Folded(line);
+
+                if (!Past(lines[at])) return at;
 
                 // On past it, the way it was already going; and if that runs out of grid, back
                 // the other way, so the last visible line is never a place the cursor cannot leave.
                 var way = by >= 0 ? 1 : -1;
 
                 for (var tried = at; tried >= 0 && tried < lines.Count; tried += way)
-                    if (!Hidden(lines[tried])) return tried;
+                    if (!Past(lines[tried])) return tried;
 
                 for (var tried = at; tried >= 0 && tried < lines.Count; tried -= way)
-                    if (!Hidden(lines[tried])) return tried;
+                    if (!Past(lines[tried])) return tried;
 
                 return Math.Max(0, Math.Min(lines.Count - 1, from));
             }
