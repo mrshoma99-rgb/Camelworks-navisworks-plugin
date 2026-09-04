@@ -123,6 +123,19 @@ namespace CamelWorks.UI.Views
             /// <summary>The ring round the cell the keyboard is on.</summary>
             private readonly Border _ring = new Border();
 
+            /// <summary>
+            /// The headers, by the line they belong to, so a cell can light its own two up.
+            ///
+            /// <b>Tracking a row across a scrolling grid is the thing a triangle costs you.</b>
+            /// Under a pointer, both ends of the pair say so - which answers "which two is this"
+            /// without a tooltip and without reading two long names off two edges of the screen.
+            /// </summary>
+            private readonly Dictionary<MatrixLine, Border> _rowHeads =
+                new Dictionary<MatrixLine, Border>();
+
+            private readonly Dictionary<MatrixLine, Border> _columnHeads =
+                new Dictionary<MatrixLine, Border>();
+
             /// <summary>The corner and the left band, whose width follows what the rows carry.</summary>
             private readonly Border _corner = new Border();
 
@@ -942,6 +955,7 @@ namespace CamelWorks.UI.Views
             /// <summary>The band across the top: the letters, and the names stood on their end.</summary>
             private void RedrawAcross()
             {
+                _columnHeads.Clear();
                 _across.Children.Clear();
                 _across.ColumnDefinitions.Clear();
                 _across.RowDefinitions.Clear();
@@ -973,6 +987,7 @@ namespace CamelWorks.UI.Views
             /// <summary>The band down the left: the numbers, the names, and the box that adds one.</summary>
             private void RedrawDown()
             {
+                _rowHeads.Clear();
                 _down.Children.Clear();
                 _down.ColumnDefinitions.Clear();
                 _down.RowDefinitions.Clear();
@@ -1498,6 +1513,8 @@ namespace CamelWorks.UI.Views
 
                 head.Child = words;
 
+                _rowHeads[line] = head;
+
                 Draggable(head, line, rows: true);
                 Picks(head, line, rows: true, at: at);
 
@@ -1625,6 +1642,8 @@ namespace CamelWorks.UI.Views
 
                 head.Child = stacked;
 
+                _columnHeads[line] = head;
+
                 Draggable(head, line, rows: false);
                 Picks(head, line, rows: false, at: at);
 
@@ -1749,12 +1768,16 @@ namespace CamelWorks.UI.Views
 
                 cell.MouseEnter += (s, e) => Ui.Safely(() =>
                 {
+                    Crossed(row, column);
+
                     if (_brush == null
                         || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
                         return;
 
                     Daub(row, column);
                 });
+
+                cell.MouseLeave += (s, e) => Ui.Safely(() => Crossed(null, null));
 
                 cell.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                 {
@@ -1768,6 +1791,45 @@ namespace CamelWorks.UI.Views
 
                 return cell;
             }
+
+            /// <summary>
+            /// Light the two headers a cell belongs to, and put the last pair out.
+            /// </summary>
+            /// <param name="row">The row, or null to put them all out.</param>
+            /// <param name="column">The column, or null.</param>
+            private void Crossed(MatrixLine? row, MatrixLine? column)
+            {
+                if (ReferenceEquals(row, _crossRow) && ReferenceEquals(column, _crossColumn))
+                    return;
+
+                Lit(_crossRow, _rowHeads, false, _pickedRows);
+                Lit(_crossColumn, _columnHeads, false, !_pickedRows);
+
+                _crossRow = row;
+                _crossColumn = column;
+
+                Lit(row, _rowHeads, true, _pickedRows);
+                Lit(column, _columnHeads, true, !_pickedRows);
+            }
+
+            /// <summary>Tint one header, unless it is the one the inspector is already showing.</summary>
+            /// <param name="line">The row or column, or null.</param>
+            /// <param name="heads">Where its header is kept.</param>
+            /// <param name="lit">True to light it.</param>
+            /// <param name="axis">True when the inspector's pick is on this axis.</param>
+            private void Lit(MatrixLine? line, Dictionary<MatrixLine, Border> heads, bool lit,
+                             bool axis)
+            {
+                if (line == null || !heads.TryGetValue(line, out var head)) return;
+
+                if (axis && ReferenceEquals(_picked, line)) return;
+
+                head.Tint(Border.BackgroundProperty, lit ? "Hover" : "Pane");
+            }
+
+            /// <summary>Which pair is lit at the moment.</summary>
+            private MatrixLine? _crossRow;
+            private MatrixLine? _crossColumn;
 
             /// <summary>
             /// Put the cursor on one cell, the keyboard on the grid, and the cell in the
@@ -1926,9 +1988,28 @@ namespace CamelWorks.UI.Views
                 // drawing kept.
                 if (mirrored)
                 {
-                    cell.Child = null;
-                    cell.Tint(Border.BackgroundProperty, "Nav");
-                    cell.Opacity = 0.5;
+                    // <b>The echo is back, quietly.</b> Drawn at full strength it was four
+                    // hundred and eighty letters on a screen holding two hundred and thirty-one
+                    // decisions, every one of them reading as something to check. Drawn not at
+                    // all - which is what this was - a row could no longer be read across, and
+                    // reading a row is what a matrix is for in front of a client: "what is
+                    // ARC_Ceilings checked against" is a question about a whole line, and half
+                    // of that line lives on the other axis. So: the mark, in the faintest ink
+                    // the palette has, on no fill at all. Colour alone still marks the half that
+                    // is live, and the shape of the grid is still one triangle to work in.
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+                    cell.Opacity = 1.0;
+
+                    cell.Child = symbol == null
+                        ? null
+                        : new TextBlock
+                        {
+                            Text = symbol,
+                            FontSize = 11,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            Opacity = 0.55,
+                        }.Wearing("Faint");
 
                     var pair = _board.MirrorOf(row, column);
 
@@ -3187,6 +3268,47 @@ namespace CamelWorks.UI.Views
 
                 count.Margin = new Thickness(0, 10, 0, 5);
                 _inspector.Children.Add(count);
+
+                // <b>The whole line, in words, whichever half of the grid it lives in.</b> A
+                // mirrored matrix keeps each pair once, so half of what a discipline is checked
+                // against sits on the other axis - and "what is ARC_Ceilings checked against" is
+                // the question a coordination meeting actually asks. Reading it off the grid
+                // means following a line that bends at the diagonal, across two scroll axes, in
+                // front of a client. Here it is a list.
+                var against = Ui.Stack();
+
+                foreach (var other in rows ? _board.Columns : _board.Rows)
+                {
+                    var held = _board.At(rows ? line : other, rows ? other : line);
+
+                    if (held == null || MatrixBoard.IsNotRequired(held)) continue;
+
+                    var meaning = _legend.Meaning(held);
+
+                    against.Children.Add(Ui.Small(
+                        "· " + other.Titled + "  " + Quoted(held)
+                        + (meaning == null
+                            ? string.Empty
+                            : " — " + MatrixNaming.Worded(meaning.Test).ToLowerInvariant()
+                              + " at " + Millimetres(meaning.Tolerance))));
+                }
+
+                if (against.Children.Count > 0)
+                {
+                    var titled = Ui.Small("Checked against");
+
+                    titled.Margin = new Thickness(0, 4, 0, 3);
+                    _inspector.Children.Add(titled);
+
+                    _inspector.Children.Add(new ScrollViewer
+                    {
+                        Content = Ui.Loose(against),
+                        MaxHeight = 132,
+                        Margin = new Thickness(0, 0, 0, 6),
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    });
+                }
 
                 if (_brush != null)
                     Doable("Fill the rest with " + Quoted(_brush.Symbol), () =>
