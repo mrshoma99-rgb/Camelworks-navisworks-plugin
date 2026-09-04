@@ -163,6 +163,9 @@ namespace CamelWorks.UI.Views
             private readonly Stack<JsonValue> _past = new Stack<JsonValue>();
 
             private readonly Stack<JsonValue> _future = new Stack<JsonValue>();
+
+            /// <summary>The run of edits the last remembering was for, or empty.</summary>
+            private string _remembered = string.Empty;
             /// <summary>
             /// What the last act had to say, in a strip that can be put away.
             ///
@@ -1642,7 +1645,15 @@ namespace CamelWorks.UI.Views
                 return cell;
             }
 
-            /// <summary>Put the cursor on one cell, and the keyboard on the grid.</summary>
+            /// <summary>
+            /// Put the cursor on one cell, the keyboard on the grid, and the cell in the
+            /// inspector.
+            ///
+            /// <b>The inspector shows what was last touched, and a cell is a touch.</b> It did
+            /// not let go of a row or a symbol when one was pressed, and nothing on the screen
+            /// released either - so the first time somebody pressed a row header, the inspector
+            /// stopped answering about cells for the rest of the session.
+            /// </summary>
             /// <param name="down">Which row.</param>
             /// <param name="across">Which column.</param>
             private void Land(int down, int across)
@@ -1650,12 +1661,24 @@ namespace CamelWorks.UI.Views
                 _atRow = down;
                 _atColumn = across;
 
+                var held = _picked != null;
+
+                _picked = null;
+                _pickedSymbol = null;
+
                 _scroll.Focus();
+
+                // Only when a header was tinted, because this runs on every press of every cell
+                // and a drag across twenty of them must not rebuild two bands twenty times.
+                if (held)
+                {
+                    RedrawAcross();
+                    RedrawDown();
+                }
 
                 RedrawRing();
                 RedrawStrip();
-
-                if (_picked == null && _pickedSymbol == null) RedrawInspector();
+                RedrawInspector();
             }
 
             /// <summary>Put the armed symbol in one cell, if it is not already there.</summary>
@@ -2682,6 +2705,8 @@ namespace CamelWorks.UI.Views
 
                 Told("Name", Ui.Text(line.Name, typed =>
                 {
+                    Remember("name " + at + rows);
+
                     line.Name = typed;
 
                     if (rows) RedrawDown(); else RedrawAcross();
@@ -2709,6 +2734,8 @@ namespace CamelWorks.UI.Views
 
                 var number = Ui.Text(line.Number, typed =>
                 {
+                    Remember("number " + at + rows);
+
                     line.Number = typed;
 
                     if (rows) RedrawDown(); else RedrawAcross();
@@ -2726,7 +2753,16 @@ namespace CamelWorks.UI.Views
 
                 coded.Children.Add(Ui.Small("Code"));
 
-                var code = Ui.Text(line.Code, typed => { line.Code = typed; Recount(); }, 40);
+                var code = Ui.Text(line.Code, typed =>
+                {
+                    Remember("code " + at + rows);
+
+                    line.Code = typed;
+
+                    if (rows) RedrawDown(); else RedrawAcross();
+
+                    Recount();
+                }, 40);
 
                 code.Margin = new Thickness(0, 3, 0, 0);
                 coded.Children.Add(code);
@@ -2887,7 +2923,8 @@ namespace CamelWorks.UI.Views
                     {
                         if (double.TryParse(typed, NumberStyles.Float, CultureInfo.InvariantCulture,
                                             out var mm) && mm >= 0)
-                            Reset(symbol, symbol.Test, mm / 1000, symbol.Enabled);
+                            Reset(symbol, symbol.Test, mm / 1000, symbol.Enabled,
+                                  run: "tolerance " + symbol.Symbol, rebuild: false);
                     }, 60));
 
                 var live = Ui.Check("Build tests from this symbol", symbol.Enabled,
@@ -3184,9 +3221,22 @@ namespace CamelWorks.UI.Views
                 Redraw();
             }
 
-            /// <summary>Keep what the matrix is now, so the next act can be taken back.</summary>
-            private void Remember()
+            /// <summary>
+            /// Keep what the matrix is now, so the next act can be taken back.
+            ///
+            /// <b>A run of keystrokes is one act.</b> Typing "150" into a tolerance is three
+            /// changes to the legend and one thing somebody did, so an edit that names its run
+            /// is only remembered the first time that run is seen. Anything else clears the
+            /// name, so the next digit typed after some other act starts a new run.
+            /// </summary>
+            /// <param name="run">Names a run of edits that share one undo, or empty.</param>
+            private void Remember(string run = "")
             {
+                if (run.Length > 0 && string.Equals(run, _remembered, StringComparison.Ordinal))
+                    return;
+
+                _remembered = run;
+
                 _past.Push(Held());
                 _future.Clear();
 
@@ -3251,10 +3301,24 @@ namespace CamelWorks.UI.Views
             /// cell carrying that symbol changes meaning at once, which is the point of a legend
             /// and is why the cells are repainted rather than the grid rebuilt.
             /// </summary>
+            /// <param name="symbol">The symbol being changed.</param>
+            /// <param name="test">The kind of test it now means.</param>
+            /// <param name="tolerance">The tolerance it now carries, in metres.</param>
+            /// <param name="enabled">Whether tests are built from it.</param>
+            /// <param name="drop">True to take it out of the legend altogether.</param>
+            /// <param name="run">
+            /// Names a run of edits that should cost one undo between them, such as typing a
+            /// tolerance digit by digit. Empty for a single act.
+            /// </param>
+            /// <param name="rebuild">
+            /// False while the inspector is the thing being typed into. Redrawing it under the
+            /// caret takes the focus away, so a tolerance could only ever be one digit long.
+            /// </param>
             private void Reset(MatrixSymbol symbol, MatrixTest test, double tolerance,
-                               bool enabled, bool drop = false)
+                               bool enabled, bool drop = false, string run = "",
+                               bool rebuild = true)
             {
-                Remember();
+                Remember(run);
 
                 var kept = _legend.Symbols
                     .Where(s => !string.Equals(s.Symbol, symbol.Symbol,
@@ -3279,7 +3343,9 @@ namespace CamelWorks.UI.Views
 
                 RedrawPalette();
                 RedrawStrip();
-                RedrawInspector();
+
+                if (rebuild) RedrawInspector();
+
                 RepaintAll();
             }
 
