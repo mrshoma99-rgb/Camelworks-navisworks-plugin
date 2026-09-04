@@ -125,6 +125,15 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _inspector = Ui.Stack();
 
             /// <summary>
+            /// The pencil beside the plus, kept so it can go grey when there is nothing to change.
+            ///
+            /// It acts on the symbol that is armed or shown, which is what "the one you mean"
+            /// means on this screen - so with nothing armed it is a button with no subject, and
+            /// says so by being off rather than by opening a window that explains itself.
+            /// </summary>
+            private System.Windows.Controls.Button? _editing;
+
+            /// <summary>
             /// What can be done to it, on a strip of its own at the foot of the panel.
             ///
             /// <b>They used to sit wherever the page ended.</b> A row with three pairs decided
@@ -573,8 +582,19 @@ namespace CamelWorks.UI.Views
                 // symbols; the two things you do to the legend itself must not scroll away with
                 // them, because "add a symbol" is what somebody reaches for when the one they
                 // want is not in the list they are looking at.
+                var changing = Doable(Glyphs.Pencil,
+                    "Change the symbol on the brush — what it is called, its colour, its kind "
+                    + "and its tolerance", EditSymbol);
+
+                _editing = changing;
+
+                // Nothing is armed the moment the panel is built, and the pencil has no subject
+                // until something is.
+                changing.IsEnabled = false;
+
                 var legend = Ui.Across(
                     Doable(Glyphs.Add, "Add a symbol to the legend", AddSymbol),
+                    changing,
                     Doable(Glyphs.Checklist,
                            "Give every symbol in the grid a meaning, if any of them has none",
                            CoverSymbols));
@@ -2046,6 +2066,7 @@ namespace CamelWorks.UI.Views
                 _pickedSymbol = null;
 
                 Lighting(null);
+                Editable();
 
                 RedrawAcross();
                 RedrawDown();
@@ -2288,6 +2309,17 @@ namespace CamelWorks.UI.Views
 
                 RedrawStrip();
                 RedrawPalette();
+                Editable();
+            }
+
+            /// <summary>Whether there is a symbol for the pencil to change.</summary>
+            private void Editable()
+            {
+                if (_editing == null) return;
+
+                var symbol = _pickedSymbol ?? _brush;
+
+                _editing.IsEnabled = symbol != null && _legend.Meaning(symbol.Symbol) != null;
             }
 
             /// <summary>
@@ -3569,6 +3601,7 @@ namespace CamelWorks.UI.Views
                     : symbol.Symbol);
 
                 RedrawInspector();
+                Editable();
             }
 
             /// <summary>Light every cell carrying one symbol, and drop the rest back.</summary>
@@ -4291,53 +4324,72 @@ namespace CamelWorks.UI.Views
             {
                 _inspector.Children.Add(Ui.Eyebrow("Symbol " + symbol.Symbol));
 
-                var says = Ui.Small("Every cell carrying it becomes a test with these settings.");
-
-                says.TextWrapping = TextWrapping.Wrap;
-                says.Margin = new Thickness(0, 4, 0, 9);
-                _inspector.Children.Add(says);
-
-                // <b>On Return or on leaving the box, never per keystroke.</b> A symbol renamed
-                // as it is typed renames every cell it is in to "H", then "HA", then "HAR", and
-                // the undo stack is three deep before the word is finished.
-                var called = Ui.Text(symbol.Symbol, null, 60);
-
-                called.KeyDown += (s, e) => Ui.Safely(() =>
+                // <b>One editor, on the palette, where the symbol is.</b> This used to be five
+                // fields you could type into, which made a second place to change what a symbol
+                // means - and a colour picker in a window about the whole grid made a third.
+                // What a symbol is is one form, opened by the pencil beside the plus; this says
+                // what it is now and what its cells are doing.
+                var meant = new Border
                 {
-                    if (e.Key != Key.Return) return;
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(9, 7, 9, 8),
+                    Margin = new Thickness(0, 6, 0, 8),
+                };
 
-                    e.Handled = true;
-                    Rename(symbol, called.Text);
-                });
+                meant.Tint(Border.BorderBrushProperty, "Bd");
+                meant.Tint(Border.BackgroundProperty, "Card");
 
-                called.LostFocus += (s, e) => Ui.Safely(() => Rename(symbol, called.Text));
+                var head = new DockPanel { LastChildFill = true };
 
-                Told("What it is called", called);
+                var letter = new TextBlock
+                {
+                    Text = symbol.Symbol,
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 11,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
 
-                Told("Colour", MatrixLook.Colours(symbol.Colour,
-                    colour => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
-                                    colour: colour)));
+                if (!symbol.Enabled) letter.TextDecorations = TextDecorations.Strikethrough;
 
-                Told("Kind of test", Ui.Choice(
-                    new[] { "Hard", "Hard conservative", "Clearance", "Duplicate" },
-                    MatrixNaming.Worded(symbol.Test),
-                    picked => Reset(symbol, Kinded(picked), symbol.Tolerance, symbol.Enabled),
-                    100));
+                var swatch = new Border
+                {
+                    Width = 24,
+                    Height = 22,
+                    CornerRadius = new CornerRadius(4),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Child = letter,
+                };
 
-                Told("Tolerance, in millimetres",
-                    Ui.Text(Millimetres(symbol.Tolerance).Replace(" mm", string.Empty), typed =>
-                    {
-                        if (double.TryParse(typed, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                            out var mm) && mm >= 0)
-                            Reset(symbol, symbol.Test, mm / 1000, symbol.Enabled,
-                                  run: "tolerance " + symbol.Symbol, rebuild: false);
-                    }, 60));
+                if (symbol.Enabled) swatch.Background = Washed(symbol);
+                else swatch.Tint(Border.BackgroundProperty, "Nav");
 
-                var live = Ui.Check("Build tests from this symbol", symbol.Enabled,
-                    on => Reset(symbol, symbol.Test, symbol.Tolerance, on));
+                DockPanel.SetDock(swatch, Dock.Left);
+                head.Children.Add(swatch);
 
-                live.Margin = new Thickness(0, 0, 0, 8);
-                _inspector.Children.Add(live);
+                var reading = Ui.Stack();
+
+                reading.Children.Add(new TextBlock
+                {
+                    Text = MatrixNaming.Worded(symbol.Test) + " at " + Millimetres(symbol.Tolerance),
+                    FontWeight = FontWeights.SemiBold,
+                    FontSize = 12,
+                    TextWrapping = TextWrapping.Wrap,
+                }.Wearing("Body"));
+
+                var state = Ui.Small(symbol.Enabled
+                    ? "Every cell carrying it becomes a test with these settings."
+                    : "Turned off, so its cells say what was agreed and build nothing.");
+
+                state.TextWrapping = TextWrapping.Wrap;
+                reading.Children.Add(state);
+
+                head.Children.Add(reading);
+
+                meant.Child = head;
+                _inspector.Children.Add(meant);
 
                 var using_ = 0;
 
@@ -4378,7 +4430,10 @@ namespace CamelWorks.UI.Views
 
                 stepping.IsEnabled = using_ > 0;
 
-                Verbs("Do to this symbol", stepping, everywhere, null,
+                Verbs("Do to this symbol",
+                    Doable(Glyphs.Pencil, "Change what it is called, its colour, its kind and "
+                                          + "its tolerance", EditSymbol),
+                    stepping, everywhere, null,
                     Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol) + " out of the legend",
                         () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
                                     drop: true),
@@ -5000,12 +5055,6 @@ namespace CamelWorks.UI.Views
                                      held["on"].AsBool(true),
                                      held["colour"].AsString())));
 
-            private static MatrixTest Kinded(string said) =>
-                said == "Clearance" ? MatrixTest.Clearance
-                : said == "Duplicate" ? MatrixTest.Duplicate
-                : said == "Hard conservative" ? MatrixTest.HardConservative
-                : MatrixTest.Hard;
-
             /// <summary>
             /// Change one symbol's meaning, keeping every other symbol as it was.
             ///
@@ -5079,9 +5128,6 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Looks() =>
                 MatrixLook.Ask(_style,
-                    () => _legend.Symbols,
-                    (symbol, colour) => Reset(symbol, symbol.Test, symbol.Tolerance,
-                                              symbol.Enabled, colour: colour),
                     () =>
                     {
                         Touched();
@@ -5159,23 +5205,100 @@ namespace CamelWorks.UI.Views
                                  : ", and so are " + Ui.Count(moved, "cell") + ".")));
             }
 
-            private void AddSymbol() =>
-                Parts.Ask(_grid, "What does the sheet call it? A letter, a mark, a word.",
-                    Suggested(), "Add", symbol =>
+            /// <summary>
+            /// Make a symbol, all five of it at once.
+            ///
+            /// <b>It used to ask for the letter and nothing else.</b> Every symbol was born a
+            /// hard clash at the default tolerance, and the four decisions that were not asked
+            /// about had to be found afterwards by somebody who knew where to look. What a
+            /// symbol is is one thought, so it is one form.
+            /// </summary>
+            private void AddSymbol()
+            {
+                var made = MatrixKey.Ask("A symbol for the legend", "Add",
+                    new MatrixKeyEdit { Symbol = Suggested() }, Clashing);
+
+                if (made == null) return;
+
+                Remember(what: "adding the symbol " + Quoted(made.Symbol));
+
+                var one = new MatrixSymbol(made.Symbol, made.Test, made.Tolerance, made.Enabled,
+                                           made.Colour);
+
+                _legend = new MatrixLegend(_legend.Symbols.Concat(new[] { one }));
+
+                RedrawPalette();
+                RepaintAll();
+                Recount();
+
+                Arm(one);
+                Show(one);
+            }
+
+            /// <summary>
+            /// Change one, in the same form it was made in.
+            ///
+            /// The one on the brush, or the one the panel is showing - which are the two ways a
+            /// symbol is ever "the one you mean" on this screen.
+            /// </summary>
+            private void EditSymbol()
+            {
+                var symbol = _pickedSymbol ?? _brush;
+
+                if (symbol == null || _legend.Meaning(symbol.Symbol) == null)
+                {
+                    Warned(Ui.Note("Press a symbol on the palette first, and the pencil changes "
+                                   + "that one."));
+                    return;
+                }
+
+                var was = symbol.Symbol;
+
+                var made = MatrixKey.Ask("The symbol " + was, "Save",
+                    new MatrixKeyEdit
                     {
-                        var text = (symbol ?? string.Empty).Trim();
+                        Symbol = was,
+                        Colour = symbol.Colour,
+                        Test = symbol.Test,
+                        Tolerance = symbol.Tolerance,
+                        Enabled = symbol.Enabled,
+                    },
+                    wanted => string.Equals(wanted, was, StringComparison.OrdinalIgnoreCase)
+                        ? null
+                        : Clashing(wanted));
 
-                        if (text.Length == 0) return;
+                if (made == null) return;
 
-                        Remember(what: "adding the symbol " + Quoted(text));
+                // The rename first, because everything else is keyed on the name it ends up with.
+                if (!string.Equals(made.Symbol, was, StringComparison.Ordinal))
+                    Rename(symbol, made.Symbol);
 
-                        _legend = new MatrixLegend(_legend.Symbols
-                            .Where(s => !string.Equals(s.Symbol, text, StringComparison.OrdinalIgnoreCase))
-                            .Concat(new[] { new MatrixSymbol(text) }));
+                var now = _legend.Meaning(made.Symbol);
 
-                        RedrawPalette();
-                        RepaintAll();
-                    });
+                if (now == null) return;
+
+                Reset(now, made.Test, made.Tolerance, made.Enabled, colour: made.Colour);
+                Recount();
+            }
+
+            /// <summary>
+            /// Why a symbol cannot be called that, or null when it can.
+            ///
+            /// The legend is keyed on the symbol, so a name that collides does not fail - it
+            /// quietly replaces the entry it collided with, taking its tolerance and every cell's
+            /// meaning with it.
+            /// </summary>
+            /// <param name="wanted">The name being asked for.</param>
+            private string? Clashing(string wanted)
+            {
+                if (MatrixBoard.IsNotRequired(wanted))
+                    return "A dash is the mark for a pair ruled out, so it cannot be a symbol "
+                           + "as well.";
+
+                return _legend.Meaning(wanted) == null
+                    ? null
+                    : "The legend already has a " + Quoted(wanted) + ".";
+            }
 
             /// <summary>The next unused letter, which is what a clash matrix's key uses.</summary>
             private string Suggested()

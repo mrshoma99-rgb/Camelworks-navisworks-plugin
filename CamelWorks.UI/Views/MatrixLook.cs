@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -22,6 +21,10 @@ namespace CamelWorks.UI.Views
     /// was last opened on. Nothing in here changes a single test: a pair is written to both cells
     /// whichever half it was put in, and a hidden number is still the number the test is named
     /// after.
+    ///
+    /// <b>Everything here is about the whole grid.</b> What one symbol means and what colour it
+    /// is are settings of that symbol, and they live on the palette with it - a per-item setting
+    /// filed under general ones is one nobody finds.
     /// </summary>
     internal static class MatrixLook
     {
@@ -40,15 +43,10 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Open it.</summary>
         /// <param name="style">How it is drawn now. Edited in place as things are pressed.</param>
-        /// <param name="symbols">The legend as it stands, asked for again after every change.</param>
-        /// <param name="onColour">Give one symbol a colour, or empty to take its own away.</param>
         /// <param name="onChanged">Called after anything changes, to draw it again.</param>
-        internal static void Ask(MatrixStyle style,
-                                 Func<IReadOnlyList<MatrixSymbol>> symbols,
-                                 Action<MatrixSymbol, string> onColour,
-                                 Action onChanged)
+        internal static void Ask(MatrixStyle style, Action onChanged)
         {
-            if (style == null || symbols == null || onColour == null || onChanged == null) return;
+            if (style == null || onChanged == null) return;
 
             var window = new Window
             {
@@ -69,10 +67,10 @@ namespace CamelWorks.UI.Views
             void Redrawn()
             {
                 onChanged();
-                Fill(pages, style, symbols, onColour, Redrawn);
+                Fill(pages, style, Redrawn);
             }
 
-            Fill(pages, style, symbols, onColour, Redrawn);
+            Fill(pages, style, Redrawn);
 
             var root = new DockPanel { Margin = new Thickness(14, 12, 14, 12) };
 
@@ -114,13 +112,8 @@ namespace CamelWorks.UI.Views
         /// <summary>Draw the whole window's contents, which happens again after every change.</summary>
         /// <param name="into">The panel to fill.</param>
         /// <param name="style">How it is drawn now.</param>
-        /// <param name="symbols">The legend as it stands.</param>
-        /// <param name="onColour">Give one symbol a colour.</param>
         /// <param name="onChanged">Called after anything changes.</param>
-        private static void Fill(Panel into, MatrixStyle style,
-                                 Func<IReadOnlyList<MatrixSymbol>> symbols,
-                                 Action<MatrixSymbol, string> onColour,
-                                 Action onChanged)
+        private static void Fill(Panel into, MatrixStyle style, Action onChanged)
         {
             into.Children.Clear();
 
@@ -181,27 +174,9 @@ namespace CamelWorks.UI.Views
                 Ui.Small("The name is always drawn. A line with nothing to call it is not a line "
                          + "anybody can act on.")));
 
-            var legend = symbols();
-            var keys = new List<UIElement>();
-
-            foreach (var symbol in legend)
-            {
-                var one = symbol;
-
-                keys.Add(Ui.Field(
-                    one.Symbol + "  ·  " + MatrixNaming.Worded(one.Test)
-                    + (one.Enabled ? string.Empty : "  ·  turned off"),
-                    Colours(one.Colour, colour => onColour(one, colour))));
-            }
-
-            if (keys.Count == 0)
-                keys.Add(Ui.Small("Nothing in the legend yet. Add a symbol and its colour is here."));
-            else
-                keys.Add(Ui.Small("Automatic gives each symbol a colour of its own from where it "
-                                  + "sits in the legend, which is what a matrix nobody has "
-                                  + "coloured looks like."));
-
-            into.Children.Add(Bench.Group("The symbols", keys.ToArray()));
+            into.Children.Add(Ui.Small("What one symbol means and what colour it is belong to that "
+                                       + "symbol: they are on the palette, under the pencil beside "
+                                       + "the plus."));
         }
 
         /// <summary>The three-way switch a field setting is.</summary>
