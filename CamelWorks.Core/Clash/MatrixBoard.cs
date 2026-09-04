@@ -329,13 +329,142 @@ namespace CamelWorks.Core.Clash
             return changed;
         }
 
-        /// <summary>Whether a row and a column stand for the same thing.</summary>
+        /// <summary>
+        /// Whether a row and a column stand for the same thing.
+        ///
+        /// <b>A line nobody has pointed yet is still the discipline it is named after.</b> This
+        /// used to say: if either side has a source, the two are the same only when their sources
+        /// are. Which is right for two pointed lines and catastrophic halfway through making a
+        /// matrix - twenty names typed, squared off, and then pointed one row at a time, every row
+        /// pointed stopped matching its own column. The pair stopped being mirrored, so both cells
+        /// of it became live and the grid quietly grew from a triangle of two hundred and ten to
+        /// a square of four hundred, with the dead half drawn as decisions nobody had made. And
+        /// nothing built, because the planner drops a pair whose column points at nothing.
+        ///
+        /// So an empty source is not a different source; it is no answer yet, and the name is
+        /// what is left to go on. Two lines that both point somewhere are the same when they
+        /// point at the same thing, whatever they are called - which is what lets two axes
+        /// deliberately diverge.
+        /// </summary>
+        /// <param name="one">One line.</param>
+        /// <param name="other">The other.</param>
         private static bool Same(MatrixLine one, MatrixLine other) =>
-            !one.Source.IsEmpty
-                ? string.Equals(one.Source.Fingerprint(), other.Source.Fingerprint(),
-                                StringComparison.Ordinal)
-                : other.Source.IsEmpty
-                  && string.Equals(one.Name, other.Name, StringComparison.OrdinalIgnoreCase);
+            one.Source.IsEmpty || other.Source.IsEmpty
+                ? string.Equals(one.Name, other.Name, StringComparison.OrdinalIgnoreCase)
+                : string.Equals(one.Source.Fingerprint(), other.Source.Fingerprint(),
+                                StringComparison.Ordinal);
+
+        /// <summary>
+        /// The line on the other axis that stands for the same thing, or null.
+        /// </summary>
+        /// <param name="line">A row or a column of this board.</param>
+        public MatrixLine? TwinOf(MatrixLine? line)
+        {
+            if (line == null) return null;
+
+            return _rows.Contains(line)
+                ? _columns.FirstOrDefault(c => Same(c, line))
+                : _columns.Contains(line)
+                    ? _rows.FirstOrDefault(r => Same(r, line))
+                    : null;
+        }
+
+        /// <summary>
+        /// Point a line at something, and take its twin on the other axis with it.
+        ///
+        /// <b>Half of a pair pointed at nothing is a pair that builds nothing.</b> Saying what a
+        /// row is is one decision, and the column standing for the same discipline is the same
+        /// decision written twice - so the second one is not asked for. A twin that has already
+        /// been pointed somewhere is left alone, because two axes that have deliberately diverged
+        /// are a thing this grid is allowed to be.
+        /// </summary>
+        /// <param name="line">The row or column being pointed.</param>
+        /// <param name="source">Where its elements come from.</param>
+        /// <returns>The twin that was pointed with it, or null when there was none to point.</returns>
+        public MatrixLine? Point(MatrixLine? line, MatrixSource? source)
+        {
+            if (line == null) return null;
+
+            // Found before the change, because what makes them twins is about to move.
+            var twin = TwinOf(line);
+
+            line.Source = source ?? MatrixSource.Nothing;
+
+            if (twin == null || !twin.Source.IsEmpty) return null;
+
+            twin.Source = line.Source;
+
+            return twin;
+        }
+
+        /// <summary>
+        /// Put a symbol in every empty cell of the half that is worked in.
+        ///
+        /// <b>The press that was missing.</b> A matrix is nearly always "this one thing, except
+        /// for the twenty pairs we talked about" - so the way it is filled is exceptions first,
+        /// blanket last, and the blanket had only two sizes: one line, or the whole grid over
+        /// everything already decided. Twenty gutter clicks, one per row, was the answer, and it
+        /// is not an answer. Empty cells only, so it cannot destroy a decision, and never the
+        /// diagonal, which no bulk fill writes.
+        /// </summary>
+        /// <param name="symbol">The symbol to put in them.</param>
+        /// <returns>How many pairs were filled.</returns>
+        public int FillEmpty(string? symbol)
+        {
+            if (string.IsNullOrWhiteSpace(symbol)) return 0;
+
+            var laid = 0;
+
+            foreach (var row in _rows)
+            foreach (var column in _columns)
+            {
+                if (!IsKeptHalf(row, column) || IsSelfPair(row, column)) continue;
+                if (At(row, column) != null) continue;
+
+                Set(row, column, symbol);
+                laid++;
+            }
+
+            return laid;
+        }
+
+        /// <summary>
+        /// Move a row or a column, and move its twin on the other axis to match.
+        ///
+        /// <b>Grouping a matrix is one job, not two.</b> The block gesture is a rectangle over the
+        /// order the two axes are in, so "every MEP row against every structural column" is only
+        /// one rectangle when the disciplines sit in the same order down the side and across the
+        /// top. Moving them separately means doing the same reorder twice and getting it wrong
+        /// once; a square matrix has one order, and this keeps it.
+        /// </summary>
+        /// <param name="line">The row or column to move.</param>
+        /// <param name="to">Where it should sit, from zero.</param>
+        /// <returns>True when anything moved.</returns>
+        public bool MoveLine(MatrixLine? line, int to)
+        {
+            if (line == null) return false;
+
+            var twin = TwinOf(line);
+            var rows = _rows.Contains(line);
+
+            var at = rows ? _rows.IndexOf(line) : _columns.IndexOf(line);
+
+            if (at < 0 || to < 0) return false;
+
+            if (rows) MoveRow(at, to); else MoveColumn(at, to);
+
+            if (twin == null) return true;
+
+            var other = rows ? _columns.IndexOf(twin) : _rows.IndexOf(twin);
+
+            if (other < 0) return true;
+
+            var landed = rows ? _rows.IndexOf(line) : _columns.IndexOf(line);
+
+            if (rows) MoveColumn(other, landed); else MoveRow(other, landed);
+
+            return true;
+        }
 
         private void Write(MatrixLine row, MatrixLine column, string? symbol)
         {
@@ -394,19 +523,18 @@ namespace CamelWorks.Core.Clash
         ///
         /// <b>Not the same object - the same thing.</b> A square matrix is built by copying the
         /// rows into the columns, so the row and the column on the diagonal are two objects
-        /// pointing at one saved set. What makes them the same pair is what they point at.
+        /// pointing at one saved set. What makes them the same pair is what they point at, and -
+        /// until somebody has said what that is - what they are called.
+        ///
+        /// This used to answer "no" whenever either side had no source, which is every cell of
+        /// a matrix somebody is still typing the names of. So on a grid that had been squared
+        /// off but not yet pointed, the diagonal was not a diagonal: bulk fills wrote it, and
+        /// the spine was drawn as twenty ordinary cells.
         /// </summary>
         /// <param name="row">The row.</param>
         /// <param name="column">The column.</param>
-        public bool IsSelfPair(MatrixLine? row, MatrixLine? column)
-        {
-            if (row == null || column == null) return false;
-            if (ReferenceEquals(row, column)) return true;
-            if (row.Source.IsEmpty || column.Source.IsEmpty) return false;
-
-            return string.Equals(row.Source.Fingerprint(), column.Source.Fingerprint(),
-                                 StringComparison.Ordinal);
-        }
+        public bool IsSelfPair(MatrixLine? row, MatrixLine? column) =>
+            row != null && column != null && (ReferenceEquals(row, column) || Same(row, column));
 
         /// <summary>
         /// Make the columns a copy of the rows, which is the square matrix everybody draws.
@@ -418,28 +546,33 @@ namespace CamelWorks.Core.Clash
         public void SquareOffRows()
         {
             var kept = new Dictionary<(MatrixLine, MatrixLine), string>(_cells);
+            var wasColumns = new List<MatrixLine>(_columns);
 
             _columns.Clear();
 
-            var pairing = new Dictionary<MatrixLine, MatrixLine>();
-
             foreach (var row in _rows)
-            {
-                var column = new MatrixLine(row.Name, row.Number, row.Source, row.Code);
-
-                pairing[row] = column;
-                _columns.Add(column);
-            }
+                _columns.Add(new MatrixLine(row.Name, row.Number, row.Source, row.Code));
 
             _cells.Clear();
 
-            // What was in a cell survives when both its ends are still there, matched by name so
-            // squaring off a grid that was already square keeps every symbol in it.
+            // <b>What was in a cell survives when both its ends are still there.</b> Matched by
+            // name first, so squaring off a grid that was already square keeps every symbol in
+            // it - and then, when the name has moved, by where the old column sat.
+            //
+            // The fallback used to look the old column up in a table keyed on rows, so it could
+            // never resolve: rename one row, press this to tidy the columns up, and every
+            // decision in that column was dropped. No count, no message, and the only way back
+            // was noticing in time to press undo.
+            var was = new Dictionary<MatrixLine, MatrixLine>();
+
+            for (var at = 0; at < wasColumns.Count && at < _columns.Count; at++)
+                was[wasColumns[at]] = _columns[at];
+
             foreach (var cell in kept)
             {
                 var column = _columns.FirstOrDefault(
                     c => string.Equals(c.Name, cell.Key.Item2.Name, StringComparison.OrdinalIgnoreCase))
-                    ?? (pairing.TryGetValue(cell.Key.Item2, out var mapped) ? mapped : null);
+                    ?? (was.TryGetValue(cell.Key.Item2, out var moved) ? moved : null);
 
                 if (_rows.Contains(cell.Key.Item1) && column != null)
                     _cells[(cell.Key.Item1, column)] = cell.Value;

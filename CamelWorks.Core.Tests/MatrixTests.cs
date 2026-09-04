@@ -472,6 +472,143 @@ namespace CamelWorks.Core.Tests
     }
 
     /// <summary>
+    /// Making a twenty-discipline matrix by hand, in the order somebody actually makes one:
+    /// type the names, square the columns off, then go round saying what each row is.
+    /// </summary>
+    public class MatrixByHandTests
+    {
+        private static MatrixBoard Named(params string[] names)
+        {
+            var board = new MatrixBoard();
+
+            foreach (var name in names) board.AddRow(new MatrixLine(name));
+
+            board.SquareOffRows();
+
+            return board;
+        }
+
+        [Fact]
+        public void PointingARowAfterSquaringOffKeepsThePairMirrored()
+        {
+            // The whole afternoon this cost. Twenty names typed, squared off, and then pointed
+            // one row at a time: every row pointed stopped matching its own column, the pair
+            // stopped being mirrored, and the triangle quietly became a square.
+            var board = Named("Steel", "Ducts", "Pipes");
+
+            Assert.False(board.IsDrawnHalf(board.Rows[1], board.Columns[0]));
+
+            board.Point(board.Rows[0], MatrixSource.SelectionSet("STR"));
+
+            Assert.NotNull(board.MirrorOf(board.Rows[0], board.Columns[1]));
+            Assert.True(board.IsDrawnHalf(board.Rows[0], board.Columns[1]));
+            Assert.False(board.IsDrawnHalf(board.Rows[1], board.Columns[0]));
+        }
+
+        [Fact]
+        public void PointingARowPointsTheColumnThatStandsForTheSameThing()
+        {
+            // Saying what a row is is one decision. The column standing for that discipline is
+            // the same decision written twice, and a column pointing at nothing builds nothing.
+            var board = Named("Steel", "Ducts");
+
+            var twin = board.Point(board.Rows[0], MatrixSource.SelectionSet("STR"));
+
+            Assert.Same(board.Columns[0], twin);
+            Assert.Equal("STR", board.Columns[0].Source.Name);
+
+            // A twin somebody has already pointed somewhere else is left where it is: two axes
+            // are allowed to diverge on purpose.
+            board.Columns[1].Source = MatrixSource.SelectionSet("MEP-columns");
+
+            Assert.Null(board.Point(board.Rows[1], MatrixSource.SelectionSet("MEP")));
+            Assert.Equal("MEP-columns", board.Columns[1].Source.Name);
+        }
+
+        [Fact]
+        public void SquaringOffAgainAfterARenameKeepsTheDecisions()
+        {
+            // Rename a row, press "make the columns match the rows" to tidy up, and every
+            // decision in that column used to be dropped: no count, no message, and the only way
+            // back was noticing in time to press undo.
+            var board = Named("Steel", "Ducts", "Pipes");
+
+            board.Set(board.Rows[1], board.Columns[0], "A");
+            board.Set(board.Rows[2], board.Columns[0], "B");
+
+            board.Rows[0].Name = "Steel_L01";
+            board.SquareOffRows();
+
+            Assert.Equal("Steel_L01", board.Columns[0].Name);
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[0]));
+            Assert.Equal("B", board.At(board.Rows[2], board.Columns[0]));
+        }
+
+        [Fact]
+        public void OnePressFillsEveryPairNobodyHasRuledOn()
+        {
+            var board = Named("Steel", "Ducts", "Pipes");
+
+            board.Set(board.Rows[0], board.Columns[1], "B");
+
+            // Three pairs in the live half; one is already decided, so two are filled - and the
+            // diagonal is never one of them.
+            Assert.Equal(2, board.FillEmpty("A"));
+
+            Assert.Equal("B", board.At(board.Rows[0], board.Columns[1]));
+            Assert.Equal("A", board.At(board.Rows[0], board.Columns[2]));
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[2]));
+
+            Assert.Null(board.At(board.Rows[0], board.Columns[0]));
+            Assert.Equal(0, board.FillEmpty("A"));
+        }
+
+        [Fact]
+        public void MovingALineMovesTheOneStandingForItOnTheOtherAxis()
+        {
+            // The block gesture is a rectangle over the order the two axes are in, so grouping a
+            // matrix has to be one job. It was two, and getting it wrong once was enough.
+            var board = Named("Steel", "Ducts", "Pipes");
+
+            Assert.True(board.MoveLine(board.Rows[2], 0));
+
+            Assert.Equal(new[] { "Pipes", "Steel", "Ducts" },
+                         board.Rows.Select(r => r.Name).ToArray());
+
+            Assert.Equal(new[] { "Pipes", "Steel", "Ducts" },
+                         board.Columns.Select(c => c.Name).ToArray());
+        }
+
+        [Fact]
+        public void TheLegendKeepsTheOrderItsSymbolsWereMadeIn()
+        {
+            // The order is the number key. Sorted by text, adding a symbol that sorts early
+            // silently renumbered every key under it, across every cell typed afterwards.
+            var legend = new MatrixLegend(new[]
+            {
+                new MatrixSymbol("H"), new MatrixSymbol("C"), new MatrixSymbol("B"),
+            });
+
+            Assert.Equal(new[] { "H", "C", "B" }, legend.Symbols.Select(s => s.Symbol).ToArray());
+
+            var grown = new MatrixLegend(legend.Symbols.Concat(new[] { new MatrixSymbol("AA") }));
+
+            Assert.Equal(new[] { "H", "C", "B", "AA" },
+                         grown.Symbols.Select(s => s.Symbol).ToArray());
+
+            // And an edit is a new legend built out of the old one, so an edited symbol must not
+            // jump to the end and renumber everything under it either.
+            var edited = new MatrixLegend(grown.Symbols
+                .Select(s => s.Symbol == "C" ? new MatrixSymbol("C", MatrixTest.Clearance, 0.05) : s));
+
+            Assert.Equal(new[] { "H", "C", "B", "AA" },
+                         edited.Symbols.Select(s => s.Symbol).ToArray());
+
+            Assert.Equal(MatrixTest.Clearance, edited.Symbols[1].Test);
+        }
+    }
+
+    /// <summary>
     /// How a matrix is drawn, which the matrix carries rather than the seat it is opened on.
     /// </summary>
     public class MatrixStyleTests
@@ -1113,11 +1250,48 @@ namespace CamelWorks.Core.Tests
                 new MatrixSymbol("A", MatrixTest.Clearance, 0.05),
             }));
 
-            Assert.Equal(new[] { "#", "Row", "02 Ducts" }, sheet.Rows[0]);
-            Assert.Equal(new[] { "01", "Steel", "A" }, sheet.Rows[1]);
+            Assert.Equal(new[] { "#", "Row", "Points at", "02 Ducts" }, sheet.Rows[0]);
+
+            // What the row is checking, beside its name: two rows called "Ductwork" on two
+            // different sets used to export identically.
+            Assert.Equal(new[] { "01", "Steel", "selection set: STR", "A" }, sheet.Rows[1]);
+
             Assert.Contains(sheet.Rows, r => r.Count > 0 && r[0] == "Legend");
             Assert.Contains(sheet.Rows, r => r.Count > 1 && r[1] != null
                                              && r[1]!.Contains("Clearance at 50 mm"));
+        }
+
+        [Fact]
+        public void TheSheetSaysWhatABlankCellMeans()
+        {
+            // The dash exists because blank meant two opposite things. A sheet that spells the
+            // dash out and leaves the blank to be guessed at has put the ambiguity straight back,
+            // at the moment - an issue to a client - when it matters most.
+            var board = new MatrixBoard();
+
+            foreach (var name in new[] { "Steel", "Ducts", "Pipes" })
+                board.AddRow(new MatrixLine(name, null, MatrixSource.SelectionSet(name)));
+
+            board.SquareOffRows();
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[0], board.Columns[2], MatrixBoard.NotRequired);
+
+            var sheet = MatrixSanity.AsSheet(board, new MatrixLegend(new[] { new MatrixSymbol("A") }));
+
+            Assert.Contains(sheet.Rows, r => r.Count > 1 && r[0] == "(blank)"
+                                             && r[1]!.Contains("Nobody has ruled on this pair"));
+
+            Assert.Contains(sheet.Rows, r => r.Count > 1 && r[0] == MatrixBoard.NotRequired
+                                             && r[1]!.Contains("agreed"));
+
+            // And a symbol nobody explained gets a line saying so, rather than sitting in the
+            // grid as a letter with no key.
+            board.Set(board.Rows[1], board.Columns[2], "Q");
+
+            var again = MatrixSanity.AsSheet(board, new MatrixLegend(new[] { new MatrixSymbol("A") }));
+
+            Assert.Contains(again.Rows, r => r.Count > 1 && r[0] == "Q"
+                                             && r[1]!.Contains("Not in the legend"));
         }
     }
 }

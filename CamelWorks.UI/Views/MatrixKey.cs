@@ -80,6 +80,9 @@ namespace CamelWorks.UI.Views
 
             var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), 70);
 
+            var mm = Ui.Text(
+                (held.Tolerance * 1000).ToString("0.###", CultureInfo.CurrentCulture), null, 80);
+
             body.Children.Add(Ui.Field("What the cells say", name,
                 "A letter, a mark or a word — whatever the sheet this matrix came from uses."));
 
@@ -90,12 +93,12 @@ namespace CamelWorks.UI.Views
 
                     // Redrawn rather than re-tinted: the strip marks which one is chosen with a
                     // border, and the one that was chosen a moment ago has to lose it.
-                    Fill(body, held);
+                    Fill(body, held, mm);
                 }),
                 "Automatic gives it one from where it sits in the legend, which is what a matrix "
                 + "nobody has coloured looks like."));
 
-            Fill(body, held);
+            Fill(body, held, mm);
 
             var take = Ui.Primary(caption, () =>
             {
@@ -116,6 +119,22 @@ namespace CamelWorks.UI.Views
                     trouble.Children.Add(Ui.Problem(why));
                     return;
                 }
+
+                // <b>A tolerance that cannot be read is refused, not ignored.</b> It was parsed
+                // as it was typed, against the invariant culture only, and anything that did not
+                // parse simply did not assign - so on a seat where the decimal separator is a
+                // comma, typing "12,5" left the box saying 12,5, said nothing, and saved the old
+                // number. A wrong clearance is not a thing anybody catches by eye in a grid of a
+                // hundred and ninety cells.
+                if (!Millimetres(mm.Text, out var tolerance))
+                {
+                    trouble.Children.Add(Ui.Problem(
+                        "\u201c" + mm.Text.Trim() + "\u201d is not a tolerance. Give it a number "
+                        + "of millimetres, or zero."));
+                    return;
+                }
+
+                held.Tolerance = tolerance / 1000;
 
                 done = held;
                 window.Close();
@@ -169,7 +188,8 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="body">The form.</param>
         /// <param name="held">What is being filled in.</param>
-        private static void Fill(Panel body, MatrixKeyEdit held)
+        /// <param name="mm">The tolerance box, built once so what is typed into it survives.</param>
+        private static void Fill(Panel body, MatrixKeyEdit held, TextBox mm)
         {
             while (body.Children.Count > 2) body.Children.RemoveAt(2);
 
@@ -184,14 +204,7 @@ namespace CamelWorks.UI.Views
                             : MatrixTest.Hard;
                     }, 160)));
 
-            body.Children.Add(Ui.Field("Tolerance, in millimetres",
-                Ui.Text((held.Tolerance * 1000).ToString("0.###", CultureInfo.InvariantCulture),
-                    typed =>
-                    {
-                        if (double.TryParse(typed, NumberStyles.Float, CultureInfo.InvariantCulture,
-                                            out var mm) && mm >= 0)
-                            held.Tolerance = mm / 1000;
-                    }, 80)));
+            body.Children.Add(Ui.Field("Tolerance, in millimetres", mm));
 
             var live = Ui.Check("Build tests from this symbol", held.Enabled,
                                 on => held.Enabled = on);
@@ -201,6 +214,31 @@ namespace CamelWorks.UI.Views
 
             body.Children.Add(Ui.Small("Unticked, its cells still say what was agreed and are "
                                        + "drawn struck through, and no test is built for them."));
+        }
+
+        /// <summary>
+        /// A tolerance in millimetres, read the way the person typing it writes numbers.
+        ///
+        /// Their own culture first, because that is what their keyboard and their habits give;
+        /// the invariant one after, so a sheet or a colleague's "12.5" is still read on a seat
+        /// that writes "12,5". Anything that is neither is refused rather than dropped.
+        /// </summary>
+        /// <param name="said">What was typed.</param>
+        /// <param name="millimetres">The number, when there is one.</param>
+        private static bool Millimetres(string? said, out double millimetres)
+        {
+            millimetres = 0;
+
+            var text = (said ?? string.Empty).Trim();
+
+            if (text.Length == 0) return false;
+
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out millimetres)
+                && !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+                                    out millimetres))
+                return false;
+
+            return millimetres >= 0;
         }
     }
 }

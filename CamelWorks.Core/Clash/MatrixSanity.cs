@@ -145,7 +145,11 @@ namespace CamelWorks.Core.Clash
 
             var sheet = new XlsxSheet("Clash matrix");
 
-            var headings = new List<string?> { "#", "Row" };
+            // <b>What each row is, next to its name.</b> Two rows called "Ductwork" on two
+            // different sets exported identically, so a sheet issued to a client said nothing
+            // about what any of it was actually checking - and that is the question somebody
+            // asks about a matrix six weeks later, when the sets have been re-cut.
+            var headings = new List<string?> { "#", "Row", "Points at" };
 
             foreach (var column in board.Columns) headings.Add(column.Titled);
 
@@ -153,7 +157,12 @@ namespace CamelWorks.Core.Clash
 
             foreach (var row in board.Rows)
             {
-                var cells = new List<string?> { row.Number, row.Name };
+                var cells = new List<string?>
+                {
+                    row.Number,
+                    row.Name,
+                    row.Source.IsEmpty ? "nothing" : row.Source.Kinded() + ": " + row.Source.Describe(),
+                };
 
                 foreach (var column in board.Columns)
                     cells.Add(board.At(row, column) ?? string.Empty);
@@ -162,12 +171,26 @@ namespace CamelWorks.Core.Clash
             }
 
             var ruled = false;
+            var open = false;
+            var unexplained = new List<string>();
 
             foreach (var row in board.Rows)
-                foreach (var column in board.Columns)
-                    if (MatrixBoard.IsNotRequired(board.At(row, column))) ruled = true;
+            foreach (var column in board.Columns)
+            {
+                var held = board.At(row, column);
 
-            if ((legend == null || legend.IsEmpty) && !ruled) return sheet;
+                if (held == null)
+                {
+                    if (board.IsKeptHalf(row, column) && !board.IsSelfPair(row, column)) open = true;
+                    continue;
+                }
+
+                if (MatrixBoard.IsNotRequired(held)) { ruled = true; continue; }
+
+                if (legend?.Meaning(held) == null
+                    && !unexplained.Contains(held, StringComparer.OrdinalIgnoreCase))
+                    unexplained.Add(held);
+            }
 
             sheet.Row();
             sheet.Row("Legend");
@@ -178,11 +201,26 @@ namespace CamelWorks.Core.Clash
             if (ruled)
                 sheet.Row(MatrixBoard.NotRequired, "Not required, agreed - no test is made");
 
+            // <b>And the blank, said in words too.</b> The dash exists because blank meant two
+            // opposite things; a sheet that spells the dash out and leaves the blank to be
+            // guessed at has put the ambiguity straight back, at the moment it matters most.
+            if (open)
+                sheet.Row("(blank)", "Nobody has ruled on this pair yet - no test is made");
+
             foreach (var symbol in legend?.Symbols ?? Array.Empty<MatrixSymbol>())
                 sheet.Row(symbol.Symbol,
                           MatrixNaming.Worded(symbol.Test)
                           + " at " + (symbol.Tolerance * 1000).ToString("0.###", CultureInfo.InvariantCulture)
-                          + " mm" + (symbol.Enabled ? string.Empty : ", off"));
+                          + " mm" + (symbol.Enabled ? string.Empty : ", off - no test is made"));
+
+            // A symbol the legend has nothing to say about is flagged on the screen and by the
+            // sanity check, and used to leave the sheet as a bare letter with no key line.
+            foreach (var symbol in unexplained)
+                sheet.Row(symbol, "Not in the legend - no test is made for it");
+
+            sheet.Row();
+            sheet.Row("The matrix is mirrored: a pair reads the same either way round, and is "
+                      + "tested once.");
 
             return sheet;
         }

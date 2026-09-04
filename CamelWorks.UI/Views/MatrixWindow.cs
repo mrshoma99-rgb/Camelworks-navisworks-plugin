@@ -1093,11 +1093,19 @@ namespace CamelWorks.UI.Views
 
                 var bare = _board.Rows.Count == 0 && _board.Columns.Count == 0;
 
+                // <b>Twenty rows and nothing across the top is a dead end that looked like a
+                // bug.</b> The typing box makes rows, so a matrix typed out by hand arrives here
+                // with a column of names and no grid at all: no cells, no keyboard, no progress.
+                // The one press that fixes it was the fifth line of a menu called "Start from",
+                // beside four entries about where a matrix comes from and one that empties it.
+                // It is on the screen now, where the grid would be.
+                var half = !bare && _board.Columns.Count == 0;
+
                 // Nothing drawn yet is a screen about starting, and a palette, a strip and an
                 // inspector about an empty grid are three pieces of furniture in the way of it.
-                _grid.Child = bare ? Empty() : Frame();
+                _grid.Child = bare ? Empty() : half ? Sideways() : Frame();
 
-                if (!bare)
+                if (!bare && !half)
                 {
                     Fits();
                     Relaid();
@@ -1321,6 +1329,51 @@ namespace CamelWorks.UI.Views
 
                     return;
                 }
+            }
+
+            /// <summary>
+            /// Rows typed, nothing across the top yet: the one press that makes it a matrix.
+            ///
+            /// The names go down the side because that is the list somebody has in their head.
+            /// What goes across the top is the same list, and saying so is a press - but until it
+            /// is pressed there is no grid, no keyboard and no progress, and nothing on the
+            /// screen said which press it was.
+            /// </summary>
+            private UIElement Sideways()
+            {
+                var ways = new StackPanel { MaxWidth = 560 };
+
+                ways.Children.Add(Bench.Ready(
+                    Ui.Count(_board.Rows.Count, "row") + " down the side, and nothing across the top",
+                    "A coordination matrix is the same disciplines both ways, so the columns are "
+                    + "the rows. Until there are some, there are no pairs to decide."));
+
+                ways.Children.Add(Ui.Row(
+                    "The same disciplines across the top",
+                    "One column per row, named, numbered and pointed at the same thing. This is "
+                    + "what nearly every matrix is, and it can be pressed again later after rows "
+                    + "are added or renamed.",
+                    "Make the columns match the rows",
+                    () =>
+                    {
+                        Remember(what: "squaring the columns off to the rows");
+                        _board.SquareOffRows();
+                        Redraw();
+
+                        Said(Ui.Done(Ui.Count(_board.Columns.Count, "column")
+                                     + " to match the rows. Put a symbol in the cells that have "
+                                     + "to be checked."));
+                    }));
+
+                ways.Children.Add(Ui.Row(
+                    "Something else across the top",
+                    "A grid of packages down the side against disciplines across the top is a "
+                    + "real matrix too, and it has no diagonal and no mirror. Add the columns one "
+                    + "at a time and name them as you go.",
+                    "Add the first column",
+                    AddColumn));
+
+                return ways;
             }
 
             /// <summary>
@@ -2123,6 +2176,13 @@ namespace CamelWorks.UI.Views
                         || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
                         return;
 
+                    // A drag is a bulk gesture and leaves the diagonal alone, like every other
+                    // one. It was the only path that wrote it, so dragging across a rectangle
+                    // and taking the same rectangle with shift and the arrows gave two different
+                    // answers on the one cell the tool is otherwise careful about. Clicking it
+                    // still writes it, because that is somebody deciding.
+                    if (_board.IsSelfPair(row, column)) return;
+
                     Daub(row, column);
                 });
 
@@ -2759,9 +2819,16 @@ namespace CamelWorks.UI.Views
                 {
                     if (!_board.IsKeptHalf(row, column)) continue;
 
-                    live++;
-
                     var held = _board.At(row, column);
+
+                    // <b>A discipline against itself is not an open pair.</b> It was counted as
+                    // one, and no bulk fill will ever write it - so on a twenty-discipline matrix
+                    // the bar stopped at a hundred and ninety of two hundred and ten and would
+                    // not move, and "go to the first open one" parked on the diagonal over and
+                    // over. It counts once somebody has deliberately put something in it.
+                    if (held == null && _board.IsSelfPair(row, column)) continue;
+
+                    live++;
 
                     if (held == null) continue;
 
@@ -2896,6 +2963,7 @@ namespace CamelWorks.UI.Views
                 for (var c = 0; c < _board.Columns.Count; c++)
                 {
                     if (!_board.IsKeptHalf(_board.Rows[r], _board.Columns[c])) continue;
+                    if (_board.IsSelfPair(_board.Rows[r], _board.Columns[c])) continue;
                     if (_board.At(_board.Rows[r], _board.Columns[c]) != null) continue;
 
                     Land(r, c);
@@ -3002,7 +3070,8 @@ namespace CamelWorks.UI.Views
 
                         Remember(what: "moving that " + (rows ? "row" : "column"));
 
-                        if (rows) _board.MoveRow(from, to); else _board.MoveColumn(from, to);
+                        // With its twin on the other axis, so grouping a matrix is one job.
+                        _board.MoveLine(moved, to);
 
                         Redraw();
                     });
@@ -3027,14 +3096,28 @@ namespace CamelWorks.UI.Views
             // Rows, columns and cells
             // ---------------------------------------------------------------------------
 
+            /// <summary>
+            /// Make a row, and put the cursor where its name goes.
+            ///
+            /// The empty state's "add the first row" left a row called "New row" and nothing
+            /// else - no panel, no focus - unlike adding a column, which opens the inspector.
+            /// The whole trick of this screen is that a row is a name and a Return, so the first
+            /// one lands in the box the next nineteen are typed into.
+            /// </summary>
             private void AddRow()
             {
                 Remember(what: "adding a row");
 
-                _board.AddRow(new MatrixLine("New row", Next(_board.Rows)));
+                var made = new MatrixLine("New row", Next(_board.Rows));
+
+                _board.AddRow(made);
 
                 Seed();
                 Redraw();
+                Pick(made, rows: true);
+
+                _scroll.ScrollToBottom();
+                _naming.Focus();
             }
 
             private void AddColumn()
@@ -3119,7 +3202,7 @@ namespace CamelWorks.UI.Views
                     {
                         Remember(what: "moving that " + (rows ? "row" : "column"));
 
-                        if (rows) _board.MoveRow(at, at - 1); else _board.MoveColumn(at, at - 1);
+                        _board.MoveLine(line, at - 1);
                         Redraw();
                     }));
 
@@ -3128,7 +3211,7 @@ namespace CamelWorks.UI.Views
                     {
                         Remember(what: "moving that " + (rows ? "row" : "column"));
 
-                        if (rows) _board.MoveRow(at, at + 1); else _board.MoveColumn(at, at + 1);
+                        _board.MoveLine(line, at + 1);
                         Redraw();
                     }));
 
@@ -3192,11 +3275,9 @@ namespace CamelWorks.UI.Views
 
                                 Remember(what: "pointing " + Quoted(line.Titled) + " at another set");
 
-                                line.Source = found.IsSearch
+                                Pointed(line, found.IsSearch
                                     ? MatrixSource.SearchSet(found.Name, found.Folder)
-                                    : MatrixSource.SelectionSet(found.Name, found.Folder);
-
-                                Redraw();
+                                    : MatrixSource.SelectionSet(found.Name, found.Folder));
                             })));
 
                 var models = Models();
@@ -3215,8 +3296,7 @@ namespace CamelWorks.UI.Views
 
                                 Remember(what: "pointing " + Quoted(line.Titled) + " at models");
 
-                                line.Source = MatrixSource.Models(picked.ToList());
-                                Redraw();
+                                Pointed(line, MatrixSource.Models(picked.ToList()));
                             })));
 
                 items.Add(Parts.Entry.Saying("What is selected now", Glyphs.Focus,
@@ -3238,8 +3318,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Act("Point it at nothing", Glyphs.Close, () =>
                     {
                         Remember(what: "pointing " + Quoted(line.Titled) + " at nothing");
-                        line.Source = MatrixSource.Nothing;
-                        Redraw();
+                        Pointed(line, MatrixSource.Nothing);
                     }));
 
                 return items;
@@ -3306,12 +3385,32 @@ namespace CamelWorks.UI.Views
 
             private void Held(MatrixLine line, MatrixSourceKind kind, IReadOnlyList<ElementKey> keys)
             {
-                line.Source = MatrixSource.Captured(kind, keys);
-
-                Redraw();
+                Pointed(line, MatrixSource.Captured(kind, keys));
 
                 Said(Ui.Done(line.Name + " now holds " + Ui.Count(keys.Count, "element")
                              + ", as they are today. Anything modelled later is not in it."));
+            }
+
+            /// <summary>
+            /// Point a line at something, and take the line standing for it on the other axis.
+            ///
+            /// <b>Saying what a row is was half a decision.</b> The column for that discipline
+            /// went on pointing at nothing, so the pair built no test - and, worse, the two
+            /// stopped being a mirror of each other, which quietly turned the triangle into a
+            /// square with the dead half drawn as decisions nobody had made. One press says it
+            /// once; a column somebody has deliberately pointed somewhere else is left alone.
+            /// </summary>
+            /// <param name="line">The row or column.</param>
+            /// <param name="source">Where its elements come from.</param>
+            private void Pointed(MatrixLine line, MatrixSource source)
+            {
+                var twin = _board.Point(line, source);
+
+                Redraw();
+
+                if (twin != null)
+                    Said(Ui.Note("The column for " + Quoted(line.Name) + " now points at the same "
+                                 + "thing, so the pairs on it can be built."), hold: true);
             }
 
             /// <summary>What goes in one cell.</summary>
@@ -3993,16 +4092,22 @@ namespace CamelWorks.UI.Views
                 var live = 0;
                 var done = 0;
 
+                // <b>Every pair this line takes part in, not the half of them that this side of
+                // the diagonal happens to hold.</b> Counted on the kept half, row 1 said "of 20"
+                // and row 18 said "of 3" - and two inches below it the list of what the row is
+                // checked against named nineteen disciplines for both. One line, one panel, two
+                // totals. A line is in a pair with every line on the other axis, once.
                 foreach (var other in rows ? _board.Columns : _board.Rows)
                 {
                     var row = rows ? line : other;
                     var column = rows ? other : line;
+                    var held = _board.At(row, column);
 
-                    if (!_board.IsKeptHalf(row, column)) continue;
+                    if (held == null && _board.IsSelfPair(row, column)) continue;
 
                     live++;
 
-                    if (_board.At(row, column) != null) done++;
+                    if (held != null) done++;
                 }
 
                 var count = Ui.Small(done.ToString(CultureInfo.InvariantCulture) + " of "
@@ -4144,9 +4249,17 @@ namespace CamelWorks.UI.Views
 
                 foreach (var other in rows ? _board.Columns : _board.Rows)
                 {
-                    var symbol = _board.At(rows ? line : other, rows ? other : line);
+                    var row = rows ? line : other;
+                    var column = rows ? other : line;
+                    var symbol = _board.At(row, column);
 
-                    if (symbol == null) { open.Add(other.Titled); continue; }
+                    if (symbol == null)
+                    {
+                        // The line against itself is not a pair anybody has left open.
+                        if (!_board.IsSelfPair(row, column)) open.Add(other.Titled);
+
+                        continue;
+                    }
 
                     if (!held.TryGetValue(symbol, out var names))
                         held[symbol] = names = new List<string>();
@@ -4406,6 +4519,25 @@ namespace CamelWorks.UI.Views
 
                 _inspector.Children.Add(gap);
 
+                // <b>The press that was missing.</b> A matrix is nearly always "this one thing,
+                // except for the pairs we talked about", so it is filled exceptions first and
+                // blanket last - and the blanket had two sizes: one line, or the whole grid over
+                // everything already decided. Twenty gutter clicks was the answer and it is not
+                // an answer. Empty pairs only, so it cannot take a decision back.
+                var rest = Doable(Glyphs.Sweep,
+                    "Put it in every pair nobody has ruled on yet", () =>
+                {
+                    Remember(what: "filling every undecided pair with " + Quoted(symbol.Symbol));
+
+                    var laid = _board.FillEmpty(symbol.Symbol);
+
+                    RepaintAll();
+                    Recount();
+                    RedrawInspector();
+
+                    Reported(laid, Quoted(symbol.Symbol) + " put in", "undecided pair");
+                });
+
                 var everywhere = Doable(Glyphs.SelectAll, "Put it in every cell of the matrix", () =>
                     Parts.Sure(_grid,
                         "This puts " + Quoted(symbol.Symbol) + " in every cell of the matrix, "
@@ -4433,10 +4565,29 @@ namespace CamelWorks.UI.Views
                 Verbs("Do to this symbol",
                     Doable(Glyphs.Pencil, "Change what it is called, its colour, its kind and "
                                           + "its tolerance", EditSymbol),
-                    stepping, everywhere, null,
+                    stepping, rest, everywhere, null,
                     Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol) + " out of the legend",
-                        () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
-                                    drop: true),
+                        () =>
+                        {
+                            // Renaming a symbol takes its cells with it; dropping one leaves
+                            // them saying something nothing explains, and used to do it on one
+                            // unconfirmed press.
+                            if (using_ == 0)
+                            {
+                                Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
+                                      drop: true);
+                                return;
+                            }
+
+                            Parts.Sure(_grid,
+                                Ui.Count(using_, "cell") + " still carries " + Quoted(symbol.Symbol)
+                                + ". Taking it out of the legend leaves them saying something the "
+                                + "legend does not explain, and they build no tests. Rename it "
+                                + "instead and the cells follow it.",
+                                "Take it out",
+                                () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
+                                            drop: true));
+                        },
                         danger: true));
             }
 
@@ -4845,8 +4996,9 @@ namespace CamelWorks.UI.Views
 
                 Remember(what: "moving that " + (rows ? "row" : "column"));
 
-                if (rows) { _board.MoveRow(at, to); _atRow = to; }
-                else { _board.MoveColumn(at, to); _atColumn = to; }
+                _board.MoveLine(rows ? _board.Rows[at] : _board.Columns[at], to);
+
+                if (rows) _atRow = to; else _atColumn = to;
 
                 _markRow = -1;
                 _markColumn = -1;
@@ -5368,6 +5520,16 @@ namespace CamelWorks.UI.Views
 
                 Parts.Entry.Rule(),
 
+                Parts.Entry.Saying("Point the rows at saved sets", Glyphs.Layers,
+                    "Tick the sets; each one finds the row of the same name that is still "
+                    + "pointing at nothing", PointRows),
+
+                Parts.Entry.Saying("Group them by discipline code", Glyphs.Sort,
+                    "Both axes in one order, so a block covers one discipline against another",
+                    Grouped),
+
+                Parts.Entry.Rule(),
+
                 Parts.Entry.Act("Make the columns match the rows", Glyphs.Columns, () =>
                 {
                     Remember(what: "squaring the columns off to the rows");
@@ -5452,6 +5614,122 @@ namespace CamelWorks.UI.Views
                 Parts.Entry.Saying("As a spreadsheet", Glyphs.Table,
                     "The grid and its legend, to send to whoever asked", Sheet),
             };
+
+            /// <summary>
+            /// Point every row that has no source at the saved set of the same name, in one press.
+            ///
+            /// <b>A hundred and twenty presses were one flow repeated twenty times.</b> Saying
+            /// what a row is takes a header press, a menu, a picker and a confirm, and twenty
+            /// rows is that four times over per row - even though the picker underneath has
+            /// always been a multi-select list and the rows are nearly always named after the
+            /// sets they stand for. Ticked here, each set finds the row that shares its name.
+            ///
+            /// Nothing already pointed is touched, so this can be pressed again after rows are
+            /// added, and rows it could not match are named rather than left to be found.
+            /// </summary>
+            private void PointRows()
+            {
+                var sets = Sets();
+
+                if (sets.Count == 0)
+                {
+                    Warned(Ui.Problem("This model has no saved selection or search sets to point "
+                                      + "the rows at."));
+                    return;
+                }
+
+                var waiting = _board.Rows.Where(r => r.Source.IsEmpty).ToList();
+
+                if (waiting.Count == 0)
+                {
+                    Said(Ui.Note("Every row already points at something."));
+                    return;
+                }
+
+                Parts.Search(_grid,
+                    "Which sets are these " + Ui.Count(waiting.Count, "row") + "?",
+                    sets.Select(s => new KeyValuePair<string, int>(s.Trail, s.Members)).ToList(),
+                    null, null,
+                    picked =>
+                    {
+                        var wanted = new HashSet<string>(picked, StringComparer.OrdinalIgnoreCase);
+                        var pointed = 0;
+
+                        Remember(what: "pointing the rows at saved sets");
+
+                        foreach (var set in sets)
+                        {
+                            if (!wanted.Contains(set.Trail)) continue;
+
+                            var row = waiting.FirstOrDefault(
+                                r => r.Source.IsEmpty
+                                     && string.Equals(r.Name, set.Name, StringComparison.OrdinalIgnoreCase));
+
+                            if (row == null) continue;
+
+                            _board.Point(row, set.IsSearch
+                                ? MatrixSource.SearchSet(set.Name, set.Folder)
+                                : MatrixSource.SelectionSet(set.Name, set.Folder));
+
+                            pointed++;
+                        }
+
+                        Redraw();
+
+                        var left = _board.Rows.Where(r => r.Source.IsEmpty).Select(r => r.Name).ToList();
+
+                        Said(pointed == 0
+                            ? Ui.Note("None of those sets is named after a row that is still "
+                                      + "waiting. Point those rows one at a time, from the row "
+                                      + "itself.")
+                            : Ui.Done(Ui.Count(pointed, "row") + " pointed, and the columns for "
+                                      + "them with them."));
+
+                        if (left.Count > 0)
+                            Said(Ui.Note("Still pointing at nothing: "
+                                         + string.Join(", ", left.Take(8))
+                                         + (left.Count > 8
+                                             ? " and " + (left.Count - 8).ToString(CultureInfo.InvariantCulture) + " more"
+                                             : string.Empty)
+                                         + "."),
+                                 hold: true);
+                    });
+            }
+
+            /// <summary>
+            /// Put the disciplines in code order, both axes together.
+            ///
+            /// <b>A block is a rectangle, and a decision is a discipline against a discipline.</b>
+            /// "Every MEP row against every structural column" is one rectangle only when the
+            /// disciplines sit together - and a list typed in the order they came up in a meeting
+            /// never does. The codes are already on the rows and they are already what the test
+            /// names are built from, so they are what to sort by; the columns follow, because a
+            /// rectangle needs both axes in one order.
+            /// </summary>
+            private void Grouped()
+            {
+                if (_board.Rows.Count < 2) return;
+
+                var order = _board.Rows
+                    .OrderBy(r => r.Code.Length == 0 ? "\uffff" : r.Code, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (order.SequenceEqual(_board.Rows))
+                {
+                    Said(Ui.Note("The rows are already in code order."));
+                    return;
+                }
+
+                Remember(what: "putting the rows in code order");
+
+                for (var at = 0; at < order.Count; at++) _board.MoveLine(order[at], at);
+
+                Redraw();
+
+                Said(Ui.Done("Grouped by discipline code, down the side and across the top. A "
+                             + "block now covers one discipline against another."));
+            }
 
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
             private void FromModel()
