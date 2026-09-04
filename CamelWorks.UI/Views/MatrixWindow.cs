@@ -2565,7 +2565,7 @@ namespace CamelWorks.UI.Views
                             // than the half that is live, and still a mark rather than a hint of
                             // one. Fifty-five was two to one, which is what a projector loses.
                             Opacity = 0.9,
-                        }.Wearing("Faint");
+                        }.Tint(TextBlock.ForegroundProperty, "Faint");
 
                     // <b>The two states worth echoing are the two it threw away.</b> Reading a
                     // row across the diagonal is the whole argument for the echo, and it showed
@@ -2574,7 +2574,7 @@ namespace CamelWorks.UI.Views
                     // not. The strike and the red come across; nothing else does.
                     if (cell.Child is TextBlock echoing && !MatrixBoard.IsNotRequired(symbol))
                     {
-                        if (echoed == null) echoing.Wearing("RedTx");
+                        if (echoed == null) echoing.Tint(TextBlock.ForegroundProperty, "RedTx");
                         else if (!echoed.Enabled)
                             echoing.TextDecorations = TextDecorations.Strikethrough;
                     }
@@ -2657,7 +2657,7 @@ namespace CamelWorks.UI.Views
                         FontWeight = FontWeights.SemiBold,
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
-                    }.Wearing("Muted");
+                    }.Tint(TextBlock.ForegroundProperty, "Muted");
 
                     cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled
                                    + " — not required, agreed. No test is made. Delete empties "
@@ -2699,7 +2699,7 @@ namespace CamelWorks.UI.Views
                     Ground(cell, spine ? _style.SpineColour : string.Empty, spine ? "Spine" : "Nav");
 
                     text.TextDecorations = TextDecorations.Strikethrough;
-                    text.Wearing("Muted");
+                    text.Tint(TextBlock.ForegroundProperty, "Muted");
 
                     cell.ToolTip = at + " · "
                                    + (self
@@ -3827,7 +3827,7 @@ namespace CamelWorks.UI.Views
                 if (!live && hue >= 0)
                 {
                     letter.TextDecorations = TextDecorations.Strikethrough;
-                    letter.Wearing("Muted");
+                    letter.Tint(TextBlock.ForegroundProperty, "Muted");
                 }
 
                 DockPanel.SetDock(swatch, Dock.Left);
@@ -4713,7 +4713,7 @@ namespace CamelWorks.UI.Views
                     FontSize = 12,
                     Margin = new Thickness(6, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Top,
-                }.Wearing("Muted");
+                }.Tint(TextBlock.ForegroundProperty, "Muted");
 
                 DockPanel.SetDock(tally, Dock.Right);
                 head.Children.Add(tally);
@@ -6141,6 +6141,24 @@ namespace CamelWorks.UI.Views
                              + "block now covers one discipline against another."));
             }
 
+            /// <summary>
+            /// Take a board that came from somewhere else, drawn the way this matrix is drawn.
+            ///
+            /// Which half is worked in lives on the board as well as in the style, so that undo
+            /// and the saved grid keep it - and a board that arrives from a read or an import
+            /// carries the default. Every one of the three ways in set the field directly and
+            /// none of them said so, so reading a matrix out of the model silently flipped the
+            /// drawing back on anybody who had asked for the other triangle.
+            /// </summary>
+            /// <param name="board">The board that came back.</param>
+            private void Taken(MatrixBoard board)
+            {
+                _board = board;
+                _board.UpperIsLive = _style.UpperIsLive;
+
+                _found.Clear();
+            }
+
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
             private void FromModel()
             {
@@ -6180,7 +6198,8 @@ namespace CamelWorks.UI.Views
 
                 Remember(what: "reading the matrix out of the model's tests");
 
-                _board = reading.Board;
+                Taken(reading.Board);
+
                 _legend = reading.Legend;
 
                 Redraw();
@@ -6222,7 +6241,7 @@ namespace CamelWorks.UI.Views
 
                     Remember(what: "opening that spreadsheet");
 
-                    _board = read.Grid;
+                    Taken(read.Grid);
 
                     // The legend the sheet's own symbols ask for, kept where it already says
                     // something. What arrives unexplained arrives as an ordinary hard clash,
