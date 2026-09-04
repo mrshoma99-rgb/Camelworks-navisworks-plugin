@@ -959,6 +959,44 @@ namespace CamelWorks.Nav
             }
         }
 
+        /// <summary>
+        /// Every saved set, with the folders it sits in.
+        ///
+        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
+        /// inside Level 02, and two more under a package folder somebody made in March. Anything
+        /// that keeps only the name and looks it up later gets whichever one a walk of the tree
+        /// reaches first, which is not the one anybody picked.
+        /// </summary>
+        public IReadOnlyList<SetInFolder> SetsInFolders()
+        {
+            var sets = new List<SetInFolder>();
+
+            try
+            {
+                Walk(Document.SelectionSets.ToSavedItemCollection(), string.Empty, sets);
+            }
+            catch (Exception)
+            {
+                // A document with no sets at all. Not an error, and not worth a message.
+            }
+
+            return sets;
+        }
+
+        private static void Walk(SavedItemCollection items, string trail, List<SetInFolder> result)
+        {
+            foreach (SavedItem item in items)
+            {
+                if (item is SelectionSet set) result.Add(new SetInFolder(set, trail));
+                else if (item is FolderItem folder && folder.Children != null)
+                    Walk(folder.Children,
+                         trail.Length == 0
+                             ? folder.DisplayName ?? string.Empty
+                             : trail + "/" + (folder.DisplayName ?? string.Empty),
+                         result);
+            }
+        }
+
         // Geometry-bearing nodes, taking a node's own geometry when nothing beneath it produced
         // any. Some formats hang reference planes and annotations under a part that carries the
         // mesh itself, and the naive "only childless nodes" rule loses the entire part.
@@ -1104,4 +1142,29 @@ namespace CamelWorks.Nav
             return (byte)scaled;
         }
     }
+
+    /// <summary>One saved set, and the folders that lead to it.</summary>
+    public sealed class SetInFolder
+    {
+        /// <summary>Hold one.</summary>
+        /// <param name="set">The set.</param>
+        /// <param name="folder">The folders it sits in, innermost last, joined with slashes.</param>
+        public SetInFolder(SelectionSet set, string folder)
+        {
+            Set = set;
+            Folder = folder ?? string.Empty;
+        }
+
+        /// <summary>The set itself.</summary>
+        public SelectionSet Set { get; }
+
+        /// <summary>The folders it sits in, innermost last, or empty at the top level.</summary>
+        public string Folder { get; }
+
+        /// <summary>The set's name with its folders in front of it, for a person to read.</summary>
+        public string Trail =>
+            Folder.Length == 0 ? Set.DisplayName ?? string.Empty
+                               : Folder + "/" + (Set.DisplayName ?? string.Empty);
+    }
+
 }

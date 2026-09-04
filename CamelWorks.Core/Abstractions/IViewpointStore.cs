@@ -454,10 +454,20 @@ namespace CamelWorks.Core.Abstractions
     public sealed class ClashSide
     {
         private ClashSide(ClashSideKind kind, string? name, IReadOnlyList<string> scopes,
-                          IReadOnlyList<ElementKey> keys)
+                          IReadOnlyList<ElementKey> keys, string? path = null)
         {
-            Kind = kind; Name = name; Scopes = scopes; Keys = keys;
+            Kind = kind; Name = name; Scopes = scopes; Keys = keys; Path = path;
         }
+
+        /// <summary>
+        /// The folders the set sits in, innermost last, or null when nobody recorded them.
+        ///
+        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
+        /// inside Level 02, and two more under a package folder somebody made in March. Resolved
+        /// by name, all four are whichever one a depth-first walk reaches first - so a matrix
+        /// carefully pointed at four different disciplines quietly tests one of them four times.
+        /// </summary>
+        public string? Path { get; }
 
         /// <summary>Which of the three this is.</summary>
         public ClashSideKind Kind { get; }
@@ -490,8 +500,10 @@ namespace CamelWorks.Core.Abstractions
 
         /// <summary>A saved selection or search set, by name, kept as a source so it re-resolves.</summary>
         /// <param name="name">The set's name in the host.</param>
-        public static ClashSide Set(string name) =>
-            new ClashSide(ClashSideKind.Set, name, Array.Empty<string>(), Array.Empty<ElementKey>());
+        /// <param name="path">The folders it sits in, innermost last, or null.</param>
+        public static ClashSide Set(string name, string? path = null) =>
+            new ClashSide(ClashSideKind.Set, name, Array.Empty<string>(),
+                          Array.Empty<ElementKey>(), path);
 
         /// <summary>A fixed list of elements.</summary>
         /// <param name="keys">The elements.</param>

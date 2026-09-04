@@ -49,16 +49,30 @@ namespace CamelWorks.Core.Clash
         /// The pairing above still carries the kind, because two cells asking for a hard test
         /// and a clearance between the same two sets are two tests somebody meant to have.
         /// </summary>
-        public string Sides()
-        {
-            var one = Row.Source.Fingerprint();
-            var two = Column.Source.Fingerprint();
+        public string Sides() => Both(Row.Source.Matched(), Column.Source.Matched());
 
-            var first = string.CompareOrdinal(one, two) <= 0 ? one : two;
-            var second = string.CompareOrdinal(one, two) <= 0 ? two : one;
+        /// <summary>
+        /// What this test is between and how, told apart exactly rather than as the document
+        /// would report it.
+        ///
+        /// <b>Two questions that are not the same question.</b> Matching a plan against a test
+        /// the document holds has to happen on what the document can say, which for a set is its
+        /// name and not the folder it lives in. Telling two cells of the same matrix apart has
+        /// to happen on everything known about them, or two rows pointed at two different sets
+        /// that happen to share a name are one row, and the second one's tests are dropped as
+        /// duplicates of the first's.
+        /// </summary>
+        public string Exact() =>
+            Both(Row.Source.Fingerprint(), Column.Source.Fingerprint())
+            + "\u001f" + (int)Symbol.Test;
 
-            return first + "\u001f" + second;
-        }
+        /// <summary>Two sides in a fixed order, so a pair reads the same from either end.</summary>
+        /// <param name="one">One side.</param>
+        /// <param name="two">The other.</param>
+        private static string Both(string one, string two) =>
+            string.CompareOrdinal(one, two) <= 0
+                ? one + "\u001f" + two
+                : two + "\u001f" + one;
 
         /// <summary>What to hand the host.</summary>
         /// <param name="folder">Which clash folder to put it in, or null for the root.</param>
@@ -167,7 +181,7 @@ namespace CamelWorks.Core.Clash
 
                 var plan = new MatrixTestPlan(cell.Row, cell.Column, string.Empty, meaning);
 
-                if (!paired.Add(plan.Pairing()))
+                if (!paired.Add(plan.Exact()))
                 {
                     skipped.Add(new MatrixSkip(where,
                         "the same pair is already tested by another cell"));

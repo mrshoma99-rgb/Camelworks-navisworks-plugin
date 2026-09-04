@@ -1101,11 +1101,14 @@ namespace CamelWorks.UI.Views
                 }
 
                 var already = new HashSet<string>(
-                    _board.Rows.Where(r => r.Source.IsSet).Select(r => r.Source.Name),
+                    _board.Rows.Where(r => r.Source.IsSet)
+                               .Select(r => r.Source.Folder.Length == 0
+                                   ? r.Source.Name
+                                   : r.Source.Folder + "/" + r.Source.Name),
                     StringComparer.OrdinalIgnoreCase);
 
                 Parts.Search(_grid, "Which sets are the disciplines?",
-                    sets.Select(s => new KeyValuePair<string, int>(s.Name, s.Members)).ToList(),
+                    sets.Select(s => new KeyValuePair<string, int>(s.Trail, s.Members)).ToList(),
                     already, null,
                     picked =>
                     {
@@ -1118,14 +1121,14 @@ namespace CamelWorks.UI.Views
 
                         foreach (var set in sets)
                         {
-                            if (!wanted.Contains(set.Name) || already.Contains(set.Name)) continue;
+                            if (!wanted.Contains(set.Trail) || already.Contains(set.Trail)) continue;
 
                             _board.AddRow(new MatrixLine(
                                 set.Name,
                                 Next(_board.Rows),
                                 set.IsSearch
-                                    ? MatrixSource.SearchSet(set.Name)
-                                    : MatrixSource.SelectionSet(set.Name)));
+                                    ? MatrixSource.SearchSet(set.Name, set.Folder)
+                                    : MatrixSource.SelectionSet(set.Name, set.Folder)));
 
                             made++;
                         }
@@ -2223,23 +2226,33 @@ namespace CamelWorks.UI.Views
                     : Parts.Entry.Act("A saved set  ·  " + Ui.Count(sets.Count, "of them"),
                         Glyphs.Folder,
                         () => Parts.Search(_grid, "Which set is " + line.Name + "?",
-                            sets.Select(s => new KeyValuePair<string, int>(s.Name, s.Members))
+                            sets.Select(s => new KeyValuePair<string, int>(s.Trail, s.Members))
                                 .ToList(),
-                            line.Source.IsSet ? new[] { line.Source.Name } : null, null,
+                            line.Source.IsSet
+                                ? new[]
+                                {
+                                    line.Source.Folder.Length == 0
+                                        ? line.Source.Name
+                                        : line.Source.Folder + "/" + line.Source.Name,
+                                }
+                                : null,
+                            null,
                             picked =>
                             {
-                                var name = picked.FirstOrDefault();
+                                var trail = picked.FirstOrDefault();
 
-                                if (name == null) return;
+                                if (trail == null) return;
 
                                 var found = sets.FirstOrDefault(s => string.Equals(
-                                    s.Name, name, StringComparison.OrdinalIgnoreCase));
+                                    s.Trail, trail, StringComparison.OrdinalIgnoreCase));
+
+                                if (found == null) return;
 
                                 Remember();
 
-                                line.Source = found != null && found.IsSearch
-                                    ? MatrixSource.SearchSet(name)
-                                    : MatrixSource.SelectionSet(name);
+                                line.Source = found.IsSearch
+                                    ? MatrixSource.SearchSet(found.Name, found.Folder)
+                                    : MatrixSource.SelectionSet(found.Name, found.Folder);
 
                                 Redraw();
                             })));
@@ -4048,14 +4061,22 @@ namespace CamelWorks.UI.Views
             /// <summary>One saved set, as the picker needs it.</summary>
             private sealed class SetLine
             {
-                internal SetLine(string name, bool search, int members)
+                internal SetLine(string name, string folder, bool search, int members)
                 {
-                    Name = name; IsSearch = search; Members = members;
+                    Name = name; Folder = folder; IsSearch = search; Members = members;
                 }
 
                 internal string Name { get; }
+
+                /// <summary>The folders it sits in, innermost last, or empty at the top.</summary>
+                internal string Folder { get; }
+
                 internal bool IsSearch { get; }
                 internal int Members { get; }
+
+                /// <summary>The set as somebody reads it: its folders, then its name.</summary>
+                internal string Trail =>
+                    Folder.Length == 0 ? Name : Folder + "/" + Name;
             }
 
             private List<SetLine> Sets()
@@ -4065,17 +4086,23 @@ namespace CamelWorks.UI.Views
                     // The document's own list, which it answers instantly. A search set is one
                     // the host holds as a query rather than as a fixed list of items, and the
                     // difference matters: a search set re-runs every time the test does.
-                    return _session.Model.Sets()
-                        .Select(set => new SetLine(
-                            set.DisplayName ?? string.Empty,
-                            !set.HasExplicitModelItems,
-                            set.HasExplicitModelItems && set.ExplicitModelItems != null
-                                ? set.ExplicitModelItems.Count
+                    return _session.Model.SetsInFolders()
+                        .Select(held => new SetLine(
+                            held.Set.DisplayName ?? string.Empty,
+                            held.Folder,
+                            !held.Set.HasExplicitModelItems,
+                            held.Set.HasExplicitModelItems && held.Set.ExplicitModelItems != null
+                                ? held.Set.ExplicitModelItems.Count
                                 : 0))
                         .Where(s => s.Name.Length > 0)
-                        .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+
+                        // Two sets with the same name in two folders are two sets, and this used
+                        // to keep one of them. A document with "MEP" on every level offered one
+                        // "MEP" to pick from, so nineteen of the twenty rows a matrix needed
+                        // could not be pointed at anything.
+                        .GroupBy(s => s.Trail, StringComparer.OrdinalIgnoreCase)
                         .Select(g => g.First())
-                        .OrderBy(s => s.Name, StringComparer.CurrentCulture)
+                        .OrderBy(s => s.Trail, StringComparer.CurrentCulture)
                         .ToList();
                 }
                 catch (Exception)
@@ -4084,7 +4111,19 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            private IReadOnlyCollection<string> SetNames() => Sets().Select(s => s.Name).ToList();
+            /// <summary>
+            /// What the sanity check compares a row's source against.
+            ///
+            /// Both forms: a row drawn since folders were kept names its set with them, and one
+            /// drawn before that names it without. Neither should be reported as missing when
+            /// the set is right there.
+            /// </summary>
+            private IReadOnlyCollection<string> SetNames() =>
+                Sets().SelectMany(s => s.Folder.Length == 0
+                        ? new[] { s.Name }
+                        : new[] { s.Name, s.Trail })
+                      .Distinct(StringComparer.OrdinalIgnoreCase)
+                      .ToList();
 
             private List<string> Models()
             {

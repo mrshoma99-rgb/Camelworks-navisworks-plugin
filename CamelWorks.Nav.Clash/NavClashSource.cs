@@ -2159,11 +2159,15 @@ namespace CamelWorks.Nav.Clash
                 case ClashSideKind.Set:
                 {
                     var sets = _document.Document.SelectionSets;
-                    var found = Find(sets.Value, side.Name);
+                    var found = Find(sets.Value, side.Name, side.Path);
 
                     if (found == null)
                     {
-                        LastProblem = "There is no set called \"" + side.Name + "\" in this document.";
+                        LastProblem = string.IsNullOrEmpty(side.Path)
+                            ? "There is no set called \"" + side.Name + "\" in this document."
+                            : "There is no set called \"" + side.Name + "\" in \"" + side.Path
+                              + "\" any more. It has been renamed, moved or deleted.";
+
                         return false;
                     }
 
@@ -2193,6 +2197,61 @@ namespace CamelWorks.Nav.Clash
             }
         }
 
+        /// <summary>
+        /// The set a side means, by the folders it was recorded in and then by its name.
+        ///
+        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
+        /// inside Level 02, and two more under a package folder somebody made in March. This
+        /// used to walk the tree and take the first thing that matched, so a matrix carefully
+        /// pointed at four different disciplines quietly tested one of them four times, and
+        /// nothing anywhere said so.
+        ///
+        /// A side that knows its folders is resolved there and nowhere else: if the set has been
+        /// moved or renamed, that is worth being told about rather than papering over with
+        /// whichever same-named set is still standing. A side recorded before folders were kept
+        /// falls back to the old walk, so a matrix drawn last year still builds.
+        /// </summary>
+        /// <param name="items">Where to look.</param>
+        /// <param name="name">The set's name.</param>
+        /// <param name="path">The folders it was in, innermost last, or null.</param>
+        private static SavedItem? Find(SavedItemCollection? items, string? name, string? path)
+        {
+            if (items == null || string.IsNullOrWhiteSpace(name)) return null;
+
+            if (string.IsNullOrWhiteSpace(path)) return Find(items, name);
+
+            var trail = path!.Split('/');
+            var here = items;
+
+            foreach (var step in trail)
+            {
+                SavedItemCollection? next = null;
+
+                foreach (SavedItem item in here)
+                    if (item is GroupItem folder
+                        && string.Equals(folder.DisplayName, step,
+                                         StringComparison.OrdinalIgnoreCase))
+                    {
+                        next = folder.Children;
+                        break;
+                    }
+
+                if (next == null) return null;
+
+                here = next;
+            }
+
+            foreach (SavedItem item in here)
+                if (!(item is GroupItem)
+                    && string.Equals(item.DisplayName, name, StringComparison.OrdinalIgnoreCase))
+                    return item;
+
+            return null;
+        }
+
+        /// <summary>The old walk: the first set of that name anywhere in the tree.</summary>
+        /// <param name="items">Where to look.</param>
+        /// <param name="name">The set's name.</param>
         private static SavedItem? Find(SavedItemCollection? items, string? name)
         {
             if (items == null || string.IsNullOrWhiteSpace(name)) return null;

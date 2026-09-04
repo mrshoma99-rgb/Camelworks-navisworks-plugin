@@ -73,12 +73,30 @@ namespace CamelWorks.Core.Clash
                     continue;
                 }
 
-                if (source.IsSet && known.Count > 0 && !known.Contains(source.Name))
+                if (source.IsSet && known.Count > 0)
                 {
-                    faults.Add(new MatrixFault(line.Where,
-                        "points at a set called " + Quoted(source.Name)
-                        + ", and this model has no set by that name", true));
-                    continue;
+                    var trail = source.Folder.Length == 0
+                        ? source.Name
+                        : source.Folder + "/" + source.Name;
+
+                    if (!known.Contains(trail))
+                    {
+                        // <b>Moved is not missing, and saying so saves the afternoon.</b> A set
+                        // dragged into a package folder still exists, still has the name it had,
+                        // and no longer answers to where this row was pointed. Told "there is no
+                        // set called MEP" while looking at a set called MEP, nobody believes the
+                        // tool; told where it went, they fix it in one press.
+                        faults.Add(new MatrixFault(line.Where,
+                            known.Contains(source.Name)
+                                ? "points at " + Quoted(trail) + ", and the set called "
+                                  + Quoted(source.Name) + " is somewhere else in this model now. "
+                                  + "Point it at the set again."
+                                : "points at a set called " + Quoted(source.Name)
+                                  + ", and this model has no set by that name",
+                            true));
+
+                        continue;
+                    }
                 }
 
                 if (source.Kind == MatrixSourceKind.Models && loaded.Count > 0)

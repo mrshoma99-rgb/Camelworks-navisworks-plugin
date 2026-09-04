@@ -350,6 +350,45 @@ namespace CamelWorks.Core.Tests
         // A real model scope, which is an eight-character hash. A shorter one makes a key that
         // will not parse back out of the project file, which is a fault in the test rather than
         // in the key.
+        [Fact]
+        public void TwoSetsOfTheSameNameInTwoFoldersAreTwoSources()
+        {
+            // A real document has "MEP" inside Level 01 and another inside Level 02. Told apart
+            // only by name, a matrix pointed at twenty of them is pointed at one of them twenty
+            // times, and the planner drops nineteen pairs as duplicates.
+            Assert.NotEqual(
+                MatrixSource.SelectionSet("MEP", "Level 01").Fingerprint(),
+                MatrixSource.SelectionSet("MEP", "Level 02").Fingerprint());
+        }
+
+        [Fact]
+        public void ASetInAFolderStillMatchesWhatTheDocumentReports()
+        {
+            // The document says what a test's set is called and not where it lives, so what a
+            // plan is matched against has to be the name on its own - or every test built from a
+            // matrix that knows its folders looks new the next time anybody presses Build.
+            Assert.Equal(
+                MatrixSource.SelectionSet("MEP").Matched(),
+                MatrixSource.SelectionSet("MEP", "Level 01").Matched());
+        }
+
+        [Fact]
+        public void AFolderSurvivesBeingWrittenDownAndReadBack()
+        {
+            var source = MatrixSource.SearchSet("MEP", "Level 01/Package B");
+            var back = MatrixSource.FromJson(source.ToJson());
+
+            Assert.Equal("Level 01/Package B", back.Folder);
+            Assert.Equal(source.Fingerprint(), back.Fingerprint());
+        }
+
+        [Fact]
+        public void AMatrixDrawnBeforeFoldersWereKeptStillNamesItsSet()
+        {
+            Assert.Equal(string.Empty, MatrixSource.SelectionSet("MEP").Folder);
+            Assert.Equal("set:mep", MatrixSource.SelectionSet("MEP").Fingerprint());
+        }
+
         private static List<Identity.ElementKey> Keys(params string[] names) =>
             names.Select(n => Identity.ElementKey.FromTreePath("a1b2c3d4", null, n)).ToList();
     }
