@@ -1577,6 +1577,60 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(new[] { "sheetViews", "cols", "sheetData" }, order);
         }
 
+        /// <summary>
+        /// <b>Three things in the stylesheet that look like padding and are not.</b> Excel treats
+        /// a stylesheet without them as a damaged workbook and offers to repair it - which is
+        /// what it did - and no XML check can see any of it, so they are named here.
+        /// </summary>
+        [Fact]
+        public void TheStylesheetHasWhatExcelRefusesToOpenWithout()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            var styles = XDocument.Parse(Part(book, "xl/styles.xml"));
+
+            string Local(string name) => name;
+
+            var fills = styles.Descendants().First(e => e.Name.LocalName == "fills");
+
+            // The reserved second fill, whether or not anything uses it.
+            Assert.Equal("2", fills.Attribute("count")!.Value);
+            Assert.Contains(fills.Descendants(),
+                e => e.Name.LocalName == "patternFill"
+                     && e.Attribute("patternType")?.Value == "gray125");
+
+            // A default style for everything else to inherit from.
+            Assert.Contains(styles.Descendants(),
+                e => e.Name.LocalName == "cellStyle" && e.Attribute("name")?.Value == "Normal");
+
+            // Every format saying what it is outright: left off, they are absent, not defaulted.
+            foreach (var xf in styles.Descendants().Where(e => e.Name.LocalName == Local("xf")))
+            {
+                Assert.NotNull(xf.Attribute("numFmtId"));
+                Assert.NotNull(xf.Attribute("fontId"));
+                Assert.NotNull(xf.Attribute("fillId"));
+                Assert.NotNull(xf.Attribute("borderId"));
+            }
+        }
+
+        /// <summary>Nothing may name the theme part, because no theme part is shipped.</summary>
+        [Fact]
+        public void NothingPointsAtAThemeThatIsNotInThePackage()
+        {
+            var book = XlsxWriter.Write(new[] { MatrixSanity.AsSheet(Peopled(), new MatrixLegend()) });
+
+            using var stream = new MemoryStream(book);
+            using var zip = new System.IO.Compression.ZipArchive(
+                stream, System.IO.Compression.ZipArchiveMode.Read);
+
+            Assert.DoesNotContain(zip.Entries, e => e.FullName.Contains("theme"));
+
+            var styles = Part(book, "xl/styles.xml");
+
+            Assert.DoesNotContain("theme=", styles, StringComparison.Ordinal);
+            Assert.DoesNotContain("scheme", styles, StringComparison.Ordinal);
+        }
+
         [Fact]
         public void EverySheetThisProductWritesPutsThemInThatOrder()
         {

@@ -1787,8 +1787,11 @@ namespace CamelWorks.UI.Views
                     ToolTip = mark + " — " + what
                               + (_brush == null
                                   ? string.Empty
-                                  : ". Click to put " + Quoted(_brush.Symbol) + " in every "
-                                    + "undecided cell of the " + (rows ? "row." : "column.")),
+                                  : Erasing
+                                      ? ". Click to take every decision off the "
+                                        + (rows ? "row." : "column.")
+                                      : ". Click to put " + Quoted(_brush.Symbol) + " in every "
+                                        + "undecided cell of the " + (rows ? "row." : "column.")),
                     Child = new TextBlock
                     {
                         Text = mark,
@@ -2540,15 +2543,14 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The column.</param>
             private void Daub(MatrixLine row, MatrixLine column)
             {
-                var brush = _brush;
+                if (_brush == null) return;
 
-                if (brush == null) return;
+                var laying = Laying;
 
                 // Dragging crosses the same cell many times; only a change is worth a repaint.
-                if (string.Equals(_board.At(row, column), brush.Symbol, StringComparison.Ordinal))
-                    return;
+                if (string.Equals(_board.At(row, column), laying, StringComparison.Ordinal)) return;
 
-                _board.Set(row, column, brush.Symbol);
+                _board.Set(row, column, laying);
                 Repaint(row, column);
             }
 
@@ -2583,16 +2585,22 @@ namespace CamelWorks.UI.Views
                     var row = rows ? line : other;
                     var column = rows ? other : line;
 
-                    if (_board.At(row, column) != null) continue;
                     if (_board.IsSelfPair(row, column)) continue;
+
+                    // Filling works on what is undecided; the rubber works on what is decided.
+                    // The same gesture over the opposite set of cells, so "put the brush down
+                    // this row" means something whichever is on it.
+                    if (Erasing ? _board.At(row, column) == null
+                                : _board.At(row, column) != null) continue;
 
                     Daub(row, column);
                     laid++;
                 }
 
-                Reported(laid, Quoted(_brush.Symbol) + " put in", 
-                         "empty cell of " + (rows ? "row " + Number(At(_board.Rows, line))
-                                                  : "column " + Letter(At(_board.Columns, line))));
+                Reported(laid, Erasing ? "cleared" : Quoted(_brush.Symbol) + " put in",
+                         (Erasing ? "decided cell of " : "empty cell of ")
+                         + (rows ? "row " + Number(At(_board.Rows, line))
+                                 : "column " + Letter(At(_board.Columns, line))));
             }
 
             /// <summary>
@@ -3908,8 +3916,8 @@ namespace CamelWorks.UI.Views
                     _brush != null && MatrixBoard.IsNotRequired(_brush.Symbol),
                     false, () => Arm(Ruling())));
 
-                _palette.Children.Add(Swatch("×", "Not decided", "empties the cell", "Del",
-                                          false, false, () => Arm(null)));
+                _palette.Children.Add(Swatch(Rubber, "Not decided", "empties the cell", "Del",
+                                          Erasing, false, () => Arm(Rubbing())));
 
             }
 
@@ -4059,6 +4067,37 @@ namespace CamelWorks.UI.Views
             private static MatrixSymbol Ruling() =>
                 new MatrixSymbol(MatrixBoard.NotRequired, MatrixTest.Hard, 0, false);
 
+            /// <summary>The mark the palette shows for taking a decision back off a cell.</summary>
+            private const string Rubber = "\u00d7";
+
+            /// <summary>
+            /// The rubber, as something the brush can carry.
+            ///
+            /// <b>"Not decided" put the brush down instead of picking one up.</b> It was wired to
+            /// arm nothing - which is what the palette does when you press the symbol already on
+            /// the brush - so the key that says "empties the cell" disarmed you, and every click
+            /// after it did nothing at all. Emptying a cell was reachable only from the Delete
+            /// key, which is not what the palette said it was.
+            ///
+            /// The brush carries a symbol or nothing, and nothing already means "no brush", so
+            /// the rubber needs a mark of its own to be carried by - exactly as the pair ruled
+            /// out does. What it writes into a cell is nothing, which is the one thing about it
+            /// that differs, and that happens in the one place every stroke goes through.
+            /// </summary>
+            private static MatrixSymbol Rubbing() =>
+                new MatrixSymbol(Rubber, MatrixTest.Hard, 0, false);
+
+            /// <summary>Whether what is on the brush takes a decision away rather than making one.</summary>
+            private bool Erasing =>
+                _brush != null && string.Equals(_brush.Symbol, Rubber, StringComparison.Ordinal);
+
+            /// <summary>What the brush puts in a cell: its mark, or nothing at all.</summary>
+            private string? Laying => _brush == null || Erasing ? null : _brush.Symbol;
+
+            /// <summary>What is on the brush, as a person would say it.</summary>
+            private string Brushed =>
+                _brush == null ? "nothing" : Erasing ? "the rubber" : Quoted(_brush.Symbol);
+
             /// <summary>Put one symbol in the inspector, or clear it out.</summary>
             /// <param name="symbol">The symbol, or null.</param>
             private void Show(MatrixSymbol? symbol)
@@ -4133,7 +4172,7 @@ namespace CamelWorks.UI.Views
 
                     Say(new TextBlock
                     {
-                        Text = Quoted(_brush.Symbol) + " on the brush",
+                        Text = Brushed + " on the brush",
                         FontWeight = FontWeights.SemiBold,
                     }.Wearing("Body"));
 
@@ -4594,7 +4633,9 @@ namespace CamelWorks.UI.Views
                 filling = Doable(Glyphs.Sweep,
                     _brush == null
                         ? "Fill the rest of this " + what + " — arm a symbol on the palette first"
-                        : "Fill the rest of this " + what + " with " + Quoted(_brush.Symbol), () =>
+                        : Erasing
+                            ? "Take every decision off this " + what
+                            : "Fill the rest of this " + what + " with " + Quoted(_brush.Symbol), () =>
                     {
                         if (_brush == null) return;
 
@@ -4607,8 +4648,10 @@ namespace CamelWorks.UI.Views
                             var row = rows ? line : other;
                             var column = rows ? other : line;
 
-                            if (_board.At(row, column) != null) continue;
                             if (_board.IsSelfPair(row, column)) continue;
+
+                            if (Erasing ? _board.At(row, column) == null
+                                        : _board.At(row, column) != null) continue;
 
                             Daub(row, column);
                             laid++;
@@ -5396,7 +5439,7 @@ namespace CamelWorks.UI.Views
                         return;
 
                     case Key.Space:
-                        if (_brush != null) Lay(_brush.Symbol);
+                        if (_brush != null) Lay(Laying);
                         e.Handled = true;
                         return;
                 }
