@@ -36,6 +36,35 @@ namespace CamelWorks.Core.Tests
             new string?[] { "",   "02",   "ST",  "",   "Frame",       "ST_Frame", "",         "",  "A",        "C" },
             new string?[] { "",   "03",   "ME",  "",   "Ductwork",    "ME_Duct",  "",         "",  "",         "A" });
 
+        [Fact]
+        public void A_dash_in_a_workbook_means_the_pair_was_ruled_out()
+        {
+            // A client's workbook says "not required" with whichever dash their font gave them,
+            // or with the letters. Read as anything else it becomes a symbol with no meaning,
+            // and the reader is asked to give a tolerance to a decision not to test.
+            foreach (var said in new[] { "-", "\u2013", "\u2014", "N/A", "na" })
+            {
+                var read = SheetMatrix.Read(Sheet(
+                    new string?[] { "Coordination matrix" },
+                    new string?[] { "", "", "", "", "", "", "01", "", "02", "03" },
+                    new string?[] { "" },
+                    new string?[] { "" },
+                    new string?[] { "" },
+                    new string?[] { "", "", "", "", "", "", "ST_Found", "", "ST_Frame", "ME_Duct" },
+                    new string?[] { "", "01", "ST", "", "Foundations", "ST_Found", "A", "", said, "" },
+                    new string?[] { "", "02", "ST", "", "Frame", "ST_Frame", said, "", "A", "C" },
+                    new string?[] { "", "03", "ME", "", "Ductwork", "ME_Duct", "", "", "", "A" }),
+                    Mapping());
+
+                Assert.Equal(MatrixBoard.NotRequired,
+                             read.Grid.At(read.Grid.Rows[0], read.Grid.Columns[1]));
+
+                Assert.Empty(new MatrixLegend(new[] { new MatrixSymbol("A") })
+                                 .Unexplained(read.Grid)
+                                 .Where(MatrixBoard.IsNotRequired));
+            }
+        }
+
         private static SheetMapping Mapping() => new SheetMapping
         {
             NumberColumn = 2, CodeColumn = 3, NameColumn = 5, SetColumn = 6, FirstRow = 7,

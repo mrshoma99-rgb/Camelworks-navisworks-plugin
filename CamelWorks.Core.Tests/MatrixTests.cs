@@ -471,6 +471,67 @@ namespace CamelWorks.Core.Tests
             names.Select(n => Identity.ElementKey.FromTreePath("a1b2c3d4", null, n)).ToList();
     }
 
+    /// <summary>The mark for a pair somebody ruled out on purpose.</summary>
+    public class MatrixNotRequiredTests
+    {
+        [Fact]
+        public void ARuledOutPairMakesNoTestAndIsNotAFault()
+        {
+            var plan = MatrixPlanner.Plan(Ruled(), new MatrixLegend(new[] { new MatrixSymbol("A") }));
+
+            Assert.Empty(plan.Tests);
+            Assert.Empty(plan.Skipped);
+        }
+
+        [Fact]
+        public void TheReservedMarkIsNeverUnexplained()
+        {
+            // Offering to give it a tolerance is offering to turn every pair somebody ruled out
+            // into a test, which is exactly what a reserved mark exists to prevent.
+            var legend = new MatrixLegend(new[] { new MatrixSymbol("A") });
+
+            Assert.Empty(legend.Unexplained(Ruled()));
+            Assert.Single(legend.Covering(Ruled()).Symbols);
+        }
+
+        [Fact]
+        public void ARuledOutPairIsNotTheSameAsAnEmptyOne()
+        {
+            var board = Ruled();
+
+            // The pair that was ruled out carries the mark on both sides of the diagonal,
+            // because a pair is only ever run once whichever half somebody was filling in.
+            Assert.Equal(MatrixBoard.NotRequired, board.At(board.Rows[0], board.Columns[1]));
+            Assert.Equal(MatrixBoard.NotRequired, board.At(board.Rows[1], board.Columns[0]));
+
+            // And a pair nobody has ruled on is still empty, which is the whole distinction.
+            Assert.Null(board.At(board.Rows[0], board.Columns[0]));
+        }
+
+        [Fact]
+        public void TheSheetSaysWhatTheMarkMeansInWords()
+        {
+            // Where it matters most: a client reading a printed matrix cannot hover a cell.
+            var sheet = MatrixSanity.AsSheet(Ruled(), new MatrixLegend());
+
+            Assert.Contains(sheet.Rows,
+                row => row.Any(c => c != null && c.Contains("Not required")));
+        }
+
+        private static MatrixBoard Ruled()
+        {
+            var board = new MatrixBoard();
+
+            board.AddRow(new MatrixLine("Steel", null, MatrixSource.SelectionSet("STR")));
+            board.AddRow(new MatrixLine("Ducts", null, MatrixSource.SelectionSet("MEP")));
+            board.SquareOffRows();
+
+            board.Set(board.Rows[0], board.Columns[1], MatrixBoard.NotRequired);
+
+            return board;
+        }
+    }
+
     public class MatrixNamingTests
     {
         [Fact]

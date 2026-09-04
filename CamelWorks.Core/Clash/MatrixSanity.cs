@@ -161,12 +161,24 @@ namespace CamelWorks.Core.Clash
                 sheet.Row(cells.ToArray());
             }
 
-            if (legend == null || legend.IsEmpty) return sheet;
+            var ruled = false;
+
+            foreach (var row in board.Rows)
+                foreach (var column in board.Columns)
+                    if (MatrixBoard.IsNotRequired(board.At(row, column))) ruled = true;
+
+            if ((legend == null || legend.IsEmpty) && !ruled) return sheet;
 
             sheet.Row();
             sheet.Row("Legend");
 
-            foreach (var symbol in legend.Symbols)
+            // The reserved mark, said in words, because a sheet issued to a client is where the
+            // difference between "agreed not required" and "nobody got to it" matters most and
+            // where nobody can hover a cell to find out.
+            if (ruled)
+                sheet.Row(MatrixBoard.NotRequired, "Not required, agreed - no test is made");
+
+            foreach (var symbol in legend?.Symbols ?? Array.Empty<MatrixSymbol>())
                 sheet.Row(symbol.Symbol,
                           MatrixNaming.Worded(symbol.Test)
                           + " at " + (symbol.Tolerance * 1000).ToString("0.###", CultureInfo.InvariantCulture)

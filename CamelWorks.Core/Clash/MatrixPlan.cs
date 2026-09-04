@@ -155,6 +155,12 @@ namespace CamelWorks.Core.Clash
             foreach (var cell in board.Cells())
             {
                 var where = cell.Row.Titled + " x " + cell.Column.Titled;
+
+                // A pair ruled out on purpose is not a test and is not a fault either. It is the
+                // one mark in the grid that means "no test here", said deliberately, so it
+                // passes through without a word.
+                if (MatrixBoard.IsNotRequired(cell.Symbol)) continue;
+
                 var meaning = legend.Meaning(cell.Symbol);
 
                 if (meaning == null)

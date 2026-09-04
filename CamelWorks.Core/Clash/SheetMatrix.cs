@@ -177,6 +177,14 @@ namespace CamelWorks.Core.Clash
                     var symbol = (Text(sheet, sheetRow, column.Key) ?? string.Empty).Trim();
                     if (symbol.Length == 0) continue;
 
+                    // <b>What a paper matrix has always used for "not required".</b> A client's
+                    // workbook says it with a dash of whichever kind their font gave them, or
+                    // with the letters, and every one of them means the same thing: this pair
+                    // was ruled out, not overlooked. Read as anything else it becomes a symbol
+                    // with no meaning, and the reader is asked to give a tolerance to a
+                    // decision not to test.
+                    if (Ruled(symbol)) symbol = MatrixBoard.NotRequired;
+
                     // The mirrored cell may already hold something. A sheet filled in on both sides
                     // of the diagonal usually agrees with itself; when it does not, the reader is
                     // told rather than one of the two silently winning.
@@ -310,6 +318,13 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>One cell by 1-based row and column, or null past the edge.</summary>
+        /// <summary>Whether a cell of a workbook says "we agreed not to check this pair".</summary>
+        /// <param name="said">What the cell held, trimmed.</param>
+        private static bool Ruled(string said) =>
+            said == "-" || said == "\u2013" || said == "\u2014"
+            || string.Equals(said, "n/a", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(said, "na", StringComparison.OrdinalIgnoreCase);
+
         private static string? Text(SheetTable sheet, int row, int column)
         {
             if (row <= 0 || column <= 0 || row > sheet.Rows.Count) return null;

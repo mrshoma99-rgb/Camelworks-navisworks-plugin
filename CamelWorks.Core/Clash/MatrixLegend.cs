@@ -106,7 +106,8 @@ namespace CamelWorks.Core.Clash
             var filled = new List<MatrixSymbol>(_byText.Values);
 
             foreach (var symbol in board.SymbolsUsed)
-                if (Meaning(symbol) == null) filled.Add(new MatrixSymbol(symbol));
+                if (!MatrixBoard.IsNotRequired(symbol) && Meaning(symbol) == null)
+                    filled.Add(new MatrixSymbol(symbol));
 
             return new MatrixLegend(filled);
         }
@@ -117,7 +118,12 @@ namespace CamelWorks.Core.Clash
         {
             if (board == null) throw new ArgumentNullException(nameof(board));
 
-            return board.SymbolsUsed.Where(s => Meaning(s) == null).ToList();
+            // The reserved mark is never unexplained: it is the one thing in the grid whose
+            // meaning is fixed, and offering to give it a tolerance is offering to turn every
+            // pair somebody ruled out into a test.
+            return board.SymbolsUsed
+                .Where(s => !MatrixBoard.IsNotRequired(s) && Meaning(s) == null)
+                .ToList();
         }
     }
 }

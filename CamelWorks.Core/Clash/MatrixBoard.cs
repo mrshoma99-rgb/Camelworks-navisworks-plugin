@@ -108,6 +108,27 @@ namespace CamelWorks.Core.Clash
         /// <summary>The columns, which are side B.</summary>
         public IReadOnlyList<MatrixLine> Columns => _columns;
 
+        /// <summary>
+        /// The mark for a pair somebody has ruled out on purpose.
+        ///
+        /// <b>Blank used to mean two things.</b> "Nobody has got to this yet" and "we agreed at
+        /// the kick-off that these two are never checked" were the same empty cell, and forty
+        /// per cent of a real grid is empty - so a coordinator inheriting one in March cannot
+        /// tell an agreement from an abandonment, and the count of what is left to decide can
+        /// never reach the end.
+        ///
+        /// An en dash, which is what every paper matrix has used for this for as long as they
+        /// have been drawn. It is reserved rather than a legend entry: a symbol somebody can
+        /// give a tolerance to and switch on is a symbol that turns ninety agreed-not-required
+        /// pairs into ninety tests the first time anybody ticks it.
+        /// </summary>
+        public const string NotRequired = "\u2013";
+
+        /// <summary>Whether a cell's mark is the reserved one for a pair ruled out on purpose.</summary>
+        /// <param name="symbol">What is in the cell, or null.</param>
+        public static bool IsNotRequired(string? symbol) =>
+            string.Equals(symbol, NotRequired, StringComparison.Ordinal);
+
         /// <summary>How many cells carry a symbol.</summary>
         public int Filled => _cells.Count;
 

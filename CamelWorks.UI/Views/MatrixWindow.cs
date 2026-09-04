@@ -1913,6 +1913,27 @@ namespace CamelWorks.UI.Views
 
                 cell.Tint(Border.BorderBrushProperty, self ? "BdStrong" : "Bd");
 
+                if (MatrixBoard.IsNotRequired(symbol))
+                {
+                    // No fill, muted ink, one glyph. Three states on two channels, so it still
+                    // reads on a projector, in greyscale and on the printed sheet - where a cell
+                    // told apart only by its colour is a cell told apart by nothing.
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+
+                    cell.Child = new TextBlock
+                    {
+                        Text = MatrixBoard.NotRequired,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Hint");
+
+                    cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled
+                                   + " — not required, agreed. No test is made. Delete empties "
+                                   + "it back to undecided.";
+
+                    return;
+                }
+
                 if (symbol == null)
                 {
                     if (self) cell.Tint(Border.BackgroundProperty, "Nav");
@@ -2017,6 +2038,7 @@ namespace CamelWorks.UI.Views
 
                 var live = 0;
                 var done = 0;
+                var ruled = 0;
 
                 foreach (var row in _board.Rows)
                 foreach (var column in _board.Columns)
@@ -2025,7 +2047,16 @@ namespace CamelWorks.UI.Views
 
                     live++;
 
-                    if (_board.At(row, column) != null) done++;
+                    var held = _board.At(row, column);
+
+                    if (held == null) continue;
+
+                    // A pair ruled out is decided. That is the whole point of being able to say
+                    // so: the bar reaches the end when every pair has been ruled on, not when
+                    // every pair has been given a test.
+                    done++;
+
+                    if (MatrixBoard.IsNotRequired(held)) ruled++;
                 }
 
                 _progress.Children.Add(Ui.Eyebrow("Decided"));
@@ -2057,6 +2088,9 @@ namespace CamelWorks.UI.Views
                 _progress.Children.Add(Ui.Small(done.ToString(CultureInfo.InvariantCulture)
                     + " of " + live.ToString(CultureInfo.InvariantCulture) + " pairs"
                     + (left == 0 ? ". All of them." : ", " + Ui.Count(left, "still open"))));
+
+                if (ruled > 0)
+                    _progress.Children.Add(Ui.Small(Ui.Count(ruled, "of them ruled out")));
 
                 if (left > 0)
                 {
@@ -2522,17 +2556,24 @@ namespace CamelWorks.UI.Views
                         }));
                 }
 
-                if (here != null)
-                {
-                    items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Rule());
 
-                    items.Add(Parts.Entry.Act("Leave it untested", Glyphs.Close, () =>
+                items.Add(Parts.Entry.Saying("Not required", Glyphs.Close,
+                    "Agreed, and no test is made. Different from a cell nobody has got to yet.",
+                    () =>
+                    {
+                        Remember(what: "ruling out a pair");
+                        _board.Set(row, column, MatrixBoard.NotRequired);
+                        Repaint(row, column);
+                    }));
+
+                if (here != null)
+                    items.Add(Parts.Entry.Act("Back to undecided", Glyphs.Close, () =>
                     {
                         Remember(what: "clearing a cell");
                         _board.Set(row, column, null);
                         Repaint(row, column);
                     }));
-                }
 
                 items.Add(Parts.Entry.Rule());
 
@@ -2603,7 +2644,15 @@ namespace CamelWorks.UI.Views
                         () => { Arm(one); Show(one); }));
                 }
 
-                _palette.Children.Add(Swatch("×", "Not tested", "clears the cell", "Del",
+                // The two marks that are not symbols: one rules a pair out on purpose, the
+                // other empties the cell back to undecided. Both below the symbols, because they
+                // are not part of the key a client reads off the grid.
+                _palette.Children.Add(Swatch(MatrixBoard.NotRequired, "Not required",
+                    "agreed, and no test is made", "-",
+                    _brush != null && MatrixBoard.IsNotRequired(_brush.Symbol),
+                    false, () => { Arm(Ruling()); Show(null); }));
+
+                _palette.Children.Add(Swatch("×", "Not decided", "empties the cell", "Del",
                                           false, false, () => { Arm(null); Show(null); }));
 
                 var add = Ui.Quiet("Add a symbol", AddSymbol);
@@ -2726,6 +2775,15 @@ namespace CamelWorks.UI.Views
 
                 return key;
             }
+
+            /// <summary>
+            /// The reserved mark as something the brush can carry.
+            ///
+            /// A symbol object so the brush, the drag and the sweep all work on it unchanged -
+            /// but never in the legend, so nothing can give it a tolerance or switch it on.
+            /// </summary>
+            private static MatrixSymbol Ruling() =>
+                new MatrixSymbol(MatrixBoard.NotRequired, MatrixTest.Hard, 0, false);
 
             /// <summary>Put one symbol in the inspector, or clear it out.</summary>
             /// <param name="symbol">The symbol, or null.</param>
@@ -3253,8 +3311,18 @@ namespace CamelWorks.UI.Views
                         }));
                 }
 
-                _inspector.Children.Add(Swatch("×", "Not tested", "clears the cell", string.Empty,
-                    here == null, false, () =>
+                _inspector.Children.Add(Swatch(MatrixBoard.NotRequired, "Not required",
+                    "agreed, and no test is made", string.Empty,
+                    MatrixBoard.IsNotRequired(here), false, () =>
+                    {
+                        Remember(what: "ruling out a pair");
+                        _board.Set(row, column, MatrixBoard.NotRequired);
+                        Repaint(row, column);
+                        RedrawInspector();
+                    }));
+
+                _inspector.Children.Add(Swatch("×", "Not decided", "empties the cell",
+                    string.Empty, here == null, false, () =>
                     {
                         Remember(what: "clearing a cell");
                         _board.Set(row, column, null);
@@ -3347,6 +3415,12 @@ namespace CamelWorks.UI.Views
                     case Key.D0:
                     case Key.NumPad0:
                         Lay(null);
+                        e.Handled = true;
+                        return;
+
+                    case Key.OemMinus:
+                    case Key.Subtract:
+                        Lay(MatrixBoard.NotRequired);
                         e.Handled = true;
                         return;
 
