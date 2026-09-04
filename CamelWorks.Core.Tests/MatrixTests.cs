@@ -1657,4 +1657,254 @@ namespace CamelWorks.Core.Tests
             }
         }
     }
+
+    /// <summary>
+    /// Folders: a name several lines share, kept together, and mirrored like everything else.
+    /// </summary>
+    public class MatrixFolderTests
+    {
+        private static MatrixBoard Peopled(params string[] names)
+        {
+            var board = new MatrixBoard();
+
+            foreach (var name in names) board.AddPair(new MatrixLine(name));
+
+            return board;
+        }
+
+        [Fact]
+        public void ALineFiledInAFolderTakesItsTwinWithIt()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+
+            Assert.Equal("Services", board.Rows[0].Folder);
+            Assert.Equal("Services", board.Columns.Single(c => c.Name == "Pipes").Folder);
+        }
+
+        [Fact]
+        public void KeptApartOnlyTheLineFiledIsFiled()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.Paired = false;
+            board.File(board.Rows[0], "Services");
+
+            Assert.Equal("Services", board.Rows[0].Folder);
+            Assert.Equal(string.Empty, board.Columns[0].Folder);
+        }
+
+        [Fact]
+        public void FilingMovesTheLineNextToTheRestOfItsFolder()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[2], "Services");
+
+            Assert.Equal(new[] { "Pipes", "Ducts", "Walls" }, board.Rows.Select(r => r.Name));
+            Assert.Equal(new[] { "Pipes", "Ducts", "Walls" }, board.Columns.Select(c => c.Name));
+        }
+
+        [Fact]
+        public void FoldersComeBackInTheOrderTheirFirstMemberAppears()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts", "Doors");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows.Single(r => r.Name == "Walls"), "Fabric");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Services");
+
+            Assert.Equal(new[] { "Services", "Fabric" }, board.Folders(rows: true));
+        }
+
+        [Fact]
+        public void AFolderKnowsWhatIsInIt()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Services");
+
+            Assert.Equal(new[] { "Pipes", "Ducts" },
+                         board.InFolder(rows: true, "Services").Select(l => l.Name));
+        }
+
+        [Fact]
+        public void TakingALineOutOfAFolderClearsItOnBothAxes()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[0], null);
+
+            Assert.Equal(string.Empty, board.Rows[0].Folder);
+            Assert.All(board.Columns, c => Assert.Equal(string.Empty, c.Folder));
+        }
+
+        [Fact]
+        public void RenamingAFolderRenamesItOnBothAxes()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[1], "Services");
+
+            Assert.Equal(4, board.RenameFolder("Services", "MEP"));
+            Assert.All(board.Rows, r => Assert.Equal("MEP", r.Folder));
+            Assert.All(board.Columns, c => Assert.Equal("MEP", c.Folder));
+        }
+
+        [Fact]
+        public void DissolvingAFolderKeepsItsLines()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows[1], "Services");
+
+            Assert.Equal(4, board.DissolveFolder("Services"));
+            Assert.Equal(2, board.Rows.Count);
+            Assert.Equal(2, board.Columns.Count);
+            Assert.All(board.Rows, r => Assert.Equal(string.Empty, r.Folder));
+            Assert.Empty(board.Folders(rows: true));
+        }
+
+        [Fact]
+        public void RemovingAFolderTakesItsLinesToo()
+        {
+            var board = Peopled("Pipes", "Ducts", "Walls");
+
+            board.File(board.Rows[0], "Services");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Services");
+
+            Assert.Equal(2, board.RemoveFolder("Services"));
+            Assert.Single(board.Rows);
+            Assert.Single(board.Columns);
+            Assert.Equal("Walls", board.Rows[0].Name);
+        }
+
+        [Fact]
+        public void MergingFoldersPutsThemUnderOneName()
+        {
+            var board = Peopled("Pipes", "Ducts", "Cables");
+
+            board.File(board.Rows[0], "Wet");
+            board.File(board.Rows.Single(r => r.Name == "Ducts"), "Air");
+            board.File(board.Rows.Single(r => r.Name == "Cables"), "Power");
+
+            Assert.Equal(6, board.MergeFolders(new[] { "Wet", "Air", "Power" }, "Services"));
+            Assert.Equal(new[] { "Services" }, board.Folders(rows: true));
+            Assert.All(board.Rows, r => Assert.Equal("Services", r.Folder));
+        }
+
+        [Fact]
+        public void MergingIntoOneOfThemIsAllowed()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Wet");
+            board.File(board.Rows[1], "Air");
+
+            board.MergeFolders(new[] { "Wet", "Air" }, "Wet");
+
+            Assert.Equal(new[] { "Wet" }, board.Folders(rows: true));
+        }
+
+        [Fact]
+        public void TidyingPutsEachFoldersMembersTogetherAndLeavesLooseLinesLast()
+        {
+            var board = Peopled("Pipes", "Walls", "Ducts", "Doors");
+
+            // Filed without moving, so the axes are deliberately interleaved.
+            board.Rows[0].Folder = "Services";
+            board.Rows[2].Folder = "Services";
+            board.Rows[1].Folder = "Fabric";
+
+            board.Tidy();
+
+            Assert.Equal(new[] { "Pipes", "Ducts", "Walls", "Doors" },
+                         board.Rows.Select(r => r.Name));
+        }
+
+        [Fact]
+        public void AFolderSurvivesASaveAndRead()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.Equal("Services", read.Rows[0].Folder);
+            Assert.Equal(new[] { "Services" }, read.Folders(rows: true));
+        }
+
+        [Fact]
+        public void AddingADisciplineToAFolderGivesTheColumnTheSameFolder()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Pipes") { Folder = "Services" });
+
+            Assert.Equal("Services", board.Columns[0].Folder);
+        }
+
+        [Fact]
+        public void TheFolderIsATokenATestNameCanUse()
+        {
+            var row = new MatrixLine("Pipes") { Folder = "Services" };
+            var column = new MatrixLine("Walls") { Folder = "Fabric" };
+
+            Assert.Equal("Services/Pipes vs Fabric/Walls",
+                         MatrixNaming.Fill("{rowFolder}/{row} vs {columnFolder}/{column}",
+                                           row, column, null, 1));
+        }
+
+        [Fact]
+        public void ALineInNoFolderLeavesTheTokenEmptyRatherThanTheWordEmpty()
+        {
+            var row = new MatrixLine("Pipes");
+            var column = new MatrixLine("Walls");
+
+            Assert.Equal("Pipes vs Walls",
+                         MatrixNaming.Fill("{rowFolder} {row} vs {columnFolder} {column}",
+                                           row, column, null, 1));
+        }
+
+        /// <summary>
+        /// Removing a folder removes what is in it, and on axes kept apart only one axis was
+        /// ever filed - so only that one loses anything.
+        /// </summary>
+        [Fact]
+        public void RemovingAFolderOnAnUnpairedBoardTakesOnlyWhatWasFiled()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.Paired = false;
+            board.File(board.Rows[0], "Services");
+
+            Assert.Equal(string.Empty, board.Columns[0].Folder);
+
+            board.RemoveFolder("Services");
+
+            Assert.Single(board.Rows);
+            Assert.Equal(2, board.Columns.Count);
+        }
+
+        /// <summary>And on a paired board it takes the discipline off both, which is the point.</summary>
+        [Fact]
+        public void RemovingAFolderTakesTheDisciplineOffBothAxes()
+        {
+            var board = Peopled("Pipes", "Ducts");
+
+            board.File(board.Rows[0], "Services");
+            board.RemoveFolder("Services");
+
+            Assert.Single(board.Rows);
+            Assert.Single(board.Columns);
+            Assert.Equal("Ducts", board.Rows[0].Name);
+        }
+    }
 }

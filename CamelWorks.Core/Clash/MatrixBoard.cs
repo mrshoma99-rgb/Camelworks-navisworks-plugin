@@ -32,6 +32,19 @@ namespace CamelWorks.Core.Clash
         /// <summary>Its discipline code — "ST", "ME" — or empty. A sheet often carries one.</summary>
         public string Code { get; set; }
 
+        /// <summary>
+        /// The folder it is filed in, or empty for one that is loose.
+        ///
+        /// <b>A folder is a name several lines share, not an object they hang off.</b> Twenty
+        /// disciplines is a readable matrix; sixty is a wall, and the way anybody makes sense of
+        /// sixty is "these eight are services". Held as a name on the line, a folder cannot go
+        /// stale against the lines in it, cannot be emptied without emptying itself, and
+        /// survives every reorder, save and undo that the lines survive - because it is the
+        /// lines. The board keeps the members of one folder next to each other; what a folder
+        /// <i>is</i> is the set of lines that answer to its name.
+        /// </summary>
+        public string Folder { get; set; } = string.Empty;
+
         /// <summary>Where its elements come from.</summary>
         public MatrixSource Source { get; set; }
 
@@ -48,6 +61,7 @@ namespace CamelWorks.Core.Clash
 
             if (Number.Length > 0) json.Set("number", Number);
             if (Code.Length > 0) json.Set("code", Code);
+            if (Folder.Length > 0) json.Set("folder", Folder);
 
             json.Set("source", Source.ToJson());
 
@@ -66,7 +80,10 @@ namespace CamelWorks.Core.Clash
 
             return new MatrixLine(name, json["number"].AsString(),
                                   MatrixSource.FromJson(json["source"]),
-                                  json["code"].AsString());
+                                  json["code"].AsString())
+            {
+                Folder = (json["folder"].AsString() ?? string.Empty).Trim(),
+            };
         }
 
         /// <inheritdoc />
@@ -175,7 +192,11 @@ namespace CamelWorks.Core.Clash
 
             _rows.Add(line);
 
-            if (Paired) _columns.Add(new MatrixLine(line.Name, line.Number, line.Source, line.Code));
+            if (Paired)
+                _columns.Add(new MatrixLine(line.Name, line.Number, line.Source, line.Code)
+                {
+                    Folder = line.Folder,
+                });
 
             return line;
         }
@@ -198,6 +219,232 @@ namespace CamelWorks.Core.Clash
             Drop(_rows.Contains(line) ? _rows : _columns, line);
 
             if (twin != null) Drop(_rows.Contains(twin) ? _rows : _columns, twin);
+        }
+
+        // ---------------------------------------------------------------------------
+        // Folders
+        // ---------------------------------------------------------------------------
+
+        /// <summary>The folders on one axis, in the order their first member appears.</summary>
+        /// <param name="rows">True for the rows, false for the columns.</param>
+        public IReadOnlyList<string> Folders(bool rows)
+        {
+            var found = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var line in rows ? _rows : _columns)
+                if (line.Folder.Length > 0 && seen.Add(line.Folder))
+                    found.Add(line.Folder);
+
+            return found;
+        }
+
+        /// <summary>Every line filed in one folder, in the order they sit on their axis.</summary>
+        /// <param name="rows">True for the rows.</param>
+        /// <param name="folder">The folder's name.</param>
+        public IReadOnlyList<MatrixLine> InFolder(bool rows, string? folder) =>
+            (rows ? _rows : _columns)
+                .Where(l => string.Equals(l.Folder, (folder ?? string.Empty).Trim(),
+                                          StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+        /// <summary>
+        /// File a line in a folder, and file its twin with it.
+        ///
+        /// <b>Filing is also a move.</b> A folder is only legible while its members are next to
+        /// each other - a band down the side with two of its eight rows somewhere else is not a
+        /// folder, it is a label that lies - so a line dropped into a folder goes to the end of
+        /// that folder's block rather than staying where it was. A line taken out of one goes
+        /// after the block it just left, which is where a hand expects to find it.
+        /// </summary>
+        /// <param name="line">The row or column.</param>
+        /// <param name="folder">The folder, or null or empty to take it out of one.</param>
+        public void File(MatrixLine? line, string? folder)
+        {
+            if (line == null) return;
+
+            var wanted = (folder ?? string.Empty).Trim();
+
+            Filed(_rows.Contains(line) ? _rows : _columns, line, wanted);
+
+            if (!Paired) return;
+
+            var twin = TwinOf(line);
+
+            if (twin != null) Filed(_rows.Contains(twin) ? _rows : _columns, twin, wanted);
+        }
+
+        private static void Filed(List<MatrixLine> lines, MatrixLine line, string folder)
+        {
+            var at = lines.IndexOf(line);
+
+            if (at < 0) return;
+
+            var was = line.Folder;
+
+            line.Folder = folder;
+
+            // The end of the block it now belongs to, or the end of the one it just left.
+            var last = -1;
+
+            for (var i = 0; i < lines.Count; i++)
+            {
+                if (i == at) continue;
+
+                if (string.Equals(lines[i].Folder,
+                                  folder.Length > 0 ? folder : was,
+                                  StringComparison.OrdinalIgnoreCase))
+                    last = i;
+            }
+
+            if (last < 0) return;
+
+            var to = last < at ? last + 1 : last;
+
+            if (to == at) return;
+
+            lines.RemoveAt(at);
+            lines.Insert(to, line);
+        }
+
+        /// <summary>
+        /// Call a folder something else, on both axes.
+        ///
+        /// Every line answering to the old name answers to the new one, which is the whole of
+        /// what renaming a folder is when a folder is a name its members share.
+        /// </summary>
+        /// <param name="from">What it is called.</param>
+        /// <param name="to">What it should be called. Empty dissolves it.</param>
+        /// <returns>How many lines were refiled.</returns>
+        public int RenameFolder(string? from, string? to)
+        {
+            var was = (from ?? string.Empty).Trim();
+            var wanted = (to ?? string.Empty).Trim();
+
+            if (was.Length == 0) return 0;
+
+            var moved = 0;
+
+            foreach (var line in _rows.Concat(_columns))
+            {
+                if (!string.Equals(line.Folder, was, StringComparison.OrdinalIgnoreCase)) continue;
+
+                line.Folder = wanted;
+                moved++;
+            }
+
+            return moved;
+        }
+
+        /// <summary>
+        /// Take a folder away and leave its lines where they are.
+        ///
+        /// <b>Dissolving is not deleting.</b> A folder holds nothing of its own - no source, no
+        /// symbol, no decision - so taking it away can never cost anybody a decision they made,
+        /// and the two acts have to be told apart on the menu that offers them.
+        /// </summary>
+        /// <param name="folder">The folder.</param>
+        /// <returns>How many lines came loose.</returns>
+        public int DissolveFolder(string? folder) => RenameFolder(folder, null);
+
+        /// <summary>
+        /// Take a folder away and every line in it, on both axes.
+        /// </summary>
+        /// <param name="folder">The folder.</param>
+        /// <returns>How many disciplines went.</returns>
+        public int RemoveFolder(string? folder)
+        {
+            var wanted = (folder ?? string.Empty).Trim();
+
+            if (wanted.Length == 0) return 0;
+
+            var going = _rows.Concat(_columns)
+                             .Where(l => string.Equals(l.Folder, wanted,
+                                                       StringComparison.OrdinalIgnoreCase))
+                             .ToList();
+
+            var went = 0;
+
+            foreach (var line in going)
+            {
+                // RemovePair takes the twin, so a line already gone this way is skipped.
+                if (!_rows.Contains(line) && !_columns.Contains(line)) continue;
+
+                RemovePair(line);
+                went++;
+            }
+
+            return went;
+        }
+
+        /// <summary>
+        /// Put several folders together under one name.
+        ///
+        /// The name they are merged into may be one of them or a new one; either way every line
+        /// in any of them ends up answering to it, on both axes, and next to each other.
+        /// </summary>
+        /// <param name="folders">The folders being merged.</param>
+        /// <param name="into">What the one folder is called.</param>
+        /// <returns>How many lines ended up in it.</returns>
+        public int MergeFolders(IEnumerable<string>? folders, string? into)
+        {
+            var wanted = (into ?? string.Empty).Trim();
+
+            if (wanted.Length == 0 || folders == null) return 0;
+
+            var names = new HashSet<string>(
+                folders.Select(f => (f ?? string.Empty).Trim()).Where(f => f.Length > 0),
+                StringComparer.OrdinalIgnoreCase);
+
+            if (names.Count == 0) return 0;
+
+            var moved = 0;
+
+            foreach (var line in _rows.Concat(_columns))
+            {
+                if (!names.Contains(line.Folder)) continue;
+
+                line.Folder = wanted;
+                moved++;
+            }
+
+            Tidy();
+
+            return moved;
+        }
+
+        /// <summary>
+        /// Put both axes in folder order, so every folder's members sit together.
+        ///
+        /// The folders keep the order their first member is already in, and the loose lines stay
+        /// at the end - so tidying a grid somebody has arranged does not rearrange it, it only
+        /// closes the gaps that filing has opened.
+        /// </summary>
+        public void Tidy()
+        {
+            Tidied(_rows);
+            Tidied(_columns);
+        }
+
+        private static void Tidied(List<MatrixLine> lines)
+        {
+            var order = new List<string>();
+
+            foreach (var line in lines)
+                if (line.Folder.Length > 0
+                    && !order.Any(f => string.Equals(f, line.Folder, StringComparison.OrdinalIgnoreCase)))
+                    order.Add(line.Folder);
+
+            var sorted = lines
+                .OrderBy(l => l.Folder.Length == 0
+                    ? order.Count
+                    : order.FindIndex(f => string.Equals(f, l.Folder, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (sorted.SequenceEqual(lines)) return;
+
+            lines.Clear();
+            lines.AddRange(sorted);
         }
 
         /// <summary>Add a row, and hand it back.</summary>
