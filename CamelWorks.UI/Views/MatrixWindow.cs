@@ -2296,7 +2296,7 @@ namespace CamelWorks.UI.Views
                     // at fifty-five per cent on top of that: two to one against the sheet, which
                     // is a mark that survives neither a projector nor a laptop at an angle nor a
                     // printed page - so the argument for it and the drawing of it disagreed. The
-                    // ink alone, at its own strength, is four and a half to one: subordinate to
+                    // ink at eighty-five per cent is three and a third to one: subordinate to
                     // the semibold letters of the live half without being invisible.
                     cell.Background = System.Windows.Media.Brushes.Transparent;
                     cell.Opacity = Dimmed(symbol);
@@ -2309,6 +2309,11 @@ namespace CamelWorks.UI.Views
                             FontSize = 11,
                             HorizontalAlignment = HorizontalAlignment.Center,
                             VerticalAlignment = VerticalAlignment.Center,
+
+                            // Eighty-five per cent, which is three and a third to one: quieter
+                            // than the half that is live, and still a mark rather than a hint of
+                            // one. Fifty-five was two to one, which is what a projector loses.
+                            Opacity = 0.85,
                         }.Wearing("Faint");
 
                     var pair = _board.MirrorOf(row, column);
@@ -2351,7 +2356,7 @@ namespace CamelWorks.UI.Views
                     ? new Thickness(0, 0, 2, 2)
                     : new Thickness(0, 0, 1, 1);
 
-                cell.Tint(Border.BorderBrushProperty, self ? "BdStrong" : "Bd");
+                cell.Tint(Border.BorderBrushProperty, self ? "SpineBd" : "Bd");
 
                 if (MatrixBoard.IsNotRequired(symbol))
                 {
@@ -2380,7 +2385,7 @@ namespace CamelWorks.UI.Views
 
                 if (symbol == null)
                 {
-                    if (self) cell.Tint(Border.BackgroundProperty, "Nav");
+                    if (self) cell.Tint(Border.BackgroundProperty, "Spine");
                     else cell.Background = System.Windows.Media.Brushes.Transparent;
 
                     cell.ToolTip = at + " · "
@@ -2425,9 +2430,21 @@ namespace CamelWorks.UI.Views
                     // cell reads in greyscale, on a projector and to anybody who does not see
                     // these hues apart - colour is the channel that makes the pattern scannable,
                     // never the one that carries the meaning.
-                    cell.Background = Skin.Symbol(Hue(symbol));
-
-                    if (self) text.FontStyle = FontStyles.Italic;
+                    //
+                    // <b>Except down the diagonal, which is one line and keeps one colour.</b>
+                    // The spine is the axis the whole grid is mirrored about; broken into
+                    // twenty-two different washes it stops being a line at all, and a self-pair
+                    // is a different kind of decision from the two hundred around it. The letter
+                    // still says which test it is, in italics, as it always did.
+                    if (self)
+                    {
+                        cell.Tint(Border.BackgroundProperty, "Spine");
+                        text.FontStyle = FontStyles.Italic;
+                    }
+                    else
+                    {
+                        cell.Background = Skin.Symbol(Hue(symbol));
+                    }
 
                     cell.ToolTip = at + " · "
                                    + (self

@@ -331,6 +331,14 @@ namespace CamelWorks.UI.Views
             ("Sym.G",       "#E9F2CE", "#29331A"),
             ("Sym.H",       "#E2E6EC", "#2B3138"),
 
+            // <b>The diagonal is not a symbol and must not be drawn as one.</b> A discipline
+            // against itself is the spine of the grid - the line every pair is mirrored about -
+            // and it was drawn on the same grey that now means "this makes no test", which is
+            // the one thing a live self-pair is not. Deeper than any symbol wash and neutral
+            // against all of them, so it reads as structure rather than as a decision.
+            ("Spine",       "#CBD5E3", "#33404F"),
+            ("SpineBd",     "#9FB0C4", "#4A5A6D"),
+
             // The family hues lift in dark rather than staying put: a #0F766E teal that reads as a
             // considered green on white is a smudge on #23272E.
             ("Fam.Home",       "#57616C", "#94A0AC"),
