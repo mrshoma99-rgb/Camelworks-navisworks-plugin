@@ -1039,8 +1039,15 @@ namespace CamelWorks.UI.Views
                 {
                     if (_board.Columns.Count == 0) return false;
 
+                    // <b>Room to spare, not room exactly.</b> Measured against the column to the
+                    // pixel, a name that just fits is a name drawn hard against both edges of its
+                    // cell - and one measured a shade short of what it draws at is a name with
+                    // its tail cut off. A column narrower than this is not somewhere a horizontal
+                    // name belongs anyway; below it they turn, which is what the turning is for.
+                    if (CellWide < 64) return false;
+
                     foreach (var line in _board.Columns)
-                        if (Measured(line.Name) + 8 > CellWide) return false;
+                        if (Measured(line.Name) + 18 > CellWide) return false;
 
                     return true;
                 }
@@ -1318,6 +1325,10 @@ namespace CamelWorks.UI.Views
                         Remember(what: "adding the row " + Quoted(name));
 
                         _board.AddRow(new MatrixLine(name, Next(_board.Rows)));
+
+                        // The first name typed brings a column with it, for the same reason the
+                        // first row does: until there is one there are no pairs and no grid.
+                        if (_board.Columns.Count == 0) _board.SquareOffRows();
 
                         Seed();
 
@@ -2053,6 +2064,13 @@ namespace CamelWorks.UI.Views
                         TextAlignment = TextAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis,
                         TextWrapping = TextWrapping.NoWrap,
+
+                        // Said outright rather than left to the layout. A centred block asks for
+                        // the width its own words want, and what it is then given depends on what
+                        // is around it - so the one thing that must be true, that the words stop
+                        // at the column's edge, was the one thing nothing was stating.
+                        MaxWidth = Math.Max(16, CellWide - 8),
+
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Bottom,
                         Margin = new Thickness(2, 0, 2, 5),
@@ -3338,6 +3356,19 @@ namespace CamelWorks.UI.Views
                 var made = new MatrixLine("New row", Next(_board.Rows));
 
                 _board.AddRow(made);
+
+                // <b>The first row by hand landed on a screen with no editor on it.</b> A row
+                // with nothing across the top is the "nothing across the top yet" state, and that
+                // state is two buttons - so the header you would press to name the row, the panel
+                // that would name it and the box you type the next nineteen into were all in the
+                // frame, and the frame was not on the screen. There was no way to edit the one
+                // thing the press had just made.
+                //
+                // A matrix needs both axes before it is a matrix, so the first row brings its
+                // column. After that the two lists go their own way again: adding row two leaves
+                // the columns alone, and "make the columns match the rows" squares them off when
+                // the names are settled.
+                if (_board.Columns.Count == 0) _board.SquareOffRows();
 
                 Seed();
                 Redraw();
