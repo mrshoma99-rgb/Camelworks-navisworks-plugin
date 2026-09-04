@@ -496,13 +496,13 @@ namespace CamelWorks.UI.Views
                 // symbols; the two things you do to the legend itself must not scroll away with
                 // them, because "add a symbol" is what somebody reaches for when the one they
                 // want is not in the list they are looking at.
-                var legend = new WrapPanel { Margin = new Thickness(7, 0, 7, 6) };
+                var legend = Ui.Across(
+                    Doable(Glyphs.Add, "Add a symbol to the legend", AddSymbol),
+                    Doable(Glyphs.Tick,
+                           "Give every symbol in the grid a meaning, if any of them has none",
+                           CoverSymbols));
 
-                legend.Children.Add(Doable(Glyphs.Add, "Add a symbol to the legend", AddSymbol));
-
-                legend.Children.Add(Doable(Glyphs.Tick,
-                    "Give every symbol in the grid a meaning, if any of them has none",
-                    CoverSymbols));
+                legend.Margin = new Thickness(7, 0, 7, 4);
 
                 keys.Children.Add(legend);
 
@@ -3115,28 +3115,9 @@ namespace CamelWorks.UI.Views
             /// <param name="onPress">Does it.</param>
             /// <param name="danger">True for the ones that take something away.</param>
             private static System.Windows.Controls.Button Doable(string glyph, string tip,
-                                                                 Action onPress,
-                                                                 bool danger = false)
-            {
-                var act = Ui.Icon(glyph, tip, onPress);
-
-                // Red, so the one that removes something is not the same object as the four
-                // beside it that do not. A row of identical symbols where one of them deletes is
-                // a row where the wrong one gets pressed.
-                if (danger) act.Content = Ui.Glyph(Glyphs.Bin, 15, "RedTx");
-
-                return act;
-            }
-
-            /// <summary>A row of them, across the panel.</summary>
-            private WrapPanel Doings()
-            {
-                var acts = new WrapPanel { Margin = new Thickness(0, 6, 0, 2) };
-
-                _inspector.Children.Add(acts);
-
-                return acts;
-            }
+                                                                 Action? onPress,
+                                                                 bool danger = false) =>
+                Ui.Icon(glyph, tip, onPress, danger ? "RedTx" : "Muted");
 
             /// <summary>A row or a column: what it is called, and what it points at.</summary>
             /// <param name="line">The row or column.</param>
@@ -3259,16 +3240,15 @@ namespace CamelWorks.UI.Views
                 source.Child = says;
                 _inspector.Children.Add(source);
 
-                var acts = Doings();
+                // The button is its own anchor: a menu hung off the panel would open somewhere
+                // else on the screen entirely. It can be, now that the primitive admits a
+                // handler added after the fact rather than demanding one it then null-checks.
+                var elsewhere = Doable(Glyphs.Focus, "Point it at something else", null);
 
-                // Built first so the menu can hang off the button that opened it, rather than
-                // off the panel, which would put it somewhere else on the screen entirely.
-                var elsewhere = new Border();
+                elsewhere.Click += (s, e) =>
+                    Ui.Safely(() => Parts.PopMenu(elsewhere, SourceMenu(line)));
 
-                elsewhere.Child = Doable(Glyphs.Focus, "Point it at something else",
-                                         () => Parts.PopMenu(elsewhere, SourceMenu(line)));
-
-                acts.Children.Add(elsewhere);
+                System.Windows.Controls.Button? filling = null;
 
                 var live = 0;
                 var done = 0;
@@ -3334,7 +3314,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (_brush != null)
-                    acts.Children.Add(Doable(Glyphs.Add,
+                    filling = Doable(Glyphs.Add,
                         "Fill the rest of this " + what + " with " + Quoted(_brush.Symbol), () =>
                     {
                         Remember(what: "filling the rest of that " + what);
@@ -3355,9 +3335,9 @@ namespace CamelWorks.UI.Views
 
                         Reported(laid, Quoted(_brush.Symbol) + " put in",
                                  "empty cell of this " + what);
-                    }));
+                    });
 
-                acts.Children.Add(Doable(Glyphs.Close, "Clear the whole " + what, () =>
+                var clearing = Doable(Glyphs.Close, "Clear the whole " + what, () =>
                 {
                     Remember(what: "clearing that " + what);
 
@@ -3376,12 +3356,12 @@ namespace CamelWorks.UI.Views
                     }
 
                     Reported(cleared, "Cleared", "cell of this " + what);
-                }));
+                });
 
                 // <b>Twenty disciplines are rarely twenty different things.</b> Half a matrix is
                 // the same package split by level or by area, and typing the whole row again to
                 // change one word in it is the sort of work a tool is supposed to remove.
-                acts.Children.Add(Doable(Glyphs.Copy,
+                var copying = Doable(Glyphs.Copy,
                     "Duplicate this " + what + ", source and all", () =>
                 {
                     Remember(what: "duplicating " + Quoted(line.Titled));
@@ -3406,9 +3386,9 @@ namespace CamelWorks.UI.Views
 
                     Redraw();
                     Pick(copy, rows);
-                }));
+                });
 
-                acts.Children.Add(Doable(Glyphs.Bin, "Take this " + what + " out", () =>
+                var removing = Doable(Glyphs.Bin, "Take this " + what + " out", () =>
                 {
                     Remember(what: "taking out " + Quoted(line.Titled));
 
@@ -3417,7 +3397,12 @@ namespace CamelWorks.UI.Views
                     _picked = null;
 
                     Redraw();
-                }, danger: true));
+                }, danger: true);
+
+                // Across, which is the house way of laying a row out and skips whatever is not
+                // there - so the fill appears only when something is on the brush, without the
+                // row being built two different ways.
+                _inspector.Children.Add(Ui.Across(elsewhere, filling, clearing, copying, removing));
             }
 
             /// <summary>One symbol: what it means, which every cell carrying it follows.</summary>
@@ -3465,9 +3450,7 @@ namespace CamelWorks.UI.Views
 
                 _inspector.Children.Add(gap);
 
-                var doing = Doings();
-
-                doing.Children.Add(Doable(Glyphs.Table, "Put it in every cell of the matrix", () =>
+                var everywhere = Doable(Glyphs.Table, "Put it in every cell of the matrix", () =>
                     Parts.Sure(_grid,
                         "This puts " + Quoted(symbol.Symbol) + " in every cell of the matrix, "
                         + "over everything already decided. The diagonal is left alone.",
@@ -3480,12 +3463,13 @@ namespace CamelWorks.UI.Views
 
                             Said(Ui.Done("The grid is filled with " + Quoted(symbol.Symbol)
                                          + ". Undo takes it back."));
-                        })));
+                        }));
 
-                doing.Children.Add(Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol)
-                    + " out of the legend",
-                    () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled, drop: true),
-                    danger: true));
+                _inspector.Children.Add(Ui.Across(everywhere,
+                    Doable(Glyphs.Bin, "Take " + Quoted(symbol.Symbol) + " out of the legend",
+                        () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
+                                    drop: true),
+                        danger: true)));
             }
 
             /// <summary>One cell, and the symbols that can go in it without a menu.</summary>

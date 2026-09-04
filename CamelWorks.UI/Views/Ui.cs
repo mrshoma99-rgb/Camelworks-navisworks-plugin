@@ -1390,13 +1390,20 @@ namespace CamelWorks.UI.Views
         /// <param name="glyph">One of <see cref="Glyphs"/>.</param>
         /// <param name="tip">What it does, as a tooltip. Row buttons have no caption to read.</param>
         /// <param name="onClick">What it does.</param>
-        public static System.Windows.Controls.Button Icon(string glyph, string tip, Action onClick)
+        /// <param name="tint">
+        /// Which ink the symbol is drawn in. Muted for nearly all of them - a row of icons is a
+        /// row of equals - and a warning colour for the one that takes something away, because a
+        /// row of identical symbols where one of them deletes is a row where the wrong one gets
+        /// pressed, and a tip only helps somebody who waited for it.
+        /// </param>
+        public static System.Windows.Controls.Button Icon(string glyph, string tip,
+                                                          Action? onClick, string tint = "Muted")
         {
             var button = new System.Windows.Controls.Button
             {
                 // Through Glyph, not Arrow: a raw path draws at its own 24-unit size, which inside
                 // a 26-pixel button is a cross that fills the row it is meant to sit beside.
-                Content = Glyph(glyph, 15, "Muted"),
+                Content = Glyph(glyph, 15, tint),
                 ToolTip = tip,
             };
 
