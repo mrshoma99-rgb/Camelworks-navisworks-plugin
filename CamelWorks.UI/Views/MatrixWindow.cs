@@ -143,6 +143,26 @@ namespace CamelWorks.UI.Views
             /// <summary>The three-part frame, built once and kept across redraws.</summary>
             private UIElement? _frame;
 
+            /// <summary>
+            /// The two side panels, which give their width back when there is not enough.
+            ///
+            /// <b>Four hundred and forty pixels of them, and they never moved.</b> Docked beside
+            /// the Clash Detective at eleven or twelve hundred, that left about a third of the
+            /// window for the grid the panels are there to serve - so the frozen headers, whose
+            /// whole job is to keep the names beside the cells, were keeping them beside seven
+            /// columns. The inspector goes first because it is about one line at a time and the
+            /// grid is about all of them; the palette holds on longer because it is what the
+            /// hand is using.
+            /// </summary>
+            private readonly Border _railPane = new Border();
+
+            private readonly Border _sidePane = new Border();
+
+            /// <summary>Whether each is open, and whether somebody said so themselves.</summary>
+            private bool _railOpen = true;
+            private bool _sideOpen = true;
+            private bool _byHand;
+
             /// <summary>Where the keyboard is, or -1 for nowhere.</summary>
             private int _atRow = -1;
             private int _atColumn = -1;
@@ -393,42 +413,50 @@ namespace CamelWorks.UI.Views
                 });
                 three.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                var rail = new Border
-                {
-                    Width = 190,
-                    BorderThickness = new Thickness(0, 0, 1, 0),
-                    Child = Rail(),
-                };
+                _railPane.Width = 190;
+                _railPane.BorderThickness = new Thickness(0, 0, 1, 0);
+                _railPane.Child = Rail();
 
-                rail.Tint(Border.BackgroundProperty, "Pane");
-                rail.Tint(Border.BorderBrushProperty, "Bd");
+                _railPane.Tint(Border.BackgroundProperty, "Pane");
+                _railPane.Tint(Border.BorderBrushProperty, "Bd");
 
-                Grid.SetColumn(rail, 0);
-                three.Children.Add(rail);
+                Grid.SetColumn(_railPane, 0);
+                three.Children.Add(Ui.Loose(_railPane));
 
                 var middle = Middle();
 
                 Grid.SetColumn(middle, 1);
                 three.Children.Add(middle);
 
-                var side = new Border
+                _sidePane.Width = 252;
+                _sidePane.BorderThickness = new Thickness(1, 0, 0, 0);
+                _sidePane.Child = new ScrollViewer
                 {
-                    Width = 252,
-                    BorderThickness = new Thickness(1, 0, 0, 0),
-                    Child = new ScrollViewer
-                    {
-                        Content = Ui.Loose(_inspector),
-                        Padding = new Thickness(10, 8, 10, 10),
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    },
+                    Content = Ui.Loose(_inspector),
+                    Padding = new Thickness(10, 8, 10, 10),
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 };
 
-                side.Tint(Border.BackgroundProperty, "Pane");
-                side.Tint(Border.BorderBrushProperty, "Bd");
+                _sidePane.Tint(Border.BackgroundProperty, "Pane");
+                _sidePane.Tint(Border.BorderBrushProperty, "Bd");
 
-                Grid.SetColumn(side, 2);
-                three.Children.Add(side);
+                Grid.SetColumn(_sidePane, 2);
+                three.Children.Add(Ui.Loose(_sidePane));
+
+                // Narrow enough and the inspector stands aside on its own, until somebody says
+                // otherwise - after which it is theirs and the window stops arguing about it.
+                three.SizeChanged += (s, e) => Ui.Safely(() =>
+                {
+                    if (_byHand || e.NewSize.Width <= 0) return;
+
+                    var room = e.NewSize.Width >= 1200;
+
+                    if (room == _sideOpen) return;
+
+                    _sideOpen = room;
+                    RedrawPanes();
+                });
 
                 _frame = three;
 
@@ -737,20 +765,50 @@ namespace CamelWorks.UI.Views
                 NameWide + (Numbered(_board.Rows) ? NumberWide : 0)
                          + (Coded(_board.Rows) ? CodeWide : 0);
 
-            /// <summary>Whether any of these lines carries a number of its own.</summary>
+            /// <summary>
+            /// Whether the numbers are worth a column of their own.
+            ///
+            /// <b>Not whether they exist - whether they say anything.</b> Rows made from saved
+            /// sets are numbered 01, 02, 03 down the list, which is what the index gutter beside
+            /// them already says, so the matrix paid thirty pixels a row to print the same number
+            /// twice twenty-four pixels apart. The moment one of them is 19 against an ordinal of
+            /// 20 - a row taken out, a package renumbered - they are saying two different things
+            /// and the column comes back.
+            /// </summary>
             /// <param name="lines">The rows or the columns.</param>
             private static bool Numbered(IReadOnlyList<MatrixLine> lines)
             {
-                foreach (var line in lines) if (line.Number.Length > 0) return true;
+                for (var at = 0; at < lines.Count; at++)
+                {
+                    var said = lines[at].Number;
 
+                    if (said.Length == 0) continue;
+
+                    if (!int.TryParse(said, NumberStyles.None, CultureInfo.InvariantCulture,
+                                      out var held) || held != at + 1)
+                        return true;
+                }
+
+                // Every number there is agrees with the position it sits at, so the index gutter
+                // beside it is already saying it.
                 return false;
             }
 
-            /// <summary>Whether any of these lines carries a discipline code.</summary>
+            /// <summary>
+            /// Whether the codes are worth a column of their own.
+            ///
+            /// A code is a discipline's short form and a set is nearly always named after it:
+            /// "WSC" in front of "WSC_Pipes" is the same three letters twice on a row that has
+            /// no width to spare. A code that is not already the front of its name is telling
+            /// you something the name does not, and keeps its column.
+            /// </summary>
             /// <param name="lines">The rows or the columns.</param>
             private static bool Coded(IReadOnlyList<MatrixLine> lines)
             {
-                foreach (var line in lines) if (line.Code.Length > 0) return true;
+                foreach (var line in lines)
+                    if (line.Code.Length > 0
+                        && !line.Name.StartsWith(line.Code, StringComparison.OrdinalIgnoreCase))
+                        return true;
 
                 return false;
             }
@@ -2853,6 +2911,20 @@ namespace CamelWorks.UI.Views
 
                 Say(Saying(), 16);
 
+                Say(Ui.Quiet(_railOpen ? "Hide the palette" : "Palette", () =>
+                {
+                    _byHand = true;
+                    _railOpen = !_railOpen;
+                    RedrawPanes();
+                }), 16);
+
+                Say(Ui.Quiet(_sideOpen ? "Hide the inspector" : "Inspector", () =>
+                {
+                    _byHand = true;
+                    _sideOpen = !_sideOpen;
+                    RedrawPanes();
+                }), 4);
+
                 var back = Ui.Quiet("Undo", Undo);
 
                 back.IsEnabled = _past.Count > 0;
@@ -2870,6 +2942,15 @@ namespace CamelWorks.UI.Views
                     : "Put back " + _future.Peek().What;
 
                 Say(on, 4);
+            }
+
+            /// <summary>Show or hide the two side panels, and say so on the strip.</summary>
+            private void RedrawPanes()
+            {
+                _railPane.Visibility = _railOpen ? Visibility.Visible : Visibility.Collapsed;
+                _sidePane.Visibility = _sideOpen ? Visibility.Visible : Visibility.Collapsed;
+
+                RedrawStrip();
             }
 
             /// <summary>Whether the matrix is safe, in the fewest words that are true.</summary>
