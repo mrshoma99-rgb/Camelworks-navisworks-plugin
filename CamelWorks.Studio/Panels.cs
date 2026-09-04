@@ -5,6 +5,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using CamelWorks.Core.Project;
+using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
 using CamelWorks.UI.Views;
 
@@ -37,7 +39,35 @@ namespace CamelWorks.Studio
             Page("app-scenes-appearance", "Scene Kit · Appearance", 780, Appearance),
             Page("app-scenes-viewpoints", "Scene Kit · Viewpoints", 780, Scenes),
             Page("app-automate-jobs", "Automate · Jobs", 780, Deliver),
+
+            // <b>The one page here that is the shipping screen rather than a drawing of it.</b>
+            // Every other page composes the real controls into an arrangement written here, which
+            // catches a wrong colour or a clipped word but cannot catch a fault in the layout code
+            // itself - and the matrix's faults have all been in the layout code: a header sized
+            // without its own padding, a rotated name given a box longer than the space it has, a
+            // folder band collapsed to no height at all. None of those are visible in an
+            // arrangement written by hand, because the hand writes what it meant.
+            //
+            // MatrixWindow.Surface takes a seat now, so this is the tab itself, measured by WPF at
+            // the width WPF gives it, in the font it will really be read in.
+            Page("app-clash-matrix", "Clash Manager · Matrix", 820,
+                 () => MatrixWindow.Surface(Seated())),
         };
+
+        /// <summary>
+        /// A seat with nothing in it, and a scratch project beside the images.
+        ///
+        /// <b>Empty on purpose.</b> This is the state a screen faces before a document is open,
+        /// and the one nobody remembers to check - so it is the one the harness draws. A screen
+        /// that reads badly here reads badly on somebody's first minute of the day.
+        /// </summary>
+        private static ISeat Seated() => new EmptySeat(
+            ProjectStore.Open(PhysicalFileSystem.Instance,
+                              System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                     "camelworks-shots", "shots.nwf"),
+                              System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+                                                     "camelworks-shots")),
+            Host.WithoutClash());
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };

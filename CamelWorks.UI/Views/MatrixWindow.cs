@@ -46,9 +46,15 @@ namespace CamelWorks.UI.Views
         private static string _pattern = MatrixNaming.Default;
         private static string _folder = string.Empty;
 
-        /// <summary>The surface, for a desk to bench.</summary>
-        /// <param name="session">The open document.</param>
-        public static UIElement Surface(Session session) => new Editor(session).View;
+        /// <summary>
+        /// The tab, on whatever seat it is running in.
+        ///
+        /// Takes a seat rather than a Session, which is what lets the render harness build this
+        /// screen - the shipping screen, not a drawing of it - without Navisworks anywhere near
+        /// the machine.
+        /// </summary>
+        /// <param name="seat">The host it is running in.</param>
+        public static UIElement Surface(ISeat seat) => new Editor(seat).View;
 
         /// <summary>Which slot of the project file the matrix is kept in.</summary>
         private const string Slot = "clashmatrix";
@@ -56,7 +62,7 @@ namespace CamelWorks.UI.Views
         /// <summary>One editing session over the matrix.</summary>
         private sealed class Editor
         {
-            private readonly Session _session;
+            private readonly ISeat _session;
 
             /// <summary>
             /// How this matrix is drawn: which half is worked in, what things are coloured, and
@@ -345,7 +351,7 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<(MatrixLine Row, MatrixLine Column), Border> _cells =
                 new Dictionary<(MatrixLine, MatrixLine), Border>();
 
-            internal Editor(Session session)
+            internal Editor(ISeat session)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
 
@@ -4155,11 +4161,7 @@ namespace CamelWorks.UI.Views
             {
                 try
                 {
-                    var keys = _session.Model.Traverse(TraversalScope.CurrentSelection)
-                                             .Select(i => i.Key)
-                                             .Where(k => !k.IsEmpty)
-                                             .Distinct()
-                                             .ToList();
+                    var keys = _session.Selected();
 
                     if (keys.Count == 0)
                     {
@@ -4189,13 +4191,11 @@ namespace CamelWorks.UI.Views
                 {
                     var seen = 0;
 
-                    foreach (var item in _session.Model.Traverse(TraversalScope.WholeDocument))
+                    foreach (var key in _session.Visible())
                     {
                         if (!job.Step(++seen, "elements read")) return;
 
-                        if (item.IsHidden || !item.HasGeometry || item.Key.IsEmpty) continue;
-
-                        keys.Add(item.Key);
+                        keys.Add(key);
                     }
                 });
 
@@ -8129,14 +8129,12 @@ namespace CamelWorks.UI.Views
                     // The document's own list, which it answers instantly. A search set is one
                     // the host holds as a query rather than as a fixed list of items, and the
                     // difference matters: a search set re-runs every time the test does.
-                    return _session.Model.SetsInFolders()
+                    return _session.Sets()
                         .Select(held => new SetLine(
-                            held.Set.DisplayName ?? string.Empty,
+                            held.Name,
                             held.Folder,
-                            !held.Set.HasExplicitModelItems,
-                            held.Set.HasExplicitModelItems && held.Set.ExplicitModelItems != null
-                                ? held.Set.ExplicitModelItems.Count
-                                : 0))
+                            held.IsSearch,
+                            held.Members))
                         .Where(s => s.Name.Length > 0)
 
                         // Two sets with the same name in two folders are two sets, and this used
@@ -8172,8 +8170,7 @@ namespace CamelWorks.UI.Views
             {
                 try
                 {
-                    return _session.Model.Models
-                        .Select(m => m.DisplayName)
+                    return _session.Models()
                         .Where(n => !string.IsNullOrWhiteSpace(n))
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .OrderBy(n => n, StringComparer.CurrentCulture)
