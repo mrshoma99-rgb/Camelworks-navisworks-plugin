@@ -50,8 +50,8 @@ namespace CamelWorks.UI.Views
         /// <param name="session">The open document.</param>
         public static UIElement Surface(Session session) => new Editor(session).View;
 
-        /// <summary>Where the matrix is kept in the project file.</summary>
-        private const string Kept = "clashmatrix";
+        /// <summary>Which slot of the project file the matrix is kept in.</summary>
+        private const string Slot = "clashmatrix";
 
         /// <summary>One editing session over the matrix.</summary>
         private sealed class Editor
@@ -166,6 +166,31 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The run of edits the last remembering was for, or empty.</summary>
             private string _remembered = string.Empty;
+
+            /// <summary>
+            /// Saving, on its own, a few seconds after the last thing anybody did.
+            ///
+            /// <b>An afternoon's matrix was one closed window from gone.</b> The only save was a
+            /// line in a menu called "Out", nothing said whether it had ever been used, and
+            /// nothing asked on the way out - so a grid a kick-off meeting argued over for two
+            /// hours lived in memory until somebody remembered a menu. A matrix is a document,
+            /// and a document saves itself.
+            ///
+            /// Quiet on the way through: a save that announces itself twenty times an afternoon
+            /// is a save nobody reads. The strip says when it last happened; only a failure
+            /// interrupts.
+            /// </summary>
+            private readonly System.Windows.Threading.DispatcherTimer _saver =
+                new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(3),
+                };
+
+            /// <summary>When the matrix was last written to the project file.</summary>
+            private DateTime? _saved;
+
+            /// <summary>Why the last save did not happen, or null.</summary>
+            private string? _unsaved;
             /// <summary>
             /// What the last act had to say, in a strip that can be put away.
             ///
@@ -192,6 +217,12 @@ namespace CamelWorks.UI.Views
                 _session = session ?? throw new ArgumentNullException(nameof(session));
 
                 Load();
+
+                _saver.Tick += (s, e) => Ui.Safely(() =>
+                {
+                    _saver.Stop();
+                    Kept(quiet: true);
+                });
 
                 // The notices go in the body, not beside the title.
                 //
@@ -1831,6 +1862,19 @@ namespace CamelWorks.UI.Views
                 Recount();
             }
 
+            /// <summary>
+            /// Something changed: save in a few seconds, unless something else changes first.
+            ///
+            /// Restarting the timer on every act is the point. Twenty cells dragged in four
+            /// seconds is one save rather than twenty, and the file is written when the hand
+            /// stops.
+            /// </summary>
+            private void Touched()
+            {
+                _saver.Stop();
+                _saver.Start();
+            }
+
             private void Recount()
             {
                 var plan = MatrixPlanner.Plan(_board, _legend, _pattern);
@@ -2607,6 +2651,8 @@ namespace CamelWorks.UI.Views
                     _naming.Focus();
                 }), 16);
 
+                Say(Saying(), 16);
+
                 var back = Ui.Quiet("Undo", Undo);
 
                 back.IsEnabled = _past.Count > 0;
@@ -2616,6 +2662,28 @@ namespace CamelWorks.UI.Views
 
                 on.IsEnabled = _future.Count > 0;
                 Say(on, 4);
+            }
+
+            /// <summary>Whether the matrix is safe, in the fewest words that are true.</summary>
+            private UIElement Saying()
+            {
+                if (_unsaved != null)
+                {
+                    var bad = Ui.Small("Not saved — " + _unsaved);
+
+                    bad.Tint(TextBlock.ForegroundProperty, "RedTx");
+
+                    return bad;
+                }
+
+                if (_saved == null) return Ui.Small("Saving as you go");
+
+                var said = Ui.Small("Saved "
+                    + _saved.Value.ToString("HH:mm", CultureInfo.CurrentCulture));
+
+                said.Tint(TextBlock.ForegroundProperty, "Ok");
+
+                return said;
             }
 
             /// <summary>
@@ -3237,6 +3305,8 @@ namespace CamelWorks.UI.Views
 
                 _remembered = run;
 
+                Touched();
+
                 _past.Push(Held());
                 _future.Clear();
 
@@ -3462,6 +3532,7 @@ namespace CamelWorks.UI.Views
                             _pattern = string.IsNullOrWhiteSpace(typed)
                                 ? MatrixNaming.Default : typed.Trim();
 
+                            Touched();
                             Recount();
                         })),
 
@@ -3476,12 +3547,16 @@ namespace CamelWorks.UI.Views
                             if (token == null) return;
 
                             _pattern = (_pattern + " " + token.Token).Trim();
+
+                            Touched();
                             Recount();
                         })),
 
                 Parts.Entry.Act("Back to the plain one", Glyphs.Close, () =>
                 {
                     _pattern = MatrixNaming.Default;
+
+                    Touched();
                     Recount();
                 }),
 
@@ -3493,6 +3568,8 @@ namespace CamelWorks.UI.Views
                                     "Use it", typed =>
                                     {
                                         _folder = (typed ?? string.Empty).Trim();
+
+                                        Touched();
                                         Recount();
                                     })),
             };
@@ -3857,7 +3934,16 @@ namespace CamelWorks.UI.Views
             // Keeping it
             // ---------------------------------------------------------------------------
 
-            private void Keep()
+            /// <summary>Save it, and say so.</summary>
+            private void Keep() => Kept(quiet: false);
+
+            /// <summary>Write the matrix into the project file.</summary>
+            /// <param name="quiet">
+            /// True for a save nobody asked for. It still reports a failure - a matrix that has
+            /// silently stopped saving is worse than one that never saved - but it does not
+            /// interrupt to say that it worked.
+            /// </param>
+            private void Kept(bool quiet)
             {
                 var json = JsonValue.Object();
 
@@ -3870,24 +3956,52 @@ namespace CamelWorks.UI.Views
 
                 try
                 {
-                    _session.Store.Section(ProjectStore.ClashSection).Set(Kept, json);
+                    _session.Store.Section(ProjectStore.ClashSection).Set(Slot, json);
 
-                    Said(_session.Store.Save()
-                        ? Ui.Done("Saved. The matrix is here the next time this project opens.")
-                        : Ui.Problem(_session.Store.LastSaveProblem
-                                     ?? "The project file could not be written."));
+                    if (_session.Store.Save())
+                    {
+                        _saved = DateTime.Now;
+                        _unsaved = null;
+
+                        if (!quiet)
+                            Said(Ui.Done("Saved. The matrix is here the next time this project "
+                                         + "opens."));
+                    }
+                    else
+                    {
+                        Trouble(_session.Store.LastSaveProblem
+                                ?? "The project file could not be written.");
+                    }
                 }
                 catch (Exception e)
                 {
-                    Warned(Ui.Problem("It could not be saved: " + Ui.Describe(e)));
+                    Trouble(Ui.Describe(e));
                 }
+
+                RedrawStrip();
+            }
+
+            /// <summary>
+            /// A save did not happen. Say so once, and keep saying so in the strip.
+            ///
+            /// Once, because the timer tries again in three seconds and a locked project file
+            /// would otherwise fill the notices with the same line twenty times a minute.
+            /// </summary>
+            /// <param name="why">What went wrong.</param>
+            private void Trouble(string why)
+            {
+                var first = _unsaved == null;
+
+                _unsaved = why;
+
+                if (first) Warned(Ui.Problem("The matrix is not being saved: " + why));
             }
 
             private void Load()
             {
                 try
                 {
-                    var json = _session.Store.Section(ProjectStore.ClashSection)[Kept];
+                    var json = _session.Store.Section(ProjectStore.ClashSection)[Slot];
 
                     if (json == null || json.Kind != JsonKind.Object) return;
 
