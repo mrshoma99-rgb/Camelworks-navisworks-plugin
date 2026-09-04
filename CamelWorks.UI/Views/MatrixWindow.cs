@@ -160,9 +160,27 @@ namespace CamelWorks.UI.Views
             /// board and the legend together, because an edit to a symbol changes what every
             /// cell carrying it means.
             /// </summary>
-            private readonly Stack<JsonValue> _past = new Stack<JsonValue>();
+            private readonly Stack<Doing> _past = new Stack<Doing>();
 
-            private readonly Stack<JsonValue> _future = new Stack<JsonValue>();
+            private readonly Stack<Doing> _future = new Stack<Doing>();
+
+            /// <summary>
+            /// One thing somebody did, and the matrix as it was before they did it.
+            ///
+            /// <b>Undo used to say nothing at all.</b> A press, the grid changes, and no word
+            /// anywhere about what came back - so on a matrix of five hundred cells the only way
+            /// to know whether the right thing was undone was to find the cell again and look at
+            /// it. What it was is recorded when it happens, which is the only moment anybody
+            /// knows.
+            /// </summary>
+            private sealed class Doing
+            {
+                internal Doing(JsonValue held, string what) { Held = held; What = what; }
+
+                internal JsonValue Held { get; }
+
+                internal string What { get; }
+            }
 
             /// <summary>The run of edits the last remembering was for, or empty.</summary>
             private string _remembered = string.Empty;
@@ -343,6 +361,20 @@ namespace CamelWorks.UI.Views
                 stack.Children.Add(top);
 
                 stack.Children.Add(Ui.Loose(_grid));
+
+                // <b>Undo belongs to the screen, not to the grid.</b> It was bound to the cells'
+                // own scroller, so it worked while the pointer had last touched a cell and did
+                // nothing at all while somebody was in the inspector, the palette or the box
+                // that makes rows - which is exactly where the edits it needs to take back are
+                // made. On the bubbling event rather than the preview one, so a text box being
+                // typed into still gets its own undo first and keeps it.
+                stack.KeyDown += (s, e) => Ui.Safely(() =>
+                {
+                    if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
+
+                    if (e.Key == Key.Z) { Undo(); e.Handled = true; }
+                    else if (e.Key == Key.Y) { Redo(); e.Handled = true; }
+                });
 
                 return stack;
             }
@@ -988,7 +1020,7 @@ namespace CamelWorks.UI.Views
 
                         if (name.Length == 0) return;
 
-                        Remember();
+                        Remember(what: "adding the row " + Quoted(name));
 
                         _board.AddRow(new MatrixLine(name, Next(_board.Rows)));
 
@@ -1117,7 +1149,7 @@ namespace CamelWorks.UI.Views
 
                         // In the order the model lists them, not the order they were ticked, so
                         // the matrix comes out alphabetical like the picker was.
-                        Remember();
+                        Remember(what: "adding rows from the saved sets");
 
                         foreach (var set in sets)
                         {
@@ -1653,7 +1685,7 @@ namespace CamelWorks.UI.Views
 
                     // One remembering per gesture, not one per cell: a drag across twenty cells
                     // is one thing somebody did and one press of undo should take it back.
-                    Remember();
+                    Remember(what: "painting cells");
                     Daub(row, column);
                 });
 
@@ -1754,7 +1786,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                Remember();
+                Remember(what: "filling that " + (rows ? "row" : "column"));
 
                 var laid = 0;
 
@@ -2148,7 +2180,7 @@ namespace CamelWorks.UI.Views
 
                         if (from < 0 || to < 0) return;
 
-                        Remember();
+                        Remember(what: "moving that " + (rows ? "row" : "column"));
 
                         if (rows) _board.MoveRow(from, to); else _board.MoveColumn(from, to);
 
@@ -2177,7 +2209,7 @@ namespace CamelWorks.UI.Views
 
             private void AddRow()
             {
-                Remember();
+                Remember(what: "adding a row");
 
                 _board.AddRow(new MatrixLine("New row", Next(_board.Rows)));
 
@@ -2187,7 +2219,7 @@ namespace CamelWorks.UI.Views
 
             private void AddColumn()
             {
-                Remember();
+                Remember(what: "adding a column");
 
                 _board.AddColumn(new MatrixLine("New column", Next(_board.Columns)));
 
@@ -2222,6 +2254,8 @@ namespace CamelWorks.UI.Views
                         () => Parts.Ask(_grid, "What is this " + what + " called?", line.Name,
                                         "Rename", named =>
                                         {
+                                            Remember(what: "renaming that " + what);
+
                                             line.Name = named;
                                             Redraw();
                                         })),
@@ -2230,6 +2264,8 @@ namespace CamelWorks.UI.Views
                         () => Parts.Ask(_grid, "The " + what + "'s number", line.Number,
                                         "Set", number =>
                                         {
+                                            Remember(what: "numbering that " + what);
+
                                             line.Number = number;
                                             Redraw();
                                         })),
@@ -2238,6 +2274,8 @@ namespace CamelWorks.UI.Views
                         () => Parts.Ask(_grid, "A discipline code, such as ST", line.Code,
                                         "Set", code =>
                                         {
+                                            Remember(what: "coding that " + what);
+
                                             line.Code = code;
                                             Redraw();
                                         })),
@@ -2253,7 +2291,7 @@ namespace CamelWorks.UI.Views
                 if (at > 0)
                     items.Add(Parts.Entry.Act("Move it earlier", Glyphs.Up, () =>
                     {
-                        Remember();
+                        Remember(what: "moving that " + (rows ? "row" : "column"));
 
                         if (rows) _board.MoveRow(at, at - 1); else _board.MoveColumn(at, at - 1);
                         Redraw();
@@ -2262,7 +2300,7 @@ namespace CamelWorks.UI.Views
                 if (at < lines.Count - 1)
                     items.Add(Parts.Entry.Act("Move it later", Glyphs.Down, () =>
                     {
-                        Remember();
+                        Remember(what: "moving that " + (rows ? "row" : "column"));
 
                         if (rows) _board.MoveRow(at, at + 1); else _board.MoveColumn(at, at + 1);
                         Redraw();
@@ -2276,7 +2314,7 @@ namespace CamelWorks.UI.Views
 
                 items.Add(Parts.Entry.Danger("Take it out", Glyphs.Bin, () =>
                 {
-                    Remember();
+                    Remember(what: "taking out that " + what);
 
                     if (rows) _board.RemoveRow(line); else _board.RemoveColumn(line);
                     Redraw();
@@ -2326,7 +2364,7 @@ namespace CamelWorks.UI.Views
 
                                 if (found == null) return;
 
-                                Remember();
+                                Remember(what: "pointing " + Quoted(line.Titled) + " at another set");
 
                                 line.Source = found.IsSearch
                                     ? MatrixSource.SearchSet(found.Name, found.Folder)
@@ -2349,7 +2387,7 @@ namespace CamelWorks.UI.Views
                             {
                                 if (picked.Count == 0) return;
 
-                                Remember();
+                                Remember(what: "pointing " + Quoted(line.Titled) + " at models");
 
                                 line.Source = MatrixSource.Models(picked.ToList());
                                 Redraw();
@@ -2373,7 +2411,7 @@ namespace CamelWorks.UI.Views
                 if (!line.Source.IsEmpty)
                     items.Add(Parts.Entry.Act("Point it at nothing", Glyphs.Close, () =>
                     {
-                        Remember();
+                        Remember(what: "pointing " + Quoted(line.Titled) + " at nothing");
                         line.Source = MatrixSource.Nothing;
                         Redraw();
                     }));
@@ -2478,7 +2516,7 @@ namespace CamelWorks.UI.Views
                         + (one.Enabled ? string.Empty : ", turned off"),
                         () =>
                         {
-                            Remember();
+                            Remember(what: "putting " + Quoted(one.Symbol) + " in a cell");
                             _board.Set(row, column, one.Symbol);
                             Repaint(row, column);
                         }));
@@ -2490,7 +2528,7 @@ namespace CamelWorks.UI.Views
 
                     items.Add(Parts.Entry.Act("Leave it untested", Glyphs.Close, () =>
                     {
-                        Remember();
+                        Remember(what: "clearing a cell");
                         _board.Set(row, column, null);
                         Repaint(row, column);
                     }));
@@ -2511,7 +2549,7 @@ namespace CamelWorks.UI.Views
                         + "against itself is a test somebody chooses, not one a fill makes.",
                         "Fill it", () =>
                         {
-                            Remember();
+                            Remember(what: "filling the whole grid with " + Quoted(here));
                             _board.Fill(here);
                             RepaintAll();
 
@@ -2760,11 +2798,19 @@ namespace CamelWorks.UI.Views
                 var back = Ui.Quiet("Undo", Undo);
 
                 back.IsEnabled = _past.Count > 0;
+                back.ToolTip = _past.Count == 0
+                    ? "Nothing to take back yet"
+                    : "Take back " + _past.Peek().What;
+
                 Say(back, 16);
 
                 var on = Ui.Quiet("Redo", Redo);
 
                 on.IsEnabled = _future.Count > 0;
+                on.ToolTip = _future.Count == 0
+                    ? "Nothing to put back"
+                    : "Put back " + _future.Peek().What;
+
                 Say(on, 4);
             }
 
@@ -3006,7 +3052,7 @@ namespace CamelWorks.UI.Views
                 if (_brush != null)
                     Doable("Fill the rest with " + Quoted(_brush.Symbol), () =>
                     {
-                        Remember();
+                        Remember(what: "filling the rest of that " + what);
 
                         var laid = 0;
 
@@ -3028,7 +3074,7 @@ namespace CamelWorks.UI.Views
 
                 Doable("Clear the whole " + what, () =>
                 {
-                    Remember();
+                    Remember(what: "clearing that " + what);
 
                     var cleared = 0;
 
@@ -3052,7 +3098,7 @@ namespace CamelWorks.UI.Views
                 // change one word in it is the sort of work a tool is supposed to remove.
                 Doable("Duplicate it, source and all", () =>
                 {
-                    Remember();
+                    Remember(what: "duplicating " + Quoted(line.Titled));
 
                     var copy = new MatrixLine(line.Name + " (copy)",
                                               Next(rows ? _board.Rows : _board.Columns),
@@ -3078,7 +3124,7 @@ namespace CamelWorks.UI.Views
 
                 Doable("Take it out", () =>
                 {
-                    Remember();
+                    Remember(what: "taking out " + Quoted(line.Titled));
 
                     if (rows) _board.RemoveRow(line); else _board.RemoveColumn(line);
 
@@ -3139,7 +3185,8 @@ namespace CamelWorks.UI.Views
                         + "over everything already decided. The diagonal is left alone.",
                         "Fill it", () =>
                         {
-                            Remember();
+                            Remember(what: "filling the whole grid with "
+                                             + Quoted(symbol.Symbol));
                             _board.Fill(symbol.Symbol);
                             RepaintAll();
 
@@ -3199,7 +3246,7 @@ namespace CamelWorks.UI.Views
                         one.Enabled,
                         () =>
                         {
-                            Remember();
+                            Remember(what: "putting " + Quoted(one.Symbol) + " in a cell");
                             _board.Set(row, column, one.Symbol);
                             Repaint(row, column);
                             RedrawInspector();
@@ -3209,7 +3256,7 @@ namespace CamelWorks.UI.Views
                 _inspector.Children.Add(Swatch("×", "Not tested", "clears the cell", string.Empty,
                     here == null, false, () =>
                     {
-                        Remember();
+                        Remember(what: "clearing a cell");
                         _board.Set(row, column, null);
                         Repaint(row, column);
                         RedrawInspector();
@@ -3379,7 +3426,7 @@ namespace CamelWorks.UI.Views
                 var row = _board.Rows[_atRow];
                 var column = _board.Columns[_atColumn];
 
-                Remember();
+                Remember(what: symbol == null ? "clearing a cell" : "putting " + Quoted(symbol) + " in a cell");
 
                 _board.Set(row, column, symbol);
                 Repaint(row, column);
@@ -3406,12 +3453,20 @@ namespace CamelWorks.UI.Views
             /// <param name="json">What they were.</param>
             private void Restore(JsonValue json)
             {
+                // What was on the brush, so it can be picked up again on the other side. Undoing
+                // a fill and then having to go and re-arm the symbol to carry on is the sort of
+                // small tax that stops people using undo at all.
+                var was = _brush?.Symbol;
+
                 _board = MatrixBoard.FromJson(json["board"]);
                 _legend = LegendOf(json["legend"]);
 
                 _picked = null;
                 _pickedSymbol = null;
-                _brush = null;
+                _brush = was == null
+                    ? null
+                    : _legend.Symbols.FirstOrDefault(sym => string.Equals(
+                        sym.Symbol, was, StringComparison.Ordinal));
 
                 Redraw();
             }
@@ -3425,7 +3480,8 @@ namespace CamelWorks.UI.Views
             /// name, so the next digit typed after some other act starts a new run.
             /// </summary>
             /// <param name="run">Names a run of edits that share one undo, or empty.</param>
-            private void Remember(string run = "")
+            /// <param name="what">What is about to happen, for undo to name when it takes it back.</param>
+            private void Remember(string run = "", string what = "")
             {
                 if (run.Length > 0 && string.Equals(run, _remembered, StringComparison.Ordinal))
                     return;
@@ -3434,7 +3490,7 @@ namespace CamelWorks.UI.Views
 
                 Touched();
 
-                _past.Push(Held());
+                _past.Push(new Doing(Held(), what.Length > 0 ? what : "that change"));
                 _future.Clear();
 
                 // An afternoon of editing is not worth a hundred megabytes of undo. Forty acts
@@ -3455,16 +3511,26 @@ namespace CamelWorks.UI.Views
             {
                 if (_past.Count == 0) return;
 
-                _future.Push(Held());
-                Restore(_past.Pop());
+                var step = _past.Pop();
+
+                _future.Push(new Doing(Held(), step.What));
+
+                Restore(step.Held);
+
+                Said(Ui.Note("Undone: " + step.What + ". Redo puts it back."));
             }
 
             private void Redo()
             {
                 if (_future.Count == 0) return;
 
-                _past.Push(Held());
-                Restore(_future.Pop());
+                var step = _future.Pop();
+
+                _past.Push(new Doing(Held(), step.What));
+
+                Restore(step.Held);
+
+                Said(Ui.Note("Redone: " + step.What + "."));
             }
 
             /// <summary>The legend, as the project file and the undo stack both hold it.</summary>
@@ -3515,7 +3581,9 @@ namespace CamelWorks.UI.Views
                                bool enabled, bool drop = false, string run = "",
                                bool rebuild = true)
             {
-                Remember(run);
+                Remember(run, drop
+                    ? "taking " + Quoted(symbol.Symbol) + " out of the legend"
+                    : "changing what " + Quoted(symbol.Symbol) + " means");
 
                 var kept = _legend.Symbols
                     .Where(s => !string.Equals(s.Symbol, symbol.Symbol,
@@ -3554,7 +3622,7 @@ namespace CamelWorks.UI.Views
 
                         if (text.Length == 0) return;
 
-                        Remember();
+                        Remember(what: "adding the symbol " + Quoted(text));
 
                         _legend = new MatrixLegend(_legend.Symbols
                             .Where(s => !string.Equals(s.Symbol, text, StringComparison.OrdinalIgnoreCase))
@@ -3590,7 +3658,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                Remember();
+                Remember(what: "covering the grid\u2019s symbols");
 
                 _legend = _legend.Covering(_board);
 
@@ -3621,13 +3689,20 @@ namespace CamelWorks.UI.Views
                     FromSheet),
 
                 Parts.Entry.Saying("What was saved in this project", Glyphs.Folder,
-                    "The matrix as it was left last time", () => { Load(); Redraw(); }),
+                    "The matrix as it was left last time",
+                    () =>
+                    {
+                        Remember(what: "reading the saved matrix back in");
+
+                        Load();
+                        Redraw();
+                    }),
 
                 Parts.Entry.Rule(),
 
                 Parts.Entry.Act("Make the columns match the rows", Glyphs.Table, () =>
                 {
-                    Remember();
+                    Remember(what: "squaring the columns off to the rows");
                     _board.SquareOffRows();
                     Redraw();
                 }),
@@ -3638,7 +3713,7 @@ namespace CamelWorks.UI.Views
                         + "the tests already built stay exactly as they are.",
                         "Clear it", () =>
                         {
-                            Remember();
+                            Remember(what: "starting again");
 
                             _board = new MatrixBoard();
                             _legend = new MatrixLegend();
@@ -3755,7 +3830,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                Remember();
+                Remember(what: "reading the matrix out of the model's tests");
 
                 _board = reading.Board;
                 _legend = reading.Legend;
@@ -3793,7 +3868,7 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    Remember();
+                    Remember(what: "opening that spreadsheet");
 
                     _board = read.Grid;
 
