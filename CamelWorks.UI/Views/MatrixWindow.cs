@@ -1732,17 +1732,65 @@ namespace CamelWorks.UI.Views
                 Repaint(row, column);
             }
 
-            /// <summary>Put the armed symbol down the whole of one row or across one column.</summary>
+            /// <summary>
+            /// Put the armed symbol down the empty cells of one row or column.
+            ///
+            /// <b>Empties only, and it says how many.</b> One click on a number used to overwrite
+            /// every considered decision in that line with whatever happened to be on the brush,
+            /// silently, and a line somebody had spent ten minutes on was gone with nothing on
+            /// the screen to say it had happened. Filling what has not been decided is the thing
+            /// people actually want from a gutter, and it cannot destroy anything.
+            ///
+            /// With nothing on the brush it is not a dead click: it puts the line in the
+            /// inspector, which is what pressing a header does everywhere else.
+            /// </summary>
             /// <param name="line">The row or the column.</param>
             /// <param name="rows">True for a row, false for a column.</param>
             private void Sweep(MatrixLine line, bool rows)
             {
-                if (_brush == null) return;
+                if (_brush == null)
+                {
+                    Pick(line, rows);
+                    return;
+                }
 
                 Remember();
 
-                if (rows) foreach (var column in _board.Columns) Daub(line, column);
-                else foreach (var row in _board.Rows) Daub(row, line);
+                var laid = 0;
+
+                foreach (var other in rows ? (IReadOnlyList<MatrixLine>)_board.Columns : _board.Rows)
+                {
+                    var row = rows ? line : other;
+                    var column = rows ? other : line;
+
+                    if (_board.At(row, column) != null) continue;
+                    if (_board.IsSelfPair(row, column)) continue;
+
+                    Daub(row, column);
+                    laid++;
+                }
+
+                Reported(laid, Quoted(_brush.Symbol) + " put in", 
+                         "empty cell of " + (rows ? "row " + Number(At(_board.Rows, line))
+                                                  : "column " + Letter(At(_board.Columns, line))));
+            }
+
+            /// <summary>
+            /// Say what a bulk act did, in the notices, with what to press to take it back.
+            ///
+            /// <b>Not a confirmation.</b> A box asking "are you sure" before a fill is clicked
+            /// through by lunchtime and teaches nothing; a count afterwards is read, believed,
+            /// and can be acted on. The one act that still asks first is filling the whole grid,
+            /// because that one is not a mistake anybody makes twice.
+            /// </summary>
+            /// <param name="count">How many cells changed.</param>
+            /// <param name="did">What was done, in the past tense.</param>
+            /// <param name="unit">What was changed, singular.</param>
+            private void Reported(int count, string did, string unit)
+            {
+                Said(count == 0
+                    ? Ui.Note("Nothing to do: every " + unit + " already says something.")
+                    : Ui.Done(did + " " + Ui.Count(count, unit) + ". Undo takes it back."));
             }
 
             /// <summary>Arm a symbol, or put the one already armed down.</summary>
@@ -1816,11 +1864,35 @@ namespace CamelWorks.UI.Views
 
                 text.Wearing("Body");
 
+                // <b>The diagonal is a discipline against itself, and it stays live.</b> Steel
+                // against steel finds members modelled through each other; a row that merges two
+                // suppliers has supplier-against-supplier clashes only here; a duplicates test is
+                // nearly always a source against itself. So it takes a click like any other cell -
+                // but no bulk fill writes it, because filling a grid never meant that, and it is
+                // drawn as its own thing so a symbol sitting there reads as somebody's decision
+                // rather than as something a sweep left behind.
+                var self = _board.IsSelfPair(row, column);
+
+                // Set here rather than in one branch, so a diagonal cell cleared of its symbol
+                // does not keep the heavier edge that having one gave it.
+                cell.BorderThickness = self
+                    ? new Thickness(0, 0, 2, 2)
+                    : new Thickness(0, 0, 1, 1);
+
+                cell.Tint(Border.BorderBrushProperty, self ? "BdStrong" : "Bd");
+
                 if (symbol == null)
                 {
-                    cell.Background = System.Windows.Media.Brushes.Transparent;
-                    cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled
-                                   + " — not tested. Click to put a symbol in it.";
+                    if (self) cell.Tint(Border.BackgroundProperty, "Nav");
+                    else cell.Background = System.Windows.Media.Brushes.Transparent;
+
+                    cell.ToolTip = at + " · "
+                                   + (self
+                                       ? row.Titled + " against itself — not tested. Bulk fills "
+                                         + "leave this alone; click it to test a discipline "
+                                         + "against itself deliberately."
+                                       : row.Titled + " against " + column.Titled
+                                         + " — not tested. Click to put a symbol in it.");
                 }
                 else if (meaning == null)
                 {
@@ -1832,8 +1904,14 @@ namespace CamelWorks.UI.Views
                 else
                 {
                     cell.Tint(Border.BackgroundProperty, meaning.Enabled ? "AccentWash" : "Nav");
-                    cell.ToolTip = at + " · " + row.Titled + " against " + column.Titled + " — "
-                                   + MatrixNaming.Worded(meaning.Test) + " at "
+
+                    if (self) text.FontStyle = FontStyles.Italic;
+
+                    cell.ToolTip = at + " · "
+                                   + (self
+                                       ? row.Titled + " against itself"
+                                       : row.Titled + " against " + column.Titled)
+                                   + " — " + MatrixNaming.Worded(meaning.Test) + " at "
                                    + Millimetres(meaning.Tolerance)
                                    + (meaning.Enabled ? string.Empty : ", turned off");
                 }
@@ -2420,13 +2498,26 @@ namespace CamelWorks.UI.Views
 
                 items.Add(Parts.Entry.Rule());
 
-                items.Add(Parts.Entry.Act("Fill the whole grid with this", Glyphs.Table, () =>
+                items.Add(Parts.Entry.Danger("Fill the whole grid with this", Glyphs.Table, () =>
                 {
                     if (here == null) return;
 
-                    Remember();
-                    _board.Fill(here);
-                    RepaintAll();
+                    // The one bulk act that asks first. It overwrites every decision on the
+                    // matrix at once, which is not a mistake anybody makes twice, and the count
+                    // afterwards would be a count of everything they had done all afternoon.
+                    Parts.Sure(_grid,
+                        "This puts " + Quoted(here) + " in every cell of the matrix, over "
+                        + "everything already decided. The diagonal is left alone - a discipline "
+                        + "against itself is a test somebody chooses, not one a fill makes.",
+                        "Fill it", () =>
+                        {
+                            Remember();
+                            _board.Fill(here);
+                            RepaintAll();
+
+                            Said(Ui.Done("The grid is filled with " + Quoted(here)
+                                         + ". Undo takes it back."));
+                        });
                 }));
 
                 return items;
@@ -2917,27 +3008,43 @@ namespace CamelWorks.UI.Views
                     {
                         Remember();
 
+                        var laid = 0;
+
                         foreach (var other in rows ? _board.Columns : _board.Rows)
                         {
                             var row = rows ? line : other;
                             var column = rows ? other : line;
 
-                            if (_board.At(row, column) == null) Daub(row, column);
+                            if (_board.At(row, column) != null) continue;
+                            if (_board.IsSelfPair(row, column)) continue;
+
+                            Daub(row, column);
+                            laid++;
                         }
+
+                        Reported(laid, Quoted(_brush.Symbol) + " put in",
+                                 "empty cell of this " + what);
                     });
 
                 Doable("Clear the whole " + what, () =>
                 {
                     Remember();
 
+                    var cleared = 0;
+
                     foreach (var other in rows ? _board.Columns : _board.Rows)
                     {
                         var row = rows ? line : other;
                         var column = rows ? other : line;
 
+                        if (_board.At(row, column) == null) continue;
+
                         _board.Set(row, column, null);
                         Repaint(row, column);
+                        cleared++;
                     }
+
+                    Reported(cleared, "Cleared", "cell of this " + what);
                 });
 
                 // <b>Twenty disciplines are rarely twenty different things.</b> Half a matrix is
@@ -3027,11 +3134,18 @@ namespace CamelWorks.UI.Views
                 _inspector.Children.Add(gap);
 
                 Doable("Put it in every cell", () =>
-                {
-                    Remember();
-                    _board.Fill(symbol.Symbol);
-                    RepaintAll();
-                });
+                    Parts.Sure(_grid,
+                        "This puts " + Quoted(symbol.Symbol) + " in every cell of the matrix, "
+                        + "over everything already decided. The diagonal is left alone.",
+                        "Fill it", () =>
+                        {
+                            Remember();
+                            _board.Fill(symbol.Symbol);
+                            RepaintAll();
+
+                            Said(Ui.Done("The grid is filled with " + Quoted(symbol.Symbol)
+                                         + ". Undo takes it back."));
+                        }));
 
                 Doable("Take it out of the legend",
                        () => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,

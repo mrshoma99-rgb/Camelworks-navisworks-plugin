@@ -142,6 +142,84 @@ namespace CamelWorks.Core.Tests
     }
 
     /// <summary>What a grid and its legend ask the host for.</summary>
+    /// <summary>What a bulk fill writes, and what it deliberately leaves alone.</summary>
+    public class MatrixFillTests
+    {
+        [Fact]
+        public void FillingTheGridLeavesTheDiagonalAlone()
+        {
+            // Twenty-two disciplines filled in one press used to give two hundred and fifty-three
+            // tests, twenty-two of them a discipline against itself. Nobody filling a grid meant
+            // those, and they are the ones that come back as thousands of results.
+            var board = Square("STR", "MEP", "ARC");
+
+            board.Fill("A");
+
+            Assert.Equal(6, board.Filled);
+
+            for (var at = 0; at < 3; at++)
+                Assert.Null(board.At(board.Rows[at], board.Columns[at]));
+        }
+
+        [Fact]
+        public void ADisciplineAgainstItselfCanStillBeAskedForOnPurpose()
+        {
+            var board = Square("STR", "MEP");
+
+            board.Set(board.Rows[0], board.Columns[0], "A");
+
+            Assert.Equal("A", board.At(board.Rows[0], board.Columns[0]));
+        }
+
+        [Fact]
+        public void FillingTheGridWritesTheDiagonalWhenItIsAskedTo()
+        {
+            var board = Square("STR", "MEP");
+
+            board.Fill("A", selfPairs: true);
+
+            Assert.Equal(4, board.Filled);
+        }
+
+        [Fact]
+        public void TwoLinesPointedAtTheSameSetAreTheSamePairWhereverTheySit()
+        {
+            // Not the same object - the same thing. A square matrix copies its rows into its
+            // columns, so the two ends of the diagonal are two objects pointing at one set.
+            var board = new MatrixBoard();
+
+            var row = board.AddRow(new MatrixLine("Steel", null, MatrixSource.SelectionSet("STR")));
+            var last = board.AddColumn(new MatrixLine("Ducts", null, MatrixSource.SelectionSet("MEP")));
+            var same = board.AddColumn(new MatrixLine("Steel again", null, MatrixSource.SelectionSet("STR")));
+
+            Assert.True(board.IsSelfPair(row, same));
+            Assert.False(board.IsSelfPair(row, last));
+        }
+
+        [Fact]
+        public void ALinePointedAtNothingIsNotItsOwnPair()
+        {
+            var board = new MatrixBoard();
+
+            var row = board.AddRow(new MatrixLine("New row"));
+            var column = board.AddColumn(new MatrixLine("New column"));
+
+            Assert.False(board.IsSelfPair(row, column));
+        }
+
+        private static MatrixBoard Square(params string[] sets)
+        {
+            var board = new MatrixBoard();
+
+            foreach (var set in sets)
+                board.AddRow(new MatrixLine(set, null, MatrixSource.SelectionSet(set)));
+
+            board.SquareOffRows();
+
+            return board;
+        }
+    }
+
     public class MatrixPlanTests
     {
         [Fact]

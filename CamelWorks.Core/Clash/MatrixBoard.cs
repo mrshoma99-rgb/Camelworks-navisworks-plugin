@@ -276,11 +276,37 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>Put the same symbol in every cell of the grid.</summary>
         /// <param name="symbol">The symbol, or null to clear the grid.</param>
-        public void Fill(string? symbol)
+        /// <param name="selfPairs">
+        /// True to write the diagonal as well. Off by default: a discipline against itself is a
+        /// legitimate test - it finds the pipe running through its own hanger - but it is never
+        /// what somebody filling a whole grid in one press meant, and twenty-two of those on a
+        /// twenty-two by twenty-two matrix is twenty-two tests nobody asked for.
+        /// </param>
+        public void Fill(string? symbol, bool selfPairs = false)
         {
             foreach (var row in _rows)
                 foreach (var column in _columns)
-                    Set(row, column, symbol);
+                    if (selfPairs || !IsSelfPair(row, column))
+                        Set(row, column, symbol);
+        }
+
+        /// <summary>
+        /// Whether a cell is a discipline against itself.
+        ///
+        /// <b>Not the same object - the same thing.</b> A square matrix is built by copying the
+        /// rows into the columns, so the row and the column on the diagonal are two objects
+        /// pointing at one saved set. What makes them the same pair is what they point at.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public bool IsSelfPair(MatrixLine? row, MatrixLine? column)
+        {
+            if (row == null || column == null) return false;
+            if (ReferenceEquals(row, column)) return true;
+            if (row.Source.IsEmpty || column.Source.IsEmpty) return false;
+
+            return string.Equals(row.Source.Fingerprint(), column.Source.Fingerprint(),
+                                 StringComparison.Ordinal);
         }
 
         /// <summary>
