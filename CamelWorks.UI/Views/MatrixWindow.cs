@@ -529,6 +529,13 @@ namespace CamelWorks.UI.Views
 
                 _scroll.PreviewKeyDown += (s, e) => Ui.Safely(() => Typed(e));
 
+                // The room changes when the window does, when the pane does, and when a tab is
+                // switched back to. The cells follow it.
+                _scroll.SizeChanged += (s, e) => Ui.Safely(() =>
+                {
+                    if (_board.Rows.Count > 0 && _board.Columns.Count > 0 && Fits()) Relaid();
+                });
+
                 Grid.SetRow(_scroll, 1);
                 Grid.SetColumn(_scroll, 1);
                 frame.Children.Add(Ui.Loose(_scroll));
@@ -553,12 +560,87 @@ namespace CamelWorks.UI.Views
             /// paid a hundred pixels for a letter. Stood on their end they cost height once, and
             /// every column of a twenty-two-discipline matrix fits on a screen instead of six.
             /// </summary>
-            private const double CellWide = 38;
+            private const double LeastWide = 38;
+
+            /// <summary>
+            /// How big a cell is drawn: the smallest that reads, grown to fill what is there.
+            ///
+            /// <b>A six-row matrix in a window that holds thirty left two thirds of it empty.</b>
+            /// Colouring that space did not use it. A grid that fits with room to spare has no
+            /// reason to be drawn at the size a grid that does not fit has to be, so the cells
+            /// take the room: bigger targets to click, more of the name in each header, and no
+            /// dead half-window under a small matrix. Once it stops fitting the cells go back to
+            /// the smallest size that still reads, and the sheet scrolls as before.
+            /// </summary>
+            private double CellWide => _wide;
 
             /// <summary>
             /// One line, not two. The source moved to the inspector, which has room for it.
             /// </summary>
-            private const double CellHigh = 30;
+            private const double LeastHigh = 30;
+
+            /// <summary>
+            /// The largest a cell is allowed to grow to.
+            ///
+            /// Generous, because the point is to leave no dead half-window under a small matrix,
+            /// and a cell holding one letter reads at any size. A cell is never taller than it
+            /// is wide, so six rows against twenty columns come out as a band of squares rather
+            /// than a row of tall thin slots.
+            /// </summary>
+            private const double MostWide = 110;
+
+            private const double MostHigh = 88;
+
+            private double CellHigh => _high;
+
+            private double _wide = LeastWide;
+            private double _high = LeastHigh;
+
+            /// <summary>
+            /// Work out the cell size for the room there is, and say whether it changed.
+            ///
+            /// <b>Growing only when the smallest size already fits</b> is what keeps this from
+            /// oscillating. Filled exactly to the viewport a scrollbar appears, which takes the
+            /// room away, which shrinks the cells, which takes the scrollbar away again. Every
+            /// grown size is worked out from a viewport already known to be big enough and is
+            /// rounded down, so the total always lands inside it and no bar is ever summoned.
+            /// </summary>
+            private bool Fits()
+            {
+                var wide = LeastWide;
+                var high = LeastHigh;
+
+                var across = _board.Columns.Count + 1;
+                var down = _board.Rows.Count + 1;
+
+                var room = _scroll.ViewportWidth - 2;
+                var deep = _scroll.ViewportHeight - 2;
+
+                if (across > 0 && room > across * LeastWide)
+                    wide = Math.Floor(Math.Min(MostWide, room / across));
+
+                if (down > 0 && deep > down * LeastHigh)
+                    high = Math.Floor(Math.Min(MostHigh, deep / down));
+
+                high = Math.Max(LeastHigh, Math.Min(high, wide));
+
+                if (Math.Abs(wide - _wide) < 0.5 && Math.Abs(high - _high) < 0.5) return false;
+
+                _wide = wide;
+                _high = high;
+
+                return true;
+            }
+
+            /// <summary>Draw the three grids again at whatever size the cells are now.</summary>
+            private void Relaid()
+            {
+                _cells.Clear();
+
+                RedrawAcross();
+                RedrawDown();
+                RedrawCells();
+            }
 
             /// <summary>How wide the name itself gets, before the gutters beside it.</summary>
             private const double NameWide = 150;
@@ -632,9 +714,14 @@ namespace CamelWorks.UI.Views
             /// turning was meant to fix. The space is reserved for all of them or for none.
             /// </summary>
             private double Beneath =>
-                (Numbered(_board.Columns) ? 15.0 : 0)
-                + (Coded(_board.Columns) ? 17.0 : 0)
-                + (Unbacked(_board.Columns) ? 14.0 : 0);
+                (Numbered(_board.Columns) ? NumberTall : 0)
+                + (Coded(_board.Columns) ? CodeTall : 0)
+                + (Unbacked(_board.Columns) ? WarnTall : 0);
+
+            /// <summary>How far up a column header the number, the code and the mark reach.</summary>
+            private const double NumberTall = 22;
+            private const double CodeTall = 28;
+            private const double WarnTall = 16;
 
             /// <summary>
             /// A text block kept aside to measure a name with, at the size the headers use.
@@ -686,9 +773,8 @@ namespace CamelWorks.UI.Views
 
                 if (!bare)
                 {
-                    RedrawAcross();
-                    RedrawDown();
-                    RedrawCells();
+                    Fits();
+                    Relaid();
                 }
 
                 RedrawPalette();
@@ -1265,7 +1351,7 @@ namespace CamelWorks.UI.Views
                 var head = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(2, 6, 2, 6),
+                    Padding = new Thickness(2, 6, 2, 4),
                     Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                     ToolTip = "Column " + Letter(at) + ": " + line.Titled + " — "
@@ -1276,102 +1362,91 @@ namespace CamelWorks.UI.Views
                 head.Tint(Border.BackgroundProperty,
                           ReferenceEquals(_picked, line) && !_pickedRows ? "NavActive" : "Pane");
 
-                // Stood on its end, reading upwards, in a box of its own size.
-                //
-                // <b>Wrapping did not work</b>, and neither did turning it and letting the
-                // layout work the size out. A column had to be a hundred pixels wide to hold two
-                // words of a name, and the names were cut off anyway - "WSC_Process st...".
-                // Turned through ninety degrees with a LayoutTransform they came out cut off
-                // after three letters instead: a rotated child is measured against the
-                // inverse-transformed space it is given, and inside a stack in a cell forty
-                // pixels wide that arithmetic ends with the name's length limited by the
-                // column's width. Which is the constraint the rotation was there to escape.
-                //
-                // So the text is given the box it is to occupy - as long as the header is tall,
-                // as thick as the column is wide - and turned about its own centre for the
-                // drawing only.
-                var name = new TextBlock
-                {
-                    Text = line.Name,
-                    FontWeight = FontWeights.SemiBold,
-                    FontSize = 11,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    TextWrapping = TextWrapping.NoWrap,
-
-                    Width = HeaderHigh - Beneath,
-                    Height = CellWide - 6,
-
-                    // Read up towards the grid, so every name ends where its column begins
-                    // rather than each one starting at a different height.
-                    TextAlignment = TextAlignment.Right,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    RenderTransformOrigin = new Point(0.5, 0.5),
-                    RenderTransform = new System.Windows.Media.RotateTransform(-90),
-                };
-
+                // <b>Everything in a column header is turned, and it reads in the order the row
+                // reads.</b> A turned name over an upright number was two writing directions in
+                // one cell forty pixels wide, and the two axes stopped matching each other. A
+                // column header is a row header stood on its end, so what is leftmost in the row
+                // is lowest in the column: the number, then the code, then the name running up
+                // to the grid.
                 var stacked = new Grid();
 
-                // The name is turned; the number and the code are not. Two characters read
-                // perfectly well the right way up, and stood on their end beside a name they
-                // were three more letters of the same vertical smear.
                 stacked.RowDefinitions.Add(new RowDefinition
                 {
                     Height = new GridLength(1, GridUnitType.Star),
                 });
 
-                stacked.RowDefinitions.Add(new RowDefinition
-                {
-                    Height = new GridLength(Beneath),
-                });
+                if (Unbacked(_board.Columns))
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(WarnTall),
+                    });
+
+                if (Coded(_board.Columns))
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(CodeTall),
+                    });
+
+                if (Numbered(_board.Columns))
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(NumberTall),
+                    });
+
+                var name = Turned(line.Name, HeaderHigh - Beneath, 11, FontWeights.SemiBold);
 
                 var turned = name.Wearing("Body");
 
                 Grid.SetRow(turned, 0);
                 stacked.Children.Add(turned);
 
-                var beneath = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom };
+                var row = 1;
 
-                if (line.Number.Length > 0)
-                    beneath.Children.Add(new TextBlock
-                    {
-                        Text = line.Number,
-                        FontSize = 10,
-                        TextAlignment = TextAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                    }.Wearing("Hint"));
-
-                if (line.Code.Length > 0)
+                if (Unbacked(_board.Columns))
                 {
-                    var chip = new Border
+                    if (line.IsUnbacked)
                     {
-                        CornerRadius = new CornerRadius(4),
-                        Margin = new Thickness(3, 2, 3, 0),
-                        Child = new TextBlock
+                        var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx");
+
+                        warn.HorizontalAlignment = HorizontalAlignment.Center;
+                        warn.VerticalAlignment = VerticalAlignment.Center;
+
+                        Grid.SetRow(warn, row);
+                        stacked.Children.Add(warn);
+                    }
+
+                    row++;
+                }
+
+                if (Coded(_board.Columns))
+                {
+                    if (line.Code.Length > 0)
+                    {
+                        var chip = new Border
                         {
-                            Text = line.Code,
-                            FontSize = 10,
-                            FontWeight = FontWeights.SemiBold,
-                            TextAlignment = TextAlignment.Center,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            TextTrimming = TextTrimming.CharacterEllipsis,
-                        }.Wearing("Lbl"),
-                    };
+                            CornerRadius = new CornerRadius(4),
+                            Margin = new Thickness(4, 1, 4, 2),
+                            Child = Turned(line.Code, CodeTall - 7, 10, FontWeights.SemiBold,
+                                           CellWide - 14).Wearing("Lbl"),
+                        };
 
-                    chip.Tint(Border.BackgroundProperty, "Nav");
-                    beneath.Children.Add(chip);
+                        chip.Tint(Border.BackgroundProperty, "Nav");
+
+                        Grid.SetRow(chip, row);
+                        stacked.Children.Add(chip);
+                    }
+
+                    row++;
                 }
 
-                if (line.IsUnbacked)
+                if (Numbered(_board.Columns) && line.Number.Length > 0)
                 {
-                    var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx", new Thickness(0, 2, 0, 0));
+                    var number = Turned(line.Number, NumberTall - 4, 11, FontWeights.Normal)
+                                     .Wearing("Hint");
 
-                    warn.HorizontalAlignment = HorizontalAlignment.Center;
-                    beneath.Children.Add(warn);
+                    Grid.SetRow(number, row);
+                    stacked.Children.Add(number);
                 }
-
-                Grid.SetRow(beneath, 1);
-                stacked.Children.Add(beneath);
 
                 head.Child = stacked;
 
@@ -1380,6 +1455,47 @@ namespace CamelWorks.UI.Views
 
                 return head;
             }
+
+            /// <summary>
+            /// One piece of a column header, stood on its end and reading up the column.
+            ///
+            /// <b>Wrapping did not work</b>, and neither did turning it and letting the layout
+            /// work the size out. A column had to be a hundred pixels wide to hold two words of
+            /// a name, and the names were cut off anyway - "WSC_Process st...". Turned through
+            /// ninety degrees with a LayoutTransform they came out cut off after three letters
+            /// instead: a rotated child is measured against the inverse-transformed space it is
+            /// given, and inside a cell forty pixels wide that arithmetic ends with the name's
+            /// length limited by the column's width. Which is the constraint the rotation was
+            /// there to escape. So the text is given the box it is to occupy - as long up the
+            /// column as it is allowed, as thick as the column is wide - and turned about its
+            /// own centre for the drawing only.
+            /// </summary>
+            /// <param name="text">What it says.</param>
+            /// <param name="along">How far up the column it may run.</param>
+            /// <param name="size">The type size.</param>
+            /// <param name="weight">The weight.</param>
+            /// <param name="across">How thick it is, or 0 for the whole column.</param>
+            private TextBlock Turned(string text, double along, double size, FontWeight weight,
+                                     double across = 0) =>
+                new TextBlock
+                {
+                    Text = text,
+                    FontWeight = weight,
+                    FontSize = size,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+
+                    Width = Math.Max(0, along),
+                    Height = Math.Max(0, across > 0 ? across : CellWide - 6),
+
+                    // Read up towards the grid, so every one of them ends where its column
+                    // begins rather than each starting at a different height.
+                    TextAlignment = TextAlignment.Right,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    RenderTransformOrigin = new Point(0.5, 0.5),
+                    RenderTransform = new System.Windows.Media.RotateTransform(-90),
+                };
 
             /// <summary>
             /// A header press puts its line in the inspector; the right button keeps the menu.
