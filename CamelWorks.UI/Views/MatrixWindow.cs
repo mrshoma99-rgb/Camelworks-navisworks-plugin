@@ -248,9 +248,24 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(adding, Dock.Right);
                 key.Children.Add(adding);
 
-                var titled = Ui.Eyebrow("The legend");
+                var titled = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
 
-                titled.VerticalAlignment = VerticalAlignment.Center;
+                var eyebrow = Ui.Eyebrow("The legend");
+
+                eyebrow.VerticalAlignment = VerticalAlignment.Center;
+                titled.Children.Add(eyebrow);
+
+                var how = Ui.Small("Press a symbol to put it on the brush, then click or drag "
+                                   + "across the cells it belongs in.");
+
+                how.Margin = new Thickness(10, 0, 0, 0);
+                how.VerticalAlignment = VerticalAlignment.Center;
+                titled.Children.Add(how);
+
                 key.Children.Add(titled);
 
                 _key.Children.Add(key);
@@ -273,7 +288,15 @@ namespace CamelWorks.UI.Views
                 _over.Children.Add(Ui.Loose(_armed));
                 _over.Children.Add(Ui.Loose(_count.Wearing("Hint")));
 
-                _key.Children.Add(Ui.Loose(_legendRows));
+                // Capped, and scrolling inside itself: a job with a dozen symbols must not push
+                // the matrix off the screen to show them all.
+                _key.Children.Add(new ScrollViewer
+                {
+                    Content = Ui.Loose(_legendRows),
+                    MaxHeight = 108,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                });
 
                 var stack = new DockPanel { LastChildFill = true };
 
@@ -304,7 +327,10 @@ namespace CamelWorks.UI.Views
             /// eighteen columns fit on a screen instead of six.
             /// </summary>
             private const double CellWide = 44;
-            private const double CellHigh = 30;
+
+            // Tall enough for a row header's two lines. At thirty the name's ascenders were
+            // clipped by the row above and the source line by the row below.
+            private const double CellHigh = 34;
             private const double HeaderWide = 250;
             private const double HeaderHigh = 168;
 
@@ -353,7 +379,8 @@ namespace CamelWorks.UI.Views
                     Put(grid, ColumnHead(_board.Columns[c], c), 1, c + 2);
                 }
 
-                Put(grid, Adding("Add a column", AddColumn), 1, _board.Columns.Count + 2);
+                Put(grid, Adding("Add a column", AddColumn, column: true),
+                    1, _board.Columns.Count + 2);
 
                 for (var r = 0; r < _board.Rows.Count; r++)
                 {
@@ -372,7 +399,7 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                Put(grid, Adding("Add a row", AddRow), _board.Rows.Count + 2, 1);
+                Put(grid, Adding("Add a row", AddRow, column: false), _board.Rows.Count + 2, 1);
 
                 var bare = _board.Rows.Count == 0 && _board.Columns.Count == 0;
 
@@ -559,8 +586,8 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Bottom,
                     Children =
                     {
-                        Ui.Eyebrow("Rows 1, 2, 3 are side A"),
-                        Ui.Small("Columns A, B, C are side B"),
+                        Ui.Eyebrow("Side A  \u2193"),
+                        Ui.Small("Side B  \u2192"),
                     },
                 };
 
@@ -691,14 +718,26 @@ namespace CamelWorks.UI.Views
                     Text = line.Titled,
                     FontWeight = FontWeights.SemiBold,
                     TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
                 }.Wearing("Body"));
 
-                stacked.Children.Add(new TextBlock
-                {
-                    Text = line.Source.Describe(),
-                    FontSize = 10,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                }.Wearing("Hint"));
+                // The source underneath only when it is not the name again.
+                //
+                // A row built from a saved set is named after that set, so the second line said
+                // "CSP_Pipes" under "CSP_Pipes" on every row of the matrix - the same word twice,
+                // in two type sizes, in a row thirty pixels tall that could not hold both. The
+                // whole source is on the row's tip either way.
+                var under = line.Source.Describe();
+
+                if (!string.Equals(under, line.Titled, StringComparison.OrdinalIgnoreCase)
+                    && under.Length > 0)
+                    stacked.Children.Add(new TextBlock
+                    {
+                        Text = under,
+                        FontSize = 10,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                    }.Wearing("Hint"));
 
                 words.Children.Add(stacked);
                 head.Child = words;
@@ -726,17 +765,21 @@ namespace CamelWorks.UI.Views
                 head.Tint(Border.BorderBrushProperty, "Bd");
                 head.Tint(Border.BackgroundProperty, "Pane");
 
-                // Stood on its end, reading upwards.
+                // Stood on its end, reading upwards, in a box of its own size.
                 //
-                // <b>Wrapping did not work.</b> A column had to be a hundred pixels wide to hold
-                // two words of a name, six columns filled the screen, and the names were cut off
-                // anyway - "WSC_Process st...". Turned through ninety degrees the whole name
-                // fits, a column costs what a symbol costs, and three times as many of them are
-                // on screen at once. It is what every coordination matrix ever drawn does.
+                // <b>Wrapping did not work</b>, and neither did turning it and letting the
+                // layout work the size out. A column had to be a hundred pixels wide to hold two
+                // words of a name, and the names were cut off anyway - "WSC_Process st...".
+                // Turned through ninety degrees with a LayoutTransform they came out cut off
+                // after three letters instead: a rotated child is measured against the
+                // inverse-transformed space it is given, and inside a stack in a cell forty
+                // pixels wide that arithmetic ends with the name's length limited by the
+                // column's width. Which is the constraint the rotation was there to escape.
                 //
-                // A LayoutTransform, not a RenderTransform: the header has to be measured
-                // rotated, or the grid gives it the width of the unturned text and the row is
-                // one line tall with the names hanging out of it.
+                // So the text is given the box it is to occupy - as long as the header is tall,
+                // as thick as the column is wide - and turned about its own centre for the
+                // drawing only. Nothing has to be inferred: the name has the whole height of the
+                // header to run up, and ellipsises only when it is genuinely longer than that.
                 var name = new TextBlock
                 {
                     Text = line.Titled,
@@ -745,22 +788,31 @@ namespace CamelWorks.UI.Views
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
 
-                    // As long as the header is tall, so a very long name ellipsises rather than
-                    // pushing the whole top of the grid down.
-                    MaxWidth = HeaderHigh - 26,
-                    LayoutTransform = new System.Windows.Media.RotateTransform(-90),
-                };
+                    Width = HeaderHigh - (line.IsUnbacked ? 30 : 16),
+                    Height = CellWide - 6,
 
-                var stacked = new StackPanel
-                {
-                    VerticalAlignment = VerticalAlignment.Bottom,
+                    // Read up towards the grid, so every name ends where its column begins
+                    // rather than each one starting at a different height.
+                    TextAlignment = TextAlignment.Right,
                     HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    RenderTransformOrigin = new Point(0.5, 0.5),
+                    RenderTransform = new System.Windows.Media.RotateTransform(-90),
                 };
 
-                if (line.IsUnbacked)
-                    stacked.Children.Add(Ui.Glyph(Glyphs.Warn, 10, "RedTx", new Thickness(0, 0, 0, 4)));
+                var stacked = new Grid();
 
                 stacked.Children.Add(name.Wearing("Body"));
+
+                if (line.IsUnbacked)
+                {
+                    var warn = Ui.Glyph(Glyphs.Warn, 10, "RedTx");
+
+                    warn.HorizontalAlignment = HorizontalAlignment.Center;
+                    warn.VerticalAlignment = VerticalAlignment.Bottom;
+
+                    stacked.Children.Add(warn);
+                }
 
                 head.Child = stacked;
 
@@ -1449,9 +1501,15 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                _legendRows.Children.Add(Ui.Small(
-                    "Press a symbol to put it on the brush, then click or drag across the cells "
-                    + "it belongs in. Changing a symbol here changes every cell that uses it."));
+                // Side by side, not one under the other.
+                //
+                // Four symbols stacked took a third of the screen off the grid they are a key
+                // to - and a key is glanced at, not read down. Each one is a card of a fixed
+                // width, so as many fit on a line as the window is wide, and the whole block is
+                // capped and scrolls inside itself rather than growing into the matrix.
+                var cards = new WrapPanel();
+
+                _legendRows.Children.Add(cards);
 
                 foreach (var symbol in _legend.Symbols)
                 {
@@ -1464,9 +1522,9 @@ namespace CamelWorks.UI.Views
                     // all sat at different heights - and the tolerance sat lower still, because
                     // it was in a field, which puts a label over the box. One row, one line, one
                     // set of columns every row shares.
-                    var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                    var row = new Grid { Margin = new Thickness(0, 3, 16, 3) };
 
-                    foreach (var width in new[] { 26.0, 160.0, 76.0, 30.0, 60.0, 30.0 })
+                    foreach (var width in new[] { 26.0, 132.0, 62.0, 26.0, 52.0, 26.0 })
                         row.ColumnDefinitions.Add(new ColumnDefinition
                         {
                             Width = new GridLength(width),
@@ -1524,7 +1582,7 @@ namespace CamelWorks.UI.Views
                     At(Ui.Choice(
                         new[] { "Hard", "Hard conservative", "Clearance", "Duplicate" },
                         MatrixNaming.Worded(one.Test),
-                        picked => Reset(one, Kinded(picked), one.Tolerance, one.Enabled), 90), 1);
+                        picked => Reset(one, Kinded(picked), one.Tolerance, one.Enabled), 80), 1);
 
                     var tolerance = Ui.Text(Millimetres(one.Tolerance).Replace(" mm", string.Empty),
                         typed =>
@@ -1532,7 +1590,7 @@ namespace CamelWorks.UI.Views
                             if (double.TryParse(typed, NumberStyles.Float,
                                                 CultureInfo.InvariantCulture, out var mm) && mm >= 0)
                                 Reset(one, one.Test, mm / 1000, one.Enabled);
-                        }, 60);
+                        }, 50);
 
                     At(tolerance, 2, right: 6);
 
@@ -1547,7 +1605,7 @@ namespace CamelWorks.UI.Views
                         () => Reset(one, one.Test, one.Tolerance, one.Enabled, drop: true)), 5,
                        right: 0);
 
-                    _legendRows.Children.Add(row);
+                    cards.Children.Add(row);
                 }
             }
 
@@ -2175,15 +2233,62 @@ namespace CamelWorks.UI.Views
             /// <param name="problem">What went wrong.</param>
             private void Warned(UIElement problem) => Said(problem);
 
-            private UIElement Adding(string what, Action onAdd)
+            /// <summary>
+            /// The last cell of the top row, and of the left column: one more line.
+            ///
+            /// <b>A symbol floating in the white beside a grid is not a button.</b> It was a
+            /// plus at the top of a header a hundred and sixty pixels tall, level with nothing,
+            /// against no background - and the only way to learn what it did was to hover it.
+            /// Shaped like the headers it continues, with the words on the row one, it reads as
+            /// the next place rather than as a mark somebody left behind.
+            /// </summary>
+            /// <param name="what">What it adds, which is also what it says.</param>
+            /// <param name="onAdd">Adds it.</param>
+            /// <param name="column">True for the one at the end of the columns.</param>
+            private UIElement Adding(string what, Action onAdd, bool column)
             {
-                var add = Ui.Icon(Glyphs.Add, what, onAdd);
+                var words = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
 
-                add.Margin = new Thickness(6);
-                add.HorizontalAlignment = HorizontalAlignment.Left;
-                add.VerticalAlignment = VerticalAlignment.Top;
+                words.Children.Add(Ui.Glyph(Glyphs.Add, 13, "Accent",
+                                            new Thickness(0, 0, column ? 0 : 6, 0)));
 
-                return add;
+                // The column one is as wide as a column, which is not wide enough for words.
+                if (!column)
+                    words.Children.Add(new TextBlock
+                    {
+                        Text = what,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Lbl"));
+
+                var cell = new Border
+                {
+                    Child = words,
+                    Cursor = Cursors.Hand,
+                    ToolTip = what,
+                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    Background = System.Windows.Media.Brushes.Transparent,
+                    Height = column ? 44 : CellHigh,
+                    VerticalAlignment = column ? VerticalAlignment.Bottom : VerticalAlignment.Top,
+                    HorizontalAlignment = column
+                        ? HorizontalAlignment.Stretch
+                        : HorizontalAlignment.Stretch,
+                    MinWidth = column ? CellWide : 0,
+                };
+
+                cell.Tint(Border.BorderBrushProperty, "Bd");
+
+                cell.MouseEnter += (s, e) => cell.Tint(Border.BackgroundProperty, "Hover");
+                cell.MouseLeave += (s, e) =>
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+
+                cell.MouseLeftButtonUp += (s, e) => Ui.Safely(onAdd);
+
+                return cell;
             }
 
             private static string Millimetres(double metres) =>
