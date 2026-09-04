@@ -445,9 +445,29 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(Ui.Loose(button));
                 }
 
+                // <b>The strip reads in the order the work happens.</b> Where a matrix comes
+                // from, then what is done to all of it, then how the tool behaves, then keeping
+                // and sending it, then the two checks, then the build.
+                //
+                // Three things had drifted. "Start from" held four ways to make a matrix and
+                // four ways to rearrange one, which are opposite acts on one menu - so somebody
+                // looking for "put these in order" had no reason to open it. "Save it in this
+                // project" was filed under "Out", and out is where work goes when it is over,
+                // not where it is kept. And the settings were in three places, none of them
+                // called settings: how the grid is drawn was a verb called "Look", how a test
+                // is named was a menu called "Names and folder", and where tests are filed was
+                // the last line of that menu.
                 Add(Parts.MenuButton("Start from", Glyphs.Read, Starting()));
-                Add(Parts.MenuButton("Names and folder", Glyphs.Pencil, Naming()));
-                Add(Parts.MenuButton("Out", Glyphs.Export, Sending()));
+                Add(Parts.MenuButton("Arrange", Glyphs.Sort, Arranging()));
+                Add(Parts.MenuButton("Settings", Glyphs.Tune, Settings()));
+
+                Add(Ui.Verb(Glyphs.Save, "Save",
+                            "Keep it in this project, so it is here next time this model is "
+                            + "opened. It also saves itself as you work.", Keep));
+
+                Add(Ui.Verb(Glyphs.Table, "Export",
+                            "The grid and its legend as a spreadsheet, to send to whoever "
+                            + "asked", Sheet));
 
                 // <b>The two things to do before building were filed under "Out".</b> Checking
                 // every source against the model and seeing what would change are the pre-flight
@@ -462,10 +482,6 @@ namespace CamelWorks.UI.Views
                 Add(Ui.Verb(Glyphs.Changes, "Changes",
                             "See what would change — this matrix against the tests already in "
                             + "the document", Difference));
-
-                Add(Ui.Verb(Glyphs.Palette, "Look",
-                            "How the matrix is drawn: which half is live, what the symbols are "
-                            + "coloured, and which of a line's fields show", Looks));
 
                 _build.Margin = new Thickness(8, 0, 0, 0);
 
@@ -3790,6 +3806,10 @@ namespace CamelWorks.UI.Views
                 // whole stated reason for existing, "this is where four dialogues went" - and
                 // they behaved differently from it, so the same edit had two outcomes depending
                 // on which door it came through.
+                // <b>One order, on every menu this screen has.</b> What it is, then what it
+                // points at, then where it is filed, then where it sits, then the one act that
+                // destroys something - last, behind a rule, in the danger colour. A reader who
+                // has opened one of these menus knows where to look on the next.
                 var items = new List<Parts.Entry>
                 {
                     Parts.Entry.Heading(line.Titled),
@@ -3797,20 +3817,36 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Saying("Say what it is", Glyphs.Pencil,
                         "Its name, number and code, in the panel", () => Pick(line, rows)),
 
+                    Parts.Entry.Saying("Rename it", Glyphs.Pencil,
+                        "The same as double-clicking its header",
+                        () => Parts.Ask(_grid, rows ? "Name this row" : "Name this column",
+                                        line.Name, "Rename", typed =>
+                        {
+                            if (string.IsNullOrWhiteSpace(typed)) return;
+
+                            Remember(what: "renaming a " + what);
+
+                            _board.Rename(line, typed.Trim());
+
+                            Redraw();
+                            Pick(line, rows);
+                        })),
+
                     Parts.Entry.Rule(),
-                    Parts.Entry.Heading("Point it at: " + line.Source.Kinded()),
+                    Parts.Entry.Heading("Points at: " + line.Source.Kinded()),
                 };
 
                 items.AddRange(SourceMenu(line));
 
                 items.Add(Parts.Entry.Rule());
                 items.Add(Parts.Entry.Heading(line.Folder.Length == 0
-                    ? "File it in a folder"
+                    ? "In no folder"
                     : "Filed in: " + line.Folder));
 
                 items.AddRange(FilingMenu(line));
 
                 items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Where it sits"));
 
                 if (at > 0)
                     items.Add(Parts.Entry.Act("Move it earlier", Glyphs.Up, () =>
@@ -3835,6 +3871,8 @@ namespace CamelWorks.UI.Views
                     {
                         if (rows) AddRow(); else AddColumn();
                     }));
+
+                items.Add(Parts.Entry.Rule());
 
                 items.Add(Parts.Entry.Danger("Take it out", Glyphs.Bin, () =>
                 {
@@ -4107,6 +4145,7 @@ namespace CamelWorks.UI.Views
                                     shut ? Glyphs.Down : Glyphs.Up, () => Shut(folder)),
 
                     Parts.Entry.Rule(),
+                    Parts.Entry.Heading("The folder itself"),
 
                     Parts.Entry.Act("Rename it", Glyphs.Pencil,
                         () => Parts.Ask(_grid, "What is this folder called?", folder, "Rename",
@@ -4148,6 +4187,7 @@ namespace CamelWorks.UI.Views
                             })));
 
                 items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Take it away"));
 
                 items.Add(Parts.Entry.Act("Dissolve it, and keep the disciplines", Glyphs.Eraser,
                     () =>
@@ -4253,6 +4293,8 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Saying("The legend is empty", Glyphs.Add,
                         "A cell carries a symbol, and a symbol is a setting. Make one first.",
                         AddSymbol));
+                else
+                    items.Add(Parts.Entry.Heading(many ? "Put in all of them" : "Put in it"));
 
                 foreach (var symbol in _legend.Symbols)
                 {
@@ -4285,6 +4327,7 @@ namespace CamelWorks.UI.Views
                                         : "clearing a cell")));
 
                 items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Take it somewhere else"));
 
                 items.Add(Parts.Entry.Saying(
                     many ? "Copy these " + Ui.Count(reach.Count, "cell") : "Copy this cell",
@@ -4296,6 +4339,7 @@ namespace CamelWorks.UI.Views
                     Paste));
 
                 items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Over the whole grid"));
 
                 items.Add(Parts.Entry.Danger("Fill the whole grid with this", Glyphs.SelectAll, () =>
                 {
@@ -6729,22 +6773,85 @@ namespace CamelWorks.UI.Views
 
                 Parts.Entry.Rule(),
 
-                Parts.Entry.Saying("Point the rows at saved sets", Glyphs.Layers,
-                    "Tick the sets; each one finds the row of the same name that is still "
-                    + "pointing at nothing", PointRows),
+                Parts.Entry.Danger("Start again, empty", Glyphs.Bin, () =>
+                    Parts.Sure(_grid,
+                        "This clears the grid and the legend. Nothing in the document changes - "
+                        + "the tests already built stay exactly as they are.",
+                        "Clear it", () =>
+                        {
+                            Remember(what: "starting again");
 
-                Parts.Entry.Saying("Group them by discipline code", Glyphs.Sort,
-                    "Both axes in one order, so a block covers one discipline against another",
-                    Grouped),
+                            _board = new MatrixBoard();
+                            _legend = new MatrixLegend();
+                            Redraw();
+                        })),
+            };
 
-                Parts.Entry.Rule(),
+            /// <summary>
+            /// Everything that reorganises the whole grid, in one place.
+            ///
+            /// <b>These were filed under "Start from", and none of them starts anything.</b>
+            /// Pointing every row at a set, putting both axes in code order, squaring the
+            /// columns off and deciding whether the axes are one list are all things done to a
+            /// matrix that already exists - offered on a menu whose other four lines make a new
+            /// one and throw the old one away. A person looking for "put these in order" had no
+            /// reason to open it, and a person opening it to start again had four ways to
+            /// rearrange what they were about to discard.
+            ///
+            /// One verb, one menu: this is the whole grid at once, where the line's own menu is
+            /// one line at a time.
+            /// </summary>
+            private List<Parts.Entry> Arranging()
+            {
+                var items = new List<Parts.Entry>
+                {
+                    Parts.Entry.Heading("Every line at once"),
+
+                    Parts.Entry.Saying("Point the rows at saved sets", Glyphs.Layers,
+                        "Tick the sets; each one finds the row of the same name that is still "
+                        + "pointing at nothing", PointRows),
+
+                    Parts.Entry.Saying("Group them by discipline code", Glyphs.Sort,
+                        "Both axes in one order and a folder per code, so a block covers one "
+                        + "discipline against another", Grouped),
+                };
+
+                var folders = _board.Folders(rows: true);
+
+                if (folders.Count > 0)
+                {
+                    items.Add(Parts.Entry.Rule());
+                    items.Add(Parts.Entry.Heading(Ui.Count(folders.Count, "folder")));
+
+                    items.Add(Parts.Entry.Saying("Close the gaps", Glyphs.Sort,
+                        "Put every folder's members back together, keeping the order they are in",
+                        () =>
+                        {
+                            Remember(what: "tidying the folders");
+                            _board.Tidy();
+                            Redraw();
+                        }));
+
+                    items.Add(Parts.Entry.Act(
+                        _shut.Count > 0 ? "Open all of them" : "Shut all of them", Glyphs.Layers,
+                        () =>
+                        {
+                            if (_shut.Count > 0) _shut.Clear();
+                            else foreach (var one in folders) _shut.Add(one);
+
+                            Redraw();
+                        }));
+                }
+
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("The shape of it"));
 
                 // <b>The shape of the thing, said out loud.</b> Both axes being one list is
                 // what makes a clash matrix a clash matrix - it is why the grid mirrors, why
                 // half of it is dead and why the diagonal is not a pair. It is the default and
                 // it stays out of the way, but a matrix of one trade's sets against another's
                 // is a real thing somebody builds, and this is where they say so.
-                Parts.Entry.Saying(
+                items.Add(Parts.Entry.Saying(
                     _board.Paired
                         ? "Let the two axes differ"
                         : "Make the two axes one list again",
@@ -6766,32 +6873,42 @@ namespace CamelWorks.UI.Views
                         if (_board.Paired) _board.SquareOffRows();
 
                         Redraw();
-                    }),
+                    }));
 
-                Parts.Entry.Act("Make the columns match the rows", Glyphs.Columns, () =>
-                {
-                    Remember(what: "squaring the columns off to the rows");
-                    _board.SquareOffRows();
-                    Redraw();
-                }),
-
-                Parts.Entry.Danger("Start again, empty", Glyphs.Bin, () =>
-                    Parts.Sure(_grid,
-                        "This clears the grid and the legend. Nothing in the document changes - "
-                        + "the tests already built stay exactly as they are.",
-                        "Clear it", () =>
+                if (!_board.Paired)
+                    items.Add(Parts.Entry.Act("Make the columns match the rows", Glyphs.Columns,
+                        () =>
                         {
-                            Remember(what: "starting again");
-
-                            _board = new MatrixBoard();
-                            _legend = new MatrixLegend();
+                            Remember(what: "squaring the columns off to the rows");
+                            _board.SquareOffRows();
                             Redraw();
-                        })),
-            };
+                        }));
 
-            private List<Parts.Entry> Naming() => new List<Parts.Entry>
+                return items;
+            }
+
+            /// <summary>
+            /// Every setting this screen has, under the word people look for.
+            ///
+            /// <b>They were in three places and none of them was called settings.</b> How the
+            /// grid is drawn was a verb on the strip called "Look"; how a test is named was a
+            /// menu called "Names and folder"; where the built tests are filed was the last line
+            /// of that menu. Three answers to "where do I change how this behaves", none of them
+            /// where anybody would look first, and one of them wearing a paint icon.
+            ///
+            /// Everything that changes how the tool behaves rather than what the matrix says is
+            /// here. Nothing here edits the matrix.
+            /// </summary>
+            private List<Parts.Entry> Settings() => new List<Parts.Entry>
             {
-                Parts.Entry.Heading("Test names: " + _pattern),
+                Parts.Entry.Heading("How it is drawn"),
+
+                Parts.Entry.Saying("The grid, the symbols and the fields", Glyphs.Palette,
+                    "Which half is worked in, what the spine and a ruled-out pair are coloured, "
+                    + "and which of a line's fields are shown", Looks),
+
+                Parts.Entry.Rule(),
+                Parts.Entry.Heading("How a test is named: " + _pattern),
 
                 Parts.Entry.Act("Write the pattern", Glyphs.Pencil,
                     () => Parts.Ask(_grid,
@@ -6831,8 +6948,9 @@ namespace CamelWorks.UI.Views
                 }),
 
                 Parts.Entry.Rule(),
+                Parts.Entry.Heading("Where the tests are filed"),
 
-                Parts.Entry.Act("Which folder the tests go in: "
+                Parts.Entry.Act("Which clash folder they go in: "
                     + (_folder.Length == 0 ? "the root" : _folder), Glyphs.Folder,
                     () => Parts.Ask(_grid, "A clash folder, or nothing for the root", _folder,
                                     "Use it", typed =>
@@ -6842,15 +6960,6 @@ namespace CamelWorks.UI.Views
                                         Touched();
                                         Recount();
                                     })),
-            };
-
-            private List<Parts.Entry> Sending() => new List<Parts.Entry>
-            {
-                Parts.Entry.Saying("Save it in this project", Glyphs.Save,
-                    "So it is here next time this model is opened", Keep),
-
-                Parts.Entry.Saying("As a spreadsheet", Glyphs.Table,
-                    "The grid and its legend, to send to whoever asked", Sheet),
             };
 
             /// <summary>
