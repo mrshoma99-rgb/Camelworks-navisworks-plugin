@@ -2476,6 +2476,48 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
+        /// A button with a symbol and the word for it, for a strip where there is room to say it.
+        ///
+        /// <b>A symbol alone is a guess.</b> On a row where every button is a symbol they are at
+        /// least a set to be learned; on the top strip, beside three buttons that all carry their
+        /// own word, an unlabelled one reads as something that failed to draw. The tip still
+        /// carries the sentence.
+        /// </summary>
+        /// <param name="glyph">The symbol.</param>
+        /// <param name="caption">The word.</param>
+        /// <param name="tip">The sentence, for the tip.</param>
+        /// <param name="onClick">What it does.</param>
+        public static System.Windows.Controls.Button Verb(string glyph, string caption, string tip,
+                                                          Action? onClick)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            row.Children.Add(Glyph(glyph, 13, "Muted", new Thickness(0, 0, 6, 0)));
+
+            row.Children.Add(new TextBlock
+            {
+                Text = caption ?? string.Empty,
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+            var button = new System.Windows.Controls.Button
+            {
+                Content = row,
+                ToolTip = tip,
+                Padding = new Thickness(9, 4, 10, 5),
+            };
+
+            if (onClick != null) button.Click += (s, e) => Busy(onClick);
+
+            return button;
+        }
+
+        /// <summary>
         /// Set on a container whose tables are the whole of it, so they grow to the room they get.
         ///
         /// Inherited, so a pane sets it once and every table drawn inside it afterwards is told -
@@ -3959,6 +4001,30 @@ namespace CamelWorks.UI.Views
 
         /// <summary>Two crossing pairs: number them again.</summary>
         public const string Number = "M9,4 L7,20 M17,4 L15,20 M4,9 L20,9 M3,15 L19,15";
+
+        /// <summary>A ring with a bar through it: ruled out, on purpose.</summary>
+        public const string Barred = "M12,4 A8,8 0 1 0 12.01,4 M6.3,6.3 L17.7,17.7";
+
+        /// <summary>Corners and a filled middle: all of it, every cell.</summary>
+        public const string SelectAll = "M4,7.5 L4,4 L7.5,4 M16.5,4 L20,4 L20,7.5 M20,16.5 L20,20 L16.5,20 M7.5,20 L4,20 L4,16.5 M9,9 L15,9 L15,15 L9,15 Z";
+
+        /// <summary>A list with a tick against it: every one of them accounted for.</summary>
+        public const string Checklist = "M4,7 L13,7 M4,12 L11,12 M4,17 L10,17 M13.5,16.5 L16,19 L20.5,13.5";
+
+        /// <summary>An arrow up against a bar: on to the next one.</summary>
+        public const string Next = "M6.5,5.5 L13.5,12 L6.5,18.5 M17.5,5.5 L17.5,18.5";
+
+        /// <summary>A sheet with a tick on it: checked, and against something.</summary>
+        public const string Verify = "M5,5 L19,5 L19,20.5 L5,20.5 Z M9.5,3.5 L14.5,3.5 M8.5,12.5 L11,15 L15.5,9.5";
+
+        /// <summary>Two arrows passing: what is different between them.</summary>
+        public const string Changes = "M3,9 L16,9 M13,6 L16,9 L13,12 M21,15 L8,15 M11,12 L8,15 L11,18";
+
+        /// <summary>An arrow leaving a tray: out of here, into a file.</summary>
+        public const string Export = "M12,3 L12,14 M8.5,6.5 L12,3 L15.5,6.5 M5,13 L5,20 L19,20 L19,13";
+
+        /// <summary>A painter's board with its colours on it: how the thing looks.</summary>
+        public const string Palette = "M12,3.5 C6.8,3.5 3,7.4 3,12 C3,16.7 6.9,20.5 12,20.5 C13.4,20.5 14.1,19.7 14.1,18.8 C14.1,18 13.4,17.6 13.4,16.8 C13.4,16 14.1,15.4 14.9,15.4 L16.6,15.4 C19.1,15.4 21,13.4 21,10.9 C21,6.8 16.9,3.5 12,3.5 M7.6,10.6 L7.61,10.6 M10.6,7.6 L10.61,7.6 M14.4,7.6 L14.41,7.6 M17,10.6 L17.01,10.6";
 
         /// <summary>Pour it into what is empty: a fill, not another plus.</summary>
         public const string Sweep = "M12,3 L12,13 M8,9 L12,13 L16,9 M4,17 L20,17 L20,20 L4,20 Z";

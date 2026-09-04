@@ -228,17 +228,63 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// Whether this cell is the half of a mirrored pair that the grid draws.
+        /// Which triangle of a mirrored matrix is the one that is worked in.
         ///
-        /// The earlier of the two in reading order. Nothing about a matrix says which triangle
-        /// somebody fills in, so the one above the diagonal is kept for no reason but that one of
-        /// them has to be, and every drawing of a clash matrix keeps one.
+        /// <b>Nothing about a matrix says which one it should be.</b> One of the two has to be,
+        /// and every drawing of a clash matrix keeps one - but which one is a house habit, and
+        /// half the practices that draw these fill in the lower triangle because that is how the
+        /// sheet they inherited was drawn. Being handed the other one and told it is the dead
+        /// half is being told your own matrix is upside down.
+        ///
+        /// It changes what is drawn and nothing else: a pair is written to both cells whichever
+        /// half it is put in, so the tests that come out are the same either way.
+        /// </summary>
+        public bool UpperIsLive { get; set; } = true;
+
+        /// <summary>
+        /// Whether this cell is the one of a mirrored pair that the matrix keeps.
+        ///
+        /// <b>Always the earlier of the two, whichever half is drawn.</b> This is what walks the
+        /// cells, what the planner counts and what the test names are built from, so it cannot
+        /// follow a drawing preference: a pair kept the other way round would name every test
+        /// "Ducts vs Steel" where it said "Steel vs Ducts", and the difference against the
+        /// document would read as two hundred and thirty-one renames because somebody preferred
+        /// the lower triangle.
         /// </summary>
         /// <param name="row">The row.</param>
         /// <param name="column">The column.</param>
-        public bool IsKeptHalf(MatrixLine? row, MatrixLine? column)
+        public bool IsKeptHalf(MatrixLine? row, MatrixLine? column) => Earlier(row, column) == true;
+
+        /// <summary>
+        /// Whether this cell is in the half somebody is working in, which is the half drawn live.
+        ///
+        /// The only thing <see cref="UpperIsLive"/> changes. A pair is written to both cells
+        /// whichever one it is put in, so this decides what is painted and nothing else.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public bool IsDrawnHalf(MatrixLine? row, MatrixLine? column)
         {
-            if (row == null || column == null) return false;
+            var earlier = Earlier(row, column);
+
+            if (earlier == null) return false;
+
+            // A cell with no mirror - a grid whose axes hold different things - is always drawn.
+            if (MirrorOf(row, column) == null) return true;
+
+            return UpperIsLive ? earlier.Value : !earlier.Value;
+        }
+
+        /// <summary>
+        /// Whether a cell comes before its mirror in reading order, or null when there is no cell.
+        ///
+        /// A cell with no mirror, and a cell on the diagonal, are both their own earlier half.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        private bool? Earlier(MatrixLine? row, MatrixLine? column)
+        {
+            if (row == null || column == null) return null;
 
             var mirror = MirrorOf(row, column);
 
@@ -249,6 +295,38 @@ namespace CamelWorks.Core.Clash
 
             return here.Item1 < there.Item1
                    || (here.Item1 == there.Item1 && here.Item2 <= there.Item2);
+        }
+
+        /// <summary>
+        /// Give every cell carrying one symbol a different one, and say how many changed.
+        ///
+        /// A symbol in a legend is a name somebody chose - "A" because the client's sheet said A -
+        /// and renaming it afterwards used to mean taking it out of the legend, which orphaned
+        /// every cell using it, and then painting them all again. The cells follow the name.
+        /// </summary>
+        /// <param name="from">The symbol as it is now.</param>
+        /// <param name="to">What it becomes. Empty or null empties the cells.</param>
+        public int Recast(string? from, string? to)
+        {
+            if (string.IsNullOrWhiteSpace(from)) return 0;
+
+            var wanted = string.IsNullOrWhiteSpace(to) ? null : to!.Trim();
+            var changed = 0;
+
+            foreach (var row in _rows)
+            foreach (var column in _columns)
+            {
+                var held = At(row, column);
+
+                if (held == null
+                    || !string.Equals(held, from!.Trim(), StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                Write(row, column, wanted);
+                changed++;
+            }
+
+            return changed;
         }
 
         /// <summary>Whether a row and a column stand for the same thing.</summary>
@@ -384,6 +462,8 @@ namespace CamelWorks.Core.Clash
 
             json.Set("cells", cells);
 
+            if (!UpperIsLive) json.Set("lower", true);
+
             return json;
         }
 
@@ -394,6 +474,8 @@ namespace CamelWorks.Core.Clash
             var board = new MatrixBoard();
 
             if (json == null || json.Kind != JsonKind.Object) return board;
+
+            board.UpperIsLive = !json["lower"].AsBool(false);
 
             foreach (var held in json["rows"].Items)
             {

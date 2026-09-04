@@ -471,6 +471,167 @@ namespace CamelWorks.Core.Tests
             names.Select(n => Identity.ElementKey.FromTreePath("a1b2c3d4", null, n)).ToList();
     }
 
+    /// <summary>
+    /// How a matrix is drawn, which the matrix carries rather than the seat it is opened on.
+    /// </summary>
+    public class MatrixStyleTests
+    {
+        private static MatrixBoard Square(params string[] names)
+        {
+            var board = new MatrixBoard();
+
+            foreach (var name in names)
+                board.AddRow(new MatrixLine(name, null, MatrixSource.SelectionSet(name)));
+
+            board.SquareOffRows();
+
+            return board;
+        }
+
+        [Fact]
+        public void EitherHalfCanBeTheOneThatIsWorkedIn()
+        {
+            var board = Square("Steel", "Ducts", "Pipes");
+
+            // Put a symbol in from one side; both cells that name the pair carry it, which is
+            // what makes flipping the drawing safe in the first place.
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            Assert.Equal("A", board.At(board.Rows[0], board.Columns[1]));
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[0]));
+
+            Assert.True(board.IsDrawnHalf(board.Rows[0], board.Columns[1]));
+            Assert.False(board.IsDrawnHalf(board.Rows[1], board.Columns[0]));
+
+            board.UpperIsLive = false;
+
+            Assert.False(board.IsDrawnHalf(board.Rows[0], board.Columns[1]));
+            Assert.True(board.IsDrawnHalf(board.Rows[1], board.Columns[0]));
+
+            // The diagonal is its own mirror and is drawn in either half.
+            Assert.True(board.IsDrawnHalf(board.Rows[2], board.Columns[2]));
+
+            // And what the matrix keeps does not move with the drawing: the cell the planner
+            // walks and names the test from is the earlier one, always.
+            Assert.True(board.IsKeptHalf(board.Rows[0], board.Columns[1]));
+            Assert.False(board.IsKeptHalf(board.Rows[1], board.Columns[0]));
+        }
+
+        [Fact]
+        public void FlippingTheHalfChangesNothingAboutTheTests()
+        {
+            var board = Square("Steel", "Ducts", "Pipes");
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[0], board.Columns[2], "B");
+
+            var legend = new MatrixLegend(new[] { new MatrixSymbol("A"), new MatrixSymbol("B") });
+
+            var upper = MatrixPlanner.Plan(board, legend);
+
+            board.UpperIsLive = false;
+
+            var lower = MatrixPlanner.Plan(board, legend);
+
+            Assert.Equal(upper.Tests.Count, lower.Tests.Count);
+            Assert.Equal(upper.Tests.Select(t => t.Name).OrderBy(n => n),
+                         lower.Tests.Select(t => t.Name).OrderBy(n => n));
+        }
+
+        [Fact]
+        public void WhichHalfIsLiveIsSavedWithTheMatrix()
+        {
+            var board = Square("Steel", "Ducts");
+
+            board.UpperIsLive = false;
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.False(read.UpperIsLive);
+            Assert.True(MatrixBoard.FromJson(Square("Steel", "Ducts").ToJson()).UpperIsLive);
+        }
+
+        [Fact]
+        public void RenamingASymbolTakesItsCellsWithIt()
+        {
+            // What it replaced: taking the symbol out of the legend, which orphaned every cell
+            // using it, and then painting them all again.
+            var board = Square("Steel", "Ducts", "Pipes");
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[0], board.Columns[2], "A");
+            board.Set(board.Rows[1], board.Columns[2], "B");
+
+            Assert.Equal(4, board.Recast("a", "H"));
+
+            Assert.Equal("H", board.At(board.Rows[0], board.Columns[1]));
+            Assert.Equal("H", board.At(board.Rows[1], board.Columns[0]));
+            Assert.Equal("H", board.At(board.Rows[0], board.Columns[2]));
+            Assert.Equal("B", board.At(board.Rows[1], board.Columns[2]));
+
+            Assert.Equal(0, board.Recast("Z", "H"));
+            Assert.Equal(0, board.Recast(null, "H"));
+        }
+
+        [Fact]
+        public void ASymbolKeepsAColourOfItsOwnAndRefusesAnythingThatIsNotOne()
+        {
+            Assert.Equal("#DDF2E4", new MatrixSymbol("B", colour: "#ddf2e4").Colour);
+            Assert.Equal("#ABC", new MatrixSymbol("B", colour: " #abc ").Colour);
+
+            // Not a colour, and Core has no idea what one is - so anything that is not plainly
+            // one is dropped here rather than guarded against by every screen that reads it.
+            Assert.Equal(string.Empty, new MatrixSymbol("B", colour: "green").Colour);
+            Assert.Equal(string.Empty, new MatrixSymbol("B", colour: "#12345").Colour);
+            Assert.Equal(string.Empty, new MatrixSymbol("B", colour: "#GGGGGG").Colour);
+            Assert.Equal(string.Empty, new MatrixSymbol("B").Colour);
+        }
+
+        [Fact]
+        public void AFieldIsDrawnWhenItSaysSomething_UnlessSomebodySaidOtherwise()
+        {
+            Assert.True(MatrixStyle.Drawn(MatrixField.Auto, worthIt: true));
+            Assert.False(MatrixStyle.Drawn(MatrixField.Auto, worthIt: false));
+
+            Assert.True(MatrixStyle.Drawn(MatrixField.Shown, worthIt: false));
+            Assert.False(MatrixStyle.Drawn(MatrixField.Hidden, worthIt: true));
+        }
+
+        [Fact]
+        public void TheStyleIsWrittenDownAndReadBack()
+        {
+            var style = new MatrixStyle
+            {
+                UpperIsLive = false,
+                Echo = false,
+                Spine = false,
+                SpineColour = "#CBD5E3",
+                Numbers = MatrixField.Shown,
+                Codes = MatrixField.Hidden,
+                Warnings = MatrixField.Shown,
+            };
+
+            var read = MatrixStyle.FromJson(style.ToJson());
+
+            Assert.False(read.UpperIsLive);
+            Assert.False(read.Echo);
+            Assert.False(read.Spine);
+            Assert.Equal("#CBD5E3", read.SpineColour);
+            Assert.Equal(MatrixField.Shown, read.Numbers);
+            Assert.Equal(MatrixField.Hidden, read.Codes);
+            Assert.Equal(MatrixField.Shown, read.Warnings);
+
+            // Nothing stored is the ordinary one, not a blank one: a matrix saved before any of
+            // this existed opens drawn the way it was drawn then.
+            var fresh = MatrixStyle.FromJson(null);
+
+            Assert.True(fresh.UpperIsLive);
+            Assert.True(fresh.Echo);
+            Assert.True(fresh.Spine);
+            Assert.Equal(MatrixField.Auto, fresh.Numbers);
+        }
+    }
+
     /// <summary>The mark for a pair somebody ruled out on purpose.</summary>
     public class MatrixNotRequiredTests
     {

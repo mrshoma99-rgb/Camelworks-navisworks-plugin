@@ -59,6 +59,15 @@ namespace CamelWorks.UI.Views
             private readonly Session _session;
 
             /// <summary>
+            /// How this matrix is drawn: which half is worked in, what things are coloured, and
+            /// which of a line's fields appear beside its name.
+            ///
+            /// Saved with the grid rather than with the seat, because a practice draws its
+            /// matrices one way and that travels with the matrix it sends out.
+            /// </summary>
+            private MatrixStyle _style = new MatrixStyle();
+
+            /// <summary>
             /// Where a matrix sits on a worksheet, as it was last answered.
             ///
             /// Held rather than made fresh per open, because a practice lays its matrices out one
@@ -409,18 +418,25 @@ namespace CamelWorks.UI.Views
 
                 Add(Parts.MenuButton("Start from", Glyphs.Read, Starting()));
                 Add(Parts.MenuButton("Naming", Glyphs.Pencil, Naming()));
-                Add(Parts.MenuButton("Out", Glyphs.Onward, Sending()));
+                Add(Parts.MenuButton("Out", Glyphs.Export, Sending()));
 
                 // <b>The two things to do before building were filed under "Out".</b> Checking
                 // every source against the model and seeing what would change are the pre-flight
                 // for the blue button beside them - and they were the top two lines of a menu
                 // every user reads as "export", which is where things go when the work is over.
-                // Beside the button they are for, they are what they are.
-                Add(Ui.Icon(Glyphs.Find, "Check it against the model — every row and column, "
-                                         + "against what this model actually has", Sanity));
+                // Beside the button they are for, they are what they are - and they say so in a
+                // word, like every other button on this strip.
+                Add(Ui.Verb(Glyphs.Verify, "Check",
+                            "Check it against the model — every row and column, against what "
+                            + "this model actually has", Sanity));
 
-                Add(Ui.Icon(Glyphs.Compare, "See what would change — this matrix against the "
-                                            + "tests already in the document", Difference));
+                Add(Ui.Verb(Glyphs.Changes, "Changes",
+                            "See what would change — this matrix against the tests already in "
+                            + "the document", Difference));
+
+                Add(Ui.Verb(Glyphs.Palette, "Look",
+                            "How the matrix is drawn: which half is live, what the symbols are "
+                            + "coloured, and which of a line's fields show", Looks));
 
                 _build.Margin = new Thickness(8, 0, 0, 0);
 
@@ -559,7 +575,7 @@ namespace CamelWorks.UI.Views
                 // want is not in the list they are looking at.
                 var legend = Ui.Across(
                     Doable(Glyphs.Add, "Add a symbol to the legend", AddSymbol),
-                    Doable(Glyphs.Tick,
+                    Doable(Glyphs.Checklist,
                            "Give every symbol in the grid a meaning, if any of them has none",
                            CoverSymbols));
 
@@ -877,7 +893,24 @@ namespace CamelWorks.UI.Views
             /// and the column comes back.
             /// </summary>
             /// <param name="lines">The rows or the columns.</param>
-            private static bool Numbered(IReadOnlyList<MatrixLine> lines)
+            /// <summary>Whether the number gutter is drawn, which the style can insist on either way.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private bool Numbered(IReadOnlyList<MatrixLine> lines) =>
+                MatrixStyle.Drawn(_style.Numbers, Numbering(lines));
+
+            /// <summary>Whether the code gutter is drawn.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private bool Coded(IReadOnlyList<MatrixLine> lines) =>
+                MatrixStyle.Drawn(_style.Codes, Coding(lines));
+
+            /// <summary>Whether room is kept for the mark on a line that points at nothing.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private bool Unbacked(IReadOnlyList<MatrixLine> lines) =>
+                MatrixStyle.Drawn(_style.Warnings, Unbacking(lines));
+
+            /// <summary>Whether the numbers say anything the index gutter does not.</summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private static bool Numbering(IReadOnlyList<MatrixLine> lines)
             {
                 for (var at = 0; at < lines.Count; at++)
                 {
@@ -904,7 +937,7 @@ namespace CamelWorks.UI.Views
             /// you something the name does not, and keeps its column.
             /// </summary>
             /// <param name="lines">The rows or the columns.</param>
-            private static bool Coded(IReadOnlyList<MatrixLine> lines)
+            private static bool Coding(IReadOnlyList<MatrixLine> lines)
             {
                 foreach (var line in lines)
                     if (line.Code.Length > 0
@@ -1009,7 +1042,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Whether any of these lines points at nothing.</summary>
             /// <param name="lines">The rows or the columns.</param>
-            private static bool Unbacked(IReadOnlyList<MatrixLine> lines)
+            private static bool Unbacking(IReadOnlyList<MatrixLine> lines)
             {
                 foreach (var line in lines) if (line.IsUnbacked) return true;
 
@@ -2271,7 +2304,7 @@ namespace CamelWorks.UI.Views
             {
                 var symbol = _board.At(row, column);
                 var meaning = symbol == null ? null : _legend.Meaning(symbol);
-                var mirrored = !_board.IsKeptHalf(row, column);
+                var mirrored = !_board.IsDrawnHalf(row, column);
 
                 // The cell's coordinates first, so a tip answers "which one is this" before it
                 // answers "what is in it" - which is the question somebody has when they are
@@ -2301,7 +2334,7 @@ namespace CamelWorks.UI.Views
                     cell.Background = System.Windows.Media.Brushes.Transparent;
                     cell.Opacity = Dimmed(symbol);
 
-                    cell.Child = symbol == null
+                    cell.Child = symbol == null || !_style.Echo
                         ? null
                         : new TextBlock
                         {
@@ -2352,11 +2385,15 @@ namespace CamelWorks.UI.Views
 
                 // Set here rather than in one branch, so a diagonal cell cleared of its symbol
                 // does not keep the heavier edge that having one gave it.
-                cell.BorderThickness = self
+                cell.BorderThickness = self && _style.Spine
                     ? new Thickness(0, 0, 2, 2)
                     : new Thickness(0, 0, 1, 1);
 
-                cell.Tint(Border.BorderBrushProperty, self ? "SpineBd" : "Bd");
+                var spine = self && _style.Spine;
+
+                if (spine && _style.SpineColour.Length > 0)
+                    cell.BorderBrush = Painted(_style.SpineColour, "SpineBd");
+                else cell.Tint(Border.BorderBrushProperty, spine ? "SpineBd" : "Bd");
 
                 if (MatrixBoard.IsNotRequired(symbol))
                 {
@@ -2370,7 +2407,9 @@ namespace CamelWorks.UI.Views
                     // Down the diagonal the spine's colour wins, because the line has to be
                     // followable through whatever state one of its cells happens to be in - and
                     // the dash on it says the rest.
-                    cell.Tint(Border.BackgroundProperty, self ? "Spine" : "Nav");
+                    Ground(cell,
+                           spine ? _style.SpineColour : _style.RuledColour,
+                           spine ? "Spine" : "Nav");
 
                     cell.Child = new TextBlock
                     {
@@ -2389,7 +2428,7 @@ namespace CamelWorks.UI.Views
 
                 if (symbol == null)
                 {
-                    if (self) cell.Tint(Border.BackgroundProperty, "Spine");
+                    if (spine) Ground(cell, _style.SpineColour, "Spine");
                     else cell.Background = System.Windows.Media.Brushes.Transparent;
 
                     cell.ToolTip = at + " · "
@@ -2417,7 +2456,7 @@ namespace CamelWorks.UI.Views
                     // the same fact the tick in the inspector states - and on the spine's own
                     // colour where the spine runs, so the line stays one line. The strike is
                     // what says it builds nothing, on either ground.
-                    cell.Tint(Border.BackgroundProperty, self ? "Spine" : "Nav");
+                    Ground(cell, spine ? _style.SpineColour : string.Empty, spine ? "Spine" : "Nav");
 
                     text.TextDecorations = TextDecorations.Strikethrough;
                     text.Wearing("Muted");
@@ -2442,14 +2481,16 @@ namespace CamelWorks.UI.Views
                     // twenty-two different washes it stops being a line at all, and a self-pair
                     // is a different kind of decision from the two hundred around it. The letter
                     // still says which test it is, in italics, as it always did.
-                    if (self)
+                    if (spine)
                     {
-                        cell.Tint(Border.BackgroundProperty, "Spine");
+                        Ground(cell, _style.SpineColour, "Spine");
                         text.FontStyle = FontStyles.Italic;
                     }
                     else
                     {
-                        cell.Background = Skin.Symbol(Hue(symbol));
+                        if (self) text.FontStyle = FontStyles.Italic;
+
+                        cell.Background = Washed(meaning);
                     }
 
                     cell.ToolTip = at + " · "
@@ -2475,6 +2516,83 @@ namespace CamelWorks.UI.Views
             private static void Named(Border cell) =>
                 System.Windows.Automation.AutomationProperties.SetName(
                     cell, cell.ToolTip as string ?? string.Empty);
+
+            /// <summary>
+            /// The wash a symbol's cells carry: its own colour, or the one its place in the
+            /// legend gives it.
+            ///
+            /// <b>Empty is not a missing colour.</b> It means "whatever the tool would pick",
+            /// which is what every matrix starts as and most of them stay - so a legend of four
+            /// symbols is four distinguishable colours without anybody choosing one, and the
+            /// practice that has always drawn clearances green can say so.
+            /// </summary>
+            /// <param name="meaning">The legend entry, or null.</param>
+            private System.Windows.Media.Brush Washed(MatrixSymbol? meaning) =>
+                meaning == null
+                    ? Skin.Of("Nav")
+                    : meaning.Colour.Length > 0
+                        ? Painted(meaning.Colour, "Nav")
+                        : Skin.Symbol(Hue(meaning.Symbol));
+
+            /// <summary>
+            /// Paint a cell with a colour somebody chose, or with the skin's own when they have
+            /// not.
+            ///
+            /// A chosen colour is a fixed brush and a skin key is a live one, so the two cannot
+            /// be set the same way: a cell given a brush keeps it when the theme changes, which
+            /// is right - the colour is the matrix's, not the theme's.
+            /// </summary>
+            /// <param name="cell">The cell.</param>
+            /// <param name="colour">What was chosen, or empty.</param>
+            /// <param name="key">The skin key to fall back to.</param>
+            private static void Ground(Border cell, string colour, string key)
+            {
+                if (colour.Length > 0) cell.Background = Painted(colour, key);
+                else cell.Tint(Border.BackgroundProperty, key);
+            }
+
+            /// <summary>
+            /// One chosen colour as a brush, or the skin's own when it cannot be read.
+            ///
+            /// Core keeps these as text and checks only that they look like a colour; this is
+            /// where one becomes one, and a string that got past both is still not a crash.
+            /// </summary>
+            /// <param name="colour">The colour, as <c>#RRGGBB</c>.</param>
+            /// <param name="key">The skin key to fall back to.</param>
+            private static System.Windows.Media.Brush Painted(string colour, string key)
+            {
+                if (!_inks.TryGetValue(colour, out var brush))
+                {
+                    try
+                    {
+                        var made = new System.Windows.Media.SolidColorBrush(
+                            (System.Windows.Media.Color)System.Windows.Media.ColorConverter
+                                .ConvertFromString(colour));
+
+                        made.Freeze();
+                        brush = made;
+                    }
+                    catch (Exception)
+                    {
+                        brush = null;
+                    }
+
+                    _inks[colour] = brush;
+                }
+
+                return brush ?? Skin.Of(key);
+            }
+
+            /// <summary>
+            /// Every colour that has been asked for, made once.
+            ///
+            /// Paint runs per cell and a matrix of twenty-two is four hundred and eighty-four of
+            /// them on every redraw; parsing the same six characters that many times is work
+            /// nobody asked for. Null in here is a colour that could not be read, remembered so
+            /// it is not tried again either.
+            /// </summary>
+            private static readonly Dictionary<string, System.Windows.Media.Brush?> _inks =
+                new Dictionary<string, System.Windows.Media.Brush?>(StringComparer.OrdinalIgnoreCase);
 
             /// <summary>
             /// Where one symbol sits in the legend, which is the wash it is drawn on.
@@ -3219,7 +3337,7 @@ namespace CamelWorks.UI.Views
 
                 items.Add(Parts.Entry.Rule());
 
-                items.Add(Parts.Entry.Danger("Fill the whole grid with this", Glyphs.Table, () =>
+                items.Add(Parts.Entry.Danger("Fill the whole grid with this", Glyphs.SelectAll, () =>
                 {
                     if (here == null) return;
 
@@ -3284,7 +3402,8 @@ namespace CamelWorks.UI.Views
                         armed,
                         one.Enabled,
                         () => { Arm(one); Show(one); },
-                        hue: at));
+                        hue: at,
+                        paint: Washed(one)));
                 }
 
                 // The two marks that are not symbols: one rules a pair out on purpose, the
@@ -3309,8 +3428,10 @@ namespace CamelWorks.UI.Views
             /// <param name="live">False for a symbol that is turned off, and for the cross.</param>
             /// <param name="onPress">Arms it.</param>
             /// <param name="hue">Where it sits in the legend, or -1 for the marks that are not in it.</param>
+            /// <param name="paint">The wash its cells carry, or null to take it from the hue.</param>
             private UIElement Swatch(string mark, string kind, string says, string stroke,
-                                     bool armed, bool live, Action onPress, int hue = -1)
+                                     bool armed, bool live, Action onPress, int hue = -1,
+                                     System.Windows.Media.Brush? paint = null)
             {
                 var key = new Border
                 {
@@ -3352,7 +3473,8 @@ namespace CamelWorks.UI.Views
 
                 // The key carries the same wash the cells do, because a key that is not drawn
                 // the way the thing it explains is drawn is not a key.
-                if (live && hue >= 0) swatch.Background = Skin.Symbol(hue);
+                if (live && paint != null) swatch.Background = paint;
+                else if (live && hue >= 0) swatch.Background = Skin.Symbol(hue);
                 else swatch.Tint(Border.BackgroundProperty, live ? "AccentWash" : "Nav");
 
                 // And a symbol that is turned off is struck through here as well as in the grid,
@@ -3620,7 +3742,7 @@ namespace CamelWorks.UI.Views
                     _inspector.Children.Add(idle);
 
                     Verbs("Do to the matrix",
-                        Doable(Glyphs.Onward, "Go to the first pair nobody has ruled on",
+                        Doable(Glyphs.Next, "Go to the first pair nobody has ruled on",
                                Undecided));
                 }
 
@@ -3828,7 +3950,7 @@ namespace CamelWorks.UI.Views
                 // The button is its own anchor: a menu hung off the panel would open somewhere
                 // else on the screen entirely. It can be, now that the primitive admits a
                 // handler added after the fact rather than demanding one it then null-checks.
-                var elsewhere = Doable(Glyphs.Focus, "Point it at something else", null);
+                var elsewhere = Doable(Glyphs.Layers, "Point it at something else", null);
 
                 elsewhere.Click += (s, e) =>
                     Ui.Safely(() => Parts.PopMenu(elsewhere, SourceMenu(line)));
@@ -4019,7 +4141,7 @@ namespace CamelWorks.UI.Views
                     held.Remove(symbol.Symbol);
 
                     groups.Children.Add(Gathered(
-                        symbol.Symbol, at, symbol.Enabled,
+                        symbol.Symbol, Washed(symbol), symbol.Enabled,
                         MatrixNaming.Worded(symbol.Test),
                         Millimetres(symbol.Tolerance)
                         + (symbol.Enabled ? string.Empty : " · turned off, so these build nothing"),
@@ -4032,7 +4154,7 @@ namespace CamelWorks.UI.Views
                     var ruled = MatrixBoard.IsNotRequired(pair.Key);
 
                     groups.Children.Add(Gathered(
-                        ruled ? MatrixBoard.NotRequired : pair.Key, -1, false,
+                        ruled ? MatrixBoard.NotRequired : pair.Key, null, false,
                         ruled ? "Not required" : Quoted(pair.Key),
                         ruled ? "agreed, and no test is made"
                               : "not in the legend, so these make no test",
@@ -4040,7 +4162,7 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (open.Count > 0)
-                    groups.Children.Add(Gathered("", -1, false, "Nobody has ruled on these",
+                    groups.Children.Add(Gathered("", null, false, "Nobody has ruled on these",
                                                  "no test either way, yet", open));
 
                 // <b>No scroller of its own.</b> The list used to be capped and scrolled inside
@@ -4061,12 +4183,13 @@ namespace CamelWorks.UI.Views
             /// and the eye is looking for one of them rather than reading all of them.
             /// </summary>
             /// <param name="mark">The symbol, or empty for the pairs nobody has decided.</param>
-            /// <param name="hue">Where it sits in the legend, or -1 for anything not in it.</param>
+            /// <param name="paint">The wash its cells carry, or null for anything not in the legend.</param>
             /// <param name="live">False for a symbol that builds nothing, and for the two marks.</param>
             /// <param name="title">What the test is.</param>
             /// <param name="under">The tolerance, or what the mark means.</param>
             /// <param name="names">The disciplines on the other side of each pair.</param>
-            private static UIElement Gathered(string mark, int hue, bool live, string title,
+            private static UIElement Gathered(string mark, System.Windows.Media.Brush? paint,
+                                              bool live, string title,
                                               string under, IReadOnlyList<string> names)
             {
                 var card = new Border
@@ -4091,7 +4214,7 @@ namespace CamelWorks.UI.Views
                     VerticalAlignment = VerticalAlignment.Center,
                 };
 
-                if (!live && hue >= 0) letter.TextDecorations = TextDecorations.Strikethrough;
+                if (!live && paint != null) letter.TextDecorations = TextDecorations.Strikethrough;
 
                 var swatch = new Border
                 {
@@ -4105,7 +4228,7 @@ namespace CamelWorks.UI.Views
 
                 // The same wash the cells carry, so the group and the grid are one key. A group
                 // with no symbol - the open one - is drawn as the empty cells it stands for.
-                if (live && hue >= 0) swatch.Background = Skin.Symbol(hue);
+                if (live && paint != null) swatch.Background = paint;
                 else if (mark.Length == 0) swatch.Tint(Border.BackgroundProperty, "Card");
                 else swatch.Tint(Border.BackgroundProperty, "Nav");
 
@@ -4174,6 +4297,27 @@ namespace CamelWorks.UI.Views
                 says.Margin = new Thickness(0, 4, 0, 9);
                 _inspector.Children.Add(says);
 
+                // <b>On Return or on leaving the box, never per keystroke.</b> A symbol renamed
+                // as it is typed renames every cell it is in to "H", then "HA", then "HAR", and
+                // the undo stack is three deep before the word is finished.
+                var called = Ui.Text(symbol.Symbol, null, 60);
+
+                called.KeyDown += (s, e) => Ui.Safely(() =>
+                {
+                    if (e.Key != Key.Return) return;
+
+                    e.Handled = true;
+                    Rename(symbol, called.Text);
+                });
+
+                called.LostFocus += (s, e) => Ui.Safely(() => Rename(symbol, called.Text));
+
+                Told("What it is called", called);
+
+                Told("Colour", MatrixLook.Colours(symbol.Colour,
+                    colour => Reset(symbol, symbol.Test, symbol.Tolerance, symbol.Enabled,
+                                    colour: colour)));
+
                 Told("Kind of test", Ui.Choice(
                     new[] { "Hard", "Hard conservative", "Clearance", "Duplicate" },
                     MatrixNaming.Worded(symbol.Test),
@@ -4210,7 +4354,7 @@ namespace CamelWorks.UI.Views
 
                 _inspector.Children.Add(gap);
 
-                var everywhere = Doable(Glyphs.Table, "Put it in every cell of the matrix", () =>
+                var everywhere = Doable(Glyphs.SelectAll, "Put it in every cell of the matrix", () =>
                     Parts.Sure(_grid,
                         "This puts " + Quoted(symbol.Symbol) + " in every cell of the matrix, "
                         + "over everything already decided. The diagonal is left alone.",
@@ -4228,7 +4372,7 @@ namespace CamelWorks.UI.Views
                 // <b>"Eighteen cells carrying it" was a number and a dead end.</b> Every cell
                 // that has it is already lit; this walks the cursor from one to the next, which
                 // is the other half of finding something on a grid too big to see at once.
-                var stepping = Doable(Glyphs.Find,
+                var stepping = Doable(Glyphs.Next,
                     "Go to the next cell carrying " + Quoted(symbol.Symbol),
                     () => Stepping(symbol.Symbol));
 
@@ -4256,7 +4400,7 @@ namespace CamelWorks.UI.Views
                 named.Margin = new Thickness(0, 4, 0, 9);
                 _inspector.Children.Add(named);
 
-                if (!_board.IsKeptHalf(row, column))
+                if (!_board.IsDrawnHalf(row, column))
                 {
                     var mirrored = Ui.Small("The other side of the diagonal. A pair is only run "
                                             + "once, so what goes here goes in both.");
@@ -4321,7 +4465,7 @@ namespace CamelWorks.UI.Views
                 how.TextWrapping = TextWrapping.Wrap;
                 _inspector.Children.Add(how);
 
-                var ruling = Doable(Glyphs.Compact, "Rule this pair out — agreed, and no test", () =>
+                var ruling = Doable(Glyphs.Barred, "Rule this pair out — agreed, and no test", () =>
                 {
                     Remember(what: "ruling out a pair");
                     _board.Set(row, column, MatrixBoard.NotRequired);
@@ -4343,7 +4487,7 @@ namespace CamelWorks.UI.Views
 
                 emptying.IsEnabled = here != null;
 
-                var onward = Doable(Glyphs.Onward, "Go to the next pair nobody has ruled on",
+                var onward = Doable(Glyphs.Next, "Go to the next pair nobody has ruled on",
                                     Undecided);
 
                 Verbs("Do to this cell", ruling, onward, null, emptying);
@@ -4762,6 +4906,8 @@ namespace CamelWorks.UI.Views
                 _board = MatrixBoard.FromJson(json["board"]);
                 _legend = LegendOf(json["legend"]);
 
+                _board.UpperIsLive = _style.UpperIsLive;
+
                 _picked = null;
                 _pickedSymbol = null;
                 _brush = was == null
@@ -4841,7 +4987,8 @@ namespace CamelWorks.UI.Views
                         .Set("symbol", s.Symbol)
                         .Set("test", (double)(int)s.Test)
                         .Set("tolerance", s.Tolerance)
-                        .Set("on", s.Enabled)));
+                        .Set("on", s.Enabled)
+                        .Set("colour", s.Colour)));
 
             /// <summary>A legend read back out of that.</summary>
             /// <param name="json">What was written.</param>
@@ -4850,7 +4997,8 @@ namespace CamelWorks.UI.Views
                     new MatrixSymbol(held["symbol"].AsString() ?? string.Empty,
                                      (MatrixTest)(int)held["test"].AsDouble(),
                                      held["tolerance"].AsDouble(),
-                                     held["on"].AsBool(true))));
+                                     held["on"].AsBool(true),
+                                     held["colour"].AsString())));
 
             private static MatrixTest Kinded(string said) =>
                 said == "Clearance" ? MatrixTest.Clearance
@@ -4878,9 +5026,13 @@ namespace CamelWorks.UI.Views
             /// False while the inspector is the thing being typed into. Redrawing it under the
             /// caret takes the focus away, so a tolerance could only ever be one digit long.
             /// </param>
+            /// <param name="colour">
+            /// The colour its cells carry, empty to go back to the one its place in the legend
+            /// gives it, or null to leave it as it is.
+            /// </param>
             private void Reset(MatrixSymbol symbol, MatrixTest test, double tolerance,
                                bool enabled, bool drop = false, string run = "",
-                               bool rebuild = true)
+                               bool rebuild = true, string? colour = null)
             {
                 Remember(run, drop
                     ? "taking " + Quoted(symbol.Symbol) + " out of the legend"
@@ -4891,7 +5043,10 @@ namespace CamelWorks.UI.Views
                                                StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
-                var made = drop ? null : new MatrixSymbol(symbol.Symbol, test, tolerance, enabled);
+                var made = drop
+                    ? null
+                    : new MatrixSymbol(symbol.Symbol, test, tolerance, enabled,
+                                       colour ?? symbol.Colour);
 
                 if (made != null) kept.Add(made);
 
@@ -4913,6 +5068,95 @@ namespace CamelWorks.UI.Views
                 if (rebuild) RedrawInspector();
 
                 RepaintAll();
+            }
+
+            /// <summary>
+            /// Open the window that says how the matrix is drawn.
+            ///
+            /// Everything in it applies as it is pressed, against the grid behind the window, and
+            /// is saved with the matrix like any other edit - because a colour is judged by
+            /// looking at the grid, not by reading the name of it in a dialogue.
+            /// </summary>
+            private void Looks() =>
+                MatrixLook.Ask(_style,
+                    () => _legend.Symbols,
+                    (symbol, colour) => Reset(symbol, symbol.Test, symbol.Tolerance,
+                                              symbol.Enabled, colour: colour),
+                    () =>
+                    {
+                        Touched();
+
+                        // The half is on the board as well as in the style, so that undo and the
+                        // saved grid keep it. Setting it here is what keeps the two in step.
+                        _board.UpperIsLive = _style.UpperIsLive;
+
+                        // A whole redraw rather than a repaint: the field settings change how
+                        // wide the row headers are and how tall the column band is, which is the
+                        // shape of the grid rather than what is in it.
+                        Redraw();
+                    });
+
+            /// <summary>
+            /// Give a symbol a different letter, and take its cells with it.
+            ///
+            /// <b>A symbol's name was the one thing about it that could not be changed.</b> The
+            /// panel let you change what it means, how tight it is and whether it builds
+            /// anything, but the letter itself was fixed at the moment it was made - so a legend
+            /// that came out of a client's sheet as "1" and "2" stayed that way, and calling it
+            /// "H" meant taking it out of the legend, which orphaned every cell using it, and
+            /// then painting all of them again.
+            /// </summary>
+            /// <param name="symbol">The symbol as it is.</param>
+            /// <param name="to">What it should be called.</param>
+            private void Rename(MatrixSymbol symbol, string to)
+            {
+                var wanted = (to ?? string.Empty).Trim();
+
+                if (wanted.Length == 0
+                    || string.Equals(wanted, symbol.Symbol, StringComparison.Ordinal)) return;
+
+                if (MatrixBoard.IsNotRequired(wanted))
+                {
+                    Warned(Ui.Problem("A dash is the mark for a pair ruled out, so it cannot be "
+                                      + "a symbol as well."));
+                    return;
+                }
+
+                if (_legend.Meaning(wanted) != null)
+                {
+                    Warned(Ui.Problem("The legend already has a " + Quoted(wanted) + "."));
+                    return;
+                }
+
+                Remember(what: "renaming " + Quoted(symbol.Symbol) + " to " + Quoted(wanted));
+
+                var kept = _legend.Symbols
+                    .Where(one => !string.Equals(one.Symbol, symbol.Symbol,
+                                                 StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                var made = new MatrixSymbol(wanted, symbol.Test, symbol.Tolerance,
+                                            symbol.Enabled, symbol.Colour);
+
+                kept.Add(made);
+
+                _legend = new MatrixLegend(kept);
+
+                var moved = _board.Recast(symbol.Symbol, wanted);
+
+                if (_brush != null && string.Equals(_brush.Symbol, symbol.Symbol,
+                                                    StringComparison.OrdinalIgnoreCase))
+                    _brush = made;
+
+                _pickedSymbol = made;
+
+                Redraw();
+                Show(made);
+
+                Said(Ui.Done(Quoted(symbol.Symbol) + " is now " + Quoted(wanted)
+                             + (moved == 0
+                                 ? ". No cell was carrying it."
+                                 : ", and so are " + Ui.Count(moved, "cell") + ".")));
             }
 
             private void AddSymbol() =>
@@ -5001,7 +5245,7 @@ namespace CamelWorks.UI.Views
 
                 Parts.Entry.Rule(),
 
-                Parts.Entry.Act("Make the columns match the rows", Glyphs.Table, () =>
+                Parts.Entry.Act("Make the columns match the rows", Glyphs.Columns, () =>
                 {
                     Remember(what: "squaring the columns off to the rows");
                     _board.SquareOffRows();
@@ -5463,6 +5707,7 @@ namespace CamelWorks.UI.Views
                 if (_folder.Length > 0) json.Set("folder", _folder);
 
                 json.Set("legend", LegendJson());
+                json.Set("style", _style.ToJson());
 
                 try
                 {
@@ -5524,6 +5769,12 @@ namespace CamelWorks.UI.Views
                     _folder = json["folder"].AsString() ?? string.Empty;
 
                     _legend = LegendOf(json["legend"]);
+                    _style = MatrixStyle.FromJson(json["style"]);
+
+                    // The board carries the choice too, so undo and the spreadsheet round trip
+                    // keep it; the style is what the window edits, and they are held together
+                    // here rather than by remembering to set one whenever the other changes.
+                    _board.UpperIsLive = _style.UpperIsLive;
                 }
                 catch (Exception)
                 {

@@ -35,13 +35,18 @@ namespace CamelWorks.Core.Clash
         /// <param name="test">Which test to make.</param>
         /// <param name="tolerance">Its tolerance, in metres.</param>
         /// <param name="enabled">False to read the symbol but make no test for it.</param>
+        /// <param name="colour">
+        /// What its cells are washed with, as <c>#RRGGBB</c>, or empty to let the drawing choose.
+        /// </param>
         public MatrixSymbol(string symbol, MatrixTest test = MatrixTest.Hard,
-                            double tolerance = MatrixOptions.DefaultTolerance, bool enabled = true)
+                            double tolerance = MatrixOptions.DefaultTolerance, bool enabled = true,
+                            string? colour = null)
         {
             Symbol = (symbol ?? string.Empty).Trim();
             Test = test;
             Tolerance = tolerance < 0 ? 0 : tolerance;
             Enabled = enabled;
+            Colour = Hexed(colour);
         }
 
         /// <summary>The cell's text.</summary>
@@ -55,6 +60,45 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>False to read the symbol but make no test for it.</summary>
         public bool Enabled { get; }
+
+        /// <summary>
+        /// What its cells are washed with, as <c>#RRGGBB</c>, or empty for the drawing's choice.
+        ///
+        /// <b>Held here rather than in the screen that draws it</b>, because a matrix's colours
+        /// are the matrix's: a practice that has always drawn clearances green expects them green
+        /// tomorrow, on the seat next to them, and in the copy they send out. Empty is not a
+        /// missing value - it means "whatever the tool would pick", which is what every matrix
+        /// starts as and most of them stay.
+        /// </summary>
+        public string Colour { get; }
+
+        /// <summary>
+        /// A colour that is safe to hand to a drawing, or empty.
+        ///
+        /// Nothing here parses it into a colour - Core has no idea what one is - but a string
+        /// that is not six or three hex digits behind a hash is not one either, and letting it
+        /// through means every screen that reads this has to guard against the same thing.
+        /// </summary>
+        /// <param name="said">What was given.</param>
+        private static string Hexed(string? said)
+        {
+            var text = (said ?? string.Empty).Trim();
+
+            if (text.Length != 4 && text.Length != 7) return string.Empty;
+            if (text[0] != '#') return string.Empty;
+
+            for (var at = 1; at < text.Length; at++)
+            {
+                var one = text[at];
+
+                var hex = (one >= '0' && one <= '9') || (one >= 'a' && one <= 'f')
+                          || (one >= 'A' && one <= 'F');
+
+                if (!hex) return string.Empty;
+            }
+
+            return text.ToUpperInvariant();
+        }
 
         /// <inheritdoc />
         public override string ToString() =>
