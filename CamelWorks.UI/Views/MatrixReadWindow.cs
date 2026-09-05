@@ -96,7 +96,11 @@ namespace CamelWorks.UI.Views
             {
                 Title = "CamelWorks - Read tests into a matrix",
                 Width = 980,
-                Height = 660,
+
+                // Taller than the pane it replaced: a row carries two lines now that both sides
+                // of a test are printed, so the same table needs more of the screen to show the
+                // same number of tests.
+                Height = 720,
                 MinWidth = 780,
                 MinHeight = 480,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
