@@ -85,6 +85,13 @@ namespace CamelWorks.Studio
             Page("app-clash-matrix-scrolled", "Clash Manager · Matrix, scrolled", 520,
                  () => MatrixWindow.Surface(Seated(), Drawn(pointed: true))),
 
+            // The panel beside the grid, with a line picked, which is the only state it draws
+            // anything in. Every field of a line is typed here and a field of the project's own
+            // is made here, and until this page existed none of it had been photographed.
+            Page("app-clash-matrix-line", "Clash Manager · Matrix, a line picked", 820,
+                 () => MatrixWindow.Surface(Seated(), Fielded(), MatrixWindow.Showing.Symbols,
+                                            null, "ARC_Internal Partitions")),
+
             // The levels a project declares, and what each covers. Drawn with a building in it:
             // an empty plan draws the one line saying there are none, which is the state that
             // proves nothing about the editor.

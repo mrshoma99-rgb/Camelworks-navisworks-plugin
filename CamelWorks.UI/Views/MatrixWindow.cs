@@ -109,11 +109,30 @@ namespace CamelWorks.UI.Views
         /// on a seat.
         /// </param>
         public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view,
-                                        IReadOnlyList<ClashTestRead>? counted)
+                                        IReadOnlyList<ClashTestRead>? counted) =>
+            Surface(seat, drawn, view, counted, null);
+
+        /// <summary>
+        /// The matrix tab, opened with one row already picked.
+        /// </summary>
+        /// <param name="seat">The seat it is running in.</param>
+        /// <param name="drawn">A matrix already open, or null to arrive at the start screen.</param>
+        /// <param name="view">Which of the three the grid starts on.</param>
+        /// <param name="counted">Tests as a read of the document hands them back, or null.</param>
+        /// <param name="picked">
+        /// The name of the row to open on, or null for none.
+        ///
+        /// Here for the render harness, which cannot press a row header. The panel beside the
+        /// grid — every field of a line, and the way to make one — only draws once something is
+        /// picked, so until this existed the whole of it was a surface no picture had ever shown
+        /// and its faults were found on a licensed seat and described to me in words.
+        /// </param>
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view,
+                                        IReadOnlyList<ClashTestRead>? counted, string? picked)
         {
             if (drawn != null) _board = drawn;
 
-            return new Editor(seat, view, counted).View;
+            return new Editor(seat, view, counted, picked).View;
         }
 
         /// <summary>
@@ -449,7 +468,8 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<(MatrixLine Row, MatrixLine Column), Border> _cells =
                 new Dictionary<(MatrixLine, MatrixLine), Border>();
 
-            internal Editor(ISeat session, Showing view, IReadOnlyList<ClashTestRead>? counted)
+            internal Editor(ISeat session, Showing view, IReadOnlyList<ClashTestRead>? counted,
+                            string? picked = null)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
 
@@ -468,6 +488,12 @@ namespace CamelWorks.UI.Views
                 _build = Ui.Primary("Build the tests", Build);
 
                 Load();
+
+                // After Load, which is what puts the board's rows there to be picked.
+                if (!string.IsNullOrEmpty(picked))
+                    Pick(_board.Rows.FirstOrDefault(
+                             one => string.Equals(one.Name, picked, StringComparison.Ordinal)),
+                         rows: true);
 
                 _saver.Tick += (s, e) => Ui.Safely(() =>
                 {
@@ -1163,10 +1189,42 @@ namespace CamelWorks.UI.Views
             /// third of the window. The leading mark is included, since it is reserved for the
             /// whole axis whenever any row needs it.
             /// </summary>
+            // Every one of these measures text, and every one of them was a property recomputed
+            // wherever it was read. A row header reads four of them and a redraw builds one header
+            // per row, so drawing twenty-two rows measured every row's name twenty-two times and
+            // built and measured a throwaway shell for each — which is the half-second between a
+            // keystroke and the letter appearing.
+            //
+            // Held for one draw and thrown away at the start of the next, so nothing can go stale:
+            // a pass either measures once or reuses what this pass already measured.
+            private double? _nameWide;
+            private double? _numberWide;
+            private double? _codeWide;
+            private double? _headerWide;
+            private double? _folderWide;
+            private double? _folderHigh;
+            private IReadOnlyList<MatrixField>? _carriedRows;
+            private Dictionary<string, double>? _fieldWide;
+
+            /// <summary>Throw the measured widths away, so the next draw works them out afresh.</summary>
+            private void Remeasure()
+            {
+                _nameWide = null;
+                _numberWide = null;
+                _codeWide = null;
+                _headerWide = null;
+                _folderWide = null;
+                _folderHigh = null;
+                _carriedRows = null;
+                _fieldWide = null;
+            }
+
             private double NameWide
             {
                 get
                 {
+                    if (_nameWide.HasValue) return _nameWide.Value;
+
                     var widest = 0.0;
 
                     foreach (var line in _board.Rows)
@@ -1175,7 +1233,9 @@ namespace CamelWorks.UI.Views
                     // The mark and the gap after it, and the room the name is inset by.
                     var mark = Unbacked(_board.Rows) ? 24.0 : 0;
 
-                    return Math.Max(150, Math.Min(300, widest + mark + 14));
+                    _nameWide = Math.Max(150, Math.Min(300, widest + mark + 14));
+
+                    return _nameWide.Value;
                 }
             }
 
@@ -1185,9 +1245,11 @@ namespace CamelWorks.UI.Views
             /// A fixed 36px truncated "ARC". These are short strings of known length, so they are
             /// measured rather than estimated.
             /// </summary>
-            private double NumberWide => Widest(_board.Rows, 11, false) + 12;
+            private double NumberWide =>
+                _numberWide ??= Widest(_board.Rows, 11, false) + 12;
 
-            private double CodeWide => Widest(_board.Rows, 10, true, code: true) + 18;
+            private double CodeWide =>
+                _codeWide ??= Widest(_board.Rows, 10, true, code: true) + 18;
 
             /// <summary>
             /// The container a row header is built in: its edge, and the gutters it lays out.
@@ -1220,6 +1282,16 @@ namespace CamelWorks.UI.Views
                         Width = new GridLength(CodeWide),
                     });
 
+                // A gutter per field of the project's own that any line actually carries. Without
+                // these a phase typed onto a line was written into the test names and read back
+                // by a pattern, and was nowhere on the board — so the one place somebody looks to
+                // check what a line holds was the one place that did not say.
+                foreach (var field in Carried(_board.Rows))
+                    words.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(FieldWide(field, _board.Rows)),
+                    });
+
                 words.ColumnDefinitions.Add(new ColumnDefinition
                 {
                     Width = new GridLength(NameWide),
@@ -1240,7 +1312,7 @@ namespace CamelWorks.UI.Views
             /// resolving or on which row happens to be first - only on the shell's own edge,
             /// padding and gutters, which is exactly what the band has to be wide enough to hold.
             /// </summary>
-            private double HeaderWide => Asked(RowShell()).Width;
+            private double HeaderWide => _headerWide ??= Asked(RowShell()).Width;
 
             /// <summary>
             /// Whether the numbers carry information beyond the index gutter beside them.
@@ -1452,6 +1524,52 @@ namespace CamelWorks.UI.Views
 
             private const double WarnTall = 16;
 
+            /// <summary>
+            /// The project's own fields that any line actually holds a value for.
+            ///
+            /// Only the ones in use. A field somebody added and has not filled in yet would
+            /// otherwise take a column of the header on every row and say nothing in any of them,
+            /// which costs the names the width they need.
+            /// </summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private IReadOnlyList<MatrixField> Carried(IReadOnlyList<MatrixLine> lines)
+            {
+                // Only the rows are held: they are what the header is measured against, and the
+                // columns ask for the same list through the same shell.
+                if (ReferenceEquals(lines, _board.Rows) && _carriedRows != null) return _carriedRows;
+
+                var held = MatrixNaming.Custom(_board.Scheme)
+                    .Where(one => lines.Any(line => line.Value(one.Key).Length > 0))
+                    .ToList();
+
+                if (ReferenceEquals(lines, _board.Rows)) _carriedRows = held;
+
+                return held;
+            }
+
+            /// <summary>How wide one field's gutter is: its longest value, within reason.</summary>
+            /// <param name="field">The field.</param>
+            /// <param name="lines">The rows or the columns.</param>
+            private double FieldWide(MatrixField field, IReadOnlyList<MatrixLine> lines)
+            {
+                _fieldWide ??= new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
+                if (_fieldWide.TryGetValue(field.Key, out var held)) return held;
+
+                var widest = 0.0;
+
+                foreach (var line in lines)
+                    widest = Math.Max(widest, Measured(line.Value(field.Key), 10));
+
+                // Floored so a gutter is worth pointing at, capped so one long value cannot take
+                // the room the names need.
+                held = Math.Max(34, Math.Min(110, widest + 14));
+
+                _fieldWide[field.Key] = held;
+
+                return held;
+            }
+
             /// <summary>The longest number, or code, in one axis - at the size it is drawn.</summary>
             /// <param name="lines">The rows or the columns.</param>
             /// <param name="size">The type size it is drawn at.</param>
@@ -1554,10 +1672,12 @@ namespace CamelWorks.UI.Views
             /// Zero when nothing is filed, so an unfoldered matrix costs no width.
             /// </summary>
             private double FolderWide =>
-                _board.Folders(rows: true).Count == 0 ? 0 : LineHigh(10, bold: true) + 10;
+                _folderWide ??= _board.Folders(rows: true).Count == 0
+                    ? 0 : LineHigh(10, bold: true) + 10;
 
             private double FolderHigh =>
-                _board.Folders(rows: false).Count == 0 ? 0 : LineHigh(10, bold: true) + 8;
+                _folderHigh ??= _board.Folders(rows: false).Count == 0
+                    ? 0 : LineHigh(10, bold: true) + 8;
 
             // The frozen frame's size is taken from layout rather than computed. The corner, the
             // top band and the side band must agree to the pixel, or the headers stop sitting over
@@ -1666,6 +1786,8 @@ namespace CamelWorks.UI.Views
             /// <summary>The band across the top: the letters, and the names stood on their end.</summary>
             private void RedrawAcross()
             {
+                Remeasure();
+
                 _columnHeads.Clear();
                 _across.Children.Clear();
                 _across.ColumnDefinitions.Clear();
@@ -1728,6 +1850,8 @@ namespace CamelWorks.UI.Views
             /// <summary>The band down the left: the numbers, the names, and the box that adds one.</summary>
             private void RedrawDown()
             {
+                Remeasure();
+
                 _rowHeads.Clear();
                 _down.Children.Clear();
                 _down.ColumnDefinitions.Clear();
@@ -2651,11 +2775,33 @@ namespace CamelWorks.UI.Views
                     words.Children.Add(chip);
                 }
 
+                var carried = Carried(_board.Rows);
+
+                foreach (var field in carried)
+                {
+                    var value = new TextBlock
+                    {
+                        Text = line.Value(field.Key),
+                        FontSize = 10,
+                        TextAlignment = TextAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        Margin = new Thickness(2, 0, 4, 0),
+                        ToolTip = field.Title + ": "
+                                  + (line.Value(field.Key).Length == 0
+                                      ? "not set on this line"
+                                      : line.Value(field.Key)),
+                    }.Wearing("Hint");
+
+                    Grid.SetColumn(value, column++);
+                    words.Children.Add(value);
+                }
+
                 var named = new DockPanel
                 {
                     LastChildFill = true,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(numbered || coded ? 0 : 8, 0, 6, 0),
+                    Margin = new Thickness(numbered || coded || carried.Count > 0 ? 0 : 8, 0, 6, 0),
                 };
 
                 // The warning mark is drawn only on rows that need it. Drawn on every row it
@@ -3261,7 +3407,7 @@ namespace CamelWorks.UI.Views
 
                     Land(down, across);
 
-                    if (_brush == null) return;
+                    if (!Painting) return;
 
                     e.Handled = true;
 
@@ -3275,7 +3421,7 @@ namespace CamelWorks.UI.Views
                 {
                     Crossed(row, column);
 
-                    if (_brush == null
+                    if (!Painting
                         || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
                         return;
 
@@ -3295,7 +3441,7 @@ namespace CamelWorks.UI.Views
                 {
                     e.Handled = true;
 
-                    if (_brush == null) Land(down, across);
+                    if (!Painting) Land(down, across);
                 });
 
                 // The whole menu is still one right-click away while a brush is armed.
@@ -3563,6 +3709,84 @@ namespace CamelWorks.UI.Views
 
                 Reported(changed, "written", "value");
             }
+
+            /// <summary>
+            /// The way to make a field, on the line where fields are met.
+            ///
+            /// A field was reachable only from Arrange, which is a menu about the whole board, so
+            /// somebody looking at a line and wanting to put a phase on it had no way in and
+            /// nothing on the panel saying there was one. The panel is where a line's fields are
+            /// typed, so it is where one is made.
+            ///
+            /// Arrange still holds the rest of it: what a field is called, whether it is counted
+            /// down the axis, and taking one away. This is the one act that is about the line in
+            /// front of you.
+            /// </summary>
+            private UIElement Fielding()
+            {
+                var held = Ui.Stack();
+
+                if (!MatrixNaming.Custom(_board.Scheme).Any())
+                {
+                    var says = Ui.Small(
+                        "A field of your own \u2014 a phase, a sub-discipline, a package \u2014 is "
+                        + "carried by every row and column, can be counted down the axis, and can "
+                        + "be written into the test names.");
+
+                    says.TextWrapping = TextWrapping.Wrap;
+                    says.Margin = new Thickness(0, 0, 0, 2);
+
+                    held.Children.Add(says);
+                }
+
+                var add = Ui.Link("Add a field", () => Ui.Safely(Fielded));
+
+                add.HorizontalAlignment = HorizontalAlignment.Left;
+                add.Margin = new Thickness(0, 0, 0, 9);
+                add.ToolTip = "Adds it to every row and column. Arrange \u25b8 Fields is where a "
+                              + "field is counted down the axis rather than typed line by line.";
+
+                held.Children.Add(add);
+
+                return held;
+            }
+
+            /// <summary>Ask for a field's name, and add it to the scheme.</summary>
+            private void Fielded() =>
+                Parts.Ask(_grid,
+                          "What is the field called? \u201cPhase\u201d, \u201cSub-discipline\u201d, "
+                          + "\u201cPackage\u201d.",
+                          string.Empty, "Add", said =>
+                {
+                    var title = (said ?? string.Empty).Trim();
+
+                    if (title.Length == 0) return;
+
+                    var key = new string(title.Where(char.IsLetterOrDigit).ToArray());
+
+                    if (!MatrixField.IsUsable(key))
+                    {
+                        Ui.Told("A field's name has to start with a letter.");
+                        return;
+                    }
+
+                    if (_board.Scheme.Has(key))
+                    {
+                        Ui.Told("There is already a field called \u201c" + title + "\u201d.");
+                        return;
+                    }
+
+                    var was = Held();
+
+                    _board.Scheme.Add(key, title);
+
+                    Touched();
+
+                    _past.Push(new Doing(was, "adding the " + title + " field"));
+                    _future.Clear();
+
+                    Redraw();
+                });
 
             private void Rulebook()
             {
@@ -6270,6 +6494,17 @@ namespace CamelWorks.UI.Views
                 _brush != null && string.Equals(_brush.Symbol, Rubber, StringComparison.Ordinal);
 
             /// <summary>What the brush puts in a cell: its mark, or nothing at all.</summary>
+            /// <summary>
+            /// Whether a press on a cell lays something down rather than picking the cell.
+            ///
+            /// What is armed depends on the view. On the symbols a symbol is armed from the
+            /// palette; on the priority view a rank is, and there is always one — so the press
+            /// handler gated on the symbol brush and the priority brush did nothing at all. The
+            /// results view is a reading of the document and takes no paint.
+            /// </summary>
+            private bool Painting =>
+                _shown == Showing.Priority || (_shown == Showing.Symbols && _brush != null);
+
             private string? Laying => _brush == null || Erasing ? null : _brush.Symbol;
 
             /// <summary>What is on the brush, as a person would say it.</summary>
@@ -6745,7 +6980,11 @@ namespace CamelWorks.UI.Views
                 // caret was lost after each character. The name appears in exactly those two
                 // places; the panel is already correct, since that is where the text is being
                 // typed.
-                _rename = Ui.Text(line.Name, typed =>
+                // Settled, not per keystroke. Each of these rewrites the two frozen bands and
+                // recounts the plan, which on a board of any size is a tenth of a second — so a
+                // box reporting per keystroke put that between every letter and the letter after
+                // it.
+                _rename = Ui.Settled(line.Name, string.Empty, typed =>
                 {
                     Remember("name " + at + rows);
 
@@ -6776,7 +7015,7 @@ namespace CamelWorks.UI.Views
 
                 numbered.Children.Add(Ui.Small("Number"));
 
-                var number = Ui.Text(line.Number, typed =>
+                var number = Ui.Settled(line.Number, string.Empty, typed =>
                 {
                     Remember("number " + at + rows);
 
@@ -6801,7 +7040,7 @@ namespace CamelWorks.UI.Views
 
                 coded.Children.Add(Ui.Small("Code"));
 
-                var code = Ui.Text(line.Code, typed =>
+                var code = Ui.Settled(line.Code, string.Empty, typed =>
                 {
                     Remember("code " + at + rows);
 
@@ -6832,7 +7071,7 @@ namespace CamelWorks.UI.Views
 
                     held.Children.Add(Ui.Small(here.Title));
 
-                    var box = Ui.Text(line.Value(here.Key), typed =>
+                    var box = Ui.Settled(line.Value(here.Key), string.Empty, typed =>
                     {
                         Remember(here.Key + " " + at + rows);
 
@@ -6848,6 +7087,8 @@ namespace CamelWorks.UI.Views
 
                     _inspector.Children.Add(held);
                 }
+
+                _inspector.Children.Add(Fielding());
 
                 if (line.IsCustom) _inspector.Children.Add(Released(line, at, rows));
 
@@ -6880,6 +7121,28 @@ namespace CamelWorks.UI.Views
 
                 describes.TextWrapping = TextWrapping.Wrap;
                 says.Children.Add(describes);
+
+                // The box is the way in, not only a readout. It is the one thing on the panel
+                // that says a line points at nothing, which is a prompt to act — and the verb
+                // that acts on it was a button further down, past the fold on a short panel.
+                source.Cursor = Cursors.Hand;
+                source.ToolTip = "Press to point this " + what + " at something else.";
+
+                source.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                {
+                    e.Handled = true;
+                    Parts.PopMenu(source, SourceMenu(line));
+                });
+
+                source.MouseEnter += (s, e) =>
+                    source.Tint(Border.BorderBrushProperty, "Accent");
+
+                source.MouseLeave += (s, e) =>
+                    source.Tint(Border.BorderBrushProperty, line.IsUnbacked ? "AmberBd" : "Bd");
+
+                says.Children.Add(Ui.Small(line.IsUnbacked
+                    ? "Press to point it at a saved set, some models, or what is selected."
+                    : "Press to change it."));
 
                 source.Child = says;
                 _inspector.Children.Add(source);
