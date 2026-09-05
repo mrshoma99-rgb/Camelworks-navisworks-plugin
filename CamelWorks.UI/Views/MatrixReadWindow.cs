@@ -12,28 +12,21 @@ using CamelWorks.UI.Shell;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Choosing which of the document's tests become a matrix, and saying how they are named.
+    /// Selects which clash tests become a matrix, and how their names are structured.
     ///
-    /// <b>Two things were being decided for the person rather than by them.</b>
+    /// Previously the read used every test in the document and named each row after the saved
+    /// set it points at. Set names are usually not the names a coordination matrix should carry,
+    /// and the discipline codes, numbers, folders and test kinds already present in the test
+    /// names were discarded.
     ///
-    /// The first was which tests. "Read the matrix out of the model" took every test in the
-    /// document - the current round and the three abandoned ones, the sandbox tests somebody set
-    /// up on a Friday, the duplicate of a duplicate - and made one grid out of the lot. On a real
-    /// job that is a matrix of forty rows where the coordination has eleven, and the only way
-    /// back was to delete rows afterwards and hope none of them was real.
+    /// This window provides:
     ///
-    /// The second was what the names mean. Every test carries what it is between, so a matrix
-    /// could always be rebuilt from the saved sets - and the grid that came back was named after
-    /// whatever those sets are called, which on a real job is "ARC_GENERAL_ELEMENTS_R21_ISSUED"
-    /// and not what anybody puts in front of a client. Meanwhile the discipline codes, the
-    /// numbers, the packages and the kind of each test were sitting in the test's own name, in an
-    /// order that job agreed on months ago, and none of it was read. The tool guessed; the person
-    /// already knew.
+    /// - a test table with a search box, checkboxes and bulk selection;
+    /// - name patterns written in <see cref="MatrixNaming.Tokens"/>, applied in reverse;
+    /// - a live indication of which pattern matched each test.
     ///
-    /// So: a table of the tests with a search and ticks, and beside it the naming conventions,
-    /// written in the same tokens the matrix uses to write names. The table says live which
-    /// pattern claimed each test, which is the only honest way to check a convention against a
-    /// hundred and sixty names.
+    /// Patterns are evaluated in order and the first match wins, so specific patterns belong
+    /// above general ones.
     /// </summary>
     public static class MatrixReadWindow
     {
@@ -48,12 +41,12 @@ namespace CamelWorks.UI.Views
 
             internal bool Chosen { get; set; } = true;
 
-            /// <summary>Which pattern claimed it, from one, or nought for none.</summary>
+            /// <summary>Index of the matching pattern, from 1; 0 when none matched.</summary>
             internal int By { get; set; }
 
             internal string Between =>
                 Read.Shape == null || !Read.Shape.KnowsA || !Read.Shape.KnowsB
-                    ? "does not say"
+                    ? "not stated"
                     : Side(Read.Shape.SetA, Read.Shape.ScopesA) + "  vs  "
                       + Side(Read.Shape.SetB, Read.Shape.ScopesB);
 
@@ -65,9 +58,7 @@ namespace CamelWorks.UI.Views
                         : "nothing";
         }
 
-        /// <summary>
-        /// Ask which tests, and how they are named.
-        /// </summary>
+        /// <summary>Show the window and return the matrix that was read.</summary>
         /// <param name="tests">Every test the document holds, already read.</param>
         /// <param name="pattern">The pattern the matrix writes names with, as a starting point.</param>
         /// <returns>The matrix that was read, or null when the window was closed without one.</returns>
@@ -79,7 +70,7 @@ namespace CamelWorks.UI.Views
 
             var window = new Window
             {
-                Title = "CamelWorks - Read the matrix out of the model",
+                Title = "CamelWorks - Read tests into a matrix",
                 Width = 980,
                 Height = 660,
                 MinWidth = 780,
@@ -107,13 +98,10 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The screen itself, without the window round it.
+        /// Builds the window content as a panel.
         ///
-        /// <b>Split out so it can be photographed.</b> A WPF <c>Window</c> needs to be shown to
-        /// exist, and the render harness has no screen to show one on - so every dialogue in this
-        /// product was checked by a coordinator on a licensed seat and described to me in words,
-        /// which is the slowest and least exact way a layout fault can be reported. What is
-        /// wrapped in a window here is an ordinary panel, and the harness draws the panel.
+        /// Separate from <see cref="Ask"/> so the render harness can capture the layout; a WPF
+        /// <c>Window</c> must be shown to render, and the harness has no display.
         /// </summary>
         /// <param name="tests">Every test the document holds, already read.</param>
         /// <param name="pattern">The pattern the matrix writes names with, as a starting point.</param>
@@ -127,9 +115,8 @@ namespace CamelWorks.UI.Views
                 .Select(one => new Row(one))
                 .ToList();
 
-            // <b>The pattern the matrix writes with is the pattern it should read with.</b>
-            // Somebody who has set this job's naming up once has said how their tests are named;
-            // starting from anything else would ask them to say it twice.
+            // Seeded with the pattern the matrix uses to generate names, since that is the
+            // convention the project has already declared.
             var written = new List<TextBox>();
             var patterns = new List<string>
             {
@@ -142,14 +129,13 @@ namespace CamelWorks.UI.Views
             var trouble = Ui.Stack();
 
             var find = Ui.Text(string.Empty, "part of a name", null, 220);
-            var take = Ui.Check("Read tests no pattern fits from their sets", true, null);
-            var names = Ui.Check("Let the names decide what a row is called", true, null);
+            var take = Ui.Check("Use saved sets for unmatched tests", true, null);
+            var names = Ui.Check("Prefer parsed names over set names", true, null);
 
             TextBox? focused = null;
 
-            // Which pattern claims which test, worked out from what is in the boxes now. Every
-            // redraw of either side runs this, because a pattern somebody is halfway through
-            // typing has to say what it would catch while they are still typing it.
+            // Re-evaluated on every redraw so a partially typed pattern shows its current match
+            // set as it is edited.
             List<MatrixNamePattern> Read()
             {
                 var read = patterns.Select(MatrixNamePattern.Parse).ToList();
@@ -207,7 +193,7 @@ namespace CamelWorks.UI.Views
             var side = new DockPanel { LastChildFill = true, Width = 420 };
 
             var under = Ui.Stack(
-                Ui.Eyebrow("Drop a token in"),
+                Ui.Eyebrow("Insert a token"),
                 chips,
                 take,
                 names);
@@ -217,14 +203,13 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(under, Dock.Bottom);
             side.Children.Add(under);
 
-            var says = Ui.Small("A pattern says what a test's name looks like. The first one that "
-                                + "fits a name claims it, so put the exceptions above the general "
-                                + "one.");
+            var says = Ui.Small("Patterns are matched in order; the first match is used. Put "
+                                + "specific patterns above general ones.");
 
             says.TextWrapping = TextWrapping.Wrap;
             says.Margin = new Thickness(0, 2, 0, 8);
 
-            var top = Ui.Stack(Ui.Eyebrow("How your tests are named"), says);
+            var top = Ui.Stack(Ui.Eyebrow("Test name patterns"), says);
 
             DockPanel.SetDock(top, Dock.Top);
             side.Children.Add(top);
@@ -241,8 +226,8 @@ namespace CamelWorks.UI.Views
             var searching = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
 
             var acts = Ui.Across(
-                Ui.Quiet("Tick shown", () => { Sweep(rows, find.Text, true); Redraw(); }),
-                Ui.Quiet("Untick shown", () => { Sweep(rows, find.Text, false); Redraw(); }),
+                Ui.Quiet("Select shown", () => { Sweep(rows, find.Text, true); Redraw(); }),
+                Ui.Quiet("Clear shown", () => { Sweep(rows, find.Text, false); Redraw(); }),
                 Ui.Quiet("Invert", () =>
                 {
                     foreach (var row in Shown(rows, find.Text)) row.Chosen = !row.Chosen;
@@ -272,7 +257,7 @@ namespace CamelWorks.UI.Views
             body.Children.Add(side);
             body.Children.Add(middle);
 
-            var go = Ui.Primary("Read them", () =>
+            var go = Ui.Primary("Read tests", () =>
             {
                 trouble.Children.Clear();
 
@@ -280,7 +265,7 @@ namespace CamelWorks.UI.Views
 
                 if (chosen.Count == 0)
                 {
-                    trouble.Children.Add(Ui.Problem("Tick at least one test."));
+                    trouble.Children.Add(Ui.Problem("Select at least one test."));
                     return;
                 }
 
@@ -324,7 +309,7 @@ namespace CamelWorks.UI.Views
             return root;
         }
 
-        /// <summary>The tests the search leaves on the screen.</summary>
+        /// <summary>The tests matching the current search text.</summary>
         private static IEnumerable<Row> Shown(IEnumerable<Row> rows, string? find)
         {
             var said = (find ?? string.Empty).Trim();
@@ -340,11 +325,8 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The patterns, each with what it catches under it.
-        ///
-        /// <b>The count is the whole feedback loop.</b> A pattern is right or wrong against a
-        /// hundred and sixty names nobody is going to read, so what has to be on the screen while
-        /// somebody types is how many of them it fits and what it pulled out of the first one.
+        /// Draws the pattern cards, each showing its match count and the values extracted from
+        /// the first name it matched.
         /// </summary>
         private static void DrawPatterns(Panel into, List<string> patterns,
                                          IReadOnlyList<MatrixNamePattern> read,
@@ -364,10 +346,8 @@ namespace CamelWorks.UI.Views
 
                 box.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-                // <b>A pattern is longer than a field.</b> Written on one line it scrolled out of
-                // its own box - "{columnCode}-{columnNumb" - so the half somebody was checking
-                // was the half they could not see, on the one control whose exact text is the
-                // whole point of the screen.
+                // Wrapped: a full pattern is wider than the field and scrolled out of view on a
+                // single line.
                 box.TextWrapping = TextWrapping.Wrap;
                 box.AcceptsReturn = false;
                 box.MinHeight = 46;
@@ -436,7 +416,7 @@ namespace CamelWorks.UI.Views
 
                 if (!one.IsUsable)
                 {
-                    var why = Ui.Small(one.Trouble ?? "This pattern cannot be read.");
+                    var why = Ui.Small(one.Trouble ?? "This pattern cannot be parsed.");
 
                     why.TextWrapping = TextWrapping.Wrap;
                     why.Margin = new Thickness(0, 5, 0, 0);
@@ -449,14 +429,14 @@ namespace CamelWorks.UI.Views
                     var mine = rows.Where(r => r.By == here + 1).ToList();
 
                     var count = Ui.Small(mine.Count == 0
-                        ? "Fits none of these tests"
-                        : "Claims " + Ui.Count(mine.Count, "test"));
+                        ? "No matches"
+                        : "Matches " + Ui.Count(mine.Count, "test"));
 
                     count.Margin = new Thickness(0, 5, 0, 0);
                     stack.Children.Add(count);
 
-                    // What it actually pulled out of a real name, which is the difference
-                    // between a pattern that matches and a pattern that is right.
+                    // Extracted values from a real name: a pattern can match and still assign
+                    // the wrong parts.
                     var first = mine.FirstOrDefault();
                     var caught = first == null ? null : one.Match(first.Name);
 
@@ -486,10 +466,7 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The tests, ticked or not, with the pattern that claimed each one.
-        ///
-        /// A row is pressed rather than only its box, because a table of a hundred and sixty
-        /// where only a twelve-pixel square is live is a table nobody can work through.
+        /// Draws the test table. The whole row toggles the checkbox, not just the box itself.
         /// </summary>
         private static void DrawTable(Panel into, IReadOnlyList<Row> rows, string? find,
                                       Action redraw)
@@ -504,7 +481,7 @@ namespace CamelWorks.UI.Views
 
             if (shown.Count == 0)
             {
-                var none = Ui.Small("No test's name has that in it.");
+                var none = Ui.Small("No test name contains that text.");
 
                 none.Margin = new Thickness(4, 8, 4, 4);
                 into.Children.Add(none);
@@ -527,8 +504,7 @@ namespace CamelWorks.UI.Views
                 {
                     e.Handled = true;
 
-                    // Shift takes the run from the last one pressed, the way every list of
-                    // things to tick has worked for thirty years.
+                    // Shift-click applies the toggle across the range from the last click.
                     if (Keyboard.Modifiers == ModifierKeys.Shift && _anchor != null
                         && rows.Contains(_anchor))
                     {
@@ -557,7 +533,7 @@ namespace CamelWorks.UI.Views
             }
         }
 
-        /// <summary>The last row pressed, so shift can take the run from it.</summary>
+        /// <summary>Anchor row for shift-click range selection.</summary>
         private static Row? _anchor;
 
         private static Border Line(bool? ticked, string name, string between, string by,
@@ -631,7 +607,7 @@ namespace CamelWorks.UI.Views
             return line;
         }
 
-        /// <summary>What the read would come to, under the table.</summary>
+        /// <summary>Draws the count line under the table.</summary>
         private static void DrawStrip(Panel into, IReadOnlyList<Row> rows,
                                       IReadOnlyList<MatrixNamePattern> read)
         {
@@ -640,17 +616,18 @@ namespace CamelWorks.UI.Views
             var chosen = rows.Count(r => r.Chosen);
             var claimed = rows.Count(r => r.Chosen && r.By > 0);
 
-            var said = Ui.Small(Ui.Count(chosen, "test") + " ticked of "
-                                + rows.Count.ToString(CultureInfo.InvariantCulture) + "  ·  "
+            var said = Ui.Small(chosen.ToString(CultureInfo.InvariantCulture) + " of "
+                                + rows.Count.ToString(CultureInfo.InvariantCulture)
+                                + " tests selected  ·  "
                                 + claimed.ToString(CultureInfo.InvariantCulture)
-                                + " named by a pattern");
+                                + " matched by a pattern");
 
             said.Margin = new Thickness(4, 8, 4, 0);
 
             into.Children.Add(said);
         }
 
-        /// <summary>One token, as something to press.</summary>
+        /// <summary>Draws one token as a clickable chip.</summary>
         private static UIElement Chip(NameToken token, Action onPress)
         {
             var chip = new Border

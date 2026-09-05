@@ -3061,7 +3061,7 @@ namespace CamelWorks.Core.Tests
             var pattern = MatrixNamePattern.Parse("{row}{column}");
 
             Assert.False(pattern.IsUsable);
-            Assert.Contains("nothing between", pattern.Trouble);
+            Assert.Contains("directly", pattern.Trouble);
         }
 
         [Fact]
@@ -3070,7 +3070,7 @@ namespace CamelWorks.Core.Tests
             var pattern = MatrixNamePattern.Parse("{row} vs {row}");
 
             Assert.False(pattern.IsUsable);
-            Assert.Contains("twice", pattern.Trouble);
+            Assert.Contains("appears twice", pattern.Trouble);
         }
 
         [Fact]
@@ -3079,7 +3079,7 @@ namespace CamelWorks.Core.Tests
             var pattern = MatrixNamePattern.Parse("{discipline} vs {column}");
 
             Assert.False(pattern.IsUsable);
-            Assert.Contains("not one of the tokens", pattern.Trouble);
+            Assert.Contains("not a known token", pattern.Trouble);
         }
 
         [Fact]
@@ -3094,7 +3094,7 @@ namespace CamelWorks.Core.Tests
             var pattern = MatrixNamePattern.Parse("Steel vs Ductwork");
 
             Assert.False(pattern.IsUsable);
-            Assert.Contains("no tokens", pattern.Trouble);
+            Assert.Contains("No tokens", pattern.Trouble);
         }
 
         [Fact]
