@@ -149,7 +149,7 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void A_pinned_line_does_not_take_a_place_in_the_series()
+        public void A_pinned_line_holds_its_place_so_the_rest_do_not_move()
         {
             var board = Board("Steel", "Ducts", "Pipes");
             var number = board.Scheme.Field(MatrixField.NumberKey)!;
@@ -160,8 +160,34 @@ namespace CamelWorks.Core.Tests
             board.Rows[1].Pin(MatrixField.NumberKey, "99");
             board.Scheme.Apply(board.Rows);
 
-            // The numbering runs 1, 2 over the lines still in it rather than leaving a gap at 2.
-            Assert.Equal(new[] { "1", "99", "2" }, board.Rows.Select(r => r.Number));
+            // Pipes stays at 3. Closing the gap would renumber every line under a pinned one,
+            // which on a forty-row matrix is thirty-seven edits to make one.
+            Assert.Equal(new[] { "1", "99", "3" }, board.Rows.Select(r => r.Number));
+        }
+
+        [Fact]
+        public void Pinning_a_line_leaves_every_other_number_where_it_was()
+        {
+            var board = Board("Steel", "Ducts", "Pipes", "Trays");
+            var number = board.Scheme.Field(MatrixField.NumberKey)!;
+
+            number.Fill = MatrixFill.Series;
+            number.Start = "10";
+            number.Step = 10;
+
+            board.Scheme.Apply(board.Rows);
+
+            var before = board.Rows.Select(r => r.Number).ToList();
+
+            board.Rows[1].Pin(MatrixField.NumberKey, "99");
+            board.Scheme.Apply(board.Rows);
+
+            var after = board.Rows.Select(r => r.Number).ToList();
+
+            Assert.Equal(before[0], after[0]);
+            Assert.Equal(before[2], after[2]);
+            Assert.Equal(before[3], after[3]);
+            Assert.Equal("99", after[1]);
         }
 
         [Fact]

@@ -19,7 +19,8 @@ namespace CamelWorks.Core.Clash
     ///
     /// A line can be taken out of the scheme for any one field. That is what
     /// <see cref="MatrixLine.Pinned"/> holds, and it is per field rather than per line because a
-    /// line whose number was set by hand still wants its code counted with the rest.
+    /// line whose number was set by hand still wants its code counted with the rest. It keeps its
+    /// place in the count, so taking one line out leaves every other line's value where it was.
     /// </summary>
     public sealed class MatrixScheme
     {
@@ -122,9 +123,11 @@ namespace CamelWorks.Core.Clash
         /// a line gets is decided by how many lines came before it, which is what makes inserting
         /// a discipline renumber the ones under it rather than leaving a gap.
         ///
-        /// A line that has pinned a field keeps what it holds and does not advance the count. It
-        /// is outside the series, so counting it would leave a hole in the numbering wherever
-        /// somebody had set a value by hand.
+        /// A line that has pinned a field keeps what it holds and still takes its place in the
+        /// count. Skipping it would mean that pinning one row renumbered every row under it —
+        /// thirty-seven edits to make one — which is the churn this whole mechanism exists to
+        /// remove. Holding the place costs one value out of the run and leaves every other line
+        /// exactly where it was.
         /// </summary>
         /// <param name="lines">One axis, in the order it is drawn.</param>
         /// <returns>How many values were written.</returns>
@@ -142,12 +145,16 @@ namespace CamelWorks.Core.Clash
 
                 foreach (var line in lines)
                 {
-                    if (line == null || line.Pinned.Contains(field.Key)) continue;
+                    if (line == null) continue;
 
                     var bucket = field.PerFolder ? line.Folder ?? string.Empty : string.Empty;
 
                     counts.TryGetValue(bucket, out var at);
                     counts[bucket] = at + 1;
+
+                    // Counted, then left alone: the place is taken either way, so the lines under
+                    // a pinned one do not move.
+                    if (line.Pinned.Contains(field.Key)) continue;
 
                     var said = field.At(at);
 
