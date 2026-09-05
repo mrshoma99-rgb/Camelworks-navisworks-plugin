@@ -130,6 +130,10 @@ namespace CamelWorks.UI.Views
         {
             var pane = start;
 
+            // Which pattern card carries the token palette. Held here rather than inside the
+            // pane, because the pane is rebuilt on every edit and would put it back on the first.
+            var live = 0;
+
             // The series the write pane counts in. A field rather than three loose boxes, because
             // MatrixField already knows how to count in numbers and letters, how to pad and what
             // "the same on every line" means.
@@ -162,7 +166,8 @@ namespace CamelWorks.UI.Views
                 switch (pane)
                 {
                     case NamingPane.Patterns:
-                        Patterns(held, book, tests, near, Touch, Redraw);
+                        Patterns(held, book, tests, near, live,
+                                 at => { live = at; Redraw(); }, Touch, Redraw);
                         break;
 
                     case NamingPane.Fields:
@@ -348,11 +353,9 @@ namespace CamelWorks.UI.Views
 
             Fill();
 
-            var top = Ui.Field("Find", box, null);
+            box.Margin = new Thickness(0, 0, 0, 8);
 
-            top.Margin = new Thickness(0, 0, 0, 8);
-
-            into.Children.Add(top);
+            into.Children.Add(box);
             into.Children.Add(list);
         }
 
@@ -407,15 +410,25 @@ namespace CamelWorks.UI.Views
 
             var stack = Ui.Stack(top);
 
-            var under = Ui.Small(read == null
+            var said = read == null
                 ? (bound == 0
                     ? "No pattern reads this name."
                     : "Pattern " + Numbered(bound) + " does not fit this name.")
-                : Reads(read, book.Compiled(read.Pattern)));
+                : Reads(book, read, book.Compiled(read.Pattern));
 
-            under.TextWrapping = TextWrapping.Wrap;
-            under.Margin = new Thickness(0, 4, 0, 0);
-            under.Tint(TextBlock.ForegroundProperty, read == null ? "Muted" : "Accent");
+            // One line, trimmed, with the whole of it on the tip. Six fields wrapped to a second
+            // line under every row, which doubled the height of the list and buried the names
+            // the list is about.
+            var under = new TextBlock
+            {
+                Text = said,
+                FontSize = 11,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 4, 0, 0),
+                ToolTip = said,
+            }.Wearing("Body");
+
+            under.Tint(TextBlock.ForegroundProperty, "Muted");
 
             stack.Children.Add(under);
 
@@ -426,17 +439,26 @@ namespace CamelWorks.UI.Views
             return card;
         }
 
-        /// <summary>What a pattern read out of a name, field by field.</summary>
-        private static string Reads(NamingRead read, MatrixNamePattern? pattern)
+        /// <summary>
+        /// What a pattern read out of a name, field by field, in the project's own words.
+        ///
+        /// Titled rather than tokenised. The whole point of the fields is that a project names
+        /// them, so a line reading "rowCode = ARC" hands back the internal spelling of a word the
+        /// project already has a word for.
+        /// </summary>
+        /// <param name="book">The project's naming, for the titles.</param>
+        /// <param name="read">What the pattern found.</param>
+        /// <param name="pattern">The pattern that found it.</param>
+        private static string Reads(NamingBook book, NamingRead read, MatrixNamePattern? pattern)
         {
             if (pattern == null) return string.Empty;
 
             var held = pattern.Tokens
-                .Select(one => one + " = "
-                               + (read.Value(one).Length == 0 ? "—" : read.Value(one)))
+                .Select(one => Titled(book, one) + ": "
+                               + (read.Value(one).Length == 0 ? "\u2014" : read.Value(one)))
                 .ToList();
 
-            return held.Count == 0 ? string.Empty : string.Join("   ·   ", held);
+            return held.Count == 0 ? string.Empty : string.Join("   \u00b7   ", held);
         }
 
         /// <summary>The menu behind an assignment: every pattern, and none.</summary>
@@ -473,7 +495,8 @@ namespace CamelWorks.UI.Views
 
         /// <summary>The patterns, with what each one reads on this job.</summary>
         private static void Patterns(Panel into, NamingBook book, List<Line> tests,
-                                     FrameworkElement? near, Action touch, Action redraw)
+                                     FrameworkElement? near, int live, Action<int> onLive,
+                                     Action touch, Action redraw)
         {
             var patterns = book.Patterns.ToList();
 
@@ -486,15 +509,22 @@ namespace CamelWorks.UI.Views
                     + "that follows it."));
             }
 
+            // The palette goes under one card, not under every one. Fourteen chips repeated on
+            // each pattern is a wall of them: two patterns filled the window and pushed "Add a
+            // pattern" off the bottom of it.
             for (var at = 0; at < patterns.Count; at++)
-                into.Children.Add(Pattern(book, patterns, at, tests, touch, redraw));
+                into.Children.Add(Pattern(book, patterns, at, tests, at == live, onLive,
+                                          touch, redraw));
 
             var add = Ui.Quiet("Add a pattern", () => Ui.Safely(() =>
             {
                 patterns.Add(MatrixNaming.Default);
                 book.Patterned(patterns);
                 touch();
-                redraw();
+
+                // The palette follows the card that was just added, which is the one about to be
+                // typed into.
+                onLive(patterns.Count - 1);
             }));
 
             add.HorizontalAlignment = HorizontalAlignment.Left;
@@ -507,7 +537,8 @@ namespace CamelWorks.UI.Views
 
         /// <summary>One pattern: the text, what is wrong with it, and how many tests it reads.</summary>
         private static UIElement Pattern(NamingBook book, List<string> patterns, int at,
-                                         List<Line> tests, Action touch, Action redraw)
+                                         List<Line> tests, bool live, Action<int> onLive,
+                                         Action touch, Action redraw)
         {
             var here = at;
             var made = MatrixNamePattern.Parse(patterns[here], book.Scheme);
@@ -531,6 +562,11 @@ namespace CamelWorks.UI.Views
 
             // Written back on the way out rather than on every keystroke, so the card is not
             // rebuilt under the caret while a pattern is being typed.
+            box.GotKeyboardFocus += (s, e) => Ui.Safely(() =>
+            {
+                if (!live) onLive(here);
+            });
+
             box.LostFocus += (s, e) => Ui.Safely(() =>
             {
                 if (string.Equals(box.Text, patterns[here], StringComparison.Ordinal)) return;
@@ -575,7 +611,8 @@ namespace CamelWorks.UI.Views
             says.Tint(TextBlock.ForegroundProperty, made.IsUsable ? "Muted" : "RedTx");
 
             stack.Children.Add(says);
-            stack.Children.Add(Palette(book, box, patterns, here, touch, redraw));
+
+            if (live) stack.Children.Add(Palette(book, box, patterns, here, touch, redraw));
 
             card.Child = stack;
 
@@ -839,7 +876,12 @@ namespace CamelWorks.UI.Views
 
             if (token == null || !offered.Any(one => one.Key == token))
             {
-                token = offered[0].Key;
+                // A number, not whatever the token list happens to lead with. The pane is reached
+                // by pressing Renumber, and the token list leads with the row's name — so the
+                // default plan was to write a series over every discipline name on the job.
+                var wanted = offered.Where(one => Numbered(one.Key)).ToList();
+
+                token = wanted.Count > 0 ? wanted[0].Key : offered[0].Key;
                 onToken(token);
             }
 
@@ -908,14 +950,12 @@ namespace CamelWorks.UI.Views
             }
 
             var field = Parts.Presser(Titled(book, chosen), Glyphs.Tune, "Pick a field",
-                                      on => Parts.PopMenu(on, offered
-                                          .Select(one => Parts.Entry.Act(one.Value, null, () =>
-                                          {
-                                              onToken(one.Key);
-                                              chosen = one.Key;
-                                              Fill();
-                                          }))
-                                          .ToList()));
+                                      on => Parts.PopMenu(on, Picking(offered, one =>
+                                      {
+                                          onToken(one);
+                                          chosen = one;
+                                          Fill();
+                                      })));
 
             var kinds = Ui.Segmented(new[] { Counted, Everywhere },
                                      how.Fill == MatrixFill.Same ? Everywhere : Counted,
@@ -958,25 +998,22 @@ namespace CamelWorks.UI.Views
         /// <summary>One test's line in the plan: what it is called, and what it would become.</summary>
         private static UIElement Step(NamingStep step)
         {
-            var row = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 3) };
+            // A grid of three, not two docked halves. Docked, the two names sat at opposite edges
+            // of a seven-hundred-pixel window with nothing between them, so reading a rename meant
+            // crossing the gap and guessing which right-hand line belonged to which left-hand one.
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 3) };
 
-            var right = new TextBlock
+            row.ColumnDefinitions.Add(new ColumnDefinition
             {
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(8, 0, 0, 0),
-                Text = step.Why != NamingRefusal.None
-                    ? NamingWrite.Said(step.Why)
-                    : step.Changes ? step.Now : "unchanged",
-            }.Wearing("Body");
+                Width = new GridLength(1, GridUnitType.Star),
+            });
 
-            right.Tint(TextBlock.ForegroundProperty,
-                       step.Why != NamingRefusal.None ? "RedTx"
-                       : step.Changes ? "Accent" : "Muted");
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            DockPanel.SetDock(right, Dock.Right);
-            row.Children.Add(right);
+            row.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+            });
 
             var left = new TextBlock
             {
@@ -984,14 +1021,98 @@ namespace CamelWorks.UI.Views
                 FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = step.Was,
             }.Wearing("Body");
 
             left.Tint(TextBlock.ForegroundProperty, "Muted");
 
+            Grid.SetColumn(left, 0);
             row.Children.Add(left);
+
+            var arrow = new TextBlock
+            {
+                Text = "\u2192",
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 10, 0),
+            }.Wearing("Body");
+
+            arrow.Tint(TextBlock.ForegroundProperty, "Faint");
+
+            Grid.SetColumn(arrow, 1);
+            row.Children.Add(arrow);
+
+            var right = new TextBlock
+            {
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Text = step.Why != NamingRefusal.None
+                    ? NamingWrite.Said(step.Why)
+                    : step.Changes ? step.Now : "unchanged",
+            }.Wearing("Body");
+
+            right.ToolTip = right.Text;
+
+            right.Tint(TextBlock.ForegroundProperty,
+                       step.Why != NamingRefusal.None ? "RedTx"
+                       : step.Changes ? "Accent" : "Muted");
+
+            Grid.SetColumn(right, 2);
+            row.Children.Add(right);
 
             return row;
         }
+
+        /// <summary>
+        /// The fields to pick from, numbers first.
+        ///
+        /// Under two headings rather than one list, because writing a series into a discipline's
+        /// name is a different act from renumbering it and a flat list puts them a keystroke
+        /// apart.
+        /// </summary>
+        /// <param name="offered">The fields the patterns carry.</param>
+        /// <param name="onPick">Called with the token that was picked.</param>
+        private static IReadOnlyList<Parts.Entry> Picking(
+            IReadOnlyList<KeyValuePair<string, string>> offered, Action<string> onPick)
+        {
+            var items = new List<Parts.Entry>();
+
+            void Add(IEnumerable<KeyValuePair<string, string>> these)
+            {
+                foreach (var one in these)
+                {
+                    var here = one.Key;
+
+                    items.Add(Parts.Entry.Act(one.Value, null, () => onPick(here)));
+                }
+            }
+
+            var numbers = offered.Where(one => Numbered(one.Key)).ToList();
+            var rest = offered.Where(one => !Numbered(one.Key)).ToList();
+
+            if (numbers.Count > 0)
+            {
+                items.Add(Parts.Entry.Heading("Numbers"));
+                Add(numbers);
+            }
+
+            if (rest.Count > 0)
+            {
+                if (numbers.Count > 0) items.Add(Parts.Entry.Rule());
+
+                items.Add(Parts.Entry.Heading("Every other field"));
+                Add(rest);
+            }
+
+            return items;
+        }
+
+        /// <summary>Whether a token holds a number, and is what Renumber should reach for.</summary>
+        /// <param name="token">The token, without braces.</param>
+        private static bool Numbered(string token) =>
+            token.IndexOf("number", StringComparison.OrdinalIgnoreCase) >= 0
+            || string.Equals(token, "n", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>The fields the project's patterns carry, as token and title.</summary>
         private static List<KeyValuePair<string, string>> Offered(NamingBook book)
