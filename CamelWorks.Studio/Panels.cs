@@ -56,6 +56,14 @@ namespace CamelWorks.Studio
 
             Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn())),
+
+            // The same board, turned over to the priority view. A view that cannot be
+            // photographed is a view whose drawing faults are found on a licensed seat and
+            // described to me in words, which is how every layout fault on this tab has been
+            // found so far. The results view is not here: it counts what a document holds, and
+            // this seat holds none.
+            Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
+                 () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
         };
 
         /// <summary>
@@ -152,6 +160,22 @@ namespace CamelWorks.Studio
 
                     board.Set(board.Rows[down], board.Columns[across],
                               marks[((down * 3) + across) % marks.Length]);
+                }
+
+            // Ranked in a block rather than at random, so the picture says whether a run of
+            // ranks down a discipline reads as one thing - which is the question the view
+            // exists to answer.
+            for (var down = 0; down < board.Rows.Count; down++)
+                for (var across = 0; across < board.Columns.Count; across++)
+                {
+                    if (board.At(board.Rows[down], board.Columns[across]) == null) continue;
+
+                    var rank = down < 3 ? MatrixBoard.High
+                        : down < 6 ? MatrixBoard.Medium
+                        : across < 4 ? MatrixBoard.Low
+                        : MatrixBoard.NotSet;
+
+                    board.Rank(board.Rows[down], board.Columns[across], rank);
                 }
 
             return board;

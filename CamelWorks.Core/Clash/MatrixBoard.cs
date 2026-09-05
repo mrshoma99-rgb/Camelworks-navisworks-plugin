@@ -140,6 +140,13 @@ namespace CamelWorks.Core.Clash
         private readonly Dictionary<(MatrixLine Row, MatrixLine Column), string> _cells =
             new Dictionary<(MatrixLine, MatrixLine), string>();
 
+        // Kept apart from the symbol rather than folded into it. A cell says two independent
+        // things - whether these two are checked and how, and how much anybody cares about the
+        // answer - and a grid that encoded both in one mark would need a legend entry per
+        // combination: twelve entries to say four things about three tolerances.
+        private readonly Dictionary<(MatrixLine Row, MatrixLine Column), int> _ranks =
+            new Dictionary<(MatrixLine, MatrixLine), int>();
+
         /// <summary>The rows, which are side A.</summary>
         public IReadOnlyList<MatrixLine> Rows => _rows;
 
@@ -936,11 +943,95 @@ namespace CamelWorks.Core.Clash
             return true;
         }
 
+        /// <summary>
+        /// What the host itself calls a clash test's priority: nought is not set, then high,
+        /// medium, low.
+        ///
+        /// The numbers are the host's, not ours. Navisworks writes a test's priority as one of
+        /// these four and shows it as a column in its own results, so a matrix that invented a
+        /// five-point scale would be a scale that could never be pushed into the document or
+        /// read back out of it.
+        /// </summary>
+        public const int NotSet = 0;
+
+        /// <summary>Highest of the three the host has.</summary>
+        public const int High = 1;
+
+        /// <summary>The middle one.</summary>
+        public const int Medium = 2;
+
+        /// <summary>The lowest.</summary>
+        public const int Low = 3;
+
+        /// <summary>What a rank is called, for a tip or a legend.</summary>
+        /// <param name="rank">The rank.</param>
+        public static string RankNamed(int rank) =>
+            rank == High ? "High" : rank == Medium ? "Medium" : rank == Low ? "Low" : "Not set";
+
+        /// <summary>How urgent this pair is, or <see cref="NotSet"/>.</summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public int RankAt(MatrixLine? row, MatrixLine? column) =>
+            row != null && column != null && _ranks.TryGetValue((row, column), out var rank)
+                ? rank
+                : NotSet;
+
+        /// <summary>
+        /// Say how urgent a pair is, on both cells of a mirrored pair.
+        ///
+        /// Mirrored the same way a symbol is, and for the same reason: one pair cannot be two
+        /// different amounts of urgent depending on which triangle somebody was handed.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        /// <param name="rank">One of the four, anything else being taken as not set.</param>
+        public void Rank(MatrixLine? row, MatrixLine? column, int rank)
+        {
+            if (row == null || column == null) return;
+
+            Ranked(row, column, rank);
+
+            var mirror = MirrorOf(row, column);
+
+            if (mirror != null) Ranked(mirror.Value.Row, mirror.Value.Column, rank);
+        }
+
+        /// <summary>How many cells anybody has ranked.</summary>
+        public int RankedCells => _ranks.Count;
+
+        /// <summary>Every ranked pair, each once, in reading order.</summary>
+        public IEnumerable<(MatrixLine Row, MatrixLine Column, int Rank)> Ranks()
+        {
+            foreach (var row in _rows)
+                foreach (var column in _columns)
+                {
+                    if (!IsKeptHalf(row, column)) continue;
+
+                    var rank = RankAt(row, column);
+
+                    if (rank != NotSet) yield return (row, column, rank);
+                }
+        }
+
+        private void Ranked(MatrixLine row, MatrixLine column, int rank)
+        {
+            if (rank != High && rank != Medium && rank != Low) _ranks.Remove((row, column));
+            else _ranks[(row, column)] = rank;
+        }
+
         private void Write(MatrixLine row, MatrixLine column, string? symbol)
         {
             var text = symbol == null ? string.Empty : symbol.Trim();
 
-            if (text.Length == 0) _cells.Remove((row, column));
+            if (text.Length == 0)
+            {
+                _cells.Remove((row, column));
+
+                // A rank on an empty cell is a priority for a test that will never be built,
+                // and it would come back the moment somebody put a symbol there again - saying
+                // something about the new pair that nobody said.
+                _ranks.Remove((row, column));
+            }
             else _cells[(row, column)] = text;
         }
 
@@ -1016,6 +1107,7 @@ namespace CamelWorks.Core.Clash
         public void SquareOffRows()
         {
             var kept = new Dictionary<(MatrixLine, MatrixLine), string>(_cells);
+            var keptRanks = new Dictionary<(MatrixLine, MatrixLine), int>(_ranks);
             var wasColumns = new List<MatrixLine>(_columns);
 
             _columns.Clear();
@@ -1051,6 +1143,21 @@ namespace CamelWorks.Core.Clash
                 if (_rows.Contains(cell.Key.Item1) && column != null)
                     _cells[(cell.Key.Item1, column)] = cell.Value;
             }
+
+            // The ranks follow their cells. A priority is about a pair, so a pair that survived
+            // squaring off keeps how urgent somebody said it was; one whose column went takes
+            // its rank with it rather than leaving it keyed to a line that is no longer here.
+            _ranks.Clear();
+
+            foreach (var rank in keptRanks)
+            {
+                var column = _columns.FirstOrDefault(
+                    c => string.Equals(c.Name, rank.Key.Item2.Name, StringComparison.OrdinalIgnoreCase))
+                    ?? (was.TryGetValue(rank.Key.Item2, out var moved) ? moved : null);
+
+                if (_rows.Contains(rank.Key.Item1) && column != null)
+                    _ranks[(rank.Key.Item1, column)] = rank.Value;
+            }
         }
 
         /// <summary>Write it down.</summary>
@@ -1068,6 +1175,15 @@ namespace CamelWorks.Core.Clash
                     .Set("symbol", cell.Symbol)));
 
             json.Set("cells", cells);
+
+            // Only written when somebody has ranked something, so every board saved before the
+            // priority view existed reads back byte for byte as it did.
+            if (_ranks.Count > 0)
+                json.Set("ranks", JsonValue.Array(Ranks().Select(one =>
+                    JsonValue.Object()
+                        .Set("row", (double)_rows.IndexOf(one.Row))
+                        .Set("column", (double)_columns.IndexOf(one.Column))
+                        .Set("rank", (double)one.Rank))));
 
             if (!UpperIsLive) json.Set("lower", true);
             if (!Paired) json.Set("apart", true);
@@ -1119,6 +1235,17 @@ namespace CamelWorks.Core.Clash
                 board.Set(board._rows[row], board._columns[column], held["symbol"].AsString());
             }
 
+            foreach (var held in json["ranks"].Items)
+            {
+                var row = (int)held["row"].AsDouble();
+                var column = (int)held["column"].AsDouble();
+
+                if (row < 0 || row >= board._rows.Count) continue;
+                if (column < 0 || column >= board._columns.Count) continue;
+
+                board.Rank(board._rows[row], board._columns[column], (int)held["rank"].AsDouble());
+            }
+
             foreach (var held in json["folders"].Items)
                 board.Paint(held["name"].AsString(), held["colour"].AsString());
 
@@ -1135,6 +1262,9 @@ namespace CamelWorks.Core.Clash
 
             foreach (var key in _cells.Keys.Where(k => k.Row == line || k.Column == line).ToList())
                 _cells.Remove(key);
+
+            foreach (var key in _ranks.Keys.Where(k => k.Row == line || k.Column == line).ToList())
+                _ranks.Remove(key);
         }
 
         private static void Move(List<MatrixLine> lines, int from, int to)

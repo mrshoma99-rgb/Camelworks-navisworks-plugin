@@ -2325,4 +2325,147 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(4, counts.Open);
         }
     }
+
+    /// <summary>
+    /// A pair carries how urgent it is as well as what is checked on it, in the host's own four
+    /// ranks - and the two travel together: mirrored the same way, cleared when the cell is
+    /// cleared, dropped when the line goes, and written down and read back only when somebody
+    /// has actually ranked something.
+    /// </summary>
+    public class MatrixRankTests
+    {
+        private static MatrixBoard Square()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Architecture"));
+            board.AddPair(new MatrixLine("Structure"));
+            board.AddPair(new MatrixLine("Services"));
+
+            return board;
+        }
+
+        [Fact]
+        public void Nothing_is_ranked_to_begin_with()
+        {
+            var board = Square();
+
+            Assert.Equal(MatrixBoard.NotSet, board.RankAt(board.Rows[0], board.Columns[1]));
+            Assert.Empty(board.Ranks());
+        }
+
+        [Fact]
+        public void A_rank_lands_on_both_cells_of_a_mirrored_pair()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.High);
+
+            Assert.Equal(MatrixBoard.High, board.RankAt(board.Rows[0], board.Columns[1]));
+            Assert.Equal(MatrixBoard.High, board.RankAt(board.Rows[1], board.Columns[0]));
+        }
+
+        [Fact]
+        public void Ranks_names_the_pair_once()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.Medium);
+
+            var ranked = board.Ranks().ToList();
+
+            Assert.Single(ranked);
+            Assert.Equal(MatrixBoard.Medium, ranked[0].Rank);
+        }
+
+        [Fact]
+        public void A_rank_outside_the_four_is_no_rank()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.High);
+            board.Rank(board.Rows[0], board.Columns[1], 9);
+
+            Assert.Equal(MatrixBoard.NotSet, board.RankAt(board.Rows[0], board.Columns[1]));
+        }
+
+        [Fact]
+        public void Clearing_the_cell_clears_its_rank()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.Low);
+
+            board.Set(board.Rows[0], board.Columns[1], null);
+
+            Assert.Equal(MatrixBoard.NotSet, board.RankAt(board.Rows[0], board.Columns[1]));
+            Assert.Equal(MatrixBoard.NotSet, board.RankAt(board.Rows[1], board.Columns[0]));
+        }
+
+        [Fact]
+        public void Removing_a_line_takes_its_ranks_with_it()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.High);
+
+            board.RemovePair(board.Rows[0]);
+
+            Assert.Empty(board.Ranks());
+        }
+
+        [Fact]
+        public void The_ranks_are_written_down_and_read_back()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[1], board.Columns[2], "B");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.High);
+            board.Rank(board.Rows[1], board.Columns[2], MatrixBoard.Low);
+
+            var back = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.Equal(MatrixBoard.High, back.RankAt(back.Rows[0], back.Columns[1]));
+            Assert.Equal(MatrixBoard.Low, back.RankAt(back.Rows[1], back.Columns[2]));
+        }
+
+        [Fact]
+        public void A_board_nobody_ranked_writes_no_ranks_at_all()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            Assert.Empty(board.ToJson()["ranks"].Items);
+        }
+
+        [Fact]
+        public void Squaring_off_keeps_the_ranks_of_the_pairs_that_survive()
+        {
+            var board = Square();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.Medium);
+
+            board.SquareOffRows();
+
+            Assert.Equal(MatrixBoard.Medium, board.RankAt(board.Rows[0], board.Columns[1]));
+        }
+
+        [Fact]
+        public void Every_rank_has_a_name()
+        {
+            Assert.Equal("High", MatrixBoard.RankNamed(MatrixBoard.High));
+            Assert.Equal("Medium", MatrixBoard.RankNamed(MatrixBoard.Medium));
+            Assert.Equal("Low", MatrixBoard.RankNamed(MatrixBoard.Low));
+            Assert.Equal("Not set", MatrixBoard.RankNamed(MatrixBoard.NotSet));
+            Assert.Equal("Not set", MatrixBoard.RankNamed(42));
+        }
+    }
 }

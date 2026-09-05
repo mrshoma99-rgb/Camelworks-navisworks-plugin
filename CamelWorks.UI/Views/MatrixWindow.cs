@@ -90,11 +90,54 @@ namespace CamelWorks.UI.Views
         /// same object a saved matrix is read back into, and it puts the tab in the state a
         /// coordinator is in for most of their day: a matrix open, being worked on.
         /// </param>
-        public static UIElement Surface(ISeat seat, MatrixBoard? drawn)
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn) =>
+            Surface(seat, drawn, Showing.Symbols);
+
+        /// <summary>
+        /// The matrix tab, opened on one of its three views.
+        /// </summary>
+        /// <param name="seat">The seat it is running in.</param>
+        /// <param name="drawn">A matrix already open, or null to arrive at the start screen.</param>
+        /// <param name="view">
+        /// Which of the three the grid starts on.
+        ///
+        /// Here for the render harness, which cannot press the chooser: a view nobody can
+        /// photograph is a view whose drawing faults are found by a coordinator on a licensed
+        /// seat and described to me in words. The results view is not offered - it counts what
+        /// the document holds, and a harness seat holds no document - so asking for it opens on
+        /// the symbols.
+        /// </param>
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view)
         {
             if (drawn != null) _board = drawn;
 
-            return new Editor(seat).View;
+            return new Editor(seat, view).View;
+        }
+
+        /// <summary>
+        /// Which of the three things a cell can say is the one written in it.
+        ///
+        /// <b>One grid, three questions.</b> A pair of disciplines carries three separate facts -
+        /// whether they are checked and how, how much anybody cares about the answer, and what
+        /// came back last time it ran - and every one of them belongs in the same twenty-by-twenty
+        /// picture, because the picture is what says which pairs exist at all. Written into one
+        /// cell together they would need a legend with an entry per combination, and read at
+        /// eleven point they would be unreadable.
+        ///
+        /// So the rows, the columns, the folders and the order never move: only what is written
+        /// in the cells changes, and the strip and the chooser both say which of the three is on.
+        /// A coordinator holds one grid in their head and turns it over.
+        /// </summary>
+        public enum Showing
+        {
+            /// <summary>What is checked and how - the matrix that gets built.</summary>
+            Symbols,
+
+            /// <summary>How urgent each pair is, in the host's own four ranks.</summary>
+            Priority,
+
+            /// <summary>What came back: open clashes per pair.</summary>
+            Results,
         }
 
         /// <summary>Which slot of the project file the matrix is kept in.</summary>
@@ -356,20 +399,24 @@ namespace CamelWorks.UI.Views
             /// <summary>Which axis the picked lines are on. The two are never mixed.</summary>
             private bool _chosenRows;
 
+            /// <summary>Which of the three the grid is showing. The symbols, until asked.</summary>
+            private Showing _shown = Showing.Symbols;
+
             /// <summary>
-            /// Whether the grid is showing what came back rather than what was asked for.
+            /// The rank a press lays down while the priority view is on.
             ///
-            /// <b>The board said what should be tested and never what the tests found.</b> A
-            /// coordinator drew it, built the tests, ran them - and then went somewhere else, or
-            /// to a spreadsheet somebody exported, to find out where the project is still
-            /// fighting. The one picture that already says which disciplines meet was the one
-            /// that could not say how badly, and that is the picture a weekly meeting wants.
-            ///
-            /// The same grid, the same rows, the same folders: only what is written in the cells
-            /// changes. Nothing is edited while it is on, because a number that came out of the
-            /// document is not something to paint over.
+            /// The same shape as the symbol brush, and for the same reason: ranking a
+            /// twenty-by-twenty matrix a cell at a time through a menu is four hundred menus,
+            /// and the drag that fills a block of symbols is the drag that should fill a block
+            /// of ranks.
             /// </summary>
-            private bool _showing;
+            private int _rank = MatrixBoard.High;
+
+            /// <summary>The slot the view chooser sits in, so its label can follow the view.</summary>
+            private readonly ContentControl _viewPick = new ContentControl
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+            };
 
             /// <summary>What came back, when it has been read. Empty until somebody asks.</summary>
             private MatrixCounts _counts = MatrixCounts.None;
@@ -453,9 +500,14 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<(MatrixLine Row, MatrixLine Column), Border> _cells =
                 new Dictionary<(MatrixLine, MatrixLine), Border>();
 
-            internal Editor(ISeat session)
+            internal Editor(ISeat session, Showing view)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
+
+                // Set before anything is drawn, because the chooser's label and every cell in the
+                // grid are built from it. The results view is not startable this way - it has to
+                // go and count first, and a constructor is no place to read a document.
+                _shown = view == Showing.Results ? Showing.Symbols : view;
 
                 _build = Ui.Primary("Build the tests", Build);
 
@@ -570,6 +622,17 @@ namespace CamelWorks.UI.Views
                 Add(Parts.MenuButton("Arrange", Glyphs.Sort, Arranging()));
                 Add(Parts.MenuButton("Settings", Glyphs.Tune, Settings()));
 
+                // <b>Which matrix is on the strip, not behind a verb.</b> "Results" was a button
+                // that turned one of three views on, and whose own label was built once at
+                // start-up and then said "Results" for ever however many times it had been
+                // pressed. Three views want a chooser that says which one is showing - and one
+                // that is redrawn when it changes. It sits with the other three because it is
+                // the same kind of thing: how this screen behaves, not what it does to the
+                // board.
+                RedrawView();
+
+                Add(_viewPick);
+
                 Add(Ui.Verb(Glyphs.Save, "Save",
                             "Keep it in this project, so it is here next time this model is "
                             + "opened. It also saves itself as you work.", Keep));
@@ -587,14 +650,6 @@ namespace CamelWorks.UI.Views
                 Add(Ui.Verb(Glyphs.Verify, "Check",
                             "Check it against the model — every row and column, against what "
                             + "this model actually has", Sanity));
-
-                // Beside Check and Changes: the three that go to the document and come back with
-                // something to look at, rather than the ones that change the board.
-                Add(Ui.Verb(Glyphs.Report, _showing ? "Hide results" : "Results",
-                            _showing
-                                ? "Go back to the symbols"
-                                : "Count what the tests found and show it in the grid",
-                            Showing));
 
                 Add(Ui.Verb(Glyphs.Changes, "Changes",
                             "See what would change — this matrix against the tests already in "
@@ -1962,12 +2017,23 @@ namespace CamelWorks.UI.Views
                                   ?? e.Data.GetData(ColumnCarried) as MatrixLine;
 
                     if (carried == null) return;
-                    if (string.Equals(carried.Folder, folder, StringComparison.OrdinalIgnoreCase))
-                        return;
 
-                    Remember(what: "filing " + Quoted(carried.Titled) + " in " + Quoted(folder));
+                    // The band takes what the drag is carrying, which is the picked set when the
+                    // drag started inside one - the same rule the reorder follows, so dragging
+                    // eight rows onto a folder files eight rows.
+                    var set = Moving(carried, e.Data.GetDataPresent(RowCarried))
+                        .Where(one => !string.Equals(one.Folder, folder,
+                                                     StringComparison.OrdinalIgnoreCase))
+                        .ToList();
 
-                    _board.File(carried, folder);
+                    if (set.Count == 0) return;
+
+                    Remember(what: set.Count > 1
+                                 ? "filing " + Ui.Count(set.Count, "line") + " in " + Quoted(folder)
+                                 : "filing " + Quoted(set[0].Titled) + " in " + Quoted(folder));
+
+                    foreach (var one in set) _board.File(one, folder);
+
                     Redraw();
                 });
 
@@ -3323,14 +3389,31 @@ namespace CamelWorks.UI.Views
             /// <param name="column">The column.</param>
             private void Daub(MatrixLine row, MatrixLine column)
             {
-                if (_brush == null) return;
-
                 // <b>Nothing is painted over a number that came out of the document.</b> While
                 // the grid is showing what came back, a cell is a count of somebody's open
                 // clashes, not a decision to be changed - and a brush stroke across it would
                 // write symbols under a drawing that does not show them, so the board would
                 // quietly differ from the one that was saved.
-                if (_showing) return;
+                if (_shown == Showing.Results) return;
+
+                // <b>The priority view paints ranks, with the same hand.</b> A press and a drag
+                // do there exactly what they do on the symbols - lay the armed thing down, once
+                // per cell, and change nothing that already holds it - because a matrix ranked a
+                // cell at a time through a menu is four hundred menus.
+                if (_shown == Showing.Priority)
+                {
+                    // A rank is a thing said about a test, so a cell with nothing in it has
+                    // nothing to say it about. Ranking an undecided pair would put a priority on
+                    // a test that is never going to be built.
+                    if (_board.At(row, column) == null) return;
+                    if (_board.RankAt(row, column) == _rank) return;
+
+                    _board.Rank(row, column, _rank);
+                    Repaint(row, column);
+                    return;
+                }
+
+                if (_brush == null) return;
 
                 var laying = Laying;
 
@@ -3357,12 +3440,6 @@ namespace CamelWorks.UI.Views
             /// <param name="rows">True for a row, false for a column.</param>
             private void Sweep(MatrixLine line, bool rows)
             {
-                if (_brush == null)
-                {
-                    Pick(line, rows);
-                    return;
-                }
-
                 // <b>The gutter fills what is picked, when what was pressed is part of it.</b>
                 // Eight rows picked and the mark beside one of them pressed means the eight, not
                 // the one - anything else makes picking them pointless. Pressing the gutter of a
@@ -3370,6 +3447,24 @@ namespace CamelWorks.UI.Views
                 var many = Chosen(line, rows) && _chosen.Count > 1
                     ? _chosen.Where(l => !Hidden(l)).ToList()
                     : new List<MatrixLine> { line };
+
+                // Whatever the grid is showing is what a fill lays down. The gesture is the same
+                // one - the mark beside a row, or the same act off the menu - and it would be a
+                // strange screen where it wrote symbols under a drawing of priorities.
+                if (_shown == Showing.Priority)
+                {
+                    RankSweep(many, rows);
+                    return;
+                }
+
+                // There is nothing to lay down over a count that came out of the document.
+                if (_shown == Showing.Results) return;
+
+                if (_brush == null)
+                {
+                    Pick(line, rows);
+                    return;
+                }
 
                 Remember(what: many.Count > 1
                              ? "filling " + Ui.Count(many.Count, rows ? "row" : "column")
@@ -3399,6 +3494,52 @@ namespace CamelWorks.UI.Views
                          (Erasing ? "decided cell of " : "empty cell of ")
                          + (rows ? "row " + Number(At(_board.Rows, line))
                                  : "column " + Letter(At(_board.Columns, line))));
+            }
+
+            /// <summary>
+            /// Lay the armed rank down every checked cell of the picked rows or columns.
+            ///
+            /// The priority view's half of the fill. It writes only where a symbol already is,
+            /// because a rank on an undecided pair is a priority for a test nobody has agreed
+            /// to build - and it overwrites a rank that is already there, unlike the symbol
+            /// fill, because ranking is a judgement somebody revises rather than a blank they
+            /// are working through.
+            /// </summary>
+            /// <param name="many">The picked lines.</param>
+            /// <param name="rows">True when they are rows.</param>
+            private void RankSweep(IReadOnlyList<MatrixLine> many, bool rows)
+            {
+                var what = rows ? "row" : "column";
+
+                Remember(what: many.Count > 1
+                             ? "ranking " + Ui.Count(many.Count, what)
+                             : "ranking that " + what);
+
+                var laid = 0;
+
+                foreach (var one in many)
+                foreach (var other in rows ? (IReadOnlyList<MatrixLine>)_board.Columns : _board.Rows)
+                {
+                    var row = rows ? one : other;
+                    var column = rows ? other : one;
+
+                    if (_board.IsSelfPair(row, column)) continue;
+
+                    var symbol = _board.At(row, column);
+
+                    if (symbol == null || MatrixBoard.IsNotRequired(symbol)) continue;
+                    if (_board.RankAt(row, column) == _rank) continue;
+
+                    _board.Rank(row, column, _rank);
+                    Repaint(row, column);
+                    laid++;
+                }
+
+                Reported(laid,
+                         _rank == MatrixBoard.NotSet
+                             ? "unranked"
+                             : "set to " + MatrixBoard.RankNamed(_rank).ToLowerInvariant(),
+                         "checked cell of " + what);
             }
 
             /// <summary>
@@ -3589,6 +3730,95 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// One cell of the priority view: how urgent this pair is, if anybody has said.
+            ///
+            /// <b>A rank is a thing said about a test, so a cell with no test in it is blank.</b>
+            /// Drawing "not set" over four hundred undecided cells would fill the screen with a
+            /// word about tests that do not exist, and hide the twelve pairs somebody has
+            /// actually ranked among them. A pair that is checked and unranked is drawn as the
+            /// faintest of the four - it is a real answer, "nobody has said yet" - and a pair
+            /// that is not checked at all is left alone.
+            ///
+            /// The three colours are the ones every schedule uses for the same three words, so
+            /// the picture is read without going to the legend.
+            /// </summary>
+            /// <param name="cell">The cell.</param>
+            /// <param name="row">Its row.</param>
+            /// <param name="column">Its column.</param>
+            private void Urgency(Border cell, MatrixLine row, MatrixLine column)
+            {
+                cell.Opacity = 1.0;
+
+                var at = Where(row, column);
+
+                if (_board.IsSelfPair(row, column))
+                {
+                    cell.Background = Skin.Of("Nav");
+                    cell.Child = null;
+                    cell.ToolTip = at + " \u2014 a discipline against itself";
+                    return;
+                }
+
+                var symbol = _board.At(row, column);
+
+                if (symbol == null || MatrixBoard.IsNotRequired(symbol))
+                {
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+                    cell.Child = null;
+                    cell.ToolTip = at + " \u2014 " + row.Titled + " against " + column.Titled
+                                   + (symbol == null
+                                       ? ". Not decided yet, so there is nothing to rank."
+                                       : ". Agreed not required, so there is nothing to rank.");
+                    return;
+                }
+
+                var rank = _board.RankAt(row, column);
+                var ground = Ranked(rank);
+
+                cell.Background = ground;
+
+                cell.Child = new TextBlock
+                {
+                    Text = rank == MatrixBoard.High ? "H"
+                        : rank == MatrixBoard.Medium ? "M"
+                        : rank == MatrixBoard.Low ? "L"
+                        : string.Empty,
+                    FontSize = Math.Max(10, Lettering - 1),
+                    FontWeight = FontWeights.SemiBold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Foreground = Ui.InkOn(ground),
+                };
+
+                cell.ToolTip = at + " \u2014 " + row.Titled + " against " + column.Titled + ". "
+                               + (rank == MatrixBoard.NotSet
+                                   ? "Checked, no priority set."
+                                   : MatrixBoard.RankNamed(rank) + " priority.")
+                               + " Checked as " + Quoted(symbol) + ".";
+            }
+
+            /// <summary>
+            /// The ground for a rank: red, amber, green, and a pale nothing for unranked.
+            ///
+            /// The same three the host draws its own priority column in, so a matrix beside a
+            /// results grid does not use two different scales for one word.
+            /// </summary>
+            /// <param name="rank">The rank.</param>
+            private static System.Windows.Media.Brush Ranked(int rank) =>
+                rank == MatrixBoard.High
+                    ? new System.Windows.Media.SolidColorBrush(
+                        System.Windows.Media.Color.FromRgb(0xE5, 0x39, 0x35))
+                    : rank == MatrixBoard.Medium
+                    ? new System.Windows.Media.SolidColorBrush(
+                        System.Windows.Media.Color.FromRgb(0xFB, 0x8C, 0x00))
+                    : rank == MatrixBoard.Low
+                    ? new System.Windows.Media.SolidColorBrush(
+                        System.Windows.Media.Color.FromRgb(0x7C, 0xB3, 0x42))
+                    : Skin.Of("Card2");
+
+            /// <summary>
             /// The wash for a count, from the mildest thing on the board to the worst.
             ///
             /// Scaled to the worst pair rather than to a fixed number of clashes: a job with
@@ -3617,7 +3847,8 @@ namespace CamelWorks.UI.Views
             {
                 // What came back is drawn over the whole grid, both halves alike: a heat map
                 // read across a triangle is a heat map somebody has to fold in their head.
-                if (_showing) { Counted(cell, row, column); return; }
+                if (_shown == Showing.Results) { Counted(cell, row, column); return; }
+                if (_shown == Showing.Priority) { Urgency(cell, row, column); return; }
 
                 var symbol = _board.At(row, column);
                 var meaning = symbol == null ? null : _legend.Meaning(symbol);
@@ -4393,17 +4624,35 @@ namespace CamelWorks.UI.Views
 
                     Ui.Safely(() =>
                     {
+                        var what = rows ? "row" : "column";
+                        var set = Moving(moved, rows);
+
+                        // Dropped on one of its own members, the set has nowhere to go: the
+                        // block would be asked to land inside itself, and the answer would be
+                        // whatever the arithmetic happened to produce.
+                        if (set.Any(one => ReferenceEquals(one, line))) return;
+
                         var lines = rows ? _board.Rows : _board.Columns;
 
-                        var from = lines.ToList().FindIndex(l => ReferenceEquals(l, moved));
-                        var to = lines.ToList().FindIndex(l => ReferenceEquals(l, line));
+                        if (lines.ToList().FindIndex(l => ReferenceEquals(l, line)) < 0) return;
 
-                        if (from < 0 || to < 0) return;
+                        Remember(what: set.Count > 1
+                                     ? "moving " + Ui.Count(set.Count, what)
+                                     : "moving that " + what);
 
-                        Remember(what: "moving that " + (rows ? "row" : "column"));
+                        // <b>The set lands as a block, in its own order.</b> Each one goes where
+                        // the last one landed plus one, read back off the board rather than
+                        // counted forward, because a move from below the target shifts every
+                        // index above it and arithmetic done in advance would scatter them.
+                        var at = At(lines, line);
 
-                        // With its twin on the other axis, so grouping a matrix is one job.
-                        _board.MoveLine(moved, to);
+                        foreach (var one in set)
+                        {
+                            // With its twin on the other axis, so grouping a matrix is one job.
+                            _board.MoveLine(one, at);
+
+                            at = At(rows ? _board.Rows : _board.Columns, one) + 1;
+                        }
 
                         Redraw();
                     });
@@ -4417,6 +4666,33 @@ namespace CamelWorks.UI.Views
                     _dragging = false;
                     e.Handled = true;
                 };
+            }
+
+            /// <summary>
+            /// What a drag off this header actually moves: the picked set, or the one line.
+            ///
+            /// <b>A drag that started inside a selection is about the selection.</b> Picking
+            /// eight rows and then dragging one of them out from under the other seven is not
+            /// something anybody means, and it is exactly what happened - the set stayed where
+            /// it was and the line somebody had hold of left it. The same rule the menus and the
+            /// gutter already follow: what was pressed decides whether the act is about the set,
+            /// and once it is, it is about all of it.
+            ///
+            /// In board order rather than pick order, so eight rows dropped somewhere land in
+            /// the order they were already in rather than the order somebody happened to
+            /// ctrl-click them.
+            /// </summary>
+            /// <param name="line">The line the drag started on.</param>
+            /// <param name="rows">True for rows.</param>
+            private List<MatrixLine> Moving(MatrixLine line, bool rows)
+            {
+                if (!Chosen(line, rows) || _chosen.Count < 2)
+                    return new List<MatrixLine> { line };
+
+                var order = rows ? (IReadOnlyList<MatrixLine>)_board.Rows : _board.Columns;
+
+                return order.Where(one => _chosen.Any(picked => ReferenceEquals(picked, one)))
+                            .ToList();
             }
 
             /// <summary>What a dragged row and a dragged column are carried as.</summary>
@@ -4546,21 +4822,25 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Heading(Ui.Count(many.Count, what) + " picked"),
                 };
 
-                if (_brush != null)
+                // Through the same gutter act, so filling eight rows from the menu and filling
+                // them from the mark beside them are one thing - and so it lays down whatever
+                // the grid is currently showing.
+                if (_shown == Showing.Priority)
+                    items.Add(Parts.Entry.Saying(
+                        _rank == MatrixBoard.NotSet
+                            ? "Clear their priorities"
+                            : "Rank them " + MatrixBoard.RankNamed(_rank).ToLowerInvariant(),
+                        Glyphs.Warn,
+                        "Every checked cell on them, whatever it says now",
+                        () => Sweep(many[0], rows)));
+                else if (_shown == Showing.Symbols && _brush != null)
                     items.Add(Parts.Entry.Saying(
                         Erasing ? "Clear their undecided cells" : "Fill with " + Quoted(_brush.Symbol),
                         Glyphs.Sweep,
                         Erasing
                             ? "Takes the decisions off every cell on them"
                             : "Puts it in every cell on them that is still undecided",
-                        () =>
-                        {
-                            // Through the same gutter act, so filling eight rows from the menu and
-                            // filling them from the mark beside them are one thing.
-                            var first = many[0];
-
-                            Sweep(first, rows);
-                        }));
+                        () => Sweep(many[0], rows)));
 
                 items.Add(Parts.Entry.Rule());
                 items.Add(Parts.Entry.Heading("Folder"));
@@ -5605,12 +5885,22 @@ namespace CamelWorks.UI.Views
                 // and came back needs to know the board is not what they drew - and what the
                 // numbers are counting, which is what is still open rather than what was ever
                 // found.
-                if (_showing)
+                if (_shown == Showing.Results)
                 {
                     Say(Ui.Small(Ui.Count(_counts.Open, "clash") + " open across "
                                  + Ui.Count(_counts.Tests, "test")));
 
-                    Say(Ui.Quiet("Show the symbols", Showing), 8);
+                    Say(Ui.Quiet("Show the symbols", () => Show(Showing.Symbols)), 8);
+                }
+
+                if (_shown == Showing.Priority)
+                {
+                    Say(Ui.Small(Ui.Count(_board.Ranks().Count(), "pair") + " ranked \u00b7 laying "
+                                 + (_rank == MatrixBoard.NotSet
+                                     ? "nothing"
+                                     : MatrixBoard.RankNamed(_rank).ToLowerInvariant())));
+
+                    Say(Ui.Quiet("Show the symbols", () => Show(Showing.Symbols)), 8);
                 }
 
                 if (_lit != null)
@@ -8106,21 +8396,104 @@ namespace CamelWorks.UI.Views
                 _found.Clear();
             }
 
-            /// <summary>
-            /// Count what came back and show it in the grid, or put the counts away again.
-            ///
-            /// Reads results as well as sides, which is the one difference from reading a matrix
-            /// out of the model: the shape says which cell, the results say what is in it.
-            /// </summary>
-            private void Showing()
+            /// <summary>What a view is called, on the chooser and in the strip.</summary>
+            /// <param name="which">The view.</param>
+            private static string ViewNamed(Showing which) =>
+                which == Showing.Priority ? "Priority"
+                : which == Showing.Results ? "Results"
+                : "Symbols";
+
+            /// <summary>The mark that goes with a view.</summary>
+            /// <param name="which">The view.</param>
+            private static string ViewGlyph(Showing which) =>
+                which == Showing.Priority ? Glyphs.Warn
+                : which == Showing.Results ? Glyphs.Report
+                : Glyphs.Palette;
+
+            /// <summary>Draw the chooser again, so its label is the view that is actually on.</summary>
+            private void RedrawView()
             {
-                if (_showing)
+                _viewPick.Content = Ui.Loose(
+                    Parts.MenuButton(ViewNamed(_shown), ViewGlyph(_shown), Views()));
+            }
+
+            /// <summary>
+            /// The three matrices, and - in the priority view - which rank a press lays down.
+            ///
+            /// The rank sits on this menu rather than in the palette because the palette is the
+            /// legend, and a legend entry is something that becomes a clash test. A rank is not
+            /// a test; it is a thing said about one.
+            /// </summary>
+            private List<Parts.Entry> Views()
+            {
+                var items = new List<Parts.Entry>
                 {
-                    _showing = false;
+                    Parts.Entry.Heading("Show in the cells"),
+
+                    Ticked(Showing.Symbols, "What is checked, and with which tolerance"),
+                    Ticked(Showing.Priority, "How urgent each pair is, in the host\u2019s own ranks"),
+                    Ticked(Showing.Results, "How many clashes are still open on each pair"),
+                };
+
+                if (_shown != Showing.Priority) return items;
+
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("A press lays down"));
+
+                foreach (var rank in new[] { MatrixBoard.High, MatrixBoard.Medium,
+                                             MatrixBoard.Low, MatrixBoard.NotSet })
+                {
+                    var wanted = rank;
+
+                    items.Add(Parts.Entry.Act(
+                        (wanted == _rank ? "\u2713  " : "     ")
+                        + (wanted == MatrixBoard.NotSet
+                            ? "Clear the rank"
+                            : MatrixBoard.RankNamed(wanted)),
+                        null,
+                        () =>
+                        {
+                            _rank = wanted;
+
+                            RedrawView();
+                            RedrawStrip();
+                        }));
+                }
+
+                return items;
+            }
+
+            private Parts.Entry Ticked(Showing which, string why) =>
+                Parts.Entry.Saying((which == _shown ? "\u2713  " : "     ") + ViewNamed(which),
+                                   ViewGlyph(which), why, () => Show(which));
+
+            /// <summary>
+            /// Turn the grid over to one of the three views.
+            ///
+            /// Only the results view has to go and ask the document anything, and it is the one
+            /// that can fail to arrive: an edition with no clash engine has nothing to count,
+            /// and a document whose tests never said what they were between cannot be counted
+            /// onto a matrix. Either way the view does not change, because a grid that had gone
+            /// blank and said why in a notice would have thrown away the picture somebody was
+            /// reading in order to tell them it could not draw a different one.
+            /// </summary>
+            /// <param name="wanted">The view to show.</param>
+            private void Show(Showing wanted)
+            {
+                if (wanted == _shown) return;
+
+                if (wanted != Showing.Results)
+                {
+                    _shown = wanted;
+
+                    // The counts go with the view. They are a reading of the document at one
+                    // moment, and a stale one silently redrawn ten minutes later is worse than
+                    // counting again.
                     _counts = MatrixCounts.None;
 
                     RedrawCells();
                     RedrawStrip();
+                    RedrawView();
                     return;
                 }
 
@@ -8133,7 +8506,7 @@ namespace CamelWorks.UI.Views
 
                 MatrixCounts? counted = null;
 
-                Ui.Working("Counting what came back…", job =>
+                Ui.Working("Counting what came back\u2026", job =>
                 {
                     var read = new List<ClashTestRead>();
                     var seen = 0;
@@ -8153,16 +8526,17 @@ namespace CamelWorks.UI.Views
 
                 if (counted.IsEmpty)
                 {
-                    Warned(Ui.Note("None of the document's tests says what it is between, so "
+                    Warned(Ui.Note("None of the document\u2019s tests says what it is between, so "
                                    + "nothing could be counted onto the matrix."));
                     return;
                 }
 
                 _counts = counted;
-                _showing = true;
+                _shown = Showing.Results;
 
                 RedrawCells();
                 RedrawStrip();
+                RedrawView();
             }
 
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
