@@ -273,7 +273,8 @@ namespace CamelWorks.UI.Views
             /// however many disciplines there are. Typed here it costs a name and a Return, and
             /// the box stays open for the next one.
             /// </summary>
-            private readonly TextBox _naming = new TextBox();
+            /// <summary>The inspector's name box for whatever is picked, so the caret can be sent to it.</summary>
+            private TextBox? _rename;
 
             /// <summary>The three-part frame, built once and kept across redraws.</summary>
             private UIElement? _frame;
@@ -433,26 +434,6 @@ namespace CamelWorks.UI.Views
             {
                 var say = Ui.Stack();
 
-                if (!_session.Clash.IsAvailable && !_hushed)
-                {
-                    UIElement? standing = null;
-
-                    standing = Ui.Info(
-                        "This Navisworks edition has no clash engine, so the matrix cannot be run "
-                        + "into tests here - but everything else works. Draw it, save it, send it "
-                        + "out as a spreadsheet, and build it on a seat that has one. "
-                        + (_session.ClashProblem ?? string.Empty).Trim(),
-                        "Dismiss",
-                        () => Ui.Safely(() =>
-                        {
-                            _hushed = true;
-
-                            if (standing != null) standing.Visibility = Visibility.Collapsed;
-                        }));
-
-                    say.Children.Add(standing);
-                }
-
                 var close = Ui.Icon(Glyphs.Close, "Dismiss", Quiet);
 
                 close.VerticalAlignment = VerticalAlignment.Top;
@@ -598,13 +579,6 @@ namespace CamelWorks.UI.Views
                 // headers, no cells, and the inspector squeezed against the right-hand edge. It
                 // took a render to see, and nothing else could have: it compiles, it throws
                 // nothing, and every test passes over a grid that is not on the screen.
-                var top = Head();
-
-                if (top is FrameworkElement said) said.Margin = new Thickness(0, 0, 0, 8);
-
-                DockPanel.SetDock(top, Dock.Top);
-
-                stack.Children.Add(top);
                 stack.Children.Add(Ui.Loose(_grid));
 
                 // <b>Undo belongs to the screen, not to the grid.</b> It was bound to the cells'
@@ -762,6 +736,20 @@ namespace CamelWorks.UI.Views
 
                 DockPanel.SetDock(_actsPane, Dock.Bottom);
                 panel.Children.Add(Ui.Loose(_actsPane));
+
+                // <b>A notice that neither pushes the work nor covers it.</b> Above the grid it
+                // took its own height off the matrix and gave it back when it went, so the cell
+                // somebody was aiming at moved out from under the pointer twice. Laid over the
+                // grid instead it stopped moving anything and sat on the words underneath. Both
+                // were rejected, and rightly: the two were never the only options.
+                //
+                // It goes in the panel on the right, which is open at every moment of every
+                // session, is already the answer to "what is this thing", and is not where the
+                // work is. Whatever it says, the grid does not move by a pixel.
+                var told = Head();
+
+                DockPanel.SetDock(told, Dock.Top);
+                panel.Children.Add(told);
 
                 panel.Children.Add(new ScrollViewer
                 {
@@ -1668,20 +1656,17 @@ namespace CamelWorks.UI.Views
 
                 if (band > 0) Bands(_across, rows: false);
 
-                // <b>Two shapes for one act.</b> Past the last column sat a plus, and under the
-                // last row a box you type a name into - and on a mirrored board they did exactly
-                // the same thing, because a discipline is one line and adding it adds both. The
-                // plus did not even add anything: it put the caret in that same box. So a
-                // coordinator was offered two different-looking controls, learned them
-                // separately, and one of them was a detour to the other.
+                // <b>One shape for one act, at both ends of it.</b> Past the last column sat a
+                // plus and under the last row a box you typed a name into - two different-looking
+                // controls for the same thing, learned separately, and on a mirrored board one of
+                // them a detour to the other. Both ends are the plus now, which is the one that
+                // belongs in a grid: a cell shaped like the cells it continues, reading as the
+                // next place rather than as a form somebody left in the frame.
                 //
-                // Where the two axes are one list, there is one way in: the box, which is also
-                // the better of the two - a name and a Return each, straight down a list, without
-                // touching the mouse. The plus comes back the moment the axes are their own
-                // lists, because then a column really is something the box cannot add.
-                if (!_board.Paired)
-                    Put(_across, Adding("Add a column", AddColumn, column: true),
-                        top + 1, _board.Columns.Count);
+                // The name is typed where every other thing about a line is said - the panel on
+                // the right, which is already open and already the answer to "what is this row".
+                Put(_across, Adding("Add a discipline", AddColumn, column: true),
+                    top + 1, _board.Columns.Count);
             }
 
             /// <summary>The band down the left: the numbers, the names, and the box that adds one.</summary>
@@ -1736,12 +1721,12 @@ namespace CamelWorks.UI.Views
 
                 if (band > 0) Bands(_down, rows: true);
 
-                var typing = Typing();
-
-                Grid.SetRow(typing, _board.Rows.Count);
-                Grid.SetColumnSpan(typing, left + 2);
-                Grid.SetColumn(typing, 0);
-                _down.Children.Add(typing);
+                // The same cell the columns end in, on the same terms. A box you typed into sat
+                // here instead: a text field in the frame of a grid, against a plus at the other
+                // end of the same act, so adding a discipline looked like two different jobs
+                // depending on which edge you happened to be near.
+                Put(_down, Adding("Add a discipline", AddRow, column: false),
+                    _board.Rows.Count, left + 1);
             }
 
             /// <summary>
@@ -2088,71 +2073,6 @@ namespace CamelWorks.UI.Views
                 Grid.SetColumn(child, column);
                 grid.Children.Add(child);
             }
-
-            /// <summary>
-            /// The box that makes a row out of every name typed into it.
-            ///
-            /// <b>Twenty rows used to be eighty presses.</b> Add a row, open its menu, name it,
-            /// open it again, number it, open it again, point it - and again for the next one.
-            /// A name and a Return each is the whole of it here, and the box keeps the focus so
-            /// a list can be typed straight down without touching the mouse. Where each row
-            /// points is still a question, and it is asked once, in the inspector, of whichever
-            /// row you press.
-            /// </summary>
-            private UIElement Typing()
-            {
-                _naming.Tag = "Type a name, press Return";
-                _naming.Margin = new Thickness(6, 3, 6, 3);
-                _naming.VerticalAlignment = VerticalAlignment.Center;
-
-                if (!_wired)
-                {
-                    _wired = true;
-
-                    _naming.KeyDown += (s, e) => Ui.Safely(() =>
-                    {
-                        if (e.Key != Key.Return) return;
-
-                        e.Handled = true;
-
-                        var name = _naming.Text.Trim();
-
-                        if (name.Length == 0) return;
-
-                        Remember(what: "adding " + Quoted(name));
-
-                        // A name and a Return makes a discipline, which is a row and the column
-                        // that stands for it. Typing twenty names builds a twenty by twenty
-                        // matrix, which is what somebody typing twenty names is doing.
-                        _board.AddPair(new MatrixLine(name, Next(_board.Rows)));
-
-                        Seed();
-
-                        _naming.Text = string.Empty;
-
-                        Redraw();
-
-                        // The box is rebuilt into the band on every redraw, so the focus has to
-                        // be put back or a list of names is one name and a hunt for the box.
-                        _naming.Focus();
-                    });
-                }
-
-                var holder = new Border
-                {
-                    BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(2, 0, 2, 0),
-                    Child = Ui.Loose(_naming),
-                };
-
-                holder.Tint(Border.BorderBrushProperty, "Bd");
-                holder.Tint(Border.BackgroundProperty, "Card");
-
-                return holder;
-            }
-
-            /// <summary>Whether the typing box has been given its Return handler yet.</summary>
-            private bool _wired;
 
             /// <summary>The find box in the corner, and whether it has been wired yet.</summary>
             private readonly TextBox _finder = Ui.Text(string.Empty, null, 60);
@@ -4246,8 +4166,21 @@ namespace CamelWorks.UI.Views
                 Pick(made, rows: true);
 
                 _scroll.ScrollToBottom();
-                _naming.Focus();
+                Naming();
             }
+
+            /// <summary>
+            /// Put the caret where a new line gets its name.
+            ///
+            /// The panel on the right, which is already open, already says what the picked line
+            /// is, and is where every other thing about it is changed. A box in the grid's own
+            /// frame said the same thing in a second place and made adding a discipline look like
+            /// a different job from renaming one.
+            /// </summary>
+            private void Naming() =>
+                _inspector.Dispatcher.BeginInvoke(
+                    new Action(() => Ui.Safely(() => _rename?.Focus())),
+                    System.Windows.Threading.DispatcherPriority.Input);
 
             /// <summary>
             /// Go to the box that makes a discipline, and put the caret in it.
@@ -4260,7 +4193,7 @@ namespace CamelWorks.UI.Views
             private void Adding()
             {
                 _scroll.ScrollToBottom();
-                _naming.Focus();
+                Naming();
             }
 
             /// <summary>
@@ -5167,9 +5100,44 @@ namespace CamelWorks.UI.Views
                 // the panel is titled with the row, the cursor is drawn in the cell it is in,
                 // and the brush is the chip that is lit on the palette. What stays here is
                 // state that has a control attached to it, and nothing that is a lesson.
+                // <b>A standing fact about the seat, in a row that is already there.</b> This
+                // used to be a band across the top of the window: it pushed the matrix down by
+                // its own height, said the same sentence every time the tab was opened, and on a
+                // seat with no clash engine that is every session for ever, about something its
+                // owner learned once. Made to float instead, it covered the words underneath.
+                //
+                // The strip is already drawn, at a height that does not change, and this is
+                // exactly the kind of thing it carries. Six words here and the whole sentence on
+                // the tip; a press puts it away for as long as the application runs, because the
+                // fact is about the seat and a seat that gains a clash engine is a different
+                // Navisworks and a different session.
+                if (!_session.Clash.IsAvailable && !_hushed)
+                {
+                    var mark = Ui.Glyph(Glyphs.Warn, 12, "AmberTx", new Thickness(0, 0, 6, 0));
+
+                    mark.VerticalAlignment = VerticalAlignment.Center;
+                    Say(mark);
+
+                    var what = Ui.Small("No clash engine on this seat");
+
+                    what.ToolTip = "This Navisworks edition has no clash engine, so the matrix "
+                                   + "cannot be run into tests here - but everything else works. "
+                                   + "Draw it, save it, send it out as a spreadsheet, and build "
+                                   + "it on a seat that has one. "
+                                   + (_session.ClashProblem ?? string.Empty).Trim();
+
+                    Say(what);
+
+                    Say(Ui.Quiet("Dismiss", () =>
+                    {
+                        _hushed = true;
+                        RedrawStrip();
+                    }), 8);
+                }
+
                 if (_brush == null)
                 {
-                    Say(Ui.Small("No symbol selected"));
+                    Say(Ui.Small("No symbol selected"), _hushed || _session.Clash.IsAvailable ? 0 : 16);
                 }
                 else
                 {
@@ -5492,7 +5460,7 @@ namespace CamelWorks.UI.Views
                 // one. The name shows in two places, the row header and the column header, and
                 // those are what a rename has to repaint. The panel is already right: it is
                 // where the letters are being typed.
-                Told("Name", Ui.Text(line.Name, typed =>
+                _rename = Ui.Text(line.Name, typed =>
                 {
                     Remember("name " + at + rows);
 
@@ -5501,7 +5469,9 @@ namespace CamelWorks.UI.Views
                     RedrawDown();
                     RedrawAcross();
                     Recount();
-                }, 100));
+                }, 100);
+
+                Told("Name", _rename);
 
                 var pair = new Grid();
 
