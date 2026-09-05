@@ -5113,26 +5113,47 @@ namespace CamelWorks.UI.Views
                 // Navisworks and a different session.
                 if (!_session.Clash.IsAvailable && !_hushed)
                 {
-                    var mark = Ui.Glyph(Glyphs.Warn, 12, "AmberTx", new Thickness(0, 0, 6, 0));
+                    // <b>Three words and a mark, because the strip has one line.</b> Said at
+                    // length here - the sentence, and a Dismiss beside it - it pushed "Saving as
+                    // you go" onto a second row, and a strip that grows a line has moved the
+                    // matrix down by one. Which is the whole thing this was supposed to stop
+                    // doing. The sentence is on the tip, where a sentence costs nothing, and
+                    // pressing it is what puts it away.
+                    var told = new DockPanel
+                    {
+                        LastChildFill = true,
+                        Cursor = Cursors.Hand,
+                        Background = System.Windows.Media.Brushes.Transparent,
+                        ToolTip = "This Navisworks edition has no clash engine, so the matrix "
+                                  + "cannot be run into tests here - but everything else works. "
+                                  + "Draw it, save it, send it out as a spreadsheet, and build it "
+                                  + "on a seat that has one. "
+                                  + (_session.ClashProblem ?? string.Empty).Trim()
+                                  + "  Press to put this away.",
+                    };
+
+                    var mark = Ui.Glyph(Glyphs.Warn, 12, "AmberTx", new Thickness(0, 0, 5, 0));
 
                     mark.VerticalAlignment = VerticalAlignment.Center;
-                    Say(mark);
 
-                    var what = Ui.Small("No clash engine on this seat");
+                    DockPanel.SetDock(mark, Dock.Left);
+                    told.Children.Add(mark);
+                    told.Children.Add(Ui.Small("No clash engine"));
 
-                    what.ToolTip = "This Navisworks edition has no clash engine, so the matrix "
-                                   + "cannot be run into tests here - but everything else works. "
-                                   + "Draw it, save it, send it out as a spreadsheet, and build "
-                                   + "it on a seat that has one. "
-                                   + (_session.ClashProblem ?? string.Empty).Trim();
+                    told.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+                    {
+                        e.Handled = true;
+                        _hushed = true;
+                        RedrawStrip();
+                    });
 
-                    Say(what);
-
-                    Say(Ui.Quiet("Dismiss", () =>
+                    Reachable(told, "No clash engine on this seat. Press to put this away.", () =>
                     {
                         _hushed = true;
                         RedrawStrip();
-                    }), 8);
+                    });
+
+                    Say(told);
                 }
 
                 if (_brush == null)
