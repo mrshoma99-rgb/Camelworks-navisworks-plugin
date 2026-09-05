@@ -107,11 +107,32 @@ namespace CamelWorks.UI.Views
         /// the document holds, and a harness seat holds no document - so asking for it opens on
         /// the symbols.
         /// </param>
-        public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view)
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view) =>
+            Surface(seat, drawn, view, null);
+
+        /// <summary>
+        /// The matrix tab, opened on one of its three views, over tests that have already been
+        /// read.
+        /// </summary>
+        /// <param name="seat">The seat it is running in.</param>
+        /// <param name="drawn">A matrix already open, or null to arrive at the start screen.</param>
+        /// <param name="view">Which of the three the grid starts on.</param>
+        /// <param name="counted">
+        /// Tests as a read of the document hands them back, or null.
+        ///
+        /// <b>The results view was the one that could not be photographed.</b> It counts what the
+        /// document holds, and the render harness has no document - so the heat scale, the
+        /// difference between a nought and a pair no test covers, and every number in the grid
+        /// were drawing nobody had ever seen. Handed the same list a real read produces, the
+        /// harness counts it through <see cref="MatrixTally"/> exactly as the seat does: what is
+        /// photographed is the counting, not a picture of it.
+        /// </param>
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view,
+                                        IReadOnlyList<ClashTestRead>? counted)
         {
             if (drawn != null) _board = drawn;
 
-            return new Editor(seat, view).View;
+            return new Editor(seat, view, counted).View;
         }
 
         /// <summary>
@@ -514,14 +535,21 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<(MatrixLine Row, MatrixLine Column), Border> _cells =
                 new Dictionary<(MatrixLine, MatrixLine), Border>();
 
-            internal Editor(ISeat session, Showing view)
+            internal Editor(ISeat session, Showing view, IReadOnlyList<ClashTestRead>? counted)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
 
                 // Set before anything is drawn, because the chooser's label and every cell in the
-                // grid are built from it. The results view is not startable this way - it has to
-                // go and count first, and a constructor is no place to read a document.
-                _shown = view == Showing.Results ? Showing.Symbols : view;
+                // grid are built from it. The results view needs counts before it can draw
+                // anything, and a constructor is no place to go and read a document - so it opens
+                // on results only when the tests have been handed in already, and counts them the
+                // same way the button does.
+                if (view == Showing.Results)
+                {
+                    _counts = MatrixTally.Of(counted);
+                    _shown = _counts.IsEmpty ? Showing.Symbols : Showing.Results;
+                }
+                else _shown = view;
 
                 _build = Ui.Primary("Build the tests", Build);
 

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
@@ -57,6 +58,20 @@ namespace CamelWorks.Studio
             Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn())),
 
+            // The results view was the one that could not be photographed: it counts what the
+            // document holds and this seat holds none, so the heat scale, the number in each
+            // cell and the difference between a nought and a pair no test covers were drawing
+            // nobody had ever seen. It is handed the same list a real read hands back, and the
+            // tab counts it through MatrixTally exactly as a licensed seat does.
+            Page("app-clash-matrix-results", "Clash Manager · Matrix, results", 820,
+                 () =>
+                 {
+                     var board = Drawn(pointed: true);
+
+                     return MatrixWindow.Surface(Seated(), board, MatrixWindow.Showing.Results,
+                                                 Ran(board));
+                 }),
+
             // The same board, turned over to the priority view. A view that cannot be
             // photographed is a view whose drawing faults are found on a licensed seat and
             // described to me in words, which is how every layout fault on this tab has been
@@ -98,7 +113,20 @@ namespace CamelWorks.Studio
         /// drawn; and a number that disagrees with its position, so the number gutter is drawn
         /// too. A matrix that exercises none of those proves nothing.
         /// </summary>
-        private static MatrixBoard Drawn()
+        private static MatrixBoard Drawn() => Drawn(pointed: false);
+
+        /// <summary>
+        /// The board every matrix page is drawn from.
+        /// </summary>
+        /// <param name="pointed">
+        /// True to give every line the saved set it stands for.
+        ///
+        /// Off for the two pages that photograph the drawing, because a board being typed has
+        /// nothing behind its lines yet and the marks that say so are part of what those pages
+        /// are for. On for the results page, where it is not decoration: what a test is between
+        /// is how a count finds its cell, so a board pointing at nothing counts onto nothing.
+        /// </param>
+        private static MatrixBoard Drawn(bool pointed)
         {
             var board = new MatrixBoard();
 
@@ -133,7 +161,11 @@ namespace CamelWorks.Studio
                 // The numbers skip one, so they stop agreeing with the position in the list and
                 // the gutter that prints them is drawn - which is a column of the header the
                 // empty screen never had to lay out.
-                var row = board.AddPair(new MatrixLine(name)
+                var row = board.AddPair(new MatrixLine(
+                    name,
+                    source: pointed && name.Length > 0
+                        ? MatrixSource.SelectionSet(name)
+                        : null)
                 {
                     Code = code,
                     Number = (at + (at > 8 ? 2 : 1)).ToString(CultureInfo.InvariantCulture),
@@ -179,6 +211,62 @@ namespace CamelWorks.Studio
                 }
 
             return board;
+        }
+
+        /// <summary>
+        /// The board's tests as a run of them hands them back, so the results view has something
+        /// to count.
+        ///
+        /// Not a tally written by hand. These are the product's own types - the shape of a test
+        /// and the results under it - so what the page photographs is
+        /// <see cref="MatrixTally"/> doing its own job: finding the cell from what the test is
+        /// between, and counting a result as open or not from the word the host wrote on it.
+        ///
+        /// A spread on purpose. Some pairs come back heavy, some light, some entirely approved -
+        /// which is the nought that has to be told from the pairs left blank because no test
+        /// covers them at all, and a third of them are left uncovered so that both are on the
+        /// picture.
+        /// </summary>
+        /// <param name="board">The pointed board.</param>
+        private static IReadOnlyList<ClashTestRead> Ran(MatrixBoard board)
+        {
+            var read = new List<ClashTestRead>();
+            var at = 0;
+
+            foreach (var cell in board.Cells())
+            {
+                at++;
+
+                if (board.IsSelfPair(cell.Row, cell.Column)) continue;
+
+                // A third of the pairs have no test at all, so the view has to draw "nobody has
+                // checked this" beside "checked, nothing left".
+                if (at % 3 == 0) continue;
+
+                // Nought open on one in five, which is the pair somebody has finished with.
+                var found = ((at * 37) % 240) + 1;
+                var open = at % 5 == 0 ? 0 : ((at * 17) % found) + 1;
+
+                var results = new List<ClashResultInfo>();
+
+                for (var one = 0; one < found; one++)
+                    results.Add(new ClashResultInfo(
+                        one.ToString(CultureInfo.InvariantCulture), default, default,
+                        0, 0, 0,
+                        one < open ? (one % 2 == 0 ? "New" : "Active") : "Approved", null));
+
+                var shape = new ClashTestSides(cell.Row.Name, cell.Column.Name,
+                                               Array.Empty<string>(), Array.Empty<string>(),
+                                               "Hard", 0.01);
+
+                read.Add(new ClashTestRead(
+                    new ClashTestInfo(at.ToString(CultureInfo.InvariantCulture),
+                                      cell.Row.Name + " vs " + cell.Column.Name, null,
+                                      results.Count, 0),
+                    shape, results));
+            }
+
+            return read;
         }
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>

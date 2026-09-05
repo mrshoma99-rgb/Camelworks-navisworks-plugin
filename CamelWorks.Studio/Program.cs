@@ -46,7 +46,7 @@ namespace CamelWorks.Studio
         /// opens - and the cost of that is not the minutes, it is that a render stops being
         /// something you reach for. Named pages are two.
         /// </summary>
-        private const string Only = "app-clash-matrix,app-clash-matrix-drawn,app-clash-matrix-priority";
+        private const string Only = "app-clash-matrix,app-clash-matrix-drawn,app-clash-matrix-priority,app-clash-matrix-results";
 
         /// <summary>Run the harness.</summary>
         /// <param name="args">
