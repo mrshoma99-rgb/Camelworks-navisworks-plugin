@@ -167,15 +167,15 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// What every saved set used to return, and what it returns now.
         ///
-        /// <b>Why this rides on the federation sweep.</b> The sweep answers "is this fit to
-        /// coordinate against", and a set that has gone quiet is the sharpest way it can fail to
-        /// be: nothing errors, nothing turns red, and every check pointed at that set now runs
-        /// over what is left and passes. A green board over a building nobody checked is the one
-        /// outcome this product exists to prevent, and this is the side door it comes through.
+        /// Carried on the federation sweep because the sweep answers "is this fit to coordinate
+        /// against", and a set that has silently emptied is one of the sharpest ways it can fail to
+        /// be: nothing errors, nothing turns red, and every check pointed at that set now runs over
+        /// what is left and passes. A green board over a building nobody checked is the outcome this
+        /// product exists to prevent.
         ///
-        /// Its findings are their own, not the review's: drift has its own source, its own
-        /// identity and its own history, and folding it into the review's cards would put the
-        /// same problem in the register twice.
+        /// Its findings are its own rather than the review's: drift has its own source, identity
+        /// and history, and folding it into the review's cards would put the same problem in the
+        /// register twice.
         /// </summary>
         private static void Drifted(Session session, Panel results, Job job)
         {
@@ -394,10 +394,9 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Put what the sweep found into the findings register, and hand back what it kept.
         ///
-        /// <b>Why a sweep writes anything.</b> Until now the review said what it found, offered to
-        /// select the elements, and forgot the whole thing the moment the tab was left. Nobody
-        /// could mark one as accepted, nothing could be assigned, and there was no way to raise an
-        /// issue from one. Keeping it is what makes all three possible.
+        /// The review previously reported what it found, offered to select the elements, and
+        /// discarded everything on leaving the tab: nothing could be marked accepted, assigned, or
+        /// raised as an issue. Keeping the findings is what makes those possible.
         ///
         /// Keyed by the rule, so the caller can put each card's verbs on the finding behind it.
         /// </summary>
@@ -485,13 +484,12 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The verbs that make a review finding a thing somebody can deal with rather than only
-        /// look at: settle it, and put it on an issue.
+        /// The verbs that make a review finding actionable rather than only readable: settle it, and
+        /// put it on an issue.
         ///
-        /// <b>Why "Settle it" and not a status picker.</b> A review finding has exactly one
-        /// decision anybody takes about it — yes, we know, and we have accepted it. Offering five
-        /// statuses would be offering four nobody uses. What it says depends on where the finding
-        /// already is, so the button is never a no-op.
+        /// "Settle it" rather than a status picker, because a review finding carries one decision:
+        /// it is known and it has been accepted. Five statuses would be four nobody uses. The
+        /// caption depends on where the finding already is, so the button is never a no-op.
         /// </summary>
         private static UIElement Judge(Session session, Finding kept, Panel said)
         {
@@ -1257,12 +1255,12 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Put what the check found into the findings register, and hand back what it kept.
         ///
-        /// <b>Why an IDS run writes anything.</b> The tab could select the failures and write a
-        /// workbook and remember nothing. Run it on Monday, agree with the architect that the
-        /// forty doors without a fire rating are being scheduled separately, run it again on
-        /// Tuesday, and it said forty again with nowhere to have said so.
+        /// Without this the tab could select the failures and write a workbook but remember nothing:
+        /// run it, agree with the architect that the forty doors without a fire rating are being
+        /// scheduled separately, run it again the next day, and it reports forty again with nowhere
+        /// that agreement was recorded.
         ///
-        /// Keyed by the specification, so a picked row can act on the finding behind it.
+        /// Keyed by the specification, so a selected row can act on the finding behind it.
         /// </summary>
         private static Dictionary<string, Finding> Keep(Session session, IdsReport report,
                                                         string? document)
@@ -1646,18 +1644,16 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// Project settings: what CamelWorks worked out, and every override, on one surface.
+        /// Project settings: the values CamelWorks derived, and every override, on one surface.
         ///
-        /// <b>This screen is skippable.</b> Every value on it already has an answer, so nothing
-        /// here has to be visited before any other feature works — which is the difference between
-        /// a product you can try in a minute and one that starts with an afternoon of forms. The
-        /// project file is created lazily and nothing blocks on it.
+        /// This screen is skippable. Every value on it already has an answer, so nothing here has to
+        /// be visited before any other feature works, and the project file is created lazily with
+        /// nothing blocking on it.
         ///
-        /// The register of derived answers is the working material, so it is the stage; the inputs
-        /// that are the project's own — parties, priorities, code tables, the roster — are the
-        /// setup column, and saving the overrides is the one action at its foot. The operations
-        /// that write into the model itself stay at the bottom of the stage, where somebody has to
-        /// go looking for them.
+        /// The register of derived answers is the working material and so is the stage; the inputs
+        /// that belong to the project — parties, priorities, code tables, the roster — are the setup
+        /// column, with saving the overrides as the single action at its foot. The operations that
+        /// write into the model itself stay at the bottom of the stage.
         /// </summary>
         public static UIElement Settings()
         {
