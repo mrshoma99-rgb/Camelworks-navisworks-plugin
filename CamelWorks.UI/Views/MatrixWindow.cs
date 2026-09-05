@@ -161,9 +161,30 @@ namespace CamelWorks.UI.Views
             /// changes; where a button is must not. The state reads from the left, the controls
             /// are held against the right-hand edge, and neither moves the other.
             /// </summary>
-            private readonly WrapPanel _strip = new WrapPanel { Orientation = Orientation.Horizontal };
+            /// <summary>
+            /// The strip is one line, at one size, on one centre.
+            ///
+            /// <b>It was three of each.</b> The facts on the left were Hint-styled text, the
+            /// actions on the right were buttons at the button size, and the gaps between them
+            /// were written one at a time - nought, six, eight, ten, twelve and sixteen. Three
+            /// type sizes centred in one row put their baselines in three places, which is what
+            /// "nothing lines up" is: not a missing alignment, a row of things that were never
+            /// the same size to begin with.
+            ///
+            /// And it wrapped. A WrapPanel that gains an item gains a line, and a line here moves
+            /// the whole matrix down - which is the one thing this strip must never do. It is a
+            /// fixed height now and it clips: what does not fit is cut, in an order that puts the
+            /// state that matters first, rather than shoving the grid.
+            /// </summary>
+            private const double StripSize = 11;
 
-            private readonly WrapPanel _verbs = new WrapPanel { Orientation = Orientation.Horizontal };
+            private const double StripHigh = 30;
+
+            private const double StripGap = 16;
+
+            private readonly StackPanel _strip = new StackPanel { Orientation = Orientation.Horizontal };
+
+            private readonly StackPanel _verbs = new StackPanel { Orientation = Orientation.Horizontal };
 
             private readonly Border _grid = new Border();
 
@@ -794,11 +815,22 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Bar()
             {
-                var bar = new DockPanel { LastChildFill = true };
+                var bar = new DockPanel
+                {
+                    LastChildFill = true,
+
+                    // One line, always. Anything that does not fit is cut rather than wrapped,
+                    // because a wrapped strip is a taller strip and a taller strip has pushed
+                    // the matrix down - which is the thing a notice in here must never do.
+                    Height = StripHigh,
+                    ClipToBounds = true,
+                };
 
                 _verbs.HorizontalAlignment = HorizontalAlignment.Right;
                 _verbs.VerticalAlignment = VerticalAlignment.Center;
-                _verbs.Margin = new Thickness(12, 0, 0, 0);
+                _verbs.Margin = new Thickness(StripGap, 0, 0, 0);
+
+                _strip.VerticalAlignment = VerticalAlignment.Center;
 
                 DockPanel.SetDock(_verbs, Dock.Right);
                 bar.Children.Add(Ui.Loose(_verbs));
@@ -5078,6 +5110,11 @@ namespace CamelWorks.UI.Views
 
                 void Into(Panel panel, UIElement said, double left)
                 {
+                    // One size for the whole row. A caption at the button size beside a fact at
+                    // the hint size are two baselines however carefully they are centred.
+                    if (said is Control control) control.FontSize = StripSize;
+                    else if (said is TextBlock words) words.FontSize = StripSize;
+
                     if (said is FrameworkElement held)
                     {
                         held.VerticalAlignment = VerticalAlignment.Center;
@@ -5088,10 +5125,12 @@ namespace CamelWorks.UI.Views
                 }
 
                 // What is going on, on the left, where a sentence is read from.
-                void Say(UIElement said, double left = 0) => Into(_strip, said, left);
+                void Say(UIElement said, double left = StripGap) =>
+                    Into(_strip, said, _strip.Children.Count == 0 ? 0 : left);
 
                 // What can be done, against the right-hand edge, in the same place every time.
-                void Does(UIElement said, double left = 12) => Into(_verbs, said, left);
+                void Does(UIElement said, double left = StripGap) =>
+                    Into(_verbs, said, _verbs.Children.Count == 0 ? 0 : left);
 
                 // <b>A strip that narrates every press is a strip nobody reads.</b> It carried
                 // running commentary - how to use the brush, which row is in the panel, where
@@ -5138,7 +5177,12 @@ namespace CamelWorks.UI.Views
 
                     DockPanel.SetDock(mark, Dock.Left);
                     told.Children.Add(mark);
-                    told.Children.Add(Ui.Small("No clash engine"));
+                    told.Children.Add(new TextBlock
+                    {
+                        Text = "No clash engine",
+                        FontSize = StripSize,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Hint"));
 
                     told.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
                     {
@@ -5158,7 +5202,7 @@ namespace CamelWorks.UI.Views
 
                 if (_brush == null)
                 {
-                    Say(Ui.Small("No symbol selected"), _hushed || _session.Clash.IsAvailable ? 0 : 16);
+                    Say(Ui.Small("No symbol selected"));
                 }
                 else
                 {
@@ -5170,7 +5214,7 @@ namespace CamelWorks.UI.Views
                         FontWeight = FontWeights.SemiBold,
                     }.Wearing("Body"));
 
-                    Say(Ui.Quiet("Clear selection", () => Arm(null)), 10);
+                    Say(Ui.Quiet("Clear selection", () => Arm(null)), 8);
                 }
 
                 // <b>Two of the five modes said nothing at all.</b> The picked line and the lit
@@ -5181,8 +5225,8 @@ namespace CamelWorks.UI.Views
                 // something says it is a search, and the way out of it is the button beside it.
                 if (_lit != null)
                 {
-                    Say(Ui.Small("Showing only " + Quoted(_lit)), 16);
-                    Say(Ui.Quiet("Show all", () => Lighting(null)), 6);
+                    Say(Ui.Small("Showing only " + Quoted(_lit)));
+                    Say(Ui.Quiet("Show all", () => Lighting(null)), 8);
                 }
 
                 // The cursor's own address went with the rest: it is drawn in the cell it is
@@ -5196,12 +5240,12 @@ namespace CamelWorks.UI.Views
                                                   _board.Columns[Math.Min(_atColumn, _markColumn)])
                                  + " to " + Where(_board.Rows[Math.Max(_atRow, _markRow)],
                                                   _board.Columns[Math.Max(_atColumn, _markColumn)])
-                                 + " — type a symbol for all of it"), 16);
+                                 + " — type a symbol for all of it"));
 
                 // The tally and whether it is saved are both state, and both belong with the
                 // rest of the state - on the left, where a sentence is read from.
-                Say(Ui.Loose(_count.Wearing("Hint")), 16);
-                Say(Saying(), 16);
+                Say(Ui.Loose(_count.Wearing("Hint")));
+                Say(Saying());
 
                 // Everything from here is a control, and every one of them goes on the right.
                 // The box that makes rows is under the last one, which on a matrix of any size
@@ -5211,7 +5255,7 @@ namespace CamelWorks.UI.Views
                 // category" and left you to find it. Both add the same thing, so there is one of
                 // them, and it goes to the box - which is the editor, and the only place a
                 // discipline gets a name at the moment it is made.
-                Does(Ui.Quiet("Add discipline", Adding), 0);
+                Does(Ui.Quiet("Add discipline", Adding));
 
                 // <b>The twin the columns never got.</b> The plus that adds one sits past the
                 // last column of the band, which on any matrix wide enough to scroll is off the
