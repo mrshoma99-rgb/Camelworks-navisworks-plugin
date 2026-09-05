@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
@@ -542,6 +543,56 @@ namespace CamelWorks.UI.Views
             private NamingBook Book => _book ??= NamingBook.FromJson(
                 _session.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
 
+            /// <summary>
+            /// The project's storeys, read once per screen and held.
+            ///
+            /// Held because banding asks which storey every row is on, six hundred times on one
+            /// redraw. Written back by <see cref="KeepPlan"/> whenever the list changes.
+            /// </summary>
+            private LevelPlan? _plan;
+
+            /// <summary>The storeys this project says the building has.</summary>
+            private LevelPlan Plan => _plan ??= LevelPlan.FromJson(
+                _session.Store.Section(ProjectStore.ProfileSection)[LevelPlan.Key]);
+
+            /// <summary>Write the storeys back to the project file.</summary>
+            /// <returns>True when the project file took them.</returns>
+            private bool KeepPlan()
+            {
+                _session.Store.Section(ProjectStore.ProfileSection)
+                        .Set(LevelPlan.Key, Plan.ToJson() ?? JsonValue.Array());
+
+                return _session.Store.Save();
+            }
+
+            /// <summary>
+            /// Which storey a row is on.
+            ///
+            /// The clash point, not either element. A riser passing through six storeys clashes on
+            /// the storey the conflict is on, and filing it under the storey the pipe starts from
+            /// sends somebody to the wrong floor.
+            ///
+            /// A group of results is on one storey when every member is; a group spread over two
+            /// says so rather than picking one, because a group is a thing somebody made and
+            /// splitting it across bands would be the view editing it.
+            /// </summary>
+            /// <param name="row">The row, which may be a group.</param>
+            private string Storey(BoardRow row)
+            {
+                if (Plan.IsEmpty) return NoLevels;
+
+                var scale = OnFile ? 1.0 : _session.MetresPerUnit;
+
+                var held = row.Rows
+                    .Select(one => Plan.LevelAt(one.Info.PointZ * scale) ?? Underneath)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                return held.Count == 0 ? Underneath
+                    : held.Count == 1 ? held[0]
+                    : "Across " + Ui.Count(held.Count, "level");
+            }
+
             /// <summary>Write the naming back to the project file.</summary>
             /// <returns>True when the project file took it.</returns>
             private bool KeepBook()
@@ -666,6 +717,22 @@ namespace CamelWorks.UI.Views
             private const string ByAssignee = "Assignee";
             private const string ByStatus = "Status";
             private const string ByHowBad = "Severity";
+
+            /// <summary>
+            /// The storey a clash is on, read off its own point against the project's levels.
+            ///
+            /// The panel used to refuse this: "nothing in a clash test carries a level, and a
+            /// level guessed out of a test's name is a filter that hides tests for a reason it
+            /// cannot state". That objection was about a guess. A clash carries a height, the
+            /// project says which storey each height is on, and the two together are a fact.
+            /// </summary>
+            private const string ByLevel = "Level";
+
+            /// <summary>Where a clash falls when it is under the lowest storey declared.</summary>
+            private const string Underneath = "Below the lowest level";
+
+            /// <summary>What every row reads as before any storey has been declared.</summary>
+            private const string NoLevels = "No levels set up";
 
             private const string Anyone = "Anyone";
 
@@ -5497,6 +5564,18 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// The building's storeys, so the board can group clashes by floor.
+            ///
+            /// Drawn by <see cref="ClashLevels"/>, which is where the editor lives so the render
+            /// harness can look at it: this page is inside a tab that needs a licensed seat and a
+            /// federation to exist at all.
+            /// </summary>
+            private UIElement Storeys() =>
+                Bench.Group("Levels",
+                    ClashLevels.Panel(Plan, _board, KeepPlan,
+                                      () => Ui.Safely(RedrawBoard)));
+
+            /// <summary>
             /// All settings for this screen, in one window with one section per subject.
             ///
             /// Replaces the earlier "Source and tolerance" window, which held four unrelated
@@ -5531,6 +5610,8 @@ namespace CamelWorks.UI.Views
                                  + "baseline, named after you. It does not change the baseline "
                                  + "and it does not touch anyone else's markup."))
                     : null,
+
+                Storeys(),
 
                 Bench.Group("Focus",
                     Ui.Field("Zoom out", Ui.Text(
@@ -6349,6 +6430,9 @@ namespace CamelWorks.UI.Views
                         return Past(Deep(row))
                             ? "Worse than " + Tolerance(entry)
                             : "Within " + Tolerance(entry);
+
+                    case ByLevel:
+                        return Storey(row);
                 }
 
                 var token = Token(by);
@@ -6430,6 +6514,11 @@ namespace CamelWorks.UI.Views
             private List<string> Bandable()
             {
                 var held = new List<string> { ByAssignee, ByStatus, ByHowBad };
+
+                // Only when the project has said what its storeys are. Offered on a project with
+                // none, every row falls in one band and the entry reads as a broken control
+                // rather than as a list nobody has filled in.
+                if (!Plan.IsEmpty) held.Add(ByLevel);
 
                 held.AddRange(Tokened().Select(one => ByToken + one));
                 held.AddRange(_columns.Select(c => ByColumn + c.Id));

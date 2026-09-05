@@ -57,6 +57,16 @@ namespace CamelWorks.Core.Data
 
         /// <summary>A histogram of where elements actually sit.</summary>
         Inferred = 3,
+
+        /// <summary>
+        /// The project said so.
+        ///
+        /// Above all three of the others, because it is not a derivation. A grid can be missing,
+        /// a level property can be spelled three ways by three disciplines, and a histogram
+        /// produces levels named after their own elevation. A coordinator typing "Level 1 starts
+        /// at five metres" is stating the building, and nothing the model holds outranks that.
+        /// </summary>
+        Declared = 4,
     }
 
     /// <summary>
@@ -143,6 +153,12 @@ namespace CamelWorks.Core.Data
         /// </summary>
         public string Provenance() => Source switch
         {
+            LevelSource.Declared =>
+                "Typed on this project. These are the storeys the coordinator says the building "
+                + "has, so they are named the way the client names them and they do not change "
+                + "when a model is appended. Anything below the lowest one is filed as such "
+                + "rather than pushed into it.",
+
             LevelSource.Grid =>
                 "Read from the coordination grid. These are the level names on the drawings. Anything "
                 + "outside the grid's extent still lands in the nearest band, so a detached plant "
@@ -186,6 +202,13 @@ namespace CamelWorks.Core.Data
 
             return new LevelSet(Band(ordered, derived: false, support: null), 0, 0, source);
         }
+
+        /// <summary>
+        /// The levels the project declares, typed by a coordinator rather than read off anything.
+        /// </summary>
+        /// <param name="levels">Name and floor elevation pairs, in any order.</param>
+        public static LevelSet Declared(IEnumerable<KeyValuePair<string, double>> levels) =>
+            FromModel(levels, LevelSource.Declared);
 
         /// <summary>
         /// The levels the coordination grid declares.
@@ -314,6 +337,7 @@ namespace CamelWorks.Core.Data
                   + (Bands.Count == 1 ? " level" : " levels")
                   + Source switch
                     {
+                        LevelSource.Declared => " declared on this project",
                         LevelSource.Grid => " from the coordination grid",
                         LevelSource.Property => " from the models' level property",
                         _ => " inferred from geometry",

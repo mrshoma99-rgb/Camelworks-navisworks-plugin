@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Data;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
@@ -76,6 +77,12 @@ namespace CamelWorks.Studio
                  () => MatrixReadWindow.Draw(Named(), "{rowCode}-{rowNumber} {row} vs "
                                                       + "{columnCode}-{columnNumber} {column}",
                                              null, null)),
+
+            // The levels a project declares, and what each covers. Drawn with a building in it:
+            // an empty plan draws the one line saying there are none, which is the state that
+            // proves nothing about the editor.
+            Page("app-clash-levels", "Clash Manager · Levels", 620,
+                 () => ClashLevels.Drawn(Storeyed())),
 
             // The naming, drawn on each of its panes. This is the surface that decides what the
             // manager can band, filter, sort and renumber by, and every one of those reads a
@@ -348,6 +355,26 @@ namespace CamelWorks.Studio
         /// fixture where every name fits the first pattern would photograph a screen that never
         /// happens.
         /// </summary>
+        /// <summary>
+        /// A building's storeys as a coordinator would type them: a ground floor at zero, a taller
+        /// plant level over it, then equal storeys up.
+        ///
+        /// Uneven on purpose. A block of identical storeys draws every span the same and would not
+        /// show that the span is worked out from the next level up rather than typed.
+        /// </summary>
+        private static LevelPlan Storeyed()
+        {
+            var plan = new LevelPlan();
+
+            plan.Add("Ground floor", 0);
+            plan.Add("Plant", 5.4);
+            plan.Add("Level 1", 9.6);
+            plan.Add("Level 2", 13.2);
+            plan.Add("Roof", 16.8);
+
+            return plan;
+        }
+
         /// <summary>The naming window's tests: the same list, as id and name.</summary>
         private static IReadOnlyList<(string Id, string Name)> Testing() =>
             Named().Select(one => (one.Test.Id, one.Test.Name)).ToList();

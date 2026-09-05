@@ -35,7 +35,7 @@ on:
       pages:
         description: "Which pages to draw, by id, comma-separated - or 'all'"
         required: false
-        default: "app-clash-naming-tests,app-clash-naming-patterns,app-clash-naming-write"
+        default: "app-clash-levels"
 
   # A push to render/** is a request for a picture, and the only way an agent working in this
   # repository can ask for one: dispatching a workflow needs actions:write, which the app it runs
