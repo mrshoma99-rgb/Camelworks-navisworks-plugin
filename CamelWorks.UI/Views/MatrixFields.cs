@@ -137,7 +137,15 @@ namespace CamelWorks.UI.Views
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             });
 
-            var root = new DockPanel { LastChildFill = true };
+            // Capped at the width the window opens at, so what the render harness draws at 1180
+            // is the layout that ships rather than the same controls stretched across a screen
+            // nobody sees them on.
+            var root = new DockPanel
+            {
+                LastChildFill = true,
+                MaxWidth = 600,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
 
             var acts = new Border
             {
@@ -190,8 +198,18 @@ namespace CamelWorks.UI.Views
 
             var stack = Ui.Stack();
 
-            stack.Children.Add(Head(board, field, onChange));
-            stack.Children.Add(Filling(board, field, onChange));
+            stack.Children.Add(Head(board, field, onChange, field.Fill == MatrixFill.ByHand));
+
+            // A field typed line by line has nothing to configure and nothing to preview, so it
+            // is one line rather than a card with a sentence in it saying so. Four of those
+            // sentences down a window is the state a scheme starts in, and it read as four
+            // warnings rather than as the default.
+            if (field.Fill != MatrixFill.ByHand)
+                stack.Children.Add(Filling(board, field, onChange));
+
+            card.Padding = field.Fill == MatrixFill.ByHand
+                ? new Thickness(12, 8, 12, 8)
+                : new Thickness(12, 10, 12, 12);
 
             card.Child = stack;
 
@@ -199,9 +217,14 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>The card's top line: what it is called, its token, and the way to remove it.</summary>
-        private static UIElement Head(MatrixBoard board, MatrixField field, Action onChange)
+        private static UIElement Head(MatrixBoard board, MatrixField field, Action onChange,
+                                      bool inline)
         {
-            var head = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
+            var head = new DockPanel
+            {
+                LastChildFill = true,
+                Margin = new Thickness(0, 0, 0, inline ? 0 : 8),
+            };
 
             if (!field.IsBuiltIn)
             {
@@ -245,17 +268,28 @@ namespace CamelWorks.UI.Views
             }, 170);
 
             title.HorizontalAlignment = HorizontalAlignment.Left;
+            title.Width = 150;
 
+            DockPanel.SetDock(title, Dock.Left);
             head.Children.Add(title);
+
+            var pick = Picker(field, onChange);
+
+            pick.Margin = new Thickness(10, 0, 0, 0);
+            pick.VerticalAlignment = VerticalAlignment.Center;
+            pick.HorizontalAlignment = HorizontalAlignment.Left;
+
+            DockPanel.SetDock(pick, Dock.Left);
+            head.Children.Add(pick);
+
+            head.Children.Add(new Border());
 
             return head;
         }
 
-        /// <summary>The fill chooser, its controls, and the preview of what it would write.</summary>
-        private static UIElement Filling(MatrixBoard board, MatrixField field, Action onChange)
+        /// <summary>The three ways a field can be filled.</summary>
+        private static FrameworkElement Picker(MatrixField field, Action onChange)
         {
-            var stack = Ui.Stack();
-
             var chosen = field.Fill switch
             {
                 MatrixFill.Series => Counted,
@@ -275,10 +309,13 @@ namespace CamelWorks.UI.Views
                 onChange();
             });
 
-            var picking = new StackPanel { HorizontalAlignment = HorizontalAlignment.Left };
+            return pick as FrameworkElement ?? new Border { Child = pick };
+        }
 
-            picking.Children.Add(pick);
-            stack.Children.Add(picking);
+        /// <summary>The fill chooser, its controls, and the preview of what it would write.</summary>
+        private static UIElement Filling(MatrixBoard board, MatrixField field, Action onChange)
+        {
+            var stack = Ui.Stack();
 
             if (field.Fill == MatrixFill.Series) stack.Children.Add(Series(field, onChange));
             if (field.Fill == MatrixFill.Same) stack.Children.Add(Constant(field, onChange));
