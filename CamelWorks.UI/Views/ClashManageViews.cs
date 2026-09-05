@@ -415,6 +415,15 @@ namespace CamelWorks.UI.Views
             private readonly HashSet<string> _byFolder =
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            /// <summary>
+            /// Which values of each naming token the rail is narrowed to.
+            ///
+            /// One set per token rather than one flat set, so narrowing to phase P2 and package
+            /// PK1 means both rather than either.
+            /// </summary>
+            private readonly Dictionary<string, HashSet<string>> _byToken =
+                new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
             private bool _openOnly;
 
             // ---- The board: how the picked test's results are narrowed and arranged ----
@@ -518,6 +527,66 @@ namespace CamelWorks.UI.Views
 
             /// <summary>The team as it stands, read once and held until something changes it.</summary>
             private TeamRoster Roster() => _roster ??= TeamWindow.Read(_session);
+
+            /// <summary>
+            /// The project's naming, read once per screen and held.
+            ///
+            /// Held rather than read fresh like the test names, because banding, filtering and
+            /// sorting all read a name through it for every row on the board. It is written back
+            /// by <see cref="KeepBook"/> whenever a pattern or a binding changes, so the held copy
+            /// is always the one that was saved.
+            /// </summary>
+            private NamingBook? _book;
+
+            /// <summary>The project's fields, patterns and per-test bindings.</summary>
+            private NamingBook Book => _book ??= NamingBook.FromJson(
+                _session.Store.Section(ProjectStore.ClashSection)[NamingBook.Key]);
+
+            /// <summary>Write the naming back to the project file.</summary>
+            /// <returns>True when the project file took it.</returns>
+            private bool KeepBook()
+            {
+                _session.Store.Section(ProjectStore.ClashSection)
+                        .Set(NamingBook.Key, Book.ToJson() ?? JsonValue.Object());
+
+                return _session.Store.Save();
+            }
+
+            /// <summary>
+            /// Open the naming: the fields, the patterns, and which pattern reads which test.
+            ///
+            /// The tests are handed over in the order the rail shows them, because a counted
+            /// write numbers them in the order it is given. Sorting the rail by name and then
+            /// renumbering is how a coordinator gets 010, 020, 030 down an alphabetical list.
+            /// </summary>
+            /// <param name="pane">Which pane to open on.</param>
+            private void Naming(NamingPane pane)
+            {
+                var shown = Shown();
+
+                var changed = ClashNaming.Ask(
+                    Book,
+                    shown.Select(one => (one.Test.Id, one.Test.Name)).ToList(),
+                    (id, name) =>
+                    {
+                        var entry = shown.FirstOrDefault(one => one.Test.Id == id);
+
+                        if (entry == null) return false;
+
+                        return RenamedTo(entry, name);
+                    },
+                    pane);
+
+                if (!changed) return;
+
+                if (!KeepBook())
+                    Warned(Ui.Problem("The naming could not be kept in this project. "
+                        + (_session.Store.LastSaveProblem ?? string.Empty)));
+
+                RedrawRail();
+                RedrawBoard();
+                RedrawFoot();
+            }
             private string _showing = BothKinds;
 
             /// <summary>
@@ -569,6 +638,28 @@ namespace CamelWorks.UI.Views
 
             /// <summary>What a band key carries in front of a property column's id.</summary>
             private const string ByColumn = "column:";
+
+            /// <summary>
+            /// A band keyed on one of the project's naming tokens.
+            ///
+            /// The panel used to refuse Level because "a level guessed out of a test's name is a
+            /// filter that hides tests for a reason it cannot state". A token is not a guess: the
+            /// project declared the pattern, said which pattern reads each test, and the value
+            /// comes out of the name the same way every time. So the objection is gone, and any
+            /// field the scheme carries can be banded, filtered and sorted on.
+            /// </summary>
+            private const string ByToken = "token:";
+
+            /// <summary>Tests whose name no pattern reads, which is a bucket rather than a gap.</summary>
+            private const string NoPattern = "No pattern";
+
+            /// <summary>
+            /// The narrowing key for "no pattern reads this test".
+            ///
+            /// Bracketed so it cannot collide with a token: a token is letters and digits, which
+            /// is what makes it usable inside braces in a pattern.
+            /// </summary>
+            private const string NoPatternKey = "(naming)";
 
             /// <summary>The band a row falls in when the property it is banded by is empty.</summary>
             private const string Blank = "(not carried)";
@@ -794,15 +885,40 @@ namespace CamelWorks.UI.Views
 
                 _railTools.Children.Clear();
 
-                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + _sort,
-                    new[]
-                        {
-                            MostNew, MostOpen, MostReviewed, MostApproved, MostClosed,
-                            ByName, LastRun,
-                        }
-                        .Select(o => Parts.Entry.Act(o, null, () => { _sort = o; RedrawRail(); }))
-                        .ToList(),
-                    on: _sort != MostNew));
+                var orders = new List<Parts.Entry>();
+
+                foreach (var one in new[]
+                         {
+                             MostNew, MostOpen, MostReviewed, MostApproved, MostClosed,
+                             ByName, LastRun,
+                         })
+                {
+                    var here = one;
+
+                    orders.Add(Parts.Entry.Act(here, null, () => { _sort = here; RedrawRail(); }));
+                }
+
+                // The naming's own fields, under a heading, because sorting by phase and sorting
+                // by how many results are new are not the same kind of order and a flat list of
+                // both reads as one.
+                var tokens = Tokened();
+
+                if (tokens.Count > 0)
+                {
+                    orders.Add(Parts.Entry.Rule());
+                    orders.Add(Parts.Entry.Heading("By the name's own fields"));
+
+                    foreach (var one in tokens)
+                    {
+                        var here = ByToken + one;
+
+                        orders.Add(Parts.Entry.Act(Titled(one), null,
+                                                   () => { _sort = here; RedrawRail(); }));
+                    }
+                }
+
+                _railTools.Children.Add(Parts.MoreMenu(Glyphs.Sort, "Sort: " + Ordered(_sort),
+                    orders, on: _sort != MostNew));
 
                 var narrow = Ui.Icon(Glyphs.Filter, WhatIsNarrowed(), () =>
                 {
@@ -825,7 +941,17 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Whether anything is narrowing the rail.</summary>
             private bool Narrowed =>
-                _byParty.Count > 0 || _byFolder.Count > 0 || _openOnly || _railFind.Trim().Length > 0;
+                _byParty.Count > 0 || _byFolder.Count > 0 || _byToken.Count > 0 || _openOnly
+                || _railFind.Trim().Length > 0;
+
+            /// <summary>What the rail is ordered by, in words.</summary>
+            /// <param name="sort">The order key.</param>
+            private string Ordered(string sort)
+            {
+                var token = Token(sort);
+
+                return token == null ? sort : Titled(token);
+            }
 
             /// <summary>What the funnel says it is doing, in full, on hover.</summary>
             private string WhatIsNarrowed()
@@ -836,6 +962,10 @@ namespace CamelWorks.UI.Views
 
                 if (_byParty.Count > 0) said.Add(string.Join(", ", _byParty));
                 if (_byFolder.Count > 0) said.Add(string.Join(", ", _byFolder));
+
+                foreach (var one in _byToken)
+                    said.Add(Titled(one.Key) + ": " + string.Join(", ", one.Value));
+
                 if (_openOnly) said.Add("only tests with something open");
                 if (_railFind.Trim().Length > 0) said.Add("matching " + Quoted(_railFind.Trim()));
 
@@ -894,6 +1024,8 @@ namespace CamelWorks.UI.Views
                     body.Children.Add(chips);
                 }
 
+                body.Children.Add(Tokening(read));
+
                 body.Children.Add(Ui.Check("Only tests with something open", _openOnly, on =>
                 {
                     _openOnly = on;
@@ -907,6 +1039,7 @@ namespace CamelWorks.UI.Views
                     {
                         _byParty.Clear();
                         _byFolder.Clear();
+                        _byToken.Clear();
                         _openOnly = false;
                         _railBox.Text = string.Empty;
                         RedrawRail();
@@ -925,6 +1058,128 @@ namespace CamelWorks.UI.Views
                 panel.Tint(Border.BorderBrushProperty, "Bd");
 
                 return panel;
+            }
+
+            /// <summary>
+            /// The naming tokens, as chips, with the way to give a test a pattern.
+            ///
+            /// The panel's own note used to say that a level guessed out of a test's name is a
+            /// filter that hides tests for a reason it cannot state. That is still true of a
+            /// guess. A token is not one: the project wrote the pattern, said which pattern reads
+            /// each test, and the value comes out of the name the same way every time — so every
+            /// field the naming carries is offered here beside the discipline and the folder.
+            ///
+            /// Tests no pattern reads get a chip of their own rather than being left out. They
+            /// are the ones that need attention, and the chip is how somebody finds them.
+            /// </summary>
+            /// <param name="read">Everything read, or null before the first read.</param>
+            private UIElement Tokening(List<TestEntry>? read)
+            {
+                var body = Ui.Stack();
+                var tests = read ?? new List<TestEntry>();
+
+                if (tests.Count == 0) return body;
+
+                foreach (var token in Tokened())
+                {
+                    var here = token;
+
+                    var values = tests.Select(one => Said(one, here))
+                                      .Where(one => one != NoPattern)
+                                      .Distinct(StringComparer.OrdinalIgnoreCase)
+                                      .OrderBy(one => one, StringComparer.CurrentCulture)
+                                      .ToList();
+
+                    // A token every test reads the same way narrows nothing, so it is left off
+                    // rather than drawn as a row of one chip that cannot change the list.
+                    if (values.Count < 2) continue;
+
+                    body.Children.Add(Ui.Eyebrow(Titled(here)));
+
+                    var chips = new WrapPanel();
+
+                    foreach (var value in values)
+                    {
+                        var said = value;
+
+                        chips.Children.Add(Parts.Pick(said, Narrowing(here, said), () =>
+                        {
+                            Narrow(here, said);
+                            RedrawRail();
+                        }));
+                    }
+
+                    body.Children.Add(chips);
+                }
+
+                var unread = tests.Count(one => Book.Read(one.Test.Id, one.Test.Name) == null);
+
+                if (unread > 0)
+                {
+                    body.Children.Add(Ui.Eyebrow("Naming"));
+
+                    var chips = new WrapPanel();
+
+                    chips.Children.Add(Parts.Pick(
+                        NoPattern + "  ·  " + unread.ToString(CultureInfo.InvariantCulture),
+                        Narrowing(NoPatternKey, NoPattern),
+                        () =>
+                        {
+                            Narrow(NoPatternKey, NoPattern);
+                            RedrawRail();
+                        }));
+
+                    body.Children.Add(chips);
+
+                    var says = Ui.Link("Give them a naming pattern",
+                                       () => Naming(NamingPane.Tests));
+
+                    says.HorizontalAlignment = HorizontalAlignment.Left;
+                    body.Children.Add(says);
+                }
+
+                return body;
+            }
+
+            /// <summary>Whether the rail is narrowed to one value of a token.</summary>
+            /// <param name="token">The token, without braces.</param>
+            /// <param name="value">The value.</param>
+            private bool Narrowing(string token, string value) =>
+                _byToken.TryGetValue(token, out var held) && held.Contains(value);
+
+            /// <summary>Turn one value of a token on or off.</summary>
+            /// <param name="token">The token, without braces.</param>
+            /// <param name="value">The value.</param>
+            private void Narrow(string token, string value)
+            {
+                if (!_byToken.TryGetValue(token, out var held))
+                    _byToken[token] = held = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                if (!held.Remove(value)) held.Add(value);
+
+                // An empty set is dropped rather than kept: kept, it would read as "narrowed to
+                // nothing" and hide every test.
+                if (held.Count == 0) _byToken.Remove(token);
+            }
+
+            /// <summary>
+            /// What a test's name says under one token.
+            ///
+            /// The two answers that are not a value are named rather than blank: a test no pattern
+            /// reads is a different thing from a test whose pattern read that field as empty, and
+            /// banding them together would hide the first inside the second.
+            /// </summary>
+            /// <param name="entry">The test.</param>
+            /// <param name="token">The token, without braces.</param>
+            private string Said(TestEntry entry, string token)
+            {
+                var read = Book.Read(entry.Test.Id, entry.Test.Name);
+
+                if (read == null) return NoPattern;
+
+                var held = read.Value(token);
+
+                return held.Length == 0 ? Blank : held;
             }
 
             /// <summary>The column labels over the rail's rows.</summary>
@@ -1489,6 +1744,10 @@ namespace CamelWorks.UI.Views
                         Glyphs.Number,
                         () => Prompt("Renumber the results", string.Empty, "Renumber",
                                      prefix => RenameResults(reaching, prefix, _log))),
+                    Parts.Entry.Act("Renumber the tests", Glyphs.Number,
+                                    () => Naming(NamingPane.Write)),
+                    Parts.Entry.Act("Naming: fields, patterns and which reads which",
+                                    Glyphs.Checklist, () => Naming(NamingPane.Tests)),
                     Parts.Entry.Act(many ? "Move to a folder" : "Move to a folder",
                         Glyphs.MoveIn, () => MoveInto(reaching, entry)),
                     Parts.Entry.Act(many ? "Compact — remove resolved results"
@@ -5554,6 +5813,24 @@ namespace CamelWorks.UI.Views
             // -------------------------------------------------------------------------------
 
             /// <summary>The tests the rail's search, chips and sort leave.</summary>
+            /// <summary>Whether a test's name carries every token value the rail is narrowed to.</summary>
+            /// <param name="entry">The test.</param>
+            private bool Carries(TestEntry entry)
+            {
+                foreach (var one in _byToken)
+                {
+                    // Every token narrows, not any: two chips from two fields are two conditions.
+                    var said = one.Key == NoPatternKey
+                        ? (Book.Read(entry.Test.Id, entry.Test.Name) == null
+                            ? NoPattern : string.Empty)
+                        : Said(entry, one.Key);
+
+                    if (!one.Value.Contains(said)) return false;
+                }
+
+                return true;
+            }
+
             private List<TestEntry> Shown()
             {
                 var read = Current();
@@ -5567,7 +5844,14 @@ namespace CamelWorks.UI.Views
                      || Sides(e).IndexOf(find, StringComparison.OrdinalIgnoreCase) >= 0)
                     && (_byParty.Count == 0 || Trades(e).Any(d => _byParty.Contains(d)))
                     && (_byFolder.Count == 0 || _byFolder.Contains(e.Test.Folder ?? string.Empty))
+                    && Carries(e)
                     && (!_openOnly || e.Of("New") + e.Of("Active") > 0)).ToList();
+
+                var token = Token(_sort);
+
+                if (token != null)
+                    return shown.OrderBy(e => Said(e, token), StringComparer.CurrentCulture)
+                                .ThenBy(e => e.Test.Name, StringComparer.CurrentCulture).ToList();
 
                 switch (_sort)
                 {
@@ -6067,6 +6351,15 @@ namespace CamelWorks.UI.Views
                             : "Within " + Tolerance(entry);
                 }
 
+                var token = Token(by);
+
+                if (token != null)
+                {
+                    // Read off the test, not the result: a phase is a fact about which two things
+                    // are being compared, and every result in the test shares it.
+                    return Said(entry, token);
+                }
+
                 var column = Column(by);
 
                 if (column == null) return string.Empty;
@@ -6082,6 +6375,13 @@ namespace CamelWorks.UI.Views
                     : "Several values";
             }
 
+            /// <summary>The naming token a band key names, without braces, or null.</summary>
+            /// <param name="by">The facet this level bands by.</param>
+            private static string? Token(string by) =>
+                by != null && by.StartsWith(ByToken, StringComparison.Ordinal)
+                    ? by.Substring(ByToken.Length)
+                    : null;
+
             /// <summary>The column a band key names, or null when it names a facet or nothing.</summary>
             /// <param name="by">The facet this level bands by.</param>
             private PropColumn? Column(string by) =>
@@ -6096,13 +6396,73 @@ namespace CamelWorks.UI.Views
             /// Not "Named": that is already the results table's own first column.
             /// </summary>
             /// <param name="by">The facet a level bands by.</param>
-            private string Facet(string by) => Column(by)?.Title ?? by;
+            private string Facet(string by)
+            {
+                var token = Token(by);
+
+                return token != null ? Titled(token) : Column(by)?.Title ?? by;
+            }
+
+            /// <summary>
+            /// What a token is called on a menu.
+            ///
+            /// Taken from the same list a pattern's token picker offers, so a menu entry and the
+            /// chip somebody clicked to write the pattern read the same words. Both sides are
+            /// offered rather than one, because a test genuinely has two of every field and a
+            /// menu saying only "Phase" would band on one of them without saying which.
+            /// </summary>
+            /// <param name="token">The token, without braces.</param>
+            private string Titled(string token)
+            {
+                foreach (var one in MatrixNaming.Offered(Book.Scheme))
+                    if (string.Equals(token, Bare(one.Token), StringComparison.OrdinalIgnoreCase))
+                        return one.Title;
+
+                return token;
+            }
+
+            /// <summary>A token without its braces.</summary>
+            /// <param name="token">The token as a pattern writes it.</param>
+            private static string Bare(string token) =>
+                (token ?? string.Empty).Trim().Trim('{', '}');
 
             /// <summary>Every facet the view can be banded by, in the order the menu offers them.</summary>
-            private List<string> Bandable() =>
-                new[] { ByAssignee, ByStatus, ByHowBad }
-                    .Concat(_columns.Select(c => ByColumn + c.Id))
-                    .ToList();
+            private List<string> Bandable()
+            {
+                var held = new List<string> { ByAssignee, ByStatus, ByHowBad };
+
+                held.AddRange(Tokened().Select(one => ByToken + one));
+                held.AddRange(_columns.Select(c => ByColumn + c.Id));
+
+                return held;
+            }
+
+            /// <summary>
+            /// The tokens the project's patterns actually carry, in the picker's own order.
+            ///
+            /// Taken from the patterns rather than from the token list, because a field exists to
+            /// be written into a name and one no pattern mentions cannot be read back out of one.
+            /// Offering it would put an entry on the menu that could only ever produce a single
+            /// bucket.
+            /// </summary>
+            private List<string> Tokened()
+            {
+                var carried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                for (var at = 1; at <= Book.Patterns.Count; at++)
+                {
+                    var pattern = Book.Compiled(at);
+
+                    if (pattern == null || !pattern.IsUsable) continue;
+
+                    foreach (var one in pattern.Tokens) carried.Add(one);
+                }
+
+                return MatrixNaming.Offered(Book.Scheme)
+                                   .Select(one => Bare(one.Token))
+                                   .Where(carried.Contains)
+                                   .ToList();
+            }
 
             // -------------------------------------------------------------------------------
             // Identity, distance and tone
@@ -6694,14 +7054,7 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                _session.Record(ActivityKind.Regroup,
-                                "renamed the test \"" + entry.Test.Name + "\" to \"" + wanted + "\"");
-
-                // One word, in memory. This used to re-harvest every result on the job to change
-                // the name on a rail row.
-                entry.Rename(wanted);
-
-                foreach (var row in entry.Rows) row.TestName = wanted;
+                Called(entry, wanted);
 
                 // One row on the rail, unless the rail is sorted by name - in which case the
                 // renamed test may have moved, and RailChanged is the thing that knows.
@@ -6710,6 +7063,51 @@ namespace CamelWorks.UI.Views
                 RedrawFoot();
 
                 Tell("Renamed.", null);
+            }
+
+            /// <summary>
+            /// Rename a test and say whether it landed, without redrawing or reporting.
+            ///
+            /// What the naming window renames through. It renames a run of tests in one press and
+            /// redraws once at the end, so a per-rename toast and a per-rename redraw would be
+            /// sixty of each.
+            /// </summary>
+            /// <param name="entry">The test.</param>
+            /// <param name="name">Its new name.</param>
+            /// <returns>True when the document or this project took it.</returns>
+            private bool RenamedTo(TestEntry entry, string name)
+            {
+                var wanted = (name ?? string.Empty).Trim();
+
+                if (entry == null || wanted.Length == 0) return false;
+
+                if (!_session.Clash.RenameTest(entry.Test.Id, wanted))
+                {
+                    var names = TestNames();
+
+                    names.Rename(entry.Test.Id, wanted);
+
+                    if (!KeepTestNames(names)) return false;
+                }
+
+                Called(entry, wanted);
+
+                return true;
+            }
+
+            /// <summary>Put a test's new name on the rail row and on every result of it.</summary>
+            /// <param name="entry">The test.</param>
+            /// <param name="wanted">Its new name.</param>
+            private void Called(TestEntry entry, string wanted)
+            {
+                _session.Record(ActivityKind.Regroup,
+                                "renamed the test \"" + entry.Test.Name + "\" to \"" + wanted + "\"");
+
+                // One word, in memory. This used to re-harvest every result on the job to change
+                // the name on a rail row.
+                entry.Rename(wanted);
+
+                foreach (var row in entry.Rows) row.TestName = wanted;
             }
 
             /// <summary>

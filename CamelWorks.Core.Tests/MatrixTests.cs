@@ -3185,6 +3185,54 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void The_read_says_which_pattern_read_each_test()
+        {
+            var read = MatrixFromNames.Read(
+                new[]
+                {
+                    Test("Steel vs Ductwork", "a", "b"),
+                    Test("Steel | Pipes", "a", "c"),
+                },
+                new[]
+                {
+                    MatrixNamePattern.Parse("{row} vs {column}"),
+                    MatrixNamePattern.Parse("{row} | {column}"),
+                });
+
+            // Handed back so the project can record it: a test whose pattern was decided here
+            // should not be asked about again on the Clash Manager.
+            Assert.Equal(2, read.Patterns.Count);
+            Assert.Equal(1, read.Bound["Steel vs Ductwork"]);
+            Assert.Equal(2, read.Bound["Steel | Pipes"]);
+        }
+
+        [Fact]
+        public void A_test_no_pattern_reads_is_not_bound_to_one()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Coordination check 3", "a", "b") },
+                One("{row} vs {column}"));
+
+            Assert.Empty(read.Bound);
+        }
+
+        [Fact]
+        public void A_test_put_on_no_pattern_by_hand_is_not_bound_to_the_one_that_fits()
+        {
+            var how = new MatrixReadOptions();
+
+            how.Assigned["Steel vs Ductwork"] = 0;
+
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "a", "b") },
+                One("{row} vs {column}"), how);
+
+            // The assignment is a decision. Reporting the pattern that would have fitted would
+            // put the test back on it the moment the project recorded the read.
+            Assert.Empty(read.Bound);
+        }
+
+        [Fact]
         public void One_discipline_named_by_five_tests_is_one_row()
         {
             var read = MatrixFromNames.Read(

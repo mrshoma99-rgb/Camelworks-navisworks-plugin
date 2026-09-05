@@ -76,6 +76,8 @@ namespace CamelWorks.Core.Clash
             var symbols = new Dictionary<string, MatrixSymbol>(StringComparer.Ordinal);
             var pairs = new List<(MatrixLine A, MatrixLine B, string Symbol)>();
 
+            var bound = new Dictionary<string, int>(StringComparer.Ordinal);
+
             var read = 0;
             var unmatched = 0;
 
@@ -89,9 +91,14 @@ namespace CamelWorks.Core.Clash
                 }
 
                 var name = test.Test.Name;
-                var match = Chosen(usable, how, test.Test.Id, name, out var byHand, out var refused);
+                var match = Chosen(usable, how, test.Test.Id, name, out var byHand,
+                                   out var refused, out var at);
 
                 if (refused != null) warnings.Add(refused);
+
+                // Recorded whether or not the test ends up on the board, because the project's
+                // naming is about what reads a test's name, not about which cells came out.
+                if (at > 0 && !string.IsNullOrEmpty(test.Test.Id)) bound[test.Test.Id] = at;
 
                 if (match == null)
                 {
@@ -141,7 +148,8 @@ namespace CamelWorks.Core.Clash
 
             return new MatrixReading(board,
                 new MatrixLegend(symbols.Values.OrderBy(s => s.Symbol, StringComparer.Ordinal)),
-                warnings, read);
+                warnings, read,
+                usable.Select(one => one.Pattern).ToList(), bound);
         }
 
         /// <summary>
@@ -163,12 +171,14 @@ namespace CamelWorks.Core.Clash
         /// <param name="name">The test's name.</param>
         /// <param name="byHand">True when the user assigned this test.</param>
         /// <param name="refused">What to warn about, or null.</param>
+        /// <param name="at">Which pattern read it, from one, or 0 for none.</param>
         private static MatrixNameMatch? Chosen(IReadOnlyList<MatrixNamePattern> usable,
                                                MatrixReadOptions how, string? id, string name,
-                                               out bool byHand, out string? refused)
+                                               out bool byHand, out string? refused, out int at)
         {
             byHand = false;
             refused = null;
+            at = 0;
 
             if (!string.IsNullOrEmpty(id) && how.Assigned.TryGetValue(id!, out var wanted))
             {
@@ -183,11 +193,23 @@ namespace CamelWorks.Core.Clash
                               + wanted.ToString(CultureInfo.InvariantCulture)
                               + ", which its name does not fit, so it was read from what it is "
                               + "between instead.";
+                else at = wanted;
 
                 return said;
             }
 
-            return usable.Select(one => one.Match(name)).FirstOrDefault(one => one != null);
+            for (var one = 0; one < usable.Count; one++)
+            {
+                var said = usable[one].Match(name);
+
+                if (said == null) continue;
+
+                at = one + 1;
+
+                return said;
+            }
+
+            return null;
         }
 
         /// <summary>The column corresponding to one side of a pair.</summary>

@@ -9180,6 +9180,8 @@ namespace CamelWorks.UI.Views
 
                 Remember(what: "reading the matrix out of the model's tests");
 
+                Reading(reading);
+
                 Taken(reading.Board);
 
                 _legend = reading.Legend;
@@ -9665,6 +9667,11 @@ namespace CamelWorks.UI.Views
 
                 var turned = 0;
 
+                // The ids of everything this build named, so the project can be told which
+                // pattern reads them. A test built from a matrix should never have to be asked
+                // about: the pattern that wrote its name is known at the moment it is written.
+                var named = new List<string>();
+
                 void Refused(string name, string what)
                 {
                     turned++;
@@ -9691,8 +9698,17 @@ namespace CamelWorks.UI.Views
                         {
                             var spec = line.Plan.Spec(_folder.Length == 0 ? null : _folder);
 
-                            if (_session.Clash.Create(spec) != null) made++;
-                            else Refused(line.Name, "could not be made");
+                            var id = _session.Clash.Create(spec);
+
+                            if (id != null)
+                            {
+                                made++;
+                                named.Add(id.Value.Id);
+                            }
+                            else
+                            {
+                                Refused(line.Name, "could not be made");
+                            }
 
                             continue;
                         }
@@ -9718,11 +9734,20 @@ namespace CamelWorks.UI.Views
                             done = false;
                         }
 
-                        if (done) altered++;
+                        if (done)
+                        {
+                            altered++;
+
+                            // A renamed test carries the same pattern as a new one: the name it
+                            // now has was written from it.
+                            if (line.Renames) named.Add(line.TestId);
+                        }
                     }
                 });
 
                 Quiet();
+
+                Binding(named);
 
                 if (made + altered > 0)
                 {
@@ -9759,6 +9784,74 @@ namespace CamelWorks.UI.Views
 
                 if (made + altered == 0 && turned == 0)
                     Said(Ui.Problem("Nothing was written."), hold: true);
+            }
+
+            /// <summary>
+            /// Keep what the read decided about each test's naming.
+            ///
+            /// The read window is where somebody says which pattern reads which test, one test at
+            /// a time over a hundred and sixty of them. Throwing that away at the end of the read
+            /// and asking again on the Clash Manager would be asking a question that has just
+            /// been answered.
+            /// </summary>
+            /// <param name="reading">What the read came back with.</param>
+            private void Reading(MatrixReading reading)
+            {
+                if (reading.Bound.Count == 0) return;
+
+                var section = _session.Store.Section(ProjectStore.ClashSection);
+                var book = NamingBook.FromJson(section[NamingBook.Key]);
+
+                book.Scheme.Absorb(reading.Board.Scheme);
+
+                // The read's own positions are its own; the project's are the project's, so each
+                // pattern is added by text and the binding follows where it landed.
+                var where = reading.Patterns.Select(one => book.Add(one)).ToList();
+
+                foreach (var one in reading.Bound)
+                {
+                    var at = one.Value - 1;
+
+                    if (at >= 0 && at < where.Count) book.Bind(one.Key, where[at]);
+                }
+
+                section.Set(NamingBook.Key, book.ToJson() ?? JsonValue.Object());
+
+                if (!_session.Store.Save())
+                    Said(Ui.Note("The matrix was read, but this project would not record which "
+                                 + "naming pattern reads each test."), hold: true);
+            }
+
+            /// <summary>
+            /// Tell the project which pattern reads the tests this build just named.
+            ///
+            /// Without this the Clash Manager would have to ask about every test the matrix
+            /// wrote, which is the one case where nobody needs to be asked: the pattern that
+            /// produced the name is on this screen. The board's own fields go over with it, so a
+            /// pattern naming {rowPhase} is readable on the manager as soon as it is bound.
+            /// </summary>
+            /// <param name="ids">The tests this build named.</param>
+            private void Binding(IReadOnlyList<string> ids)
+            {
+                if (ids == null || ids.Count == 0) return;
+
+                var section = _session.Store.Section(ProjectStore.ClashSection);
+                var book = NamingBook.FromJson(section[NamingBook.Key]);
+
+                book.Scheme.Absorb(_board.Scheme);
+
+                var at = book.Add(_pattern.Length == 0 ? MatrixNaming.Default : _pattern);
+
+                foreach (var id in ids) book.Bind(id, at);
+
+                section.Set(NamingBook.Key, book.ToJson() ?? JsonValue.Object());
+
+                // A failed save is worth a line rather than a dialogue: the tests are written and
+                // the naming can be set up again on the manager.
+                if (!_session.Store.Save())
+                    Said(Ui.Note("The tests were built, but this project would not record which "
+                                 + "naming pattern reads them. Set it on the Clash Manager's "
+                                 + "naming window."), hold: true);
             }
 
             // ---------------------------------------------------------------------------

@@ -10,9 +10,13 @@ namespace CamelWorks.Core.Clash
     public sealed class MatrixReading
     {
         internal MatrixReading(MatrixBoard board, MatrixLegend legend,
-                               IReadOnlyList<string> warnings, int tests)
+                               IReadOnlyList<string> warnings, int tests,
+                               IReadOnlyList<string>? patterns = null,
+                               IReadOnlyDictionary<string, int>? bound = null)
         {
             Board = board; Legend = legend; Warnings = warnings; Tests = tests;
+            Patterns = patterns ?? Array.Empty<string>();
+            Bound = bound ?? new Dictionary<string, int>(StringComparer.Ordinal);
         }
 
         /// <summary>The grid.</summary>
@@ -26,6 +30,18 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>How many tests became cells.</summary>
         public int Tests { get; }
+
+        /// <summary>The patterns the read used, in order, or empty for a read off the sets.</summary>
+        public IReadOnlyList<string> Patterns { get; }
+
+        /// <summary>
+        /// Which pattern read each test, by host id, from one.
+        ///
+        /// Handed back so the project can record it. A test read here has had its pattern decided
+        /// — by the person, or by the match they accepted — and asking again on the Clash Manager
+        /// would be asking a question that has just been answered.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> Bound { get; }
 
         /// <summary>True when at least one test came out.</summary>
         public bool IsUsable => Tests > 0;
