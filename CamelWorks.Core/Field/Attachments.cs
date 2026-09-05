@@ -222,21 +222,18 @@ namespace CamelWorks.Core.Field
     /// <summary>
     /// The paperwork that belongs to an element, found from what the model already says.
     ///
-    /// Every project keeps the documents somewhere and the model somewhere else, and the join
-    /// between them is a property nobody thinks of as a link: a folder name, a drawing number, an
-    /// address into a document system. This reads that property, resolves it, and says what is
-    /// actually there - which turns "the O&amp;M is in the folder" into a list a person can open.
+    /// Every project keeps the documents in one place and the model in another, and the join between
+    /// them is a property not usually thought of as a link: a folder name, a drawing number, an
+    /// address into a document system. This reads that property, resolves it, and reports what is
+    /// there, which turns "the O&amp;M is in the folder" into a list that can be opened.
     ///
     /// One mechanism, three uses. A folder of data sheets, a folder of site photos and an address
-    /// into a document management system are the same idea pointed at different things, and
-    /// building three of them would have produced three sets of the same bug.
+    /// into a document management system are the same idea pointed at different things, and building
+    /// three would have produced three copies of the same bug.
     ///
-    /// <b>What is not here.</b> Nothing writes back into the authoring tool. iConstruct ships a
-    /// Revit add-in for that, and a Navisworks plug-in cannot do it from this side - so
-    /// <see cref="HandBack"/> writes the file that a Revit-side import consumes instead, keyed on
-    /// the authoring tool's own element id, which the model already carries. That is the honest
-    /// half: this end produces something the other end can read, rather than pretending to reach
-    /// across.
+    /// Nothing writes back into the authoring tool, which a Navisworks plug-in cannot do from this
+    /// side. <see cref="HandBack"/> writes the file a Revit-side import consumes instead, keyed on
+    /// the authoring tool's own element id, which the model already carries.
     /// </summary>
     public static class Attachments
     {

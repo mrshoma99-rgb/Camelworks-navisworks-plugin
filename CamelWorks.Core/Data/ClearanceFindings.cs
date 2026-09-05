@@ -9,20 +9,18 @@ namespace CamelWorks.Core.Data
     /// <summary>
     /// Clear-height breaches, as findings.
     ///
-    /// <b>The second producer to move, and the one with most to gain.</b> The clearance board kept
-    /// its judgement on the row and carried it between runs in memory: close a breach on Tuesday,
-    /// close Navisworks, and on Wednesday it is open again. That is the behaviour that makes a
-    /// check nobody re-runs, and it is exactly what the findings store exists to end.
+    /// The clearance board kept its judgement on the row and carried it between runs in memory:
+    /// close a breach, close Navisworks, and it is open again the next day. That is the behaviour
+    /// that makes a check nobody re-runs, and it is what the findings store ends.
     ///
-    /// <b>Identity.</b> The floor surface, what is over it, and where — the same shape as a clash,
-    /// for the same reason. Two short spots under one slab-and-duct pair are two problems and two
-    /// decisions; a spot that shifts a little as the model moves is still itself, because the
-    /// position is quantised into a cell rather than compared exactly.
+    /// Identity: the floor surface, what is over it, and where — the same shape as a clash, for the
+    /// same reason. Two short spots under one slab-and-duct pair are two problems and two decisions;
+    /// a spot that shifts a little as the model moves is still itself, because the position is
+    /// quantised into a cell rather than compared exactly.
     ///
-    /// <b>What is not in the identity.</b> The minimum somebody asked for. Re-running at 2.4 m
-    /// after running at 2.1 m finds the same low soffit and must not present it as a new one with
-    /// last week's decision lost; the number it fell short of is a fact about the run, and the
-    /// board shows it as one.
+    /// The minimum asked for is not part of the identity. Re-running at 2.4 m after running at 2.1 m
+    /// finds the same low soffit and must not present it as a new one with the earlier decision lost;
+    /// the number it fell short of is a fact about the run, and the board shows it as one.
     /// </summary>
     public static class ClearanceFindings
     {

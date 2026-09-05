@@ -109,19 +109,19 @@ namespace CamelWorks.Core.Data
     /// <summary>
     /// Reads what Excel writes, well enough to take a schedule back.
     ///
-    /// The other half of the round trip. Writing a spreadsheet is a courtesy; reading one back is
-    /// the feature — the whole reason a project sends properties to a subcontractor is that
-    /// somebody there is going to fill in a column, and a tool that cannot take it back has moved
-    /// the retyping rather than removed it.
+    /// The other half of the round trip. Writing a spreadsheet is a courtesy; reading one back is the
+    /// feature, because the reason a project sends properties to a subcontractor is that somebody
+    /// there will fill in a column, and a tool that cannot take it back has moved the retyping rather
+    /// than removed it.
     ///
-    /// <b>Deliberately a text reader.</b> Every cell comes back as the string it appears as, and
-    /// numbers keep their stored form rather than being parsed and reformatted. A property write is
-    /// a string, and putting a round trip through <c>double</c> is how "0450" becomes "450" and a
-    /// door code stops matching.
+    /// A text reader, deliberately. Every cell comes back as the string it appears as, and numbers
+    /// keep their stored form rather than being parsed and reformatted. A property write is a
+    /// string, and a round trip through <c>double</c> is how "0450" becomes "450" and a door code
+    /// stops matching.
     ///
-    /// It handles what Excel actually emits: a shared-string table, inline strings, formula
-    /// results, booleans, errors, sparse rows and out-of-order cells. It does not evaluate
-    /// formulas — it takes the cached result Excel stored, which is what the person saw.
+    /// It handles what Excel emits: a shared-string table, inline strings, formula results, booleans,
+    /// errors, sparse rows and out-of-order cells. It does not evaluate formulas; it takes the cached
+    /// result Excel stored, which is what the person saw.
     /// </summary>
     public static class XlsxReader
     {

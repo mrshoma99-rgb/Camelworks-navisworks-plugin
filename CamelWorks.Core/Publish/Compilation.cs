@@ -424,26 +424,24 @@ namespace CamelWorks.Core.Publish
     }
 
     /// <summary>
-    /// Turning a folder of supplier drops into the file the project actually ships.
+    /// Turning a folder of supplier drops into the file the project ships.
     ///
-    /// The hard part is not the writing. It is knowing what goes in: a delivery folder holds three
-    /// revisions of half the models, two of them superseded and none of them saying so except in
-    /// the file name, and a federation built from all three is wrong in a way that looks exactly
-    /// like a federation built from one. So the revision is read out of the name, older ones lose
-    /// to newer ones of the same base, and every file left out is named in the plan and again in
-    /// the run log.
+    /// The hard part is not the writing but knowing what goes in: a delivery folder holds three
+    /// revisions of half the models, two of them superseded and none of them saying so except in the
+    /// file name, and a federation built from all three is wrong in a way that looks like a
+    /// federation built from one. So the revision is read out of the name, older ones lose to newer
+    /// ones of the same base, and every file left out is named in the plan and again in the run log.
     ///
-    /// <b>What supersedes what.</b> "Rev03" beats "Rev02". "RevC" beats "RevB". "Rev03" and "RevC"
-    /// beat nothing at all - they are not two points on one sequence, and a tool that ranked them
-    /// would drop somebody's model on a coin toss. Both are kept and the plan says why.
+    /// What supersedes what: "Rev03" beats "Rev02" and "RevC" beats "RevB". "Rev03" and "RevC" beat
+    /// nothing — they are not two points on one sequence, and ranking them would drop a model
+    /// arbitrarily. Both are kept and the plan says why.
     ///
-    /// <b>What the list comes from.</b> A list of paths, from wherever: files picked by hand, a
-    /// folder walked, or a column of a spreadsheet - which is how a project that already keeps its
-    /// model register in Excel gets to keep it there.
+    /// The list comes from anywhere: files picked by hand, a folder walked, or a column of a
+    /// spreadsheet, so a project that keeps its model register in Excel can keep it there.
     ///
-    /// Every run writes a log beside the output: what went in, what was left out and why, what
-    /// failed. A batch that ran overnight and produced eleven files out of twelve is a batch
-    /// somebody has to be able to ask a question about in the morning.
+    /// Every run writes a log beside the output: what went in, what was left out and why, and what
+    /// failed. A batch that ran overnight and produced eleven files out of twelve has to be
+    /// answerable in the morning.
     /// </summary>
     public static class Compilation
     {

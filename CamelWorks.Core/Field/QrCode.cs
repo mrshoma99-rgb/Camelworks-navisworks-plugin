@@ -140,23 +140,21 @@ namespace CamelWorks.Core.Field
     }
 
     /// <summary>
-    /// A QR code, made here rather than fetched from anywhere.
+    /// A QR code, generated here rather than fetched.
     ///
     /// The symbol is ISO/IEC 18004: byte mode, one segment, versions 1 to 40, all four error
-    /// correction levels. Written out rather than pulled in because a plug-in that ships inside
-    /// Navisworks cannot afford a dependency for one small thing, and because the thing it makes
-    /// has to be right - a label that takes four tries to scan on a cold morning is worse than no
-    /// label, and nobody finds out until somebody is standing in front of the pipe.
+    /// correction levels. Written out rather than taken as a dependency because a plug-in that ships
+    /// inside Navisworks cannot afford one for a single small thing, and because a label that takes
+    /// four attempts to scan on site is worse than no label.
     ///
-    /// <b>Byte mode only, on purpose.</b> Numeric and alphanumeric modes pack tighter, and what
-    /// goes in these is a link or an identifier - mixed case, slashes, hyphens - which neither of
-    /// them can hold. One mode that takes anything beats three that each take a subset and a
-    /// segmenting pass to choose between them.
+    /// Byte mode only. Numeric and alphanumeric modes pack tighter, and what goes in these is a link
+    /// or an identifier — mixed case, slashes, hyphens — which neither can hold. One mode that takes
+    /// anything is better than three that each take a subset plus a segmenting pass to choose
+    /// between them.
     ///
-    /// <b>What it cannot do.</b> It writes codes; it does not read them. Reading one means a camera
-    /// and a person standing in front of the work, which is a phone, not a plug-in. So the sheet
-    /// this feeds carries the identifier in words underneath every symbol - somebody who cannot
-    /// scan it can still type it.
+    /// It writes codes and does not read them; reading one needs a camera in front of the work. The
+    /// sheet this feeds carries the identifier in words underneath every symbol, so somebody who
+    /// cannot scan it can type it.
     /// </summary>
     public static class QrCode
     {

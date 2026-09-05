@@ -6,22 +6,20 @@ using System.Text.RegularExpressions;
 namespace CamelWorks.Core.Data
 {
     /// <summary>
-    /// Turns what a property actually says into something a quantity parser can read.
+    /// Turns what a property says into something a quantity parser can read.
     ///
-    /// The takeoff parser handles "12.5 m3" and "3'-6"". What it cannot handle is what models
-    /// actually carry: "Volume: 12.5 m3 (net)", "12,500", "approx 4.2m2", "V=8.75". Those are not
-    /// broken models, they are how a dozen different authoring tools and a hundred different
-    /// template authors write a number, and a takeoff that reports them as unreadable is a takeoff
-    /// that reports a total nobody can use.
+    /// The takeoff parser handles "12.5 m3" and feet-and-inches. What it cannot handle is what models
+    /// carry in practice: "Volume: 12.5 m3 (net)", "12,500", "approx 4.2m2", "V=8.75". Those are not
+    /// broken models but the ways a dozen authoring tools and many template authors write a number,
+    /// and a takeoff that reports them as unreadable reports a total nobody can use.
     ///
-    /// So: an optional pattern that says which part of the text is the number, and an optional unit
-    /// to assume when the text has none. Both off by default — a value that already parses is left
-    /// exactly alone, which is the zero-setup case and the common one.
+    /// So: an optional pattern saying which part of the text is the number, and an optional unit to
+    /// assume when the text has none. Both off by default — a value that already parses is left
+    /// alone, which is the zero-setup case and the common one.
     ///
-    /// <b>It never invents a number.</b> A pattern that matches nothing leaves the value untouched
-    /// so the takeoff still counts it as unreadable and names it. Silently turning a value it could
-    /// not clean into a zero would move the failure from a line that says "3 unreadable" into a
-    /// total that is quietly wrong.
+    /// It never invents a number. A pattern that matches nothing leaves the value untouched, so the
+    /// takeoff still counts it as unreadable and names it. Turning an uncleanable value into a zero
+    /// would move the failure from a line saying "3 unreadable" into a total that is wrong.
     /// </summary>
     public sealed class ValueCleaner
     {

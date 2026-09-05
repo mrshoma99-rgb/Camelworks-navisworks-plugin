@@ -95,26 +95,24 @@ namespace CamelWorks.Core.Data
     /// <summary>
     /// A small language for making one property out of the others.
     ///
-    /// This is how a work breakdown code, a sort key, a door reference or a derived quantity
-    /// actually gets built: not by a mapping table, but by sticking two properties together with a
-    /// dash in the middle, or multiplying a length by a width. Doing it by hand is an export to
-    /// Excel, a column of formulas, and an import — which is a round trip nobody repeats when the
-    /// model changes.
+    /// This is how a work breakdown code, a sort key, a door reference or a derived quantity gets
+    /// built: not by a mapping table, but by joining two properties with a separator, or multiplying
+    /// a length by a width. Doing it by hand is an export to Excel, a column of formulas and an
+    /// import, which is a round trip nobody repeats when the model changes.
     ///
-    /// Deliberately small, and deliberately strict about two things:
+    /// Deliberately small, and strict about two things:
     ///
     /// <list type="bullet">
-    /// <item><b><c>+</c> adds and <c>&amp;</c> joins.</b> One operator that did both would have to
-    /// guess, and the guess is wrong exactly when the values look like numbers but are not — a door
-    /// reference of "12" and a level of "3" becoming 15 rather than "12-3".</item>
-    /// <item><b>A missing property produces nothing, never zero.</b> An element that does not carry
-    /// a width has no area, and writing zero would put a number into a schedule that somebody adds
-    /// up. The element is skipped and counted, which is the same rule the takeoff follows.</item>
+    /// <item><c>+</c> adds and <c>&amp;</c> joins. One operator doing both would have to guess, and
+    /// the guess is wrong exactly when the values look like numbers but are not — a door reference of
+    /// "12" and a level of "3" becoming 15 rather than "12-3".</item>
+    /// <item>A missing property produces nothing, never zero. An element with no width has no area,
+    /// and writing zero would put a number into a schedule somebody adds up. The element is skipped
+    /// and counted, which is the rule the takeoff follows.</item>
     /// </list>
     ///
-    /// What it is not: a spreadsheet. No functions, no conditionals, no ranges. Anything that needs
-    /// those needs a real one, and pretending otherwise produces a language nobody can debug from
-    /// a single-line text box.
+    /// It is not a spreadsheet: no functions, no conditionals, no ranges. Anything needing those
+    /// needs a real one.
     /// </summary>
     public sealed class Formula
     {

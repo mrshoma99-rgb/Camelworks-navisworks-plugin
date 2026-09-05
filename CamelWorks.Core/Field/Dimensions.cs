@@ -504,23 +504,20 @@ namespace CamelWorks.Core.Field
     /// <summary>
     /// The model, measured.
     ///
-    /// Somebody asks how long that run is, how far it sits off the slab, whether those hangers are
-    /// at centres. The answer is in the model and the usual way of getting it out is to draw a
-    /// measurement on the screen, read it, and type it into an email - once per question, with a
-    /// transcription error waiting at the end of each one. This asks the question of every element
-    /// at once and puts the answers in a table that goes on a report.
+    /// How long a run is, how far it sits off the slab, whether hangers are at centres: the answer is
+    /// in the model, and the usual way of getting it out is to draw a measurement on the screen,
+    /// read it and type it into an email, once per question. This asks the question of every element
+    /// at once and puts the answers in a table.
     ///
-    /// <b>It measures the body, not the box, wherever the body has been read.</b> A world box is
-    /// the cheapest thing to get off a Navisworks element and it is right for anything that is
-    /// square to the model. It is badly wrong for anything that is not: a brace on the diagonal has
-    /// a box a good deal longer than the brace. So where the triangles have been read this works
-    /// out which way the element actually runs and measures along that, and where they have not it
-    /// says so on the row rather than quietly handing back the box.
+    /// It measures the body rather than the box wherever the body has been read. A world box is the
+    /// cheapest thing to get off a Navisworks element and is right for anything square to the model.
+    /// It is badly wrong otherwise: a brace on the diagonal has a box considerably longer than the
+    /// brace. So where the triangles have been read this works out which way the element runs and
+    /// measures along that, and where they have not it says so on the row rather than returning the
+    /// box.
     ///
-    /// <b>It measures; it does not judge.</b> There is a clearance checker elsewhere that says
-    /// whether a gap is big enough. This says what the gap is. The two are deliberately not the
-    /// same tool, because a schedule that has already made up its mind is no use to the person who
-    /// wants to see the numbers.
+    /// It measures; it does not judge. The clearance checker elsewhere says whether a gap is big
+    /// enough. This says what the gap is.
     /// </summary>
     public static class Dimensions
     {

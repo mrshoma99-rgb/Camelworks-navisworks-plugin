@@ -146,20 +146,19 @@ namespace CamelWorks.Core.Data
     /// <summary>
     /// Taking a sheet back.
     ///
-    /// Sending properties out is a courtesy; taking them back is the feature. The whole reason a
-    /// project exports a schedule is that somebody is going to fill in a column, and a tool that
-    /// cannot read it back has moved the retyping rather than removed it.
+    /// Sending properties out is a courtesy; taking them back is the feature. The reason a project
+    /// exports a schedule is that somebody will fill in a column, and a tool that cannot read it back
+    /// has moved the retyping rather than removed it.
     ///
-    /// <b>Matched on a written identity, not on a name.</b> Every keyed import in this industry is
-    /// matched on a mark or a description, and every one of them breaks the first time two doors
-    /// are called "D-12" or somebody fixes a typo. The exported sheet carries an identity column
-    /// and the import matches on that; the identity column is the one column that may never be
-    /// written back, because a typo in a key would otherwise rename the element it points at.
+    /// Matched on a written identity rather than on a name. Matching on a mark or a description
+    /// breaks the first time two doors are called "D-12" or somebody fixes a typo. The exported
+    /// sheet carries an identity column and the import matches on that; that column may never be
+    /// written back, because a typo in a key would rename the element it points at.
     ///
-    /// <b>Nothing is dropped quietly.</b> Rows that match nothing, rows that repeat an identity and
-    /// rows with no identity are all counted and shown. A person added rows at the bottom, or sent
-    /// a sheet from another package, or the model has been re-exported — all three need a decision,
-    /// and all three look the same to a tool that just skips them.
+    /// Nothing is dropped quietly. Rows that match nothing, rows that repeat an identity and rows
+    /// with no identity are all counted and shown. Rows added at the bottom, a sheet from another
+    /// package, and a re-exported model all need a decision and all look the same to a tool that
+    /// skips them.
     /// </summary>
     public static class SheetImport
     {
