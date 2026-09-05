@@ -2468,4 +2468,217 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Not set", MatrixBoard.RankNamed(42));
         }
     }
+
+    /// <summary>
+    /// A rule is a sentence about two folders that keeps holding: it fills the block it covers,
+    /// re-applies itself as the board grows, loses to a hand that writes over it, and takes its
+    /// own cells back when it is dropped.
+    /// </summary>
+    public class MatrixRuleTests
+    {
+        private static MatrixBoard Filed()
+        {
+            var board = new MatrixBoard();
+
+            board.File(board.AddPair(new MatrixLine("Walls")), "ARC");
+            board.File(board.AddPair(new MatrixLine("Slabs")), "STR");
+            board.File(board.AddPair(new MatrixLine("Pipes")), "MEP");
+
+            return board;
+        }
+
+        [Fact]
+        public void A_rule_covers_its_pair_either_way_round()
+        {
+            var rule = new MatrixRule("ARC", "MEP", "B");
+
+            Assert.True(rule.Covers("ARC", "MEP"));
+            Assert.True(rule.Covers("MEP", "ARC"));
+            Assert.False(rule.Covers("ARC", "STR"));
+        }
+
+        [Fact]
+        public void An_empty_side_covers_any_folder()
+        {
+            var rule = new MatrixRule("MEP", null, "A");
+
+            Assert.True(rule.Covers("MEP", "ARC"));
+            Assert.True(rule.Covers("STR", "MEP"));
+            Assert.False(rule.Covers("ARC", "STR"));
+        }
+
+        [Fact]
+        public void Applying_writes_the_block_the_rule_covers()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+
+            Assert.Equal(1, board.ApplyRules());
+            Assert.Equal("B", board.At(board.Rows[0], board.Columns[2]));
+            Assert.Null(board.At(board.Rows[0], board.Columns[1]));
+        }
+
+        [Fact]
+        public void A_rule_written_cell_says_it_is_the_rules()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            Assert.True(board.IsByRule(board.Rows[0], board.Columns[2]));
+            Assert.Equal("B", board.RuleOn(board.Rows[0], board.Columns[2])?.Symbol);
+        }
+
+        [Fact]
+        public void The_last_rule_that_covers_a_pair_wins()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule(null, null, "A"));
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            Assert.Equal("B", board.At(board.Rows[0], board.Columns[2]));
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[2]));
+        }
+
+        [Fact]
+        public void A_hand_written_cell_is_left_alone()
+        {
+            var board = Filed();
+
+            board.Set(board.Rows[0], board.Columns[2], "D");
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            Assert.Equal("D", board.At(board.Rows[0], board.Columns[2]));
+            Assert.False(board.IsByRule(board.Rows[0], board.Columns[2]));
+        }
+
+        [Fact]
+        public void Writing_over_a_rule_cell_makes_it_a_decision()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            board.Set(board.Rows[0], board.Columns[2], "D");
+
+            Assert.False(board.IsByRule(board.Rows[0], board.Columns[2]));
+
+            board.ApplyRules();
+
+            Assert.Equal("D", board.At(board.Rows[0], board.Columns[2]));
+        }
+
+        [Fact]
+        public void Dropping_a_rule_takes_its_cells_with_it()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            board.RemoveRule(0);
+            board.ApplyRules();
+
+            Assert.Null(board.At(board.Rows[0], board.Columns[2]));
+        }
+
+        [Fact]
+        public void A_line_added_later_arrives_already_filled()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            board.File(board.AddPair(new MatrixLine("Ducts")), "MEP");
+            board.ApplyRules();
+
+            var added = board.Columns.First(c => c.Name == "Ducts");
+
+            Assert.Equal("B", board.At(board.Rows[0], added));
+        }
+
+        [Fact]
+        public void Refiling_a_line_moves_what_the_rules_wrote_on_it()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+
+            board.File(board.Rows[1], "MEP");
+            board.ApplyRules();
+
+            Assert.Equal("B", board.At(board.Rows.First(r => r.Name == "Walls"),
+                                       board.Columns.First(c => c.Name == "Slabs")));
+        }
+
+        [Fact]
+        public void The_rules_and_whose_cell_it_is_are_written_down()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+            board.ApplyRules();
+            board.Set(board.Rows[0], board.Columns[1], "D");
+
+            var back = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.Single(back.Rules);
+            Assert.Equal("B", back.Rules[0].Symbol);
+            Assert.True(back.IsByRule(back.Rows[0], back.Columns[2]));
+            Assert.False(back.IsByRule(back.Rows[0], back.Columns[1]));
+        }
+
+        [Fact]
+        public void A_board_with_no_rules_writes_none()
+        {
+            var board = Filed();
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            Assert.Empty(board.ToJson()["rules"].Items);
+        }
+
+        [Fact]
+        public void An_empty_rule_is_not_kept()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule("ARC", "MEP", "   "));
+
+            Assert.Empty(board.Rules);
+        }
+
+        [Fact]
+        public void Rules_can_be_reordered()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule(null, null, "A"));
+            board.AddRule(new MatrixRule("ARC", "MEP", "B"));
+
+            board.MoveRule(1, 0);
+            board.ApplyRules();
+
+            Assert.Equal("A", board.At(board.Rows[0], board.Columns[2]));
+        }
+
+        [Fact]
+        public void A_rule_never_writes_the_diagonal()
+        {
+            var board = Filed();
+
+            board.AddRule(new MatrixRule(null, null, "A"));
+            board.ApplyRules();
+
+            Assert.Null(board.At(board.Rows[0], board.Columns[0]));
+        }
+    }
 }

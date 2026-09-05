@@ -648,33 +648,59 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(Ui.Loose(button));
                 }
 
-                // <b>The strip reads in the order the work happens.</b> Where a matrix comes
-                // from, then what is done to all of it, then how the tool behaves, then keeping
-                // and sending it, then the two checks, then the build.
+                // A thin rule between the groups, so the grouping is on the screen rather than
+                // only in this comment.
+                void Apart()
+                {
+                    var line = new Border
+                    {
+                        Width = 1,
+                        Margin = new Thickness(4, 5, 10, 5),
+                        VerticalAlignment = VerticalAlignment.Stretch,
+                    };
+
+                    line.Tint(Border.BackgroundProperty, "Bd");
+
+                    row.Children.Add(line);
+                }
+
+                // <b>The strip reads in the order the work happens</b>, in four groups: make the
+                // matrix, then look at it, then keep and send it, then check it and build.
                 //
-                // Three things had drifted. "Start from" held four ways to make a matrix and
-                // four ways to rearrange one, which are opposite acts on one menu - so somebody
-                // looking for "put these in order" had no reason to open it. "Save it in this
-                // project" was filed under "Out", and out is where work goes when it is over,
-                // not where it is kept. And the settings were in three places, none of them
-                // called settings: how the grid is drawn was a verb called "Look", how a test
-                // is named was a menu called "Names and folder", and where tests are filed was
-                // the last line of that menu.
+                // Nine controls in an undifferentiated row is a row nobody reads - and it had
+                // grown to nine one button at a time, each one filed by an argument that made
+                // sense against the eight beside it and never against the shape of the whole
+                // strip. Three things had drifted before that: "Start from" held four ways to
+                // make a matrix and four ways to rearrange one, which are opposite acts on one
+                // menu; "Save it in this project" was filed under "Out", and out is where work
+                // goes when it is over, not where it is kept; and the settings were in three
+                // places, none of them called settings.
+                //
+                // <b>First: what the matrix is.</b> Where it came from, and the order and the
+                // folders it is in - the two menus that change the board itself.
                 Add(Parts.MenuButton("Start from", Glyphs.Read, Starting()));
                 Add(Parts.MenuButton("Arrange", Glyphs.Sort, Arranging()));
-                Add(Parts.MenuButton("Settings", Glyphs.Tune, Settings()));
 
-                // <b>Which matrix is on the strip, not behind a verb.</b> "Results" was a button
-                // that turned one of three views on, and whose own label was built once at
-                // start-up and then said "Results" for ever however many times it had been
-                // pressed. Three views want a chooser that says which one is showing - and one
-                // that is redrawn when it changes. It sits with the other three because it is
-                // the same kind of thing: how this screen behaves, not what it does to the
-                // board.
+                Apart();
+
+                // <b>Second: how it is being looked at.</b> Which of the three matrices is in
+                // the cells, and how the grid is drawn - one is a mode and one is a set of
+                // preferences, and neither of them touches what the board says.
+                //
+                // The chooser was filed with the menus, drawn as one, and read as a fourth menu
+                // of actions. It is not: it is the state the screen is in, so it is drawn as a
+                // mode - lit, and prefixed - and the settings that belong beside it came with
+                // it. Its own label was built once at start-up too, and said "Results" for ever
+                // however many times it had been pressed; it is redrawn when it changes.
                 RedrawView();
 
                 Add(_viewPick);
+                Add(Parts.MenuButton("Settings", Glyphs.Tune, Settings()));
 
+                Apart();
+
+                // <b>Third: out of here.</b> Into the project, and into a spreadsheet for
+                // whoever asked.
                 Add(Ui.Verb(Glyphs.Save, "Save",
                             "Keep it in this project, so it is here next time this model is "
                             + "opened. It also saves itself as you work.", Keep));
@@ -683,12 +709,12 @@ namespace CamelWorks.UI.Views
                             "The grid and its legend as a spreadsheet, to send to whoever "
                             + "asked", Sheet));
 
-                // <b>The two things to do before building were filed under "Out".</b> Checking
-                // every source against the model and seeing what would change are the pre-flight
-                // for the blue button beside them - and they were the top two lines of a menu
-                // every user reads as "export", which is where things go when the work is over.
-                // Beside the button they are for, they are what they are - and they say so in a
-                // word, like every other button on this strip.
+                Apart();
+
+                // <b>Fourth: the build, and the two things to do before it.</b> They were filed
+                // under "Out" - the top two lines of a menu every user reads as "export", which
+                // is where things go when the work is over. Beside the button they are the
+                // pre-flight for, they are what they are.
                 Add(Ui.Verb(Glyphs.Verify, "Check",
                             "Check it against the model — every row and column, against what "
                             + "this model actually has", Sanity));
@@ -697,7 +723,7 @@ namespace CamelWorks.UI.Views
                             "See what would change — this matrix against the tests already in "
                             + "the document", Difference));
 
-                _build.Margin = new Thickness(8, 0, 0, 0);
+                _build.Margin = new Thickness(2, 0, 0, 0);
 
                 row.Children.Add(Ui.Loose(_build));
 
@@ -1749,6 +1775,18 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Redraw()
             {
+                // <b>A rule that only held when somebody pressed something is not a rule.</b>
+                // The whole reason to keep one is that a discipline added next week arrives
+                // already checked the way its folder is checked - and that means the fifteen
+                // acts that change the board's shape all have to re-state them. Fifteen call
+                // sites is fifteen chances to add a sixteenth act and forget, which is exactly
+                // how a matrix comes to disagree with the rules written at the top of it.
+                //
+                // The rule-filled cells are derived, so they are reconciled here, once, before
+                // anything is drawn. It costs a pass over the grid and only when there are rules
+                // at all; and every path in - a menu, an import, an undo - goes through here.
+                if (_board.Rules.Count > 0) _board.ApplyRules();
+
                 _cells.Clear();
 
                 var bare = _board.Rows.Count == 0 && _board.Columns.Count == 0;
@@ -3589,6 +3627,32 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
+            /// Open the standing instructions, and let them fill the board.
+            ///
+            /// Remembered before the window opens rather than after it closes, because what a
+            /// person wants back from one press of undo is the matrix as it was before they went
+            /// in - not one of the four edits they made while they were in there.
+            /// </summary>
+            private void Rulebook()
+            {
+                var was = Held();
+
+                if (!MatrixRules.Ask(_board, _legend.Symbols.Select(one => one.Symbol).ToList()))
+                    return;
+
+                var changed = _board.ApplyRules();
+
+                Touched();
+
+                _past.Push(new Doing(was, "changing the fill rules"));
+                _future.Clear();
+
+                Redraw();
+
+                Reported(changed, "written by rule", "cell of the grid");
+            }
+
+            /// <summary>
             /// Say what a bulk act did, in the notices, with what to press to take it back.
             ///
             /// <b>Not a confirmation.</b> A box asking "are you sure" before a fill is clicked
@@ -4267,7 +4331,59 @@ namespace CamelWorks.UI.Views
                         cell.Background = Faded(wash, faded);
                 }
 
+                Ruled(cell, row, column);
                 Named(cell);
+            }
+
+            /// <summary>
+            /// Mark a cell a rule wrote, and say which rule on its tip.
+            ///
+            /// <b>"Why does this say B" has to have an answer.</b> A cell somebody filled in and
+            /// a cell that filled itself are the same mark on the same wash, and the difference
+            /// matters twice: a rule-filled cell will change again on its own when the rules or
+            /// the folders change, and a hand-filled one never will. Left indistinguishable,
+            /// somebody spends an afternoon correcting cells that correct themselves back.
+            ///
+            /// A corner, not a second letter. The mark reads at a glance across a block - which
+            /// is how rules fill, in blocks - and takes nothing from the letter it sits beside.
+            /// </summary>
+            /// <param name="cell">The cell.</param>
+            /// <param name="row">Its row.</param>
+            /// <param name="column">Its column.</param>
+            private void Ruled(Border cell, MatrixLine row, MatrixLine column)
+            {
+                if (!_board.IsByRule(row, column)) return;
+
+                var corner = new System.Windows.Shapes.Path
+                {
+                    Data = System.Windows.Media.Geometry.Parse("M0,0 L6,0 L0,6 Z"),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Opacity = 0.55,
+                    IsHitTestVisible = false,
+                };
+
+                corner.Tint(System.Windows.Shapes.Path.FillProperty, "Muted");
+
+                var both = new Grid();
+
+                both.Children.Add(corner);
+
+                if (cell.Child is UIElement had)
+                {
+                    cell.Child = null;
+                    both.Children.Add(had);
+                }
+
+                cell.Child = both;
+
+                var rule = _board.RuleOn(row, column);
+
+                cell.ToolTip = (cell.ToolTip as string ?? string.Empty)
+                               + (rule == null
+                                   ? "  Put here by a fill rule."
+                                   : "  Put here by the rule " + Quoted(rule.Worded())
+                                     + ". Write in it to overrule that.");
             }
 
             /// <summary>
@@ -6026,7 +6142,7 @@ namespace CamelWorks.UI.Views
                       "tested, and everything on it is decided");
 
                 Keyed(Heat((worst + 1) / 2), "\u2026", "Some open",
-                      "the wash runs to the worst pair on this board");
+                      "the wash runs to the worst on this board");
 
                 Keyed(Heat(worst), worst.ToString(CultureInfo.InvariantCulture), "The worst pair",
                       "which is where a meeting goes first");
@@ -6034,8 +6150,7 @@ namespace CamelWorks.UI.Views
                 Keyed(System.Windows.Media.Brushes.Transparent, string.Empty, "No test covers it",
                       "a hole in the coordination, not a clean pair");
 
-                var says = Ui.Small("Open means active and new. Approved, reviewed and resolved "
-                                    + "are decisions somebody made, so they are not counted.");
+                var says = Ui.Small("Open means active and new; a decided clash is not counted.");
 
                 says.TextWrapping = TextWrapping.Wrap;
                 says.Margin = new Thickness(4, 6, 4, 4);
@@ -8782,6 +8897,17 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Saying("Sort by discipline code", Glyphs.Sort,
                         "Both axes in one order and a folder per code, so a block covers one "
                         + "discipline against another", Grouped),
+
+                    // <b>Filling by rule is a bulk act on the whole board, so it is filed with
+                    // the other two.</b> It is not a setting: a setting says how the tool
+                    // behaves, and this writes into the grid.
+                    Parts.Entry.Saying(
+                        _board.Rules.Count == 0
+                            ? "Fill by rule\u2026"
+                            : Ui.Count(_board.Rules.Count, "fill rule") + "\u2026",
+                        Glyphs.Checklist,
+                        "\u201cAll services against all architecture, B\u201d - and it stays "
+                        + "true as the matrix grows", Rulebook),
                 };
 
                 var folders = _board.Folders(rows: true);
@@ -9140,8 +9266,24 @@ namespace CamelWorks.UI.Views
             /// <summary>Draw the chooser again, so its label is the view that is actually on.</summary>
             private void RedrawView()
             {
-                _viewPick.Content = Ui.Loose(
-                    Parts.MenuButton(ViewNamed(_shown), ViewGlyph(_shown), Views()));
+                // <b>Prefixed, because a bare "Priority" on a strip of verbs is a verb.</b> The
+                // chooser sits between two menus that are lists of things to do; what it holds
+                // is the state the screen is already in, and the two read identically until the
+                // label says which it is.
+                var pick = Parts.MenuButton("Showing: " + ViewNamed(_shown), ViewGlyph(_shown),
+                                            Views());
+
+                // And lit while it is not on the view somebody would expect to be on. The
+                // symbols are the board; the other two are the board turned over, and a screen
+                // that has been left turned over is a screen somebody comes back to and reads as
+                // the matrix itself.
+                if (_shown != Showing.Symbols && pick is Border box)
+                {
+                    box.Tint(Border.BackgroundProperty, "AccentWash");
+                    box.Tint(Border.BorderBrushProperty, "Accent");
+                }
+
+                _viewPick.Content = Ui.Loose(pick);
             }
 
             /// <summary>

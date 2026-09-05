@@ -147,6 +147,15 @@ namespace CamelWorks.Core.Clash
         private readonly Dictionary<(MatrixLine Row, MatrixLine Column), int> _ranks =
             new Dictionary<(MatrixLine, MatrixLine), int>();
 
+        // The standing instructions, and which cells they wrote. Kept apart from the cells
+        // themselves rather than inferred by re-running the rules, because what a rule would
+        // write now and what actually wrote a cell are different questions: a rule that has
+        // since been edited must take back the cells it wrote, not the cells it would write.
+        private readonly List<MatrixRule> _rules = new List<MatrixRule>();
+
+        private readonly HashSet<(MatrixLine Row, MatrixLine Column)> _byRule =
+            new HashSet<(MatrixLine, MatrixLine)>();
+
         /// <summary>The rows, which are side A.</summary>
         public IReadOnlyList<MatrixLine> Rows => _rows;
 
@@ -617,9 +626,153 @@ namespace CamelWorks.Core.Clash
 
             Write(row, column, symbol);
 
+            // <b>A hand beats a rule, and says so by writing here.</b> Somebody who overrides a
+            // rule-filled cell has made a decision, and a re-application that quietly put the
+            // rule's answer back would be the tool arguing with the person using it. The cell
+            // stops being the rule's the moment it is written by hand.
+            _byRule.Remove((row, column));
+
             var mirror = MirrorOf(row, column);
 
-            if (mirror != null) Write(mirror.Value.Row, mirror.Value.Column, symbol);
+            if (mirror != null)
+            {
+                Write(mirror.Value.Row, mirror.Value.Column, symbol);
+                _byRule.Remove((mirror.Value.Row, mirror.Value.Column));
+            }
+        }
+
+        /// <summary>The standing instructions, in the order they are read.</summary>
+        public IReadOnlyList<MatrixRule> Rules => _rules;
+
+        /// <summary>Add one, at the end, where it wins over the ones above it.</summary>
+        /// <param name="rule">The rule.</param>
+        public void AddRule(MatrixRule? rule)
+        {
+            if (rule == null || rule.IsEmpty) return;
+
+            _rules.Add(rule);
+        }
+
+        /// <summary>Take one away.</summary>
+        /// <param name="at">Where it sits in the list.</param>
+        public void RemoveRule(int at)
+        {
+            if (at < 0 || at >= _rules.Count) return;
+
+            _rules.RemoveAt(at);
+        }
+
+        /// <summary>Move one up or down the list, which is what changes who wins.</summary>
+        /// <param name="from">Where it is.</param>
+        /// <param name="to">Where it goes.</param>
+        public void MoveRule(int from, int to)
+        {
+            if (from < 0 || from >= _rules.Count) return;
+
+            var wanted = to < 0 ? 0 : to >= _rules.Count ? _rules.Count - 1 : to;
+
+            if (wanted == from) return;
+
+            var rule = _rules[from];
+
+            _rules.RemoveAt(from);
+            _rules.Insert(wanted, rule);
+        }
+
+        /// <summary>Whether a cell was written by a rule rather than by hand.</summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public bool IsByRule(MatrixLine? row, MatrixLine? column) =>
+            row != null && column != null && _byRule.Contains((row, column));
+
+        /// <summary>
+        /// Which rule owns a cell, or null when no rule wrote it.
+        ///
+        /// Answered by reading the rules rather than by remembering which one it was, so a cell
+        /// always names the rule that would write it now - which is the one a reader asking
+        /// "why is this here" needs to be sent to.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public MatrixRule? RuleOn(MatrixLine? row, MatrixLine? column)
+        {
+            if (!IsByRule(row, column)) return null;
+
+            for (var at = _rules.Count - 1; at >= 0; at--)
+                if (_rules[at].Covers(row!.Folder, column!.Folder))
+                    return _rules[at];
+
+            return null;
+        }
+
+        /// <summary>
+        /// Write every rule over the board again, and take back the cells no rule covers now.
+        ///
+        /// <b>The last matching rule wins.</b> People write the general sentence first and the
+        /// exception after it - "everything against everything is a hard clash, except services
+        /// against architecture, which is a clearance" - so the later line is the more specific
+        /// one, and reading from the bottom is reading their intent.
+        ///
+        /// Cells written by hand are not touched, in either direction: a rule does not overwrite
+        /// one, and dropping a rule does not clear one.
+        /// </summary>
+        /// <returns>How many cells the rules changed.</returns>
+        public int ApplyRules()
+        {
+            var changed = 0;
+
+            foreach (var row in _rows)
+            foreach (var column in _columns)
+            {
+                if (IsSelfPair(row, column)) continue;
+                if (!IsKeptHalf(row, column)) continue;
+
+                var hand = At(row, column) != null && !IsByRule(row, column);
+
+                if (hand) continue;
+
+                var wanted = Wanted(row, column);
+
+                if (string.Equals(At(row, column), wanted, StringComparison.Ordinal)) continue;
+
+                Ruled(row, column, wanted);
+                changed++;
+            }
+
+            return changed;
+        }
+
+        /// <summary>What the rules say about a pair, or null when none covers it.</summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public string? Wanted(MatrixLine? row, MatrixLine? column)
+        {
+            if (row == null || column == null) return null;
+
+            for (var at = _rules.Count - 1; at >= 0; at--)
+                if (_rules[at].Covers(row.Folder, column.Folder))
+                    return _rules[at].Symbol;
+
+            return null;
+        }
+
+        private void Ruled(MatrixLine row, MatrixLine column, string? symbol)
+        {
+            Write(row, column, symbol);
+            Marked(row, column, symbol != null);
+
+            var mirror = MirrorOf(row, column);
+
+            if (mirror == null) return;
+
+            Write(mirror.Value.Row, mirror.Value.Column, symbol);
+            Marked(mirror.Value.Row, mirror.Value.Column, symbol != null);
+        }
+
+        private void Marked(MatrixLine row, MatrixLine column, bool owned)
+        {
+            if (owned) _byRule.Add((row, column));
+            else _byRule.Remove((row, column));
         }
 
         /// <summary>
@@ -1108,6 +1261,7 @@ namespace CamelWorks.Core.Clash
         {
             var kept = new Dictionary<(MatrixLine, MatrixLine), string>(_cells);
             var keptRanks = new Dictionary<(MatrixLine, MatrixLine), int>(_ranks);
+            var keptRuled = new HashSet<(MatrixLine, MatrixLine)>(_byRule);
             var wasColumns = new List<MatrixLine>(_columns);
 
             _columns.Clear();
@@ -1144,6 +1298,20 @@ namespace CamelWorks.Core.Clash
                     _cells[(cell.Key.Item1, column)] = cell.Value;
             }
 
+            // Whose cell it is follows the cell. A pair that survived squaring off is still the
+            // rule's if it was the rule's, and still somebody's decision if it was that.
+            _byRule.Clear();
+
+            foreach (var ruled in keptRuled)
+            {
+                var column = _columns.FirstOrDefault(
+                    c => string.Equals(c.Name, ruled.Item2.Name, StringComparison.OrdinalIgnoreCase))
+                    ?? (was.TryGetValue(ruled.Item2, out var moved) ? moved : null);
+
+                if (_rows.Contains(ruled.Item1) && column != null)
+                    _byRule.Add((ruled.Item1, column));
+            }
+
             // The ranks follow their cells. A priority is about a pair, so a pair that survived
             // squaring off keeps how urgent somebody said it was; one whose column went takes
             // its rank with it rather than leaving it keyed to a line that is no longer here.
@@ -1168,16 +1336,30 @@ namespace CamelWorks.Core.Clash
             json.Set("rows", JsonValue.Array(_rows.Select(r => r.ToJson())));
             json.Set("columns", JsonValue.Array(_columns.Select(c => c.ToJson())));
 
+            // The rule flag rides on the cell rather than in a list of its own, because it is a
+            // fact about that cell - and a board reloaded without it would turn every
+            // rule-filled cell into a decision somebody made by hand, which no later edit to the
+            // rule could ever take back.
             var cells = JsonValue.Array(Cells().Select(cell =>
-                JsonValue.Object()
+            {
+                var held = JsonValue.Object()
                     .Set("row", (double)_rows.IndexOf(cell.Row))
                     .Set("column", (double)_columns.IndexOf(cell.Column))
-                    .Set("symbol", cell.Symbol)));
+                    .Set("symbol", cell.Symbol);
+
+                if (IsByRule(cell.Row, cell.Column)) held.Set("rule", true);
+
+                return held;
+            }));
 
             json.Set("cells", cells);
 
             // Only written when somebody has ranked something, so every board saved before the
             // priority view existed reads back byte for byte as it did.
+            // Only when there are any, so a board that has never used one reads back as it did.
+            if (_rules.Count > 0)
+                json.Set("rules", JsonValue.Array(_rules.Select(one => one.ToJson())));
+
             if (_ranks.Count > 0)
                 json.Set("ranks", JsonValue.Array(Ranks().Select(one =>
                     JsonValue.Object()
@@ -1233,7 +1415,13 @@ namespace CamelWorks.Core.Clash
                 if (column < 0 || column >= board._columns.Count) continue;
 
                 board.Set(board._rows[row], board._columns[column], held["symbol"].AsString());
+
+                if (held["rule"].AsBool(false))
+                    board.Marked(board._rows[row], board._columns[column], true);
             }
+
+            foreach (var held in json["rules"].Items)
+                board.AddRule(MatrixRule.FromJson(held));
 
             foreach (var held in json["ranks"].Items)
             {
@@ -1265,6 +1453,9 @@ namespace CamelWorks.Core.Clash
 
             foreach (var key in _ranks.Keys.Where(k => k.Row == line || k.Column == line).ToList())
                 _ranks.Remove(key);
+
+            foreach (var key in _byRule.Where(k => k.Row == line || k.Column == line).ToList())
+                _byRule.Remove(key);
         }
 
         private static void Move(List<MatrixLine> lines, int from, int to)

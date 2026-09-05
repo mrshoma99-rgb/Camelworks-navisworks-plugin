@@ -180,6 +180,12 @@ namespace CamelWorks.Studio
             board.Paint("Architecture", "#B3E5FC");
             board.Paint("Wet services", "#C8E6C9");
 
+            // A standing rule, applied first so its cells are the rule's and carry the corner
+            // that says so. Filled by hand afterwards and the rule would have nothing left to
+            // write - which is a real board's order of events, not this page's.
+            board.AddRule(new MatrixRule("Architecture", "Wet services", "B"));
+            board.ApplyRules();
+
             // Enough decided cells that the sheet is read as a pattern rather than as a grid of
             // blanks, and a diagonal that has to be drawn as one.
             var marks = new[] { "A", "B", "C", "D" };
@@ -189,6 +195,10 @@ namespace CamelWorks.Studio
                 {
                     if (down == across) continue;
                     if (((down * 7) + (across * 3)) % 5 == 0) continue;
+
+                    // What the rule wrote is left to the rule, so the render shows both kinds of
+                    // cell side by side.
+                    if (board.At(board.Rows[down], board.Columns[across]) != null) continue;
 
                     board.Set(board.Rows[down], board.Columns[across],
                               marks[((down * 3) + across) % marks.Length]);
