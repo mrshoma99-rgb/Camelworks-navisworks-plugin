@@ -193,17 +193,17 @@ namespace CamelWorks.UI.Views
         /// <summary>The three-way switch a field setting is.</summary>
         /// <param name="now">What it is set to.</param>
         /// <param name="onPicked">Called with the new setting.</param>
-        private static UIElement Fielded(MatrixField now, Action<MatrixField> onPicked)
+        private static UIElement Fielded(MatrixDrawn now, Action<MatrixDrawn> onPicked)
         {
             const string auto = "When it says something";
             const string shown = "Always";
             const string hidden = "Never";
 
             return Ui.Segmented(new[] { auto, shown, hidden },
-                now == MatrixField.Shown ? shown : now == MatrixField.Hidden ? hidden : auto,
-                picked => onPicked(picked == shown ? MatrixField.Shown
-                    : picked == hidden ? MatrixField.Hidden
-                    : MatrixField.Auto));
+                now == MatrixDrawn.Shown ? shown : now == MatrixDrawn.Hidden ? hidden : auto,
+                picked => onPicked(picked == shown ? MatrixDrawn.Shown
+                    : picked == hidden ? MatrixDrawn.Hidden
+                    : MatrixDrawn.Auto));
         }
 
         /// <summary>

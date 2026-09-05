@@ -70,7 +70,8 @@ namespace CamelWorks.Core.Clash
         /// <see cref="Trouble"/> set, because the editor calls this on every keystroke.
         /// </summary>
         /// <param name="pattern">The pattern.</param>
-        public static MatrixNamePattern Parse(string? pattern)
+        /// <param name="scheme">The board's scheme, so its custom fields are known tokens.</param>
+        public static MatrixNamePattern Parse(string? pattern, MatrixScheme? scheme = null)
         {
             var said = (pattern ?? string.Empty).Trim();
             var tokens = new List<string>();
@@ -101,7 +102,7 @@ namespace CamelWorks.Core.Clash
 
                 var named = said.Substring(at + 1, shut - at - 1).Trim();
 
-                if (!Known(named))
+                if (!Known(named, scheme))
                     return new MatrixNamePattern(said, null, tokens,
                         "“{" + named + "}” is not a known token.");
 
@@ -173,11 +174,13 @@ namespace CamelWorks.Core.Clash
         public int Fits(IEnumerable<string?>? names) =>
             (names ?? Array.Empty<string?>()).Count(one => Match(one) != null);
 
-        /// <summary>Whether a token name is in <see cref="MatrixNaming.Tokens"/>.</summary>
+        /// <summary>Whether a token name is one a pattern can carry on this board.</summary>
         /// <param name="named">The token, without braces.</param>
-        public static bool Known(string? named) =>
-            MatrixNaming.Tokens.Any(one => string.Equals(one.Token, "{" + (named ?? string.Empty) + "}",
-                                                         StringComparison.Ordinal));
+        /// <param name="scheme">The board's scheme, for its custom fields. Null for none.</param>
+        public static bool Known(string? named, MatrixScheme? scheme = null) =>
+            MatrixNaming.Offered(scheme)
+                        .Any(one => string.Equals(one.Token, "{" + (named ?? string.Empty) + "}",
+                                                  StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// The sub-expression a token compiles to.

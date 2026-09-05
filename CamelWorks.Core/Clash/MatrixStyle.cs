@@ -3,8 +3,8 @@ using CamelWorks.Core.Store;
 
 namespace CamelWorks.Core.Clash
 {
-    /// <summary>Whether a field of a line is drawn, and who decides.</summary>
-    public enum MatrixField
+    /// <summary>Whether one of a line's fields is drawn beside its name, and who decides.</summary>
+    public enum MatrixDrawn
     {
         /// <summary>
         /// Drawn when it says something the rest of the header does not.
@@ -59,23 +59,23 @@ namespace CamelWorks.Core.Clash
         public string RuledColour { get; set; } = string.Empty;
 
         /// <summary>Whether each line's number is drawn beside its name.</summary>
-        public MatrixField Numbers { get; set; } = MatrixField.Auto;
+        public MatrixDrawn Numbers { get; set; } = MatrixDrawn.Auto;
 
         /// <summary>Whether each line's discipline code is drawn beside its name.</summary>
-        public MatrixField Codes { get; set; } = MatrixField.Auto;
+        public MatrixDrawn Codes { get; set; } = MatrixDrawn.Auto;
 
         /// <summary>Whether a line pointing at nothing is marked in the header.</summary>
-        public MatrixField Warnings { get; set; } = MatrixField.Auto;
+        public MatrixDrawn Warnings { get; set; } = MatrixDrawn.Auto;
 
         /// <summary>
         /// Whether a field is drawn, given what the lines themselves say about it.
         /// </summary>
         /// <param name="field">What the style says.</param>
         /// <param name="worthIt">Whether the lines make it worth a column of its own.</param>
-        public static bool Drawn(MatrixField field, bool worthIt) => field switch
+        public static bool Drawn(MatrixDrawn field, bool worthIt) => field switch
         {
-            MatrixField.Shown => true,
-            MatrixField.Hidden => false,
+            MatrixDrawn.Shown => true,
+            MatrixDrawn.Hidden => false,
             _ => worthIt,
         };
 
@@ -113,13 +113,13 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>One stored field setting, or Auto for anything unrecognised.</summary>
         /// <param name="json">What was written for it.</param>
-        private static MatrixField Fielded(JsonValue? json)
+        private static MatrixDrawn Fielded(JsonValue? json)
         {
             var at = (int)(json?.AsDouble() ?? 0);
 
-            return at == (int)MatrixField.Shown ? MatrixField.Shown
-                : at == (int)MatrixField.Hidden ? MatrixField.Hidden
-                : MatrixField.Auto;
+            return at == (int)MatrixDrawn.Shown ? MatrixDrawn.Shown
+                : at == (int)MatrixDrawn.Hidden ? MatrixDrawn.Hidden
+                : MatrixDrawn.Auto;
         }
 
         /// <inheritdoc />

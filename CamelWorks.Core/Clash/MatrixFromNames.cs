@@ -24,6 +24,22 @@ namespace CamelWorks.Core.Clash
         /// row keeps the set's name.
         /// </summary>
         public bool NamesWin { get; set; } = true;
+
+        /// <summary>
+        /// Which pattern a test is to be read with, by host test id, overriding the automatic
+        /// match. The value is a one-based index into the pattern list; 0 means the test is read
+        /// from its saved sets whatever the patterns would have matched.
+        ///
+        /// The automatic match is a proposal. It is what the window shows before anybody touches
+        /// it, and it is what an unassigned test still gets, but an entry here is the user's
+        /// decision and wins. Without this, pattern order silently decided which of two patterns
+        /// claimed a test, which is not something the person reading the board can see or change.
+        ///
+        /// An id with no matching test is ignored rather than reported: a stored assignment
+        /// outliving the test it named is ordinary once a document has been edited.
+        /// </summary>
+        public IDictionary<string, int> Assigned { get; } =
+            new Dictionary<string, int>(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -73,13 +89,17 @@ namespace CamelWorks.Core.Clash
                 }
 
                 var name = test.Test.Name;
-                var match = usable.Select(one => one.Match(name)).FirstOrDefault(one => one != null);
+                var match = Chosen(usable, how, test.Test.Id, name, out var byHand, out var refused);
+
+                if (refused != null) warnings.Add(refused);
 
                 if (match == null)
                 {
-                    unmatched++;
+                    // A test the user put on no pattern is a decision, not a gap, so it is read
+                    // from its sets without being counted against the patterns.
+                    if (!byHand) unmatched++;
 
-                    if (!how.TakeUnmatched) continue;
+                    if (!how.TakeUnmatched && !byHand) continue;
                 }
 
                 var a = Line(lines, warnings, match, side: true, how,
@@ -122,6 +142,52 @@ namespace CamelWorks.Core.Clash
             return new MatrixReading(board,
                 new MatrixLegend(symbols.Values.OrderBy(s => s.Symbol, StringComparer.Ordinal)),
                 warnings, read);
+        }
+
+        /// <summary>
+        /// The parse to read a test with: the user's choice where they made one, the automatic
+        /// match otherwise.
+        ///
+        /// An assignment names a pattern by its position in the list, which is what the window
+        /// shows beside each test. Zero means the user put the test on no pattern, so it is read
+        /// from its saved sets and is not counted as unmatched — that is an answer rather than a
+        /// gap, and reporting it as one would send somebody looking for a pattern to write.
+        ///
+        /// A pattern that cannot parse the name it was assigned to is reported against that test
+        /// rather than silently falling through to another pattern. Falling through would undo
+        /// the assignment, which is the behaviour this exists to remove.
+        /// </summary>
+        /// <param name="usable">The patterns, in the order the window lists them.</param>
+        /// <param name="how">The options carrying the assignments.</param>
+        /// <param name="id">The host's id for the test.</param>
+        /// <param name="name">The test's name.</param>
+        /// <param name="byHand">True when the user assigned this test.</param>
+        /// <param name="refused">What to warn about, or null.</param>
+        private static MatrixNameMatch? Chosen(IReadOnlyList<MatrixNamePattern> usable,
+                                               MatrixReadOptions how, string? id, string name,
+                                               out bool byHand, out string? refused)
+        {
+            byHand = false;
+            refused = null;
+
+            if (!string.IsNullOrEmpty(id) && how.Assigned.TryGetValue(id!, out var wanted))
+            {
+                byHand = true;
+
+                if (wanted <= 0 || wanted > usable.Count) return null;
+
+                var said = usable[wanted - 1].Match(name);
+
+                if (said == null)
+                    refused = Quoted(name) + " is assigned to pattern "
+                              + wanted.ToString(CultureInfo.InvariantCulture)
+                              + ", which its name does not fit, so it was read from what it is "
+                              + "between instead.";
+
+                return said;
+            }
+
+            return usable.Select(one => one.Match(name)).FirstOrDefault(one => one != null);
         }
 
         /// <summary>The column corresponding to one side of a pair.</summary>

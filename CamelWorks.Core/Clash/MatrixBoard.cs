@@ -65,6 +65,120 @@ namespace CamelWorks.Core.Clash
         /// <summary>Where its elements come from.</summary>
         public MatrixSource Source { get; set; }
 
+        /// <summary>
+        /// What this line holds under the scheme's custom fields, by field key.
+        ///
+        /// The four built-in fields are not in here: they keep their own properties, because the
+        /// headers, the diff, the naming and the export all read <see cref="Name"/> and
+        /// <see cref="Number"/> directly and a lookup in their place would be a change to every
+        /// one of them. <see cref="Value"/> hides the difference, so a caller working from a field
+        /// key never has to know which of the two a key lands in.
+        /// </summary>
+        public IDictionary<string, string> Values { get; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The fields this line holds by hand, by key, and so keeps against the scheme.
+        ///
+        /// Per field rather than per line. A discipline whose number was set deliberately still
+        /// wants its code counted with the rest, and a line pinned whole would quietly fall out of
+        /// every series it was in.
+        ///
+        /// <see cref="IsCustom"/> is what a header draws a mark from, since a line that has left
+        /// the scheme in any respect is one somebody should be able to see without opening it.
+        /// </summary>
+        public ISet<string> Pinned { get; } =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Whether any field on this line is held by hand.</summary>
+        public bool IsCustom => Pinned.Count > 0;
+
+        /// <summary>What this line holds under one field, whichever kind of field it is.</summary>
+        /// <param name="key">The field's key.</param>
+        public string Value(string? key)
+        {
+            var said = (key ?? string.Empty).Trim();
+
+            if (said.Length == 0) return string.Empty;
+
+            if (string.Equals(said, MatrixField.NameKey, StringComparison.OrdinalIgnoreCase))
+                return Name ?? string.Empty;
+
+            if (string.Equals(said, MatrixField.NumberKey, StringComparison.OrdinalIgnoreCase))
+                return Number ?? string.Empty;
+
+            if (string.Equals(said, MatrixField.CodeKey, StringComparison.OrdinalIgnoreCase))
+                return Code ?? string.Empty;
+
+            if (string.Equals(said, MatrixField.FolderKey, StringComparison.OrdinalIgnoreCase))
+                return Folder ?? string.Empty;
+
+            return Values.TryGetValue(said, out var held) ? held : string.Empty;
+        }
+
+        /// <summary>Put a value under one field, whichever kind of field it is.</summary>
+        /// <param name="key">The field's key.</param>
+        /// <param name="value">What it should hold. Empty removes a custom field's entry.</param>
+        public void Set(string? key, string? value)
+        {
+            var said = (key ?? string.Empty).Trim();
+
+            if (said.Length == 0) return;
+
+            var held = (value ?? string.Empty).Trim();
+
+            if (string.Equals(said, MatrixField.NameKey, StringComparison.OrdinalIgnoreCase))
+            {
+                // A line with no name at all cannot be drawn or matched, so an empty name is
+                // refused here rather than producing a header nobody can read.
+                if (held.Length > 0) Name = held;
+
+                return;
+            }
+
+            if (string.Equals(said, MatrixField.NumberKey, StringComparison.OrdinalIgnoreCase))
+            {
+                Number = held;
+                return;
+            }
+
+            if (string.Equals(said, MatrixField.CodeKey, StringComparison.OrdinalIgnoreCase))
+            {
+                Code = held;
+                return;
+            }
+
+            if (string.Equals(said, MatrixField.FolderKey, StringComparison.OrdinalIgnoreCase))
+            {
+                Folder = held;
+                return;
+            }
+
+            if (held.Length == 0) Values.Remove(said);
+            else Values[said] = held;
+        }
+
+        /// <summary>Hold a field by hand, taking it out of the scheme for this line.</summary>
+        /// <param name="key">The field's key.</param>
+        /// <param name="value">What it should hold.</param>
+        public void Pin(string? key, string? value)
+        {
+            var said = (key ?? string.Empty).Trim();
+
+            if (said.Length == 0) return;
+
+            Set(said, value);
+            Pinned.Add(said);
+        }
+
+        /// <summary>Give a field back to the scheme. Its value is rewritten on the next apply.</summary>
+        /// <param name="key">The field's key, or null for every field this line pinned.</param>
+        public void Unpin(string? key = null)
+        {
+            if (key == null) Pinned.Clear();
+            else Pinned.Remove(key.Trim());
+        }
+
         /// <summary>Nothing is behind it, so no test on it could run.</summary>
         public bool IsUnbacked => Source.IsEmpty;
 
@@ -81,6 +195,23 @@ namespace CamelWorks.Core.Clash
             if (Folder.Length > 0) json.Set("folder", Folder);
             if (Key.Length > 0) json.Set("key", Key);
 
+            // Written only when there is something to write, so a board using none of this saves
+            // the bytes it always did.
+            if (Values.Count > 0)
+            {
+                var held = JsonValue.Object();
+
+                foreach (var one in Values.OrderBy(v => v.Key, StringComparer.OrdinalIgnoreCase))
+                    held.Set(one.Key, one.Value);
+
+                json.Set("values", held);
+            }
+
+            if (Pinned.Count > 0)
+                json.Set("pinned", JsonValue.Array(
+                    Pinned.OrderBy(one => one, StringComparer.OrdinalIgnoreCase)
+                          .Select(JsonValue.String)));
+
             json.Set("source", Source.ToJson());
 
             return json;
@@ -96,13 +227,28 @@ namespace CamelWorks.Core.Clash
 
             if (name.Length == 0) return null;
 
-            return new MatrixLine(name, json["number"].AsString(),
-                                  MatrixSource.FromJson(json["source"]),
-                                  json["code"].AsString())
+            var line = new MatrixLine(name, json["number"].AsString(),
+                                      MatrixSource.FromJson(json["source"]),
+                                      json["code"].AsString())
             {
                 Folder = (json["folder"].AsString() ?? string.Empty).Trim(),
                 Key = (json["key"].AsString() ?? string.Empty).Trim(),
             };
+
+            var values = json["values"];
+
+            if (values.Kind == JsonKind.Object)
+                foreach (var one in values.Keys)
+                    line.Set(one, values[one].AsString());
+
+            foreach (var one in json["pinned"].Items)
+            {
+                var said = (one.AsString() ?? string.Empty).Trim();
+
+                if (said.Length > 0) line.Pinned.Add(said);
+            }
+
+            return line;
         }
 
         /// <inheritdoc />
@@ -204,6 +350,82 @@ namespace CamelWorks.Core.Clash
         /// case. Off is a deliberate exception rather than the default.
         /// </summary>
         public bool Paired { get; set; } = true;
+
+        /// <summary>
+        /// The fields every line carries, and how they are filled in.
+        ///
+        /// One scheme for both axes, because a square matrix is one list mirrored and two schemes
+        /// would have to be kept in step by hand.
+        /// </summary>
+        public MatrixScheme Scheme { get; private set; } = new MatrixScheme();
+
+        /// <summary>
+        /// Write the scheme's filled fields across both axes.
+        ///
+        /// Called after anything that changes what a series would produce: adding a line, moving
+        /// one, filing it in a folder, or editing a field. The two axes are walked separately, so
+        /// the rows number from the top and the columns from the left rather than continuing one
+        /// count through both.
+        /// </summary>
+        /// <returns>How many values were written.</returns>
+        public int ApplyScheme() => Scheme.Apply(_rows) + Scheme.Apply(_columns);
+
+        /// <summary>
+        /// Put a value under one field, and put it on the line's twin as well.
+        ///
+        /// Setting a field is the same shape of act as renaming or pointing a line, and mirrors
+        /// for the same reason: on a paired board a row and its column are one discipline said
+        /// twice, so a phase typed against the row and not the column would leave the two halves
+        /// of the same thing disagreeing, and a pattern reading <c>{rowPhase}</c> against
+        /// <c>{columnPhase}</c> would produce a name half filled in.
+        ///
+        /// A twin that has pinned the field is left alone: it has been taken out of the scheme on
+        /// purpose, and mirroring over it would undo a decision.
+        /// </summary>
+        /// <param name="line">The row or column being written to.</param>
+        /// <param name="key">The field's key.</param>
+        /// <param name="value">What it should hold.</param>
+        /// <param name="byHand">True to pin it, holding it against the scheme.</param>
+        /// <returns>The twin that took it too, or null when there was none.</returns>
+        public MatrixLine? Write(MatrixLine? line, string? key, string? value, bool byHand = false)
+        {
+            if (line == null) return null;
+
+            var said = (key ?? string.Empty).Trim();
+
+            if (said.Length == 0) return null;
+
+            // Found before the change: a name is one of the things that makes two lines twins,
+            // so writing the name first would lose the twin it was meant to carry to.
+            var twin = TwinOf(line);
+
+            if (byHand) line.Pin(said, value);
+            else line.Set(said, value);
+
+            if (twin == null || twin.Pinned.Contains(said)) return null;
+
+            if (byHand) twin.Pin(said, value);
+            else twin.Set(said, value);
+
+            return twin;
+        }
+
+        /// <summary>
+        /// Give a field back to the scheme on a line and its twin, and rewrite what it holds.
+        /// </summary>
+        /// <param name="line">The row or column.</param>
+        /// <param name="key">The field's key, or null for every field the line pinned.</param>
+        public void Release(MatrixLine? line, string? key = null)
+        {
+            if (line == null) return;
+
+            var twin = TwinOf(line);
+
+            line.Unpin(key);
+            twin?.Unpin(key);
+
+            ApplyScheme();
+        }
 
         /// <summary>
         /// Add a category: a row, and the column standing for the same thing.
@@ -1316,6 +1538,10 @@ namespace CamelWorks.Core.Clash
             json.Set("rows", JsonValue.Array(_rows.Select(r => r.ToJson())));
             json.Set("columns", JsonValue.Array(_columns.Select(c => c.ToJson())));
 
+            var fields = Scheme.ToJson();
+
+            if (fields != null) json.Set("fields", fields);
+
             // The rule flag rides on the cell rather than in a list of its own, because it is a
             // fact about that cell - and a board reloaded without it would turn every
             // rule-filled cell into a decision somebody made by hand, which no later edit to the
@@ -1371,6 +1597,7 @@ namespace CamelWorks.Core.Clash
 
             board.UpperIsLive = !json["lower"].AsBool(false);
             board.Paired = !json["apart"].AsBool(false);
+            board.Scheme = MatrixScheme.FromJson(json["fields"]);
 
             foreach (var held in json["rows"].Items)
             {

@@ -22,11 +22,16 @@ namespace CamelWorks.UI.Views
     /// This window provides:
     ///
     /// - a test table with a search box, checkboxes and bulk selection;
-    /// - name patterns written in <see cref="MatrixNaming.Tokens"/>, applied in reverse;
-    /// - a live indication of which pattern matched each test.
+    /// - name patterns written in <see cref="MatrixNaming.Tokens"/>;
+    /// - a per-test assignment saying which pattern reads it.
     ///
-    /// Patterns are evaluated in order and the first match wins, so specific patterns belong
-    /// above general ones.
+    /// The assignment is the user's, not the matcher's. Each pattern is still run over every
+    /// name and the result is shown as a proposal, because assigning a hundred and sixty tests
+    /// by hand is the work this window exists to remove. But the proposal is only a starting
+    /// value: any test can be moved to any pattern, or off the patterns entirely, and that
+    /// choice wins. Previously the first pattern whose regex matched claimed the test, so where
+    /// two patterns both fitted, the order of the list decided — silently, and with nothing on
+    /// screen to say so or to change it.
     /// </summary>
     public static class MatrixReadWindow
     {
@@ -41,14 +46,33 @@ namespace CamelWorks.UI.Views
 
             internal bool Chosen { get; set; } = true;
 
-            /// <summary>Index of the matching pattern, from 1; 0 when none matched.</summary>
+            /// <summary>Index of the pattern whose regex fits this name, from 1; 0 when none does.</summary>
             internal int By { get; set; }
 
-            internal string Between =>
-                Read.Shape == null || !Read.Shape.KnowsA || !Read.Shape.KnowsB
-                    ? "not stated"
-                    : Side(Read.Shape.SetA, Read.Shape.ScopesA) + "  vs  "
-                      + Side(Read.Shape.SetB, Read.Shape.ScopesB);
+            /// <summary>
+            /// The pattern the user put this test on, from 1, or 0 for none of them. Null while
+            /// the test is still on the proposal.
+            /// </summary>
+            internal int? Put { get; set; }
+
+            /// <summary>The pattern that will actually read this test.</summary>
+            internal int Using => Put ?? By;
+
+            /// <summary>The host's identity for the test, which the assignment is keyed on.</summary>
+            internal string Id => Read.Test.Id;
+
+            internal bool Stated =>
+                Read.Shape != null && Read.Shape.KnowsA && Read.Shape.KnowsB;
+
+            /// <summary>The first side, or the whole answer when there is not one.</summary>
+            internal string SideA =>
+                Stated ? Side(Read.Shape!.SetA, Read.Shape.ScopesA) : "not stated";
+
+            /// <summary>The second side, or empty when there is not one.</summary>
+            internal string SideB =>
+                Stated ? Side(Read.Shape!.SetB, Read.Shape.ScopesB) : string.Empty;
+
+            internal string Between => Stated ? SideA + "  vs  " + SideB : "not stated";
 
             private static string Side(string? set, IReadOnlyList<string> scopes) =>
                 !string.IsNullOrWhiteSpace(set)
@@ -72,7 +96,11 @@ namespace CamelWorks.UI.Views
             {
                 Title = "CamelWorks - Read tests into a matrix",
                 Width = 980,
-                Height = 660,
+
+                // Taller than the pane it replaced: a row carries two lines now that both sides
+                // of a test are printed, so the same table needs more of the screen to show the
+                // same number of tests.
+                Height = 720,
                 MinWidth = 780,
                 MinHeight = 480,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -125,6 +153,7 @@ namespace CamelWorks.UI.Views
 
             var list = Ui.Stack();
             var table = Ui.Stack();
+            var bulk = Ui.Stack();
             var strip = Ui.Stack();
             var trouble = Ui.Stack();
 
@@ -138,7 +167,7 @@ namespace CamelWorks.UI.Views
             // set as it is edited.
             List<MatrixNamePattern> Read()
             {
-                var read = patterns.Select(MatrixNamePattern.Parse).ToList();
+                var read = patterns.Select(one => MatrixNamePattern.Parse(one)).ToList();
 
                 foreach (var row in rows)
                 {
@@ -161,50 +190,30 @@ namespace CamelWorks.UI.Views
             {
                 var read = Read();
 
-                DrawPatterns(list, patterns, read, rows, written, box => focused = box,
-                             () => { patterns.Add(string.Empty); Redraw(); }, Redraw);
-                DrawTable(table, rows, find.Text, Redraw);
-                DrawStrip(strip, rows, read);
+                DrawPatterns(list, patterns, read, rows, written,
+                             held => { focused = held; Redraw(); }, focused,
+                             () => { patterns.Add(string.Empty); Redraw(); }, Redraw, Palette);
+                DrawBulk(bulk, rows, find.Text, patterns.Count, Put);
+                DrawTable(table, rows, find.Text, patterns.Count, Redraw, Put);
+                DrawStrip(strip, rows);
+            }
+
+            // One place that writes an assignment, so the table cell, the bulk bar and any later
+            // caller cannot drift on what null and zero mean.
+            void Put(Row row, int? onto)
+            {
+                row.Put = onto;
+                Redraw();
             }
 
             find.TextChanged += (s, e) => Ui.Safely(Redraw);
 
-            var chips = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+            var side = new DockPanel { LastChildFill = true, Width = 400,
+                                       Margin = new Thickness(4, 0, 0, 0) };
 
-            foreach (var token in MatrixNaming.Tokens)
-            {
-                var one = token;
-
-                chips.Children.Add(Chip(one, () =>
-                {
-                    var box = focused ?? written.FirstOrDefault();
-
-                    if (box == null) return;
-
-                    var at = Math.Max(0, Math.Min(box.Text.Length, box.SelectionStart));
-
-                    box.Text = box.Text.Substring(0, at) + one.Token + box.Text.Substring(at);
-                    box.SelectionStart = at + one.Token.Length;
-
-                    box.Focus();
-                }));
-            }
-
-            var side = new DockPanel { LastChildFill = true, Width = 420 };
-
-            var under = Ui.Stack(
-                Ui.Eyebrow("Insert a token"),
-                chips,
-                take,
-                names);
-
-            under.Margin = new Thickness(0, 8, 0, 0);
-
-            DockPanel.SetDock(under, Dock.Bottom);
-            side.Children.Add(under);
-
-            var says = Ui.Small("Patterns are matched in order; the first match is used. Put "
-                                + "specific patterns above general ones.");
+            var says = Ui.Small("A pattern is run over every test name and the result is shown "
+                                + "against each test as a proposal. Change any of them: what you "
+                                + "set is what reads the test.");
 
             says.TextWrapping = TextWrapping.Wrap;
             says.Margin = new Thickness(0, 2, 0, 8);
@@ -236,10 +245,24 @@ namespace CamelWorks.UI.Views
 
             DockPanel.SetDock(acts, Dock.Right);
             searching.Children.Add(acts);
-            searching.Children.Add(Ui.Field("Find", find, null));
+
+            // Docked rather than filling, so the box stays the width of what goes in it.
+            var box = Ui.Field("Find", find, null);
+
+            box.Width = 260;
+            box.HorizontalAlignment = HorizontalAlignment.Left;
+
+            DockPanel.SetDock(box, Dock.Left);
+            searching.Children.Add(box);
+            searching.Children.Add(new Border());
 
             DockPanel.SetDock(searching, Dock.Top);
             middle.Children.Add(searching);
+
+            // The bar that assigns the ticked tests to one pattern in a single act, which is the
+            // only thing that makes assignment usable on a job with a hundred and sixty tests.
+            DockPanel.SetDock(bulk, Dock.Top);
+            middle.Children.Add(Ui.Loose(bulk));
 
             DockPanel.SetDock(strip, Dock.Bottom);
             middle.Children.Add(Ui.Loose(strip));
@@ -269,13 +292,18 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var how = new MatrixReadOptions
+                {
+                    TakeUnmatched = take.IsChecked == true,
+                    NamesWin = names.IsChecked == true,
+                };
+
+                foreach (var row in rows.Where(r => r.Chosen && r.Put != null
+                                                    && !string.IsNullOrEmpty(r.Id)))
+                    how.Assigned[row.Id] = row.Put!.Value;
+
                 var reading = MatrixFromNames.Read(chosen,
-                    patterns.Select(MatrixNamePattern.Parse).ToList(),
-                    new MatrixReadOptions
-                    {
-                        TakeUnmatched = take.IsChecked == true,
-                        NamesWin = names.IsChecked == true,
-                    });
+                    patterns.Select(one => MatrixNamePattern.Parse(one)).ToList(), how);
 
                 if (!reading.IsUsable)
                 {
@@ -290,10 +318,27 @@ namespace CamelWorks.UI.Views
 
             var root = new DockPanel { Margin = new Thickness(16, 14, 16, 14) };
 
+            // The two read options belong beside the button that acts on them. They were at the
+            // foot of the token palette, which is about writing a pattern and not about what a
+            // read does with the tests the patterns do not cover.
+            var choices = Ui.Across(take, names);
+
+            choices.VerticalAlignment = VerticalAlignment.Center;
+
+            var footing = new DockPanel { LastChildFill = false };
+
+            var doing = Ui.Actions(go, Ui.Quiet("Cancel", () => onCancel?.Invoke()));
+
+            DockPanel.SetDock(doing, Dock.Right);
+            footing.Children.Add(doing);
+
+            DockPanel.SetDock(choices, Dock.Left);
+            footing.Children.Add(choices);
+
             var foot = new Border
             {
                 Margin = new Thickness(0, 10, 0, 0),
-                Child = Ui.Actions(go, Ui.Quiet("Cancel", () => onCancel?.Invoke())),
+                Child = footing,
             };
 
             DockPanel.SetDock(foot, Dock.Bottom);
@@ -331,7 +376,9 @@ namespace CamelWorks.UI.Views
         private static void DrawPatterns(Panel into, List<string> patterns,
                                          IReadOnlyList<MatrixNamePattern> read,
                                          IReadOnlyList<Row> rows, List<TextBox> written,
-                                         Action<TextBox> onFocus, Action onAdd, Action redraw)
+                                         Action<TextBox> onFocus, TextBox? focused,
+                                         Action onAdd, Action redraw,
+                                         Func<TextBox, UIElement> palette)
         {
             into.Children.Clear();
             written.Clear();
@@ -352,7 +399,13 @@ namespace CamelWorks.UI.Views
                 box.AcceptsReturn = false;
                 box.MinHeight = 46;
 
-                box.GotKeyboardFocus += (s, e) => onFocus(box);
+                box.GotKeyboardFocus += (s, e) => Ui.Safely(() =>
+                {
+                    if (!ReferenceEquals(focused, box)) onFocus(box);
+                });
+
+                // The card the caret is in, or the first card before anything has been touched.
+                var live = focused == null ? here == 0 : ReferenceEquals(focused, box);
 
                 written.Add(box);
 
@@ -426,11 +479,15 @@ namespace CamelWorks.UI.Views
                 }
                 else
                 {
-                    var mine = rows.Where(r => r.By == here + 1).ToList();
+                    var mine = rows.Where(r => r.Using == here + 1).ToList();
+                    var byHand = mine.Count(r => r.Put != null);
 
                     var count = Ui.Small(mine.Count == 0
-                        ? "No matches"
-                        : "Matches " + Ui.Count(mine.Count, "test"));
+                        ? "No tests"
+                        : "Reads " + Ui.Count(mine.Count, "test")
+                          + (byHand == 0 ? string.Empty
+                                         : "  ·  " + byHand.ToString(CultureInfo.InvariantCulture)
+                                           + " assigned by hand"));
 
                     count.Margin = new Thickness(0, 5, 0, 0);
                     stack.Children.Add(count);
@@ -454,6 +511,16 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                if (live)
+                {
+                    var tokens = palette(box);
+
+                    tokens.Opacity = one.IsUsable || box.Text.Length == 0 ? 1 : 0.85;
+                    stack.Children.Add(tokens);
+                }
+
+                card.Tint(Border.BorderBrushProperty, live ? "Accent" : "Bd");
+
                 card.Child = stack;
                 into.Children.Add(card);
             }
@@ -469,11 +536,11 @@ namespace CamelWorks.UI.Views
         /// Draws the test table. The whole row toggles the checkbox, not just the box itself.
         /// </summary>
         private static void DrawTable(Panel into, IReadOnlyList<Row> rows, string? find,
-                                      Action redraw)
+                                      int patterns, Action redraw, Action<Row, int?> put)
         {
             into.Children.Clear();
 
-            var head = Line(null, "Test", "Between", "Pattern", heading: true);
+            var head = Line(null, "Test", "Between", null, null, "Read by", heading: true);
 
             into.Children.Add(head);
 
@@ -492,10 +559,8 @@ namespace CamelWorks.UI.Views
             {
                 var one = row;
 
-                var line = Line(one.Chosen, one.Name, one.Between,
-                                one.By == 0 ? "—"
-                                    : (one.By).ToString(CultureInfo.InvariantCulture),
-                                heading: false);
+                var line = Line(one.Chosen, one.Name, one.SideA, one.SideB,
+                                Assigning(one, patterns, put), null, heading: false);
 
                 line.Cursor = Cursors.Hand;
                 line.Background = System.Windows.Media.Brushes.Transparent;
@@ -536,15 +601,18 @@ namespace CamelWorks.UI.Views
         /// <summary>Anchor row for shift-click range selection.</summary>
         private static Row? _anchor;
 
-        private static Border Line(bool? ticked, string name, string between, string by,
-                                   bool heading)
+        private static Border Line(bool? ticked, string name, string between, string? alsoBetween,
+                                   UIElement? by, string? byText, bool heading)
         {
             var grid = new Grid();
 
+            // The test name is what a pattern is written against, so it gets the room. Before,
+            // the two columns were 2:3 the other way and the name — the longer of the two, and
+            // the one being matched — was the one cut off.
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
 
             void Cell(int column, string text, bool bold, string key)
             {
@@ -556,6 +624,9 @@ namespace CamelWorks.UI.Views
                     TextWrapping = TextWrapping.NoWrap,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 8, 0),
+
+                    // A trimmed name is still readable on hover rather than lost.
+                    ToolTip = heading ? null : text,
                 }.Wearing(key);
 
                 Grid.SetColumn(said, column);
@@ -592,8 +663,32 @@ namespace CamelWorks.UI.Views
             }
 
             Cell(1, name, heading, heading ? "Caps" : "Body");
-            Cell(2, between, false, heading ? "Caps" : "Hint");
-            Cell(3, by, false, heading ? "Caps" : "Hint");
+
+            if (string.IsNullOrEmpty(alsoBetween))
+            {
+                Cell(2, between, false, heading ? "Caps" : "Hint");
+            }
+            else
+            {
+                // Two lines rather than one. A saved set on a real job is thirty characters, so
+                // both sides and a separator do not fit a column this table can spare, and one
+                // line trimmed every row mid-word — losing the second side, which is half of
+                // what the column is for.
+                var sides = Sides(between, alsoBetween!);
+
+                Grid.SetColumn(sides, 2);
+                grid.Children.Add(sides);
+            }
+
+            if (by != null)
+            {
+                Grid.SetColumn(by, 3);
+                grid.Children.Add(by);
+            }
+            else if (byText != null)
+            {
+                Cell(3, byText, false, heading ? "Caps" : "Hint");
+            }
 
             var line = new Border
             {
@@ -608,23 +703,243 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>Draws the count line under the table.</summary>
-        private static void DrawStrip(Panel into, IReadOnlyList<Row> rows,
-                                      IReadOnlyList<MatrixNamePattern> read)
+        private static void DrawStrip(Panel into, IReadOnlyList<Row> rows)
         {
             into.Children.Clear();
 
             var chosen = rows.Count(r => r.Chosen);
-            var claimed = rows.Count(r => r.Chosen && r.By > 0);
+            var claimed = rows.Count(r => r.Chosen && r.Using > 0);
+            var byHand = rows.Count(r => r.Chosen && r.Put != null);
 
             var said = Ui.Small(chosen.ToString(CultureInfo.InvariantCulture) + " of "
                                 + rows.Count.ToString(CultureInfo.InvariantCulture)
                                 + " tests selected  ·  "
                                 + claimed.ToString(CultureInfo.InvariantCulture)
-                                + " matched by a pattern");
+                                + " read by a pattern"
+                                + (byHand == 0
+                                    ? string.Empty
+                                    : "  ·  " + byHand.ToString(CultureInfo.InvariantCulture)
+                                      + " assigned by hand"));
 
             said.Margin = new Thickness(4, 8, 4, 0);
 
             into.Children.Add(said);
+        }
+
+        /// <summary>What a test is between, stacked so neither side is trimmed away.</summary>
+        /// <param name="a">The first side.</param>
+        /// <param name="b">The second side.</param>
+        private static UIElement Sides(string a, string b)
+        {
+            TextBlock One(string said, bool second)
+            {
+                var line = new TextBlock
+                {
+                    Text = second ? "vs  " + said : said,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Margin = new Thickness(0, second ? 1 : 0, 8, 0),
+                    ToolTip = said,
+                }.Wearing("Hint");
+
+                if (second) line.Tint(TextBlock.ForegroundProperty, "Muted");
+
+                return line;
+            }
+
+            var held = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+            held.Children.Add(One(a, false));
+            held.Children.Add(One(b, true));
+
+            return held;
+        }
+
+        /// <summary>
+        /// The cell that says which pattern reads a test, and changes it.
+        ///
+        /// A control rather than a printed index. The column previously showed the number of the
+        /// pattern that had matched, which named the outcome without offering any way to disagree
+        /// with it — and on a board with three patterns a bare "2" says little.
+        ///
+        /// The wording separates the two states that matter. A test on the proposal reads
+        /// "Pattern 2" quietly; one somebody has put there reads the same in the accent colour,
+        /// so a column of assignments can be scanned for the ones that were decided.
+        /// </summary>
+        /// <param name="row">The test.</param>
+        /// <param name="patterns">How many patterns there are.</param>
+        /// <param name="put">Writes the assignment.</param>
+        private static UIElement Assigning(Row row, int patterns, Action<Row, int?> put)
+        {
+            var mine = row.Put != null;
+            var at = row.Using;
+
+            var said = at == 0
+                ? (mine ? "Saved sets" : "—")
+                : "Pattern " + at.ToString(CultureInfo.InvariantCulture);
+
+            var text = new TextBlock
+            {
+                Text = said,
+                FontSize = 11,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            }.Wearing("Body");
+
+            text.Tint(TextBlock.ForegroundProperty, mine ? "Accent" : "Muted");
+
+            var chip = new Border
+            {
+                Padding = new Thickness(7, 2, 7, 2),
+                CornerRadius = new CornerRadius(9),
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = text,
+                ToolTip = mine
+                    ? "Assigned. Click to change it."
+                    : "Proposed from the pattern that fits this name. Click to change it.",
+            };
+
+            chip.Tint(Border.BackgroundProperty, mine ? "AccentWash" : "Card");
+            chip.Tint(Border.BorderBrushProperty, mine ? "Accent" : "FieldBd");
+
+            chip.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
+            {
+                // Stops the row's own handler taking this as a tick.
+                e.Handled = true;
+
+                Parts.PopMenu(chip, Choices(patterns, row.By,
+                                            onto => put(row, onto),
+                                            () => put(row, null),
+                                            row.Put != null));
+            });
+
+            return chip;
+        }
+
+        /// <summary>
+        /// The menu behind an assignment: every pattern, the saved sets, and the way back to the
+        /// proposal.
+        /// </summary>
+        /// <param name="patterns">How many patterns there are.</param>
+        /// <param name="proposed">The pattern the names fit, from 1, or 0 for none.</param>
+        /// <param name="onPut">Called with the chosen pattern, or 0 for the saved sets.</param>
+        /// <param name="onClear">Called to go back to the proposal.</param>
+        /// <param name="assigned">Whether this is currently assigned by hand.</param>
+        private static IReadOnlyList<Parts.Entry> Choices(int patterns, int proposed,
+                                                          Action<int> onPut, Action onClear,
+                                                          bool assigned)
+        {
+            var items = new List<Parts.Entry>();
+
+            for (var at = 1; at <= patterns; at++)
+            {
+                var here = at;
+
+                items.Add(Parts.Entry.Act(
+                    "Pattern " + here.ToString(CultureInfo.InvariantCulture)
+                    + (here == proposed ? "  (fits this name)" : string.Empty),
+                    null, () => onPut(here)));
+            }
+
+            items.Add(Parts.Entry.Act("Saved sets, not a pattern", null, () => onPut(0)));
+
+            if (assigned)
+                items.Add(Parts.Entry.Act("Back to the proposal", null, onClear));
+
+            return items;
+        }
+
+        /// <summary>
+        /// The bar that puts every ticked test on one pattern at once.
+        ///
+        /// Assignment is only usable at the size of a real job if it can be done to a selection.
+        /// Filtering the table to "ARC-" and assigning the twenty tests that come back is the
+        /// gesture this is for; without it, an explicit assignment would mean a hundred and sixty
+        /// separate menus.
+        /// </summary>
+        /// <param name="into">Where it is drawn.</param>
+        /// <param name="rows">Every test.</param>
+        /// <param name="find">The current search text.</param>
+        /// <param name="patterns">How many patterns there are.</param>
+        /// <param name="put">Writes one assignment.</param>
+        private static void DrawBulk(Panel into, IReadOnlyList<Row> rows, string? find,
+                                     int patterns, Action<Row, int?> put)
+        {
+            into.Children.Clear();
+
+            var mine = Shown(rows, find).Where(r => r.Chosen).ToList();
+
+            if (mine.Count == 0) return;
+
+            // Declared first so the menu can hang off the button that opens it.
+            System.Windows.Controls.Button button = null!;
+
+            button = Ui.Quiet("Assign " + Ui.Count(mine.Count, "shown test") + " to…", () =>
+                Parts.PopMenu(button, Choices(patterns, 0,
+                    onto =>
+                    {
+                        // The last write redraws, so the rest are set without one each.
+                        for (var at = 0; at < mine.Count - 1; at++) mine[at].Put = onto;
+
+                        put(mine[mine.Count - 1], onto);
+                    },
+                    () =>
+                    {
+                        for (var at = 0; at < mine.Count - 1; at++) mine[at].Put = null;
+
+                        put(mine[mine.Count - 1], null);
+                    },
+                    assigned: mine.Any(r => r.Put != null))));
+
+            var bar = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 6),
+                Padding = new Thickness(8, 4, 8, 4),
+                CornerRadius = new CornerRadius(6),
+                Child = button,
+                HorizontalAlignment = HorizontalAlignment.Left,
+            };
+
+            bar.Tint(Border.BackgroundProperty, "Card2");
+
+            into.Children.Add(bar);
+        }
+
+        /// <summary>
+        /// The token chips, typing into one pattern box.
+        ///
+        /// Built per card rather than once for the column, so a chip inserts into the pattern the
+        /// caret is in. As a single palette at the foot of the column it had to guess which box
+        /// it meant, and it left a column of empty space between itself and the cards.
+        /// </summary>
+        /// <param name="box">The box the chips type into.</param>
+        private static UIElement Palette(TextBox box)
+        {
+            var chips = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+
+            foreach (var token in MatrixNaming.Tokens)
+            {
+                var one = token;
+
+                chips.Children.Add(Chip(one, () =>
+                {
+                    var at = Math.Max(0, Math.Min(box.Text.Length, box.SelectionStart));
+
+                    box.Text = box.Text.Substring(0, at) + one.Token + box.Text.Substring(at);
+                    box.SelectionStart = at + one.Token.Length;
+
+                    box.Focus();
+                }));
+            }
+
+            var held = Ui.Stack(Ui.Eyebrow("Insert a token"), chips);
+
+            held.Margin = new Thickness(0, 8, 0, 0);
+
+            return held;
         }
 
         /// <summary>Draws one token as a clickable chip.</summary>

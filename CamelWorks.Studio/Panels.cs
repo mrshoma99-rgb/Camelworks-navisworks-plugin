@@ -54,8 +54,18 @@ namespace CamelWorks.Studio
             Page("app-clash-matrix", "Clash Manager · Matrix", 820,
                  () => MatrixWindow.Surface(Seated())),
 
+            // Drawn from the fielded board: it is the same grid plus a scheme, so one page
+            // covers the matrix and the two things the fields add to it — a number counted down
+            // the axis, and the mark on the row that has left the counting.
             Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
-                 () => MatrixWindow.Surface(Seated(), Drawn())),
+                 () => MatrixWindow.Surface(Seated(), Fielded())),
+
+            // The fields window, and the state that matters in it: a built-in field counted down
+            // the axis, a custom field of the project's own, and a line held by hand. A board with
+            // every field on "by hand" would draw the window with none of its controls, which is
+            // the one shape that proves nothing.
+            Page("app-clash-matrix-fields", "Clash Manager · Fields", 620,
+                 () => MatrixFields.Drawn(Fielded())),
 
             // The window that says which tests become a matrix and what their names mean. Drawn
             // as a panel rather than shown as a window, because a WPF window needs a screen to
@@ -119,6 +129,37 @@ namespace CamelWorks.Studio
         /// that are not the front of their names, so the code gutter is drawn; and a number that
         /// disagrees with its position, so the number gutter is drawn too.
         /// </summary>
+        /// <summary>
+        /// A board whose fields exercise the window: a counted number, a phase the same on every
+        /// line, a sub-discipline code typed by hand, and one row that has left the numbering.
+        /// </summary>
+        private static MatrixBoard Fielded()
+        {
+            var board = Drawn(pointed: true);
+
+            var number = board.Scheme.Field(MatrixField.NumberKey)!;
+
+            number.Fill = MatrixFill.Series;
+            number.Start = "10";
+            number.Step = 10;
+            number.Pad = 2;
+
+            board.Scheme.Add("phase", "Phase");
+
+            var phase = board.Scheme.Field("phase")!;
+
+            phase.Fill = MatrixFill.Same;
+            phase.Same = "P2";
+
+            board.Scheme.Add("sub", "Sub-discipline");
+
+            board.ApplyScheme();
+
+            if (board.Rows.Count > 2) board.Write(board.Rows[2], MatrixField.NumberKey, "99", byHand: true);
+
+            return board;
+        }
+
         private static MatrixBoard Drawn() => Drawn(pointed: false);
 
         /// <summary>

@@ -730,11 +730,11 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void AFieldIsDrawnWhenItSaysSomething_UnlessSomebodySaidOtherwise()
         {
-            Assert.True(MatrixStyle.Drawn(MatrixField.Auto, worthIt: true));
-            Assert.False(MatrixStyle.Drawn(MatrixField.Auto, worthIt: false));
+            Assert.True(MatrixStyle.Drawn(MatrixDrawn.Auto, worthIt: true));
+            Assert.False(MatrixStyle.Drawn(MatrixDrawn.Auto, worthIt: false));
 
-            Assert.True(MatrixStyle.Drawn(MatrixField.Shown, worthIt: false));
-            Assert.False(MatrixStyle.Drawn(MatrixField.Hidden, worthIt: true));
+            Assert.True(MatrixStyle.Drawn(MatrixDrawn.Shown, worthIt: false));
+            Assert.False(MatrixStyle.Drawn(MatrixDrawn.Hidden, worthIt: true));
         }
 
         [Fact]
@@ -746,9 +746,9 @@ namespace CamelWorks.Core.Tests
                 Echo = false,
                 Spine = false,
                 SpineColour = "#CBD5E3",
-                Numbers = MatrixField.Shown,
-                Codes = MatrixField.Hidden,
-                Warnings = MatrixField.Shown,
+                Numbers = MatrixDrawn.Shown,
+                Codes = MatrixDrawn.Hidden,
+                Warnings = MatrixDrawn.Shown,
             };
 
             var read = MatrixStyle.FromJson(style.ToJson());
@@ -757,9 +757,9 @@ namespace CamelWorks.Core.Tests
             Assert.False(read.Echo);
             Assert.False(read.Spine);
             Assert.Equal("#CBD5E3", read.SpineColour);
-            Assert.Equal(MatrixField.Shown, read.Numbers);
-            Assert.Equal(MatrixField.Hidden, read.Codes);
-            Assert.Equal(MatrixField.Shown, read.Warnings);
+            Assert.Equal(MatrixDrawn.Shown, read.Numbers);
+            Assert.Equal(MatrixDrawn.Hidden, read.Codes);
+            Assert.Equal(MatrixDrawn.Shown, read.Warnings);
 
             // Nothing stored is the ordinary one, not a blank one: a matrix saved before any of
             // this existed opens drawn the way it was drawn then.
@@ -768,7 +768,7 @@ namespace CamelWorks.Core.Tests
             Assert.True(fresh.UpperIsLive);
             Assert.True(fresh.Echo);
             Assert.True(fresh.Spine);
-            Assert.Equal(MatrixField.Auto, fresh.Numbers);
+            Assert.Equal(MatrixDrawn.Auto, fresh.Numbers);
         }
     }
 
@@ -3296,6 +3296,131 @@ namespace CamelWorks.Core.Tests
 
             Assert.Contains(read.Board.Rows, r => r.Source.Name == "ST_SET");
             Assert.DoesNotContain(read.Board.Rows, r => r.Name == "Steel");
+        }
+
+        private static IReadOnlyList<MatrixNamePattern> Two(string first, string second) =>
+            new[] { MatrixNamePattern.Parse(first), MatrixNamePattern.Parse(second) };
+
+        [Fact]
+        public void An_assignment_beats_the_pattern_that_would_have_matched_first()
+        {
+            // Both patterns match the name. Left alone, the first wins.
+            var patterns = Two("{row} vs {column}", "{rowCode} vs {columnCode}");
+            var tests = new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") };
+
+            var auto = MatrixFromNames.Read(tests, patterns);
+
+            Assert.Contains(auto.Board.Rows, r => r.Name == "Steel");
+            Assert.All(auto.Board.Rows, r => Assert.True(string.IsNullOrEmpty(r.Code)));
+
+            var how = new MatrixReadOptions();
+
+            how.Assigned["Steel vs Ductwork"] = 2;
+
+            var chosen = MatrixFromNames.Read(tests, patterns, how);
+
+            Assert.Contains(chosen.Board.Rows, r => r.Code == "Steel");
+        }
+
+        [Fact]
+        public void Assigning_a_test_to_no_pattern_reads_it_from_its_sets()
+        {
+            var how = new MatrixReadOptions();
+
+            how.Assigned["Steel vs Ductwork"] = 0;
+
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") },
+                One("{row} vs {column}"),
+                how);
+
+            Assert.Contains(read.Board.Rows, r => r.Name == "ST_SET");
+            Assert.DoesNotContain(read.Board.Rows, r => r.Name == "Steel");
+        }
+
+        [Fact]
+        public void A_test_put_on_no_pattern_is_not_counted_as_unmatched()
+        {
+            var how = new MatrixReadOptions();
+
+            how.Assigned["Coordination check 7"] = 0;
+
+            var read = MatrixFromNames.Read(
+                new[]
+                {
+                    Test("Steel vs Ductwork", "ST_SET", "ME_SET"),
+                    Test("Coordination check 7", "ARC_SET", "STR_SET"),
+                },
+                One("{row} vs {column}"),
+                how);
+
+            Assert.DoesNotContain(read.Warnings, w => w.Contains("none of the patterns"));
+        }
+
+        [Fact]
+        public void An_assignment_the_name_does_not_fit_is_reported_against_that_test()
+        {
+            var how = new MatrixReadOptions();
+
+            how.Assigned["Coordination check 7"] = 1;
+
+            var read = MatrixFromNames.Read(
+                new[] { Test("Coordination check 7", "ARC_SET", "STR_SET") },
+                One("{row} vs {column}"),
+                how);
+
+            Assert.Contains(read.Warnings,
+                            w => w.Contains("Coordination check 7") && w.Contains("pattern 1"));
+
+            // Read from its sets rather than dropped.
+            Assert.Contains(read.Board.Rows, r => r.Name == "ARC_SET");
+        }
+
+        [Fact]
+        public void An_assignment_that_fails_does_not_fall_through_to_another_pattern()
+        {
+            var how = new MatrixReadOptions();
+
+            // Pattern 2 cannot parse it; pattern 1 could, and must not be used instead.
+            how.Assigned["Steel vs Ductwork"] = 2;
+
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") },
+                Two("{row} vs {column}", "{row} | {column}"),
+                how);
+
+            Assert.DoesNotContain(read.Board.Rows, r => r.Name == "Steel");
+            Assert.Contains(read.Board.Rows, r => r.Name == "ST_SET");
+        }
+
+        [Fact]
+        public void An_assignment_out_of_range_reads_from_the_sets_rather_than_throwing()
+        {
+            var how = new MatrixReadOptions();
+
+            how.Assigned["Steel vs Ductwork"] = 9;
+
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") },
+                One("{row} vs {column}"),
+                how);
+
+            Assert.Contains(read.Board.Rows, r => r.Name == "ST_SET");
+        }
+
+        [Fact]
+        public void An_assignment_naming_a_test_that_is_gone_is_ignored()
+        {
+            var how = new MatrixReadOptions();
+
+            how.Assigned["A test deleted last week"] = 2;
+
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") },
+                One("{row} vs {column}"),
+                how);
+
+            Assert.Contains(read.Board.Rows, r => r.Name == "Steel");
         }
 
         [Fact]
