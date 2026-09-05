@@ -52,19 +52,20 @@ namespace CamelWorks.Core.Store
     /// The advisory lease on <c>project.cwproj</c>.
     ///
     /// Advisory on purpose. It stops the ordinary accident — two coordinators editing the clash
-    /// matrix at the same time and one of them losing an afternoon — and it does not pretend to be
-    /// a distributed lock. Anything stronger would need a server, and this product does not have
-    /// one by design.
+    /// matrix at the same time and one of them losing the work — and does not pretend to be a
+    /// distributed lock. Anything stronger would need a server, which this product does not have by
+    /// design.
     ///
     /// Three properties that matter more than the mechanism:
     ///
-    /// * <b>It expires.</b> A lease that outlives a crashed process locks a team out of their own
-    ///   project until somebody deletes a file they have never heard of. So it carries a deadline
-    ///   and a later writer takes it over, saying so.
-    /// * <b>It never blocks reading.</b> Losing the lease costs the ability to SAVE settings, and
-    ///   nothing else. The board, the reports and the journals keep working, because those are
-    ///   per-writer and merge.
-    /// * <b>It refuses rather than lies on a sync root.</b> See <see cref="StorageSubstrate"/>.
+    /// * It expires. A lease that outlives a crashed process locks a team out of their own project
+    ///   until somebody deletes a file they have not heard of, so it carries a deadline and a later
+    ///   writer takes it over with a notice.
+    /// * It never blocks reading. Losing the lease costs the ability to save settings and nothing
+    ///   else; the board, the reports and the journals keep working, because those are per-writer
+    ///   and merge.
+    /// * It refuses rather than reports a false success on a sync root. See
+    ///   <see cref="StorageSubstrate"/>.
     /// </summary>
     public static class ProjectLease
     {

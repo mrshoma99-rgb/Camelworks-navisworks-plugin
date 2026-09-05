@@ -12,15 +12,13 @@ namespace CamelWorks.Core.Compare
     /// A federation as it stood at one moment: which models were loaded, and a fingerprint per
     /// element.
     ///
-    /// This is what makes comparison possible at all without both revisions being open. Navisworks
-    /// holds one version of a model at a time; the question people actually ask — "what changed
-    /// since we issued this" — is about a version that is no longer on the machine. A snapshot is
-    /// the only thing left that remembers it.
+    /// This is what makes comparison possible without both revisions being open. Navisworks holds
+    /// one version of a model at a time; the question asked — "what changed since we issued this" —
+    /// is about a version that is no longer on the machine, and a snapshot is what remembers it.
     ///
-    /// <b>Plain text, one line per element.</b> Same reasoning as the exporter's revision manifest:
-    /// it stays small, an ordinary tool can diff it, and a person can open it and see what the
-    /// comparison thinks it knows. JSON would triple the size of a file whose only structure is a
-    /// list.
+    /// Plain text, one line per element, for the same reason as the exporter's revision manifest: it
+    /// stays small, an ordinary tool can diff it, and it can be opened and read. JSON would triple
+    /// the size of a file whose only structure is a list.
     /// </summary>
     public sealed class ModelSnapshot
     {
@@ -123,11 +121,11 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// How many elements carry a shape signature.
         ///
-        /// <b>The question to ask before spending minutes reading triangles.</b> A signature on one
-        /// side alone compares against nothing: the comparison can only report an element
-        /// remodelled inside its own envelope when BOTH revisions were measured. A baseline taken
-        /// with bounding boxes only can never answer that, however the run is set up, and the
-        /// honest thing is to say so rather than to spend the time and report nothing.
+        /// The question to ask before spending minutes reading triangles. A signature on one side
+        /// alone compares against nothing: the comparison can only report an element remodelled
+        /// inside its own envelope when both revisions were measured. A baseline taken with bounding
+        /// boxes only can never answer that, so the run says so rather than spending the time and
+        /// reporting nothing.
         /// </summary>
         public int Shapes => _elements.Count(e => e.MeshHash != null);
 

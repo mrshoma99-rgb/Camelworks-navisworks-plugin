@@ -8,15 +8,14 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The app anatomy every tab renders to. See <c>CAMELWORKS_DESIGN.md</c> §3.
     ///
-    /// One shape, everywhere, and it is the shape of the suites the client named: the <b>data</b>
-    /// fills the window and lands first; the <b>options</b> sit in a compact right-hand panel,
-    /// grouped and all visible; and the <b>one action</b> sits bottom-right in a footer bar every
-    /// app shares, with its progress beside it. Read the data, set the options, press the big
-    /// button — the contract a coordinator already knows from every good dialog they use.
+    /// One shape everywhere: the data fills the window and lands first; the options sit in a compact
+    /// right-hand panel, grouped and all visible; and the one action sits bottom-right in a footer
+    /// bar every app shares, with its progress beside it. Read the data, set the options, press the
+    /// action.
     ///
     /// Built from the design-system primitives in <see cref="Ui"/> and painted by <see cref="Skin"/>
-    /// keys. There are no folds anywhere in this anatomy: an option that seems to deserve hiding
-    /// is either a default that should state itself or clutter to delete.
+    /// keys. There are no folds in this anatomy: an option that seems to deserve hiding is either a
+    /// default that should state itself or clutter to delete.
     /// </summary>
     public static class Bench
     {
@@ -117,15 +116,14 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The other anatomy: a strip, two tables side by side, and one action row.
         ///
-        /// <b>Why a second shape exists at all.</b> The setup-column surface is right for a tool
-        /// that is configured and then run once. It is wrong for a bench somebody works in for an
-        /// afternoon: the options column becomes a wall of every field the tool has, and the two
-        /// tables it exists to serve get half the window between them. Here the tables have the
-        /// window, the filters that are touched every minute sit in a strip above them, and
-        /// everything set up once lives behind a button on the action row.
+        /// The setup-column surface suits a tool that is configured and then run once. It is wrong
+        /// for a bench worked in for an afternoon: the options column becomes a wall of every field
+        /// the tool has, and the two tables it exists to serve get half the window between them.
+        /// Here the tables have the window, the filters used continuously sit in a strip above them,
+        /// and everything set up once lives behind a button on the action row.
         ///
-        /// The panes are draggable: a coordinator reading long test names wants a wide left, and
-        /// one working results wants it narrow.
+        /// The panes are draggable: reading long test names wants a wide left pane, and working
+        /// results wants it narrow.
         /// </summary>
         /// <param name="strip">The always-on filters, above both panes.</param>
         /// <param name="left">The master pane, usually built with <see cref="Pane"/>.</param>

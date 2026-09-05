@@ -9,18 +9,17 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The two registers the clash board used to keep, read once into findings.
     ///
-    /// <b>Why this exists and why it is small.</b> Before findings, the board kept two side
-    /// registers in the project file: the edits a read-only document refused, keyed by test and
-    /// result id, and the properties the host has no field for, keyed by BCF topic. Both are now
-    /// fields on the finding itself. Somebody who marked up an NWD last week has that work sitting
-    /// in those two keys, and a release that simply stopped reading them would throw an
-    /// afternoon's coordination away without saying so.
+    /// Before findings, the board kept two side registers in the project file: the edits a read-only
+    /// document refused, keyed by test and result id, and the properties the host has no field for,
+    /// keyed by BCF topic. Both are now fields on the finding itself. Anyone who marked up an NWD
+    /// before the change has that work in those two keys, and a release that stopped reading them
+    /// would discard it without saying so.
     ///
-    /// So this reads them, lays them onto the findings they belong to, and reports how many
-    /// landed. It never writes them back and never deletes them: folding is idempotent - a status
-    /// set twice is the same status, and a comment already in the trail is not added again - so
-    /// leaving the old keys where they are costs nothing and means a project opened by an older
-    /// build still finds what it expects.
+    /// So this reads them, lays them onto the findings they belong to, and reports how many landed.
+    /// It never writes them back and never deletes them: folding is idempotent — a status set twice
+    /// is the same status, and a comment already in the trail is not added again — so leaving the old
+    /// keys in place costs nothing and means a project opened by an older build still finds what it
+    /// expects.
     /// </summary>
     public static class ClashLegacy
     {

@@ -32,7 +32,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.True(roster.IsEmpty);
             Assert.Empty(roster.Parties);
-            Assert.Contains("whatever somebody types", roster.Explain(), StringComparison.Ordinal);
+            Assert.Contains("whatever is typed", roster.Explain(), StringComparison.Ordinal);
         }
 
         [Fact]

@@ -16,14 +16,13 @@ namespace CamelWorks.Core.Abstractions
         string SourcePath { get; }
 
         /// <summary>
-        /// The file the host actually has open for this model, or null when it will not say.
+        /// The file the host has open for this model, or null when it will not say.
         ///
-        /// <b>Not the same thing as <see cref="SourcePath"/>, and the difference is the point.</b>
-        /// SourcePath is the CAD file a model was first converted from — an X-drive Revit path
-        /// nobody outside the authoring office can reach, and one that names no particular
-        /// revision. This is the NWC or NWD sitting in this week's issue folder: the thing that
-        /// can be handed to somebody, and the thing that can be appended again later to look at a
-        /// revision that is no longer the current one.
+        /// Not the same as <see cref="SourcePath"/>. SourcePath is the CAD file a model was first
+        /// converted from — an authoring-office path nobody outside it can reach, naming no
+        /// particular revision. This is the NWC or NWD in this week's issue folder: the file that can
+        /// be handed to somebody, and that can be appended again later to look at a revision that is
+        /// no longer current.
         /// </summary>
         string? LoadedPath { get; }
 
@@ -69,12 +68,11 @@ namespace CamelWorks.Core.Abstractions
     /// <summary>
     /// The host document, behind a seam.
     ///
-    /// <b>The generation counter is the point of this interface.</b> A host model item is a handle
-    /// into a native tree, and appending or refreshing a model invalidates every one of them. That
-    /// happens mid-week with the board, the appearance stack and a takeoff all open — it is the
-    /// most ordinary action there is. So no screen may hold an item; screens hold
-    /// <c>(Generation, ElementKey)</c> and re-resolve when the generation moves. Cheap to build in
-    /// now; a rewrite of every tab's bindings at any later point.
+    /// The generation counter is the point of this interface. A host model item is a handle into a
+    /// native tree, and appending or refreshing a model invalidates every one of them — which
+    /// happens with the board, the appearance stack and a takeoff all open. So no screen may hold an
+    /// item; screens hold <c>(Generation, ElementKey)</c> and re-resolve when the generation moves.
+    /// Cheap to build in now, and a rewrite of every tab's bindings later.
     /// </summary>
     public interface IModelDocument
     {

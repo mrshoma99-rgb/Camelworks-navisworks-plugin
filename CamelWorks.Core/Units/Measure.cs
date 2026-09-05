@@ -20,15 +20,15 @@ namespace CamelWorks.Core.Measurement
     /// <summary>
     /// The one place a number becomes text.
     ///
-    /// Every screen and every export calls this; no feature formats a length itself. That is the
-    /// whole reason it exists — the same clash printed "2.45", "2450" and "8'-0 1/2"" on three
-    /// surfaces of one product is how a trade ends up setting out from the wrong figure, and it is
-    /// the kind of fault that never shows up in testing because each screen is individually right.
+    /// Every screen and every export calls this; no feature formats a length itself. The same clash
+    /// printed "2.45", "2450" and a feet-and-inches figure on three surfaces of one product is how a
+    /// trade sets out from the wrong figure, and it is the kind of fault that does not show up in
+    /// testing because each screen is individually right.
     ///
-    /// <b>The unit choice is a project setting, not a Navisworks display-unit follower.</b> It is
-    /// seeded once from the model's own units so that nothing has to be configured, and after that
-    /// it stays where it is: a coordinator who switches the host to millimetres to read a dimension
-    /// must not thereby reissue every report in different units from last week's.
+    /// The unit choice is a project setting rather than a follower of the Navisworks display unit.
+    /// It is seeded once from the model's own units so nothing has to be configured, and then stays:
+    /// switching the host to millimetres to read a dimension must not reissue every report in
+    /// different units.
     ///
     /// Everything in CamelWorks is held in metres internally, so this is the only conversion in the
     /// product and there is exactly one rounding step per printed number.

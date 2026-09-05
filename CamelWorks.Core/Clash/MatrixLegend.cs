@@ -64,11 +64,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// What its cells are washed with, as <c>#RRGGBB</c>, or empty for the drawing's choice.
         ///
-        /// <b>Held here rather than in the screen that draws it</b>, because a matrix's colours
-        /// are the matrix's: a practice that has always drawn clearances green expects them green
-        /// tomorrow, on the seat next to them, and in the copy they send out. Empty is not a
-        /// missing value - it means "whatever the tool would pick", which is what every matrix
-        /// starts as and most of them stay.
+        /// Held here rather than in the screen that draws it, because a matrix's colours belong to
+        /// the matrix: a practice that has always drawn clearances green expects them green on the
+        /// next seat and in the copy they send out. Empty is not a missing value; it means "whatever
+        /// the tool would pick", which is what every matrix starts as.
         /// </summary>
         public string Colour { get; }
 
@@ -138,15 +137,14 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// The entries, in the order they were put in.
+        /// The entries, in the order they were added.
         ///
-        /// <b>Not alphabetical.</b> This order is the palette's order, and the palette's order is
-        /// the number key that puts each symbol in a cell - so sorted by text, adding a symbol
-        /// that sorts early silently renumbered every key under it. A pair of hands that has
-        /// learned "2 is the fifty-millimetre clearance" over a two-hour workshop is a real thing
-        /// to break, and it breaks across every cell typed after it without a word on the screen.
-        /// Made in the order somebody made them, a new symbol lands at the end and nothing that
-        /// was learned stops being true.
+        /// Not alphabetical. This order is the palette's order, and the palette's order is the number
+        /// key that puts each symbol in a cell, so sorting by text meant that adding a symbol which
+        /// sorted early renumbered every key under it. A user who has learned that 2 is the
+        /// fifty-millimetre clearance loses that across every cell typed afterwards, with nothing on
+        /// screen to say so. In insertion order a new symbol lands at the end and the learned keys
+        /// stay correct.
         /// </summary>
         public IReadOnlyList<MatrixSymbol> Symbols => _inOrder.ToList();
 

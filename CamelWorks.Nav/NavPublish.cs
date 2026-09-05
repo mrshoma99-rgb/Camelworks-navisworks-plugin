@@ -6,15 +6,14 @@ namespace CamelWorks.Nav
     /// <summary>
     /// Writing a deliverable file out of the host.
     ///
-    /// Deliberately one small class, because every line of it is a host call that this repository
-    /// cannot test: there is no Navisworks on the machine the Core tests run on, and the only proof
-    /// these members exist is that the Windows job compiles. Keeping them together means the whole
+    /// Deliberately one small class, because every line of it is a host call this repository cannot
+    /// test: there is no Navisworks on the machine the Core tests run on, and the only proof these
+    /// members exist is that the Windows job compiles. Keeping them together means the whole
     /// unverifiable surface is four calls in one file rather than scattered through a screen.
     ///
-    /// <b>It takes the session over.</b> The Navisworks .NET API has one document, not many: there
-    /// is no call that builds a file on the side. Compiling means clearing what is open, appending
-    /// the sources, and saving - so what was open is gone, and the caller has to have said so to
-    /// somebody first. That is not a limitation worth hiding behind a progress bar.
+    /// It takes the session over. The Navisworks .NET API has one document and no call that builds a
+    /// file on the side, so compiling means clearing what is open, appending the sources and saving:
+    /// what was open is gone, and the caller has to have said so first.
     /// </summary>
     public sealed class NavPublish
     {

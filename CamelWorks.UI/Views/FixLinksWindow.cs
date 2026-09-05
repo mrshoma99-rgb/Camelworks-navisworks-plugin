@@ -13,15 +13,14 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The models this federation can no longer find, and what to do about them.
     ///
-    /// A model whose source has moved still displays: Navisworks is showing its own cached copy,
-    /// happily, with no warning anywhere. Everybody coordinates against it for a fortnight and then
-    /// discovers the geometry is from November.
+    /// A model whose source has moved still displays: Navisworks shows its own cached copy with no
+    /// warning. Coordination then continues against geometry that is weeks out of date.
     ///
-    /// <b>What Navisworks will not let a plug-in do.</b> There is no API to re-point an existing
-    /// model at a new path. The document exposes append, merge and open; nothing replaces one
-    /// model's source in place, and nothing removes a single model. So this window does the part
-    /// that can be done properly — find where the files went, and bring the right one in — and says
-    /// plainly what has to be finished by hand, rather than pretending to a repoint it cannot make.
+    /// There is no API to re-point an existing model at a new path. The document exposes append,
+    /// merge and open; nothing replaces one model's source in place, and nothing removes a single
+    /// model. So this window does the part that can be done properly — find where the files went and
+    /// bring the right one in — and states what has to be finished by hand rather than implying a
+    /// repoint it cannot perform.
     /// </summary>
     public static class FixLinksWindow
     {

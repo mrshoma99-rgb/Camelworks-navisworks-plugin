@@ -168,14 +168,14 @@ namespace CamelWorks.UI.Views
             // -----------------------------------------------------------------------------------
 
             /// <summary>
-            /// One tool's surface: the shared read and this tool's options in the setup column,
-            /// its one action at the foot, and its answer on the stage.
+            /// One tool's surface: the shared read and this tool's options in the setup column, its
+            /// one action at the foot, and its answer on the stage.
             ///
-            /// <b>Five tools, five surfaces, one read.</b> This was one window with four sections
-            /// side by side and a fifth that was built and never placed on it - so the ribbon's
-            /// Labels button opened a window with no labels on it. Each of the five has its own
-            /// surface now, and the expensive part is what they share: the selection and its
-            /// geometry are read once and every surface opened afterwards is looking at it.
+            /// Five tools, five surfaces, one read. This was one window with four sections side by
+            /// side and a fifth that was built and never placed, so the ribbon's Labels button
+            /// opened a window with no labels on it. Each of the five now has its own surface, and
+            /// the expensive part is shared: the selection and its geometry are read once and every
+            /// surface opened afterwards uses that read.
             /// </summary>
             private UIElement Build()
             {
@@ -844,7 +844,7 @@ namespace CamelWorks.UI.Views
 
                 if (_recipe.IsUnshifted)
                     _note.Children.Add(Ui.Note("Those are model coordinates. The file says so in "
-                        + "its own header, but somebody has to read it."));
+                        + "its own header."));
             }
 
             private void KeepPoints()

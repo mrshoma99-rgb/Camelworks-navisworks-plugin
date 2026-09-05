@@ -7,18 +7,17 @@ using CamelWorks.Core.Identity;
 namespace CamelWorks.Core.Compare
 {
     /// <summary>
-    /// Turns a comparison into findings, so that what changed can be triaged, assigned, signed off
-    /// and sent out as BCF like anything else.
+    /// Turns a comparison into findings, so what changed can be triaged, assigned, signed off and
+    /// sent out as BCF like anything else.
     ///
-    /// <b>This is the step that makes a comparison useful to somebody who is not the person who
-    /// ran it.</b> A change list is an observation. A finding is a thing with an owner and a
-    /// status that survives next week's run — which is what "the architect moved the core wall
-    /// again" needs to become before anybody does anything about it.
+    /// A change list is an observation; a finding is a record with an owner and a status that
+    /// survives the next run. That is what a reported change has to become before anybody acts on
+    /// it.
     ///
-    /// <b>One parent per model per kind of change, children underneath.</b> Three hundred moved
-    /// elements are one thing to decide about and three hundred places to look, and the board
-    /// exists precisely to stop the first from being drowned by the second. Status and assignee
-    /// live on the parent; children carry the locations.
+    /// One parent per model per kind of change, with children underneath. Three hundred moved
+    /// elements are one thing to decide about and three hundred places to look, and the board exists
+    /// to keep the first from being buried by the second. Status and assignee live on the parent;
+    /// children carry the locations.
     /// </summary>
     public static class CompareIssues
     {

@@ -245,23 +245,21 @@ namespace CamelWorks.Core.Clash
     }
 
     /// <summary>
-    /// Clash results as the interchange format everyone else already reads.
+    /// Clash results as the interchange format other tools already read.
     ///
     /// A report is a deliverable; this is a baseline. It is the file a reviewer opens in their own
-    /// tool, works through, and sends back, and it is the only clash format the rest of the
-    /// industry has agreed on. Without it a coordination cycle ends at a PDF, and the answers come
-    /// back as an email.
+    /// tool, works through and sends back, and it is the only clash format the industry has agreed
+    /// on. Without it a coordination cycle ends at a PDF and the answers come back as an email.
     ///
-    /// <b>Written to be read by others, and read back exactly by us.</b> The shape is the one
-    /// Navisworks writes - an exchange holding a batch test holding tests holding results - so
-    /// another tool opens it without being told anything. Our own identity travels in a smart tag,
-    /// which every reader is already obliged to skip over, so a file that goes out and comes back
-    /// lands on the same elements it left from.
+    /// Written to be read by others and read back exactly by us. The shape is the one Navisworks
+    /// writes — an exchange holding a batch test holding tests holding results — so another tool
+    /// opens it unmodified. Our own identity travels in a smart tag, which every reader is obliged
+    /// to skip, so a file that goes out and comes back lands on the same elements it left from.
     ///
-    /// <b>A file we did not write is still worth reading.</b> Without our smart tag a result cannot
-    /// be matched to elements, but its name, position, status and test are all there, and saying
-    /// "four hundred results, none of which name elements this federation has" is far more use than
-    /// refusing the file.
+    /// A file we did not write is still worth reading. Without our smart tag a result cannot be
+    /// matched to elements, but its name, position, status and test are present, and reporting "four
+    /// hundred results, none of which name elements this federation has" is more use than refusing
+    /// the file.
     /// </summary>
     public static class ClashXml
     {

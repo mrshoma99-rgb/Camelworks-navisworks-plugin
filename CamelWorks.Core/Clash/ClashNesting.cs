@@ -5,15 +5,14 @@ using System.Linq;
 namespace CamelWorks.Core.Clash
 {
     /// <summary>
-    /// Where one bucket of results is meant to sit: the trail of group names down to it, and
-    /// the results that belong there.
+    /// Where one bucket of results is meant to sit: the trail of group names down to it, and the
+    /// results that belong there.
     ///
-    /// <b>A trail, not a name.</b> The board bands its results in a chain - section, then
-    /// material, then type - and the host's clash groups may or may not be able to hold that
-    /// shape. Handing the seam the segments rather than a joined string is what lets the seam
-    /// decide: nested groups where the document takes them, one group named for the whole trail
-    /// where it does not. Either way the trail is the identity, and
-    /// <see cref="ClashTrail.Join"/> is what both sides read it back as.
+    /// A trail rather than a name. The board bands its results in a chain — section, then material,
+    /// then type — and the host's clash groups may or may not hold that shape. Handing the seam the
+    /// segments rather than a joined string lets the seam decide: nested groups where the document
+    /// takes them, one group named for the whole trail where it does not. Either way the trail is
+    /// the identity, and <see cref="ClashTrail.Join"/> is what both sides read it back as.
     /// </summary>
     public sealed class ClashGroupPath
     {
@@ -65,9 +64,9 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The one spelling of a trail of clash-group names, so a reader and a writer agree.
     ///
-    /// <b>Why a middle dot.</b> A clash group's name is written into the document and read back
-    /// out of it, and both slashes are a path separator to somebody. A middle dot is not, reads
-    /// as a separator to a person, and is what a coordinator sees on the board.
+    /// A middle dot, because a clash group's name is written into the document and read back out of
+    /// it and both slashes read as a path separator. A middle dot does not, reads as a separator to
+    /// a person, and is what appears on the board.
     /// </summary>
     public static class ClashTrail
     {

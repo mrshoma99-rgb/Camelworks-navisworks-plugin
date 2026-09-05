@@ -319,7 +319,7 @@ namespace CamelWorks.Core.Tests
                             ClashMarkers.Write(Array.Empty<ClashItem>()).Refusal!,
                             StringComparison.Ordinal);
 
-            Assert.Contains("marker of no size",
+            Assert.Contains("radius of zero",
                             ClashMarkers.Write(new[] { At("a", 0) },
                                                new MarkerRecipe { RadiusMetres = 0 }).Refusal!,
                             StringComparison.Ordinal);

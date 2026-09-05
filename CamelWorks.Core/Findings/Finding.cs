@@ -105,22 +105,21 @@ namespace CamelWorks.Core.Findings
     /// <summary>
     /// The one record every producer emits.
     ///
-    /// This is a simplification, not a feature. Clash results, hand-raised issues, health rule
-    /// failures, headroom breaches, IDS failures and set drift were each heading for their own
-    /// record, their own status field, their own board columns and their own export path — six
-    /// near-identical subsystems, and six places for the same bug. They converge here, which means
-    /// the board, the report, the BCF exporter and the journals are each written once.
+    /// This is a simplification rather than a feature. Clash results, hand-raised issues, health
+    /// rule failures, headroom breaches, IDS failures and set drift were each heading for their own
+    /// record, status field, board columns and export path — six near-identical subsystems and six
+    /// places for the same bug. They converge here, so the board, the report, the BCF exporter and
+    /// the journals are each written once.
     ///
-    /// <b>Parent and child.</b> One rule failing 400 elements is one thing to decide about and 400
-    /// things to look at. Modelling that as 400 findings drowns the board — the exact failure the
-    /// whole product exists to fix — and modelling it as one loses the ability to point at an
-    /// element. So a rule emits a parent carrying the decision, and children carrying the
-    /// locations. Status, assignee and due date live on the parent; children inherit and are never
-    /// separately triaged.
+    /// Parent and child. One rule failing 400 elements is one thing to decide about and 400 things
+    /// to look at. Modelling that as 400 findings floods the board; modelling it as one loses the
+    /// ability to point at an element. So a rule emits a parent carrying the decision and children
+    /// carrying the locations. Status, assignee and due date live on the parent; children inherit
+    /// and are never separately triaged.
     ///
-    /// <b>Identity is derived, never allocated.</b> A finding's id is a hash of what makes it that
-    /// finding, so the same problem in next week's run is the same id without anyone storing a
-    /// mapping. That is what lets status survive a re-run, and it is why the id is not a GUID.
+    /// Identity is derived, never allocated. A finding's id is a hash of what makes it that finding,
+    /// so the same problem in next week's run has the same id with no stored mapping. That is what
+    /// lets status survive a re-run, and why the id is not a GUID.
     /// </summary>
     public sealed class Finding
     {
@@ -243,11 +242,11 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// Which of this finding's fields the host has not taken.
         ///
-        /// <b>Why a set and not a flag.</b> A published NWD refuses every clash edit; an NWF takes
-        /// most and refuses the odd one. Saying "the host is behind" without saying on what would
-        /// make the sync either write everything again - doubling comments - or guess. So each
-        /// field that is waiting names itself, the sync offers exactly those, and a field that
-        /// lands stops waiting.
+        /// A set rather than a flag. A published NWD refuses every clash edit; an NWF takes most and
+        /// refuses the occasional one. Recording only that the host is behind, without recording on
+        /// what, would make the sync either write everything again — doubling comments — or guess.
+        /// So each waiting field names itself, the sync offers exactly those, and a field that lands
+        /// stops waiting.
         /// </summary>
         public ISet<string> Pending { get; } = new SortedSet<string>(StringComparer.Ordinal);
 
@@ -444,7 +443,7 @@ namespace CamelWorks.Core.Findings
         {
             if (child == null) throw new ArgumentNullException(nameof(child));
             if (ReferenceEquals(child, this)) throw new ArgumentException("a finding cannot be its own child", nameof(child));
-            if (child.IsParent) throw new ArgumentException("children are leaves; nesting beyond one level makes the board a tree nobody reads", nameof(child));
+            if (child.IsParent) throw new ArgumentException("children are leaves; nesting beyond one level is not supported", nameof(child));
 
             if (child.Status != FindingStatus.New || child.AssignedTo != null || child.DueDayNumber != null)
                 throw new ArgumentException(
@@ -458,12 +457,11 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// Take this run's locations in place of the last run's.
         ///
-        /// <b>Why replacing is safe, and keeping is not.</b> A child carries no decision of its
-        /// own — triage lives on the parent, which is the unit of decision — so nothing anybody
-        /// said is lost by swapping them. What is lost by keeping them is worse: a rule that
-        /// failed four hundred elements last week and four hundred and one today would still show
-        /// last week's four hundred, so "show me all of them" would quietly point at a stale set
-        /// and miss the one that is new.
+        /// Replacing is safe because a child carries no decision of its own: triage lives on the
+        /// parent, which is the unit of decision, so nothing recorded is lost by swapping them.
+        /// Keeping them is not safe: a rule that failed four hundred elements last week and four
+        /// hundred and one today would still show last week's four hundred, so "show me all of them"
+        /// would point at a stale set and miss the new one.
         /// </summary>
         /// <param name="children">This run's children. Null or empty leaves a leaf.</param>
         public void ReplaceChildren(IEnumerable<Finding>? children)
@@ -492,10 +490,10 @@ namespace CamelWorks.Core.Findings
         /// (see <see cref="FindingStatusLattice"/>); assignee, due date and priority are
         /// latest-wins, which is why the caller passes which one is later.
         ///
-        /// <b>Except where a field is waiting.</b> A field in <see cref="Pending"/> is one the
-        /// host has not taken yet, so the host still reports the value it had before somebody
-        /// changed it. Letting the newer read win there would revert the afternoon's work on
-        /// every press of "Read the results" — which is the whole reason the edit is held.
+        /// Fields in <see cref="Pending"/> are the exception. A pending field is one the host has
+        /// not taken, so the host still reports the value it had before the change. Letting the
+        /// newer read win there would revert the edit on every press of "Read the results", which is
+        /// why the edit is held.
         /// </summary>
         public void MergeFrom(Finding other, bool otherIsNewer)
         {

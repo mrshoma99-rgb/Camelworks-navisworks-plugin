@@ -8,20 +8,20 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The blue strip that says somebody else has this project open.
     ///
-    /// The lease has existed in Core since the store went in and nothing ever showed it. That is
-    /// the worst shape a concurrency guard can take: two coordinators edit the clash matrix at
-    /// the same time, one save quietly wins, and the other person finds out a week later when
-    /// their rules are not the ones in the report.
+    /// The lease has existed in Core since the store went in and nothing showed it, which is the
+    /// worst shape a concurrency guard can take: two coordinators edit the clash matrix at the same
+    /// time, one save wins, and the other person finds out a week later when their rules are not the
+    /// ones in the report.
     ///
-    /// So it says so, on every screen, before the work rather than after it. Three properties
+    /// So it is stated on every screen, before the work rather than after it. Three properties
     /// matter more than the mechanism:
     ///
-    /// * <b>It never blocks reading.</b> Losing the lease costs the ability to save project
-    ///   settings and nothing else. The board, the reports and the exports carry on.
-    /// * <b>It offers the way out.</b> A strip that says "you cannot save" and leaves you there is
-    ///   how people learn to delete lock files by hand. "Take it over" is one press.
-    /// * <b>It never takes a screen down.</b> A strip is the least important thing on any panel,
-    ///   so everything here is inside a try and an unreadable lease shows nothing at all.
+    /// * It never blocks reading. Losing the lease costs the ability to save project settings and
+    ///   nothing else; the board, the reports and the exports continue.
+    /// * It offers the way out. A strip that says "you cannot save" and stops there is how people
+    ///   learn to delete lock files by hand. "Take it over" is one press.
+    /// * It never takes a screen down. A strip is the least important thing on any panel, so
+    ///   everything here is inside a try and an unreadable lease shows nothing.
     /// </summary>
     internal static class LeaseStrip
     {
@@ -55,7 +55,7 @@ namespace CamelWorks.UI.Views
                 var strip = new Border();
 
                 strip.Child = Ui.Info(
-                    lease.Reason ?? "Somebody else is editing project settings.",
+                    lease.Reason ?? "Another user is editing project settings.",
                     "Take it over",
                     () => Take(strip, session, lease.Holder));
 
@@ -113,13 +113,13 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Whether somebody has read the published-NWD strip and said so.
+        /// Whether the published-NWD strip has been acknowledged.
         ///
-        /// <b>For the rest of the session, not for ever.</b> It is a standing fact about the
+        /// For the rest of the session rather than permanently. It is a standing fact about the
         /// document rather than an event, so it appears on every screen and would otherwise be
-        /// dismissed on every screen - which is how a banner stops being read at all. Kept in
-        /// memory rather than on disk because opening a different document, or coming back
-        /// tomorrow, is exactly when somebody needs telling again.
+        /// dismissed on every screen, which is how a banner stops being read. Kept in memory rather
+        /// than on disk because opening a different document, or returning the next day, is when it
+        /// needs saying again.
         /// </summary>
         private static bool _publishedRead;
 

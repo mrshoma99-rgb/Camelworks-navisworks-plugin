@@ -15,26 +15,22 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// A whole library of sets from an ordered list of properties, in one pass.
     ///
-    /// <b>Why this is a new screen rather than a moved one.</b> Every other tool the capability
-    /// sweep turned up existed behind the wrong door. These two engines - <see cref="SetTree"/>
-    /// and <see cref="SetFamily"/> - had no door at all: tests, no caller anywhere in the UI. A
-    /// coordinator who wanted a set per level, per system, per zone built them one at a time in
-    /// the Set Builder, which is exactly the afternoon this was written to remove.
+    /// A new screen rather than a moved one. The two engines behind it — <see cref="SetTree"/> and
+    /// <see cref="SetFamily"/> — had tests and no caller anywhere in the UI. A coordinator who
+    /// wanted a set per level, per system or per zone built them one at a time in the Set Builder.
     ///
-    /// <b>Two generators, and the tick count picks between them.</b> One property is a flat family
-    /// - one set per level, nothing nested - and there <see cref="SetFamily"/> is the better
-    /// engine, because it can be argued with: every proposed set has a count beside it and a tick,
-    /// so the "Level 99, 2 elements" ones can be dropped before anything is made, and a name the
-    /// library already has starts unticked rather than quietly overwriting. Two or more properties
-    /// nest into folders, which is <see cref="SetTree"/>. Nobody is asked which they want; ticking
-    /// one property or three is already the answer.
+    /// Two generators, chosen by the tick count. One property is a flat family — one set per level,
+    /// nothing nested — and there <see cref="SetFamily"/> is the better engine, because every
+    /// proposed set has a count and a tick beside it, so the small or spurious ones can be dropped
+    /// before anything is made, and a name the library already has starts unticked rather than
+    /// overwriting. Two or more properties nest into folders, which is <see cref="SetTree"/>.
+    /// Ticking one property or three is already the answer, so nobody is asked which engine to use.
     ///
-    /// <b>Not the same as Organise Sets.</b> That reshapes a library that already exists into the
-    /// folders the properties imply. This makes the library. They share the publishing path and
-    /// nothing else.
+    /// Not the same as Organise Sets, which reshapes an existing library into the folders the
+    /// properties imply. This makes the library. They share the publishing path and nothing else.
     ///
-    /// Steps, because the order is real: the properties on offer come out of the model, and
-    /// nothing can be costed before the properties are chosen.
+    /// Steps, because the order is real: the properties on offer come out of the model, and nothing
+    /// can be costed before the properties are chosen.
     /// </summary>
     public static class SetLibraryWindow
     {

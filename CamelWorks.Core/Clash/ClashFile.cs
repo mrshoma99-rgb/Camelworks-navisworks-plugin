@@ -6,16 +6,14 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Reads a clash file, whichever of the two it is.
     ///
-    /// <b>Why both.</b> BCF is what this product writes now, and it is the right choice: it is
-    /// what the rest of the industry reads, so a clash file is one the architect can open in their
-    /// own tool. But every baseline and markup written before that change is a Navisworks clash
-    /// XML sitting in somebody's project folder, and a coordinator who upgrades should not find
-    /// last month's review round unreadable. So the reader takes either, and the writer only ever
-    /// makes the new one.
+    /// BCF is what this product writes now, because it is what the rest of the industry reads. But
+    /// every baseline and markup written before that change is a Navisworks clash XML in somebody's
+    /// project folder, and upgrading should not make last month's review round unreadable. So the
+    /// reader takes either and the writer only makes the new one.
     ///
-    /// <b>Told apart by content, not by name.</b> A .bcfzip is a zip and begins <c>PK</c>; clash
-    /// XML is text. Extensions get renamed, mailed, and re-saved by tools with opinions, and a
-    /// reader that trusts one is a reader that refuses a good file.
+    /// Told apart by content rather than by name. A .bcfzip is a zip and begins <c>PK</c>; clash XML
+    /// is text. Extensions get renamed, mailed and re-saved by other tools, and a reader that trusts
+    /// the extension refuses good files.
     /// </summary>
     public static class ClashFile
     {

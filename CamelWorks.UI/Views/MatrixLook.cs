@@ -7,24 +7,21 @@ using CamelWorks.Core.Clash;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// How the matrix is drawn, as something somebody can change.
+    /// How the matrix is drawn, exposed as settings.
     ///
-    /// <b>Every one of these was a decision somebody else made.</b> Which triangle is the live
-    /// one, whether the dead half echoes, what colour a clearance is, whether the code gutter is
-    /// there - all of them defensible, none of them universal, and all of them baked into the
-    /// drawing where nobody could reach them. A practice that has drawn its matrices in the lower
-    /// triangle for fifteen years does not want to be told its sheet is upside down, and one
-    /// whose set names already carry the discipline code does not want the column.
+    /// Each of these was previously a fixed decision inside the drawing code: which triangle is the
+    /// live one, whether the unused half echoes, what colour a clearance is, whether the code gutter
+    /// is present. All defensible, none universal. A practice that has drawn its matrices in the
+    /// lower triangle for fifteen years should not be told its sheet is inverted, and one whose set
+    /// names already carry the discipline code does not want the column.
     ///
-    /// So they are asked here, in one window, and saved with the matrix rather than with the
-    /// seat - because they are properties of the matrix that gets sent out, not of the machine it
-    /// was last opened on. Nothing in here changes a single test: a pair is written to both cells
-    /// whichever half it was put in, and a hidden number is still the number the test is named
-    /// after.
+    /// So they are asked here, in one window, and saved with the matrix rather than with the seat,
+    /// because they are properties of the matrix that gets issued rather than of the machine it was
+    /// last opened on. None of them changes a test: a pair is written to both cells whichever half
+    /// it was entered in, and a hidden number is still the number the test is named after.
     ///
-    /// <b>Everything here is about the whole grid.</b> What one symbol means and what colour it
-    /// is are settings of that symbol, and they live on the palette with it - a per-item setting
-    /// filed under general ones is one nobody finds.
+    /// Everything here applies to the whole grid. What one symbol means and what colour it is are
+    /// settings of that symbol and live on the palette with it.
     /// </summary>
     internal static class MatrixLook
     {
@@ -48,11 +45,11 @@ namespace CamelWorks.UI.Views
         {
             if (style == null || onChanged == null) return;
 
-            // <b>Modeless, and out of the way.</b> Every choice in here is judged by looking at
-            // the grid behind it - which is the reason it has no Cancel - and it was then opened
-            // modal and centred on the owner, parked on top of the one thing it wants you to
-            // see. It sits to the right of the window it changes, and the grid stays live under
-            // it, so a colour is chosen by watching two hundred cells take it.
+            // Modeless, and offset from the grid. Every choice here is judged by looking at the
+            // grid behind it, which is why it has no Cancel, and it was previously opened modal and
+            // centred on the owner, covering the thing it is about. It now sits to the right of the
+            // window it changes and the grid stays live under it, so a colour is chosen by watching
+            // the cells take it.
             var window = new Window
             {
                 Title = "CamelWorks - How the matrix is drawn",
@@ -186,8 +183,7 @@ namespace CamelWorks.UI.Views
                     Fielded(style.Warnings, at => { style.Warnings = at; onChanged(); }),
                     "On its own, the room is kept only when some line on that axis needs it."),
 
-                Ui.Small("The name is always drawn. A line with nothing to call it is not a line "
-                         + "anybody can act on.")));
+                Ui.Small("The name is always drawn; an unnamed line cannot be identified.")));
 
             into.Children.Add(Ui.Small("What one symbol means and what colour it is belong to that "
                                        + "symbol: they are on the palette, under the pencil beside "
@@ -224,13 +220,12 @@ namespace CamelWorks.UI.Views
         {
             var row = new WrapPanel { Margin = new Thickness(0, 1, 0, 0) };
 
-            // <b>The strip marks what is chosen, so the strip is what has to move the mark.</b>
-            // It was left to whoever opened it to redraw the form afterwards, and neither of the
-            // two callers did it: the legend's form rebuilds itself from its third child down and
-            // keeps this one, and the drawing window rebuilds the whole page - from inside this
-            // swatch's own click, which takes the swatch away while its event is still running.
-            // Between them a press moved the ring in neither, which is a strip of colours that
-            // reads as dead. It keeps its own swatches now and re-marks them itself.
+            // The strip marks what is chosen, so the strip re-marks its own swatches. This was left
+            // to whoever opened it to redraw afterwards, and neither caller did: the legend's form
+            // rebuilds from its third child down and keeps this one, and the drawing window rebuilds
+            // the whole page from inside this swatch's own click, which removes the swatch while its
+            // event is still running. Between them a press moved the ring in neither, so the strip
+            // read as inert.
             var swatches = new System.Collections.Generic.List<Action<string>>();
 
             void Press(string colour)

@@ -34,11 +34,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// This project's own rules, both halves, as one document to check against.
         ///
-        /// <b>Why the check cannot just open a file.</b> A rule scoped to one of this model's own
-        /// sets has no place in an IDS file, so a rule set written here is only ever partly a
-        /// file. A check that read files and nothing else could never run the very rules this
-        /// window exists to write - the feature would be decorative. So the run reads the project,
-        /// where both halves are, and the file path stays for a client's IDS.
+        /// The check cannot simply open a file. A rule scoped to one of this model's own sets has no
+        /// place in an IDS file, so a rule set written here is only partly a file. A check that read
+        /// files and nothing else could not run the rules this window exists to write. So the run
+        /// reads the project, where both halves are, and the file path remains for a client's IDS.
         /// </summary>
         /// <param name="session">The open document.</param>
         /// <param name="problem">Why there is no rule set, or null.</param>
@@ -68,7 +67,7 @@ namespace CamelWorks.UI.Views
             if (document.Specifications.Count == 0)
             {
                 problem = "This project has no rules of its own yet. Write them in Model Audit's "
-                          + "IDS tab, or point this at a rule file somebody sent.";
+                          + "IDS tab, or point this at a supplied rule file.";
 
                 return null;
             }
@@ -79,13 +78,12 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Where the rules an IDS file cannot hold live, beside the draft.
         ///
-        /// <b>Two keys, and no rule in both.</b> The draft is kept as IDS because the format is
-        /// the point - what the project holds is already a file another tool can read - and a rule
-        /// scoped to one of this model's own sets has no place in that format. Writing only the
-        /// portable half would lose the rest the next time somebody opened the window, which is
-        /// silent data loss and the one outcome worth any amount of code to avoid. So the scoped
-        /// rules are kept here, in this window's own shape, and the two halves are read back
-        /// together.
+        /// Two keys, with no rule in both. The draft is kept as IDS because the format is the point:
+        /// what the project holds is already a file another tool can read. A rule scoped to one of
+        /// this model's own sets has no place in that format, and writing only the portable half
+        /// would lose the rest the next time the window was opened, which is silent data loss. So
+        /// the scoped rules are kept here, in this window's own shape, and the two halves are read
+        /// back together.
         /// </summary>
         public const string ScopedKey = "idsScopedRules";
 
@@ -1217,13 +1215,13 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Write the rules out, in one of the two kinds there are.
+            /// Write the rules out, in one of the two available forms.
             ///
-            /// <b>Why it is a choice and not a rule.</b> An IDS is worth writing because everybody
+            /// A choice rather than a fixed behaviour. An IDS is worth writing because every tool
             /// reads one, and a rule that says who it is about in this model's own terms cannot be
             /// in one. So a project with both kinds of rule can send a file everyone opens without
             /// those rules, or a file with all of them that only CamelWorks opens. Which is right
-            /// depends entirely on who it is going to, and that is not something this code knows.
+            /// depends on the recipient.
             /// </summary>
             /// <param name="everything">
             /// True for the BIMCamel rule set, which carries the scoped rules too.
@@ -1325,8 +1323,8 @@ namespace CamelWorks.UI.Views
                 if (packed.Scoped > 0)
                     _output.Children.Add(Ui.Note(
                         "The " + Ui.Count(packed.Scoped, "scoped rule") + " in it name sets by "
-                        + "name, so on somebody else's model they apply to whatever their sets of "
-                        + "those names hold - and a run says plainly when a set is not there. "
+                        + "name, so against another model they apply to whatever that model's sets of "
+                        + "those names hold. A run reports any set that is not present. "
                         + "That is what makes one rule set runnable against several models."));
 
                 _output.Children.Add(Ui.Actions(Ui.Quiet("Check it",

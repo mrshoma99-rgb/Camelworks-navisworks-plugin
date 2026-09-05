@@ -10,11 +10,10 @@ namespace CamelWorks.Nav
     /// The document's saved viewpoints.
     ///
     /// Identified by their folder path rather than by index. The host's own collection renumbers
-    /// whenever anything is added or removed, so an index captured a moment ago points somewhere
-    /// else by the time it is used — which is how a "go to viewpoint" button ends up showing the
-    /// wrong view.
+    /// whenever anything is added or removed, so an index captured a moment ago points elsewhere by
+    /// the time it is used, which is how a "go to viewpoint" button shows the wrong view.
     ///
-    /// <b>Main thread only.</b>
+    /// Main thread only.
     /// </summary>
     public sealed class NavViewpointStore : IViewpointStore
     {

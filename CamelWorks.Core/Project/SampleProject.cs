@@ -10,20 +10,18 @@ using CamelWorks.Core.Store;
 namespace CamelWorks.Core.Project
 {
     /// <summary>
-    /// A worked project file, for looking at rather than for working in.
+    /// A worked project file, for reading rather than for working in.
     ///
     /// Every screen in CamelWorks runs with nothing set up, which is the point of the product and
-    /// also the reason nobody ever sees what a set-up project looks like. Somebody who has used it
-    /// for a fortnight and is ready to put their firm's parties, priorities and codes in has no
-    /// example of the shape those take, and the honest answer — "fill in the Profile tab" — tells
-    /// them what to press rather than what to write.
+    /// also why nobody sees what a set-up project looks like. Somebody ready to enter their firm's
+    /// parties, priorities and codes has no example of the shape those take, and "fill in the
+    /// Profile tab" says what to press rather than what to write.
     ///
-    /// So: a real project file, with a real coordination setup in it, that opens in the Project tab
-    /// like any other. Fictional job, fictional firms, no client's data.
+    /// So: a real project file with a real coordination setup in it, which opens in the Project tab
+    /// like any other. Fictional job, fictional firms, no client data.
     ///
-    /// <b>It is a file, not a mode.</b> Nothing in the product treats this differently from a
-    /// project somebody made, which is what makes it worth reading: everything in it can be
-    /// changed, deleted or copied into a real job.
+    /// It is a file rather than a mode. Nothing in the product treats it differently from a project
+    /// somebody made, so everything in it can be changed, deleted or copied into a real job.
     /// </summary>
     public static class SampleProject
     {
@@ -126,7 +124,7 @@ namespace CamelWorks.Core.Project
             library.Put(new SavedSet("set-1", "Ductwork",
                 SetExpression.Where("Element", "Category", SetOperator.Equals, "Ducts"))
             {
-                Note = "A rule, not a list, so it still covers the ducts somebody adds tomorrow.",
+                Note = "A rule, not a list, so it also covers ducts added later.",
             });
 
             library.Put(new SavedSet("set-2", "Level 01 structure",
@@ -201,7 +199,7 @@ namespace CamelWorks.Core.Project
                 new string('=', JobName.Length),
                 string.Empty,
                 "A sample CamelWorks project file. The job, the firms and the models in it are made "
-                + "up; nothing here came from anybody's project.",
+                + "up; none of it comes from a real project.",
                 string.Empty,
                 "Open a model, save it in this folder, and rename this file to match the model's "
                 + "name to have CamelWorks pick it up. Or just read it: it is JSON, and every "

@@ -14,7 +14,7 @@ namespace CamelWorks.Core.Clash
 
         internal MatrixNameMatch(IReadOnlyDictionary<string, string> held) { _held = held; }
 
-        /// <summary>What a token caught, or empty when the pattern does not carry it.</summary>
+        /// <summary>The value for a token, or empty when the pattern does not use it.</summary>
         /// <param name="token">The token, with or without its braces.</param>
         public string Value(string? token)
         {
@@ -23,7 +23,7 @@ namespace CamelWorks.Core.Clash
             return _held.TryGetValue(named, out var said) ? said : string.Empty;
         }
 
-        /// <summary>Every token the pattern caught something for.</summary>
+        /// <summary>Every token that captured a value.</summary>
         public IReadOnlyDictionary<string, string> Held => _held;
 
         /// <inheritdoc />
@@ -32,27 +32,16 @@ namespace CamelWorks.Core.Clash
     }
 
     /// <summary>
-    /// A test-naming pattern, read backwards: what a name has to look like, and what each part
-    /// of it means.
+    /// A test-naming pattern used in reverse: matches a test name and extracts the values its
+    /// parts stand for.
     ///
-    /// <b>The tool was guessing at something the user already knows.</b> A matrix read out of a
-    /// document was built from what each test is <i>between</i> - the saved sets on its two sides
-    /// - because that is the one thing the host will always answer. But a job's test names are
-    /// not decoration: "ST-01 Steel vs ME-04 Ductwork (B)" carries the discipline codes, the
-    /// numbers, the two names as the coordinator writes them and which kind of test it is, all
-    /// laid out in an order that job agreed on months ago. Reading a matrix out of the sets threw
-    /// every one of those away and left a grid named after whatever the sets happened to be
-    /// called, which is usually not what anybody puts in front of a client.
+    /// The matrix generates test names from <see cref="MatrixNaming.Tokens"/>. The same token
+    /// list is used here to parse names, so the two directions cannot diverge. Reading names
+    /// recovers the discipline codes, numbers, folders and symbols a project already encodes in
+    /// them, which reading the saved sets alone does not.
     ///
-    /// <b>And the same tokens already exist, pointing the other way.</b> The matrix builds names
-    /// out of <see cref="MatrixNaming.Tokens"/>; this reads them back out. A person who has told
-    /// the tool how their tests are named has told it how to read them, and the two halves cannot
-    /// drift because they are the same list of tokens.
-    ///
-    /// <b>More than one pattern, because a job has more than one convention.</b> Tests set up in
-    /// March and tests set up in September are named differently on every real project, and
-    /// asking somebody to pick the one pattern that fits both is asking them to rename a hundred
-    /// tests first. The patterns are tried in order and the first that fits a name claims it.
+    /// Several patterns can be supplied; they are matched in order and the first match wins,
+    /// since projects usually accumulate more than one naming convention.
     /// </summary>
     public sealed class MatrixNamePattern
     {
@@ -64,24 +53,21 @@ namespace CamelWorks.Core.Clash
             Pattern = pattern; _reading = reading; Tokens = tokens; Trouble = trouble;
         }
 
-        /// <summary>The pattern as it was written.</summary>
+        /// <summary>The pattern text as supplied.</summary>
         public string Pattern { get; }
 
-        /// <summary>Which tokens it carries, in the order they appear.</summary>
+        /// <summary>The tokens it uses, in order of appearance.</summary>
         public IReadOnlyList<string> Tokens { get; }
 
-        /// <summary>Why it cannot be used, or null when it can.</summary>
+        /// <summary>Why the pattern is unusable, or null when it is valid.</summary>
         public string? Trouble { get; }
 
-        /// <summary>Whether it can be matched against anything.</summary>
+        /// <summary>Whether the pattern compiled.</summary>
         public bool IsUsable => _reading != null;
 
         /// <summary>
-        /// Read a pattern, saying why rather than throwing when it cannot be used.
-        ///
-        /// A person types a pattern a character at a time, so most of what this sees is halfway
-        /// written. What comes back is either something that matches names or a sentence saying
-        /// what is wrong with it, and the window puts that sentence under the box.
+        /// Parses a pattern. Never throws: an unusable pattern comes back with
+        /// <see cref="Trouble"/> set, because the editor calls this on every keystroke.
         /// </summary>
         /// <param name="pattern">The pattern.</param>
         public static MatrixNamePattern Parse(string? pattern)
@@ -111,31 +97,27 @@ namespace CamelWorks.Core.Clash
 
                 if (shut < 0)
                     return new MatrixNamePattern(said, null, tokens,
-                        "There is a “{” with no “}” after it.");
+                        "Unclosed “{”.");
 
                 var named = said.Substring(at + 1, shut - at - 1).Trim();
 
                 if (!Known(named))
                     return new MatrixNamePattern(said, null, tokens,
-                        "“{" + named + "}” is not one of the tokens.");
+                        "“{" + named + "}” is not a known token.");
 
-                // <b>Two tokens with nothing between them cannot be told apart.</b> "{row}{column}"
-                // over "SteelDuctwork" has no answer - every split of it is as good as every
-                // other - so it is refused here rather than matched arbitrarily and quietly
-                // producing a matrix of nonsense.
+                // Adjacent tokens with no separator are ambiguous: "{row}{column}" against
+                // "SteelDuctwork" has no determinate split. Rejected rather than matched
+                // arbitrarily.
                 if (lastWasToken)
                     return new MatrixNamePattern(said, null, tokens,
-                        "“{" + named + "}” follows another token with nothing between "
-                        + "them, so there is no way to tell where one ends and the next begins. "
-                        + "Put a space, a dash or a word between them.");
+                        "“{" + named + "}” follows another token directly. Separate them with "
+                        + "a space, a dash or other text so the boundary is defined.");
 
-                // A token twice over is a name that repeats something, which is fine to write and
-                // impossible to read back: the second one would have to agree with the first, and
-                // nothing here can make it.
+                // A repeated token cannot be parsed: the second occurrence would have to agree
+                // with the first, which regex alternation cannot enforce here.
                 if (!seen.Add(named))
                     return new MatrixNamePattern(said, null, tokens,
-                        "“{" + named + "}” is in this pattern twice, and a name can "
-                        + "only be read one way.");
+                        "“{" + named + "}” appears twice. Each token may be used once.");
 
                 tokens.Add(named);
                 regex.Append("(?<").Append(named).Append('>').Append(Shape(named)).Append(')');
@@ -148,13 +130,11 @@ namespace CamelWorks.Core.Clash
 
             if (tokens.Count == 0)
                 return new MatrixNamePattern(said, null, tokens,
-                    "This pattern has no tokens in it, so it would read nothing out of a name.");
+                    "No tokens: this pattern would extract nothing.");
 
             try
             {
-                // Case-insensitive, because a convention written as "vs" and typed as "VS" is the
-                // same convention, and a matrix that dropped forty tests over that would be
-                // debugged by eye against a wall of names.
+                // Case-insensitive: "vs" and "VS" are the same separator in practice.
                 return new MatrixNamePattern(said,
                     new Regex(regex.ToString(),
                               RegexOptions.CultureInvariant | RegexOptions.IgnoreCase),
@@ -166,7 +146,7 @@ namespace CamelWorks.Core.Clash
             }
         }
 
-        /// <summary>What a name says, or null when this pattern does not fit it.</summary>
+        /// <summary>The extracted values, or null when the name does not match.</summary>
         /// <param name="name">The test's name.</param>
         public MatrixNameMatch? Match(string? name)
         {
@@ -188,23 +168,22 @@ namespace CamelWorks.Core.Clash
             return new MatrixNameMatch(held);
         }
 
-        /// <summary>How many of a list of names this pattern fits.</summary>
+        /// <summary>How many of the given names this pattern matches.</summary>
         /// <param name="names">The names.</param>
         public int Fits(IEnumerable<string?>? names) =>
             (names ?? Array.Empty<string?>()).Count(one => Match(one) != null);
 
-        /// <summary>Whether a token is one the naming vocabulary has.</summary>
+        /// <summary>Whether a token name is in <see cref="MatrixNaming.Tokens"/>.</summary>
         /// <param name="named">The token, without braces.</param>
         public static bool Known(string? named) =>
             MatrixNaming.Tokens.Any(one => string.Equals(one.Token, "{" + (named ?? string.Empty) + "}",
                                                          StringComparison.Ordinal));
 
         /// <summary>
-        /// What a token is allowed to swallow.
+        /// The sub-expression a token compiles to.
         ///
-        /// The numbers are digits, which is what lets "{rowNumber} {row}" split "01 Steel" at the
-        /// space rather than anywhere. Everything else takes as little as it can, so the literal
-        /// after it decides where it stops.
+        /// Numeric tokens match digits so "{rowNumber} {row}" splits "01 Steel" at the space.
+        /// Everything else is lazy, so the following literal determines where it ends.
         /// </summary>
         /// <param name="named">The token, without braces.</param>
         private static string Shape(string named) => named switch
@@ -219,14 +198,14 @@ namespace CamelWorks.Core.Clash
         /// <inheritdoc />
         public override string ToString() => Pattern;
 
-        /// <summary>An example of what this pattern would read, for a preview.</summary>
+        /// <summary>The name this pattern would generate for a cell, for previewing.</summary>
         /// <param name="row">A row to stand in.</param>
         /// <param name="column">A column to stand in.</param>
         /// <param name="symbol">A symbol to stand in.</param>
         public string Example(MatrixLine row, MatrixLine column, MatrixSymbol? symbol) =>
             MatrixNaming.Fill(Pattern, row, column, symbol, 1);
 
-        /// <summary>The number a token caught, or nought.</summary>
+        /// <summary>The numeric value of a token, or 0 when absent or unparseable.</summary>
         /// <param name="match">What the name said.</param>
         /// <param name="token">The token, without braces.</param>
         public static double Number(MatrixNameMatch? match, string token)

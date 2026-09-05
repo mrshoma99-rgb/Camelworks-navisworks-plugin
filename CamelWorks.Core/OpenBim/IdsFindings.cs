@@ -10,21 +10,20 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// IDS specifications a model failed, as findings.
     ///
-    /// <b>What IDS had and what it did not.</b> The checker gives a verdict per specification and
-    /// a violation per element, and the tab could select the failures and write a workbook. What
-    /// it could not do was remember anything: run it on Monday, agree with the architect that the
-    /// forty doors without a fire rating are being scheduled separately, run it again on Tuesday,
-    /// and the tab says forty again with nowhere to have said so.
+    /// The checker gives a verdict per specification and a violation per element, and the tab could
+    /// select the failures and write a workbook. What it could not do was remember anything: run it,
+    /// agree with the architect that the forty doors without a fire rating are being scheduled
+    /// separately, run it again, and the tab reports forty again with nowhere that agreement was
+    /// recorded.
     ///
-    /// <b>Identity is the specification, not the count.</b> A specification is the unit somebody
-    /// argues about — "every door carries a fire rating" — and the number failing it is this run's
-    /// answer, not a different requirement. Its own identifier is used when the file gives one,
-    /// because a specification can be renamed without becoming a different requirement.
+    /// Identity is the specification rather than the count. A specification is the unit that is
+    /// argued about — "every door carries a fire rating" — and the number failing it is this run's
+    /// answer. Its own identifier is used when the file gives one, because a specification can be
+    /// renamed without becoming a different requirement.
     ///
-    /// <b>A vacuous pass is not a pass.</b> A specification that applied to nothing is reported by
-    /// the checker as its own state, and it stays one here: "nothing in this model is a door" is a
-    /// finding about the model, and burying it in a green tick is how a requirement quietly stops
-    /// being checked.
+    /// A vacuous pass is not a pass. A specification that applied to nothing is reported by the
+    /// checker as its own state and stays one here: "nothing in this model is a door" is a finding
+    /// about the model, and burying it in a green tick is how a requirement stops being checked.
     /// </summary>
     public static class IdsFindings
     {

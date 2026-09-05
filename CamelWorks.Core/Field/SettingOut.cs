@@ -256,19 +256,17 @@ namespace CamelWorks.Core.Field
     /// <summary>
     /// The model, as points somebody can set out on site.
     ///
-    /// The last hundred metres of a coordination job. Everything upstream produces a model that is
-    /// right; this produces the file the engineer loads into a total station and walks the floor
-    /// with. Doing it by hand is somebody reading coordinates off a screen into a spreadsheet, and
-    /// the transcription error that follows is discovered by the steel not fitting.
+    /// Everything upstream produces a model that is right; this produces the file the engineer loads
+    /// into a total station. Doing it by hand means reading coordinates off a screen into a
+    /// spreadsheet, and the transcription error is discovered by the steel not fitting.
     ///
-    /// <b>Site coordinates, not model coordinates.</b> A model's origin is almost never the site's,
-    /// and it is almost never square to the site grid either. So the offset and the project angle
-    /// are stated, applied, and written into the file's own header - because a setting-out file
-    /// that does not say what it is referenced to is a file nobody on site is allowed to use.
+    /// Site coordinates, not model coordinates. A model's origin is rarely the site's and is rarely
+    /// square to the site grid, so the offset and the project angle are stated, applied and written
+    /// into the file's own header: a setting-out file that does not say what it is referenced to
+    /// cannot be used on site.
     ///
-    /// <b>Northing before easting.</b> The order every instrument expects and the one everybody
-    /// gets wrong the first time, which is why the columns are named rather than positional in
-    /// everything this writes.
+    /// Northing before easting, which is the order every instrument expects. The columns are named
+    /// rather than positional in everything this writes.
     /// </summary>
     public static class SettingOut
     {

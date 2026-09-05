@@ -10,11 +10,11 @@ namespace CamelWorks.Core.Store
     ///
     /// Journals are append-only and per-writer: two people editing the same board write to two
     /// different files and never contend for one. The materialised view is derived by folding them
-    /// together, which means a lost update is impossible by construction rather than by locking.
+    /// together, so a lost update is impossible by construction rather than by locking.
     ///
-    /// <b>The timestamp is supplied, never read from the clock here.</b> A fold that reads the
-    /// clock is a fold that cannot be tested, and the ordering it produces would depend on when it
-    /// happened to run. Callers stamp entries at the moment of the edit.
+    /// The timestamp is supplied rather than read from the clock here. A fold that reads the clock
+    /// cannot be tested, and the ordering it produced would depend on when it ran. Callers stamp
+    /// entries at the moment of the edit.
     /// </summary>
     public sealed class JournalEntry
     {
@@ -159,19 +159,19 @@ namespace CamelWorks.Core.Store
     /// <summary>
     /// Folds every writer's journal into one materialised view.
     ///
-    /// Two classes of field, and the distinction is the whole design:
+    /// Two classes of field, and the distinction is the design:
     ///
-    /// <b>Scalars</b> — status, assignee, due date, priority — fold to a single winner:
-    /// latest timestamp wins, ties broken by author id. One value, one winner, and a later edit
-    /// replaces an earlier one because that is what "I changed the assignee" means.
+    /// Scalars — status, assignee, due date, priority — fold to a single winner: latest timestamp
+    /// wins, ties broken by author id. A later edit replaces an earlier one, which is what changing
+    /// the assignee means.
     ///
-    /// <b>Comments</b> — union by id, never a winner. Applying latest-wins to comments would mean
-    /// two people commenting while offline lose one of the two, silently, with no trace that
-    /// anything was said. A comment thread is not a value being overwritten; it is a set being
-    /// added to. This distinction was missed in an earlier design and is the reason the field is
-    /// carried as its own class rather than as one more scalar.
+    /// Comments — union by id, with no winner. Latest-wins on comments would mean two people
+    /// commenting while offline lose one of the two, silently. A comment thread is a set being added
+    /// to rather than a value being overwritten. This was missed in an earlier design and is why the
+    /// field is carried as its own class rather than as one more scalar.
     ///
-    /// The fold is pure: same entries in, same view out, whatever order the files were read in.
+    /// The fold is pure: the same entries in give the same view out, whatever order the files were
+    /// read in.
     /// </summary>
     public static class JournalFold
     {

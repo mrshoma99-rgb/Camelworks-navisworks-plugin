@@ -9,19 +9,17 @@ namespace CamelWorks.Core.Project
     /// <summary>
     /// What a tool was last told, so it does not ask again.
     ///
-    /// Most of what "usable on day two" means. A tool that starts empty every morning is a tool
-    /// somebody retypes a path into every morning - the workbook, the column numbers, the
-    /// clearance, the naming pattern - and after the third time they stop using the tool and go
-    /// back to doing it by hand.
+    /// A tool that starts empty every morning is one that a path is retyped into every morning — the
+    /// workbook, the column numbers, the clearance, the naming pattern — and after a few times it
+    /// stops being used.
     ///
-    /// <b>In the project file, not in the user's profile.</b> Which is the difference between a
+    /// Kept in the project file rather than the user's profile, which is the difference between a
     /// habit and a setting: the column numbers for this job's schedule are about this job, and the
-    /// next person to open the federation should find them already filled in. A path remembered
-    /// per machine helps one person; a path remembered per project helps the team.
+    /// next person to open the federation should find them filled in. A path remembered per machine
+    /// helps one person; a path remembered per project helps the team.
     ///
-    /// <b>Nothing here is required.</b> Every read takes a fallback, and a project that has never
-    /// used a tool gives back exactly the fallback - so a tool works the first time, before there
-    /// is anything to remember.
+    /// Nothing here is required. Every read takes a fallback, and a project that has never used a
+    /// tool returns exactly the fallback, so a tool works the first time.
     /// </summary>
     public sealed class ToolMemory
     {

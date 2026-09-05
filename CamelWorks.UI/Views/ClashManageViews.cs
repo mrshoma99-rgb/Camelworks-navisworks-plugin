@@ -18,19 +18,17 @@ using CamelWorks.Nav;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The results, the way the engine holds them — and the pen to work them.
+    /// The results as the engine holds them, with the tools to work them.
     ///
-    /// The Board derives issues; this tab manages results. They are different jobs. A coordinator
-    /// in a Friday meeting is asked "what is the status of clash 214 in test A2B4", and the answer
-    /// has to be read, changed, commented and assigned <i>in the model's own clash data</i>, so
-    /// that the native clash window, the exports and every other tool see the same thing.
+    /// The Board derives issues; this tab manages results. A coordinator asked for the status of a
+    /// specific result must be able to read, change, comment on and assign it <i>in the model's
+    /// own clash data</i>, so the native clash window, the exports and other tools see the same
+    /// values.
     ///
-    /// <b>Two sources, one workbench.</b> From the model, edits write straight through the seam.
-    /// From a file, the same verbs mark up the file's own data — which is the whole review round:
-    /// a Manage seat exports the baseline, every Simulate seat opens it here, marks, comments and
-    /// assigns, and saves a markup beside it; the Manage seat then reads the markups back in and
-    /// the model carries everyone's answers. Simulate has no clash engine, and for the file leg it
-    /// does not need one.
+    /// Two sources, one workbench. From the model, edits write through the seam. From a file, the
+    /// same actions mark up the file's own data, which supports the review round: a Manage seat
+    /// exports the baseline, Simulate seats open it here and mark it up, and the Manage seat reads
+    /// the markups back. Simulate has no clash engine and the file leg does not require one.
     /// </summary>
     public static class ClashManageViews
     {
@@ -52,13 +50,12 @@ namespace CamelWorks.UI.Views
         private static readonly List<PropColumn> _columns = new List<PropColumn>();
 
         /// <summary>
-        /// The finding behind each row that was read from the model, by test and result id.
+        /// The finding behind each row read from the model, keyed by test and result id.
         ///
-        /// <b>An index, not a store.</b> The findings themselves live beside the project and are
-        /// the record of what somebody decided - the status a published NWD refused, the priority
-        /// a reviewer's tool set that the host has no field for, the trail. This is only the way
-        /// back from a row on screen to the finding it is a view of, rebuilt on every read because
-        /// the host reissues its result ids whenever it feels like it.
+        /// An index, not a store. The findings live beside the project and hold what was decided:
+        /// a status a published NWD refused, a priority the host has no field for, the comment
+        /// trail. This maps a row on screen back to its finding, and is rebuilt on every read
+        /// because the host reissues result ids.
         /// </summary>
         private static Dictionary<string, Finding>? _byHost;
 
@@ -481,16 +478,13 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The chain of facets the view is banded by, outermost first.
             ///
-            /// <b>A chain, not one facet.</b> The question a coordinator asks of six hundred
-            /// results is rarely one facet deep: it is the steel by level, or every service by
-            /// discipline and then by system. One band at a time answered the first half of that
-            /// and left the second to the eye. Each level here buckets what the level above it
-            /// left, so the bands nest, and the trail down to a row reads as the sentence that
-            /// describes it.
+            /// A chain rather than a single facet: the questions asked of several hundred results
+            /// are usually two levels deep, such as steel by level, or services by discipline then
+            /// by system. Each level buckets what the level above left, so the bands nest.
             ///
-            /// <b>These are views, not clash groups.</b> Nothing in this list creates,
-            /// dissolves or renames anything in the document; the bands say so, and turning a
-            /// view into real clash groups is a separate, named act.
+            /// These are views, not clash groups. Nothing here creates, dissolves or renames
+            /// anything in the document; converting a view into real clash groups is a separate
+            /// action.
             /// </summary>
             private readonly List<string> _bands = new List<string>();
 
@@ -504,13 +498,12 @@ namespace CamelWorks.UI.Views
                 new HashSet<string>(StringComparer.Ordinal);
 
             /// <summary>
-            /// The results that some issue in the register already covers, keyed as the board
-            /// keys a row.
+            /// The results already covered by an issue in the register, keyed as a board row is.
             ///
-            /// <b>Read once, not once a row.</b> Answering "is this one raised?" per row means
-            /// walking every issue's attachments six hundred times over, inside the draw. It is
+            /// Read once per draw rather than per row: answering it per row means walking every
+            /// issue's attachments once for each of several hundred rows, inside the draw. It is
             /// read when the board is drawn and when an issue is raised from it, which are the
-            /// only two moments the answer can change without a re-read.
+            /// only points at which the answer changes.
             /// </summary>
             private HashSet<string>? _raised;
 
@@ -536,20 +529,17 @@ namespace CamelWorks.UI.Views
             private Row? _sameAs;
 
             /// <summary>
-            /// The property columns the board is narrowed by, column id to the value wanted.
+            /// The property columns the board is filtered by, column id to the value wanted.
             ///
-            /// A dictionary rather than one field, because the columns are somebody's own — two
-            /// of them narrowing at once (System Name "CHW", Workset "L03 MEP") is the question a
-            /// custom column exists to be able to ask.
+            /// A dictionary rather than a single field, since the columns are user-defined and two
+            /// filtering at once (System Name "CHW", Workset "L03 MEP") is the case a custom
+            /// column exists for.
             /// </summary>
             /// <summary>
-            /// Which values each property column is narrowed to, or no entry for any of them.
+            /// Which values each property column is filtered to, or no entry for all values.
             ///
-            /// <b>A set per column, not one value.</b> One value answers "show me the ducts" and
-            /// nothing else. What a coordinator actually asks is "show me mechanical and
-            /// electrical, not structural" - three of eleven disciplines - and doing that one
-            /// value at a time means reading the board three times and holding the difference in
-            /// your head.
+            /// A set per column rather than one value. Filtering to three of eleven disciplines
+            /// one value at a time means reading the board three times.
             /// </summary>
             private readonly Dictionary<string, HashSet<string>> _byColumn =
                 new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -652,14 +642,13 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The tab: a test finder on the left, one board on the right, one footer under both.
             ///
-            /// <b>What this replaced.</b> Two tables side by side with seventeen always-visible
-            /// symbols under them, and the two facts a coordinator changes every minute — a
-            /// result's status and who it is with — behind a window opened by one of those
-            /// symbols. The symbols were greyed rather than hidden, which is the wall of buttons
-            /// that read as pressed rather than off.
+            /// Replaces two side-by-side tables with seventeen always-visible symbols beneath
+            /// them, where the two values changed most often (a result's status and its assignee)
+            /// were behind a window opened from one of those symbols. The symbols were greyed
+            /// rather than hidden, so they read as pressed rather than unavailable.
             ///
-            /// So: the rail finds the test, the board works it, and a verb appears when there is
-            /// something for it to act on and not before.
+            /// The rail finds the test, the board works it, and an action appears when there is
+            /// something for it to act on.
             /// </summary>
             internal UIElement Build()
             {
@@ -680,10 +669,9 @@ namespace CamelWorks.UI.Views
                     : Ui.RunParts("Read the results", _log, Read, primary: false);
 
                 read.Buttons.ToolTip = already
-                    ? "Reads every test and result out of the document again. Worth pressing "
-                      + "after somebody runs a test in Navisworks' own clash window, or when the "
-                      + "board might have moved under you — nothing on this screen goes stale on "
-                      + "its own."
+                    ? "Reads every test and result out of the document again. Use after a test is "
+                      + "run in the Navisworks clash window, or when the board may be out of "
+                      + "date. This screen does not refresh on its own."
                     : "Pulls every test and every result out of the document, with status, "
                       + "assignee, comments and grouping.";
 
@@ -714,14 +702,13 @@ namespace CamelWorks.UI.Views
 
                 var tab = Bench.Split(null, Rail(), BoardPane(), Footer(read), RailWidth);
 
-                // After the footer, not before: the buttons it dresses are built in there.
+                // Called after the footer is built, since it dresses the buttons created there.
                 //
-                // <b>The Redraw above cannot do it.</b> It runs while the footer is still a
-                // method that has not been called, so every "if the button exists" test in
-                // RedrawFoot answers no and the footer keeps whatever it was constructed with -
-                // which is Save and Export, over an empty board, before anything has been read.
-                // The screen's own rule is the other way round: with nothing read the two ways
-                // in are the whole footer, and Save and Export arrive with the results.
+                // The Redraw above cannot do it: it runs while the footer method has not yet been
+                // called, so every "if the button exists" test in RedrawFoot answers no and the
+                // footer keeps its constructed contents (Save and Export over an empty board).
+                // With nothing read, the two ways in are the whole footer, and Save and Export
+                // arrive with the results.
                 RedrawFoot();
                 ArmSync();
 
@@ -1100,23 +1087,20 @@ namespace CamelWorks.UI.Views
             private readonly List<string> _railOrder = new List<string>();
 
             /// <summary>
-            /// Redraw the rail after a change: the rows that moved, or the list when the list did.
+            /// Redraws the rail after a change: the rows that moved, or the list when it changed.
             ///
-            /// <b>Why this is not simply "redraw the rail".</b> Setting a status is the commonest
-            /// thing anybody does on this board, and it moves one number on one row. Rebuilding
-            /// the rail for it meant a row per test in the job - counts, tooltip and a context
-            /// menu each - every time somebody marked a clash.
+            /// Setting a status is the commonest action on this board and moves one number on one
+            /// row. Rebuilding the rail for it meant constructing a row per test, each with
+            /// counts, a tooltip and a context menu.
             ///
-            /// It cannot always be one row, though, and the reason is worth naming: the rail hides
-            /// finished tests when "only the open ones" is on, and sorts by a count under five of
-            /// its seven orders. A status write can therefore take a row out of the list or move
-            /// it up past three others, and a repaint in place would leave the rail lying about
-            /// its own order.
+            /// It cannot always be one row: the rail hides finished tests when "only the open
+            /// ones" is on, and sorts by a count under five of its seven orders. A status write
+            /// can therefore remove a row from the list or move it past others, and a repaint in
+            /// place would leave the rail in the wrong order.
             ///
-            /// So the question is asked rather than assumed. Working out which tests would be
-            /// shown, and in what order, is a filter and a sort over the tests - tens or hundreds
-            /// of items - against building that many rows of controls. When the answer is the same
-            /// list in the same order, only the rows that changed are drawn again.
+            /// So the resulting list is computed and compared. Filtering and sorting tens or
+            /// hundreds of items is cheaper than building that many rows of controls. When the
+            /// list and order are unchanged, only the changed rows are redrawn.
             /// </summary>
             /// <param name="touched">The tests whose rows changed.</param>
             private void RailChanged(IReadOnlyCollection<string> touched)
@@ -1800,13 +1784,11 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Everything on the right-hand side, from the title down to the footnote.</summary>
             /// <summary>
-            /// Draw the board again, leaving the table where the eye left it.
+            /// Redraws the board, preserving the table's scroll position.
             ///
-            /// <b>Every write comes through here.</b> Setting a status, assigning a row,
-            /// regrouping - all of them rebuild the table, and a rebuilt table starts at the top,
-            /// so a status set on row four hundred threw the reader back to row one. The offset
-            /// is carried across the rebuild, which is the same fix a group's chevron already
-            /// had; it belongs here instead, where everything that redraws will get it.
+            /// Every write passes through here and rebuilds the table, and a rebuilt table starts
+            /// at the top, so a status set on row four hundred returned the user to row one. The
+            /// scroll offset is carried across the rebuild.
             /// </summary>
             private void RedrawBoard() => Held(() =>
             {
@@ -1860,18 +1842,16 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The rows, the chips over them and the bar under them — everything a keystroke or a
-            /// tick moves, and nothing it does not.
+            /// The rows, the chips above them and the bar below them: everything a keystroke or a
+            /// tick moves, and nothing else.
             /// </summary>
             /// <summary>
-            /// The rows again, leaving the table where the eye left it.
+            /// Redraws the rows, preserving the scroll position.
             ///
-            /// <b>Staying put is the default now.</b> Every write on this board goes through
-            /// here, and a dozen callers reached it directly - a comment window closing, a band's
-            /// "pick all of them", the selection bar's Clear, an issue raised, the team edited -
-            /// each of them rebuilding the list and, with it, dropping the reader back at row one
-            /// from row four hundred. Two callers genuinely want the top, and they say so; the
-            /// rest get what they always meant.
+            /// Preserving it is the default. A dozen callers reach this directly (a comment window
+            /// closing, a band's select-all, the selection bar's Clear, an issue raised, the team
+            /// edited), each rebuilding the list and returning the user to the first row. The two
+            /// callers that want the top say so explicitly.
             /// </summary>
             private void RedrawRows() => Held(RedrawRowsNow);
 
@@ -1992,19 +1972,15 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Redraw the rows whose picked state changed, and nothing else.
+            /// Redraws only the rows whose selected state changed.
             ///
-            /// <b>Why not just redraw the rows.</b> Rebuilding the table throws the list away and
-            /// makes a new one, and a new list starts at the top - so clicking a result forty rows
-            /// down took the board back to the first row and left the thing that had just been
-            /// clicked off the screen. A press that moves the view away from what it pressed is
-            /// the board arguing with the person using it.
+            /// Rebuilding the table discards the list and creates a new one starting at the top,
+            /// so clicking a result forty rows down scrolled away from the row just clicked.
             ///
-            /// Ticking a box already worked this way. Clicking a row did not, and the difference
-            /// was that a plain click also un-picks everything else - so it is not one row that
-            /// changed, it is one row and whatever was picked before.
+            /// Ticking a box already worked this way; clicking a row did not, because a plain
+            /// click also clears the previous selection, so more than one row changes.
             /// </summary>
-            /// <param name="ids">The rows to draw again.</param>
+            /// <param name="ids">The rows to redraw.</param>
             private void Repainted(ICollection<string> ids)
             {
                 if (ids.Count == 0) return;
@@ -2064,14 +2040,12 @@ namespace CamelWorks.UI.Views
 
                 if (shape.Loose.Count > 0)
                 {
-                    // Never behind a tab. Grouping the loose results is the job, so the rows it is
-                    // done to have to be on screen without anybody finding them first.
+                    // Grouping the loose results is the point of this screen, so those rows are
+                    // never put behind a tab.
                     //
-                    // <b>Unless there is nothing to tell it apart from.</b> A test whose results
-                    // have never been grouped is a board of loose rows with one band over all of
-                    // them saying so, which is a heading that divides nothing from nothing. The
-                    // band is worth a line of the screen only when there are groups above it for
-                    // these rows to be "not" part of.
+                    // The band is drawn only when there is something to separate it from. A test
+                    // whose results have never been grouped is a flat list of loose rows, and a
+                    // heading over all of them divides nothing.
                     if (shape.Groups.Count > 0)
                         lines.Add(BoardLine.Banner(() => Parts.ViewBand(
                             Glyphs.Clash, "Not grouped",
@@ -2515,14 +2489,12 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How the board is banded, and the one thing about its order a header cannot say.
+            /// How the board is banded, plus the one ordering command no column header offers.
             ///
-            /// <b>The list of columns to sort by is gone.</b> It named every column of the table
-            /// and did exactly what pressing that column's own header does, so it was a menu
-            /// restating the table underneath it - and the two could be read as different
-            /// features by anybody who had not noticed the headers were live. What is left is the
-            /// way back to the order the test holds, which no header press reaches: a header
-            /// turns an order round, it never takes one off.
+            /// The list of columns to sort by was removed: it named every column of the table and
+            /// did what pressing that column's header already does, so it duplicated a live
+            /// control. What remains is the return to the order held by the test itself. A header
+            /// press only reverses an order; it cannot clear one.
             /// </summary>
             private List<Parts.Entry> SortMenu()
             {
@@ -2846,19 +2818,18 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The columns across the board, in the order they are drawn.
             ///
-            /// <b>Arranged, not fixed.</b> Which columns matter is the job's business, not this
-            /// screen's: a fabrication review reads Item 1, Item 2 and the worst penetration and
-            /// barely looks at who it is with, and a Friday coordination call is the other way
-            /// round. The order somebody drags their headers into is the order the table keeps.
+            /// The order is user-arranged rather than fixed. Which columns matter depends on the
+            /// task: a fabrication review reads Item 1, Item 2 and the worst penetration, while a
+            /// coordination review reads the participants. The table keeps the order the headers
+            /// were dragged into.
             ///
-            /// A column nobody has moved sits where it always did, and a column added after an
-            /// arrangement was made lands beside the column it was added next to rather than at
-            /// the end - so adding a property column does not silently undo the arrangement, and
-            /// removing one does not leave a hole in it.
+            /// A column nobody has moved stays where it was. A column added after an arrangement
+            /// was made is inserted beside the column it was added next to rather than appended,
+            /// so adding a property column does not discard the arrangement and removing one does
+            /// not leave a gap.
             ///
-            /// The tick box and the row verbs are not in here. They are the table's own furniture
-            /// rather than columns of it, and a board whose ticks were in the middle and whose
-            /// verbs were on the left would be a board nobody could work.
+            /// The tick box and the row verbs are not columns and are not listed here; they are
+            /// fixed table furniture on the left.
             /// </summary>
             private List<string> Order()
             {
@@ -3483,18 +3454,16 @@ namespace CamelWorks.UI.Views
 
                 Put(grid, Tick(row.Id, on), 0);
 
-                // <b>One target, and all of it.</b> Opening a group was reported as working
-                // sometimes on the chevron, sometimes on the name, sometimes on neither. Three
-                // causes met here. The panel had no background, so every transparent gap between
-                // the glyphs and the text was a hole the click fell through to the row beneath -
-                // which picks rather than opens. The rename handled only the second MouseDown, so
-                // its MouseUp still reached the toggle and a double-click renamed and opened at
-                // once. And the toggle rebuilt the table, which sent the scroll back to the top,
-                // so a group that did open looked as though nothing had happened.
+                // The whole group strip is one hit target. Opening a group previously worked on
+                // the chevron, sometimes on the name and sometimes on neither, for three reasons:
+                // the panel had no background, so clicks in the transparent gaps fell through to
+                // the row beneath and selected it; the rename handler consumed only MouseDown, so
+                // the matching MouseUp still reached the toggle and a double-click renamed and
+                // opened at once; and the toggle rebuilt the table, which reset the scroll offset,
+                // so a group that did open looked unchanged.
                 //
-                // Now: the whole strip is one hit target, a click anywhere on it opens or shuts
-                // the group, a double-click on the name renames and stops there, and the rows
-                // stay where they were.
+                // Now a click anywhere on the strip toggles the group, a double-click on the name
+                // renames only, and the scroll position is preserved.
                 var words = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
@@ -4068,21 +4037,20 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// What one press on a row does to the selection.
             ///
-            /// The three gestures every table in Windows has, and this one is no different:
+            /// The standard three gestures:
             ///
             /// <list type="bullet">
-            /// <item><description>A plain press picks that row and nothing else, and becomes the
-            /// place a run is measured from.</description></item>
-            /// <item><description>Ctrl adds one row, or takes it back out, and moves the place a
-            /// run is measured from to it.</description></item>
-            /// <item><description>Shift picks the whole run between there and here.</description>
-            /// </item>
+            /// <item><description>A plain press selects that row alone and becomes the anchor for
+            /// range selection.</description></item>
+            /// <item><description>Ctrl adds or removes a single row and moves the anchor to
+            /// it.</description></item>
+            /// <item><description>Shift selects the range between the anchor and the pressed
+            /// row.</description></item>
             /// </list>
             ///
-            /// <b>The run is what is on the screen</b>, in the order it is on the screen - the
-            /// board's own flattened lines, so a run across an opened clash group takes the group
-            /// and the members it is showing, and a run over a closed one takes the group alone.
-            /// Anything else would be a run through rows nobody can see.
+            /// The range is measured over the rows currently visible, in screen order, using the
+            /// board's flattened lines. A range across an expanded clash group takes the group and
+            /// the members it is showing; across a collapsed one it takes the group alone.
             /// </summary>
             /// <param name="id">The row that was pressed.</param>
             private void Clicked(string id)
@@ -4213,17 +4181,15 @@ namespace CamelWorks.UI.Views
             private string? _pickedFrom;
 
             /// <summary>
-            /// The row being looked at, which is not the same as the rows being acted on.
+            /// The row currently being viewed, which is not the same as the rows selected for an
+            /// action.
             ///
-            /// <b>Pressing a row is not ticking it.</b> A press said "this one" and a tick says
-            /// "these ones", and the board was treating them as one thing: pressing a clash to
-            /// read it put a tick in its box and raised the bar that says how many rows are
-            /// picked, so looking at four clashes in a row left the product convinced four rows
-            /// were about to be acted on. The test list on the left never did this - pressing a
-            /// test puts it on the board and its tick box is its own control - and this is the
-            /// board doing the same.
+            /// Pressing a row does not tick it. The board previously did both: pressing a clash to
+            /// read it also ticked its box and raised the selection count, so reviewing four
+            /// clashes in sequence left four rows staged for action. The test list on the left has
+            /// always kept the two apart, and the board now matches it.
             ///
-            /// Ctrl and Shift still build a selection, because that is what they are for.
+            /// Ctrl and Shift still build a selection.
             /// </summary>
             private string? _reading;
 
@@ -4493,18 +4459,18 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The one grouping verb the picked rows have, as a menu line.
+            /// The grouping commands available for the selected rows, as menu lines.
             ///
-            /// <b>All four are the same host write.</b> Navisworks has no merge, no dissolve and
-            /// no rename for a clash group — it has "put these results in a group called X", and
-            /// an empty name takes them out of one. Grouping, ungrouping, moving, merging and
-            /// renaming are all that call with a different name, which is why every one of them
-            /// lands in the document rather than only on this screen.
+            /// All four are the same host write. Navisworks has no merge, dissolve or rename for a
+            /// clash group; it has "put these results in a group called X", and an empty name takes
+            /// them out of one. Grouping, ungrouping, moving, merging and renaming are that call
+            /// with a different name, so each of them writes to the document rather than only to
+            /// this screen.
             ///
-            /// <see cref="Parts.Entry.IsDanger"/> is doing duty for "this is the primary" here,
-            /// which the button reads and the menu ignores.
+            /// <see cref="Parts.Entry.IsDanger"/> marks the primary entry here; the button reads
+            /// it and the menu ignores it.
             /// </summary>
-            /// <param name="rows">The picked results.</param>
+            /// <param name="rows">The selected results.</param>
             private Parts.Entry GroupVerb(List<Row> rows)
             {
                 var groups = rows.Where(r => r.Group.Length > 0)
@@ -4636,18 +4602,15 @@ namespace CamelWorks.UI.Views
 
             private readonly Border _send = new Border { VerticalAlignment = VerticalAlignment.Center };
 
-            /// <summary>The state of the week on the left, and the two ways out on the right.</summary>
-            /// <param name="read">The read runner, which carries its own progress and Stop.</param>
             /// <summary>
-            /// The foot: what the read found on the left, what to do next on the right, on one
-            /// line.
+            /// The footer: what the read found on the left, the actions on the right, on one line.
             ///
-            /// <b>Why the runner arrives in pieces.</b> A runner stacked whole is a button with a
-            /// progress bar and a status line growing underneath it. Dropped into a row of
-            /// ordinary buttons that made the row three lines tall, left Export and Save centred
-            /// against a bar that was not there yet, and moved both of them the moment a read
-            /// started. So the buttons join the row and the progress goes down the left, under the
-            /// counts it is about, where it can appear and disappear without shifting anything.
+            /// The runner is passed in as separate parts. A runner stacked whole is a button with a
+            /// progress bar and a status line beneath it; placed in a row of ordinary buttons it
+            /// made the row three lines tall, mis-centred Export and Save against a bar that was
+            /// not yet visible, and shifted both of them when a read started. The button joins the
+            /// button row and the progress goes down the left, under the counts it reports, where
+            /// it can appear and disappear without moving anything.
             /// </summary>
             /// <param name="read">The read button and its progress, apart.</param>
             private UIElement Footer(Ui.RunPair read)
@@ -4832,17 +4795,17 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Pull every test and every result out of the document, in one walk.
+            /// Pull every test and every result out of the document in a single walk.
             ///
-            /// <b>What this used to be.</b> A loop over the tests calling Results and Sides for
-            /// each, both of which looked their test up by walking the whole tree of tests - so
-            /// the read was quadratic in how many tests a job has, and Tests() had already
-            /// materialised every result in the document once just to count them. Describing what
-            /// each test was between compared its two sides against every saved set in the
-            /// document, building a selection source per comparison.
+            /// The previous implementation looped over the tests calling Results and Sides for
+            /// each, both of which located their test by walking the whole test tree, so the read
+            /// was quadratic in the number of tests; Tests() had also already materialised every
+            /// result once just to count them. Describing what each test compared checked its two
+            /// sides against every saved set in the document, building a selection source per
+            /// comparison.
             ///
-            /// Nothing else on this press is allowed to grow either. This is the moment somebody
-            /// is waiting to see their clashes.
+            /// Keep the cost of this press linear. It is the point at which the user is waiting
+            /// for their clashes.
             /// </summary>
             private void ReadModel(Job job)
             {
@@ -4883,16 +4846,15 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Put what this read found into the findings register, and keep it.
+            /// Record what this read found in the findings register.
             ///
-            /// <b>Why a read writes anything.</b> The register is what survives the session, the
-            /// document being a published NWD, and the next run renumbering every result. A read
-            /// is the observation that keeps it current: a clash already known keeps the decision
-            /// somebody made and takes this run's fresh facts, and one this run no longer reports
-            /// is marked absent rather than deleted.
+            /// The register is the state that survives the session, since the document may be a
+            /// published NWD and the next run renumbers every result. A read updates it: a clash
+            /// already known keeps the decision recorded against it and takes this run's fresh
+            /// facts, and one this run no longer reports is marked absent rather than deleted.
             ///
-            /// Scoped to the tests that were actually read, so reading three of twelve never
-            /// closes the other nine.
+            /// Scoped to the tests that were actually read, so reading three of twelve tests does
+            /// not close the findings of the other nine.
             /// </summary>
             private string? Keep(IReadOnlyList<TestEntry> entries, Job job)
             {
@@ -5276,14 +5238,12 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Everything about how this screen behaves, in one window with one section per
-            /// subject.
+            /// All settings for this screen, in one window with one section per subject.
             ///
-            /// <b>It was called "Source and tolerance" and was neither.</b> It carried where the
-            /// results come from, how far the camera stands back, how big a marker is and whether
-            /// one is dropped on focus - four subjects under a title naming one of them, in
-            /// sentences written to a friend rather than to a user. A settings window says what
-            /// each setting does, in order, in the words the rest of the product uses.
+            /// Replaces the earlier "Source and tolerance" window, which held four unrelated
+            /// subjects under a title naming one of them: the results source, the camera standoff,
+            /// the marker size and whether a marker is dropped on focus. Each setting is now
+            /// grouped and labelled with the terms used elsewhere in the product.
             /// </summary>
             private UIElement SettingsPage() => Ui.Stack(
                 _session.Clash.IsAvailable
@@ -5362,7 +5322,7 @@ namespace CamelWorks.UI.Views
                              + "elements meet. It is a temporary graphic, not geometry: nothing "
                              + "is added to the document and nothing appears in the selection "
                              + "tree. Export \u25b8 Marker spheres as .obj writes the same balls "
-                             + "to a file, for somebody who has neither this plug-in nor "
+                             + "to a file, readable without this plug-in or "
                              + "Navisworks.")));
 
             /// <summary>
@@ -5635,15 +5595,13 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The two disciplines one test is between, as the host records them.
+            /// The two disciplines a test compares, as recorded by the host.
             ///
-            /// <b>Where they come from.</b> A clash test's two sides are read once, with the
-            /// results, through <c>IClashSource.Sides</c>. Each side is either a <b>saved
-            /// selection set</b> — which on a real job is what carries the discipline, because
-            /// the sets are called Mechanical, Structure, Fire — or, when the side is whole
-            /// models rather than a set, the <b>model's own name</b>. Nothing is derived and
-            /// nothing is parsed: a side that is neither of those returns nothing, and the test
-            /// simply has no discipline to filter on.
+            /// Both sides are read once, with the results, through <c>IClashSource.Sides</c>. Each
+            /// side is either a saved selection set — which on a real project carries the
+            /// discipline, the sets being named Mechanical, Structure, Fire — or, when the side is
+            /// whole models rather than a set, the model's own name. Nothing is derived or parsed:
+            /// a side that is neither returns nothing and the test has no discipline to filter on.
             /// </summary>
             /// <param name="entry">The test.</param>
             private List<string> Trades(TestEntry entry)
@@ -5880,13 +5838,12 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Whether a result touches either of another result's two items.
             ///
-            /// <b>By key, not by name.</b> Two different ducts are called "Duct 400x250" on every
-            /// job there has ever been, and a filter that matched on the name would answer "what
-            /// else clashes with this duct" with every duct of that size in the federation. The
-            /// element key is the identity; the name is only what it is called.
+            /// Matched by element key, not by name. Duplicate names are normal in a federation —
+            /// many ducts are called "Duct 400x250" — so a name match would answer "what else
+            /// clashes with this duct" with every duct of that size. The key is the identity.
             ///
-            /// Names are the fallback for the one case the key cannot cover: a board read from
-            /// somebody else's file, where the keys did not survive the round trip.
+            /// Names are the fallback for boards read from another file, where the keys did not
+            /// survive the round trip.
             /// </summary>
             /// <param name="row">The result being tested.</param>
             /// <param name="origin">The result whose items are being looked for.</param>
@@ -6083,11 +6040,10 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Which band a row falls in, at one level of the chain.
             ///
-            /// <b>A clash group is one row here and can hold results that disagree.</b> Six
-            /// clashes grouped as "Level 2 risers" may sit on four different systems, and the
-            /// band cannot pretend otherwise: it says so. Splitting the group to satisfy the
-            /// view would be the view editing the document, which is the one thing banding must
-            /// never do.
+            /// A clash group is a single row here and may hold results that disagree: six clashes
+            /// grouped as "Level 2 risers" can sit on four different systems. The band reports the
+            /// disagreement rather than hiding it. Splitting the group to fit the view would make
+            /// the view edit the document, which banding must never do.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
             /// <param name="row">The row.</param>
@@ -6386,17 +6342,16 @@ namespace CamelWorks.UI.Views
                 Mark(Reaching(row), status, _toast);
 
             /// <summary>
-            /// Give some rows to one or more people, roles, companies or teams.
+            /// Assign rows to one or more people, roles, companies or teams.
             ///
-            /// <b>Several, because a clash is often two people's problem</b> - the architect who
-            /// drew the wall and the engineer who ran the duct through it - and a list that took
-            /// one made somebody decide which of them was going to be chased. So the list ticks
-            /// and stays open while several are ticked, and it carries a way to build the team
-            /// for the case where there is nobody to tick yet.
+            /// Multiple assignees are supported because a clash is commonly two parties' problem —
+            /// the architect who drew the wall and the engineer who ran the duct through it — and a
+            /// single-assignee list forced a choice between them. The list uses tick boxes and
+            /// stays open while several are ticked, and offers a route to build the team when there
+            /// is nobody to tick yet.
             ///
-            /// <b>In a menu under the chip</b>, not a window in the middle of the screen. It is
-            /// a chip on a row beside another chip that drops a list down, and two controls on
-            /// one row cannot behave as two different kinds of thing.
+            /// Presented as a menu under the chip rather than a modal window, to match the
+            /// neighbouring chip that also drops a list down.
             /// </summary>
             /// <param name="from">The chip that was pressed, which the menu hangs off.</param>
             /// <param name="picked">What is being assigned.</param>
@@ -6433,16 +6388,15 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// What a verb pressed on one row actually acts on.
+            /// What a verb pressed on one row acts on.
             ///
-            /// <b>The selection, when the row is in it.</b> Somebody who has picked forty rows
-            /// and then sets a status on one of them means all forty - that is what picking them
-            /// was for. Acting on the one row under the pointer and leaving the other
-            /// thirty-nine is the behaviour that makes a selection feel decorative, and it is
-            /// what every row chip and row verb did.
+            /// If the row is in the selection, the verb acts on the whole selection. A user who
+            /// has selected forty rows and then sets a status on one of them means all forty.
+            /// Acting on the single row under the pointer was the previous behaviour of every row
+            /// chip and row verb, and it made the selection ineffective.
             ///
-            /// A row outside the selection is itself, and only itself. Right-clicking one already
-            /// moves the selection to it, so the two rules never disagree.
+            /// A row outside the selection acts on itself alone. Right-clicking a row already
+            /// moves the selection to it, so the two rules never conflict.
             /// </summary>
             /// <param name="row">The row the verb was pressed on.</param>
             private List<object> Reaching(BoardRow row) =>
@@ -6505,16 +6459,16 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Turn the bands the view is showing into the test's own clash groups.
             ///
-            /// <b>Why the two are separate at all.</b> A band is ours and costs nothing: it
-            /// buckets what is on screen, moves nothing, and is gone the moment the chain is
-            /// cleared. A clash group is the host's - an item in the document, in the saved
-            /// results, in every export and in what the next person opens - and a result belongs
-            /// to exactly one. So the view is where the arranging is done and this is the one
-            /// place it becomes permanent, said out loud before it happens.
+            /// Bands and clash groups are deliberately separate. A band is local and free: it
+            /// buckets what is on screen, moves nothing, and disappears when the chain is cleared.
+            /// A clash group is the host's — an item in the document, in the saved results and in
+            /// every export — and a result belongs to exactly one. Arranging is done with bands;
+            /// this is the single point at which the arrangement is written to the document, and
+            /// it is confirmed first.
             ///
-            /// <b>What the filters leave, not the whole test.</b> The leaves come off the shape
-            /// the board is showing, so a board narrowed to one discipline makes groups of that
-            /// discipline and leaves the rest of the test alone. The prompt says the figure.
+            /// Only what the filters leave is written, not the whole test. The leaves come off the
+            /// current board, so a board narrowed to one discipline produces groups for that
+            /// discipline and leaves the rest of the test untouched. The prompt states the count.
             /// </summary>
             private void AskToRealise()
             {
@@ -6610,24 +6564,22 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Write the bands into the document as clash groups, and drop the bands.
+            /// Write the bands into the document as clash groups, then drop the bands.
             ///
-            /// <b>One call, one edit.</b> The seam is told the whole assignment at once rather
-            /// than being called per bucket: the host rebuilds a test's entire result tree for
-            /// any change to it, so a bucket at a time would be fifty rebuilds of the same test,
-            /// each with its own toast, redraw and rail pass.
+            /// The seam is given the whole assignment in one call rather than one call per bucket.
+            /// The host rebuilds a test's entire result tree for any change to it, so a bucket at a
+            /// time would mean one rebuild, toast, redraw and rail pass per bucket.
             ///
-            /// <b>Nested where the document holds it.</b> The seam tries groups inside groups
-            /// and falls back to one group per trail when the document will not, so what comes
-            /// back may not be the shape that was asked for - and the board says which happened
-            /// rather than leaving somebody to open Clash Detective and wonder.
+            /// Groups are nested where the document supports it. The seam attempts groups inside
+            /// groups and falls back to one group per trail when the document refuses, so the
+            /// result may not match what was requested; the board reports which of the two
+            /// happened.
             ///
-            /// Either way the board reads the same, because a nested group reads back as the
-            /// trail down to it and a flat one is named for that same trail.
+            /// Either shape reads back the same, because a nested group reads as the trail down to
+            /// it and a flat one is named for that trail.
             ///
-            /// The bands come off at the end. They have become the thing they were describing,
-            /// and leaving them up would show every group twice: once as a band and once as the
-            /// group inside it.
+            /// The bands are cleared at the end. They now exist as groups, and leaving them would
+            /// show each group twice: once as a band and once as the group inside it.
             /// </summary>
             /// <param name="entry">The test on the board.</param>
             /// <param name="leaves">The leaves, each with its trail and the results under it.</param>
@@ -6761,15 +6713,12 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Give one clash the name that was typed for it.
+            /// Set one clash to the name that was typed for it.
             ///
-            /// <b>Not the numbering verb with a list of one.</b> This went through
-            /// <see cref="Renumber"/>, which takes a stem and numbers what it is given, so
-            /// typing "Corridor duct" produced "Corridor duct1" - every rename, every time, a
-            /// digit nobody asked for. The host has an exact rename and always did; the numbered
-            /// one was simply written first, and renaming one row looked like renaming a list.
-            /// Renumbering is still its own verb, on the selection bar, where a prefix and a
-            /// running number are what is being asked for.
+            /// This previously went through <see cref="Renumber"/>, which takes a stem and numbers
+            /// what it is given, so typing "Corridor duct" produced "Corridor duct1" on every
+            /// rename. The host has an exact rename as well; renumbering remains its own verb on
+            /// the selection bar, where a prefix and a running number are what is wanted.
             /// </summary>
             /// <param name="row">The result to rename.</param>
             /// <param name="name">Its new name, exactly as typed.</param>
@@ -6788,18 +6737,17 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Rename results — through the database, like every other edit on this board.
+            /// Rename results through the database, like every other edit on this board.
             ///
-            /// <b>This one used to go straight to the host.</b> It called <c>RenamePicked</c>, and
-            /// if the document refused — a published NWD refuses everything — the rename was
-            /// simply gone. Every other edit on this screen survives that: the finding takes it,
-            /// the board keeps showing it, and the sync writes it into the NWF later. A name is
-            /// one of the five fields the register holds and one of the five the sync pushes, so
-            /// there was no reason for it to be the exception except that it was written last.
+            /// This previously called <c>RenamePicked</c> on the host directly, so if the document
+            /// refused the write — a published NWD refuses every write — the rename was lost. Every
+            /// other edit on this screen survives that: the finding takes it, the board keeps
+            /// showing it, and the sync writes it into the NWF later. A name is one of the five
+            /// fields the register holds and one of the five the sync pushes.
             ///
-            /// The host has no rename for one result: it takes a prefix and numbers what is
-            /// picked from it, so renaming one row makes "Corridor1". The board is one test at a
-            /// time, so mirroring that numbering locally is exact.
+            /// The host has no rename for a single result: it takes a prefix and numbers the
+            /// selection from it, so renaming one row yields "Corridor1". The board handles one
+            /// test at a time, so mirroring that numbering locally is exact.
             /// </summary>
             /// <param name="rows">The results to rename.</param>
             /// <param name="prefix">What to number them from.</param>
@@ -7228,28 +7176,27 @@ namespace CamelWorks.UI.Views
                     .ToList();
 
             /// <summary>
-            /// Go and look at the picked clashes. Instantly, whatever the board holds.
+            /// Move the view to the selected clashes, without searching the model.
             ///
-            /// <b>Nothing here is allowed to search the model.</b> A row carries an element key
-            /// per side, and turning a key that is not an instance GUID back into an element means
-            /// an index of every geometry leaf in the federation - which, inside a press, is a
-            /// Navisworks that stops answering. It was reported as Focus freezing, and it was.
+            /// A row carries an element key per side. Turning a key that is not an instance GUID
+            /// back into an element requires an index of every geometry leaf in the federation,
+            /// which inside a button press stops Navisworks responding. That was the cause of the
+            /// reported Focus freeze.
             ///
-            /// Neither half of what Focus does needs a search:
+            /// Neither half of Focus needs a search:
             ///
             /// <list type="bullet">
             /// <item><description>The camera. A clash result records the point where the two
-            /// elements met, and for a single result the engine also kept the view it composed
-            /// when the test ran. Both are on the row already.</description></item>
-            /// <item><description>The selection. These results came out of this document, and the
-            /// engine is still holding the two items each one is between. Asking it for them is a
-            /// copy, not a lookup.</description></item>
+            /// elements met, and for a single result the engine also kept the view it composed when
+            /// the test ran. Both are already on the row.</description></item>
+            /// <item><description>The selection. These results came out of this document and the
+            /// engine still holds the two items each is between, so asking for them is a copy
+            /// rather than a lookup.</description></item>
             /// </list>
             ///
-            /// A board read from somebody else's file is the one case with no engine behind it.
-            /// There the keys are all there is - so they are resolved, but only against an index
-            /// that already exists. Focus never builds one; the read does that, where there is a
-            /// progress bar.
+            /// A board read from another file has no engine behind it. There the keys are all that
+            /// is available, so they are resolved, but only against an index that already exists.
+            /// Focus never builds one; the read does that, where there is a progress bar.
             /// </summary>
             /// <param name="picked">The picked rows.</param>
             /// <param name="say">Where to report what happened.</param>
@@ -7325,26 +7272,20 @@ namespace CamelWorks.UI.Views
             private int _outOfReach;
 
             /// <summary>
-            /// Select what these rows name, for a board that came out of a file rather than the
-            /// engine.
+            /// Select what these rows name, for a board loaded from a file rather than the engine.
             ///
-            /// <b>Why this is not simply "select the two elements the result names".</b> From the
-            /// model, it is: the clash engine is holding the two items and hands them over, which
-            /// is what <see cref="FromEngine"/> asks it for. From a file there is no engine and no
-            /// result - the file leaves us the two element KEYS, and a key is a hash, not a
-            /// pointer. Turning one back into an element means finding the element it names.
+            /// From the model this is direct: the clash engine holds the two items and hands them
+            /// over, which is what <see cref="FromEngine"/> asks for. From a file there is no
+            /// engine and no result — only the two element keys, and a key is a hash rather than a
+            /// pointer, so it has to be resolved to an element.
             ///
-            /// For a key made from an instance GUID that is a dictionary lookup the document
-            /// answers straight away. For a key made from a tree path or a geometry signature it
-            /// means walking the federation to find what matches - the indexing pass, which on a
-            /// large model is the freeze this verb exists on the other side of.
+            /// A key made from an instance GUID resolves by dictionary lookup, which the document
+            /// answers immediately. A key made from a tree path or a geometry signature requires
+            /// walking the federation, which is the indexing pass this verb must avoid.
             ///
-            /// So this reaches for what is free and leaves the rest, rather than giving up on all
-            /// of it because one key is expensive. Before, a single tree-path key among forty
-            /// GUIDs meant nothing at all was selected, and nothing said so - which is exactly
-            /// "why can't we just feed it the two elements". We can, for the ones the document can
-            /// find without being searched; the others need the index, and now the verb says so
-            /// rather than doing nothing quietly.
+            /// So the cheap keys are resolved and the rest are reported, rather than abandoning all
+            /// of them because some are expensive. Previously a single tree-path key among forty
+            /// GUIDs meant nothing was selected and nothing said why.
             /// </summary>
             /// <param name="rows">The picked rows, from a file.</param>
             /// <returns>How many elements were selected.</returns>
@@ -7463,15 +7404,14 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Put the picked results onto an issue that already exists.
+            /// Add the selected results to an issue that already exists.
             ///
-            /// <b>The verb the board was missing.</b> "Create an issue" makes a new one every
-            /// time, so a coordinator working through a test that is all one problem ends up with
-            /// forty issues about the same duct run. This is the other half: pick the results,
-            /// pick the issue, and they join it.
+            /// "Create an issue" makes a new one each time, so a coordinator working through a test
+            /// that is all one problem ends up with one issue per result. This is the other half:
+            /// select the results, pick the issue, and they join it.
             ///
-            /// Findings rather than clash keys, so the same issue can carry a clearance breach
-            /// and a health failure beside its clashes once those move across.
+            /// Keyed on findings rather than clash keys, so the same issue can carry a clearance
+            /// breach and a health failure alongside its clashes once those move across.
             /// </summary>
             /// <param name="picked">The picked results.</param>
             /// <param name="say">Where to answer.</param>
@@ -7770,20 +7710,17 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The conversation about one clash: what has been said, and the say in it.
+            /// The comment thread on one clash: what has been said, and the controls to add to it.
             ///
-            /// <b>Reading was the half that did not exist.</b> The board showed how many comments
-            /// a result had and the newest one, and the only verb was "Comment", which added
-            /// another - so a trail could be written and never read back. Everything a coordinator
-            /// actually does with a comment thread, which is read it before adding to it, had to
-            /// happen in Navisworks' own clash window.
+            /// Reading was previously unavailable. The board showed the comment count and the
+            /// newest remark, and the only verb was "Comment", which added another, so a thread
+            /// could be written but not read back except in Navisworks' own clash window.
             ///
-            /// <b>Edit is a rebuild, and says so.</b> Every field of a host comment is read-only
-            /// and the only write is the whole trail at once, so changing a remark means putting a
-            /// new one in its place - which takes today's date. The button says that rather than
-            /// implying the original was amended.
+            /// Editing is a rebuild. Every field of a host comment is read-only and the only write
+            /// is the whole trail at once, so changing a remark replaces it with a new one carrying
+            /// today's date. The button says so rather than implying the original was amended.
             /// </summary>
-            /// <param name="row">The clash whose conversation this is.</param>
+            /// <param name="row">The clash whose thread this is.</param>
             private void Conversation(Row row)
             {
                 var body = Ui.Stack();
@@ -8257,21 +8194,20 @@ namespace CamelWorks.UI.Views
 
 
             /// <summary>
-            /// The markers as an OBJ somebody else opens.
+            /// Write the markers to an OBJ file.
             ///
-            /// <b>The other half of a marker.</b> On screen a marker is temporary graphics, which
-            /// is right for the person driving Navisworks and useless for everybody else. This is
-            /// the file: the same status-coloured balls, at the same points, written as geometry
-            /// that Revit, Blender, Rhino, a viewer or a phone will open without this plug-in and
-            /// without Navisworks. It is how a clash reaches a subcontractor.
+            /// On screen a marker is temporary graphics, which serves the person driving
+            /// Navisworks and nobody else. This writes the same status-coloured spheres, at the
+            /// same points, as geometry that Revit, Blender, Rhino, a viewer or a phone opens
+            /// without this plug-in and without Navisworks.
             ///
-            /// <b>The tree has to be useful at the other end.</b> A group per test and an object
-            /// per clash, each named what the engine named it and each carrying its status
-            /// colour - so the receiving tool shows a line per test that expands to the clashes,
-            /// and somebody can say "Clash117" back down the phone.
+            /// The tree is built for the receiving tool: a group per test and an object per clash,
+            /// each named as the engine named it and each carrying its status colour, so the
+            /// receiver shows a line per test that expands to the clashes and a result can be
+            /// referred to by name.
             ///
-            /// <b>Metres.</b> OBJ carries no units and every reader assumes metres, so this is
-            /// where the document's own units are converted - once, here.
+            /// OBJ carries no units and readers assume metres, so the document's units are
+            /// converted here, once.
             /// </summary>
             /// <param name="rows">The results to write.</param>
             /// <param name="what">What they are called, for the file name and the report.</param>
@@ -8356,11 +8292,10 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Hide the markers, or put back the ones that were hidden.
+            /// Hide the markers, or restore the ones that were hidden.
             ///
-            /// <b>One press, both ways.</b> Hiding used to be a one-way door: the markers went
-            /// down and the only way back was to pick the same rows again and drop them afresh,
-            /// which on a row somebody had since scrolled past is no way back at all.
+            /// One press does both. Hiding was previously one-way: the only route back was to
+            /// select the same rows again and drop fresh markers.
             /// </summary>
             /// <param name="say">Where to report what happened.</param>
             private void Unmark(Panel say)
@@ -8420,13 +8355,11 @@ namespace CamelWorks.UI.Views
             // -------------------------------------------------------------------------------
 
             /// <summary>
-            /// Put an empty column on the page, for its fields to be filled in inside it.
+            /// Add an empty column to the page, to be filled in inside the card.
             ///
-            /// <b>The card first, the fields after.</b> This used to need the three boxes at the
-            /// top of the page filled in before the Add symbol would do anything - so the press
-            /// that makes a column refused until somebody had already described one, and refused
-            /// silently enough that it read as a dead button. A column is a card now: press, then
-            /// say what it is, in the card.
+            /// The card is created first and described afterwards. This previously required the
+            /// three boxes at the top of the page to be filled in before the Add symbol did
+            /// anything, and it refused silently, so the button read as dead.
             /// </summary>
             private void AddColumn()
             {
@@ -8439,15 +8372,13 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The columns, as cards, with the way to add one at the top.
+            /// The columns, as cards, with the control to add one at the top.
             ///
-            /// <b>Why cards and not a form.</b> This was three fixed boxes at the top of the page
-            /// and an Add symbol under them: fill the boxes, press a symbol with no word on it,
-            /// watch a line appear in a list somewhere below, and then remember to press "Read
-            /// values" - four steps and two of them invisible. A column is a thing, so it is a
-            /// card, and it is made by pressing something that says what it makes. Its fields
-            /// live inside it and can be changed afterwards, which the old form could not do at
-            /// all.
+            /// This was previously three fixed boxes at the top of the page with an unlabelled Add
+            /// symbol beneath them: fill the boxes, press the symbol, find the new line in a list
+            /// further down, then press "Read values" — four steps, two of them with no visible
+            /// prompt. A column is now a card, created by a labelled control, with its fields
+            /// inside it and editable afterwards, which the earlier form did not allow.
             /// </summary>
             private void RedrawColumnList()
             {
@@ -8585,16 +8516,16 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Read every custom column's value off the clashing elements themselves.
+            /// Read every custom column's value off the clashing elements.
             ///
-            /// <b>Through the engine, not the index.</b> This used to take each row's element
-            /// keys and resolve them back through the document, and a key that is not an instance
-            /// GUID makes the first such resolve index every geometry leaf in the federation. The
-            /// clash engine is holding both elements of every result already, so there is nothing
-            /// to look up - the properties are read straight off them.
+            /// Read through the engine rather than the index. This previously took each row's
+            /// element keys and resolved them through the document, and a key that is not an
+            /// instance GUID makes the first such resolve index every geometry leaf in the
+            /// federation. The clash engine already holds both elements of every result, so the
+            /// properties are read straight off them.
             ///
-            /// Every test, deliberately: a column belongs to the board, not to whichever test
-            /// happens to be open, so adding one adds it everywhere and this fills it everywhere.
+            /// Every test is filled, not only the open one: a column belongs to the board rather
+            /// than to a test, so adding one adds it everywhere.
             /// </summary>
             /// <param name="job">The runner's job, for progress and for stopping.</param>
             private void FillColumns(Job job)
@@ -9549,22 +9480,19 @@ namespace CamelWorks.UI.Views
             // -------------------------------------------------------------------------------
 
             /// <summary>
-            /// Re-read from the document and redraw, then say what happened in the screen's own
-            /// log — the panel the verb's bar offered is destroyed by the redraw, so a message
-            /// written there would never be seen.
-            /// </summary>
-            /// <summary>
             /// Read the whole document again, for an edit that changed which tests there are.
             ///
-            /// <b>Only when the test list moved.</b> Deleting or moving tests changes the rail
-            /// itself, so there is nothing to refresh in place. Everything else names the tests it
-            /// touched and goes through <see cref="RereadTests"/>, which reads those and leaves
-            /// the rest of the document alone — a rename used to re-harvest a hundred and sixty
-            /// tests to change one word.
+            /// Used only when the test list itself moved. Deleting or moving tests changes the
+            /// rail, so there is nothing to refresh in place. Every other edit names the tests it
+            /// touched and goes through <see cref="RereadTests"/>, which reads those and leaves the
+            /// rest of the document alone; a rename previously re-harvested every test in the
+            /// document to change one word.
             ///
-            /// Shown while it runs. This is a walk of every result in the document from inside a
-            /// button press, and behind a wait cursor it is indistinguishable from a plug-in that
-            /// has stopped.
+            /// Progress is shown while it runs. This walks every result in the document from inside
+            /// a button press, and behind a wait cursor that is indistinguishable from a hang.
+            ///
+            /// The outcome is reported in the screen's own log: the redraw destroys the panel the
+            /// verb's bar offered, so a message written there would not be seen.
             /// </summary>
             /// <param name="did">What to say afterwards.</param>
             /// <param name="problems">Anything the host refused, or null.</param>
@@ -9830,18 +9758,16 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Why this document cannot take the changes, or null when it can.
             ///
-            /// <b>Only what is knowable before trying.</b> This also said, in advance, that a
-            /// published NWD holds its clash results read-only and that a document whose
-            /// <c>CanEdit</c> was false would take nothing - both of them read off
-            /// <c>TestsData.Value.IsReadOnly</c>, which is a property of a snapshot object and
-            /// not a statement about the document part every edit actually goes through. So the
-            /// product told somebody their afternoon could not be written into a file that Clash
-            /// Detective, in the next window along, was editing happily.
+            /// Reports only what is knowable before attempting a write. This also used to claim in
+            /// advance that a published NWD holds its clash results read-only, and that a document
+            /// whose <c>CanEdit</c> was false would take nothing. Both were read off
+            /// <c>TestsData.Value.IsReadOnly</c>, which is a property of a snapshot object rather
+            /// than of the document part the edits go through, so the product refused writes to
+            /// files Clash Detective was editing in the next window.
             ///
-            /// What is left here is the two facts that are true before any attempt: a file is
-            /// open for markup instead of the model, or this edition has no clash engine at all.
-            /// A document that really does refuse an edit says so when it refuses one, about the
-            /// edit it refused.
+            /// What remains are the two facts that hold before any attempt: a markup file is open
+            /// instead of the model, or this edition has no clash engine. A document that does
+            /// refuse an edit reports it when it refuses, against the edit it refused.
             /// </summary>
             private string? WhySync()
             {
@@ -9914,21 +9840,20 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Save the work. Always to this project; into the document as well where it can go.
+            /// Save the work: always to this project, and into the document as well where that is
+            /// possible.
             ///
-            /// <b>What "save" means here.</b> The decisions on this board - a status, an
-            /// assignee, a group, a comment, a due date the host has no field for - belong to the
-            /// project, and the project database is where they are kept. Writing them into the
-            /// document's own clash results is a second thing, worth doing because the native
-            /// clash window and every export read from there, but it is not what makes the work
-            /// safe and it is not always possible.
+            /// The decisions on this board — status, assignee, group, comment, a due date the host
+            /// has no field for — belong to the project, and the project database holds them.
+            /// Writing them into the document's own clash results is a second step, worth doing
+            /// because the native clash window and the exports read from there, but it is not what
+            /// makes the work durable and it is not always available.
             ///
-            /// A published NWD holds its clash results read-only. A Simulate seat has no clash
-            /// engine at all. Both of those used to grey this button out, which told somebody
-            /// their afternoon's decisions could not be saved - when in fact they were already
-            /// kept and would travel to whoever opened the NWF next. Saving to the database is
-            /// the default and the whole of it; the document write is the part that is offered
-            /// when the document will take it.
+            /// A published NWD holds its clash results read-only, and a Simulate seat has no clash
+            /// engine. Both used to disable this button, which implied the decisions could not be
+            /// saved when in fact they were already stored and would reach whoever opened the NWF
+            /// next. The database write is the default and is sufficient; the document write is
+            /// offered when the document will take it.
             /// </summary>
             private void SaveWork()
             {
@@ -10045,15 +9970,14 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Put the topics no clash answers to into the issue register.
+            /// Add the topics that match no clash to the issue register.
             ///
-            /// <b>Why they are not simply dropped.</b> A reviewer with the file open raises what
-            /// they find, and what they find is not always a clash we sent them - a missing
-            /// handrail, a door that opens the wrong way, a coordination question. Those came back
-            /// counted and discarded, which is the same as not having asked.
+            /// A reviewer with the file open raises what they find, and that is not always a clash
+            /// that was sent to them: a missing handrail, a door that opens the wrong way, a
+            /// coordination question. These were previously counted and discarded.
             ///
-            /// The register is where a problem with no clash behind it belongs, and importing is
-            /// a merge rather than a load, so the same reviewer sending the same file three times
+            /// The register is where a problem with no clash behind it belongs, and importing
+            /// merges rather than loads, so the same reviewer sending the same file three times
             /// updates their topics instead of tripling them.
             /// </summary>
             /// <param name="strangers">Topics this model could not place.</param>
@@ -10161,15 +10085,14 @@ namespace CamelWorks.UI.Views
             private void Said(UIElement note) => Said(note, hold: false);
 
             /// <summary>
-            /// Say one thing over the board, and decide whether it goes away on its own.
+            /// Show one message over the board, and decide whether it clears on its own.
             ///
-            /// <b>A problem never fades.</b> Confirmations do - they are the press being
-            /// acknowledged, and a strip of them stacking over the table pushes the rows they are
-            /// about off the screen. A refusal is the opposite: it is the only account of why the
-            /// press did nothing, and three seconds of it while somebody is looking at the rail
-            /// rather than the board is a verb that silently does not work. Every one of "rename
-            /// does not work", "move only changes the selected test" and "the status dropdown
-            /// does not change it" was the host refusing and saying so where nobody was looking.
+            /// Confirmations fade; problems do not. A confirmation acknowledges the press, and a
+            /// stack of them pushes the rows they refer to off the screen. A refusal is the only
+            /// account of why a press did nothing, and three seconds of it while the user is
+            /// looking at the rail reads as a verb that does not work. The reports that rename did
+            /// nothing, that move changed only the selected test, and that the status dropdown had
+            /// no effect were all the host refusing and saying so where it was not seen.
             /// </summary>
             /// <param name="note">What to say.</param>
             /// <param name="hold">True to leave it up until it is dismissed.</param>

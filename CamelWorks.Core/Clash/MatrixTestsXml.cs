@@ -28,11 +28,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// What a saved set's name is prefixed with to become a selection locator.
         ///
-        /// <b>Held as a setting rather than fixed in the code.</b> This is the one part of the
-        /// format that is the host's private business: the path it uses to name a saved set
-        /// inside its own tree. It is what every clash-test file in the wild carries, and it is
-        /// not published - so a host year that spells it differently would otherwise mean a new
-        /// build rather than a changed line.
+        /// A setting rather than a constant. This is the one part of the format that is the host's
+        /// private business: the path it uses to name a saved set inside its own tree. It is what
+        /// every clash-test file in the wild carries and it is not published, so a host year that
+        /// spells it differently would otherwise mean a new build rather than a changed line.
         /// </summary>
         public string SetPrefix { get; set; } = "lcop_selection_set_tree/";
 
@@ -66,26 +65,25 @@ namespace CamelWorks.Core.Clash
     }
 
     /// <summary>
-    /// The matrix as a file Navisworks can make the tests from.
+    /// The matrix as a file Navisworks can create the tests from.
     ///
-    /// <b>The build button needs the seat the matrix was drawn on.</b> A matrix is argued over at
-    /// a kick-off, on a laptop, by somebody who is not the person who will run it - and the only
-    /// way it became tests was pressing a button inside the model it was going to run against.
-    /// So the coordinator drew the board, sent a spreadsheet, and the person with the seat built
-    /// two hundred tests by hand from a picture of them.
+    /// The build button requires the seat the matrix will run on. A matrix is agreed at a kick-off,
+    /// often by somebody who is not the person who will run it, and the only way it became tests was
+    /// pressing a button inside the model it was going to run against. So the coordinator drew the
+    /// board, sent a spreadsheet, and the person with the seat built two hundred tests by hand.
     ///
-    /// Clash Detective imports its own tests from XML, and that file is exactly what a matrix
-    /// already knows: a name per pair, two sides, a kind and a tolerance. Written out, the board
-    /// travels - and the person with the seat presses Import rather than New two hundred times.
+    /// Clash Detective imports its own tests from XML, and that file is what a matrix already knows:
+    /// a name per pair, two sides, a kind and a tolerance. Written out, the board travels and the
+    /// person with the seat presses Import once.
     ///
-    /// <b>Tests, not results.</b> The other writer in this codebase records what came back; this
-    /// one records what should be run and carries no results at all, which is what the host
-    /// expects from a file it is asked to create tests from.
+    /// Tests, not results. The other writer in this codebase records what came back; this one
+    /// records what should be run and carries no results, which is what the host expects from a file
+    /// it is asked to create tests from.
     ///
-    /// <b>Only the sides the format can name.</b> A side that is a saved set is a locator the
-    /// host resolves by name. A side that is whole models, or a selection captured by element,
-    /// is not something this file can address - so those are left out and named in the warnings
-    /// rather than written as something that would import as an empty test.
+    /// Only the sides the format can name. A side that is a saved set is a locator the host resolves
+    /// by name. A side that is whole models, or a selection captured by element, cannot be addressed
+    /// by this file, so those are left out and named in the warnings rather than written as
+    /// something that would import as an empty test.
     /// </summary>
     public static class MatrixTestsXml
     {

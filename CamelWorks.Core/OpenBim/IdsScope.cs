@@ -31,21 +31,20 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// Which elements a rule is about, said in the model's own terms rather than IFC's.
     ///
-    /// <b>Why this exists.</b> An IDS says who a rule applies to with an entity facet — "every
-    /// IfcWall" — and a Navisworks federation is a pile of NWCs from Revit, Tekla and Civil 3D
-    /// where most elements have no IFC class at all. On that model every specification matches
-    /// nothing and the whole check reports "not applicable", which is useless and, worse, reads
-    /// as green.
+    /// An IDS says who a rule applies to with an entity facet — "every IfcWall" — and a Navisworks
+    /// federation is a set of NWCs from Revit, Tekla and Civil 3D where most elements have no IFC
+    /// class. On that model every specification matches nothing and the whole check reports "not
+    /// applicable", which reads as a pass.
     ///
     /// The requirements half already works there: a property facet is property matching and the
-    /// projection already bridges it. Only applicability was IFC-bound. So this is the missing
-    /// half — a rule can say "the elements in the Level 3 Ductwork set" and everything else about
-    /// IDS works unchanged.
+    /// projection bridges it. Only applicability was IFC-bound. This supplies the missing half — a
+    /// rule can say "the elements in the Level 3 Ductwork set" and everything else about IDS works
+    /// unchanged.
     ///
-    /// <b>It does not go in the .ids file.</b> The published schema's applicability is a closed
-    /// sequence of six facet elements with no extension point, so a scope written into one would
-    /// make the file invalid for every other tool. It travels in a CamelWorks overlay beside the
-    /// IDS instead, and the portable file stays portable.
+    /// It does not go in the .ids file. The published schema's applicability is a closed sequence of
+    /// six facet elements with no extension point, so a scope written into one would make the file
+    /// invalid for every other tool. It travels in a CamelWorks overlay beside the IDS, and the
+    /// portable file stays portable.
     /// </summary>
     public sealed class IdsScope : IEquatable<IdsScope>
     {
@@ -119,10 +118,9 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// Matches on which of the model's own groupings an element is in.
     ///
-    /// <b>Applicability only.</b> Written as a requirement it would assert "this element must be
-    /// in that set", which is a statement about how somebody organised their sets rather than
-    /// about the building — and the sets are usually made by the same person the rule is checking.
-    /// A check that grades a model on its own filing is worth nothing, so
+    /// Applicability only. Written as a requirement it would assert "this element must be in that
+    /// set", which is a statement about how the sets were organised rather than about the building,
+    /// and the sets are usually made by the same person the rule is checking. So
     /// <see cref="IdsScopeSpecification.IsScoped"/> reads this off applicability and nothing reads
     /// it off requirements.
     /// </summary>

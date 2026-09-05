@@ -190,20 +190,18 @@ namespace CamelWorks.Core.Automation
     /// <summary>
     /// Runs a graph.
     ///
-    /// Two decisions worth stating, because both could reasonably go the other way:
+    /// Three decisions worth stating, because each could reasonably go the other way:
     ///
-    /// 1. <b>A cycle stops the whole run.</b> Not the cycle, the run. A graph with a loop in it has
-    ///    no defined answer, and running the acyclic part of it would produce a real-looking result
-    ///    from half a job.
-    /// 2. <b>A node with a missing input is skipped, not failed.</b> Everything downstream of it is
-    ///    skipped too, and every one of them says why. A half-built graph is the ordinary state of
-    ///    one being written, and refusing to run any of it until every wire is in place would make
-    ///    the canvas useless exactly while it is being used.
-    /// 3. <b>A foundational step that fails stops the run.</b> The steps that assemble the
-    ///    federation carry no wires, so the skip-what-depends-on-it rule cannot reach them: a
-    ///    failed append followed by a clash run and a report produces a real-looking PDF about a
-    ///    federation missing a model, and nothing on it says so. Stopping is the only answer that
-    ///    does not lie.
+    /// 1. A cycle stops the whole run rather than just the cycle. A graph with a loop has no defined
+    ///    answer, and running the acyclic part would produce a real-looking result from half a job.
+    /// 2. A node with a missing input is skipped rather than failed. Everything downstream of it is
+    ///    skipped too, and each says why. A half-built graph is the ordinary state of one being
+    ///    written, and refusing to run any of it until every wire is in place would make the canvas
+    ///    unusable while it is being used.
+    /// 3. A foundational step that fails stops the run. The steps that assemble the federation carry
+    ///    no wires, so the skip-what-depends-on-it rule cannot reach them: a failed append followed
+    ///    by a clash run and a report produces a real-looking PDF about a federation missing a
+    ///    model, with nothing on it saying so.
     /// </summary>
     public static class GraphRunner
     {

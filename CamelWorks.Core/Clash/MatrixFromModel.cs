@@ -49,15 +49,14 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Read the document's tests as a matrix.
         ///
-        /// <b>Every test carries what it is between</b> - a saved set on each side, or a list of
-        /// models - so the matrix is already in the document and nobody has to redraw it. Each
-        /// distinct source becomes a row and a column, the pair becomes a cell, and the legend is
-        /// built from what the tests themselves say: one entry per distinct kind and tolerance, so
-        /// a job running hard at 10 mm and clearance at 50 mm comes back with two symbols rather
-        /// than a legend somebody has to reconstruct.
+        /// Every test carries what it is between — a saved set on each side, or a list of models —
+        /// so the matrix is already in the document and does not have to be redrawn. Each distinct
+        /// source becomes a row and a column, the pair becomes a cell, and the legend is built from
+        /// what the tests say: one entry per distinct kind and tolerance, so a job running hard at
+        /// 10 mm and clearance at 50 mm comes back with two symbols.
         ///
-        /// <b>Square, because a read has nothing to say about which axis is which.</b> Both axes
-        /// hold every source found. Splitting them afterwards is the editor's job.
+        /// Square, because a read has nothing to say about which axis is which: both axes hold every
+        /// source found. Splitting them afterwards is the editor's job.
         /// </summary>
         /// <param name="tests">The document's tests, with what each is between.</param>
         public static MatrixReading Read(IReadOnlyList<ClashTestRead> tests)

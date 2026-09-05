@@ -238,7 +238,7 @@ namespace CamelWorks.Studio
             if (button == null)
             {
                 Program.Log("  could not find the button named " + caption + "; the page will be "
-                            + "photographed at rest, which is not what it is for");
+                            + "captured in its resting state");
                 return;
             }
 
@@ -370,8 +370,8 @@ namespace CamelWorks.Studio
                          "Clear the rules", () => { }),
                 Ui.Note("This model has no saved viewpoints yet, so there is nothing to rename. "
                         + "Save one first, or run this after a coordination session."),
-                Ui.Problem("The project file is open in another Navisworks. CamelWorks will not "
-                           + "write over somebody else's work; close it there, or carry on and export "
+                Ui.Problem("The project file is open in another Navisworks session. CamelWorks "
+                           + "will not overwrite it; close it there, or continue and export "
                            + "without saving."),
                 Ui.Done("Published 46 sets into 6 folders. They are in the Sets window now."),
                 Ui.Info("Removed elements are drawn from the baseline model, which CamelWorks appends "

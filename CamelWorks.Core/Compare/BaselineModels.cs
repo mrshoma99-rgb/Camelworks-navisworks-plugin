@@ -62,22 +62,19 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Bringing the old revision back into the document, so a deletion can be looked at.
     ///
-    /// <b>"A removed element cannot be shown" is only true until somebody opens the old file.</b>
-    /// The element is not gone — it is in last month's model, sitting in last month's issue folder,
-    /// and Navisworks will append that file beside the current one quite happily. The snapshot
+    /// A removed element can be shown once the old file is open. It is in last month's model in last
+    /// month's issue folder, and Navisworks appends that file beside the current one. The snapshot
     /// already records the path of every model it was taken from, so nothing has to be found or
     /// asked for.
     ///
-    /// <b>What makes this work rather than merely load two models.</b> The host's element index is
-    /// first-wins in document order, and appended models land at the end. Every key that exists in
-    /// the current model therefore still resolves to the current element — so the added, moved and
-    /// changed layers keep pointing where they did — and the only keys the appended revision
-    /// claims are the ones nothing else has: precisely the removed set. The red layer starts
-    /// working and nothing else moves.
+    /// What makes this work rather than merely load two models: the host's element index is
+    /// first-wins in document order and appended models land at the end. Every key that exists in
+    /// the current model still resolves to the current element, so the added, moved and changed
+    /// layers keep pointing where they did, and the only keys the appended revision claims are the
+    /// ones nothing else has — the removed set.
     ///
-    /// <b>And the case where it cannot work.</b> A model issued by overwriting one file in place
-    /// has no old revision left to open. That is not a limit of this tool and it is worth being
-    /// told about rather than left to discover.
+    /// It cannot work where a model was issued by overwriting one file in place, because there is no
+    /// old revision left to open. That is worth reporting rather than leaving to be discovered.
     /// </summary>
     public static class BaselineModels
     {

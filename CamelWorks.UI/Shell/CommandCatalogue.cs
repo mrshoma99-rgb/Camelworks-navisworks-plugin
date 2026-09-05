@@ -65,8 +65,8 @@ namespace CamelWorks.UI.Shell
                 + "filters, and the ways a board leaves and comes back."),
 
             AppCmd("ID_CW_AppIssueManager", "Issue Manager", "issuemgr",
-                "Everything raised on this job in one register - by hand, from clash results, "
-                + "from the clearance check, or out of somebody's BCF file."),
+                "Every issue on this job in one register: raised by hand, from clash results, "
+                + "from the clearance check, or imported from BCF."),
 
             AppCmd("ID_CW_AppAudit", "Model Audit", "audit",
                 "Whether this federation is fit to coordinate against — health, IDS, the model "
@@ -92,7 +92,7 @@ namespace CamelWorks.UI.Shell
                 + "viewpoints."),
 
             AppCmd("ID_CW_AppExports", "Export Kit", "exports",
-                "The model as a file somebody else opens — IFC, GLB, a drawing, an extract or "
+                "The model as a file for other applications: IFC, GLB, a drawing, an extract or "
                 + "a compiled deliverable."),
 
             AppCmd("ID_CW_AppSite", "Site Pack", "site",

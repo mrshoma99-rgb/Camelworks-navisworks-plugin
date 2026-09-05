@@ -36,8 +36,9 @@ Example of the required register for a commit message:
 
 ## Other standing rules
 
-- No code, comment, commit message or document may mention KVI, Kanadevia or
-  iConstruct.
+- The only company identity in this product is BIMCamel. Do not name the
+  predecessor company, its parent, or the third-party plug-in suite it used.
+  `checks/validate-branding.py` enforces this and lists the exact terms.
 - Be sparing with GitHub Actions minutes. The `ui-shots` workflow draws only
   the named pages, in the light palette.
 - The matrix's default save target is the project database. Changes sync back

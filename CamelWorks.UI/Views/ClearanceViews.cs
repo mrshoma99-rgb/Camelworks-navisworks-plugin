@@ -18,23 +18,22 @@ using CamelWorks.Nav;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Clearance Check — the clear height over a walking surface, worked like clash results.
+    /// Clearance Check: the clear height over a walking surface, worked like clash results.
     ///
-    /// <b>Why it exists.</b> A duct 1.9 m over a corridor intersects nothing. There is air between
-    /// it and the floor, so no clash test at any tolerance will ever report it, and the first
-    /// anybody hears of it is somebody walking into it on site.
+    /// A duct 1.9 m over a corridor intersects nothing. There is air between it and the floor, so no
+    /// clash test at any tolerance reports it, and the first anybody hears of it is on site.
     ///
-    /// <b>Why it looks like the Manage tab.</b> What comes out of it is a list of places somebody
-    /// has to argue about, assign and close — which is a clash list in everything but how it was
-    /// found. So it gets the same bench: sort on any column, filter on any column, an ordered
-    /// grouping chain, element-property columns, bulk status, assignment, comments and grouping on
-    /// the picked rows, focus, isolate and marker spheres in the model, the grid to a spreadsheet,
-    /// and the whole finding list out as a clash file that the Manage tab's file source opens for
-    /// the same review round.
+    /// It looks like the Manage tab because what comes out of it is a list of places to argue about,
+    /// assign and close, which is a clash list in everything but how it was found. So it gets the
+    /// same bench: sort on any column, filter on any column, an ordered grouping chain,
+    /// element-property columns, bulk status, assignment, comments and grouping on the selected
+    /// rows, focus, isolate and marker spheres in the model, the grid to a spreadsheet, and the
+    /// whole finding list out as a clash file that the Manage tab's file source opens for the same
+    /// review round.
     ///
-    /// <b>The two inputs are model-fed.</b> Both sides offer every search set and selection set the
-    /// document holds, the current selection, or everything loaded — nothing is typed. The one
-    /// guess it still offers is named as a guess, and says which words it matches.
+    /// Both inputs are model-fed. Each side offers every search set and selection set the document
+    /// holds, the current selection, or everything loaded; nothing is typed. The one guess it offers
+    /// is labelled as a guess and says which words it matches.
     /// </summary>
     public static class ClearanceViews
     {
@@ -421,8 +420,8 @@ namespace CamelWorks.UI.Views
                     _onlyCommented = on;
                     RedrawGroups();
                 }),
-                Ui.Small("The status ticks and the search are on the strip above the findings, "
-                         + "not here: they are what somebody changes every few minutes."));
+                Ui.Small("The status filters and the search are on the strip above the findings "
+                         + "because they are changed frequently."));
 
             private UIElement ColumnsPage()
             {
@@ -676,15 +675,13 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Put what this run measured into the findings register, and lay back what is known.
             ///
-            /// <b>Why a run writes anything.</b> The judgement used to live on the row and be
-            /// carried between runs in memory: close a breach on Tuesday, close Navisworks, and on
-            /// Wednesday it was open again. That is the behaviour that makes a check nobody
-            /// re-runs. It lives beside the model now.
+            /// The judgement previously lived on the row and was carried between runs in memory:
+            /// close a breach, close Navisworks, and it was open again the next day. It is now
+            /// stored beside the model.
             ///
             /// Every clear-height finding is in scope, because the check always measures the whole
-            /// of what it was pointed at: one this run did not report is one that is no longer too
-            /// low, and it is marked absent rather than deleted so the record of it having been
-            /// fixed survives.
+            /// of what it was pointed at: one this run did not report is no longer too low, and it
+            /// is marked absent rather than deleted so the record of the fix survives.
             /// </summary>
             private void Keep(IReadOnlyList<Row> rows, double minimum, Job job)
             {
@@ -1171,13 +1168,12 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// A status-coloured ball at each finding, halfway up the gap.
             ///
-            /// Halfway rather than at the surface or the soffit: the point of the marker is to be
-            /// visible in the space the person will not fit through.
+            /// Halfway rather than at the surface or the soffit, so the marker is visible in the
+            /// space that is too low to pass through.
             ///
-            /// <b>Temporary graphics, not geometry.</b> They are drawn over the model each frame
-            /// from a set handed to the view, so they appear at once and clear at once - nothing
-            /// is added to the document, nothing joins the selection tree, nothing needs
-            /// unloading.
+            /// Temporary graphics rather than geometry. They are drawn over the model each frame
+            /// from a set handed to the view, so they appear and clear at once: nothing is added to
+            /// the document, nothing joins the selection tree, and nothing needs unloading.
             /// </summary>
             /// <param name="picked">The picked rows.</param>
             /// <param name="say">Where to report what happened.</param>
@@ -1202,8 +1198,8 @@ namespace CamelWorks.UI.Views
 
                 if (radius <= 0)
                 {
-                    say.Children.Add(Ui.Problem("A marker of no size is a marker nobody can see. "
-                        + "Give it a size on the Model page."));
+                    say.Children.Add(Ui.Problem("A marker radius of zero produces nothing visible. "
+                        + "Set a size on the Model page."));
                     return;
                 }
 

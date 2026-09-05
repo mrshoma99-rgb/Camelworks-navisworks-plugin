@@ -10,14 +10,14 @@ namespace CamelWorks.UI.Views
     /// The frame every tool that is not a panel opens in.
     ///
     /// One host rather than twenty-four bespoke windows, because the frame is the part that should
-    /// be identical: the tool's name, the sentence saying what it is trying to do, its surface,
-    /// and its one main action in the same place every time. What differs between tools is the
-    /// middle, and the middle is all a tool should have to write.
+    /// be identical: the tool's name, the sentence saying what it does, its surface, and its one
+    /// main action in the same place every time. What differs between tools is the middle, and the
+    /// middle is all a tool should have to write.
     ///
-    /// <b>Why windows at all.</b> These used to be tabs in a four-hundred-and-seventy-pixel dock
-    /// pane, reached through a workspace switcher and a tab strip - so twenty-one ribbon buttons
-    /// all opened the same panel, three of them on a tab another button already opened. A tool
-    /// gets the width its work needs, and the ribbon button that opens it opens *it*.
+    /// These were previously tabs in a 470-pixel dock pane reached through a workspace switcher and
+    /// a tab strip, so twenty-one ribbon buttons all opened the same panel, three of them on a tab
+    /// another button already opened. A tool now gets the width its work needs, and the ribbon
+    /// button that opens it opens that tool.
     /// </summary>
     public static class ToolWindow
     {

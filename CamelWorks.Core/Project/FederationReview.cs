@@ -89,12 +89,11 @@ namespace CamelWorks.Core.Project
         /// <summary>
         /// A stable id for the rule that produced this, or null when the check has only one.
         ///
-        /// <b>Why the headline will not do.</b> A finding is identified so that a decision
-        /// somebody takes on it survives the next run. Headlines here read "37 elements sit on
-        /// top of each other" — the count is in the words, so a headline changes whenever the
-        /// model does, and identifying off one would hand every re-run a fresh finding and throw
-        /// away every decision anybody had made. A rule id says which rule spoke, and does not
-        /// move when the answer does.
+        /// The headline will not serve. A finding is identified so a recorded decision survives the
+        /// next run, and headlines here read "37 elements sit on top of each other": the count is in
+        /// the words, so the headline changes whenever the model does, and identifying off one would
+        /// give every re-run a fresh finding and discard every decision. A rule id says which rule
+        /// spoke and does not move when the answer does.
         /// </summary>
         public string? Rule { get; }
 

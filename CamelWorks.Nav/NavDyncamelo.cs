@@ -110,24 +110,22 @@ namespace CamelWorks.Nav
     /// <summary>
     /// Runs a Dyncamelo graph without opening the Dyncamelo editor.
     ///
-    /// <b>Why a bridge and not a reference.</b> Dyncamelo ships as its own Navisworks bundle
-    /// beside this one — its assemblies are not in CamelWorks' folder and are not on the probing
-    /// path. A compile-time reference would make CamelWorks fail to load on a machine where
-    /// Dyncamelo is absent, which is the same mistake as referencing the clash assembly on
-    /// Simulate. So this loads by path and calls by reflection, exactly the way
-    /// <see cref="NavClash"/> reaches Clash Detective, and every screen that uses it degrades to a
-    /// sentence when the answer is null.
+    /// A bridge rather than a reference. Dyncamelo ships as its own Navisworks bundle beside this
+    /// one: its assemblies are not in CamelWorks' folder and are not on the probing path. A
+    /// compile-time reference would make CamelWorks fail to load on a machine where Dyncamelo is
+    /// absent, which is the same mistake as referencing the clash assembly on Simulate. So this
+    /// loads by path and calls by reflection, as <see cref="NavClash"/> reaches Clash Detective, and
+    /// every screen that uses it degrades to a message when the answer is null.
     ///
-    /// <b>What it calls.</b> Not the engine directly: <c>DyncameloHost.Registry</c> and
-    /// <c>DyncameloHost.CreateEvaluationContext()</c>, which are the same two things the editor
-    /// itself runs on. That matters — the registry is where the Navisworks node library and the
-    /// third-party packs are loaded, and the context is where the host document service is
-    /// published. Rebuilding either here would mean a graph behaving differently depending on
-    /// which window ran it, which is the worst kind of bug to be told about.
+    /// It calls <c>DyncameloHost.Registry</c> and <c>DyncameloHost.CreateEvaluationContext()</c>
+    /// rather than the engine directly, which are the two things the editor itself runs on. The
+    /// registry is where the Navisworks node library and the third-party packs are loaded, and the
+    /// context is where the host document service is published; rebuilding either here would make a
+    /// graph behave differently depending on which window ran it.
     ///
-    /// <b>Which build.</b> A Navisworks plug-in is compiled per release, so the bundle has a
-    /// folder per year. The right one is chosen from the API version this process actually loaded
-    /// (v21 is 2024, v22 2025, v23 2026, v24 2027) rather than from anything written down.
+    /// A Navisworks plug-in is compiled per release, so the bundle has a folder per year. The right
+    /// one is chosen from the API version this process loaded (v21 is 2024, v22 2025, v23 2026, v24
+    /// 2027) rather than from anything written down.
     /// </summary>
     public static class NavDyncamelo
     {

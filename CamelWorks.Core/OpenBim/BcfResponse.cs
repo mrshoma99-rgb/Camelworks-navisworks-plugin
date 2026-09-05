@@ -129,7 +129,7 @@ namespace CamelWorks.Core.OpenBim
 
             if (Reopened > 0) s += " - " + Reopened.ToString("N0", CultureInfo.InvariantCulture) + " re-opened";
             if (Refused > 0) s += " - " + Refused.ToString("N0", CultureInfo.InvariantCulture) + " left where they are";
-            if (Unknown > 0) s += " - " + Unknown.ToString("N0", CultureInfo.InvariantCulture) + " with a status nobody knows";
+            if (Unknown > 0) s += " - " + Unknown.ToString("N0", CultureInfo.InvariantCulture) + " with an unrecognised status";
 
             if (Unmatched.Count > 0)
                 s += " - " + Unmatched.Count.ToString("N0", CultureInfo.InvariantCulture)
@@ -146,23 +146,20 @@ namespace CamelWorks.Core.OpenBim
     /// Reads a BCF file that came back, and works out what it says about the board.
     ///
     /// Exporting BCF and never reading one is half a feature: the format exists so an issue can go
-    /// out, be worked on somewhere else, and come back with an answer. What comes back is somebody
-    /// else's opinion about statuses this board already holds, and reconciling the two is the whole
-    /// difficulty.
+    /// out, be worked on elsewhere, and come back with an answer. What comes back is somebody else's
+    /// opinion about statuses this board already holds, and reconciling the two is the difficulty.
     ///
-    /// Two rules, and the difference between them is the point:
+    /// Two rules:
     ///
     /// <list type="bullet">
-    /// <item><b>An ordinary merge never loses progress.</b> Two people edited the same issue while
-    /// neither could see the other, so the higher status wins. A stale "Open" in a file somebody
-    /// exported on Tuesday must not undo an "Approved" made on Wednesday.</item>
-    /// <item><b>An explicit re-open is honoured, even downwards.</b> "ReOpened" is not a stale
-    /// edit; it is somebody saying, in front of the evidence, that the thing you closed is not
-    /// fixed. Refusing that on the grounds that it lowers a status would make CamelWorks the tool
-    /// that argues with the site.</item>
+    /// <item>An ordinary merge never loses progress. Two people edited the same issue while neither
+    /// could see the other, so the higher status wins: a stale "Open" in a file exported earlier
+    /// must not undo an "Approved" made since.</item>
+    /// <item>An explicit re-open is honoured, even downwards. "ReOpened" is not a stale edit; it is
+    /// somebody saying, in front of the evidence, that the closed item is not fixed.</item>
     /// </list>
     ///
-    /// Nothing is applied here. This works out what would happen so a person can look at it first.
+    /// Nothing is applied here. This works out what would happen so it can be reviewed first.
     /// </summary>
     public static class BcfResponse
     {

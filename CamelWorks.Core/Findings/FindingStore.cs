@@ -9,18 +9,18 @@ namespace CamelWorks.Core.Findings
     /// <summary>
     /// The findings file, beside the project file.
     ///
-    /// <b>Its own file, not a section of the project file.</b> The project file is rewritten every
-    /// time any tool remembers anything — a folder path, a column width, a tick. Findings are the
-    /// large thing here: about two hundred bytes each, so an eighteen-thousand-clash job is some
-    /// three and a half megabytes. Remembering a textbox should not rewrite that, and a findings
-    /// write should not rewrite everybody's settings.
+    /// Its own file rather than a section of the project file. The project file is rewritten every
+    /// time any tool stores anything — a folder path, a column width, a tick. Findings are the large
+    /// item here: about two hundred bytes each, so an eighteen-thousand-clash job is some three and
+    /// a half megabytes. Storing a text box should not rewrite that, and a findings write should not
+    /// rewrite everybody's settings.
     ///
     /// It still travels with the job: same <c>.camelworks</c> folder, same stem, beside the
     /// <c>.cwproj</c>. A document that has never been saved keeps its findings in the user's own
     /// folder, like its project file, until it has a home.
     ///
-    /// <b>Written atomically</b>, through the same path the project file uses: a findings file
-    /// half-written by a Navisworks that closed mid-save is a coordinator's week.
+    /// Written atomically, through the same path the project file uses: a findings file half-written
+    /// by a Navisworks that closed mid-save costs a week of work.
     /// </summary>
     public sealed class FindingStore
     {

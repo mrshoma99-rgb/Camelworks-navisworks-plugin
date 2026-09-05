@@ -35,17 +35,17 @@ namespace CamelWorks.Core.Clash
     /// Folds the same physical conflict reported by two different tests into one row.
     ///
     /// A federation typically runs a hard-clash test and a clearance test over the same two models.
-    /// One duct through one beam is then reported twice, and a coordinator resolves it twice, in
-    /// two different places, with two different statuses — the second of which nobody updates.
+    /// One duct through one beam is then reported twice, and is resolved twice, in two places, with
+    /// two statuses, the second of which nobody updates.
     ///
-    /// <b>The match is a proximity band, never exact key equality.</b> Two tests with different
+    /// The match is a proximity band rather than exact key equality. Two tests with different
     /// tolerances compute different intersection points on the same pair, so the same conflict
     /// quantises into different cells and an equality test finds nothing. The band is deliberately
     /// coarse relative to the clash key's cell.
     ///
-    /// <b>It never folds two results from the same test.</b> Within one test, two results on one
-    /// pair a metre apart are two genuine penetrations — the case the whole positional key exists
-    /// to keep separate. Only results the same test would not have produced twice are candidates.
+    /// It never folds two results from the same test. Within one test, two results on one pair a
+    /// metre apart are two genuine penetrations, which is what the positional key exists to keep
+    /// separate. Only results the same test would not have produced twice are candidates.
     /// </summary>
     public static class DuplicateCollapse
     {

@@ -10,47 +10,37 @@ namespace CamelWorks.Core.Clash
     public sealed class MatrixReadOptions
     {
         /// <summary>
-        /// Whether a test no pattern fits is read from what it is between instead.
+        /// Whether a test that no pattern matches is read from its saved sets instead.
         ///
-        /// On by default, because a matrix that silently dropped the forty tests set up before
-        /// the naming convention settled is a matrix somebody signs off believing it covers the
-        /// job. Off, the read is exactly what the patterns say and nothing else - which is what
-        /// somebody checking a convention wants.
+        /// Default true, so unmatched tests are not silently dropped. Set false to read only what
+        /// the patterns cover, which is useful when checking a convention.
         /// </summary>
         public bool TakeUnmatched { get; set; } = true;
 
         /// <summary>
-        /// Whether the patterns' own words win over the sets a test points at.
+        /// Whether parsed names take precedence over set names.
         ///
-        /// On: a row is called what the name calls it. Off: the name is only used for the code,
-        /// the folder and the symbol, and the row keeps the set's name.
+        /// Default true. When false, the parse still supplies code, folder and symbol, but the
+        /// row keeps the set's name.
         /// </summary>
         public bool NamesWin { get; set; } = true;
     }
 
     /// <summary>
-    /// A matrix read out of the document's tests, using the naming the job already uses.
+    /// Builds a matrix from clash tests, using name patterns to determine row and column
+    /// identity rather than the saved sets alone.
     ///
-    /// <b>The names were the one thing the read threw away.</b> Every test carries what it is
-    /// between, so a matrix could always be reconstructed from the saved sets - and the grid that
-    /// came back was named after whatever those sets happened to be called, which on a real job
-    /// is "ARC_GENERAL_ELEMENTS_R21_ISSUED" and not what anybody puts in front of a client. Every
-    /// other thing the job knows - the discipline codes, the numbers, the packages, which kind of
-    /// test each one is - was sitting in the test's own name, in an order that job agreed on
-    /// months ago, and none of it was read.
-    ///
-    /// So the person reading says how their tests are named, in the same tokens the matrix uses
-    /// to write names, and this reads them back out. What comes back is their matrix, in their
-    /// words, pointing at the sets the tests actually use.
+    /// <see cref="MatrixFromModel"/> keys lines on the set each side points at, so rows are named
+    /// after those sets. This keys lines on the name parsed out of the test, and takes the code,
+    /// number, folder and symbol from the same parse. The saved set is still attached to the line,
+    /// so building tests from the result works unchanged.
     /// </summary>
     public static class MatrixFromNames
     {
-        /// <summary>
-        /// Read the chosen tests as a matrix, using the patterns in the order they are given.
-        /// </summary>
-        /// <param name="tests">The tests to read. Everything not in this list is ignored.</param>
-        /// <param name="patterns">The naming conventions, in order. The first that fits wins.</param>
-        /// <param name="options">What to do with what does not fit, and who names a row.</param>
+        /// <summary>Reads the given tests into a matrix.</summary>
+        /// <param name="tests">The tests to read.</param>
+        /// <param name="patterns">Name patterns, matched in order; first match wins.</param>
+        /// <param name="options">Handling of unmatched tests and name precedence.</param>
         public static MatrixReading Read(IReadOnlyList<ClashTestRead>? tests,
                                          IReadOnlyList<MatrixNamePattern>? patterns,
                                          MatrixReadOptions? options = null)
@@ -59,9 +49,7 @@ namespace CamelWorks.Core.Clash
             var usable = (patterns ?? Array.Empty<MatrixNamePattern>())
                 .Where(one => one != null && one.IsUsable).ToList();
 
-            // Nothing to read names with is the old read, exactly: what a test is between, and
-            // nothing else. Which is still the right answer on a job whose tests were named by
-            // six people over two years.
+            // With no usable patterns this is the set-based read, unchanged.
             if (usable.Count == 0)
                 return MatrixFromModel.Read(tests ?? Array.Empty<ClashTestRead>());
 
@@ -117,7 +105,7 @@ namespace CamelWorks.Core.Clash
                 board.Set(board.Rows.FirstOrDefault(r => ReferenceEquals(r, pair.A)),
                           Matching(board.Columns, pair.A, pair.B), pair.Symbol);
 
-                // Both halves, the way every clash matrix on paper is drawn.
+                // Both halves, as the matrix is mirrored.
                 board.Set(board.Rows.FirstOrDefault(r => ReferenceEquals(r, pair.B)),
                           Matching(board.Columns, pair.B, pair.A), pair.Symbol);
             }
@@ -136,20 +124,17 @@ namespace CamelWorks.Core.Clash
                 warnings, read);
         }
 
-        /// <summary>The column standing for one of a pair's two sides.</summary>
+        /// <summary>The column corresponding to one side of a pair.</summary>
         private static MatrixLine? Matching(IReadOnlyList<MatrixLine> columns,
                                             MatrixLine one, MatrixLine other) =>
             columns.FirstOrDefault(c => string.Equals(c.Name, other.Name, StringComparison.Ordinal));
 
         /// <summary>
-        /// One side of a test as a line of the matrix, named the way the job names it.
+        /// One side of a test as a matrix line, keyed on the parsed name rather than the set, so
+        /// several tests naming the same discipline produce one line.
         ///
-        /// <b>Keyed on the name, not on the set.</b> That is the whole point of reading names: a
-        /// discipline that five tests all call "Steel" is one row, whichever five sets those
-        /// tests happen to point at. The first set seen becomes what the row points at, and a
-        /// second that disagrees is said out loud rather than silently dropped - because two
-        /// different sets under one name is either a re-cut set or a naming mistake, and both are
-        /// things the person reading needs to know about.
+        /// The first set encountered is attached to the line. A second, different set under the
+        /// same name is reported as a warning rather than dropped silently.
         /// </summary>
         private static MatrixLine? Line(Dictionary<string, MatrixLine> lines,
                                         List<string> warnings, MatrixNameMatch? match, bool side,
@@ -198,7 +183,7 @@ namespace CamelWorks.Core.Clash
             return line;
         }
 
-        /// <summary>The first of two tokens that caught anything.</summary>
+        /// <summary>The first of two tokens with a non-empty value.</summary>
         private static string Pick(MatrixNameMatch match, string first, string second)
         {
             var one = match.Value(first);
@@ -207,16 +192,12 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// The symbol a test's cell carries.
+        /// The symbol for a test's cell.
         ///
-        /// <b>The name's own mark when it has one.</b> A job whose tests are called "… (B)" has
-        /// already written its matrix's legend into every test name; reading the kind and the
-        /// tolerance off the host and lettering them A, B, C in the order they turn up produces a
-        /// legend that is right and letters that are not the job's - so the sheet comes back
-        /// looking like somebody else's matrix.
-        ///
-        /// What the mark means still comes from the host, because a tolerance in a name is a
-        /// number somebody typed and a tolerance on a test is what will actually run.
+        /// Uses the symbol parsed from the name when the pattern captures one, so the legend
+        /// matches the project's own marks. Falls back to lettering distinct kind/tolerance pairs
+        /// A, B, C in order of appearance. The kind and tolerance always come from the test
+        /// itself, not from the name.
         /// </summary>
         private static MatrixSymbol Symbol(Dictionary<string, MatrixSymbol> symbols,
                                            MatrixNameMatch? match, ClashTestSides shape)

@@ -177,12 +177,11 @@ namespace CamelWorks.Core.Clash
                     var symbol = (Text(sheet, sheetRow, column.Key) ?? string.Empty).Trim();
                     if (symbol.Length == 0) continue;
 
-                    // <b>What a paper matrix has always used for "not required".</b> A client's
-                    // workbook says it with a dash of whichever kind their font gave them, or
-                    // with the letters, and every one of them means the same thing: this pair
-                    // was ruled out, not overlooked. Read as anything else it becomes a symbol
-                    // with no meaning, and the reader is asked to give a tolerance to a
-                    // decision not to test.
+                    // The marks a paper matrix uses for "not required". A client's workbook says it
+                    // with a dash of whichever kind their font provided, or with letters, and all of
+                    // them mean the same thing: this pair was ruled out rather than overlooked. Read
+                    // as anything else it becomes a symbol with no meaning, and the reader is asked
+                    // to give a tolerance to a decision not to test.
                     if (Ruled(symbol)) symbol = MatrixBoard.NotRequired;
 
                     // The mirrored cell may already hold something. A sheet filled in on both sides

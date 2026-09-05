@@ -8,15 +8,13 @@ namespace CamelWorks.Core.Project
     /// <summary>
     /// The project file: where it is, how the load went, and the sections that live in it.
     ///
-    /// <b>Opening never fails.</b> A missing file is a first run, a damaged one falls back to its
-    /// backup, a read-only folder degrades to memory, and a file from a newer build opens read-only
-    /// and says so. Every one of those states still yields a usable store, because the alternative
-    /// is a product that refuses to start over a settings file the user has never seen and did not
-    /// ask for.
+    /// Opening never fails. A missing file is a first run, a damaged one falls back to its backup, a
+    /// read-only folder degrades to memory, and a file from a newer build opens read-only and says
+    /// so. Each of those still yields a usable store, because the alternative is a product that
+    /// refuses to start over a settings file the user did not ask for.
     ///
-    /// Nothing here is created on open. The file appears the first time something is saved, which
-    /// is what keeps a plain "open a model and press a button" session from littering the network
-    /// drive with sidecars nobody wanted.
+    /// Nothing is created on open. The file appears the first time something is saved, which keeps a
+    /// plain open-a-model-and-press-a-button session from leaving sidecars on the network drive.
     /// </summary>
     public sealed class ProjectStore
     {
@@ -380,7 +378,7 @@ namespace CamelWorks.Core.Project
         /// </summary>
         private string Refusal()
         {
-            var reason = Lease?.Reason ?? "somebody else is editing project settings.";
+            var reason = Lease?.Reason ?? "another user is editing project settings.";
 
             try
             {

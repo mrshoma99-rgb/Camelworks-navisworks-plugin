@@ -48,18 +48,18 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Renders one clash as a PNG, or returns null.
         ///
-        /// <b>A callback rather than an image, because rendering needs the host.</b> This assembly
-        /// has no Navisworks in it and is tested on a machine with no graphics at all, so the
-        /// picture is asked for rather than taken here.
+        /// A callback rather than an image, because rendering needs the host. This assembly has no
+        /// Navisworks in it and is tested on a machine with no graphics, so the picture is requested
+        /// rather than taken here.
         ///
-        /// <b>Why it is worth asking for.</b> Every coordination tool shows its issue list as
-        /// thumbnails. A BCF with no snapshots arrives as rows of grey boxes, and a reviewer has
-        /// to open each one to find out what it is - which on four hundred clashes is the
-        /// difference between a file that gets worked and a file that gets closed.
+        /// Worth requesting because every coordination tool shows its issue list as thumbnails. A
+        /// BCF with no snapshots arrives as rows of grey boxes and a reviewer has to open each one
+        /// to find out what it is, which on four hundred clashes decides whether the file is worked
+        /// through or closed.
         ///
-        /// Null is an ordinary answer: a document that cannot render off-screen, a file source
-        /// with no model behind it, or a reviewer who asked for no pictures. The topic is written
-        /// without one.
+        /// Null is an ordinary answer: a document that cannot render off-screen, a file source with
+        /// no model behind it, or a reviewer who asked for no pictures. The topic is written without
+        /// one.
         /// </summary>
         public Func<ClashItem, byte[]?>? Snapshot { get; set; }
     }
@@ -121,46 +121,41 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Clash results as BCF, losing nothing.
     ///
-    /// <b>Why this replaces the clash XML.</b> The XML this product used to exchange clashes in is
-    /// Navisworks' own report format. It works, and exactly one family of tools reads it. BCF is
-    /// what the rest of the industry reads and writes - Solibri, BIMcollab, Revizto, BIMTrack,
-    /// every issue tracker anyone actually runs a project on - so a clash file written as BCF is a
-    /// clash file the architect can open. That is the whole point of exporting one.
+    /// This replaces the clash XML. That format is Navisworks' own report format: it works, and one
+    /// family of tools reads it. BCF is what the rest of the industry reads and writes — Solibri,
+    /// BIMcollab, Revizto, BIMTrack and the issue trackers projects are run on — so a clash file
+    /// written as BCF is one the architect can open.
     ///
-    /// <b>Why nothing is lost by the change.</b> BCF has a field for perhaps a third of what a
-    /// clash is: a title, a status, an assignee, comments, and a camera. It has none for the
-    /// tolerance the test ran at, the distance between the two elements, the crossing angle, the
-    /// level or grid reference, the host's own id for the result, or the keys that let an edit
-    /// land back on the right element when the file comes home. A format that dropped those would
-    /// not be a format we could run a review round on.
+    /// BCF has a field for roughly a third of what a clash is: a title, a status, an assignee,
+    /// comments and a camera. It has none for the tolerance the test ran at, the distance between
+    /// the two elements, the crossing angle, the level or grid reference, the host's own id for the
+    /// result, or the keys that let an edit land back on the right element when the file returns.
     ///
-    /// So they travel in a file of our own, <see cref="Sidecar"/>, inside the same archive. The
-    /// BCF specification requires a reader to ignore entries it does not recognise, which is what
-    /// makes this safe rather than clever: every other tool reads the topics and never sees the
-    /// sidecar, and we read both.
+    /// Those travel in a file of our own, <see cref="Sidecar"/>, inside the same archive. The BCF
+    /// specification requires a reader to ignore entries it does not recognise, so every other tool
+    /// reads the topics and never sees the sidecar, and we read both.
     ///
-    /// <b>Which half wins when the file comes back.</b> The topics do, for everything BCF can
-    /// carry - status, assignee, comments - because that is what the other tool edited and the
-    /// whole reason for sending it. The sidecar wins for identity and geometry, because those are
-    /// facts about the model that no reviewer changes and that their tool will have dropped. A
-    /// file that has been through somebody else's tool comes back with the sidecar gone entirely;
-    /// that reads here as a review round on what BCF does carry, which is most of what a reviewer
-    /// does, rather than as a file that cannot be read.
+    /// On the way back, the topics win for everything BCF carries — status, assignee, comments —
+    /// because that is what the other tool edited and the reason for sending it. The sidecar wins
+    /// for identity and geometry, which are facts about the model that no reviewer changes and that
+    /// their tool will have dropped. A file that has been through another tool comes back with the
+    /// sidecar gone entirely; that is read here as a review round on what BCF does carry rather than
+    /// as an unreadable file.
     /// </summary>
     public static class ClashBcf
     {
         /// <summary>
         /// Where the facts BCF has no field for ride, inside the archive.
         ///
-        /// <b>A file at the root, deliberately not a folder.</b> A .bcfzip's top-level directories
-        /// are its topics - importers routinely enumerate them and read a <c>markup.bcf</c> out of
-        /// each - so an extra directory that is not a topic is a shape some importer will meet for
-        /// the first time in our file, and a folder whose name will not parse as a GUID is the
-        /// kind of thing that throws rather than skips.
+        /// A file at the root, deliberately not a folder. A .bcfzip's top-level directories are its
+        /// topics — importers enumerate them and read a <c>markup.bcf</c> out of each — so an extra
+        /// directory that is not a topic is a shape some importer will meet for the first time in
+        /// our file, and a folder name that will not parse as a GUID is likely to throw rather than
+        /// be skipped.
         ///
         /// A root-level file is a shape every importer already handles, because the format puts
         /// three of them there: <c>bcf.version</c>, <c>project.bcfp</c> and <c>extensions.xsd</c>.
-        /// This sits beside those and looks like nothing new.
+        /// This sits beside those.
         /// </summary>
         public const string Sidecar = "camelworks-clash.json";
 
@@ -173,28 +168,27 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The topic a clash is always written as.
         ///
-        /// <b>This is what keeps the round trip alive.</b> Everything else a returned file might
-        /// carry - our sidecar, the element keys in <c>AuthoringToolId</c> - is ours, and another
-        /// tool that re-authors the archive drops all of it. The topic GUID is the one field it
-        /// cannot drop: it is the topic's identity, it names the folder, and BCF's own merge model
-        /// is built on it. Because it is a plain function of the clash, the receiving side can
-        /// compute it again from the model, so a file that comes home stripped to nothing but its
-        /// topics still lands on the right results.
+        /// This is what keeps the round trip working. Everything else a returned file might carry —
+        /// our sidecar, the element keys in <c>AuthoringToolId</c> — is ours, and a tool that
+        /// re-authors the archive drops all of it. The topic GUID is the one field it cannot drop:
+        /// it is the topic's identity, it names the folder, and BCF's own merge model is built on
+        /// it. Because it is a plain function of the clash, the receiving side can compute it again
+        /// from the model, so a file that comes back stripped to nothing but its topics still lands
+        /// on the right results.
         ///
-        /// <b>The whole key, including where the clash is.</b> This was briefly derived from the
+        /// The whole key is used, including where the clash is. This was briefly derived from the
         /// element pair alone, on the reasoning that a conflict which shifts a few millimetres
-        /// between runs is the same conflict. That was wrong, and wrong in the worst direction: a
-        /// duct that crosses one beam twice is two results and would have been one topic - two
-        /// <c>markup.bcf</c> entries at one path, which is a malformed archive whose second topic
-        /// most readers silently drop. Coarsely decomposed models, where a whole system is one
-        /// item, make that common rather than exotic.
+        /// between runs is the same conflict. That was wrong: a duct that crosses one beam twice is
+        /// two results and would have become one topic — two <c>markup.bcf</c> entries at one path,
+        /// which is a malformed archive whose second topic most readers silently drop. Coarsely
+        /// decomposed models, where a whole system is one item, make that common.
         ///
-        /// Uniqueness has to win, so identity is exact. Tolerance for a clash that moved belongs
-        /// at match time instead, where the sync can look through the neighbouring cells for a
-        /// topic that matched nothing - and only for the few that did not.
+        /// Uniqueness has to win, so identity is exact. Tolerance for a clash that moved belongs at
+        /// match time, where the sync can look through the neighbouring cells for a topic that
+        /// matched nothing, and only for the few that did not.
         ///
         /// Both sides call this. Two copies of the rule that drifted apart would break the round
-        /// trip silently, which is the worst way for it to break.
+        /// trip silently.
         /// </summary>
         /// <param name="key">The clash.</param>
         public static string TopicGuidFor(ClashKey key) => BcfGuid.For(key.ToString());
@@ -1030,18 +1024,18 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// What the reviewer said that a Navisworks clash result has nowhere to keep.
         ///
-        /// <b>Why this exists.</b> BCF carries a priority, a due date, a stage, a title and any
-        /// tags the reviewer likes. A clash result in Navisworks carries none of them. Dropping
-        /// them silently is the failure this whole round trip is meant to avoid: somebody set a
-        /// due date, it went nowhere, and they find out at the coordination meeting.
+        /// BCF carries a priority, a due date, a stage, a title and any tags the reviewer adds. A
+        /// clash result in Navisworks carries none of them, and dropping them silently is the
+        /// failure this round trip exists to avoid: a due date is set, it goes nowhere, and that is
+        /// discovered at the coordination meeting.
         ///
-        /// So they are written as a comment on the clash instead, which is the one field the host
-        /// does have and which travels back out on the next export. Null when the reviewer changed
-        /// none of them, so an ordinary sync adds no noise.
+        /// So they are written as a comment on the clash, which is the one field the host does have
+        /// and which travels back out on the next export. Null when the reviewer changed none of
+        /// them, so an ordinary sync adds no noise.
         /// </summary>
         /// <param name="result">The returned result.</param>
-        /// <param name="expectedName">What this export would have called it, so a real retitle
-        /// can be told from the generated name coming back unchanged.</param>
+        /// <param name="expectedName">What this export would have called it, so a real retitle can
+        /// be told from the generated name coming back unchanged.</param>
         public static string? Aside(ClashXmlResult? result, string? expectedName = null)
         {
             if (result == null) return null;

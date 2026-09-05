@@ -12,12 +12,12 @@ namespace CamelWorks.Nav
     /// <summary>
     /// Property writes, batched and previewed before anything touches the document.
     ///
-    /// Nothing is written until <see cref="Commit"/>. That is not tidiness: writing properties goes
-    /// through the COM bridge, one call per element, and a half-applied batch on a federation is
-    /// not something anybody can undo by hand. So the whole batch is accumulated, previewed —
-    /// including which keys no longer resolve — and then applied in one pass, or not at all.
+    /// Nothing is written until <see cref="Commit"/>. Writing properties goes through the COM
+    /// bridge, one call per element, and a half-applied batch on a federation cannot be undone by
+    /// hand. So the whole batch is accumulated, previewed — including which keys no longer resolve —
+    /// and then applied in one pass, or not at all.
     ///
-    /// <b>Main thread only.</b>
+    /// Main thread only.
     /// </summary>
     public sealed class NavWriteTransaction : IModelWriteTransaction
     {

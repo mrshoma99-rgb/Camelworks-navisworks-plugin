@@ -46,20 +46,19 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// What is currently hanging in the view, and nothing else.
     ///
-    /// <b>Temporary graphics, not geometry.</b> A marker is a thing somebody wants for the ten
-    /// seconds they are looking at one clash: it should appear the instant Focus is pressed and go
-    /// away when they say so. Writing a mesh and appending it as a file makes it a model - it
-    /// joins the selection tree, it has to be unloaded by hand, it costs a re-index, and none of
-    /// that is what "show me where this clash is" asked for. The host will draw whatever a render
-    /// plug-in hands it on each frame, for free, so that is what a marker is here.
+    /// Temporary graphics rather than geometry. A marker is wanted for the few seconds one clash is
+    /// being looked at: it should appear the instant Focus is pressed and clear on request. Writing
+    /// a mesh and appending it as a file makes it a model — it joins the selection tree, has to be
+    /// unloaded by hand and costs a re-index. The host draws whatever a render plug-in hands it on
+    /// each frame, so that is what a marker is here.
     ///
-    /// <b>Read on the render thread, written on the UI thread.</b> Which is why the set is swapped
-    /// whole rather than mutated: a reader either sees the old array or the new one, never a list
-    /// half-way through being filled.
+    /// Read on the render thread, written on the UI thread, which is why the set is swapped whole
+    /// rather than mutated: a reader sees either the old array or the new one, never a list part way
+    /// through being filled.
     ///
-    /// The store is deliberately static and host-free. It lives in Core so that the render
-    /// plug-in, which must sit in the assembly Navisworks scans, and the screens, which must not
-    /// know that assembly exists, can both reach the same set of markers.
+    /// The store is static and host-free. It lives in Core so that the render plug-in, which must
+    /// sit in the assembly Navisworks scans, and the screens, which must not know that assembly
+    /// exists, can both reach the same set of markers.
     /// </summary>
     public static class MarkerOverlay
     {

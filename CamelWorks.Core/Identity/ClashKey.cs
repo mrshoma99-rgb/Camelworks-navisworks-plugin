@@ -5,20 +5,19 @@ using System.Globalization;
 namespace CamelWorks.Core.Identity
 {
     /// <summary>
-    /// Names one clash result, stably enough that its status, assignee, due date and comments
-    /// survive a model re-export and a re-run of the test.
+    /// Names one clash result, stably enough that its status, assignee, due date and comments survive
+    /// a model re-export and a re-run of the test.
     ///
-    /// <b>The occurrence discriminator is a quantised position, never an ordinal.</b> This is the
-    /// single most important decision in the type. An earlier design numbered the <i>n</i> results
-    /// on one element pair 1..<i>n</i> along the dominant axis. That renumbers the moment the count
-    /// changes — which is precisely the run that matters, because a coordinator fixing one of three
-    /// penetrations is the normal case. Two of three results would silently inherit a third's
-    /// history. A position-derived discriminator is unmoved by its neighbours disappearing.
+    /// The occurrence discriminator is a quantised position, never an ordinal. An earlier design
+    /// numbered the <i>n</i> results on one element pair 1..<i>n</i> along the dominant axis, which
+    /// renumbers as soon as the count changes — the run that matters, because fixing one of three
+    /// penetrations is the normal case. Two of the three results would then inherit a third's
+    /// history. A position-derived discriminator is unaffected by its neighbours disappearing.
     ///
-    /// Quantising creates a boundary problem of its own: a clash point sitting near a cell edge can
-    /// fall either side between runs. That is handled at MATCH time, not at key time — see
-    /// <see cref="NeighbourCells"/>. The key stays an exact, hashable value; the tolerance lives in
-    /// the lookup.
+    /// Quantising creates a boundary problem: a clash point near a cell edge can fall either side
+    /// between runs. That is handled at match time rather than at key time — see
+    /// <see cref="NeighbourCells"/>. The key stays an exact, hashable value and the tolerance lives
+    /// in the lookup.
     /// </summary>
     public readonly struct ClashKey : IEquatable<ClashKey>
     {

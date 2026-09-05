@@ -11,23 +11,21 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// A rule set as a file, in either of the two kinds, and one reader that takes both.
     ///
-    /// <b>Why there are two kinds.</b> An IDS is an open standard and the reason to write one is
-    /// that the client's tool, the architect's tool and ours all read it. A rule that says who it
-    /// is about in this model's own terms has no place in that standard - applicability is a
-    /// closed sequence of six IFC facets with no extension point anywhere in the schema - so a
-    /// project that writes those rules can either send a file everyone reads and leave them
-    /// behind, or send everything and be read only here. That is a choice about who the file is
-    /// for, and it belongs to the person sending it rather than to this code.
+    /// An IDS is an open standard and the reason to write one is that the client's tool, the
+    /// architect's tool and ours all read it. A rule that says who it is about in this model's own
+    /// terms has no place in that standard — applicability is a closed sequence of six IFC facets
+    /// with no extension point — so a project that writes those rules can either send a file
+    /// everyone reads and leave them out, or send everything and be read only here. That is a choice
+    /// about who the file is for and belongs to the sender.
     ///
-    /// <b>What a BIMCamel rule set is.</b> A zip holding two things: <c>rules.ids</c>, which is a
-    /// real IDS carrying every portable rule, and <c>camelworks-rules.json</c>, which carries the
-    /// rest. Somebody with no CamelWorks can rename it, unzip it, and open the IDS inside - the
-    /// degradation path is a real file rather than a shrug. Nothing is hidden and nothing pretends
-    /// to be a standard it is not.
+    /// A BIMCamel rule set is a zip holding two things: <c>rules.ids</c>, a real IDS carrying every
+    /// portable rule, and <c>camelworks-rules.json</c>, carrying the rest. Somebody without
+    /// CamelWorks can rename it, unzip it and open the IDS inside, so the degradation path is a real
+    /// file. Nothing is hidden and nothing claims to be a standard it is not.
     ///
-    /// <b>Sharing a scoped rule.</b> It names a set, and a set is a thing a model has or has not.
-    /// The rule travels; whether it applies to somebody else's model depends on that model having
-    /// a set of that name, and a run says so rather than reporting the rule as matching nothing.
+    /// A scoped rule names a set, and a set is something a model has or has not. The rule travels;
+    /// whether it applies to another model depends on that model having a set of that name, and a
+    /// run says so rather than reporting the rule as matching nothing.
     /// </summary>
     public static class IdsFile
     {

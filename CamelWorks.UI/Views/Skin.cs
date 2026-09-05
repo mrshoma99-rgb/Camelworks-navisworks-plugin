@@ -23,15 +23,14 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The palette, and the one place that owns it.
     ///
-    /// <b>These values are not new.</b> They are the token set the BIMCamel IFC exporter already
-    /// ships — the other plug-in from the same publisher, which docks beside this one in the same
-    /// Navisworks. Two panes from one publisher that do not look like each other is a worse
-    /// outcome than any palette either of them could have picked, so this is that palette, moved
-    /// somewhere both can reach.
+    /// These values are the token set the BIMCamel IFC exporter already ships — the other plug-in
+    /// from the same publisher, which docks beside this one in the same Navisworks. Two panes from
+    /// one publisher that do not match is a worse outcome than any palette either could pick, so
+    /// this is that palette, moved somewhere both can reach.
     ///
     /// Everything is looked up by key through <c>DynamicResource</c> rather than resolved once,
-    /// which is what lets <see cref="Mode"/> change the whole pane in place instead of asking
-    /// every open screen to rebuild itself.
+    /// which is what lets <see cref="Mode"/> change the whole pane in place instead of asking every
+    /// open screen to rebuild.
     /// </summary>
     public static class Skin
     {
@@ -321,19 +320,19 @@ namespace CamelWorks.UI.Views
             ("Ink.OnLight",  "#1F2329", "#1F2329"),
             ("Ink.OnDark",   "#F2F5F8", "#F2F5F8"),
 
-            // <b>Eight washes for the legend's symbols, in the order the legend lists them.</b>
-            // Every symbol in the grid was drawn on the same pale blue, so the only thing telling
-            // a hard clash from a clearance anywhere on a matrix of two hundred cells was the
-            // shape of one letter. A matrix exists to be read as a pattern - all of MEP against
-            // structure is a clearance, and you should see that without reading - and a single
-            // fill made that impossible. Pale enough to carry the letter at full contrast, and
-            // separated by hue rather than by lightness so the letter is never the only channel.
+            // Eight washes for the legend's symbols, in the order the legend lists them. Every
+            // symbol in the grid was previously drawn on the same pale blue, so the only thing
+            // separating a hard clash from a clearance across two hundred cells was the shape of one
+            // letter. A matrix is read as a pattern — all of MEP against structure is a clearance,
+            // and that should be visible without reading — and a single fill prevented that. Each
+            // wash is pale enough to carry the letter at full contrast, and they are separated by
+            // hue rather than lightness so the letter is never the only channel.
             //
-            // <b>Ordered so the first four are the four that separate best.</b> Hue alone is not
-            // separation: simulated for a deuteranope, the blue and the lavender were 1.2 apart
-            // in CIELAB - and they were positions one and four, which on a legend of four symbols
-            // is the shipped default. Blue, amber, green and pink lead; lavender, teal, lime and
-            // slate follow, where a legend has grown past the size anybody reads as a key anyway.
+            // Ordered so the first four separate best. Hue alone is not separation: simulated for a
+            // deuteranope, the blue and the lavender were 1.2 apart in CIELAB, and they were
+            // positions one and four, which on a legend of four symbols is the shipped default.
+            // Blue, amber, green and pink lead; lavender, teal, lime and slate follow, at legend
+            // sizes past what reads as a key.
             ("Sym.A",       "#DCEAF8", "#1E2E3F"),
             ("Sym.B",       "#FBEFD3", "#3A2F12"),
             ("Sym.C",       "#DDF2E4", "#17311F"),
@@ -343,11 +342,11 @@ namespace CamelWorks.UI.Views
             ("Sym.G",       "#E9F2CE", "#29331A"),
             ("Sym.H",       "#E2E6EC", "#2B3138"),
 
-            // <b>The diagonal is not a symbol and must not be drawn as one.</b> A discipline
-            // against itself is the spine of the grid - the line every pair is mirrored about -
-            // and it was drawn on the same grey that now means "this makes no test", which is
-            // the one thing a live self-pair is not. Deeper than any symbol wash and neutral
-            // against all of them, so it reads as structure rather than as a decision.
+            // The diagonal is not a symbol and must not be drawn as one. A discipline against
+            // itself is the spine of the grid, the line every pair is mirrored about, and it was
+            // drawn in the same grey that now means "this makes no test". It is deeper than any
+            // symbol wash and neutral against all of them, so it reads as structure rather than as a
+            // decision.
             ("Spine",       "#CBD5E3", "#33404F"),
             ("SpineBd",     "#9FB0C4", "#4A5A6D"),
 

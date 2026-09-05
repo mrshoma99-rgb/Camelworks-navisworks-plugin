@@ -6,14 +6,14 @@ using CamelWorks.Core.Identity;
 namespace CamelWorks.Nav
 {
     /// <summary>
-    /// Turns a host item into an <see cref="ElementKey"/>, walking down the three rungs until one
-    /// of them works.
+    /// Turns a host item into an <see cref="ElementKey"/>, walking down the three rungs until one of
+    /// them works.
     ///
-    /// The rungs are tried in order of strength, never mixed: an instance GUID is a fact, a tree
+    /// The rungs are tried in order of strength and never mixed: an instance GUID is a fact, a tree
     /// path is usually right, and a geometry signature is a proposal. Which rung a key rests on
     /// travels with it, so everything downstream can weigh a match rather than assume one.
     ///
-    /// <b>Main thread only.</b> Every read here goes through the host's single-threaded API.
+    /// Main thread only. Every read here goes through the host's single-threaded API.
     /// </summary>
     public static class NavKeys
     {

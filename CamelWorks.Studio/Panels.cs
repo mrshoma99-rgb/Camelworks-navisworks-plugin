@@ -42,16 +42,15 @@ namespace CamelWorks.Studio
             Page("app-scenes-viewpoints", "Scene Kit · Viewpoints", 780, Scenes),
             Page("app-automate-jobs", "Automate · Jobs", 780, Deliver),
 
-            // <b>The one page here that is the shipping screen rather than a drawing of it.</b>
-            // Every other page composes the real controls into an arrangement written here, which
-            // catches a wrong colour or a clipped word but cannot catch a fault in the layout code
-            // itself - and the matrix's faults have all been in the layout code: a header sized
-            // without its own padding, a rotated name given a box longer than the space it has, a
-            // folder band collapsed to no height at all. None of those are visible in an
-            // arrangement written by hand, because the hand writes what it meant.
+            // The one page here that is the shipping screen rather than a drawing of it. Every
+            // other page composes the real controls into an arrangement written here, which catches
+            // a wrong colour or a clipped word but not a fault in the layout code itself — and the
+            // matrix's faults have all been in the layout code: a header sized without its own
+            // padding, a rotated name given a box longer than the space it has, a folder band
+            // collapsed to no height. None of those appear in an arrangement written by hand.
             //
-            // MatrixWindow.Surface takes a seat now, so this is the tab itself, measured by WPF at
-            // the width WPF gives it, in the font it will really be read in.
+            // MatrixWindow.Surface takes a seat, so this is the tab itself, measured by WPF at the
+            // width WPF gives it, in the font it is read in.
             Page("app-clash-matrix", "Clash Manager · Matrix", 820,
                  () => MatrixWindow.Surface(Seated())),
 
@@ -94,9 +93,8 @@ namespace CamelWorks.Studio
         /// <summary>
         /// A seat with nothing in it, and a scratch project beside the images.
         ///
-        /// <b>Empty on purpose.</b> This is the state a screen faces before a document is open,
-        /// and the one nobody remembers to check - so it is the one the harness draws. A screen
-        /// that reads badly here reads badly on somebody's first minute of the day.
+        /// Empty on purpose. This is the state a screen is in before a document is open, and the one
+        /// least often checked, so the harness draws it.
         /// </summary>
         private static ISeat Seated() => new EmptySeat(
             ProjectStore.Open(PhysicalFileSystem.Instance,
@@ -109,19 +107,17 @@ namespace CamelWorks.Studio
         /// <summary>
         /// A matrix of the size and shape a real one is, so the grid can be looked at.
         ///
-        /// <b>Every picture of this tab was the empty start screen.</b> A seat with no document
-        /// has no board, so the grid - the whole of the tab, and where every layout fault
-        /// reported against it has been - was never photographed once. The clipped column names,
-        /// the row band that ran out of names, the dead strip beside the last column: all of them
-        /// were described in words by somebody on a licensed seat, and fixed by reasoning about
-        /// arithmetic rather than by looking.
+        /// Every image of this tab was previously the empty start screen. A seat with no document
+        /// has no board, so the grid — the whole of the tab, and where every layout fault reported
+        /// against it has been — was never captured. The clipped column names, the row band that ran
+        /// out of names and the dead strip beside the last column were all described in words from a
+        /// licensed seat and fixed by reasoning rather than by looking.
         ///
-        /// So the shapes that break it are here on purpose. Names long enough to have to be
-        /// turned and long enough to be cut off if the band is short by a pixel; enough
-        /// disciplines that the cells reach their smallest size; folders on both axes, one of
-        /// them holding a run; codes that are not the front of their names, so the code gutter is
-        /// drawn; and a number that disagrees with its position, so the number gutter is drawn
-        /// too. A matrix that exercises none of those proves nothing.
+        /// So the shapes that break it are here deliberately: names long enough to have to be turned
+        /// and long enough to be cut off if the band is a pixel short; enough disciplines that the
+        /// cells reach their smallest size; folders on both axes, one of them holding a run; codes
+        /// that are not the front of their names, so the code gutter is drawn; and a number that
+        /// disagrees with its position, so the number gutter is drawn too.
         /// </summary>
         private static MatrixBoard Drawn() => Drawn(pointed: false);
 
@@ -486,7 +482,7 @@ namespace CamelWorks.Studio
                 Bench.Group("The rules",
                     Ui.Field("Rules from", Ui.Choice(
                         new[] { "This project's rules", "An IDS file" }, "An IDS file", null, 200),
-                        "this project's own, or a file somebody sent"),
+                        "this project's own, or a supplied file"),
                     Ui.PathField("An .ids file", Ui.Text(string.Empty, "none — built-in rules only",
                                                          null, 200), PathKind.Open),
                     Ui.Field("Check over", Ui.Choice(

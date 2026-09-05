@@ -227,20 +227,19 @@ namespace CamelWorks.Core.Project
     }
 
     /// <summary>
-    /// The people on the job, so "assigned to" has a vocabulary rather than a text box.
+    /// The people on the job, so "assigned to" has a vocabulary rather than a free text box.
     ///
-    /// A party name typed into a box is a party name typed differently next week, and a board
-    /// filtered by it quietly splits in two. More than that: an assignment is to a person, and a
-    /// person has an email address - which is the difference between a BCF file somebody receives
-    /// and one that sits in a folder waiting to be noticed.
+    /// A party name typed into a box is spelled differently the following week, and a board filtered
+    /// by it splits in two. An assignment is also to a person, and a person has an email address,
+    /// which is the difference between a BCF file that is received and one that sits in a folder.
     ///
-    /// <b>Identified by name, not by a generated id.</b> A roster is typed by one person, edited by
-    /// another and mailed between machines; the name is the only thing all three agree on. A rename
-    /// breaks the assignment, which is the honest outcome: it then reads as somebody no longer on
-    /// the roster rather than silently following the rename onto whoever took the row.
+    /// Identified by name rather than by a generated id. A roster is typed by one person, edited by
+    /// another and mailed between machines, and the name is the only thing all three agree on. A
+    /// rename breaks the assignment, which is the correct outcome: it then reads as somebody no
+    /// longer on the roster rather than following the rename onto whoever took the row.
     ///
-    /// <b>Nothing has to be set up first.</b> With an empty roster every screen behaves as it did -
-    /// a party is whatever somebody types. The roster only ever adds a list to choose from.
+    /// Nothing has to be set up first. With an empty roster every screen behaves as before and a
+    /// party is whatever is typed; the roster only adds a list to choose from.
     /// </summary>
     public sealed class TeamRoster
     {
@@ -272,14 +271,14 @@ namespace CamelWorks.Core.Project
         /// <summary>
         /// Where this person's own roster lives, or null when the machine will not say.
         ///
-        /// <b>Beside the person, not inside the project.</b> The same architect, the same fire
-        /// engineer and the same three companies turn up job after job, and typing them in again
-        /// for every model is the reason nobody assigns anything to anybody. Kept here it is
-        /// there the moment a new model is opened, and it survives closing one.
+        /// Stored with the person rather than in the project. The same architect, fire engineer and
+        /// companies recur across jobs, and retyping them for every model is why assignments do not
+        /// get made. Kept here the roster is available as soon as a new model is opened and survives
+        /// closing one.
         ///
-        /// The project keeps its own copy too, for anybody opening the job who has never met
-        /// this roster - so a job carries its team, and a person carries theirs, and opening a
-        /// job merges what it knows into what they already had.
+        /// The project keeps its own copy as well, for anyone opening the job who has not met this
+        /// roster, so a job carries its team and a person carries theirs, and opening a job merges
+        /// what it knows into what they already had.
         /// </summary>
         public static string? Carried
         {
@@ -360,12 +359,11 @@ namespace CamelWorks.Core.Project
         }
 
         /// <summary>
-        /// The roles a job usually has, offered before anybody has typed one.
+        /// The roles a job usually has, offered before any have been typed.
         ///
-        /// <b>A starting list, not a fixed one.</b> Nobody wants to type "BIM Coordinator" on
-        /// every job, and nobody wants a product that insists their discipline is one of eleven
-        /// somebody else chose. So these are offered, the roster's own roles are offered beside
-        /// them, and anything can be typed.
+        /// A starting list rather than a fixed one: "BIM Coordinator" should not have to be typed on
+        /// every job, and a discipline should not have to be one of eleven chosen here. These are
+        /// offered, the roster's own roles are offered beside them, and anything can be typed.
         /// </summary>
         public static IReadOnlyList<string> UsualRoles { get; } = new[]
         {
@@ -426,15 +424,13 @@ namespace CamelWorks.Core.Project
         /// <summary>
         /// Whether one assignment falls under what is being filtered for.
         ///
-        /// <b>Why a role can be filtered at all.</b> Half a board is assigned to "Sam Reed" and
-        /// half to the architecture team, and somebody asking to see architecture's clashes means
-        /// both. So a person falls under a role, company or team when the roster says they are in
-        /// it - which is exactly why the roster has to be the one place that is known, rather
-        /// than every screen keeping its own idea of who is who.
+        /// A role can be filtered because half a board is assigned to a person and half to a team,
+        /// and asking to see architecture's clashes means both. A person falls under a role, company
+        /// or team when the roster says they are in it, which is why the roster has to be the single
+        /// place that is known rather than every screen keeping its own idea of who is who.
         ///
-        /// It does not run the other way. Work given to the whole ARC team is not any one
-        /// member's work, or filtering to your own name would hand you everything your team was
-        /// ever given.
+        /// It does not run the other way. Work given to the whole ARC team is not any one member's
+        /// work, or filtering to your own name would return everything the team was ever given.
         /// </summary>
         /// <param name="assigned">What the row is assigned to.</param>
         /// <param name="wanted">What is being filtered for.</param>
@@ -596,7 +592,7 @@ namespace CamelWorks.Core.Project
         public string Explain()
         {
             if (_members.Count == 0)
-                return "Nobody on the roster yet, so a party is whatever somebody types.";
+                return "No members on the roster yet, so a party is whatever is typed.";
 
             var active = Active.Count;
             var parties = Parties.Count;

@@ -8,18 +8,17 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// The IFC GlobalId an element carries, wherever the host filed it.
     ///
-    /// <b>Why this is worth hunting for.</b> BCF names elements by their IFC GlobalId and nothing
-    /// else. Without one, a topic exported from here reaches Solibri or Revizto as an issue with a
-    /// camera and no elements: the reviewer is flown to roughly the right place and shown nothing
-    /// highlighted. With one, the duct and the beam light up. That is most of the difference
-    /// between a clash file somebody works from and a clash file somebody scrolls past.
+    /// BCF names elements by their IFC GlobalId and nothing else. Without one, a topic exported from
+    /// here reaches Solibri or Revizto as an issue with a camera and no elements: the reviewer is
+    /// taken to roughly the right place and shown nothing highlighted. With one, the duct and the
+    /// beam are selected.
     ///
-    /// <b>Why the search is narrow.</b> Navisworks files the value under whatever the exporter
-    /// called it, so several spellings are tried - but a property merely called "GUID" is not one
-    /// of them. Navisworks gives every element an instance GUID of its own, and writing that into
-    /// a BCF component produces a legal-looking string that names nothing in the receiving model.
-    /// A topic pointing at an empty selection is worse than a topic honestly pointing at none,
-    /// because the export counts the second and reports it.
+    /// The search is deliberately narrow. Navisworks files the value under whatever the exporter
+    /// called it, so several spellings are tried, but a property merely called "GUID" is not one of
+    /// them: Navisworks gives every element an instance GUID of its own, and writing that into a BCF
+    /// component produces a legal-looking string that names nothing in the receiving model. A topic
+    /// pointing at an empty selection is worse than one pointing at no elements, because the export
+    /// counts and reports the second.
     /// </summary>
     public static class IfcIdentity
     {

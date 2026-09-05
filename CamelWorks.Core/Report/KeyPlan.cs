@@ -10,18 +10,18 @@ namespace CamelWorks.Core.Report
     /// <summary>
     /// One plan of the whole site with every group marked on it.
     ///
-    /// A report full of close-up renders answers "what does this look like" and never answers
-    /// "where is it". A single top-down plan with numbered markers answers the second question for
-    /// forty issues at once, and it is the page a reader actually turns back to.
+    /// A report full of close-up renders answers what something looks like and never answers where
+    /// it is. A single top-down plan with numbered markers answers the second question for forty
+    /// issues at once.
     ///
     /// The maths is here rather than in the host adapter because it has to be testable: a marker
-    /// half a metre out on a page is invisible in review and wrong on site, and no amount of
-    /// looking at a rendered PNG proves the projection is right.
+    /// half a metre out on a page is invisible in review and wrong on site, and looking at a
+    /// rendered PNG does not prove the projection is right.
     ///
-    /// <b>The honest limitation.</b> On a 400 m site rendered 1,600 pixels wide, one pixel is a
-    /// quarter of a metre — so a 300 mm clash is a marker sitting on a point the page cannot
-    /// resolve. The plan says so in words rather than implying a precision it does not have, and
-    /// the setting-out coordinates beside each group are the number to work from.
+    /// The limitation is stated on the page. On a 400 m site rendered 1,600 pixels wide, one pixel
+    /// is a quarter of a metre, so a 300 mm clash is a marker on a point the page cannot resolve.
+    /// The plan says so rather than implying a precision it does not have, and the setting-out
+    /// coordinates beside each group are the numbers to work from.
     /// </summary>
     public static class KeyPlan
     {

@@ -11,19 +11,18 @@ using System.Windows.Media.Effects;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The parts the clash board needed that the widget vocabulary did not carry yet.
+    /// The parts the clash board needed that the widget vocabulary did not yet carry.
     ///
-    /// <b>Why they are here and not in <see cref="Ui"/>.</b> Every one of these is a candidate for
-    /// the vocabulary proper — a filter you can see and take off, a value that is its own control,
-    /// a menu behind one symbol — and none of them has a second caller yet. A widget promoted to
-    /// <c>Ui</c> on its first use is a widget whose shape was decided by one screen, and the two
-    /// mistakes that follow are a parameter list bent to a second caller and a helper nobody can
-    /// change because forty screens use it. They live one file away until a second screen wants
-    /// them, and then they move up with two call sites arguing about the signature rather than one.
+    /// They live here rather than in <see cref="Ui"/> because each is a candidate for the
+    /// vocabulary proper — a filter that can be seen and removed, a value that is its own control, a
+    /// menu behind one symbol — and none has a second caller yet. A widget promoted to <c>Ui</c> on
+    /// its first use has its shape decided by one screen, which leads either to a parameter list
+    /// bent to fit a second caller or to a helper too widely used to change. They move up when a
+    /// second screen wants them, with two call sites to settle the signature.
     ///
-    /// Everything below is built out of <see cref="Skin"/> keys and <see cref="Ui"/> primitives, so
-    /// the theme reaches them the same way it reaches everything else: through
-    /// <c>DynamicResource</c>, never a brush resolved once at build time.
+    /// Everything below is built from <see cref="Skin"/> keys and <see cref="Ui"/> primitives, so
+    /// the theme reaches them through <c>DynamicResource</c> rather than a brush resolved once at
+    /// build time.
     /// </summary>
     public static class Parts
     {
@@ -458,17 +457,16 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// A chip whose options are things of different kinds, each saying which kind it is.
+        /// A chip whose options are things of different kinds, each stating its kind.
         ///
-        /// <b>Why the symbol matters.</b> A list holding Sam Reed, the fire engineer, Acme and
-        /// the ARC team is four different kinds of thing spelled the same way, and a coordinator
-        /// reading a board has to know at a glance whether a row is one person's or a whole
-        /// team's - those are different amounts of work and different conversations. So the kind
-        /// travels with the name, in the list and on the chip.
+        /// A list holding a person, a role, a company and a team spells four different kinds of
+        /// thing the same way, and a coordinator reading a board needs to see at a glance whether a
+        /// row belongs to one person or a whole team; they mean different amounts of work. So the
+        /// kind travels with the name, in the list and on the chip.
         ///
-        /// <b>And a way to add one.</b> An assign list with nobody on it used to be an empty
-        /// dropdown, which is a dead end at exactly the moment somebody wants to build the team.
-        /// The last line always offers it.
+        /// The last line always offers a way to add one. An assign list with nobody on it was
+        /// previously an empty dropdown, which is a dead end at the point where the team is being
+        /// built.
         /// </summary>
         /// <param name="value">What it is set to now.</param>
         /// <param name="options">What it can be set to.</param>
@@ -720,17 +718,16 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Tick as many of a short list as apply, in a menu under the thing that opened it.
+        /// Tick as many of a short list as apply, in a menu under the control that opened it.
         ///
-        /// <b>A menu, because it is a chip on a row.</b> This was a window: a modal, in the
-        /// middle of the screen, over the row it was about, for a choice that belongs beside the
-        /// choice next to it - and the status chip a few pixels away drops a list down. Two
-        /// controls on one row behaving as two different kinds of thing is the fault.
+        /// A menu rather than a window, because this hangs off a chip on a row. It was previously a
+        /// modal in the middle of the screen, covering the row it was about, for a choice that sits
+        /// beside another chip that drops a list down. Two controls on one row should not behave as
+        /// two different kinds of control.
         ///
-        /// <b>It still takes several.</b> A clash is often two people's problem - the architect
-        /// who drew the wall and the engineer who ran the duct through it - so the ticks stay,
-        /// the menu stays open while several are ticked, and the set is reported when it closes.
-        /// That is the one thing a plain drop-down cannot do and the reason this is not one.
+        /// It still takes several values. A clash is commonly two parties' problem, so the ticks
+        /// stay, the menu stays open while several are ticked, and the set is reported when it
+        /// closes. That is what a plain drop-down cannot do.
         /// </summary>
         /// <param name="on">What the menu hangs off.</param>
         /// <param name="prompt">What the menu says at the top.</param>
@@ -805,7 +802,7 @@ namespace CamelWorks.UI.Views
 
             if (list.Children.Count == 0)
             {
-                var none = Ui.Small("Nobody on the team yet.");
+                var none = Ui.Small("No team members yet.");
 
                 none.Margin = new Thickness(8, 4, 8, 6);
                 list.Children.Add(none);
@@ -832,7 +829,7 @@ namespace CamelWorks.UI.Views
             var foot = Menu(new List<Entry?>
             {
                 Entry.Rule(),
-                Entry.Act("Nobody \u2014 clear it", Glyphs.Close, () =>
+                Entry.Act("Unassigned \u2014 clear it", Glyphs.Close, () =>
                 {
                     ticked.Clear();
                     changed = true;
@@ -1145,17 +1142,16 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Ask for one line of text, and do something with it.
         ///
-        /// <b>A window, not a popup.</b> This was a <c>Popup</c>, and inside the Navisworks host a
-        /// popup is its own top-level window that never gets the keyboard: the box focused, the
-        /// caret blinked, and nothing anybody typed arrived. Opened from a double-click it did not
-        /// even last that long - the second release of the double-click lands outside the popup,
-        /// and a popup that does not stay open takes that as "click away" and shuts.
+        /// A window rather than a popup. This was a <c>Popup</c>, and inside the Navisworks host a
+        /// popup is its own top-level window that never receives the keyboard: the box focused, the
+        /// caret blinked, and nothing typed arrived. Opened from a double-click it closed
+        /// immediately, because the second release of the double-click lands outside the popup and
+        /// a popup that does not stay open treats that as a click-away.
         ///
-        /// It was reported three separate ways: the rename window flashing and vanishing, the
-        /// comment box refusing to take a comment, and "move into a folder" refusing a folder.
-        /// One cause, and the fix is to be the same kind of window every other dialogue in this
-        /// product already is - owned by the screen that opened it, modal, and part of the
-        /// keyboard's world.
+        /// This was reported three ways: the rename window flashing and vanishing, the comment box
+        /// refusing input, and "move into a folder" refusing a folder. One cause. The fix is to use
+        /// the same kind of window as every other dialogue here — owned by the screen that opened
+        /// it, modal, and in the keyboard's scope.
         /// </summary>
         /// <param name="near">The screen this belongs to, which becomes its owner.</param>
         /// <param name="prompt">What is being asked.</param>
@@ -1294,9 +1290,9 @@ namespace CamelWorks.UI.Views
                 Margin = new Thickness(0, 14, 0, 0),
             };
 
-            // <b>No colour is a choice, not an absence.</b> A folder given a colour by mistake
-            // needs a way back to the skin's own ground, and hunting for the swatch that means
-            // "none" is not it.
+            // No colour is an explicit choice rather than an absence. A folder coloured by mistake
+            // needs a way back to the theme's own ground, and that must not mean finding the swatch
+            // that stands for "none".
             var clear = Ui.Quiet("No colour", () =>
             {
                 said = string.Empty;
@@ -1422,11 +1418,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Ask which of a known set of things, with the option of a new one.
         ///
-        /// <b>Why this is not <see cref="Ask"/>.</b> Asking somebody to type a name that is
-        /// already on their screen asks them to remember it and spell it, and one typo makes a
-        /// second thing that looks like the first - two folders called Level 03 and Level 3, and
-        /// nothing to say which tests went where. A name that exists is picked; a name that does
-        /// not is typed, once.
+        /// Not <see cref="Ask"/>: asking the user to type a name already on their screen requires
+        /// them to remember and spell it, and one typo creates a second thing that looks like the
+        /// first — two folders called Level 03 and Level 3, with nothing to say which tests went
+        /// where. A name that exists is picked; a name that does not is typed once.
         /// </summary>
         /// <param name="near">The screen this belongs to, which becomes its owner.</param>
         /// <param name="prompt">What is being asked.</param>
@@ -1561,23 +1556,22 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Pick one value out of however many there are, by typing at them.
+        /// Pick values out of however many there are, by typing at them.
         ///
-        /// <b>Why not a menu.</b> <see cref="Choose"/> lists what it is given, which is right for
-        /// a job's folders or a test's groups - a dozen of each. A property column over a real
-        /// federation carries hundreds of distinct values, and putting those in a drop-down makes
-        /// a list nobody reaches the bottom of, hanging off the filter symbol and covering the
-        /// board behind it. The list here is filtered as you type and capped at what a person can
-        /// actually read, and the cap says how many it is not showing rather than hiding the
-        /// fact.
+        /// Not a menu. <see cref="Choose"/> lists what it is given, which suits a job's folders or a
+        /// test's groups — a dozen of each. A property column over a real federation carries
+        /// hundreds of distinct values, and a drop-down of those hangs off the filter symbol and
+        /// covers the board behind it. The list here is filtered as the user types and capped at a
+        /// readable length, and the cap states how many values it is not showing.
         ///
-        /// <b>Counts, because they are what the choice turns on.</b> Narrowing to a value that
-        /// holds four of six hundred results is a different act from narrowing to one that holds
-        /// four hundred, and the only place that is knowable is here, next to the value.
-        /// </summary>
-        /// <b>Many at once.</b> A column narrowed to one value answers "show me the ducts". What
-        /// a coordinator asks is "mechanical and electrical, not structural" - so the values tick,
-        /// the window stays open while several are ticked, and it reports the set when it closes.
+        /// Counts are shown because the choice turns on them: narrowing to a value that holds four
+        /// of six hundred results is a different action from narrowing to one that holds four
+        /// hundred, and this is the only place that is visible.
+        ///
+        /// Several values can be picked at once. A column narrowed to one value answers "show me
+        /// the ducts"; the usual question is "mechanical and electrical, not structural". So the
+        /// values tick, the window stays open while several are ticked, and it reports the set when
+        /// it closes.
         /// </summary>
         /// <param name="near">The element this belongs to; the window is owned by the host.</param>
         /// <param name="prompt">What the window says at the top.</param>
@@ -2025,23 +2019,17 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// A band across the table saying how the <b>view</b> is arranged, or where the loose
-        /// results start.
+        /// A band across the table saying how the view is arranged, or where the loose results
+        /// start.
         ///
         /// Deliberately not shaped like a group row — no tick, no chevron, no status colour —
-        /// because it is not a thing in the model. A band that looked like a group row would be
-        /// the product teaching somebody that arranging the view creates groups, which is the one
-        /// misunderstanding this whole screen is built to prevent.
+        /// because it is not an object in the model. A band that looked like a group row would
+        /// imply that arranging the view creates groups, which this screen exists to keep distinct.
         /// </summary>
-        /// <param name="glyph">One of <see cref="Glyphs"/>.</param>
-        /// <param name="label">The eyebrow — what kind of band this is.</param>
-        /// <param name="value">The bucket's value.</param>
-        /// <param name="count">How many rows are under it.</param>
-        /// <param name="onPickAll">Picks every row under it, or null for none.</param>
-        /// <param name="glyph">The symbol at the left.</param>
-        /// <param name="label">What the band is banding by.</param>
+        /// <param name="glyph">The symbol at the left. One of <see cref="Glyphs"/>.</param>
+        /// <param name="label">The eyebrow: what the band is banding by.</param>
         /// <param name="value">The value this band holds.</param>
-        /// <param name="count">How much is under it.</param>
+        /// <param name="count">How many rows are under it.</param>
         /// <param name="onPickAll">Ticks everything under the band, or null for no such link.</param>
         /// <param name="depth">How many bands are above this one, which is what indents it.</param>
         /// <param name="shut">True when this band is folded away, or null when it cannot fold.</param>
@@ -2133,24 +2121,23 @@ namespace CamelWorks.UI.Views
 
             row.Children.Add(words);
 
-            // Indented by its level rather than nested inside anything: the table is one flat
-            // list of lines, virtualised, and a band that contained its rows would be a panel the
+            // Indented by its level rather than nested inside anything: the table is one flat,
+            // virtualised list of lines, and a band that contained its rows would be a panel the
             // list could not recycle.
             //
-            // <b>Depth has to be visible, not just measurable.</b> Indent alone read as three
-            // identical grey bars at slightly different margins, and on a chain three deep
-            // nobody could tell which band was inside which. So each level also recedes: the
-            // outermost is a full-weight bar with a rule above it, and every level under it is
-            // lighter, smaller and unruled, with a rail down its left edge marking where its
-            // parent's ground ends.
-            // <b>One band, one line of it.</b> This wrapped every nested band in a second
-            // border carrying a rail down its left edge, inside a Grid - three elements and a
-            // stack of padding per band, which on a chain three deep left a tall empty gutter
-            // down the side of the table doing nothing. The depth is said by the indent, the
-            // weight and the left edge of the band itself, which costs one element.
+            // Depth is shown by weight as well as indent. Indent alone read as three identical grey
+            // bars at slightly different margins, so on a chain three deep the nesting was not
+            // legible. Each level now recedes: the outermost is a full-weight bar with a rule above
+            // it, and every level under it is lighter, smaller and unruled, with a rail down its
+            // left edge marking where its parent's ground ends.
             //
-            // A smaller step per level, too: twenty pixels a level pushed a third-level band a
-            // third of the way across the table before its text started.
+            // One element per band. This previously wrapped every nested band in a second border
+            // carrying the rail, inside a Grid — three elements and a stack of padding per band,
+            // which on a chain three deep left a wide empty gutter down the side of the table. The
+            // indent, the weight and the band's own left edge carry the depth at one element.
+            //
+            // The step per level is small: twenty pixels a level pushed a third-level band a third
+            // of the way across the table before its text began.
             var band = new Border
             {
                 Padding = new Thickness(12 + (depth * 14), depth == 0 ? 6 : 3, 12,
@@ -2314,13 +2301,13 @@ namespace CamelWorks.UI.Views
                 },
             };
 
-            // <b>The skin, carried onto the card itself.</b> A popup's child is not in the
-            // window's logical tree - the popup is parented to nothing, only pointed at a
-            // placement target - so every SetResourceReference inside it walks up, finds no
-            // dictionary, and resolves to nothing. The card then paints transparent and the menu
-            // reads as bare text lying over whatever is behind it, which is exactly how the
-            // assign list and the filter menu were reported. Merging the sheet in here gives
-            // everything inside the card somewhere to look.
+            // The theme sheet is merged onto the card itself. A popup's child is not in the
+            // window's logical tree — the popup is parented to nothing and only pointed at a
+            // placement target — so every SetResourceReference inside it walks up, finds no
+            // dictionary and resolves to nothing. The card then paints transparent and the menu
+            // reads as bare text over whatever is behind it, which is how the assign list and the
+            // filter menu were reported. Merging the sheet here gives everything inside the card a
+            // dictionary to resolve against.
             card.Resources.MergedDictionaries.Add(Skin.Sheet);
 
             card.Tint(Border.BackgroundProperty, "Card");
@@ -2330,19 +2317,11 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Hang a popup off something, opened by pressing it and closed by pressing anywhere else.
-        ///
-        /// <b>A popup and not a window.</b> Every modal this product shows has to be owned by the
-        /// window it came from, or it disables the host's own frame and Navisworks never comes
-        /// back. A dropdown is not a modal and must not become one: a <see cref="Popup"/> is a
-        /// layer over the same window, so there is no owner to get wrong.
-        /// </summary>
-        /// <summary>
         /// Close the menu an element sits in, if it sits in one.
         ///
         /// Walks out to the <see cref="Popup"/> rather than being handed it, so an option does not
-        /// have to be built knowing which menu it will end up in - which is what let the card try
-        /// to do this on the option's behalf, twice, and get it wrong both times.
+        /// have to be built knowing which menu it will end up in. That requirement is what led the
+        /// card to attempt this on the option's behalf, twice, and get it wrong both times.
         /// </summary>
         /// <param name="from">The option that was chosen.</param>
         private static void Shut(DependencyObject? from)

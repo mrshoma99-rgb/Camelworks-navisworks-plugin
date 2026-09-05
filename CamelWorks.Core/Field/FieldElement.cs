@@ -7,14 +7,14 @@ namespace CamelWorks.Core.Field
     /// One element, as every field tool reads it.
     ///
     /// The setting out, the mass properties and the dimensions all want the same five things off an
-    /// element and nothing else, so they share one shape rather than three that drift apart. A
-    /// screen builds this list once and hands the same list to all of them.
+    /// element, so they share one shape rather than three that drift apart. A screen builds this
+    /// list once and hands the same list to all of them.
     ///
-    /// <b>The box is always there; the body is not.</b> Every element in a Navisworks model has a
-    /// world box, so anything that works off <see cref="Bounds"/> works with no setting up at all.
-    /// Triangles are dearer to read and are only pulled when a tool needs them, which is why
-    /// <see cref="Positions"/> is allowed to be empty and every tool that reads it says which
-    /// answer it gave.
+    /// The box is always present; the body is not. Every element in a Navisworks model has a world
+    /// box, so anything working off <see cref="Bounds"/> works with no setting up. Triangles are
+    /// more expensive to read and are only pulled when a tool needs them, which is why
+    /// <see cref="Positions"/> may be empty and every tool that reads it reports which answer it
+    /// gave.
     /// </summary>
     public sealed class FieldElement
     {

@@ -165,18 +165,18 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// One element, as a snapshot remembers it.
     ///
-    /// <b>Two identities, deliberately.</b> <see cref="Scoped"/> is the ordinary
-    /// <see cref="ElementKey"/> value, which is scoped to the model's source path and is the right
-    /// key whenever both sides came from the same file. <see cref="Local"/> is the same rung
-    /// computed WITHOUT that scope, which is the only thing that can match an element in
-    /// <c>STR-R03.nwc</c> to the same element in <c>STR-R04.nwc</c> — different paths, therefore
-    /// different scopes, therefore no scoped key on one side can ever equal one on the other.
+    /// Two identities, deliberately. <see cref="Scoped"/> is the ordinary <see cref="ElementKey"/>
+    /// value, scoped to the model's source path, and is the right key whenever both sides came from
+    /// the same file. <see cref="Local"/> is the same rung computed without that scope, which is the
+    /// only thing that can match an element in <c>STR-R03.nwc</c> to the same element in
+    /// <c>STR-R04.nwc</c>: different paths mean different scopes, so no scoped key on one side can
+    /// equal one on the other.
     ///
-    /// <see cref="ElementKey.UnscopedValue"/> documents itself as diagnostic and never a match key,
-    /// and that rule still holds everywhere else: a bare unscoped value would happily match two
-    /// unrelated models that happen to share a tree path. It is safe here and only here because a
-    /// comparison matches inside an explicit <see cref="ModelPairing"/> — somebody, or a rule that
-    /// says why, has already decided these two models are two revisions of one thing.
+    /// <see cref="ElementKey.UnscopedValue"/> is documented as diagnostic and never a match key, and
+    /// that rule holds everywhere else: a bare unscoped value would match two unrelated models that
+    /// share a tree path. It is safe here only because a comparison matches inside an explicit
+    /// <see cref="ModelPairing"/>, where the two models have already been declared two revisions of
+    /// one thing.
     /// </summary>
     public sealed class ElementFingerprint
     {
@@ -248,10 +248,10 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// The watched properties, always sorted by category and then name.
         ///
-        /// <b>The sort is an invariant, not a tidy-up.</b> Comparing two elements' properties is a
-        /// merge-walk of two ordered lists, which is silently wrong on an unordered one — it
-        /// reports properties as arrived and departed that were only in a different place. Sorting
-        /// on the way in means a snapshot somebody has hand-edited still compares correctly.
+        /// The sort is an invariant. Comparing two elements' properties is a merge-walk of two
+        /// ordered lists, which is silently wrong on an unordered one: it reports properties as
+        /// arrived and departed that were only in a different place. Sorting on the way in means a
+        /// hand-edited snapshot still compares correctly.
         /// </summary>
         public IReadOnlyList<WatchedValue> Values
         {

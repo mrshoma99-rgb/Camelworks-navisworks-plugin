@@ -41,10 +41,9 @@ namespace CamelWorks.Studio
         /// <summary>
         /// Which pages a shoot draws when it is not told, and the word that means all of them.
         ///
-        /// <b>A render is asked for to settle one screen.</b> Every page in both themes is thirty
-        /// pictures off a Windows runner billed at twice the rate, twenty-eight of which nobody
-        /// opens - and the cost of that is not the minutes, it is that a render stops being
-        /// something you reach for. Named pages are two.
+        /// A render is asked for to settle one screen. Every page in both themes is thirty images
+        /// from a Windows runner billed at twice the rate, twenty-eight of which nobody opens. Named
+        /// pages are two.
         /// </summary>
         private const string Only = "app-clash-matrix-drawn,app-clash-matrix-priority,app-clash-matrix-results,app-clash-matrix-read";
 
@@ -81,15 +80,15 @@ namespace CamelWorks.Studio
         /// <summary>
         /// Render the named sheets at every width and write them out.
         ///
-        /// This is the part that makes the harness worth having on a build agent rather than only
-        /// on a desk: the pictures come back from the machine that compiled the change, so a
-        /// layout can be reviewed by whoever wrote it without a Navisworks licence anywhere.
+        /// This is what makes the harness worth having on a build agent rather than only on a desk:
+        /// the images come back from the machine that compiled the change, so a layout can be
+        /// reviewed by whoever wrote it without a Navisworks licence.
         ///
-        /// <b>Light only, and only what was asked for.</b> Every page in both themes was thirty
-        /// pictures a run, and a run happens because somebody wants to look at one screen. The
-        /// other twenty-eight cost Windows minutes at twice the rate to be force-pushed and never
-        /// opened. The dark palette is a skin over the same layout, and no fault reported against
-        /// this product has ever been visible in one and not the other.
+        /// Light palette only, and only the named pages. Every page in both themes was thirty images
+        /// a run, and a run happens because one screen needs looking at; the other twenty-eight cost
+        /// Windows minutes at twice the rate and are not opened. The dark palette is a skin over the
+        /// same layout, and no fault reported against this product has been visible in one and not
+        /// the other.
         /// </summary>
         /// <param name="folder">Where to write the PNGs.</param>
         /// <param name="only">Which pages, by id, comma-separated - or <c>all</c> for every one.</param>
@@ -97,11 +96,9 @@ namespace CamelWorks.Studio
         {
             Directory.CreateDirectory(folder);
 
-            // <b>Nothing named is the default, not everything.</b> A push carries no dispatch
-            // input, so the workflow hands this an empty string - and an empty list read as "no
-            // filter" drew all nineteen pages off a Windows runner for a request that wanted two.
-            // Which is the cost this argument exists to avoid, arriving through the one trigger
-            // that cannot pass it.
+            // Nothing named means nothing drawn, not everything. A push carries no dispatch input,
+            // so the workflow hands this an empty string, and an empty list read as "no filter" drew
+            // all nineteen pages off a Windows runner for a request that wanted two.
             if (string.IsNullOrWhiteSpace(only)) only = Only;
 
             var wanted = only.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)

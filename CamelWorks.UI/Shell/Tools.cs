@@ -43,9 +43,9 @@ namespace CamelWorks.UI.Shell
     /// <summary>
     /// One tool: what it is for, the single thing it does, and how it shows itself.
     ///
-    /// <b>Every tool has exactly one main action.</b> The field is not optional and not a
-    /// description - it is the caption on the one filled button that tool exists to offer. If a
-    /// tool cannot name it in three or four words, that is the tool telling you it is two tools.
+    /// Every tool has exactly one main action. The field is required and is not a description: it is
+    /// the caption on the one filled button that tool exists to offer. A tool that cannot name it in
+    /// three or four words is two tools.
     /// </summary>
     public sealed class Tool
     {
@@ -90,20 +90,20 @@ namespace CamelWorks.UI.Shell
     /// <summary>
     /// Every tool CamelWorks has, and what each one is for.
     ///
-    /// <b>This replaces a workspace switcher and a tab strip.</b> The old model was one dock pane
-    /// with seven workspaces and eighteen tabs, and twenty-one of the twenty-seven ribbon buttons
-    /// opened that same pane on a different tab - three of them on tabs another button already
-    /// opened, so pressing either landed you in the identical place. A ribbon of buttons that all
-    /// open the same panel is a menu wearing a ribbon's clothes, and the tab strip underneath it
-    /// meant every tool looked like the same form with different fields.
+    /// This replaces a workspace switcher and a tab strip. The earlier model was one dock pane with
+    /// seven workspaces and eighteen tabs, and twenty-one of the twenty-seven ribbon buttons opened
+    /// that same pane on a different tab — three of them on tabs another button already opened, so
+    /// either button landed in the same place. A ribbon of buttons that all open the same panel is a
+    /// menu, and the tab strip underneath it made every tool look like the same form with different
+    /// fields.
     ///
-    /// So: a tool opens its own surface, sized and shaped to what it does. Six of them are
-    /// panels, because their work genuinely happens beside the model for an hour at a time.
-    /// Everything else is a window or a wizard, opens, does its one job, and closes.
+    /// So a tool opens its own surface, sized and shaped to what it does. Six are panels, because
+    /// their work happens beside the model over a long period. Everything else is a window or a
+    /// wizard that opens, does its one job and closes.
     ///
-    /// <b>The test each entry has to pass.</b> Name the one action in three or four words. A tool
-    /// that cannot is two tools - which is how a window holding weight, dimensions, setting out,
-    /// paperwork and labels behind five collapsible sections came to be five entries here.
+    /// Each entry has to name its one action in three or four words. A tool that cannot is two
+    /// tools, which is how a window holding weight, dimensions, setting out, paperwork and labels
+    /// behind five collapsible sections became five entries here.
     /// </summary>
     public static class Tools
     {
@@ -113,8 +113,8 @@ namespace CamelWorks.UI.Shell
             // ---- Project ----------------------------------------------------------------------
 
             Of("health", "Health Check", ToolShape.Window, Glyph.Tick,
-               "Say whether this federation is fit to coordinate against, before anybody spends a "
-               + "week coordinating against it.",
+               "Reports whether this federation is fit to coordinate against, before "
+               + "coordination starts.",
                "Check this federation"),
 
             Of("project", "Project Settings", ToolShape.Window, Glyph.Tune,
@@ -129,8 +129,8 @@ namespace CamelWorks.UI.Shell
                "Take a manifest"),
 
             Of("history", "History", ToolShape.Window, Glyph.Clock,
-               "What has happened on this project and who did it, newest first, so a question "
-               + "about a decision has an answer that is not somebody's memory.",
+               "What has happened on this project and who did it, newest first, so decisions "
+               + "have a recorded answer.",
                "Copy {n}"),
 
             Of("links", "Fix Broken Links", ToolShape.Window, Glyph.Folder,
@@ -162,9 +162,8 @@ namespace CamelWorks.UI.Shell
                "Try these on the board"),
 
             Of("issuelist", "Issues", ToolShape.Window, Glyph.Report,
-               "Every issue on this project, however it was raised - written by hand, made from "
-               + "clash results, made from the clearance check, or read out of somebody's BCF - "
-               + "with the detail panel that works one.",
+               "Every issue on this project, however it was raised: by hand, from clash results, "
+               + "from the clearance check, or imported from BCF. Includes the detail panel.",
                "New issue"),
 
             Of("issuein", "Import Issues", ToolShape.Window, Glyph.Onward,
@@ -178,7 +177,7 @@ namespace CamelWorks.UI.Shell
                "Write"),
 
             Of("clashreport", "Clash Report", ToolShape.Window, Glyph.Report,
-               "Get the board out as a document somebody who does not have Navisworks can read.",
+               "Exports the board as a document readable without Navisworks.",
                "Write the report"),
 
             Of("bcf", "BCF", ToolShape.Window, Glyph.Onward,
@@ -241,8 +240,8 @@ namespace CamelWorks.UI.Shell
                "Read properties"),
 
             Of("excel", "Excel Round-trip", ToolShape.Window, Glyph.Table,
-               "Take the properties out to a workbook, let somebody who does not have Navisworks "
-               + "edit them, and read the edits back in.",
+               "Exports properties to a workbook for editing without Navisworks, then reads the "
+               + "edits back in.",
                "Write a sheet"),
 
             Of("datalink", "External Data", ToolShape.Wizard, Glyph.Folder,
@@ -319,8 +318,8 @@ namespace CamelWorks.UI.Shell
             // ---- Publish and site ---------------------------------------------------------------
 
             Of("extract", "Extract", ToolShape.Wizard, Glyph.Model,
-               "Cut a piece out of the federation - a level, a zone, a room, a view - as a set, a "
-               + "drawing or a model somebody else can open.",
+               "Extracts part of the federation (a level, zone, room or view) as a set, a drawing "
+               + "or a standalone model.",
                "Read it"),
 
             Of("compile", "Compile", ToolShape.Wizard, Glyph.Save,
@@ -359,8 +358,8 @@ namespace CamelWorks.UI.Shell
                "Find what is attached"),
 
             Of("labels", "Site Labels", ToolShape.Window, Glyph.Table,
-               "Print a sheet of stickers with a code on each and the identifier underneath, for "
-               + "somebody to put on the work.",
+               "Prints a sheet of labels, each carrying a code and its identifier, for "
+               + "application on site.",
                "Make the labels"),
 
             Of("batch", "Batch", ToolShape.Window, Glyph.Clock,

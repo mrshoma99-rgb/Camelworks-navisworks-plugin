@@ -326,6 +326,12 @@ jobs:
       - name: Check the skin has no repeated or missing keys
         run: python3 checks/validate-skin.py
 
+      # CLAUDE.md sets the register for every string, comment and doc in the product: plain,
+      # professional, technical English. The two mechanically detectable failures are a runtime
+      # string that narrates and a comment that opens with a bolded aphorism.
+      - name: Check the text reads like AEC software
+        run: python3 checks/validate-voice.py
+
       # The harness is what people are handed when they review the UI, so a harness that draws a
       # button the product does not have is worse than no harness at all. It has drifted four
       # times in one branch; captions are the cheapest half of it to hold to account.

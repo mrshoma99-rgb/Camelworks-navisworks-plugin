@@ -21,14 +21,13 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Compare: what changed between two revisions of the model.
     ///
-    /// <b>Three screens, one idea.</b> Run picks the two sides and does the work. Changes is the
-    /// list, and everything you can do with it — paint it, stamp it, raise it, send it. Baselines
-    /// is the small amount of housekeeping the other two need.
+    /// Three screens. Run picks the two sides and does the work. Changes is the list, with
+    /// everything that can be done to it — paint it, stamp it, raise it, send it. Baselines is the
+    /// housekeeping the other two need.
     ///
-    /// <b>The zero-setup story is one button.</b> With no baseline on a raw model, Run says so and
-    /// offers to take one. Nothing else has to be configured, ever: the tolerance, the property
-    /// list and the matching strength all have defaults that work, and every one of them is on the
-    /// screen so it can be argued with rather than guessed at.
+    /// No setup is required. With no baseline on a raw model, Run says so and offers to take one.
+    /// The tolerance, the property list and the matching strength all have working defaults, and
+    /// each is on the screen so it can be changed rather than guessed at.
     /// </summary>
     public static class CompareViews
     {
@@ -213,10 +212,9 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// What a triangle read can and cannot answer against the baseline that is picked.
         ///
-        /// <b>A signature on one side compares against nothing.</b> Reading the current model's
-        /// triangles against a baseline that has none costs the minutes and reports nothing at
-        /// all — which reads as "nothing was remodelled" and is the most expensive way this
-        /// feature could lie. So the screen says it before the button is pressed.
+        /// A signature on one side compares against nothing. Reading the current model's triangles
+        /// against a baseline that has none costs minutes and reports nothing, which reads as
+        /// "nothing was remodelled". So the screen states it before the button is pressed.
         /// </summary>
         private static UIElement? Triangles()
         {
@@ -702,13 +700,12 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The removed elements, and the old revision they are still in.
             ///
-            /// <b>"A removed element cannot be shown" is only true until somebody opens the old
-            /// file.</b> The element is not gone — it is in last month's model, in last month's
-            /// issue folder, and the baseline recorded exactly which file that was. Appending it
-            /// beside the current revision makes the red layer start working, and nothing else in
-            /// the view moves: the host's element index is first-wins in document order, so every
-            /// key the current model already holds still resolves to the current element and the
-            /// old revision claims only the keys nothing else has.
+            /// A removed element can be shown once the old file is open. It is still in last
+            /// month's model, in last month's issue folder, and the baseline recorded which file
+            /// that was. Appending it beside the current revision makes the red layer work, and
+            /// nothing else in the view moves: the host's element index is first-wins in document
+            /// order, so every key the current model already holds still resolves to the current
+            /// element and the old revision claims only the keys nothing else has.
             /// </summary>
             private UIElement? Removed(CompareView view)
             {
@@ -792,10 +789,9 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// A viewpoint per place something happened.
             ///
-            /// <b>A change list is a list; a building is a place.</b> Four hundred rows tell
-            /// nobody where to stand. A dozen viewpoints — one per area where something actually
-            /// moved — is a walk somebody can do in ten minutes and hand to whoever has to fix it,
-            /// and it survives being sent to a machine that has never had CamelWorks on it.
+            /// Four hundred rows do not say where to stand. A dozen viewpoints — one per area where
+            /// something moved — is a walk that takes ten minutes, can be handed to whoever has to
+            /// fix it, and survives being sent to a machine without CamelWorks installed.
             /// </summary>
             private UIElement Walk()
             {
@@ -848,9 +844,9 @@ namespace CamelWorks.UI.Views
 
                     if (framed > 0)
                         _output.Children.Add(Ui.Note(Ui.Count(framed, "viewpoint")
-                            + " look at where removed elements used to be. There is nothing in "
-                            + "this document at those coordinates — that is what removed means — "
-                            + "so the view is framed on the extent the baseline recorded."));
+                            + " look at the former location of removed elements. Nothing exists at "
+                            + "those coordinates in this document, so each view is framed on the "
+                            + "extent recorded in the baseline."));
 
                     _session.Record(ActivityKind.Reconcile,
                         "made " + Ui.Count(made, "viewpoint") + " from the comparison");
@@ -1025,9 +1021,9 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    _output.Children.Add(Ui.Note("Moves are left off by default: on most revisions "
-                        + "they are hundreds of elements settling by a few millimetres, and a "
-                        + "register full of them is a register nobody opens."));
+                    _output.Children.Add(Ui.Note("Moves are excluded by default. On most revisions they "
+                        + "are hundreds of elements shifted by a few millimetres, which "
+                        + "obscures the substantive changes."));
 
                     _output.Children.Add(Ui.Info("Raised " + Ui.Count(made, "issue")
                         + " in the register, each carrying the elements it is about.",

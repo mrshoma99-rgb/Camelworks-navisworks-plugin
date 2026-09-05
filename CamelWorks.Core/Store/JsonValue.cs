@@ -33,14 +33,14 @@ namespace CamelWorks.Core.Store
     ///
     /// Hand-rolled rather than taken from a package, for the reason the whole project holds to: a
     /// free plug-in that must load into four host years alongside whatever else the user has
-    /// installed cannot afford an assembly-binding argument with somebody else's copy of the same
-    /// library. The architecture test enforces it.
+    /// installed cannot risk an assembly-binding conflict with another copy of the same library. The
+    /// architecture test enforces it.
     ///
-    /// Two properties beyond "it parses JSON", both of which the sidecar store depends on:
+    /// Two properties beyond parsing JSON, both of which the sidecar store depends on:
     ///
-    /// * <b>Key order is preserved.</b> A file that reorders its keys on every save produces a
-    ///   meaningless diff, and these files sit in the user's project folder next to their models.
-    /// * <b>Numbers keep their original text.</b> Reading 1.10 and writing 1.1 is a spurious diff;
+    /// * Key order is preserved. A file that reorders its keys on every save produces a meaningless
+    ///   diff, and these files sit in the user's project folder beside their models.
+    /// * Numbers keep their original text. Reading 1.10 and writing 1.1 is a spurious diff, and
     ///   reading a long id and writing it in exponent form is data loss.
     /// </summary>
     public sealed class JsonValue

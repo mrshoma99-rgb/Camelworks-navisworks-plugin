@@ -12,17 +12,16 @@ using CamelWorks.UI.Shell;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Help: what this is, what it will not do, and what state it is in right now.
+    /// Help: what this is, what it will not do, and the current state of the installation.
     ///
     /// A window rather than a tab, and the one modal in the product that is not a file dialog. It
-    /// has to work when the panel does not — "the pane will not open" is exactly when somebody
-    /// needs the diagnostics — so it depends on as little as possible and shows what it can.
+    /// has to work when the panel does not — "the pane will not open" is when the diagnostics are
+    /// needed — so it depends on as little as possible and shows what it can.
     ///
-    /// <b>The limitations section is not an apology, it is documentation.</b> Every line in it is a
-    /// thing that surprises somebody once and then costs them an afternoon: Ctrl+Z not undoing a
-    /// property write, clash tools missing on Simulate, the temporary override layer being
-    /// unreadable. Stating them where they can be found beats explaining them one support email at
-    /// a time.
+    /// The limitations section is documentation. Every line in it is behaviour that surprises
+    /// somebody once and then costs them time: Ctrl+Z not undoing a property write, clash tools
+    /// missing on Simulate, the temporary override layer being unreadable. Stating them where they
+    /// can be found is cheaper than explaining them one support email at a time.
     /// </summary>
     public static class HelpWindow
     {
@@ -82,7 +81,7 @@ namespace CamelWorks.UI.Views
                            + "and a quarter turn about an axis; a rotation that leaves the box "
                            + "identical leaves nothing to see. Reading the actual triangles does not "
                            + "help with this one either — the triangles move with the element."),
-                    Bullet("Comparing two different files needs somebody to say which model is which. "
+                    Bullet("Comparing two different files requires a statement of which model is which. "
                            + "CamelWorks pairs them by path, then by name, then by name with the revision "
                            + "marker taken off, and says on every row which rule paired it and why. Where "
                            + "two candidates fit equally well it pairs neither and asks, because guessing "
@@ -183,10 +182,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Everything worth quoting, as one file.
         ///
-        /// <b>It writes a file rather than sending anything.</b> Nothing in CamelWorks phones home,
-        /// and a support bundle that uploaded itself would be the one place it did. What goes in it
-        /// is listed on the card before the button is pressed, because a bundle whose contents are a
-        /// surprise is one nobody at a firm with a security policy is allowed to send.
+        /// It writes a file rather than sending anything. Nothing in CamelWorks contacts a server,
+        /// and a support bundle that uploaded itself would be the exception. Its contents are listed
+        /// on the card before the button is pressed, because a bundle whose contents are unknown is
+        /// one a firm with a security policy will not allow to be sent.
         /// </summary>
         private static UIElement Bundle()
         {
@@ -335,9 +334,8 @@ namespace CamelWorks.UI.Views
 
             var body = Ui.Stack();
 
-            body.Children.Add(Ui.Line("Every screen works with nothing set up, which is the point of "
-                + "the product and also the reason nobody ever sees what a set-up project looks like. "
-                + "This is one, on a made-up job.", 0.85));
+            body.Children.Add(Ui.Line("Every screen works with nothing configured, so a fully "
+                + "configured project is rarely seen. This is one, on a sample job.", 0.85));
 
             foreach (var line in SampleProject.Explains) body.Children.Add(Ui.Line("- " + line, 0.8));
 
@@ -351,9 +349,9 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Which build this is, and where a newer one lives.
         ///
-        /// <b>It does not check.</b> A plug-in that reaches the internet on startup is one a firm's
-        /// security team has to have an opinion about, and the opinion is usually no. The version is
-        /// here and the address is here; looking is a decision somebody makes.
+        /// It does not check for updates. A plug-in that reaches the internet on startup is one a
+        /// firm's security team has to approve. The version and the address are both here; checking
+        /// is the user's decision.
         /// </summary>
         private static UIElement Updates() => Chapter("Updates",
             "There is no update check, and there is no telemetry.",

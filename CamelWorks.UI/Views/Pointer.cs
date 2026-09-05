@@ -11,21 +11,19 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// A mouse cursor carrying the symbol it is about to lay down.
     ///
-    /// <b>An armed brush changed what a click does and nothing under the pointer said so.</b> In
-    /// the matrix a click is either "select this cell" or "paint this cell", and which of the two
-    /// it is was written in a strip along the top of the window - forty rows away from the hand
-    /// doing the clicking, and read once at the start of a session if at all. The rest of the
-    /// time it was learned by painting a cell nobody meant to paint.
+    /// An armed brush changes what a click does, and nothing under the pointer said so. In the
+    /// matrix a click is either "select this cell" or "paint this cell", and which of the two was
+    /// written in a strip along the top of the window, far from the pointer and read once at the
+    /// start of a session if at all. Otherwise it was learned by painting a cell unintentionally.
     ///
-    /// The cursor is the one thing that is always where the work is. Carrying the symbol, it says
-    /// both facts at once and never needs looking up: that a brush is armed, and which one - so
-    /// arming C and thinking you armed B is a thing you see before the first click rather than
-    /// after the thirtieth.
+    /// The cursor is always where the work is. Carrying the symbol, it states both facts without
+    /// being looked up: that a brush is armed, and which one, so arming C while intending B is
+    /// visible before the first click.
     ///
-    /// <b>Built rather than shipped.</b> The symbols are the matrix's own - any letter, in any
-    /// colour somebody chose - so there is no set of cursor files that could cover them. This
-    /// draws one: a pointer at the hot spot, and the symbol on its own wash hanging below and to
-    /// the right, the way every drag cursor in Windows is shaped.
+    /// Built rather than shipped. The symbols are the matrix's own — any letter, in any colour
+    /// chosen — so no set of cursor files could cover them. This draws one: a pointer at the hot
+    /// spot, and the symbol on its own wash below and to the right, as Windows drag cursors are
+    /// shaped.
     /// </summary>
     public static class Pointer
     {
@@ -38,10 +36,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// A cursor carrying one symbol, or null when one cannot be built.
         ///
-        /// <b>Null is a real answer.</b> This draws a bitmap and hands Windows a cursor file it
-        /// has assembled by hand, and there is no version of that which is worth an exception
-        /// reaching a coordinator mid-drag. Every caller has a stock cursor to fall back on, so
-        /// the worst this can do is leave the pointer looking like a pen instead of like a "B".
+        /// Null is an ordinary answer. This draws a bitmap and hands Windows a cursor file assembled
+        /// by hand, and no part of that is worth an exception reaching the user mid-drag. Every
+        /// caller has a stock cursor to fall back on, so the worst outcome is a pointer that looks
+        /// like a pen rather than like a "B".
         /// </summary>
         /// <param name="mark">The symbol, as it is drawn in the cells.</param>
         /// <param name="ground">The wash its cells carry.</param>
@@ -146,11 +144,11 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The pixels, wrapped in the cursor file Windows expects.
         ///
-        /// <b>A plain 32-bit bitmap, not a PNG.</b> Windows has taken PNG payloads in icons since
-        /// Vista and is less dependable about them in cursors, and this has to work on whatever a
-        /// coordinator's machine turns out to be. So: the directory, one entry, a bitmap header
-        /// claiming twice its own height, the colours bottom-up, and an all-zero mask that the
-        /// format insists on and that thirty-two bits of alpha make redundant.
+        /// A plain 32-bit bitmap rather than a PNG. Windows has accepted PNG payloads in icons since
+        /// Vista and is less dependable about them in cursors, and this has to work on whatever
+        /// machine it lands on. So: the directory, one entry, a bitmap header claiming twice its own
+        /// height, the colours bottom-up, and an all-zero mask that the format requires and that
+        /// thirty-two bits of alpha make redundant.
         /// </summary>
         /// <param name="pixels">The rendered pixels, top-down, premultiplied.</param>
         private static byte[] Cursored(byte[] pixels)

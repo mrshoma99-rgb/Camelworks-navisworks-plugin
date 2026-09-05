@@ -6,23 +6,22 @@ using CamelWorks.Core.Store;
 namespace CamelWorks.Core.Clash
 {
     /// <summary>
-    /// What this project calls a clash test, when the document will not be told.
+    /// What this project calls a clash test, when the document will not record it.
     ///
-    /// <b>Why this exists.</b> Renaming a test and filing it in a folder are writes into the
-    /// host's clash data, and a published NWD holds that data read-only - so on the seat where
-    /// most coordination review actually happens, both verbs simply refused. The rule this
-    /// product works to is that the database is the record and the document is a projection of
-    /// it: a decision is kept whether or not the file will take it. Statuses, assignments,
-    /// comments and groups already worked that way through the findings register. A test's own
-    /// name and folder had nowhere to go, so they were lost.
+    /// Renaming a test and filing it in a folder are writes into the host's clash data, and a
+    /// published NWD holds that data read-only, so on the seat where most coordination review happens
+    /// both verbs refused. The rule this product works to is that the database is the record and the
+    /// document is a projection of it: a decision is kept whether or not the file will take it.
+    /// Statuses, assignments, comments and groups already worked that way through the findings
+    /// register; a test's own name and folder had nowhere to go and were lost.
     ///
     /// They go here. The board applies these over whatever the host reports, the sync writes them
-    /// into the document on a seat that can take them, and a document that never can still shows
-    /// the coordinator the names they chose.
+    /// into the document on a seat that can take them, and a document that never can still shows the
+    /// coordinator the names they chose.
     ///
-    /// <b>Keyed by the host's test id</b>, which survives a rename - so renaming a test twice
-    /// replaces the entry rather than orphaning it, and a test deleted in Navisworks leaves an
-    /// entry that simply never matches anything again.
+    /// Keyed by the host's test id, which survives a rename, so renaming a test twice replaces the
+    /// entry rather than orphaning it, and a test deleted in Navisworks leaves an entry that never
+    /// matches again.
     /// </summary>
     public sealed class ClashTestNames
     {

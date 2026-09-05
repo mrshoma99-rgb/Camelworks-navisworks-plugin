@@ -95,13 +95,13 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>
         /// True when nothing in the model matched the applicability at all.
         ///
-        /// <b>Reported on its own, never as a pass.</b> "Every wall must carry a fire rating" over
-        /// a model with no walls in it is vacuously true, and a checker that shows it green has
-        /// told the reader the opposite of what happened: nothing was checked. This is the single
-        /// most useful thing an IDS report can say, because it is how an audit gets passed by a
-        /// model that was never loaded properly.
+        /// Reported on its own, never as a pass. "Every wall must carry a fire rating" over a model
+        /// with no walls is vacuously true, and a checker that shows it green tells the reader the
+        /// opposite of what happened: nothing was checked. It is the most useful thing an IDS report
+        /// can say, because it is how an audit gets passed by a model that was never loaded
+        /// properly.
         ///
-        /// When the author wrote <c>minOccurs="1"</c>, it is not merely reported — see
+        /// When the author wrote <c>minOccurs="1"</c> it is not merely reported — see
         /// <see cref="CountOutOfRange"/>, which makes it a failure.
         /// </summary>
         public bool NothingApplied => Applicable == 0;

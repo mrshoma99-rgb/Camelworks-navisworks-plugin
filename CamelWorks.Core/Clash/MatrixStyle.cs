@@ -23,17 +23,17 @@ namespace CamelWorks.Core.Clash
     }
 
     /// <summary>
-    /// How a matrix is drawn: which half is worked in, what the parts are coloured, and which of
-    /// a line's fields appear beside its name.
+    /// How a matrix is drawn: which half is worked in, what the parts are coloured, and which of a
+    /// line's fields appear beside its name.
     ///
-    /// <b>Kept with the matrix, not with the seat.</b> A practice draws its matrices one way -
-    /// the lower triangle, clearances in green, no code column because their set names carry the
-    /// code already - and that is a property of the matrix they send out, not of the machine it
-    /// was last opened on. Saved with the grid, it travels with it.
+    /// Kept with the matrix rather than with the seat. A practice draws its matrices one way — the
+    /// lower triangle, clearances in green, no code column because their set names carry the code —
+    /// and that is a property of the matrix they send out rather than of the machine it was last
+    /// opened on. Saved with the grid, it travels with it.
     ///
-    /// Everything here is about drawing. Nothing in it changes which tests are planned or built:
-    /// a pair is written to both halves whichever half it was put in, and a hidden number is
-    /// still the number the test is named after.
+    /// Everything here is about drawing. None of it changes which tests are planned or built: a pair
+    /// is written to both halves whichever half it was entered in, and a hidden number is still the
+    /// number the test is named after.
     /// </summary>
     public sealed class MatrixStyle
     {

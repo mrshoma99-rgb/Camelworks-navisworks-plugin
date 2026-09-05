@@ -12,14 +12,14 @@ namespace CamelWorks.Nav.Clash
     /// <summary>
     /// Reads the host's clash tests and results.
     ///
-    /// <b>This type lives in its own assembly on purpose, and nothing may move it.</b>
-    /// <c>Autodesk.Navisworks.Clash.dll</c> ships with Navisworks Manage and not with Simulate. A
-    /// type from a missing assembly costs nothing until the JIT reaches a method that mentions it,
-    /// and then it is a FileNotFoundException in the middle of whatever the user was doing, naming
-    /// a DLL they have never heard of. Behind an assembly boundary, a Simulate user simply never
-    /// loads this — the clash tools are shown disabled, with a reason.
+    /// This type must stay in its own assembly. <c>Autodesk.Navisworks.Clash.dll</c> ships with
+    /// Navisworks Manage and not with Simulate. A type from a missing assembly costs nothing until
+    /// the JIT reaches a method that mentions it, at which point it is a FileNotFoundException in
+    /// the middle of the user's work, naming a DLL they do not recognise. Behind an assembly
+    /// boundary a Simulate user never loads this, and the clash tools are shown disabled with a
+    /// reason.
     ///
-    /// <b>Main thread only.</b>
+    /// Main thread only.
     /// </summary>
     public sealed class NavClashSource : IClashSource
     {
@@ -175,9 +175,9 @@ namespace CamelWorks.Nav.Clash
                     return null;
                 }
 
-                // <b>The folder the caller asked for, not the root.</b> The spec has carried a
-                // folder since it was written and this dropped it on the floor, so a matrix told
-                // to put two hundred tests in "Matrix" put them all beside everything else.
+                // Use the folder the caller asked for, not the root. The spec has carried a folder
+                // since it was written and this dropped it, so a matrix told to put two hundred
+                // tests in "Matrix" put them all at the top level.
                 var into = Destination(clash, root, spec.Folder);
 
                 if (into == null) return null;
@@ -480,13 +480,13 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>
-        /// The group at the end of a trail, as a group inside a group inside a group.
+        /// The group at the end of a trail, nested one group inside another.
         ///
-        /// <b>Asked before told.</b> Every collection here answers <c>CanAdd</c>, and that is
-        /// the only honest way to find out whether this document holds a group inside another:
-        /// the API's types permit it - a group is a saved item and the collection takes saved
-        /// items - and the native side is what decides. A refusal returns null rather than
-        /// throwing, and the caller writes the test flat instead.
+        /// Asked rather than assumed. Every collection here answers <c>CanAdd</c>, which is the only
+        /// reliable way to find out whether this document holds a group inside another: the API's
+        /// types permit it — a group is a saved item and the collection takes saved items — and the
+        /// native side decides. A refusal returns null rather than throwing, and the caller writes
+        /// the test flat instead.
         /// </summary>
         /// <param name="test">The copy being rebuilt.</param>
         /// <param name="made">The groups made so far, keyed on their trail.</param>
@@ -1050,18 +1050,16 @@ namespace CamelWorks.Nav.Clash
         /// <summary>
         /// What one side is: a saved set by name, whole models, or neither.
         ///
-        /// <b>Nothing here resolves a selection.</b> That is the whole point of this method, and
-        /// the reason it looks the way it does. A clash test's side is usually a saved <i>search</i>
-        /// set, and asking the host what such a selection contains - <c>GetSelectedItems</c>, or
-        /// building a source per set and comparing - makes it run the search, with the host's own
-        /// "Searching" window over the top. Per side, per test, that is two search windows a test
-        /// on the one press where somebody is waiting to see their clashes, and all of it for two
-        /// lines of text on a rail.
+        /// Nothing here resolves a selection, which is the reason for the shape of this method. A
+        /// clash test's side is usually a saved search set, and asking the host what such a
+        /// selection contains — <c>GetSelectedItems</c>, or building a source per set and comparing
+        /// — makes it run the search, with the host's own "Searching" window over the top. Per side
+        /// per test that is two search windows per test, on the press where the user is waiting to
+        /// see their clashes, for two lines of text on a rail.
         ///
-        /// So: a source is handed straight back to the host to be <i>named</i>
-        /// (<c>ResolveSelectionSource</c>), which is a lookup rather than a search; and the
-        /// fall-back reads <c>ExplicitSelection</c>, which is the statically-picked items and
-        /// nothing else. Neither touches the model.
+        /// So a source is handed back to the host to be named (<c>ResolveSelectionSource</c>), which
+        /// is a lookup rather than a search, and the fallback reads <c>ExplicitSelection</c>, which
+        /// is the statically picked items only. Neither touches the model.
         /// </summary>
         /// <param name="selection">The side.</param>
         /// <returns>The set name if it is sets, and the whole models if it is whole models.</returns>
@@ -1505,15 +1503,14 @@ namespace CamelWorks.Nav.Clash
         /// <summary>
         /// A comment's id as this project carries it.
         ///
-        /// <b>The host's own type for this is not the same everywhere.</b> The reference assembly
-        /// this repository builds against off-line declares <c>Comment.Id</c> as a signed 64-bit
-        /// integer; the one Navisworks actually ships declares it unsigned. Reading it straight
-        /// into a <c>long</c> therefore compiles here and fails on the real thing - which is
-        /// exactly how it got through.
+        /// The host's own type for this differs between builds. The reference assembly this
+        /// repository builds against off-line declares <c>Comment.Id</c> as a signed 64-bit integer;
+        /// the one Navisworks ships declares it unsigned. Reading it straight into a <c>long</c>
+        /// therefore compiles here and fails against the shipped assembly.
         ///
-        /// The cast is unchecked and so is exact either way: every bit pattern maps to one
-        /// <c>long</c> and back again, which is all an opaque handle needs. It also compiles
-        /// against both declarations, so this does not have to be guarded per Navisworks year.
+        /// The cast is unchecked and exact either way: every bit pattern maps to one <c>long</c> and
+        /// back, which is all an opaque handle needs. It also compiles against both declarations, so
+        /// this does not need guarding per Navisworks release.
         /// </summary>
         /// <param name="comment">The host's comment.</param>
         private static long HostCommentId(Comment comment) => unchecked((long)comment.Id);
@@ -1555,15 +1552,15 @@ namespace CamelWorks.Nav.Clash
             Rebuild(testId, resultId, commentId, body ?? string.Empty);
 
         /// <summary>
-        /// Write a result's trail back without one comment, or with something else in its place.
+        /// Write a result's trail back without one comment, or with a replacement in its place.
         ///
-        /// <b>Everything on a comment is read-only.</b> Body, author, status and date all have a
-        /// getter and no setter, and the only write the host offers is the whole collection at
-        /// once - so taking one out and changing one are the same act, and both are a rebuild.
+        /// Everything on a comment is read-only. Body, author, status and date have getters and no
+        /// setters, and the only write the host offers is the whole collection at once, so removing
+        /// one and changing one are the same operation: a rebuild.
         ///
-        /// A replacement is a new comment, which means a new id and today's date. There is no way
-        /// to keep the original's, and a caller offering an edit has to say so rather than
-        /// pretend the remark was amended in place.
+        /// A replacement is a new comment, with a new id and today's date. The original's cannot be
+        /// kept, and a caller offering an edit has to say so rather than imply the remark was
+        /// amended in place.
         /// </summary>
         /// <param name="testId">Which test.</param>
         /// <param name="resultId">Which result.</param>
@@ -1945,20 +1942,18 @@ namespace CamelWorks.Nav.Clash
             }
         }
 
-        /// <summary>The clash document when it can be written, or null with the reason said.</summary>
         /// <summary>
         /// One test's results by id, so a row verb does not walk the test to find one row.
         ///
-        /// <b>Why this exists.</b> Focus, Isolate, a snapshot and the engine's own saved view each
-        /// name a result by id, and each was finding it by walking every result the test holds -
-        /// twice, for a Focus on a single row, because putting the camera on the engine's view and
-        /// selecting the two elements are separate calls. On a test with twenty thousand results
-        /// that is two traversals of twenty thousand items to answer a click, which is why Focus
-        /// felt slow next to a tool that keeps the result in hand.
+        /// Focus, Isolate, a snapshot and the engine's own saved view each name a result by id, and
+        /// each previously found it by walking every result the test holds — twice for a Focus on a
+        /// single row, because putting the camera on the engine's view and selecting the two
+        /// elements are separate calls. On a test with twenty thousand results that is two full
+        /// traversals per click.
         ///
-        /// Built once per test, on the first verb that needs it, and dropped whole by any write -
+        /// Built once per test, on the first verb that needs it, and dropped whole by any write —
         /// see <see cref="Writable"/>, which every edit passes through, so there is no list of
-        /// mutators for anybody to keep in step.
+        /// mutators to keep in step.
         /// </summary>
         private readonly Dictionary<string, Dictionary<string, ClashResult>> _byId =
             new Dictionary<string, Dictionary<string, ClashResult>>(StringComparer.OrdinalIgnoreCase);
@@ -2011,21 +2006,20 @@ namespace CamelWorks.Nav.Clash
         /// <summary>
         /// The document's clash data, for something that is about to write to it.
         ///
-        /// <b>No read-only gate.</b> This refused whenever <c>TestsData.Value.IsReadOnly</c> was
-        /// true, which is why a published NWD read as a document that takes no decisions at all -
-        /// while Clash Detective, in the same seat on the same file, renames tests, sets statuses
-        /// and writes comments. The flag was the wrong question. <c>Value</c> is a
-        /// <c>ClashTestsData</c> - a snapshot with <c>CreateCopy</c> and <c>CopyFrom</c> - and
-        /// nothing is ever meant to be written through it. Every edit goes through the document
-        /// part instead: <c>TestsEditResultStatus</c>, <c>TestsEditResultAssignedTo</c>,
-        /// <c>TestsEditResultComments</c>, <c>TestsEditTestFromCopy</c>, <c>TestsEditDisplayName</c>.
-        /// That is the API Clash Detective itself is written against, and asking the snapshot
-        /// whether it may be mutated says nothing about whether those will be accepted.
+        /// There is no read-only gate. This previously refused whenever <c>TestsData.Value.IsReadOnly</c>
+        /// was true, which made a published NWD read as a document that takes no decisions, while
+        /// Clash Detective on the same seat and the same file renames tests, sets statuses and
+        /// writes comments. The flag was the wrong question: <c>Value</c> is a <c>ClashTestsData</c>
+        /// — a snapshot with <c>CreateCopy</c> and <c>CopyFrom</c> — and nothing is written through
+        /// it. Every edit goes through the document part instead: <c>TestsEditResultStatus</c>,
+        /// <c>TestsEditResultAssignedTo</c>, <c>TestsEditResultComments</c>,
+        /// <c>TestsEditTestFromCopy</c>, <c>TestsEditDisplayName</c>. That is the API Clash
+        /// Detective is written against, and asking the snapshot whether it may be mutated says
+        /// nothing about whether those calls will be accepted.
         ///
-        /// So the answer is the attempt. Every writer here is already inside a try that turns a
-        /// refusal into <see cref="LastProblem"/>, and a document that genuinely will not take an
-        /// edit says so there - once, about the edit that was actually refused, rather than in
-        /// advance about every edit there might ever be.
+        /// So the answer is the attempt. Every writer here is inside a try that turns a refusal into
+        /// <see cref="LastProblem"/>, and a document that will not take an edit reports it there,
+        /// once, about the edit that was refused.
         /// </summary>
         private DocumentClash? Writable()
         {
@@ -2200,16 +2194,15 @@ namespace CamelWorks.Nav.Clash
         /// <summary>
         /// The set a side means, by the folders it was recorded in and then by its name.
         ///
-        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
-        /// inside Level 02, and two more under a package folder somebody made in March. This
-        /// used to walk the tree and take the first thing that matched, so a matrix carefully
-        /// pointed at four different disciplines quietly tested one of them four times, and
-        /// nothing anywhere said so.
+        /// A name is not an identity. A real document has "MEP" inside Level 01, another inside
+        /// Level 02, and more under package folders. This previously walked the tree and took the
+        /// first match, so a matrix pointed at four different disciplines tested one of them four
+        /// times with nothing reporting it.
         ///
         /// A side that knows its folders is resolved there and nowhere else: if the set has been
-        /// moved or renamed, that is worth being told about rather than papering over with
-        /// whichever same-named set is still standing. A side recorded before folders were kept
-        /// falls back to the old walk, so a matrix drawn last year still builds.
+        /// moved or renamed, that is worth reporting rather than covering with whichever same-named
+        /// set remains. A side recorded before folders were kept falls back to the old walk, so a
+        /// matrix drawn earlier still builds.
         /// </summary>
         /// <param name="items">Where to look.</param>
         /// <param name="name">The set's name.</param>

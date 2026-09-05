@@ -30,14 +30,12 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// How a test gets its name, as a pattern the person building the matrix writes.
     ///
-    /// <b>A pattern rather than a fixed shape.</b> Every job names its tests differently and the
-    /// naming is not decoration: it is what somebody sorts by, filters on and reads down a rail
-    /// of a hundred and sixty. "ST-01 Steel vs ME-04 Ductwork (A)" and "Steel | Ductwork" are
-    /// both right, on different jobs, and neither is worth hard-coding.
+    /// A pattern rather than a fixed shape. Every job names its tests differently, and the naming is
+    /// what is sorted by, filtered on and read down a rail of a hundred and sixty. "ST-01 Steel vs
+    /// ME-04 Ductwork (A)" and "Steel | Ductwork" are both right on different jobs.
     ///
-    /// The tokens are the things a cell actually knows. Anything else in the pattern is kept as
-    /// typed, so a prefix, a separator and a job code all work without needing a token of their
-    /// own.
+    /// The tokens are the things a cell knows. Anything else in the pattern is kept as typed, so a
+    /// prefix, a separator and a job code all work without needing a token of their own.
     /// </summary>
     public static class MatrixNaming
     {

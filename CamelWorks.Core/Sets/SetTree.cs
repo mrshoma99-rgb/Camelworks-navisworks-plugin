@@ -178,18 +178,17 @@ namespace CamelWorks.Core.Sets
     /// <summary>
     /// A whole set library from an ordered list of properties.
     ///
-    /// Level, then discipline, then category, and out comes a folder per level holding a folder per
-    /// discipline holding a set per category — which is what every project's Selection Tree looks
-    /// like and what somebody otherwise builds by hand over an afternoon, once per project, badly.
+    /// Level, then discipline, then category gives a folder per level holding a folder per
+    /// discipline holding a set per category, which is the shape of most projects' Selection Trees
+    /// and what would otherwise be built by hand.
     ///
-    /// <b>Three deep, and no further.</b> Not an arbitrary limit: four properties on a real
-    /// federation is thousands of sets, most of them holding one element, in a tree nobody can
-    /// navigate. The fourth level people actually want is a filter, not a folder.
+    /// Three deep, and no further. Four properties on a real federation is thousands of sets, most
+    /// of them holding one element, in a tree nobody can navigate. The fourth level people want is a
+    /// filter rather than a folder.
     ///
-    /// <b>It refuses rather than truncates.</b> Past the ceiling it makes nothing and says how many
-    /// it would have made. Quietly making the first two hundred would leave somebody thinking it
-    /// had worked, with a library that is a subset of the one they asked for and no indication
-    /// which part is missing.
+    /// It refuses rather than truncates. Past the ceiling it makes nothing and reports how many it
+    /// would have made, because quietly making the first two hundred leaves a subset of the
+    /// requested library with no indication which part is missing.
     /// </summary>
     public static class SetTree
     {
@@ -222,9 +221,8 @@ namespace CamelWorks.Core.Sets
                 return Refuse(category, levels,
                     "Three properties is as deep as this goes, and you have picked "
                     + levels.Count.ToString(CultureInfo.InvariantCulture)
-                    + ". A fourth level on a real federation is thousands of sets, most of them "
-                    + "holding one element, in a tree nobody can navigate - and the fourth thing "
-                    + "people actually want is a filter, not a folder.");
+                    + ". A fourth level on a real federation produces thousands of sets, most "
+                    + "holding one element. Use a filter rather than a further folder level.");
 
             var counted = new Dictionary<string, int>(StringComparer.Ordinal);
             var spelling = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
@@ -274,10 +272,9 @@ namespace CamelWorks.Core.Sets
             if (leaves.Count > Math.Max(1, options.Ceiling))
                 return Refuse(category, levels,
                     "That would make " + Measure.Count(leaves.Count) + " sets, and the ceiling is "
-                    + Measure.Count(options.Ceiling) + ". A library that size is a Selection Tree "
-                    + "nobody can scroll and a document that takes a minute to open. Split on fewer "
-                    + "properties, raise the floor so the small ones are left out, or raise the "
-                    + "ceiling deliberately.");
+                    + Measure.Count(options.Ceiling) + ". A library that size is impractical to "
+                    + "navigate and slow to open. Split on fewer properties, raise the floor so "
+                    + "small sets are left out, or raise the ceiling deliberately.");
 
             var roots = Build(category, levels, leaves, Array.Empty<string>(), 0, options.NamePattern);
 

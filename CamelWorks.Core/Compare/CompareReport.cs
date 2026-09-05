@@ -10,11 +10,11 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// A comparison as something to send somebody.
     ///
-    /// <b>The scoreboard is the smallest part of it.</b> Four numbers can be produced by any tool
-    /// and argued with by anybody; what makes a change report worth issuing is that it says which
-    /// model was held to be which, on what evidence, at what tolerance, watching which properties,
-    /// and what it is consequently unable to tell you. All of that is on the front page, so the
-    /// argument in the meeting is about the building rather than about the tool.
+    /// The scoreboard is the smallest part of it. Four numbers can be produced by any tool; what
+    /// makes a change report worth issuing is that it states which model was held to be which, on
+    /// what evidence, at what tolerance, watching which properties, and what it is consequently
+    /// unable to report. All of that is on the front page, so the discussion is about the building
+    /// rather than about the tool.
     /// </summary>
     public static class CompareReport
     {

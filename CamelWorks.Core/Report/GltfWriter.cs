@@ -109,20 +109,19 @@ namespace CamelWorks.Core.Report
     /// <summary>
     /// A glTF 2.0 binary file, written by hand.
     ///
-    /// GLB is what a client's viewer opens: a browser, a phone, a tablet on site, with nothing
+    /// GLB is what a client's viewer opens: a browser, a phone or a tablet on site, with nothing
     /// installed. Every other way of sending somebody a model asks them to install something, and
     /// the ones that do not are per-seat, per-format licences on top of the Navisworks they already
-    /// bought.
+    /// have.
     ///
-    /// <b>Hand-written, like the PDF and the spreadsheet.</b> Same reason: a netstandard2.0 Core
+    /// Hand-written, like the PDF and the spreadsheet, for the same reason: a netstandard2.0 Core
     /// with no third-party runtime is what lets the whole format be tested on Linux CI, byte for
-    /// byte, without a host or a graphics stack. glTF is a small enough format to write correctly
-    /// and a well specified enough one to be sure about.
+    /// byte, without a host or a graphics stack. glTF is small enough to write correctly and well
+    /// enough specified to be sure about.
     ///
-    /// <b>Z-up becomes Y-up at the root.</b> Navisworks is Z-up and glTF is Y-up, which is the one
-    /// thing everybody gets wrong: the model opens on its side and nobody can say why. A single
-    /// root node carrying a -90 degree rotation about X fixes it once, where a viewer can see what
-    /// was done, rather than silently rewriting every coordinate.
+    /// Z-up becomes Y-up at the root. Navisworks is Z-up and glTF is Y-up, and getting this wrong
+    /// makes the model open on its side. A single root node carrying a -90 degree rotation about X
+    /// fixes it once, where a viewer can see what was done, rather than rewriting every coordinate.
     /// </summary>
     public static class GltfWriter
     {

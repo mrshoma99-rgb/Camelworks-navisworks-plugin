@@ -136,16 +136,15 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Services through structure, pulled out of the board as a schedule.
     ///
-    /// On a concrete frame the pour date is the one immovable date on the programme, and the sleeve
-    /// schedule is what has to be right before it. It is normally produced by a person reading a
-    /// clash board and retyping it into a spreadsheet — which is the same list, one transcription
-    /// error later.
+    /// On a concrete frame the pour date is the immovable date on the programme, and the sleeve
+    /// schedule has to be right before it. It is normally produced by reading a clash board and
+    /// retyping it into a spreadsheet.
     ///
-    /// <b>What it deliberately does not do.</b> No derived opening size, no inference of host
-    /// thickness, no request-to-approved-to-cast state machine. Every one of those is a number this
-    /// tool would be guessing, on a drawing somebody cuts concrete from. The schedule carries what
-    /// the model actually says — the service, its stated size and system, the host and its type,
-    /// where it is, and one status — and leaves the engineering to the engineer.
+    /// It deliberately does not derive an opening size, infer host thickness, or model a
+    /// request-to-approved-to-cast state machine. Each of those would be a number this tool was
+    /// guessing, on a drawing somebody cuts concrete from. The schedule carries what the model says
+    /// — the service, its stated size and system, the host and its type, where it is, and one status
+    /// — and leaves the engineering to the engineer.
     /// </summary>
     public static class Penetrations
     {

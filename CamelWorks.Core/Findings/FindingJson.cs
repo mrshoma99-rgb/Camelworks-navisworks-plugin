@@ -9,11 +9,11 @@ namespace CamelWorks.Core.Findings
     /// <summary>
     /// A finding on disk.
     ///
-    /// <b>Separate from the record, on purpose.</b> <see cref="Finding"/> is constructed through
-    /// <see cref="Finding.Create"/> so its identity is always derived and never invented. Reading
-    /// one back has to rebuild it the same way — from its source, rule, elements and
-    /// discriminator — rather than restoring a stored id, because a stored id that no longer
-    /// matches what the record says would be a finding that quietly stops matching its own re-run.
+    /// Separate from the record on purpose. <see cref="Finding"/> is constructed through
+    /// <see cref="Finding.Create"/> so its identity is always derived rather than assigned. Reading
+    /// one back has to rebuild it the same way — from its source, rule, elements and discriminator —
+    /// rather than restoring a stored id, because a stored id that no longer matches what the record
+    /// says would be a finding that stops matching its own re-run.
     ///
     /// So the file keeps the discriminator, and the id is recomputed on load and checked against
     /// what was written. A mismatch means the derivation changed between versions; the file's

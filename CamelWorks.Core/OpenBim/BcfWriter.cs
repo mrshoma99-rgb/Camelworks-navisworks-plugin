@@ -101,15 +101,14 @@ namespace CamelWorks.Core.OpenBim
         /// <param name="extras">
         /// Extra text files to put in the archive, by path.
         ///
-        /// <b>What this is for.</b> BCF has no field for a great deal that a clash actually is -
-        /// the tolerance its test ran at, the distance between the two elements, the host's own id
-        /// for the result, the keys that let an edit land back on the right element. A format that
-        /// dropped those would be a format we could not run a review round on. The BCF spec says a
-        /// reader must ignore archive entries it does not know, so those facts ride here, in a file
-        /// of our own, inside the same zip: every other tool reads the topics and ignores this,
-        /// and we read both and lose nothing.
+        /// BCF has no field for much of what a clash is: the tolerance its test ran at, the distance
+        /// between the two elements, the host's own id for the result, or the keys that let an edit
+        /// land back on the right element. A format that dropped those could not carry a review
+        /// round. The BCF specification says a reader must ignore archive entries it does not know,
+        /// so those facts ride here, in a file of our own, inside the same zip: every other tool
+        /// reads the topics and ignores this, and we read both.
         ///
-        /// Paths must not collide with the schema's own - no <c>bcf.version</c>, no
+        /// Paths must not collide with the schema's own — no <c>bcf.version</c>, no
         /// <c>project.bcfp</c>, nothing ending in <c>markup.bcf</c>, <c>.bcfv</c> or <c>.png</c>.
         /// Colliding entries are refused rather than written, because a malformed archive is worse
         /// than a missing field.

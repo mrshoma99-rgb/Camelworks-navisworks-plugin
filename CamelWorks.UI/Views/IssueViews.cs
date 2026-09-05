@@ -15,19 +15,18 @@ using CamelWorks.Core.Report;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The issue register, and the four doors into it.
+    /// The issue register, and the four ways into it.
     ///
-    /// <b>Why it is its own app.</b> Issues used to be a thing the clash board grew: you could
-    /// raise one, but only beside a clash, only while the board was loaded, and only about clashes.
-    /// Everything else a coordinator has to track — what the clearance check found, what a
-    /// consultant sent back as BCF, what somebody saw on a site walk — lived in a spreadsheet
-    /// beside the tool. So the register is now the product, and the board is gone: an issue is a
-    /// first-class record with its own list, its own detail and its own file formats, and clash
-    /// results and clearance findings are two of the ways one gets raised.
+    /// Its own app. Issues were previously something the clash board grew: one could be raised, but
+    /// only beside a clash, only while the board was loaded, and only about clashes. Everything else
+    /// a coordinator tracks — what the clearance check found, what a consultant sent back as BCF,
+    /// what somebody saw on a site walk — lived in a spreadsheet beside the tool. So the register is
+    /// now the product and the board is gone: an issue is a first-class record with its own list,
+    /// detail and file formats, and clash results and clearance findings are two of the ways one
+    /// gets raised.
     ///
-    /// <b>The shape is the one everybody already knows</b> — the issue list of a common-data
-    /// environment: a filter rail, a sortable register, and a detail panel that opens on the row
-    /// you picked and edits in place.
+    /// The shape is the one a common-data environment uses: a filter rail, a sortable register, and
+    /// a detail panel that opens on the selected row and edits in place.
     /// </summary>
     public static class IssueViews
     {
@@ -372,7 +371,7 @@ namespace CamelWorks.UI.Views
                     _list.Children.Add(Ui.Empty("No issues yet.",
                         "Press \"New issue\" to raise one, right-click results in the Clash "
                         + "Manager or the Clearance Check to make issues out of them, or import a "
-                        + "BCF file somebody sent."));
+                        + "BCF file."));
 
                     RedrawDetail();
                     return;
@@ -1086,12 +1085,11 @@ namespace CamelWorks.UI.Views
                     Bench.Group("The file",
                         Ui.PathField("BCF", _path, PathKind.Open,
                                      "BCF|*.bcf;*.bcfzip|All files|*.*",
-                                     "a BCF file somebody sent back")),
+                                     "a returned BCF file")),
                     Bench.Group(string.Empty,
                         Ui.Small("Reading the same file again updates the issues it already "
                                  + "brought in and adds only what is new — statuses, replies and "
-                                 + "due dates — so an exchange that runs for a fortnight stays "
-                                 + "one list.")),
+                                 + "due dates — so a long-running exchange stays one list.")),
                     Bench.Group(string.Empty,
                         Ui.Small("A topic answering a finding this project sent out goes back "
                                  + "onto that finding rather than arriving as a new issue: it is "

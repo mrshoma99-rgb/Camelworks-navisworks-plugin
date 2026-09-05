@@ -38,13 +38,13 @@ namespace CamelWorks.Core.Issues
     }
 
     /// <summary>
-    /// Issues in and out as BCF, which is the only format the rest of the industry agrees on.
+    /// Issues in and out as BCF, which is the format the rest of the industry agrees on.
     ///
-    /// <b>Import is a merge, not a load.</b> A reviewer sends the same file back three times over a
-    /// fortnight; each one carries the whole conversation, including the half we already have. So a
-    /// topic that matches an issue already here updates it in place and adds only the comments
-    /// nobody said yet — an import that duplicated every topic would make the register unusable by
-    /// the second exchange, which is when it starts mattering.
+    /// Import is a merge rather than a load. A reviewer sends the same file back several times over
+    /// a fortnight, and each one carries the whole conversation including the half already held. So
+    /// a topic that matches an issue already here updates it in place and adds only the comments not
+    /// yet recorded; an import that duplicated every topic would make the register unusable by the
+    /// second exchange.
     /// </summary>
     public static class IssueBcf
     {

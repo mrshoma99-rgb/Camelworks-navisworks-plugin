@@ -185,23 +185,21 @@ namespace CamelWorks.Core.Sets
     /// <summary>
     /// What a saved set used to return, and what it returns now.
     ///
-    /// <b>Why this is worth a check of its own.</b> Everything downstream leans on sets: a clash
-    /// test takes them as its two sides, the clearance check takes them as its inputs, a scoped
-    /// IDS rule names one. A search set is a saved query, so what it returns moves whenever the
-    /// model does - a discipline re-exports, a property is renamed, a parameter mapping shifts -
-    /// and the definition still reads exactly as it did the day it was written.
+    /// Everything downstream depends on sets: a clash test takes them as its two sides, the
+    /// clearance check takes them as its inputs, a scoped IDS rule names one. A search set is a
+    /// saved query, so what it returns moves whenever the model does — a discipline re-exports, a
+    /// property is renamed, a parameter mapping shifts — while the definition reads exactly as it
+    /// did when written.
     ///
-    /// When that happens the set does not fail. It returns fewer elements, or none, and every
-    /// check pointing at it then runs over what is left and <b>passes</b>. A clash test with no
-    /// elements finds no clashes. A clearance check over nothing finds nothing too low. A scoped
-    /// rule reports "not applicable". The board goes green over a building nobody checked, which
-    /// is the one failure this whole product exists to prevent, arriving through the side door.
+    /// When that happens the set does not fail. It returns fewer elements, or none, and every check
+    /// pointing at it runs over what is left and passes. A clash test with no elements finds no
+    /// clashes. A clearance check over nothing finds nothing too low. A scoped rule reports "not
+    /// applicable". The board goes green over a building nobody checked.
     ///
-    /// <b>Why it is graded rather than diffed.</b> A live model changes every day, and a check
-    /// that reported every change would be a check nobody reads - which is the same as no check.
-    /// So growth is ordinary and said in a count; a set that lost a quarter of itself is worth a
-    /// look; a set that emptied, or that the document no longer has, is a fault, because those are
-    /// the two that silently disarm everything pointing at them.
+    /// Graded rather than diffed. A live model changes every day, and a check that reported every
+    /// change would not be read. So growth is ordinary and reported as a count; a set that lost a
+    /// quarter of itself is worth a look; a set that emptied, or that the document no longer has, is
+    /// a fault, because those are the two that silently disarm everything pointing at them.
     /// </summary>
     public static class SetDrift
     {

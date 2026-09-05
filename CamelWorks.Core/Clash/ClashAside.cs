@@ -10,17 +10,16 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// What a reviewer set on one clash that the host has no field for.
     ///
-    /// <b>A message, not a store.</b> This is what one markup said, read out of it and handed
-    /// straight to the finding it belongs to. Nothing keeps a register of these any more: the
-    /// finding is the record, and a priority read out of a returned file lives on the finding
-    /// beside the status and the trail rather than in a second file keyed a second way.
+    /// A message rather than a store. This is what one markup said, read out of it and handed to the
+    /// finding it belongs to. Nothing keeps a register of these: the finding is the record, and a
+    /// priority read out of a returned file lives on the finding beside the status and the trail
+    /// rather than in a second file keyed a second way.
     ///
-    /// BCF carries a priority, a due date, a stage, a title and whatever tags a reviewer likes.
-    /// A Navisworks clash result carries a status, an assignee, a group and comments, and that is
-    /// all - so when a returned file says "high priority, due the fifteenth", the host has no
-    /// field to put it in. Dropping it loses what somebody wrote; mashing it into a comment keeps
-    /// the words but not the fact, so the board could not show a due date or say what is overdue.
-    /// It goes onto the finding, which has room for it.
+    /// BCF carries a priority, a due date, a stage, a title and any tags the reviewer adds. A
+    /// Navisworks clash result carries a status, an assignee, a group and comments, so when a
+    /// returned file says "high priority, due the fifteenth" the host has no field for it. Dropping
+    /// it loses what was written; putting it in a comment keeps the words but not the fact, so the
+    /// board could not show a due date or say what is overdue. It goes onto the finding.
     /// </summary>
     public sealed class ClashAside
     {

@@ -18,20 +18,19 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Send somebody the model, or send them the numbers.
     ///
-    /// <b>GLB is the one that matters.</b> It opens in a browser, on a phone, on a tablet on site,
-    /// with nothing installed and no licence. Every other way of handing a client a model asks them
-    /// to install something, and the tools that write this format for Navisworks are per-seat,
-    /// per-format licences on top of the Navisworks the firm already bought.
+    /// GLB is the important one. It opens in a browser, on a phone or on a tablet on site, with
+    /// nothing installed and no licence. Every other way of handing a client a model asks them to
+    /// install something, and the tools that write this format for Navisworks are per-seat,
+    /// per-format licences on top of the Navisworks the firm already has.
     ///
-    /// <b>It is geometry, not a model.</b> Triangles, names and colours go; properties, structure,
-    /// clashes and viewpoints do not. That is stated on the screen rather than discovered, because
-    /// somebody who sends a client a GLB expecting IFC has sent the wrong thing and will not find
-    /// out until they are asked for a property.
+    /// It is geometry, not a model. Triangles, names and colours go; properties, structure, clashes
+    /// and viewpoints do not. That is stated on the screen rather than discovered, because somebody
+    /// who sends a client a GLB expecting IFC will not find out until they are asked for a property.
     ///
-    /// The spreadsheet and the drawing are the other two things people mean by "send them the
-    /// model": the properties, and a DXF a CAD package opens. Three buttons and three windows,
-    /// because the three share a scope picker and nothing else - different inputs, a different
-    /// file, and a different person at the other end.
+    /// The spreadsheet and the drawing are the other two things people mean by sending the model:
+    /// the properties, and a DXF a CAD package opens. Three buttons and three windows, because the
+    /// three share a scope picker and nothing else — different inputs, a different file, and a
+    /// different recipient.
     /// </summary>
     public static class ExportWindow
     {
@@ -92,7 +91,7 @@ namespace CamelWorks.UI.Views
                 "Writes what is in scope as one GLB file a browser opens.",
                 "Triangles, one named object per element and a colour go, in metres and the right "
                 + "way up. Properties, the selection tree, clashes, viewpoints, sets and layers do "
-                + "not - if somebody is going to ask for a property, they want IFC and not this."));
+                + "not. Use IFC where properties are required."));
 
             var colours = Ui.Choice(new[] { "By discipline", "By model", "One grey" }, colour,
                                     pick => colour = pick);
@@ -274,8 +273,7 @@ namespace CamelWorks.UI.Views
                 "Solid faces, one layer per group, in metres — R12 ASCII, the dialect nothing asks "
                 + "questions about. Each solid carries its element name and model as extended "
                 + "entity data. Every other property, the tree, clashes and viewpoints do not go: "
-                + "it is a drawing, not a model, and somebody who wants the properties wants "
-                + "Export Data."));
+                + "this is a drawing, not a model. Use Export Data for properties."));
 
             var grouping = Ui.Choice(new[] { "By discipline", "By model", "By category" }, by,
                                      pick => by = pick);
@@ -435,8 +433,8 @@ namespace CamelWorks.UI.Views
 
             var idle = Ui.Stack(Bench.Ready(
                 "Writes the properties you name, one row per element in scope.",
-                "An element carrying none of them is still a row — a spreadsheet whose row count "
-                + "disagrees with the model's is one somebody spends an afternoon reconciling."));
+                "An element carrying none of them is still written as a row, so the row count "
+                + "matches the model's element count."));
 
             var formats = Ui.Choice(new[] { "Spreadsheet (.xlsx)", "Comma-separated (.csv)" }, format,
                 pick =>
@@ -540,9 +538,8 @@ namespace CamelWorks.UI.Views
 
                 if (blank > 0)
                     results.Children.Add(Ui.Note(Ui.Count(blank, "element")
-                        + " carry none of those properties and are in the file as empty rows. They are "
-                        + "not dropped: a spreadsheet whose row count disagrees with the model's is one "
-                        + "somebody spends an afternoon reconciling."));
+                        + " carry none of those properties and are written as empty rows rather than "
+                        + "dropped, so the row count matches the model's element count."));
 
                 // Remembered on a run that wrote, not on every keystroke: half-typed column lists
                 // are drafts, and the one that produced a file is the one worth finding on Friday.

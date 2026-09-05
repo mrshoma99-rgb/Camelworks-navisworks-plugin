@@ -477,28 +477,28 @@ namespace CamelWorks.Core.Sets
     }
 
     /// <summary>
-    /// A selection-set library shaped like the project, from the properties the model already carries.
+    /// A selection-set library shaped like the project, from the properties the model already
+    /// carries.
     ///
-    /// The Selection Tree is the shape the authoring tool happened to export in: a file, then a
-    /// level, then whatever the exporter grouped by. Nobody coordinates in that shape. They
-    /// coordinate in zones, packages, systems and trades — and every downstream tool, from a clash
-    /// matrix to a viewpoint run to a takeoff, is easier once the library matches.
+    /// The Selection Tree is the shape the authoring tool exported in: a file, then a level, then
+    /// whatever the exporter grouped by. Coordination happens in zones, packages, systems and
+    /// trades, and every downstream tool — a clash matrix, a viewpoint run, a takeoff — is easier
+    /// once the library matches that.
     ///
-    /// So this builds that library from the properties, and it is the second run that matters. The
-    /// recipe is saved; a new revision arrives; one press and the tree is rebuilt against the new
-    /// model, with a list of what moved.
+    /// So this builds that library from the properties, and the second run is what makes it worth
+    /// having: the recipe is saved, a new revision arrives, and one press rebuilds the tree against
+    /// the new model with a list of what moved.
     ///
-    /// <b>Every level reads its own property tab.</b> The level comes from one place, the discipline
-    /// from another, the system from a third. A tree that can only read one tab is a tree that can
-    /// only be half built.
+    /// Every level reads its own property tab. The level comes from one place, the discipline from
+    /// another, the system from a third; a tree that can only read one tab can only be half built.
     ///
-    /// <b>Elements with no value get a branch, not a silence.</b> A tree covering 94% of the model
-    /// looks complete. The missing 6% is exactly the part nobody has looked at, so by default it
-    /// gets a branch of its own, named, counted, and selectable.
+    /// Elements with no value get a branch rather than being omitted. A tree covering 94% of the
+    /// model looks complete, and the missing 6% is the part nobody has looked at, so by default it
+    /// gets a branch of its own, named, counted and selectable.
     ///
-    /// <b>It refuses rather than truncates.</b> Past the ceiling it makes nothing and says how many
-    /// it would have made. Quietly making the first five hundred leaves somebody with a subset of
-    /// the library they asked for and no idea which part is missing.
+    /// It refuses rather than truncates. Past the ceiling it makes nothing and reports how many it
+    /// would have made, because quietly making the first five hundred leaves a subset of the
+    /// requested library with no indication which part is missing.
     /// </summary>
     public static class Restructure
     {
@@ -600,9 +600,9 @@ namespace CamelWorks.Core.Sets
                 return Refuse(how,
                     "That would make " + Measure.Count(keeping.Count) + " sets, and the ceiling is "
                     + Measure.Count(Math.Max(1, how.Ceiling))
-                    + ". A library that size is a tree nobody can scroll and a document that takes "
-                    + "a minute to open. Use fewer levels, raise the floor so the small branches "
-                    + "are left out, or raise the ceiling deliberately.");
+                    + ". A library that size is impractical to navigate and slow to open. Use fewer "
+                    + "levels, raise the floor so small branches are left out, or raise the "
+                    + "ceiling deliberately.");
 
             var warnings = new List<string>();
             var buckets = new string[levels.Count];

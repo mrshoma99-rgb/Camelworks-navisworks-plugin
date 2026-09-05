@@ -36,16 +36,15 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// What one row or column of the matrix is: a name, and where its elements come from.
     ///
-    /// <b>Two kinds of source, and the difference matters.</b> A saved set and a list of models
-    /// are <em>references</em>: the test re-resolves them every run, so a wall added tomorrow is
-    /// in tomorrow's run. A selection, the visible elements, or a pick out of the tree are
-    /// <em>captures</em>: they are a list of elements as they were at the moment somebody pointed
-    /// the row at them, and nothing added later joins. Both are legitimate — a package handed
-    /// over as a fixed list of objects is a capture — but a matrix that did not say which was
-    /// which would be a coordination plan quietly going stale.
+    /// Two kinds of source, and the difference matters. A saved set and a list of models are
+    /// references: the test re-resolves them every run, so a wall added tomorrow is in tomorrow's
+    /// run. A selection, the visible elements, or a pick out of the tree are captures: a list of
+    /// elements as they were when the row was pointed at them, and nothing added later joins. Both
+    /// are legitimate — a package handed over as a fixed list of objects is a capture — but a matrix
+    /// that did not record which was which would go stale without saying so.
     ///
-    /// <b>Captures hold keys, not a live selection.</b> The matrix is a document that outlives the
-    /// selection it was drawn from, gets saved into the project, and is read back next week.
+    /// Captures hold keys rather than a live selection, because the matrix is a document that
+    /// outlives the selection it was drawn from, is saved into the project and is read back later.
     /// </summary>
     public sealed class MatrixSource
     {
@@ -178,20 +177,18 @@ namespace CamelWorks.Core.Clash
         };
 
         /// <summary>
-        /// A fingerprint of the elements a captured source actually holds.
+        /// A fingerprint of the elements a captured source holds.
         ///
-        /// <b>It used to be the count of them.</b> Two rows pointing at two different tree picks
-        /// that happened to hold the same number of elements were, to everything downstream, the
-        /// same source - and three separate things went wrong at once, all of them silently. The
-        /// planner drops a pair whose fingerprint it has already seen, so the second row's tests
-        /// were never built at all: a cell showing a symbol, counted in the total, producing
-        /// nothing, and no test reads exactly like no clashes. The difference matched the second
-        /// pair against the first one's test. And the mirror wrote one row's cells into another's.
+        /// This was previously the count of them. Two rows pointing at two different tree picks that
+        /// held the same number of elements were, to everything downstream, the same source, and
+        /// three things went wrong at once and silently. The planner drops a pair whose fingerprint
+        /// it has already seen, so the second row's tests were never built: a cell showing a symbol,
+        /// counted in the total, producing nothing. The difference matched the second pair against
+        /// the first one's test. And the mirror wrote one row's cells into another's.
         ///
-        /// Sorted, so the same elements captured in a different order are the same source.
-        /// FNV-1a rather than the string hash, because that one is seeded per process in modern
-        /// .NET: a fingerprint that changed every time Navisworks restarted would match nothing
-        /// in a document saved yesterday.
+        /// Sorted, so the same elements captured in a different order are the same source. FNV-1a
+        /// rather than the string hash, because that one is seeded per process in modern .NET and a
+        /// fingerprint that changed on every restart would match nothing in a saved document.
         /// </summary>
         /// <param name="keys">The captured elements.</param>
         private static string Digest(IReadOnlyList<ElementKey> keys)
@@ -234,11 +231,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The form of this source that can be compared with a test the document already holds.
         ///
-        /// <b>The document does not say which folder a test's set came from.</b> It reports a
-        /// name, so matching a plan against it has to happen on names - while telling one row
-        /// from another has to happen on the whole path. Two different questions, two answers,
-        /// and folding them into one is what made a matrix either lose its tests or lose its
-        /// results depending on which way it was folded.
+        /// The document does not record which folder a test's set came from; it reports a name. So
+        /// matching a plan against it happens on names, while telling one row from another happens
+        /// on the whole path. Two different questions with two answers; folding them into one made a
+        /// matrix either lose its tests or lose its results, depending on which way it was folded.
         /// </summary>
         public string Matched() => Kind switch
         {

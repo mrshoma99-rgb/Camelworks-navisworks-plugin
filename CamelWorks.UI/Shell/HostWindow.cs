@@ -7,31 +7,30 @@ namespace CamelWorks.UI.Shell
     /// <summary>
     /// Ties a WPF window to the Navisworks frame it belongs to.
     ///
-    /// <b>Why every window has to go through here.</b> A plug-in's windows are WPF; Navisworks is
-    /// a native application with its own message loop. A WPF window created inside it with no
-    /// owner is a top-level window of the same thread that the host knows nothing about, and two
-    /// things go wrong with that:
+    /// Every window has to go through here. A plug-in's windows are WPF; Navisworks is a native
+    /// application with its own message loop. A WPF window created inside it with no owner is a
+    /// top-level window of the same thread that the host knows nothing about, and two things go
+    /// wrong with that:
     ///
     /// <list type="number">
     /// <item><description>
-    /// <b>A modal dialog takes the host down when it closes.</b> <c>ShowDialog</c> with no owner
-    /// disables every top-level window on the thread — including the host's own native frame — and
-    /// re-enables them from the owner it does not have. What the user sees is a settings window
-    /// they closed and a Navisworks that never comes back. This is the bug this file exists for.
+    /// A modal dialog takes the host down when it closes. <c>ShowDialog</c> with no owner disables
+    /// every top-level window on the thread, including the host's own native frame, and re-enables
+    /// them from the owner it does not have. The user sees a settings window they closed and a
+    /// Navisworks that never regains input. This is the fault this file exists for.
     /// </description></item>
     /// <item><description>
-    /// <b>The window goes behind the model.</b> With no owner it is not kept above the frame, so
-    /// alt-tabbing away and back leaves a settings dialog somebody has to hunt for behind a 3D
-    /// view.
+    /// The window goes behind the model. With no owner it is not kept above the frame, so switching
+    /// away and back leaves a settings dialog behind a 3D view.
     /// </description></item>
     /// </list>
     ///
-    /// And if the host has a WPF <c>Application</c> of its own, its default shutdown mode ends the
-    /// process when the last window closes. Ours must never be able to count as that last window,
-    /// so the mode is pinned the first time we show anything.
+    /// If the host has a WPF <c>Application</c> of its own, its default shutdown mode ends the
+    /// process when the last window closes. Ours must never count as that last window, so the mode
+    /// is pinned the first time anything is shown.
     ///
     /// Everything here is defensive: a host that will not give up its handle is worth one window
-    /// that behaves the old way, not an exception on the way to a screen.
+    /// that behaves as before rather than an exception on the way to a screen.
     /// </summary>
     public static class HostWindow
     {
@@ -142,17 +141,16 @@ namespace CamelWorks.UI.Shell
         /// <summary>
         /// Let a window that is not modal take the keyboard.
         ///
-        /// <b>Why a text box in an app window would not accept a letter.</b> Navisworks runs a
-        /// WinForms message loop, and a WPF window shown modelessly inside one is outside it: the
-        /// box takes focus, the caret blinks, the border lights - and every key pressed is eaten
-        /// by the loop that owns the thread before WPF ever sees it. A modal window escapes it
-        /// because <c>ShowDialog</c> pumps messages itself, which is why every dialogue in this
-        /// product could always be typed into and the two search boxes on the Manage tab, sitting
+        /// Navisworks runs a WinForms message loop, and a WPF window shown modelessly inside one is
+        /// outside it: the box takes focus, the caret blinks, the border lights, and every key
+        /// pressed is consumed by the loop that owns the thread before WPF sees it. A modal window
+        /// escapes this because <c>ShowDialog</c> pumps messages itself, which is why every dialogue
+        /// in this product could always be typed into while the two search boxes on the Manage tab,
         /// in a window that was merely shown, could not.
         ///
-        /// The bridge is one call. It installs a message filter that hands keyboard messages to
-        /// the WPF window's own input system, and it is what every modeless WPF window inside a
-        /// WinForms host needs.
+        /// The bridge is one call. It installs a message filter that hands keyboard messages to the
+        /// WPF window's own input system, which is what every modeless WPF window inside a WinForms
+        /// host needs.
         /// </summary>
         /// <param name="window">A window about to be shown with <c>Show</c>, not <c>ShowDialog</c>.</param>
         public static void Typing(Window? window)
@@ -220,15 +218,14 @@ namespace CamelWorks.UI.Shell
         /// <summary>
         /// The Navisworks main frame's window handle, or zero.
         ///
-        /// <b>Why it is remembered.</b> The API's <c>Gui</c> is not answerable at every moment of
-        /// the host's life - with no document open it can be null or throw - and a zero here does
-        /// not mean "no frame", it means "not now". Taking it at face value made every window
-        /// opened before the first model an unowned one, which is exactly the two failures this
-        /// class exists to prevent: an app window that goes behind the frame and reads as never
-        /// having opened, and the next modal after it disabling the host and re-enabling it from
-        /// an owner it does not have - a grey, dead Navisworks with no cursor. The frame outlives
-        /// every document, so the first real answer is kept and the process's own main window
-        /// stands in until there is one.
+        /// It is cached because the API's <c>Gui</c> is not answerable at every moment of the host's
+        /// life — with no document open it can be null or throw — so a zero means "not now" rather
+        /// than "no frame". Taking it at face value made every window opened before the first model
+        /// an unowned one, which is the two failures this class prevents: an app window that goes
+        /// behind the frame and reads as never having opened, and the next modal after it disabling
+        /// the host and re-enabling it from an owner it does not have. The frame outlives every
+        /// document, so the first real answer is kept and the process's own main window stands in
+        /// until there is one.
         /// </summary>
         private static IntPtr Handle()
         {

@@ -39,11 +39,11 @@ namespace CamelWorks.Core.Sets
     /// <summary>
     /// Set drift, as findings.
     ///
-    /// <b>Identity is the set's name.</b> Not its membership, which is the thing that moves: a
-    /// decision somebody takes about a set - "yes, that one emptied on purpose, we deleted the
-    /// mezzanine" - has to survive the next run, and a finding keyed on what the set held would be
-    /// a new finding every time the answer changed. The name is also how everything downstream
-    /// addresses a set, so it is the identity the rest of the product already uses.
+    /// Identity is the set's name rather than its membership, which is the thing that moves. A
+    /// decision recorded about a set — that it emptied deliberately because part of the model was
+    /// deleted — has to survive the next run, and a finding keyed on what the set held would be a
+    /// new finding every time the answer changed. The name is also how everything downstream
+    /// addresses a set.
     /// </summary>
     public static class SetDriftFindings
     {

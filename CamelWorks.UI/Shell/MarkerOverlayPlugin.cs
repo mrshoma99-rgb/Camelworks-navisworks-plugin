@@ -5,24 +5,21 @@ using CamelWorks.Core.Clash;
 namespace CamelWorks.UI.Shell
 {
     /// <summary>
-    /// The balls the coordinator drops on a clash, drawn straight into the view.
+    /// The markers dropped on a clash, drawn straight into the view.
     ///
-    /// <b>Why a render plug-in and not geometry.</b> A marker answers "where is this one?" for the
-    /// ten seconds somebody is looking at it. Building a mesh and appending it as a file answers a
-    /// different question: it makes a model, which joins the selection tree, has to be unloaded by
-    /// hand, costs a re-index, and is still there next week. The host will call this once a frame
-    /// with a <see cref="Graphics"/> to draw into, for nothing, and what it draws is gone the
-    /// moment the set is cleared. That is what a marker wants to be.
+    /// A render plug-in rather than geometry. A marker answers "where is this one" for the few
+    /// seconds it is being looked at. Building a mesh and appending it as a file makes a model,
+    /// which joins the selection tree, has to be unloaded by hand, costs a re-index and persists.
+    /// The host calls this once a frame with a <see cref="Graphics"/> to draw into, and what it
+    /// draws is gone as soon as the set is cleared.
     ///
-    /// <b>It holds no state of its own.</b> Everything it draws comes from
-    /// <see cref="MarkerOverlay"/>, which lives in Core - because the screens that drop markers
-    /// must not know this assembly exists, and this class must not know theirs. The store is the
-    /// only thing both ends touch.
+    /// It holds no state of its own. Everything it draws comes from <see cref="MarkerOverlay"/>,
+    /// which lives in Core, because the screens that drop markers must not know this assembly exists
+    /// and this class must not know theirs. The store is the only thing both ends touch.
     ///
-    /// <b>Called on the render thread.</b> So it reads one array reference and iterates it, and
-    /// the store swaps the array whole rather than mutating it. Nothing here allocates, throws or
-    /// takes a lock: a frame is sixteen milliseconds and this is not the thing that should spend
-    /// them.
+    /// Called on the render thread, so it reads one array reference and iterates it, and the store
+    /// swaps the array whole rather than mutating it. Nothing here allocates, throws or takes a
+    /// lock: a frame is sixteen milliseconds.
     /// </summary>
     [Plugin("CamelWorks.Markers", "CamelWorks",
         DisplayName = "CamelWorks markers",

@@ -361,18 +361,17 @@ namespace CamelWorks.Core.OpenBim
         /// <summary>
         /// Whether this element is worth carrying across.
         ///
-        /// <b>The drop, and the one case it must not make.</b> A federation has tens of millions
-        /// of property readings and an IDS names a handful, so an element carrying nothing the
-        /// rules mention is dropped rather than counted — keeping it would only inflate the total
-        /// the report divides by. On an entity-scoped check that is exactly right: a wall with no
-        /// fire rating still carries its class, so it survives and fails properly.
+        /// A federation has tens of millions of property readings and an IDS names a handful, so an
+        /// element carrying nothing the rules mention is dropped rather than counted; keeping it
+        /// would only inflate the total the report divides by. On an entity-scoped check that is
+        /// right: a wall with no fire rating still carries its class, so it survives and fails
+        /// properly.
         ///
-        /// A scope changes that. Forty ducts with no system name at all have no IFC class and no
-        /// matching property, and dropping them would discard the precise case the rule was
-        /// written for — the run would report "nothing applied" over a model that is forty
-        /// failures deep, and read as green. So a scope having claimed an element is itself reason
-        /// enough to keep it: the scope has already said it is in scope, and what it does or does
-        /// not carry is the checker's question, not this one's.
+        /// A scope changes that. Forty ducts with no system name have no IFC class and no matching
+        /// property, and dropping them would discard the case the rule was written for: the run
+        /// would report "nothing applied" over a model that is forty failures deep. So a scope
+        /// having claimed an element is reason enough to keep it — the scope has said it is in
+        /// scope, and what it carries is the checker's question rather than this one's.
         /// </summary>
         private bool Carries(IdsElement element) =>
             element.Scopes.Count > 0

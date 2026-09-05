@@ -11,16 +11,16 @@ using CamelWorks.Core.Store;
 namespace CamelWorks.Core.Sets
 {
     /// <summary>
-    /// What every watched set held the last time anybody looked.
+    /// What every watched set held the last time it was read.
     ///
-    /// <b>Its own file, beside the project.</b> Membership is element keys, and a federation's
-    /// sets between them can name most of the model - hundreds of kilobytes that would otherwise
-    /// sit in a project file rewritten every time any tool remembers a textbox. The findings went
-    /// to their own file for exactly this reason and this follows them.
+    /// Its own file, beside the project. Membership is element keys, and a federation's sets between
+    /// them can name most of the model — hundreds of kilobytes that would otherwise sit in a project
+    /// file rewritten whenever any tool stores a text box. The findings went to their own file for
+    /// the same reason.
     ///
-    /// <b>One reading per set, not a history.</b> Drift is measured against the last time, because
-    /// that is the question somebody asks: has this changed since I trusted it. A history would be
-    /// a second feature - and the model comparison already exists for anybody who wants one.
+    /// One reading per set rather than a history. Drift is measured against the last reading,
+    /// because the question is whether the set has changed since it was trusted. A history would be
+    /// a second feature, and the model comparison already provides one.
     /// </summary>
     public sealed class SetBaselineStore
     {

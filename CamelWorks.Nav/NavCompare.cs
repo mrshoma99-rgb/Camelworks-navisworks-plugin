@@ -9,25 +9,22 @@ using CamelWorks.Core.Report;
 namespace CamelWorks.Nav
 {
     /// <summary>
-    /// The one part of comparison that needs the host: a signature of an element's actual
-    /// triangles.
+    /// The one part of comparison that needs the host: a signature of an element's actual triangles.
     ///
-    /// <b>Why it exists.</b> Everything else a comparison knows about shape comes from the
-    /// bounding box, which is all Navisworks exposes cheaply — and a box cannot see an element
-    /// remodelled inside its own envelope. A 400 mm duct rerouted through the same opening, a
-    /// stair rebuilt with different risers between the same two levels, a wall whose openings
-    /// moved: same box, same centre, same properties, entirely different thing.
+    /// Everything else a comparison knows about shape comes from the bounding box, which is all
+    /// Navisworks exposes cheaply, and a box cannot see an element remodelled inside its own
+    /// envelope. A 400 mm duct rerouted through the same opening, a stair rebuilt with different
+    /// risers between the same two levels, a wall whose openings moved: same box, same centre, same
+    /// properties, different element.
     ///
-    /// <b>Why it is off by default.</b> <c>GenerateSimplePrimitives</c> is the only way in, it is a
-    /// COM callback per fragment, and on a real federation it is minutes rather than seconds. So
-    /// this is something somebody chooses to spend, on a scope they choose, having been told what
-    /// it costs — never something a comparison does to them.
+    /// It is off by default. <c>GenerateSimplePrimitives</c> is the only route in, it is a COM
+    /// callback per fragment, and on a real federation it takes minutes rather than seconds. So it
+    /// is chosen, on a chosen scope, with the cost stated.
     ///
-    /// <b>The signature is local and unordered.</b> Local, because a hash of world coordinates
-    /// changes when an element is merely moved, and "moved" already has its own answer. Unordered,
-    /// because tessellation is free to hand the same triangles over in a different order between
-    /// two exports, and an order-sensitive hash would report a model nobody touched as entirely
-    /// remodelled.
+    /// The signature is local and unordered. Local, because a hash of world coordinates changes when
+    /// an element is merely moved, and "moved" already has its own answer. Unordered, because
+    /// tessellation may hand the same triangles over in a different order between two exports, and
+    /// an order-sensitive hash would report an untouched model as entirely remodelled.
     /// </summary>
     public sealed class NavCompare
     {
@@ -117,13 +114,13 @@ namespace CamelWorks.Nav
         /// Append the old revision beside the current one, so what was removed can be looked at.
         /// </summary>
         /// <remarks>
-        /// <b>Why the other layers do not move when this lands.</b> The document's element index is
-        /// first-wins in document order and appended models go to the end, so every key the current
-        /// model already has still resolves to the current element. The only keys the old revision
-        /// claims are the ones nothing else holds — which is exactly the removed set.
+        /// The other layers do not move when this lands. The document's element index is first-wins
+        /// in document order and appended models go to the end, so every key the current model
+        /// already has still resolves to the current element. The only keys the old revision claims
+        /// are the ones nothing else holds, which is the removed set.
         ///
         /// <c>TryAppendFiles</c> rather than <c>AppendFiles</c>: a file that will not open is
-        /// something to say on a line, not an exception to take the pane down with.
+        /// something to report on a line, not an exception that takes the pane down.
         /// </remarks>
         /// <param name="paths">The files to append. See <see cref="Core.Compare.BaselineModels"/>.</param>
         /// <param name="problem">Why it did not work, or null.</param>

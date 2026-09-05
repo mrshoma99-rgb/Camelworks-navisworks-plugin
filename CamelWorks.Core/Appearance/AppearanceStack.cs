@@ -179,15 +179,15 @@ namespace CamelWorks.Core.Appearance
     /// <summary>
     /// The layer stack, and the fold that decides what each element actually looks like.
     ///
-    /// The host has no stack. It has a pile: you hide something, you override a colour, and there
-    /// is no record of what you did, in what order, or why. The only way back is "reset all", which
-    /// discards everything including the work you wanted to keep — so in practice people stop
-    /// hiding things, or they hide things and never trust the model again.
+    /// The host has no stack. It has a pile: hide something, override a colour, and there is no
+    /// record of what was done, in what order, or why. The only way back is "reset all", which
+    /// discards everything including the work worth keeping, so in practice people stop hiding
+    /// things, or hide things and stop trusting the model.
     ///
-    /// <b>Precedence is per property, top of the stack wins.</b> A layer that sets only a colour
-    /// leaves the visibility beneath it alone. That is what makes an isolate expressible as two
-    /// ordinary layers — hide everything, then show these — rather than as a special mode, and it
-    /// is why the second layer somebody adds does not silently undo the first.
+    /// Precedence is per property, top of the stack wins. A layer that sets only a colour leaves the
+    /// visibility beneath it alone. That is what makes an isolate expressible as two ordinary layers
+    /// — hide everything, then show these — rather than as a special mode, and why a second layer
+    /// does not silently undo the first.
     /// </summary>
     public static class AppearanceStack
     {
@@ -195,9 +195,9 @@ namespace CamelWorks.Core.Appearance
         /// Fold the stack.
         /// </summary>
         /// <param name="layers">
-        /// The stack, <b>bottom first</b>: later entries override earlier ones. The panel shows it
-        /// the other way up, the way every layers panel does, but the list itself reads in the
-        /// order the fold applies it.
+        /// The stack, bottom first: later entries override earlier ones. The panel shows it the
+        /// other way up, as layers panels do, but the list itself reads in the order the fold
+        /// applies it.
         /// </param>
         /// <param name="resolver">Turns each layer's target into the elements it covers.</param>
         public static AppearanceFold Fold(IReadOnlyList<AppearanceLayer> layers, ILayerResolver resolver)

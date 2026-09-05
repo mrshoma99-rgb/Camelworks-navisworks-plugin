@@ -264,17 +264,16 @@ namespace CamelWorks.Core.Field
     }
 
     /// <summary>
-    /// The model, as stickers somebody can put on the work.
+    /// The model, as labels somebody can put on the work.
     ///
-    /// A label is the one thing in this whole product that ends up in somebody's hand. It carries a
-    /// code a phone reads and the same identifier printed underneath in characters, because the
-    /// code will be scuffed, or wet, or in a riser with no light, and somebody will have to type it.
+    /// A label is the one thing in this product that ends up in somebody's hand. It carries a code a
+    /// phone reads and the same identifier printed underneath in characters, because the code will
+    /// be scuffed, or wet, or in a riser with no light, and somebody will have to type it.
     ///
-    /// <b>What it does not do.</b> It does not read codes back. Scanning one and having Navisworks
-    /// fly to that element needs a camera and a person standing in front of the work, which is a
-    /// phone application and not a plug-in. What is here is the half this end can do properly: make
-    /// the codes, print them, and keep an index of what was printed so whatever does the scanning
-    /// has something to look the answer up in.
+    /// It does not read codes back. Scanning one and having Navisworks fly to that element needs a
+    /// camera and a person standing in front of the work, which is a phone application rather than a
+    /// plug-in. What is here is the half this end can do properly: make the codes, print them, and
+    /// keep an index of what was printed so whatever does the scanning has something to look up.
     /// </summary>
     public static class LabelSheet
     {

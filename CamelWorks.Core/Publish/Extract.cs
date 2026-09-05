@@ -408,22 +408,19 @@ namespace CamelWorks.Core.Publish
     /// <summary>
     /// A piece of the federation, chosen by something other than clicking on it.
     ///
-    /// The ask behind every deliverable that is not the whole model: this level, this zone, this
-    /// area, what that viewpoint shows, that supplier's model. Doing it by hand is a selection made
-    /// by eye that nobody can reproduce next revision, which is why the same person makes it again
-    /// every month and it is subtly different every time.
+    /// This is what every deliverable that is not the whole model asks for: this level, this zone,
+    /// this area, what that viewpoint shows, that supplier's model. Doing it by hand is a selection
+    /// made by eye that cannot be reproduced next revision, so it is remade every month and is
+    /// subtly different each time.
     ///
-    /// The axis is saved, not the answer. An extract named "Level 03 mechanical" re-runs against
-    /// whatever is loaded today and takes whatever is on Level 03 today - which is the whole point
-    /// of writing the rule down instead of the result.
+    /// The axis is saved rather than the answer. An extract named "Level 03 mechanical" re-runs
+    /// against whatever is loaded today and takes whatever is on Level 03 today.
     ///
-    /// <b>On NWD.</b> iConstruct writes a sliced NWD; CamelWorks does not, and will not pretend to.
-    /// The Navisworks .NET API has no call that writes a subset of a document to NWD - a plug-in
-    /// can save the document it has, whole, and nothing narrower. What is here instead is the part
-    /// that is actually hard and actually reusable: working out precisely what belongs in the
-    /// piece, reporting it, and writing it to the formats CamelWorks does write - IFC, glTF, DXF,
-    /// CSV and XLSX - plus making the selection in the host so Navisworks' own export takes it
-    /// from there.
+    /// It does not write a sliced NWD. The Navisworks .NET API has no call that writes a subset of a
+    /// document to NWD: a plug-in can save the document it has, whole, and nothing narrower. What is
+    /// here is the reusable part — working out what belongs in the piece, reporting it, and writing
+    /// it to the formats CamelWorks does write (IFC, glTF, DXF, CSV and XLSX) — plus making the
+    /// selection in the host so Navisworks' own export can take it from there.
     /// </summary>
     public static class Extract
     {

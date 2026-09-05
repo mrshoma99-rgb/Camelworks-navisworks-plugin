@@ -9,13 +9,13 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// What counts as a change, and how hard to look.
     ///
-    /// <b>Settings, not Options.</b> <c>System.Globalization.CompareOptions</c> exists and is
-    /// imported by every file in this product that formats a number, so a Core type of that name
-    /// compiles perfectly here and is an ambiguous reference the moment any screen uses it.
+    /// Named Settings rather than Options because <c>System.Globalization.CompareOptions</c> exists
+    /// and is imported by every file in this product that formats a number, so a Core type of that
+    /// name compiles here and becomes an ambiguous reference as soon as any screen uses it.
     ///
-    /// Every field has a working default. The type exists so that the answers a comparison gives
-    /// can be argued with — "why is this listed as moved" has to have an answer better than
-    /// "the tool said so", and that answer is a tolerance somebody can see and change.
+    /// Every field has a working default. The type exists so the answers a comparison gives can be
+    /// argued with: "why is this listed as moved" needs a better answer than "the tool said so", and
+    /// that answer is a tolerance that can be seen and changed.
     /// </summary>
     public sealed class CompareSettings
     {

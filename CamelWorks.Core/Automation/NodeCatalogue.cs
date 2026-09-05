@@ -132,12 +132,11 @@ namespace CamelWorks.Core.Automation
     /// <summary>
     /// Every node the canvas offers.
     ///
-    /// <b>Each one is a service the ribbon already drives.</b> That is the whole architecture of
-    /// this product in one list: nothing here is a second implementation of anything, so a fix to
-    /// the takeoff or the appearance planner reaches the graph and the buttons at the same time —
-    /// and neither front door can quietly drift from the other.
+    /// Each one is a service the ribbon already drives. Nothing here is a second implementation, so
+    /// a fix to the takeoff or the appearance planner reaches the graph and the buttons at the same
+    /// time and neither front door can drift from the other.
     ///
-    /// Every setting has a default that works, so a node dropped on the canvas runs without being
+    /// Every setting has a working default, so a node dropped on the canvas runs without being
     /// configured first.
     /// </summary>
     public static class NodeCatalogue
@@ -280,7 +279,7 @@ namespace CamelWorks.Core.Automation
                 }),
 
             new NodeKind("sets.publish", "Deliver", "Publish a set",
-                "Puts the elements into the host's selection sets, where anybody can find them.",
+                "Puts the elements into the host's selection sets, where any user can find them.",
                 new[] { Keys("in", "elements") }, None,
                 new[] { Text("name", "Set name", "CamelWorks working set") }),
 
@@ -296,8 +295,8 @@ namespace CamelWorks.Core.Automation
 
             new NodeKind("model.append", "Model", "Append a file",
                 "Adds a file to the federation, the way File > Append does. The step that makes an "
-                + "overnight job possible: a job that assembles its own federation does not need "
-                + "somebody to have assembled it first.",
+                + "overnight job possible: a job that assembles its own federation needs no "
+                + "prior manual assembly.",
                 None, None,
                 new[] { Text("path", "File") }, foundational: true),
 
@@ -308,8 +307,8 @@ namespace CamelWorks.Core.Automation
 
             new NodeKind("model.save", "Model", "Save the federation",
                 "Writes the document out. The extension decides it: .nwf keeps the links so the next "
-                + "refresh still works, .nwd bakes the geometry in so somebody without the source "
-                + "files can open it.",
+                + "refresh still works, .nwd embeds the geometry so it opens without the source "
+                + "files.",
                 None, None,
                 new[] { Text("path", "File") }, foundational: true),
 

@@ -6,16 +6,16 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Sends a tool where it lives.
     ///
-    /// Every tool is a tab of one app of the suite, and opening it opens that app on that tab.
-    /// Four live outside the table: Review is a floating palette over the 3D view, Section Box
-    /// and Baseline are instant acts, and Help is the window that must work when the rest of the
+    /// Every tool is a tab of one app of the suite, and opening it opens that app on that tab. Four
+    /// live outside the table: Review is a floating palette over the 3D view, Section Box and
+    /// Baseline are immediate actions, and Help is the window that must work when the rest of the
     /// product will not. See <c>CAMELWORKS_DESIGN.md</c>.
     ///
-    /// <b>Nothing runs when a tool is opened.</b> Every surface can end up walking a federation of
-    /// a few hundred thousand elements, and doing that because somebody pressed a ribbon button
-    /// freezes the host with no warning and no way to stop it. Each one shows what it will do and
-    /// the button to do it — which is also what makes the zero-setup rule honest, since that
-    /// button works on a raw model with nothing configured.
+    /// Nothing runs when a tool is opened. Every surface can end up walking a federation of a few
+    /// hundred thousand elements, and doing that because a ribbon button was pressed freezes the
+    /// host with no warning and no way to stop it. Each one shows what it will do and the button to
+    /// do it, which is also what makes the zero-setup rule hold: that button works on a raw model
+    /// with nothing configured.
     /// </summary>
     public static class ToolViews
     {

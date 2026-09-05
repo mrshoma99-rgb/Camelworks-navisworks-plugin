@@ -119,20 +119,19 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Clash points as a file somebody else opens.
     ///
-    /// <b>Not the marker you press a button for.</b> Dropping a ball on a clash while you are
-    /// looking at it is <see cref="MarkerOverlay"/>: temporary graphics, up on the next frame and
-    /// down when you say so. This is the other thing - the mesh a walkthrough, a site meeting or a
-    /// subcontractor's own copy of the model needs, still there tomorrow and openable without this
-    /// product installed. It is only ever reached through an explicit export.
+    /// Not the marker dropped by a button press. That is <see cref="MarkerOverlay"/>: temporary
+    /// graphics, up on the next frame and down on request. This is the mesh a walkthrough, a site
+    /// meeting or a subcontractor's own copy of the model needs, still present tomorrow and openable
+    /// without this product installed. It is only reached through an explicit export.
     ///
-    /// <b>Metres, always.</b> The host reports clash points in the document's own units and its OBJ
-    /// reader takes every vertex as metres. A millimetre model whose markers went out unconverted
-    /// puts them a kilometre from the building, and what the person sees is an empty model rather
-    /// than an error. That conversion is the single thing this file exists to get right.
+    /// Metres, always. The host reports clash points in the document's own units and its OBJ reader
+    /// takes every vertex as metres. A millimetre model whose markers went out unconverted puts them
+    /// a kilometre from the building, and the reader sees an empty model rather than an error. That
+    /// conversion is what this file exists to get right.
     ///
-    /// <b>Named so the tree is useful.</b> A group per test and an object per clash, each carrying
-    /// its status, so the Selection Tree collapses to a line per test and expands to the clashes -
-    /// which is what makes them selectable, hideable and colourable by the tools already here.
+    /// Named so the tree is useful: a group per test and an object per clash, each carrying its
+    /// status, so the Selection Tree collapses to a line per test and expands to the clashes, which
+    /// makes them selectable, hideable and colourable by the tools already here.
     /// </summary>
     public static class ClashMarkers
     {
@@ -151,7 +150,7 @@ namespace CamelWorks.Core.Clash
                 return Refuse("There are no clashes to mark.", materialFile);
 
             if (how.RadiusMetres <= 0)
-                return Refuse("A marker of no size is a marker nobody can see. Give it a radius.",
+                return Refuse("A marker radius of zero produces nothing visible. Set a radius.",
                               materialFile);
 
             if (how.MetresPerUnit <= 0)
@@ -161,7 +160,7 @@ namespace CamelWorks.Core.Clash
             if (all.Count > Math.Max(1, how.Ceiling))
                 return Refuse("That would write " + Measure.Count(all.Count) + " markers, and the "
                     + "ceiling is " + Measure.Count(Math.Max(1, how.Ceiling)) + ". A model with "
-                    + "that many balls in it is one nobody can spin. Mark one test at a time, or "
+                    + "that many markers will not navigate acceptably. Mark one test at a time, or "
                     + "raise the ceiling deliberately.", materialFile);
 
             var detail = how.Detail < 0 ? 0 : how.Detail > MarkerRecipe.MaxDetail

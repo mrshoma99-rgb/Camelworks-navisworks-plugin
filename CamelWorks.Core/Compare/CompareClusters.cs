@@ -81,13 +81,13 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Groups a comparison's changes into the places they happened.
     ///
-    /// <b>A change list is a list; a building is a place.</b> Four hundred rows in a table tell
-    /// nobody where to stand. Twelve viewpoints — one per area where something actually moved —
-    /// is a walk somebody can do in ten minutes and hand to whoever has to fix it.
+    /// Four hundred rows in a table do not say where to stand. Twelve viewpoints — one per area
+    /// where something moved — is a walk that takes ten minutes and can be handed to whoever has to
+    /// fix it.
     ///
-    /// Cells first, then merge what touches. A plain grid splits one changed riser across two
-    /// cells and reports it as two unrelated areas; merging adjacent occupied cells lets a cluster
-    /// take the shape of the thing that changed rather than the shape of the grid.
+    /// Cells first, then merge what touches. A plain grid splits one changed riser across two cells
+    /// and reports it as two unrelated areas; merging adjacent occupied cells lets a cluster take
+    /// the shape of the thing that changed rather than the shape of the grid.
     /// </summary>
     public static class CompareClusters
     {

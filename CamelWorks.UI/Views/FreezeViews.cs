@@ -13,21 +13,20 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Sign-off and fabrication release, and what has moved since.
     ///
-    /// <b>Two things a coordination model has to be able to say and cannot:</b> this level was
-    /// signed off on the fourteenth, and these hangers were released to fabrication on the
-    /// twentieth. Both are the same act — somebody put their name to a state of the model — and
-    /// both are worthless unless the tool can afterwards say what has changed since. So it is one
-    /// mechanism, and the Change Notice is the half that earns it.
+    /// Two things a coordination model has to be able to record: that a level was signed off on a
+    /// date, and that a set of components was released to fabrication on another. Both are the same
+    /// act — putting a name to a state of the model — and both are worthless unless the tool can
+    /// afterwards say what has changed since. So it is one mechanism, and the Change Notice is the
+    /// half that makes it useful.
     ///
-    /// <b>Why it lives in Compare Track.</b> It used to be a Clash Manager tab, which was an
-    /// implementation accident: the element list was harvested from the clash board, so the tab
-    /// went where the board was. Nothing about a freeze is clash-shaped — it is a named baseline
-    /// with a signature and a tamper hash on it, and the half that reads it back was already here.
-    /// The scope is now anything the model can name, so a level can be signed off in a week when
-    /// nobody has run a clash test.
+    /// It lives in Compare Track. It was previously a Clash Manager tab because the element list was
+    /// harvested from the clash board. Nothing about a freeze is clash-shaped: it is a named
+    /// baseline with a signature and a tamper hash, and the half that reads it back was already
+    /// here. The scope is now anything the model can name, so a level can be signed off in a week
+    /// when no clash test was run.
     ///
-    /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
-    /// not to enter.
+    /// The unfreeze is always visible. A mechanism that can only be entered is one people learn not
+    /// to enter.
     /// </summary>
     public static class FreezeViews
     {
@@ -94,9 +93,9 @@ namespace CamelWorks.UI.Views
             var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
 
             results.Children.Add(Bench.Ready(
-                "Records where every element in the scope is, right now, under somebody's name.",
-                "Nothing edits the record afterwards - which is what makes it worth signing. "
-                + "The Change Notice next door says what has moved since."));
+                "Records the current position of every element in scope, against a named author.",
+                "The record cannot be edited afterwards. Change Notice reports what has "
+                + "moved since."));
 
             var choices = new List<string> { Selection, ASet, Everything };
 
@@ -117,9 +116,9 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Signed by", signatory),
                         Ui.Field("Release reference", release, "for a fabrication release")),
                     Bench.Group(string.Empty,
-                        Ui.Small("A freeze is a baseline somebody put their name to. It records "
-                                 + "each element's box, hashes the lot, and refuses to look intact "
-                                 + "if the record is edited afterwards."))),
+                        Ui.Small("A freeze is an authored baseline. It records each element's "
+                                 + "bounding box and hashes the set, so later edits to the record "
+                                 + "are detectable."))),
                 Ui.Runner("Freeze", results,
                           job => Do(results, scope, signatory, release, job)),
                 Ui.Stack(FrozenState(), results));
@@ -135,7 +134,7 @@ namespace CamelWorks.UI.Views
             var results = Ui.Stack();
 
             results.Children.Add(Bench.Ready(
-                "Says what has moved since somebody put their name to the freeze.",
+                "Reports what has moved since the freeze was authored.",
                 "Measured against the freeze, not against last week."));
 
             return Bench.Surface(
@@ -268,8 +267,8 @@ namespace CamelWorks.UI.Views
             if (held == null)
             {
                 results.Children.Add(Ui.Empty("Nothing is frozen.",
-                    "A change notice is the difference between a record somebody agreed to and "
-                    + "the model as it stands, so there has to be a freeze first."));
+                    "A change notice compares an agreed record against the model as it stands, "
+                    + "so a freeze is required first."));
 
                 results.Children.Add(Ui.Actions(Ui.Quiet("Freeze something",
                     () => Ui.Told(Shell.AppWindow.Show("track", "freeze")))));

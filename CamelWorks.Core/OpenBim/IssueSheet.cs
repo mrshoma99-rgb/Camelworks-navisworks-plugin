@@ -122,7 +122,7 @@ namespace CamelWorks.Core.OpenBim
                      + " since it went out, so it stays where it is.";
 
             if (IsReopen && Changes)
-                return Group + ": somebody re-opened it, so it goes back to "
+                return Group + ": re-opened, so it goes back to "
                      + FindingStatusLattice.ToName(Merged) + ".";
 
             if (!Changes) return Group + ": no change.";
@@ -188,7 +188,7 @@ namespace CamelWorks.Core.OpenBim
 
             if (Reopened > 0) s += ", " + Measure.Count(Reopened) + " re-opened";
             if (Refused > 0) s += ", " + Measure.Count(Refused) + " refused as stale";
-            if (Unknown > 0) s += ", " + Measure.Count(Unknown) + " with a status nobody knows";
+            if (Unknown > 0) s += ", " + Measure.Count(Unknown) + " with an unrecognised status";
 
             if (Unmatched.Count > 0)
                 s += ", " + Measure.Count(Unmatched.Count) + " naming an issue this project never sent";
@@ -208,15 +208,15 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// The worksheet leg of a coordination conversation.
     ///
-    /// BCF assumes the far end has a tool that reads BCF. Most of the far ends on a real project
-    /// have Excel, and a coordinator who sends a .bcfzip to a fabricator gets a phone call. So the
-    /// same issues go out as a worksheet with two empty columns, and come back through the same
-    /// merge policy as a returned BCF file — including the rule that a stale "Open" does not undo
-    /// an approval and an explicit re-open is honoured even downwards.
+    /// BCF assumes the far end has a tool that reads BCF. Most far ends on a real project have
+    /// Excel, and sending a .bcfzip to a fabricator produces a phone call. So the same issues go out
+    /// as a worksheet with two empty columns and come back through the same merge policy as a
+    /// returned BCF file, including the rule that a stale "Open" does not undo an approval and an
+    /// explicit re-open is honoured even downwards.
     ///
-    /// <b>Keyed on a short opaque id, not on the group name.</b> The name is what a person edits:
-    /// they fix a typo, add a level prefix, translate it. The id is six characters derived from the
-    /// name once, printed in a column headed "do not edit", and never written back.
+    /// Keyed on a short opaque id rather than the group name. The name is what a person edits: they
+    /// fix a typo, add a level prefix, translate it. The id is six characters derived from the name
+    /// once, printed in a column headed "do not edit", and never written back.
     /// </summary>
     public static class IssueSheet
     {

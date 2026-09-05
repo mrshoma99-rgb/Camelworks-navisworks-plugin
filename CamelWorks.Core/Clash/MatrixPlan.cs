@@ -39,28 +39,26 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// What this test is between, and nothing else.
         ///
-        /// <b>The kind is not part of what a test is between.</b> A pair tested hard and the
-        /// same pair tested as a clearance are the same two things being checked, so a legend
-        /// changed from one to the other has to find the test that already exists and alter it.
-        /// Folded into the fingerprint, as it was, the old test matched nothing, sat in the
-        /// document untouched with a fortnight of statuses on it, and a second test was made
-        /// beside it.
+        /// The kind is not part of what a test is between. A pair tested hard and the same pair
+        /// tested as a clearance are the same two things being checked, so a legend changed from one
+        /// to the other has to find the existing test and alter it. Folded into the fingerprint, as
+        /// it was, the old test matched nothing and stayed in the document untouched with weeks of
+        /// statuses on it while a second test was made beside it.
         ///
-        /// The pairing above still carries the kind, because two cells asking for a hard test
-        /// and a clearance between the same two sets are two tests somebody meant to have.
+        /// The pairing above still carries the kind, because two cells asking for a hard test and a
+        /// clearance between the same two sets are two tests that were intended.
         /// </summary>
         public string Sides() => Both(Row.Source.Matched(), Column.Source.Matched());
 
         /// <summary>
-        /// What this test is between and how, told apart exactly rather than as the document
-        /// would report it.
+        /// What this test is between and how, identified exactly rather than as the document would
+        /// report it.
         ///
-        /// <b>Two questions that are not the same question.</b> Matching a plan against a test
-        /// the document holds has to happen on what the document can say, which for a set is its
-        /// name and not the folder it lives in. Telling two cells of the same matrix apart has
-        /// to happen on everything known about them, or two rows pointed at two different sets
-        /// that happen to share a name are one row, and the second one's tests are dropped as
-        /// duplicates of the first's.
+        /// Two different questions. Matching a plan against a test the document holds has to happen
+        /// on what the document can report, which for a set is its name rather than its folder.
+        /// Telling two cells of the same matrix apart has to happen on everything known about them,
+        /// or two rows pointed at two different sets that share a name become one row and the second
+        /// one's tests are dropped as duplicates.
         /// </summary>
         public string Exact() =>
             Both(Row.Source.Fingerprint(), Column.Source.Fingerprint())
@@ -129,14 +127,14 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Plan every test the board asks for.
         ///
-        /// <b>Two cells, one test.</b> Where the rows and the columns hold the same things - the
-        /// square matrix everybody draws - the cell at (Ducts, Steel) and the cell at (Steel,
-        /// Ducts) name one test between them, and making both would give the job two identical
-        /// tests with two names and two sets of results to review. The first one reached wins and
-        /// the second is skipped, saying so, rather than silently disappearing.
+        /// Two cells can name one test. Where the rows and the columns hold the same items — the
+        /// square matrix — the cell at (Ducts, Steel) and the cell at (Steel, Ducts) name one test,
+        /// and making both would give the job two identical tests with two names and two sets of
+        /// results to review. The first one reached wins and the second is skipped with a note,
+        /// rather than silently dropped.
         ///
-        /// <b>A cell against itself is a real test</b> - it finds the duct through its own hanger
-        /// - so it is planned like any other. Nothing here decides it is not wanted.
+        /// A cell against itself is a real test — it finds the duct through its own hanger — so it
+        /// is planned like any other.
         /// </summary>
         /// <param name="board">The grid.</param>
         /// <param name="legend">What each symbol means.</param>

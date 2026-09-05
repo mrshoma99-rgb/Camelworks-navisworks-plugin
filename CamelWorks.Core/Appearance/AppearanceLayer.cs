@@ -82,10 +82,10 @@ namespace CamelWorks.Core.Appearance
     /// <summary>
     /// One layer: what it points at, and what it decides about it.
     ///
-    /// <b>Each property is decided independently, and null means "does not decide".</b> A layer
-    /// that only sets a colour leaves visibility to whatever is underneath it. Without that, a
-    /// stack is not a stack — every layer would be a full replacement of the one below, and the
-    /// second layer you added would undo the first.
+    /// Each property is decided independently, and null means the layer does not decide it. A layer
+    /// that only sets a colour leaves visibility to whatever is underneath. Without that a stack is
+    /// not a stack: every layer would be a full replacement of the one below, and a second layer
+    /// would undo the first.
     /// </summary>
     public sealed class AppearanceLayer
     {

@@ -10,13 +10,13 @@ namespace CamelWorks.Nav
     /// <summary>
     /// Colour, transparency, visibility, camera and sectioning.
     ///
-    /// The host's two override layers are not symmetric, and the asymmetry drives the whole design
-    /// above this seam. The permanent layer can be reset for a given collection and read back; the
+    /// The host's two override layers are not symmetric, and the asymmetry drives the design above
+    /// this seam. The permanent layer can be reset for a given collection and read back; the
     /// temporary layer can only be reset globally and cannot be read at all. That is why the
     /// Appearance Manager's stack lives on the permanent layer, and why this class refuses a
-    /// per-element clear on the temporary one rather than pretending it worked.
+    /// per-element clear on the temporary one rather than reporting a clear it did not perform.
     ///
-    /// <b>Main thread only.</b>
+    /// Main thread only.
     /// </summary>
     public sealed class NavViewSession : IViewSession
     {
@@ -67,19 +67,19 @@ namespace CamelWorks.Nav
         /// <summary>
         /// Show these elements and nothing else.
         ///
-        /// <b>The host does the walking.</b> This used to recurse the whole federation in managed
-        /// code, deciding branch by branch what to hide - which is a walk of every element in the
-        /// document on the UI thread, paid every time somebody pressed Isolate, and a recursion
-        /// deep enough to be a risk of its own on a tall assembly tree.
+        /// The host does the walking. This previously recursed the whole federation in managed code,
+        /// deciding branch by branch what to hide: a walk of every element in the document on the UI
+        /// thread, paid on every press of Isolate, with a recursion deep enough to be a risk of its
+        /// own on a tall assembly tree.
         ///
-        /// The host can do the whole thing in three calls: hide everything, then bring back what
-        /// was asked for. <c>RootItemDescendantsAndSelf</c> is a lazy native collection and
-        /// <c>SetHidden</c> takes it whole, so nothing is enumerated into managed memory and the
-        /// cost stops depending on the size of the federation.
+        /// The host can do it in three calls: hide everything, then bring back what was asked for.
+        /// <c>RootItemDescendantsAndSelf</c> is a lazy native collection and <c>SetHidden</c> takes
+        /// it whole, so nothing is enumerated into managed memory and the cost stops depending on
+        /// the size of the federation.
         ///
-        /// Ancestors and descendants come back with the elements themselves, because hidden state
-        /// is per item: an element inside a hidden parent is not drawn, and an assembly whose
-        /// children are all hidden is an empty box.
+        /// Ancestors and descendants come back with the elements themselves, because hidden state is
+        /// per item: an element inside a hidden parent is not drawn, and an assembly whose children
+        /// are all hidden is an empty box.
         /// </summary>
         /// <param name="keys">What to leave visible.</param>
         public void Isolate(IReadOnlyList<ElementKey> keys) => Keep(_document.ItemsFor(keys));
@@ -97,35 +97,31 @@ namespace CamelWorks.Nav
         /// <summary>
         /// Hide everything but these and the branch they hang from.
         ///
-        /// <b>Only the branches leading to the elements are ever walked.</b> Isolating two items
-        /// in a federation of millions is a walk of two paths from the root and the siblings
-        /// hanging off each step of them - depth times branching, not the size of the model. That
-        /// is why the ribbon's own Hide Unselected is instant, and it is what this does.
+        /// Only the branches leading to the elements are walked. Isolating two items in a federation
+        /// of millions walks two paths from the root plus the siblings at each step — depth times
+        /// branching, not the size of the model. That is why the ribbon's own Hide Unselected is
+        /// immediate, and it is what this does.
         ///
-        /// Three versions of this were wrong before it, and all three are worth naming because
-        /// each mistake is an easy one to make twice:
+        /// Three earlier versions were wrong, each in a way that is easy to repeat:
         ///
         /// <list type="bullet">
-        /// <item><description>Hiding <c>RootItemDescendantsAndSelf</c> is correct and hands the
-        /// host every item in the document one at a time, on the UI thread, with nothing on the
-        /// screen to say so. That was Isolate freezing.</description></item>
-        /// <item><description>Hiding only the model roots is fast and does nothing. Hidden is
-        /// inherited, so the roots have to be un-hidden again to show the branch - and un-hiding a
-        /// root puts its whole model back, because nothing under it was ever marked.</description>
-        /// </item>
-        /// <item><description>Hiding the complement from <c>ModelItemCollection.Invert</c> is
-        /// fast and also does nothing, for a subtler reason: that inversion works the way the
-        /// selection tree does, where a branch stands for everything under it. The kept set has to
-        /// carry the ancestors of the elements, the topmost of which is the model root - so the
-        /// set being inverted already stands for the whole document, and its complement is empty.
-        /// Isolate then hid nothing at all, which is exactly what "the isolate still doesn't
-        /// isolate the elements" looked like.</description></item>
+        /// <item><description>Hiding <c>RootItemDescendantsAndSelf</c> is correct and hands the host
+        /// every item in the document one at a time, on the UI thread, with no progress shown. That
+        /// was the Isolate freeze.</description></item>
+        /// <item><description>Hiding only the model roots is fast and has no effect. Hidden is
+        /// inherited, so the roots have to be un-hidden again to show the branch, and un-hiding a
+        /// root restores its whole model because nothing under it was marked.</description></item>
+        /// <item><description>Hiding the complement from <c>ModelItemCollection.Invert</c> is fast
+        /// and also has no effect, for a subtler reason: that inversion works as the selection tree
+        /// does, where a branch stands for everything under it. The kept set must carry the
+        /// ancestors of the elements, the topmost of which is the model root, so the set being
+        /// inverted already stands for the whole document and its complement is empty. Isolate then
+        /// hid nothing, which is what the report of "isolate does not isolate" described.</description></item>
         /// </list>
         ///
-        /// The ancestors are not decoration. An element inside a hidden parent is not drawn, so
-        /// the chain from the root down to the item has to stay out of what gets hidden or the
-        /// thing being isolated goes with it. Its descendants are never hidden either, and get
-        /// there by being left alone: an assembly is isolated with what it is made of.
+        /// The ancestors are required. An element inside a hidden parent is not drawn, so the chain
+        /// from the root down to the item has to stay out of what is hidden. Descendants are never
+        /// hidden either, and get there by being left alone: an assembly is isolated with its parts.
         /// </summary>
         /// <param name="items">What to keep visible.</param>
         private int Keep(ModelItemCollection items)
@@ -347,19 +343,17 @@ namespace CamelWorks.Nav
                 var target = new Point3D(x, y, z);
                 var viewpoint = Host.CurrentViewpoint.CreateCopy();
 
-                // <b>Focus leaves an orthographic camera.</b> An ortho view has no vanishing
-                // point, so standing the eye closer to something changes nothing on screen: what
-                // it shows is its extent at the focal distance, and moving along the view
-                // direction leaves that where the last zoom left it. Focusing a clash in ortho
-                // therefore aimed the camera perfectly and still showed the whole federation.
+                // Focus switches an orthographic camera to perspective. An ortho view has no
+                // vanishing point, so moving the eye closer changes nothing on screen: what it
+                // shows is its extent at the focal distance, and moving along the view direction
+                // leaves that where the last zoom left it. Focusing a clash in ortho therefore
+                // aimed the camera correctly and still showed the whole federation.
                 //
-                // Framing a box around the point instead - the previous attempt at this - put the
-                // clash in the middle of the screen and no closer, which is being centred rather
-                // than being focused, and is what came back from the seat. There is no third
-                // answer: a focus in a parallel projection is a zoom, and the view somebody wants
-                // when they press Focus is the one standing in front of the junction. So the
-                // projection is switched and the camera then moves the way it does everywhere
-                // else.
+                // Framing a box around the point instead — the previous attempt — centred the clash
+                // without getting any closer, which was reported from the seat. A focus in a
+                // parallel projection is a zoom, and the view wanted on Focus is the one standing in
+                // front of the junction, so the projection is switched and the camera then moves as
+                // it does elsewhere.
                 if (viewpoint.Projection == ViewpointProjection.Orthographic)
                     viewpoint.Projection = ViewpointProjection.Perspective;
 
@@ -546,25 +540,25 @@ namespace CamelWorks.Nav
         /// <summary>
         /// The viewer that owns the document's clip planes, or null where there is not one.
         ///
-        /// <b>Why not the JSON.</b> <c>View.SetClippingPlanes</c> takes a string it calls
-        /// <c>jsonClipPlaneSet</c>, and a payload it dislikes throws
-        /// <c>Failed to set clipping planes</c> out of the button - which is what shipped, because
-        /// the schema was written from the outside and the two keys it leaned on, "OrientedBox"
-        /// and "Box", do not occur anywhere in the assembly. The format is produced by native code
-        /// (<c>GetClippingPlanesAsJsonClipPlaneSet</c>), is undocumented, and there is no reason to
-        /// believe it is stable across the four supported years.
+        /// Not the JSON path. <c>View.SetClippingPlanes</c> takes a string it calls
+        /// <c>jsonClipPlaneSet</c>, and a payload it rejects throws "Failed to set clipping planes"
+        /// out of the button — which is what shipped, because the schema was written from the
+        /// outside and the two keys it relied on, "OrientedBox" and "Box", do not occur anywhere in
+        /// the assembly. The format is produced by native code
+        /// (<c>GetClippingPlanesAsJsonClipPlaneSet</c>), is undocumented, and is not known to be
+        /// stable across the four supported years.
         ///
-        /// The clip-plane set is the same state as a typed object, on the same assembly. A wrong
-        /// call there does not compile, which is the only kind of check worth having for something
-        /// no test on a build machine can exercise.
+        /// The clip-plane set is the same state as a typed object on the same assembly. A wrong call
+        /// there does not compile, which is the only check available for something no build-machine
+        /// test can exercise.
         ///
-        /// <b>Why the one conditional.</b> This path is identical in all four years - and it is
-        /// the only one that is. The set itself was <c>Interop.LcOaClipPlaneSet</c> with
-        /// <c>SetBox</c> and <c>SetEnabled</c> in 2024, and became <c>Api.ClipPlaneSet</c> with
-        /// <c>Box</c> and <c>Enabled</c> properties in 2025. The type is never named here, only
-        /// inferred, so the difference is three lines of member style rather than a second copy of
-        /// the method. <c>Viewpoint</c> offers the same set - as <c>InternalClipPlanes</c> in 2024
-        /// and <c>ClipPlanes</c> after - which would have been two differences instead of one.
+        /// One conditional is needed. This path is identical in all four years and is the only one
+        /// that is: the set itself was <c>Interop.LcOaClipPlaneSet</c> with <c>SetBox</c> and
+        /// <c>SetEnabled</c> in 2024, and became <c>Api.ClipPlaneSet</c> with <c>Box</c> and
+        /// <c>Enabled</c> properties in 2025. The type is never named here, only inferred, so the
+        /// difference is three lines of member style rather than a second copy of the method.
+        /// <c>Viewpoint</c> offers the same set — as <c>InternalClipPlanes</c> in 2024 and
+        /// <c>ClipPlanes</c> after — which would have been two differences instead of one.
         /// </summary>
         private static Autodesk.Navisworks.Api.Interop.LcOaViewer? Viewer()
         {

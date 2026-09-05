@@ -5,23 +5,21 @@ using CamelWorks.Core.Clash;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Puts the IFC GlobalIds on clash items on the way out of the door.
+    /// Puts the IFC GlobalIds on clash items during an export.
     ///
-    /// <b>Why an export does this at all.</b> BCF names elements by their IFC GlobalId and by
-    /// nothing else. A clash file written without them reaches the architect's tool as an issue
-    /// with a camera and an empty selection: they are flown to roughly the right place and shown
-    /// nothing highlighted, which is the difference between a file somebody works from and a file
-    /// somebody scrolls past.
+    /// BCF names elements by their IFC GlobalId and by nothing else. A clash file written without
+    /// them reaches the architect's tool as an issue with a camera and an empty selection: the view
+    /// is roughly right and nothing is highlighted.
     ///
-    /// <b>Why it is not free.</b> The GlobalId is a property on the element, so finding it means
-    /// resolving the element and reading its properties. The document caches per element, so the
-    /// cost is one read per distinct element rather than one per clash - a federation with four
-    /// hundred ducts in eighteen thousand clashes pays four hundred times, not thirty-six thousand.
-    /// It still reports progress, because on a first export of a large board it is the slow part.
+    /// It is not free. The GlobalId is a property on the element, so finding it means resolving the
+    /// element and reading its properties. The document caches per element, so the cost is one read
+    /// per distinct element rather than one per clash: a federation with four hundred ducts in
+    /// eighteen thousand clashes pays four hundred times. It still reports progress, because on a
+    /// first export of a large board it is the slow part.
     ///
-    /// A federation with no IFC in it pays the cost once and finds nothing, which is the honest
-    /// outcome: the export then says how many components a receiving tool will not be able to
-    /// select, rather than writing an id that names nothing.
+    /// A federation with no IFC in it pays the cost once and finds nothing. The export then reports
+    /// how many components a receiving tool will not be able to select, rather than writing an id
+    /// that names nothing.
     /// </summary>
     internal static class ClashIdentity
     {
@@ -119,18 +117,16 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// How a clash gets its picture, and what it costs.
+        /// How a clash gets its image, and what it costs.
         ///
-        /// Two ways, in order of preference. The clash engine can render a result directly, which
-        /// is the good one: it frames the clash the way the native window does, and it never
-        /// touches the camera the coordinator is looking through. Where that is unavailable - a
-        /// file source, an edition with no clash engine, a result the engine will not draw - the
-        /// camera is moved to the clash point and the view captured, with the camera borrowed and
-        /// put back so the run leaves the screen where it found it.
+        /// Two routes, in order of preference. The clash engine can render a result directly, which
+        /// frames the clash as the native window does and never touches the camera the user is
+        /// looking through. Where that is unavailable — a file source, an edition with no clash
+        /// engine, a result the engine will not draw — the camera is moved to the clash point and
+        /// the view captured, with the camera borrowed and restored so the run leaves the screen
+        /// where it found it.
         ///
-        /// <b>It is slow, and it is opt-in for that reason.</b> A render is a render: on a large
-        /// board this is minutes, and it is the one part of an export worth being asked about
-        /// rather than surprised by.
+        /// It is slow, and opt-in for that reason: on a large board this is minutes.
         /// </summary>
         /// <param name="session">The open document.</param>
         /// <param name="width">Pixels across.</param>

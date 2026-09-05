@@ -63,16 +63,15 @@ namespace CamelWorks.Core.Data
     /// The levels of a federation, whether the model had any or not.
     ///
     /// Most of the product needs a level: the clash board groups on it, reports break down by it,
-    /// takeoff subtotals by it. And a federated model routinely has none usable — one discipline
-    /// exports storeys as properties, one puts them in the tree, one has a single flat model with
-    /// nothing at all. Refusing to work in that case would mean the zero-setup rule fails on
-    /// exactly the messy federations that need this product most, so levels are inferred from
-    /// geometry when they cannot be read.
+    /// takeoff subtotals by it. A federated model routinely has none usable — one discipline exports
+    /// storeys as properties, one puts them in the tree, one has a single flat model with nothing.
+    /// Refusing to work in that case would make the zero-setup rule fail on exactly the federations
+    /// that need this product most, so levels are inferred from geometry when they cannot be read.
     ///
-    /// <b>Inferred levels are named after their elevation, never numbered.</b> "Level +3.600" is
-    /// obviously derived; "Level 2" is a claim about the building, and guessing it wrong is worse
-    /// than not guessing — a report that says Level 2 when the client calls it Level 1 gets the
-    /// whole report doubted.
+    /// Inferred levels are named after their elevation, never numbered. "Level +3.600" is evidently
+    /// derived; "Level 2" is a claim about the building, and guessing it wrong is worse than not
+    /// guessing, because a report that says Level 2 when the client calls it Level 1 gets the whole
+    /// report doubted.
     /// </summary>
     public sealed class LevelSet
     {

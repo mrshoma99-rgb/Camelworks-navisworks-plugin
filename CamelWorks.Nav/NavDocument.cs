@@ -230,8 +230,8 @@ namespace CamelWorks.Nav
     /// <summary>
     /// The active document, behind the seam.
     ///
-    /// <b>Main thread only.</b> Everything here goes through the host's single-threaded read API,
-    /// and the seam exists precisely so that nothing above it has to know that.
+    /// Main thread only. Everything here goes through the host's single-threaded read API, and the
+    /// seam exists so that nothing above it has to know that.
     /// </summary>
     public sealed class NavDocument : IModelDocument
     {
@@ -313,23 +313,23 @@ namespace CamelWorks.Nav
         /// <summary>
         /// The GlobalId this project's own IFC exporter would give an element, or null.
         ///
-        /// <b>Why computing one is not forging one.</b> Writing a made-up GlobalId into a BCF is
-        /// the fault this codebase refuses everywhere else: a receiving tool looks the string up
-        /// verbatim, and a wrong one points the topic at nothing. This is different. The exporter
-        /// that ships inside CamelWorks derives an element's GlobalId from that element's instance
-        /// GUID by the standard IFC compression, so the value computed here is not a guess at what
-        /// the file says - it is the same function over the same input.
+        /// Computing one is not the same as inventing one. Writing a made-up GlobalId into a BCF is
+        /// refused everywhere else in this codebase: a receiving tool looks the string up verbatim,
+        /// and a wrong one points the topic at nothing. Here the exporter that ships inside
+        /// CamelWorks derives an element's GlobalId from that element's instance GUID by the
+        /// standard IFC compression, so this is the same function over the same input rather than a
+        /// guess at what the file says.
         ///
-        /// <b>What it is worth.</b> A federation of Revit-sourced NWCs carries no GlobalId property
-        /// at all, so every component in a clash BCF written from it is unresolvable and the file
-        /// selects nothing in Revizto or Solibri. Where the IFC alongside it came from this
-        /// exporter, this closes that gap outright.
+        /// What it gains: a federation of Revit-sourced NWCs carries no GlobalId property, so every
+        /// component in a clash BCF written from it is unresolvable and the file selects nothing in
+        /// Revizto or Solibri. Where the IFC alongside it came from this exporter, this closes that
+        /// gap.
         ///
-        /// <b>What it is not worth.</b> Against an IFC written by somebody else's exporter - Revit's
-        /// own, most often - the GlobalIds come from that tool's internal ids and this will match
-        /// nothing. That is exactly what happens today with no id at all, so it costs nothing to
-        /// try; but the export counts these separately from ids actually read off the model, and
-        /// says so, because "will select" and "will select in our IFC" are different promises.
+        /// What it does not: against an IFC written by another exporter — Revit's own, most often —
+        /// the GlobalIds come from that tool's internal ids and this matches nothing. That is the
+        /// same outcome as writing no id, so it costs nothing to try, but the export counts these
+        /// separately from ids read off the model and says so, because "will select" and "will
+        /// select in our IFC" are different claims.
         /// </summary>
         /// <param name="key">The element.</param>
         public string? DerivedIfcGuidFor(ElementKey key)
@@ -348,16 +348,16 @@ namespace CamelWorks.Nav
         /// <summary>
         /// The host's own handle for an element, to be written into a file it is exported in.
         ///
-        /// <b>What this is for.</b> A key in an exported file is a hash, and a hash cannot be
-        /// turned back into what it names - the only way home is to hash every element in the
-        /// federation until one matches, which is the indexing pass. The seat writing the file
-        /// never needed that: the clash engine handed it both elements. So it writes down where
-        /// they were, and the seat reading the file asks the host for them by name.
+        /// A key in an exported file is a hash, and a hash cannot be turned back into what it names
+        /// except by hashing every element in the federation until one matches, which is the
+        /// indexing pass. The seat writing the file never needed that: the clash engine handed it
+        /// both elements. So it records where they were, and the seat reading the file asks the host
+        /// for them by name.
         ///
         /// The model index is deliberately left out of the string. It is the position of the model
-        /// in this document's list, which the receiving document is under no obligation to match -
-        /// so it is derived there from the key's own model scope instead, which travels with the
-        /// key and is a fact about the file rather than about the order somebody appended things.
+        /// in this document's list, which the receiving document is not obliged to match, so it is
+        /// derived there from the key's own model scope, which travels with the key and describes
+        /// the file rather than the order the models were appended in.
         /// </summary>
         /// <param name="key">The element.</param>
         /// <returns>The handle, or null when the element is not in this document.</returns>
@@ -405,16 +405,16 @@ namespace CamelWorks.Nav
         }
 
         /// <summary>
-        /// Select the elements a file wrote down, without searching this document for them.
+        /// Select the elements a file recorded, without searching this document for them.
         ///
-        /// <b>The whole point of the locators.</b> Handed only keys, the choice is between a walk
-        /// of the federation and doing nothing - which is why selecting from a file used to do
-        /// nothing at all when one key was not an instance GUID. Handed a handle or a tree path,
-        /// each element is a lookup or a descent, and the size of the model stops mattering.
+        /// This is what the locators are for. Given only keys, the options are a walk of the
+        /// federation or nothing, which is why selecting from a file previously did nothing at all
+        /// when one key was not an instance GUID. Given a handle or a tree path, each element is a
+        /// lookup or a descent and the size of the model stops mattering.
         ///
-        /// Three ways in, tried strongest first, per element: the host's own handle, then the tree
-        /// path, then the key itself for the rungs that resolve without an index. An element that
-        /// answers to none of them is counted rather than guessed at.
+        /// Three routes are tried per element, strongest first: the host's own handle, then the
+        /// tree path, then the key itself for the cases that resolve without an index. An element
+        /// that answers to none of them is counted rather than guessed at.
         /// </summary>
         /// <param name="found">The elements, as the file recorded them.</param>
         /// <returns>How many were selected.</returns>
@@ -562,18 +562,17 @@ namespace CamelWorks.Nav
         }
 
         /// <summary>
-        /// The host item a key names, without walking the federation when it can be helped.
+        /// The host item a key names, avoiding a walk of the federation where possible.
         ///
-        /// <b>The index was the wrong first answer.</b> Resolving used to mean building a
-        /// dictionary of every geometry leaf in the document, keyed by asking each one for its
-        /// GUID, its tree path or its bounds - minutes of managed work on a real federation, paid
-        /// by whoever first pressed Focus. The host can already do this: a search by instance GUID
-        /// runs natively, lazily, and stops at the first match, and most elements that carry a
-        /// clash carry a GUID.
+        /// Resolving previously meant building a dictionary of every geometry leaf in the document,
+        /// keyed by asking each one for its GUID, its tree path or its bounds — minutes of managed
+        /// work on a real federation, paid by whoever first pressed Focus. The host can already do
+        /// this: a search by instance GUID runs natively, lazily, and stops at the first match, and
+        /// most elements that carry a clash carry a GUID.
         ///
-        /// So a GUID key is a native search; anything else falls back to the index, and only a
-        /// document whose elements have no GUIDs ever pays for one. Matches are remembered, so the
-        /// second verb on the same rows costs nothing at all.
+        /// So a GUID key uses the native search, anything else falls back to the index, and only a
+        /// document whose elements have no GUIDs pays for one. Matches are cached, so a second verb
+        /// on the same rows costs nothing.
         /// </summary>
         /// <param name="key">The key to resolve.</param>
         private ModelItem? Item(ElementKey key)
@@ -618,15 +617,14 @@ namespace CamelWorks.Nav
         }
 
         /// <summary>
-        /// How many host enumerations are open on this thread right now.
+        /// How many host enumerations are open on this thread.
         ///
-        /// <b>Why anything needs to know.</b> A long walk reports progress, and reporting progress
-        /// means pumping the message loop - which lets Navisworks process input while we are part
-        /// way through enumerating its own tree. The user clicks the model tree, the host mutates
-        /// the collection under the iterator, and the process dies in native code where no
-        /// try/catch can reach it. So the pump asks this first and stays quiet while a walk is
-        /// open: a window that does not repaint for twenty seconds is a cost; a Navisworks that
-        /// disappears is not a cost, it is a bug report.
+        /// A long walk reports progress, and reporting progress pumps the message loop, which lets
+        /// Navisworks process input part way through an enumeration of its own tree. If the user
+        /// clicks the model tree, the host mutates the collection under the iterator and the process
+        /// terminates in native code, where no try/catch reaches it. The pump therefore checks this
+        /// first and stays quiet while a walk is open: a window that does not repaint for twenty
+        /// seconds is a cost worth paying against a host that disappears.
         /// </summary>
         public static int Walking { get; private set; }
 
@@ -841,16 +839,15 @@ namespace CamelWorks.Nav
         /// <summary>
         /// Build the element index, reporting as it goes.
         ///
-        /// <b>Why this is public.</b> Resolving an element key means looking it up in an index of
-        /// every geometry leaf in the federation, and building that index is a full walk that keys
-        /// each item. Left to happen lazily, the whole cost landed on whoever first pressed Focus
-        /// - synchronously, inside a click handler, with no progress and no way to stop: on a real
-        /// federation that is Navisworks saying Not Responding for minutes, and the honest reading
-        /// of it is that the button hung.
+        /// Public because resolving an element key means looking it up in an index of every geometry
+        /// leaf in the federation, and building that index is a full walk that keys each item. Left
+        /// to happen lazily, the whole cost lands on whoever first presses Focus — synchronously,
+        /// inside a click handler, with no progress and no cancel — which on a real federation is
+        /// minutes of Not Responding.
         ///
-        /// So the long operations that are about to need it - reading a clash board, running a
-        /// check - build it inside their own job, where there is a progress bar and a Stop, and
-        /// every row verb afterwards is instant.
+        /// So the long operations that are about to need it — reading a clash board, running a
+        /// check — build it inside their own job, where there is a progress bar and a Stop, and
+        /// every row verb afterwards is immediate.
         /// </summary>
         /// <param name="onProgress">Called with the running count, for a progress line.</param>
         /// <param name="keepGoing">Asked between items; false stops and leaves the index unbuilt.</param>
@@ -891,23 +888,21 @@ namespace CamelWorks.Nav
         /// <summary>
         /// How a build of the element index gets a progress bar and a Stop.
         ///
-        /// <b>Why this is a hook and not a rule.</b> Every screen that turns a row back into
-        /// elements - Focus on a clash, a clearance finding, an issue, a set - eventually asks
-        /// <see cref="Resolve"/>, and a key that is not an instance GUID has no native search
-        /// behind it, so the first such ask pays for a walk of the whole federation. Inside a
-        /// click handler that is minutes of managed work with no progress and no way out, which
-        /// reads as a button that hung.
+        /// A hook rather than a rule. Every screen that turns a row back into elements — Focus on a
+        /// clash, a clearance finding, an issue, a set — eventually calls <see cref="Resolve"/>, and
+        /// a key that is not an instance GUID has no native search behind it, so the first such call
+        /// pays for a walk of the whole federation. Inside a click handler that is minutes of work
+        /// with no progress and no cancel.
         ///
-        /// The long jobs that know they are about to need one build it themselves, where their own
-        /// progress bar already is. This is for every other press: rather than each of the twenty
-        /// call sites remembering to check first - which is a rule, and rules last until the
-        /// twenty-first is written - the walk itself asks for somewhere to be shown. The UI sets
-        /// this once; left null, the build happens the old way.
+        /// The long jobs that know they will need the index build it themselves, where their
+        /// progress bar already is. This covers every other press: rather than each of twenty call
+        /// sites remembering to check first — a convention that fails on the twenty-first — the walk
+        /// itself asks for somewhere to report. The UI sets this once; left null, the build happens
+        /// as before.
         ///
-        /// The runner is handed what to call and a name for it, and is expected to run it there
-        /// and then on this thread. A runner that cancels leaves the index unbuilt, and the verb
-        /// that asked reports the elements as unresolved - which is the honest outcome of stopping
-        /// and is a great deal better than a host that stopped answering.
+        /// The runner is given the work and a name for it, and is expected to run it on this thread
+        /// immediately. A runner that cancels leaves the index unbuilt and the calling verb reports
+        /// the elements as unresolved, which is the correct outcome of stopping.
         /// </summary>
         public static Action<string, Action<Action<int>, Func<bool>>>? LongWork { get; set; }
 
@@ -962,10 +957,10 @@ namespace CamelWorks.Nav
         /// <summary>
         /// Every saved set, with the folders it sits in.
         ///
-        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
-        /// inside Level 02, and two more under a package folder somebody made in March. Anything
-        /// that keeps only the name and looks it up later gets whichever one a walk of the tree
-        /// reaches first, which is not the one anybody picked.
+        /// A name is not an identity. A real document has "MEP" inside Level 01, another inside
+        /// Level 02, and more under package folders. Anything that keeps only the name and looks it
+        /// up later gets whichever one a walk of the tree reaches first, which is not necessarily
+        /// the one that was picked.
         /// </summary>
         public IReadOnlyList<SetInFolder> SetsInFolders()
         {
@@ -1004,13 +999,12 @@ namespace CamelWorks.Nav
         /// The geometry leaves under a set of roots, depth first, without a host enumerator open
         /// across the yield.
         ///
-        /// <b>Why it is a stack and not recursion.</b> The recursive version held one live host
-        /// enumerator per level of the tree for the whole walk. Callers report progress as they go,
-        /// reporting progress pumps the message loop, and pumping while the host's own collections
-        /// are being enumerated lets Navisworks act on a click that mutates them - which ends the
-        /// process in native code where no handler can reach it. Here each node's children are
-        /// read into a list and the host's enumerator is finished with immediately, so at the
-        /// moment a caller pumps, nothing of the host's is open.
+        /// A stack rather than recursion. The recursive version held one live host enumerator per
+        /// level of the tree for the whole walk. Callers report progress as they go, reporting
+        /// progress pumps the message loop, and pumping while the host's own collections are being
+        /// enumerated lets Navisworks act on a click that mutates them, which terminates the process
+        /// in native code. Here each node's children are read into a list and the host's enumerator
+        /// is released immediately, so nothing of the host's is open when a caller pumps.
         /// </summary>
         private static IEnumerable<ModelItem> Leaves(IEnumerable<ModelItem> roots)
         {
@@ -1069,20 +1063,19 @@ namespace CamelWorks.Nav
         /// <summary>
         /// A property value as text.
         ///
-        /// <b>Every kind the host has, not just the string one.</b> A variant is one of fourteen
-        /// things, and asking a boolean for its display string throws. Reading only display
-        /// strings therefore blanks every property that is not text - Item / Hidden, Element ID,
-        /// a duct's Length - while the name still appears in the pickers, because a name is
-        /// harvested from the category whether or not its value renders. So every branch is
-        /// covered here, and this is the only place that turns a variant into text.
+        /// Covers every variant kind, not only the string one. A variant is one of fourteen things
+        /// and asking a boolean for its display string throws, so reading only display strings
+        /// blanks every property that is not text — Item / Hidden, Element ID, a duct's Length —
+        /// while the name still appears in the pickers, because a name is harvested from the
+        /// category whether or not its value renders. Every branch is covered here, and this is the
+        /// only place that turns a variant into text.
         ///
-        /// <b>Doubles by way of AnyDouble.</b> Length, area, volume and angle are their own
-        /// variant kinds and <c>IsDouble</c> is false for all four; <c>IsAnyDouble</c> is the
-        /// branch that takes them, plain doubles included, so it is asked first.
+        /// Doubles go through AnyDouble. Length, area, volume and angle are their own variant kinds
+        /// and <c>IsDouble</c> is false for all four; <c>IsAnyDouble</c> takes them, plain doubles
+        /// included, so it is tested first.
         ///
-        /// <b>Nothing rather than a type name.</b> An unrecognised kind returns null, not
-        /// <c>value.ToString()</c> - which yields "Autodesk.Navisworks.Api.VariantData" and would
-        /// read, in a column, as though the element carried that.
+        /// An unrecognised kind returns null rather than <c>value.ToString()</c>, which yields
+        /// "Autodesk.Navisworks.Api.VariantData" and would read in a column as an element property.
         ///
         /// Every branch is guarded. A federation contains property values the host itself cannot
         /// render, and one of them must not stop a traversal of two hundred thousand elements.

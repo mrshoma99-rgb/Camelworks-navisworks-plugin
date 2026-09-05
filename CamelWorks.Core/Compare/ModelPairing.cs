@@ -78,19 +78,18 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Which model on the baseline side is which model on the current side.
     ///
-    /// <b>Comparison stands or falls on this step.</b> An <see cref="Identity.ElementKey"/> is
-    /// scoped to its model's source path, so an element in <c>STR-R03.nwc</c> and the same element
-    /// in <c>STR-R04.nwc</c> have keys that can never be equal. Matching them means dropping the
-    /// scope — and a bare unscoped value would as happily match an element in the architectural
-    /// model to one in the structural model that happens to sit at the same place in its tree.
+    /// Comparison depends on this step. An <see cref="Identity.ElementKey"/> is scoped to its
+    /// model's source path, so an element in <c>STR-R03.nwc</c> and the same element in
+    /// <c>STR-R04.nwc</c> have keys that can never be equal. Matching them means dropping the scope,
+    /// and a bare unscoped value would as readily match an element in the architectural model to one
+    /// in the structural model that sits at the same place in its tree.
     ///
     /// So the scope is dropped only inside a pair, and a pair is only made for a stated reason.
-    /// Every pairing here carries the reason it was made and how much it can be relied on, and a
-    /// reason a person disagrees with is one they can override. That is the whole design: not
-    /// "trust the matching", but "here is what it did and why".
+    /// Every pairing carries the reason it was made and how far it can be relied on, and a reason
+    /// the user disagrees with can be overridden.
     ///
     /// Paired in strength order rather than greedily model by model, so a certain pairing is never
-    /// taken by a weaker one that happened to be considered first.
+    /// taken by a weaker one considered first.
     /// </summary>
     public sealed class ModelPairing
     {
@@ -292,17 +291,17 @@ namespace CamelWorks.Core.Compare
         };
 
         /// <summary>
-        /// A file name with any trailing revision marker taken off.
+        /// A file name with any trailing revision marker removed.
         ///
         /// <c>STR-MODEL-R04</c>, <c>STR-MODEL_rev4</c> and <c>STR-MODEL-S3-P04</c> all reduce to
-        /// <c>STR-MODEL</c>, which is how a pairing survives the weekly re-issue that renames every
-        /// file on the job.
+        /// <c>STR-MODEL</c>, which is how a pairing survives the re-issue that renames every file on
+        /// the job.
         ///
-        /// <b>Deliberately allowed to over-strip.</b> <c>BLOCK-A1</c> reduces to <c>BLOCK</c>, and
-        /// so does <c>BLOCK-A2</c> — two genuinely different models. That is safe only because a
-        /// stem shared by more than one candidate pairs nothing at all and is reported as needing a
-        /// decision. An over-eager rule that cannot act alone costs a question; a cautious one that
-        /// misses the weekly rename costs the feature.
+        /// It is allowed to over-strip. <c>BLOCK-A1</c> and <c>BLOCK-A2</c> both reduce to
+        /// <c>BLOCK</c>, and those are different models. That is safe only because a stem shared by
+        /// more than one candidate pairs nothing and is reported as needing a decision. An
+        /// over-eager rule that cannot act alone costs a question; a cautious one that misses the
+        /// rename costs the feature.
         /// </summary>
         /// <param name="fileName">A file name, with or without its extension.</param>
         public static string Stem(string? fileName)

@@ -24,24 +24,21 @@ namespace CamelWorks.Core.People
     /// <summary>
     /// Who a clash is assigned to: a person, or a whole role, company or team.
     ///
-    /// <b>Neither "party" nor "assignee".</b> "Party" already means an organisation everywhere
-    /// else in this product - the ledger, the key plan and the BCF merge all use it that way -
-    /// and this is the wider thing a company is only one kind of. "Assignee" is a name the host
-    /// and WPF already use, and a Core type that shadows one of theirs has to be written out in
-    /// full at every use in the UI.
+    /// Named neither "party" nor "assignee". "Party" already means an organisation elsewhere in this
+    /// product — the ledger, the key plan and the BCF merge all use it that way — and this is the
+    /// wider thing a company is one kind of. "Assignee" is a name the host and WPF already use, and
+    /// a Core type that shadows one of theirs has to be written out in full at every use in the UI.
     ///
-    /// <b>Why not just a name.</b> A coordinator assigns two hundred clashes on a Friday and
-    /// does not know, and should not have to know, which architect will pick each one up. What
-    /// they know is that it is architecture's - the ARC team's, or the fire engineer's, or
-    /// Acme's. Writing that as a person's name means guessing, and writing it as a bare string
-    /// means the board cannot tell "Sam Reed" the person from "Structures" the team, so it can
-    /// neither draw them differently nor narrow to one of them.
+    /// Not just a name, because a coordinator assigning two hundred clashes does not know which
+    /// architect will pick each one up. What they know is that it is architecture's — the ARC team's,
+    /// the fire engineer's, or a company's. Writing that as a person's name means guessing, and
+    /// writing it as a bare string means the board cannot tell a person from a team, so it can
+    /// neither draw them differently nor filter to one of them.
     ///
-    /// <b>Held as a string, because that is what the host has.</b> Navisworks' assignee field is
-    /// one string per result, and this has to survive a round trip through it and through every
-    /// export - so the kind rides in front of the name as a prefix. A name with no prefix is a
-    /// person, which is what every assignment written before this existed was, so old boards read
-    /// back unchanged.
+    /// Held as a string, because that is what the host has. Navisworks' assignee field is one string
+    /// per result, and this has to survive a round trip through it and through every export, so the
+    /// kind rides in front of the name as a prefix. A name with no prefix is a person, which is what
+    /// every assignment written before this existed was, so old boards read back unchanged.
     /// </summary>
     public readonly struct Responsible : IEquatable<Responsible>
     {
@@ -161,12 +158,11 @@ namespace CamelWorks.Core.People
         /// <summary>
         /// Several responsibles as the one string the host's field can hold.
         ///
-        /// <b>Why a list at all.</b> A clash is often two people's problem - the architect who
-        /// drew the wall and the engineer who ran the duct through it - and a field that holds
-        /// one made somebody pick which of them it was going to chase. The host gives us one
-        /// string per result, so the list rides in it, separated the way a person would write it.
-        /// One name with no separator is one person, which is what every assignment written
-        /// before this was.
+        /// A clash is commonly two parties' problem — the architect who drew the wall and the
+        /// engineer who ran the duct through it — and a field that held one forced a choice between
+        /// them. The host gives one string per result, so the list rides in it, separated
+        /// conventionally. One name with no separator is one person, which is what every assignment
+        /// written before this was.
         /// </summary>
         /// <param name="all">Who it is assigned to.</param>
         public static string Write(IEnumerable<Responsible>? all) =>

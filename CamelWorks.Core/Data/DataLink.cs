@@ -450,27 +450,26 @@ namespace CamelWorks.Core.Data
     /// A spreadsheet and the model, joined on a column, in both directions.
     ///
     /// The one-time import already existed: export a sheet, fill it in, bring it back. That works
-    /// because CamelWorks put its own identities in the sheet. It does nothing at all for the file
-    /// somebody else produced - an asset register keyed on tag, a procurement extract keyed on
-    /// order number, a P6 export keyed on activity code - which is every file that matters.
+    /// because CamelWorks put its own identities in the sheet. It does nothing for a file somebody
+    /// else produced — an asset register keyed on tag, a procurement extract keyed on order number, a
+    /// programme export keyed on activity code — which is most files that matter.
     ///
     /// So the join is explicit. Say which column identifies the element, say what on the element it
     /// is matched against, and say what each other column does: write it on, fill a gap with it, or
-    /// go the other way and put the model's value into the sheet. That last one is the write-back:
-    /// the register is the system of record for the tag and the model is the system of record for
-    /// the level and the size, and both directions have to work or somebody is retyping.
+    /// put the model's value into the sheet. That last is the write-back: the register is the system
+    /// of record for the tag and the model is the system of record for the level and the size, and
+    /// both directions have to work.
     ///
-    /// <b>On databases.</b> iConstruct takes MDB and ODBC. CamelWorks takes files, and reaches a
-    /// database through the export every database has. That is a deliberate choice, not an
-    /// omission: an ODBC link needs a driver installed on each coordinator's machine and a DSN
-    /// configured, it puts a database round trip on the thread that draws the model, and a query
+    /// It takes files rather than databases, and reaches a database through the export every
+    /// database has. That is a choice: an ODBC link needs a driver installed on each machine and a
+    /// DSN configured, it puts a database round trip on the thread that draws the model, and a query
     /// that hangs takes Navisworks with it. A CSV or XLSX drop is what an asset system can produce
     /// unattended, and re-running a saved link against a newer drop is one press.
     ///
     /// Nothing here has to be set up first. <see cref="Propose"/> reads the sheet and the model
-    /// together and works out which column is the key by seeing which one's values actually appear
-    /// in the model, then maps the rest by name. A saved link makes that repeatable; it is never
-    /// the price of the first run.
+    /// together and works out which column is the key by seeing which one's values appear in the
+    /// model, then maps the rest by name. A saved link makes that repeatable and is never the price
+    /// of the first run.
     /// </summary>
     public static class DataLink
     {
