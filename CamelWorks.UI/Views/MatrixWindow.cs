@@ -705,9 +705,11 @@ namespace CamelWorks.UI.Views
                             "Keep it in this project, so it is here next time this model is "
                             + "opened. It also saves itself as you work.", Keep));
 
-                Add(Ui.Verb(Glyphs.Table, "Export",
-                            "The grid and its legend as a spreadsheet, to send to whoever "
-                            + "asked", Sheet));
+                // <b>Two things go out of here now, so it is a menu.</b> The spreadsheet is for
+                // a person to read; the test file is for the seat that will run it, and it is
+                // the whole reason a matrix drawn on a laptop can become two hundred tests
+                // without the person who drew it being the person who has the licence.
+                Add(Parts.MenuButton("Export", Glyphs.Export, Exports()));
 
                 Apart();
 
@@ -4038,17 +4040,16 @@ namespace CamelWorks.UI.Views
             /// results grid does not use two different scales for one word.
             /// </summary>
             /// <param name="rank">The rank.</param>
-            private static System.Windows.Media.Brush Ranked(int rank) =>
-                rank == MatrixBoard.High
-                    ? new System.Windows.Media.SolidColorBrush(
-                        System.Windows.Media.Color.FromRgb(0xE5, 0x39, 0x35))
-                    : rank == MatrixBoard.Medium
-                    ? new System.Windows.Media.SolidColorBrush(
-                        System.Windows.Media.Color.FromRgb(0xFB, 0x8C, 0x00))
-                    : rank == MatrixBoard.Low
-                    ? new System.Windows.Media.SolidColorBrush(
-                        System.Windows.Media.Color.FromRgb(0x7C, 0xB3, 0x42))
-                    : Skin.Of("Card2");
+            private static System.Windows.Media.Brush Ranked(int rank)
+            {
+                // Read from Core rather than written here, because the export draws the same
+                // three colours: a coordinator who marks a printed matrix up in red and hands it
+                // back is marking up a picture of the screen, and two reds would make it a
+                // picture of a different board.
+                var colour = MatrixInk.OfRank(rank);
+
+                return colour.Length == 0 ? Skin.Of("Card2") : Painted(colour, "Card2");
+            }
 
             /// <summary>
             /// The wash for a count, from the mildest thing on the board to the worst.
@@ -4058,22 +4059,12 @@ namespace CamelWorks.UI.Views
             /// which is where to go first.
             /// </summary>
             /// <param name="open">How many are still open on this pair.</param>
-            private System.Windows.Media.Brush Heat(int open)
-            {
-                var worst = Math.Max(1, _counts.Worst);
-                var how = Math.Min(1.0, Math.Max(0.0, (double)open / worst));
-
+            private System.Windows.Media.Brush Heat(int open) =>
                 // Pale amber to a strong red, which is the one ramp a coordinator reads without
                 // a key - and the only two ends this needs, because the question is "how bad".
-                var from = System.Windows.Media.Color.FromRgb(0xFF, 0xF3, 0xC4);
-                var to = System.Windows.Media.Color.FromRgb(0xE5, 0x39, 0x35);
-
-                return new System.Windows.Media.SolidColorBrush(
-                    System.Windows.Media.Color.FromRgb(
-                        (byte)(from.R + ((to.R - from.R) * how)),
-                        (byte)(from.G + ((to.G - from.G) * how)),
-                        (byte)(from.B + ((to.B - from.B) * how))));
-            }
+                // The ramp itself is Core's, so the sheet that goes to the meeting is the
+                // picture the meeting was shown.
+                Painted(MatrixInk.Heat(open, _counts.Worst), "Card2");
 
             private void Paint(Border cell, MatrixLine row, MatrixLine column)
             {
@@ -10122,6 +10113,45 @@ namespace CamelWorks.UI.Views
                 }
             }
 
+            /// <summary>The two ways a matrix leaves here: for a person, and for a seat.</summary>
+            private List<Parts.Entry> Exports()
+            {
+                var ranked = _board.Ranks().Any();
+                var counted = !_counts.IsEmpty;
+
+                var tabs = "the grid and its legend"
+                           + (ranked && counted ? ", the priorities and the counts"
+                               : ranked ? " and the priorities"
+                               : counted ? " and the counts"
+                               : string.Empty);
+
+                return new List<Parts.Entry>
+                {
+                    Parts.Entry.Heading("For somebody to read"),
+
+                    Parts.Entry.Saying("Spreadsheet\u2026", Glyphs.Table,
+                        "A tab per matrix - " + tabs + " - drawn the way this screen draws them",
+                        Sheet),
+
+                    Parts.Entry.Rule(),
+                    Parts.Entry.Heading("For a seat to run"),
+
+                    Parts.Entry.Saying("Tests for Navisworks\u2026", Glyphs.Clash,
+                        "An XML the Clash Detective imports, so the tests are made without "
+                        + "opening this tab on that seat", TestsFile),
+                };
+            }
+
+            /// <summary>
+            /// The matrix as a workbook that looks like the matrix.
+            ///
+            /// <b>What went out used to be the letters and nothing else.</b> The folders, the
+            /// colour that says which kind of test each block is, the dead triangle, the spine -
+            /// every one of them a decision somebody made on this screen, and every one of them
+            /// dropped on the way to the client, who then had to read the grid from scratch. And
+            /// it was one matrix of the three: the meeting that asks for the sheet is usually the
+            /// meeting that wants to know where the work is, which is the counts.
+            /// </summary>
             private void Sheet()
             {
                 var path = Ui.AskToSave("Save the matrix", "Excel|*.xlsx", "clash-matrix.xlsx");
@@ -10131,14 +10161,110 @@ namespace CamelWorks.UI.Views
                 try
                 {
                     System.IO.File.WriteAllBytes(path!,
-                        XlsxWriter.Write(new[] { MatrixSanity.AsSheet(_board, _legend) }));
+                        XlsxWriter.Write(MatrixSheets.Book(_board, _legend, _counts, Washes())));
 
-                    Did(Ui.Done("Saved. It carries the grid and the legend under it."));
+                    Did(Ui.Done("Saved. A tab per matrix, drawn the way this screen draws it, "
+                                + "and the legend under them."));
                 }
                 catch (Exception e)
                 {
                     Warned(Ui.Problem("It could not be written: " + Ui.Describe(e)));
                 }
+            }
+
+            /// <summary>
+            /// What colour each symbol's cells carry, for anything drawing this board elsewhere.
+            ///
+            /// A symbol with no colour of its own takes one from where it sits in the legend, and
+            /// which colour that is belongs to this screen's palette rather than to the board. So
+            /// it is resolved here, once, and handed over - rather than worked out a second time
+            /// somewhere that would drift from this one.
+            /// </summary>
+            private Dictionary<string, string> Washes()
+            {
+                var washes = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                foreach (var symbol in _legend.Symbols)
+                {
+                    if (!(Washed(symbol) is System.Windows.Media.SolidColorBrush solid)) continue;
+
+                    washes[symbol.Symbol] =
+                        "#" + solid.Color.R.ToString("X2", CultureInfo.InvariantCulture)
+                            + solid.Color.G.ToString("X2", CultureInfo.InvariantCulture)
+                            + solid.Color.B.ToString("X2", CultureInfo.InvariantCulture);
+                }
+
+                return washes;
+            }
+
+            /// <summary>
+            /// The matrix as a file the Clash Detective can make the tests from.
+            ///
+            /// <b>The build button needs the seat the matrix was drawn on.</b> A matrix is argued
+            /// over at a kick-off, on a laptop, by somebody who is often not the person who will
+            /// run it - and the only way it became tests was pressing the blue button inside the
+            /// model it was going to run against. So the board was drawn, a spreadsheet was sent,
+            /// and whoever had the licence built two hundred tests by hand from a picture of them.
+            ///
+            /// Written out, the board travels, and that person presses Import once.
+            /// </summary>
+            private void TestsFile()
+            {
+                var plan = MatrixPlanner.Plan(_board, _legend, _pattern);
+
+                if (plan.Tests.Count == 0)
+                {
+                    Warned(Ui.Note("Nothing in this matrix becomes a test yet, so there is "
+                                   + "nothing to write. Point its rows at saved sets and put a "
+                                   + "symbol in some cells."));
+                    return;
+                }
+
+                var path = Ui.AskToSave("Save the tests", "Clash tests|*.xml",
+                                        "clash-tests.xml");
+
+                if (string.IsNullOrWhiteSpace(path)) return;
+
+                var written = MatrixTestsXml.Write(plan, new MatrixTestsXmlOptions
+                {
+                    SourceFile = System.IO.Path.GetFileName(path),
+                    KeepFolders = true,
+                });
+
+                if (written.IsEmpty)
+                {
+                    // Every side of every test is something this file cannot name - which on a
+                    // board pointed at whole models is every cell of it, and is worth saying
+                    // rather than writing an empty file somebody imports and finds nothing in.
+                    Warned(Ui.Problem("None of these tests could be written: this file names a "
+                                      + "side by its saved set, and none of these rows points at "
+                                      + "one. Point them at sets and it will carry the lot."));
+                    return;
+                }
+
+                try
+                {
+                    System.IO.File.WriteAllText(path!, written.Text,
+                                                new System.Text.UTF8Encoding(false));
+                }
+                catch (Exception e)
+                {
+                    Warned(Ui.Problem("It could not be written: " + Ui.Describe(e)));
+                    return;
+                }
+
+                Did(Ui.Done("Saved. " + Ui.Count(written.Written, "test")
+                            + " for the Clash Detective to import."));
+
+                // Said afterwards and in full, because a file that quietly carried nine tests of
+                // a matrix of two hundred is worse than one that refused: the person importing it
+                // has no way to know what is not in it.
+                foreach (var why in written.Warnings.Take(6))
+                    Warned(Ui.Note(why));
+
+                if (written.Warnings.Count > 6)
+                    Warned(Ui.Note(Ui.Count(written.Warnings.Count - 6, "more cell")
+                                   + " could not be written either."));
             }
 
             // ---------------------------------------------------------------------------

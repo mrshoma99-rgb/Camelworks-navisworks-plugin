@@ -45,7 +45,7 @@ ALLOWED = {
     "Hash", "IfcGuid", "Measure", "BcfGuid",
     # File-format writers' internal blocks - the report IS the surface, not its parts.
     "ReportBlock", "PageBreakBlock", "ImageBlock", "LegendBlock", "DisclosureBlock",
-    "PngImage",
+    "PngImage", "XlsxSheet",
     # Exceptions.
     "SetExpressionTooComplexException",
 }

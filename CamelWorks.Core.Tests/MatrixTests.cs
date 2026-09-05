@@ -2681,4 +2681,315 @@ namespace CamelWorks.Core.Tests
             Assert.Null(board.At(board.Rows[0], board.Columns[0]));
         }
     }
+
+    /// <summary>
+    /// The workbook a matrix goes out as: one tab per matrix somebody has filled in, drawn the
+    /// way the screen draws it - the folder bands in their colours, the headings turned, the
+    /// spine, the dead half - and a legend whose keys carry the ground their cells carry.
+    /// </summary>
+    public class MatrixWorkbookTests
+    {
+        private static MatrixBoard Coloured()
+        {
+            var board = new MatrixBoard();
+
+            // Two lines in one folder, so the band has a run to merge across - which is the
+            // shape every real board has and the shape a one-line folder never tests.
+            board.File(board.AddPair(new MatrixLine("Walls", "1", MatrixSource.SelectionSet("ARC_Walls"))), "ARC");
+            board.File(board.AddPair(new MatrixLine("Ceilings", "2", MatrixSource.SelectionSet("ARC_Ceilings"))), "ARC");
+            board.File(board.AddPair(new MatrixLine("Slabs", "3", MatrixSource.SelectionSet("STR_Slabs"))), "STR");
+            board.File(board.AddPair(new MatrixLine("Pipes", "4", MatrixSource.SelectionSet("MEP_Pipes"))), "MEP");
+
+            board.Paint("ARC", "#B3E5FC");
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[0], board.Columns[2], "B");
+            board.Set(board.Rows[1], board.Columns[3], MatrixBoard.NotRequired);
+
+            return board;
+        }
+
+        private static MatrixLegend Key() =>
+            new MatrixLegend(new[]
+            {
+                new MatrixSymbol("A", colour: "#FFAA00"),
+                new MatrixSymbol("B", MatrixTest.Clearance, 0.025),
+            });
+
+        [Fact]
+        public void A_plain_board_writes_the_grid_and_the_legend()
+        {
+            var book = MatrixSheets.Book(Coloured(), Key());
+
+            Assert.Equal(new[] { "Clash matrix", "Legend" }, book.Select(s => s.Name).ToArray());
+        }
+
+        [Fact]
+        public void A_ranked_board_writes_a_priority_tab()
+        {
+            var board = Coloured();
+
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.High);
+
+            Assert.Contains("Priority", MatrixSheets.Book(board, Key()).Select(s => s.Name));
+        }
+
+        [Fact]
+        public void Counts_write_a_results_tab()
+        {
+            var board = Coloured();
+
+            var counts = MatrixTally.Of(new[]
+            {
+                new ClashTestRead(
+                    new ClashTestInfo("1", "Walls vs Slabs", null, 1, 0),
+                    new ClashTestSides("ARC_Walls", "STR_Slabs", Array.Empty<string>(),
+                                       Array.Empty<string>(), "Hard", 0.01),
+                    new[] { new ClashResultInfo("1", default, default, 0, 0, 0, "New", null) }),
+            });
+
+            var book = MatrixSheets.Book(board, Key(), counts);
+
+            Assert.Contains("Results", book.Select(s => s.Name));
+        }
+
+        [Fact]
+        public void The_cells_are_painted()
+        {
+            var book = MatrixSheets.Book(Coloured(), Key());
+            var grid = book[0];
+
+            // Row nought is the folder band, row one the headings, so the first pair sits at
+            // row two, column four.
+            Assert.True(grid.Styles.ContainsKey((2, 5)));
+            Assert.Equal("FFAA00", grid.Styles[(2, 5)].Fill);
+        }
+
+        [Fact]
+        public void A_symbol_with_no_colour_takes_the_one_it_is_handed()
+        {
+            var book = MatrixSheets.Book(Coloured(), Key(), null,
+                                         new Dictionary<string, string> { ["B"] = "#123456" });
+
+            Assert.Equal("123456", book[0].Styles[(2, 6)].Fill);
+        }
+
+        [Fact]
+        public void The_diagonal_carries_the_spine()
+        {
+            var grid = MatrixSheets.Book(Coloured(), Key())[0];
+
+            Assert.Equal("D7DBE3", grid.Styles[(2, 4)].Fill);
+        }
+
+        [Fact]
+        public void The_folder_band_is_merged_and_coloured()
+        {
+            var grid = MatrixSheets.Book(Coloured(), Key())[0];
+
+            Assert.Contains(grid.Merges, m => m.Row == 0 && m.Column == 4 && m.ToColumn == 5);
+            Assert.Equal("B3E5FC", grid.Styles[(0, 4)].Fill);
+        }
+
+        [Fact]
+        public void A_headings_row_is_turned()
+        {
+            var grid = MatrixSheets.Book(Coloured(), Key())[0];
+
+            Assert.True(grid.Styles[(1, 4)].Turned);
+        }
+
+        [Fact]
+        public void A_row_header_is_washed_with_its_folder()
+        {
+            var grid = MatrixSheets.Book(Coloured(), Key())[0];
+
+            // A long way to white, so a name is still readable on it.
+            Assert.NotNull(grid.Styles[(2, 2)].Fill);
+            Assert.NotEqual("B3E5FC", grid.Styles[(2, 2)].Fill);
+        }
+
+        [Fact]
+        public void The_workbook_opens()
+        {
+            var board = Coloured();
+
+            board.Rank(board.Rows[0], board.Columns[1], MatrixBoard.High);
+
+            var bytes = XlsxWriter.Write(MatrixSheets.Book(board, Key()).ToList());
+
+            Assert.True(bytes.Length > 0);
+            Assert.Equal(0x50, bytes[0]);
+            Assert.Equal(0x4B, bytes[1]);
+        }
+
+        [Fact]
+        public void Every_style_used_gets_a_format()
+        {
+            var bytes = XlsxWriter.Write(MatrixSheets.Book(Coloured(), Key()).ToList());
+            var text = Unzipped(bytes, "xl/styles.xml");
+
+            Assert.Contains("patternType=\"solid\"", text);
+            Assert.Contains("FFB3E5FC", text);
+            Assert.Contains("textRotation=\"90\"", text);
+        }
+
+        [Fact]
+        public void The_merges_are_written()
+        {
+            var bytes = XlsxWriter.Write(MatrixSheets.Book(Coloured(), Key()).ToList());
+
+            Assert.Contains("<mergeCells", Unzipped(bytes, "xl/worksheets/sheet1.xml"));
+        }
+
+        [Fact]
+        public void A_report_that_says_nothing_about_colour_is_unchanged()
+        {
+            var sheet = new XlsxSheet("Plain");
+
+            sheet.Row("One", "Two");
+            sheet.Row("a", "b");
+
+            var text = Unzipped(XlsxWriter.Write(new[] { sheet }), "xl/worksheets/sheet1.xml");
+
+            // The header still points at the bold format and nothing else carries one.
+            Assert.Contains("s=\"1\"", text);
+        }
+
+        private static string Unzipped(byte[] bytes, string path)
+        {
+            using var buffer = new MemoryStream(bytes);
+            using var zip = new System.IO.Compression.ZipArchive(buffer);
+
+            var entry = zip.GetEntry(path);
+
+            Assert.NotNull(entry);
+
+            using var stream = entry!.Open();
+            using var reader = new StreamReader(stream);
+
+            return reader.ReadToEnd();
+        }
+    }
+
+    /// <summary>
+    /// The matrix as a file the Clash Detective makes its tests from: names, sides, kinds and
+    /// tolerances, and nothing it cannot name written as though it could be.
+    /// </summary>
+    public class MatrixTestsXmlTests
+    {
+        private static MatrixPlan Planned(out MatrixBoard board)
+        {
+            board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Walls", "1", MatrixSource.SelectionSet("ARC_Walls")));
+            board.AddPair(new MatrixLine("Slabs", "2", MatrixSource.SelectionSet("STR_Slabs", "Structure")));
+
+            board.Set(board.Rows[0], board.Columns[1], "B");
+
+            return MatrixPlanner.Plan(board,
+                new MatrixLegend(new[]
+                {
+                    new MatrixSymbol("B", MatrixTest.Clearance, 0.025),
+                }));
+        }
+
+        [Fact]
+        public void One_cell_becomes_one_test()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _));
+
+            Assert.Equal(1, file.Written);
+            Assert.Contains("<clashtest ", file.Text);
+        }
+
+        [Fact]
+        public void The_kind_and_the_tolerance_are_the_symbols()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _));
+
+            Assert.Contains("test_type=\"clearance\"", file.Text);
+            Assert.Contains("tolerance=\"0.025000\"", file.Text);
+        }
+
+        [Fact]
+        public void A_side_is_its_saved_set_as_a_locator()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _));
+
+            Assert.Contains("<locator>lcop_selection_set_tree/ARC_Walls</locator>", file.Text);
+        }
+
+        [Fact]
+        public void A_set_in_a_folder_carries_the_folder()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _));
+
+            Assert.Contains("<locator>lcop_selection_set_tree/Structure/STR_Slabs</locator>",
+                            file.Text);
+        }
+
+        [Fact]
+        public void The_prefix_can_be_changed_without_a_new_build()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _),
+                new MatrixTestsXmlOptions { SetPrefix = "sets/" });
+
+            Assert.Contains("<locator>sets/ARC_Walls</locator>", file.Text);
+        }
+
+        [Fact]
+        public void It_carries_no_results()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _));
+
+            Assert.DoesNotContain("<clashresults", file.Text);
+        }
+
+        [Fact]
+        public void A_side_the_file_cannot_name_is_left_out_and_said()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("Walls", "1", MatrixSource.SelectionSet("ARC_Walls")));
+            board.AddPair(new MatrixLine("Everything", "2",
+                                         MatrixSource.Models(new[] { "one.nwc" })));
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            var file = MatrixTestsXml.Write(MatrixPlanner.Plan(board,
+                new MatrixLegend(new[] { new MatrixSymbol("A") })));
+
+            Assert.Equal(0, file.Written);
+            Assert.True(file.IsEmpty);
+            Assert.Contains(file.Warnings, w => w.Contains("cannot name"));
+        }
+
+        [Fact]
+        public void A_matrix_that_plans_nothing_writes_an_empty_batch()
+        {
+            var file = MatrixTestsXml.Write(MatrixPlanner.Plan(new MatrixBoard(),
+                                                               new MatrixLegend()));
+
+            Assert.True(file.IsEmpty);
+            Assert.Contains("<clashtests>", file.Text);
+        }
+
+        [Fact]
+        public void The_header_declares_its_units()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _),
+                new MatrixTestsXmlOptions { Units = "mm" });
+
+            Assert.Contains("<exchange units=\"mm\"", file.Text);
+        }
+
+        [Fact]
+        public void It_is_well_formed()
+        {
+            var file = MatrixTestsXml.Write(Planned(out _));
+
+            Assert.NotNull(XDocument.Parse(file.Text));
+        }
+    }
 }
