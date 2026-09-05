@@ -4299,8 +4299,10 @@ namespace CamelWorks.UI.Views
             ///
             /// <b>Paler by a long way, and never on the cells.</b> The header is a label, and a
             /// label washed at the band's own strength competes with the band and with the
-            /// symbols beside it; a fifth of the way from white is enough to group twenty
-            /// headers by eye and quiet enough to read a name on. The cells are left alone
+            /// symbols beside it. Most of the way to white is enough to group twenty headers by
+            /// eye and quiet enough to read a name on - and the amount is a fraction of the
+            /// distance rather than a fixed pale colour, so a folder given a strong colour and
+            /// one given an already-pale colour both come out as a wash of themselves. The cells are left alone
             /// entirely: a cell's colour is what is decided in it - the symbol's wash, a rank, a
             /// count - and a second colour underneath saying which folder its row is in would
             /// put two meanings on one ground.
@@ -4319,7 +4321,7 @@ namespace CamelWorks.UI.Views
 
                 if (colour.Length == 0) return;
 
-                head.Background = Washing(colour, 0.8);
+                head.Background = Washing(colour, 0.62);
             }
 
             /// <summary>
@@ -5788,7 +5790,10 @@ namespace CamelWorks.UI.Views
             {
                 _palette.Children.Clear();
 
-                _paletteTitle.Text = _shown == Showing.Priority ? "Priority" : "Palette";
+                // Upper-cased here, because Ui.Eyebrow does it to the text it is handed and
+                // this writes over that text - which is how the one eyebrow on the screen ended
+                // up in sentence case beside DECIDED and RANKED.
+                _paletteTitle.Text = _shown == Showing.Priority ? "PRIORITY" : "PALETTE";
 
                 // The three things a legend button does - add a symbol, change one, give the
                 // unmeant ones meanings - are all about the symbols, so they go while the
