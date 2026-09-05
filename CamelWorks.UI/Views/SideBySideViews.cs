@@ -14,22 +14,21 @@ using CamelWorks.Core.Report;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Compare two things that are both here now.
+    /// Compare two things that are both present now.
     ///
-    /// <b>Why this exists beside the baseline comparison.</b> Comparing the model against a
-    /// snapshot of itself answers one question — what has happened since Tuesday — and it is not
-    /// the only comparison anybody makes. The supplier sends back the model you gave them and you
-    /// want to know what they did to it. Two search sets are supposed to hold the same thing and
-    /// somebody suspects they do not. A revision arrives as a separate file and is appended beside
-    /// the old one rather than replacing it. None of those has a snapshot, none of them is the
-    /// model against its own past, and all of them are the same question: <i>what is in one and
-    /// not the other, and what is in both but different.</i>
+    /// Separate from the baseline comparison. Comparing the model against a snapshot of itself
+    /// answers one question — what has happened since a given date — and it is not the only
+    /// comparison people make. A supplier returns the model they were given and the question is what
+    /// they changed. Two search sets are meant to hold the same thing and may not. A revision
+    /// arrives as a separate file and is appended beside the old one rather than replacing it. None
+    /// of those has a snapshot, and all of them ask the same question: what is in one and not the
+    /// other, and what is in both but different.
     ///
-    /// <b>It reuses the whole comparison engine.</b> Each side becomes a snapshot taken here and
-    /// now, and the ordinary compare runs between them — so the matching rungs, the tolerance, the
-    /// moved-not-replaced pairing and the property diff all behave exactly as they do against a
-    /// baseline. Two models pair as the only candidate on each side even when their names differ,
-    /// which is precisely the supplier case.
+    /// It reuses the whole comparison engine. Each side becomes a snapshot taken here and now, and
+    /// the ordinary compare runs between them, so the matching rungs, the tolerance, the
+    /// moved-not-replaced pairing and the property diff behave as they do against a baseline. Two
+    /// models pair as the only candidate on each side even when their names differ, which is the
+    /// supplier case.
     /// </summary>
     public static class SideBySideViews
     {

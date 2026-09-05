@@ -13,21 +13,20 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Sign-off and fabrication release, and what has moved since.
     ///
-    /// <b>Two things a coordination model has to be able to say and cannot:</b> this level was
-    /// signed off on the fourteenth, and these hangers were released to fabrication on the
-    /// twentieth. Both are the same act — somebody put their name to a state of the model — and
-    /// both are worthless unless the tool can afterwards say what has changed since. So it is one
-    /// mechanism, and the Change Notice is the half that earns it.
+    /// Two things a coordination model has to be able to record: that a level was signed off on a
+    /// date, and that a set of components was released to fabrication on another. Both are the same
+    /// act — putting a name to a state of the model — and both are worthless unless the tool can
+    /// afterwards say what has changed since. So it is one mechanism, and the Change Notice is the
+    /// half that makes it useful.
     ///
-    /// <b>Why it lives in Compare Track.</b> It used to be a Clash Manager tab, which was an
-    /// implementation accident: the element list was harvested from the clash board, so the tab
-    /// went where the board was. Nothing about a freeze is clash-shaped — it is a named baseline
-    /// with a signature and a tamper hash on it, and the half that reads it back was already here.
-    /// The scope is now anything the model can name, so a level can be signed off in a week when
-    /// nobody has run a clash test.
+    /// It lives in Compare Track. It was previously a Clash Manager tab because the element list was
+    /// harvested from the clash board. Nothing about a freeze is clash-shaped: it is a named
+    /// baseline with a signature and a tamper hash, and the half that reads it back was already
+    /// here. The scope is now anything the model can name, so a level can be signed off in a week
+    /// when no clash test was run.
     ///
-    /// The unfreeze is always visible. A mechanism that can only be entered is one people learn
-    /// not to enter.
+    /// The unfreeze is always visible. A mechanism that can only be entered is one people learn not
+    /// to enter.
     /// </summary>
     public static class FreezeViews
     {

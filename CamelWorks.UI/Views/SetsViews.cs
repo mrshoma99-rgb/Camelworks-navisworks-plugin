@@ -76,10 +76,10 @@ namespace CamelWorks.UI.Views
         /// The set builder, held as a small object rather than a function because it edits a list
         /// the screen redraws itself from.
         ///
-        /// <b>The editor's shape is disjunctive normal form.</b> Groups are ORed, conditions inside
-        /// a group are ANDed, and any condition can be negated. That is not a simplification of
-        /// boolean algebra — it is all of it, and it happens to be the exact shape the host can run,
-        /// so what the user builds and what Navisworks executes are the same structure.
+        /// The editor's shape is disjunctive normal form: groups are ORed, conditions inside a
+        /// group are ANDed, and any condition can be negated. That is not a simplification of
+        /// boolean algebra but all of it, and it is the exact shape the host can run, so what the
+        /// user builds and what Navisworks executes are the same structure.
         /// </summary>
         private sealed class SetBuilderScreen
         {

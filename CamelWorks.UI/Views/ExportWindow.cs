@@ -18,20 +18,19 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Send somebody the model, or send them the numbers.
     ///
-    /// <b>GLB is the one that matters.</b> It opens in a browser, on a phone, on a tablet on site,
-    /// with nothing installed and no licence. Every other way of handing a client a model asks them
-    /// to install something, and the tools that write this format for Navisworks are per-seat,
-    /// per-format licences on top of the Navisworks the firm already bought.
+    /// GLB is the important one. It opens in a browser, on a phone or on a tablet on site, with
+    /// nothing installed and no licence. Every other way of handing a client a model asks them to
+    /// install something, and the tools that write this format for Navisworks are per-seat,
+    /// per-format licences on top of the Navisworks the firm already has.
     ///
-    /// <b>It is geometry, not a model.</b> Triangles, names and colours go; properties, structure,
-    /// clashes and viewpoints do not. That is stated on the screen rather than discovered, because
-    /// somebody who sends a client a GLB expecting IFC has sent the wrong thing and will not find
-    /// out until they are asked for a property.
+    /// It is geometry, not a model. Triangles, names and colours go; properties, structure, clashes
+    /// and viewpoints do not. That is stated on the screen rather than discovered, because somebody
+    /// who sends a client a GLB expecting IFC will not find out until they are asked for a property.
     ///
-    /// The spreadsheet and the drawing are the other two things people mean by "send them the
-    /// model": the properties, and a DXF a CAD package opens. Three buttons and three windows,
-    /// because the three share a scope picker and nothing else - different inputs, a different
-    /// file, and a different person at the other end.
+    /// The spreadsheet and the drawing are the other two things people mean by sending the model:
+    /// the properties, and a DXF a CAD package opens. Three buttons and three windows, because the
+    /// three share a scope picker and nothing else — different inputs, a different file, and a
+    /// different recipient.
     /// </summary>
     public static class ExportWindow
     {

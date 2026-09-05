@@ -15,16 +15,14 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// Dyncamelo graphs, run from here.
     ///
-    /// <b>Why this replaced a canvas.</b> This app used to carry a node editor of its own — a
-    /// smaller, weaker one than the editor Dyncamelo already is, maintained twice, teaching two
-    /// vocabularies for one idea. Dyncamelo ships in the same install now, so the editing belongs
-    /// there and this tab does the half the editor is a bad place for: pick a graph off the shelf
-    /// and run it against the document that is open, without a canvas in the way.
+    /// This replaced a node editor of its own — a smaller, weaker one than the editor Dyncamelo
+    /// already is, maintained twice and teaching two vocabularies for one idea. Dyncamelo ships in
+    /// the same install, so the editing belongs there and this tab does the half the editor is a bad
+    /// place for: pick a graph and run it against the open document.
     ///
-    /// <b>What it does not do.</b> It does not edit. A graph that needs changing opens in
-    /// Dyncamelo, which is one press away and is the tool for it. Nothing here re-implements a
-    /// node, a port or a wire — the whole surface is a list of files, a button, and what the run
-    /// had to say.
+    /// It does not edit. A graph that needs changing opens in Dyncamelo, which is one press away.
+    /// Nothing here re-implements a node, a port or a wire; the surface is a list of files, a button
+    /// and the run's output.
     /// </summary>
     public static class GraphViews
     {
