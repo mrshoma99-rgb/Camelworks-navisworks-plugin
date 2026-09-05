@@ -61,11 +61,18 @@ namespace CamelWorks.UI.Views
             /// <summary>The host's identity for the test, which the assignment is keyed on.</summary>
             internal string Id => Read.Test.Id;
 
-            internal string Between =>
-                Read.Shape == null || !Read.Shape.KnowsA || !Read.Shape.KnowsB
-                    ? "not stated"
-                    : Side(Read.Shape.SetA, Read.Shape.ScopesA) + "  vs  "
-                      + Side(Read.Shape.SetB, Read.Shape.ScopesB);
+            internal bool Stated =>
+                Read.Shape != null && Read.Shape.KnowsA && Read.Shape.KnowsB;
+
+            /// <summary>The first side, or the whole answer when there is not one.</summary>
+            internal string SideA =>
+                Stated ? Side(Read.Shape!.SetA, Read.Shape.ScopesA) : "not stated";
+
+            /// <summary>The second side, or empty when there is not one.</summary>
+            internal string SideB =>
+                Stated ? Side(Read.Shape!.SetB, Read.Shape.ScopesB) : string.Empty;
+
+            internal string Between => Stated ? SideA + "  vs  " + SideB : "not stated";
 
             private static string Side(string? set, IReadOnlyList<string> scopes) =>
                 !string.IsNullOrWhiteSpace(set)
@@ -529,7 +536,7 @@ namespace CamelWorks.UI.Views
         {
             into.Children.Clear();
 
-            var head = Line(null, "Test", "Between", null, "Read by", heading: true);
+            var head = Line(null, "Test", "Between", null, null, "Read by", heading: true);
 
             into.Children.Add(head);
 
@@ -548,7 +555,7 @@ namespace CamelWorks.UI.Views
             {
                 var one = row;
 
-                var line = Line(one.Chosen, one.Name, one.Between,
+                var line = Line(one.Chosen, one.Name, one.SideA, one.SideB,
                                 Assigning(one, patterns, put), null, heading: false);
 
                 line.Cursor = Cursors.Hand;
@@ -590,8 +597,8 @@ namespace CamelWorks.UI.Views
         /// <summary>Anchor row for shift-click range selection.</summary>
         private static Row? _anchor;
 
-        private static Border Line(bool? ticked, string name, string between, UIElement? by,
-                                   string? byText, bool heading)
+        private static Border Line(bool? ticked, string name, string between, string? alsoBetween,
+                                   UIElement? by, string? byText, bool heading)
         {
             var grid = new Grid();
 
@@ -652,7 +659,22 @@ namespace CamelWorks.UI.Views
             }
 
             Cell(1, name, heading, heading ? "Caps" : "Body");
-            Cell(2, between, false, heading ? "Caps" : "Hint");
+
+            if (string.IsNullOrEmpty(alsoBetween))
+            {
+                Cell(2, between, false, heading ? "Caps" : "Hint");
+            }
+            else
+            {
+                // Two lines rather than one. A saved set on a real job is thirty characters, so
+                // both sides and a separator do not fit a column this table can spare, and one
+                // line trimmed every row mid-word — losing the second side, which is half of
+                // what the column is for.
+                var sides = Sides(between, alsoBetween!);
+
+                Grid.SetColumn(sides, 2);
+                grid.Children.Add(sides);
+            }
 
             if (by != null)
             {
@@ -698,6 +720,35 @@ namespace CamelWorks.UI.Views
             said.Margin = new Thickness(4, 8, 4, 0);
 
             into.Children.Add(said);
+        }
+
+        /// <summary>What a test is between, stacked so neither side is trimmed away.</summary>
+        /// <param name="a">The first side.</param>
+        /// <param name="b">The second side.</param>
+        private static UIElement Sides(string a, string b)
+        {
+            TextBlock One(string said, bool second)
+            {
+                var line = new TextBlock
+                {
+                    Text = second ? "vs  " + said : said,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Margin = new Thickness(0, second ? 1 : 0, 8, 0),
+                    ToolTip = said,
+                }.Wearing("Hint");
+
+                if (second) line.Tint(TextBlock.ForegroundProperty, "Muted");
+
+                return line;
+            }
+
+            var held = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+
+            held.Children.Add(One(a, false));
+            held.Children.Add(One(b, true));
+
+            return held;
         }
 
         /// <summary>
