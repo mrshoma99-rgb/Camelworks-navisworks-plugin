@@ -971,7 +971,12 @@ namespace CamelWorks.UI.Views
                 // switched back to. The cells follow it.
                 _scroll.SizeChanged += (s, e) => Ui.Safely(() =>
                 {
-                    if (_board.Rows.Count > 0 && _board.Columns.Count > 0 && Fits()) Relaid();
+                    if (_board.Rows.Count == 0 || _board.Columns.Count == 0) return;
+
+                    // A width change that does not move the cell size still moves the slack, and
+                    // the strip past the plus is what would otherwise grow with the window.
+                    if (Fits()) Relaid();
+                    else Filling();
                 });
 
                 Grid.SetRow(_scroll, 1);
@@ -1108,6 +1113,45 @@ namespace CamelWorks.UI.Views
                 RedrawAcross();
                 RedrawDown();
                 RedrawCells();
+
+                Filling();
+            }
+
+            /// <summary>
+            /// Let the add-a-discipline slot take up whatever width is left over.
+            ///
+            /// Cells are a whole number of pixels wide and never wider than
+            /// <see cref="MostWide"/>, so the columns rarely land exactly on the edge of the pane.
+            /// What was left over was drawn as nothing: a dead strip between the plus and the
+            /// inspector, which reads as the grid having failed to finish rather than as a grid
+            /// that ends where it ends.
+            ///
+            /// The slack goes to the slot the plus already sits in, so the row of columns runs out
+            /// to the edge and the plus stays where it was. A grid wider than the pane has no
+            /// slack and is left alone.
+            /// </summary>
+            private void Filling()
+            {
+                var room = _scroll.ViewportWidth;
+                var last = _board.Columns.Count;
+
+                if (room <= 0 || last == 0) return;
+
+                var used = 0.0;
+
+                for (var c = 0; c < last; c++)
+                    if (!Hidden(_board.Columns[c]))
+                        used += CellWide;
+
+                var slack = new GridLength(Math.Max(CellWide, room - used));
+
+                // Both grids, and by the same number, because the band across the top is what
+                // makes the columns readable and it has to end where they do.
+                if (_sheet.ColumnDefinitions.Count > last)
+                    _sheet.ColumnDefinitions[last].Width = slack;
+
+                if (_across.ColumnDefinitions.Count > last)
+                    _across.ColumnDefinitions[last].Width = slack;
             }
 
             /// <summary>
