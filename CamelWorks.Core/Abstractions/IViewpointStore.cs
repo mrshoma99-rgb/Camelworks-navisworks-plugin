@@ -41,11 +41,11 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Give one viewpoint the overrides another one carries, keeping its own camera.
         ///
-        /// The host has no way to set a saved viewpoint's overrides directly, so this is done by
-        /// restoring the source, putting the camera back where the target had it, and re-capturing
-        /// the target from that. Which means <b>the target's redlines are replaced by the
-        /// source's</b> — the host's own replace does that and there is no call that does not.
-        /// Stated rather than discovered, since redlines somebody drew are not recoverable.
+        /// The host cannot set a saved viewpoint's overrides directly, so this restores the source,
+        /// puts the camera back where the target had it, and re-captures the target from that. The
+        /// target's redlines are therefore replaced by the source's; the host's own replace does the
+        /// same and there is no call that does not. Stated here because redlines cannot be
+        /// recovered.
         /// </summary>
         /// <param name="fromViewId">The viewpoint whose overrides are wanted.</param>
         /// <param name="toViewId">The viewpoint to put them on.</param>
@@ -107,13 +107,12 @@ namespace CamelWorks.Core.Abstractions
     /// <summary>
     /// Clash tests and their results.
     ///
-    /// <b>Manage only.</b> The host's clash assembly ships with Manage and not with Simulate, and
-    /// any type whose signature names a clash type fails to load where it is absent — including,
-    /// left unguarded, the very probe whose job is to report that it is absent. So this interface
-    /// lives behind a capability check and its implementation lives in its own assembly, loaded
-    /// only after that check passes. On Simulate the board still opens: it hydrates from the
-    /// sidecar store instead, and refuses exactly two things — running or creating a test, and
-    /// projecting status back into the host.
+    /// Manage only. The host's clash assembly ships with Manage and not with Simulate, and any type
+    /// whose signature names a clash type fails to load where it is absent — including, if left
+    /// unguarded, the probe whose job is to report that it is absent. So this interface sits behind
+    /// a capability check and its implementation lives in its own assembly, loaded only after that
+    /// check passes. On Simulate the board still opens, hydrating from the sidecar store, and
+    /// refuses two things: running or creating a test, and projecting status back into the host.
     /// </summary>
     public interface IClashSource
     {
@@ -201,20 +200,20 @@ namespace CamelWorks.Core.Abstractions
         bool Regroup(string testId, IReadOnlyList<string> resultIds, string groupName);
 
         /// <summary>
-        /// Put every result of one test where a chain of bands says it belongs, nesting the
-        /// host's groups along each trail when the document will hold them.
+        /// Put every result of one test where a chain of bands says it belongs, nesting the host's
+        /// groups along each trail when the document will hold them.
         ///
-        /// <b>Why this is not the call above in a loop.</b> That one takes one name and leaves
-        /// the rest of the test alone; this one states the whole assignment at once, which is
-        /// what lets it be a single edit to the document rather than one per group - fifty
-        /// rebuilds of the same test on a real board. It is also the only way to ask for depth,
-        /// because a trail is only a trail relative to the others beside it.
+        /// Not the call above in a loop. That one takes one name and leaves the rest of the test
+        /// alone; this states the whole assignment at once, which is what makes it a single edit to
+        /// the document rather than one per group — on a real board, fifty rebuilds of the same
+        /// test. It is also the only way to ask for depth, because a trail is only a trail relative
+        /// to the others beside it.
         ///
-        /// <b>It may not get what it asked for.</b> Whether the host's clash groups hold other
-        /// groups is a fact about the document, not about the API's types, so the implementation
-        /// tries, reads the tree back, and falls back to one group per trail - named for the
-        /// whole trail, so nothing collides and the board reads the same either way. The answer
-        /// says which happened.
+        /// The result may not match the request. Whether the host's clash groups hold other groups
+        /// is a fact about the document rather than about the API's types, so the implementation
+        /// tries, reads the tree back, and falls back to one group per trail, named for the whole
+        /// trail so nothing collides and the board reads the same either way. The answer says which
+        /// happened.
         /// </summary>
         /// <param name="testId">Which test.</param>
         /// <param name="paths">Each bucket: the trail down to it and the results in it.</param>
@@ -237,14 +236,12 @@ namespace CamelWorks.Core.Abstractions
         bool RenamePicked(string testId, IReadOnlyList<string> resultIds, string prefix);
 
         /// <summary>
-        /// Give one result the name it was actually given.
+        /// Give one result the name it was given.
         ///
-        /// <b>Not the numbering one with a list of one.</b> Renaming a single clash went through
-        /// <see cref="RenamePicked"/>, which takes a stem and numbers what it is given - so
-        /// typing "Corridor duct" produced "Corridor duct1", every time, on every rename. The
-        /// host has an exact rename and always did; it just was not reached for, because the
-        /// numbering one was written first and a rename of one row looked like a rename of a
-        /// list.
+        /// Not the numbering call with a list of one. Renaming a single clash previously went
+        /// through <see cref="RenamePicked"/>, which takes a stem and numbers what it is given, so
+        /// typing "Corridor duct" produced "Corridor duct1" on every rename. The host has an exact
+        /// rename as well.
         /// </summary>
         /// <param name="testId">Which test.</param>
         /// <param name="resultId">Which result.</param>
@@ -254,10 +251,10 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Change an existing test's tolerance and kind, keeping the test and its results.
         ///
-        /// <b>Why this is not delete-and-remake.</b> A matrix is edited all year and the results
-        /// are the work: statuses, assignments, comment trails, groups, a fortnight of review by
-        /// four people. Moving a legend from a hard clash at 10 mm to a clearance at 50 mm has
-        /// to reach the test that is already carrying that and change it where it stands.
+        /// Not delete-and-remake. A matrix is edited over the life of a project and the results are
+        /// the work: statuses, assignments, comment trails, groups, weeks of review by several
+        /// people. Moving a legend from a hard clash at 10 mm to a clearance at 50 mm must change
+        /// the test that already carries those results in place.
         /// </summary>
         /// <param name="testId">The test.</param>
         /// <param name="toleranceMetres">The tolerance it should now have, in metres.</param>
@@ -307,18 +304,17 @@ namespace CamelWorks.Core.Abstractions
         bool ApplyResultView(string testId, string resultId);
 
         /// <summary>
-        /// Select the elements the named results are between, using the handles the engine is
-        /// already holding.
+        /// Select the elements the named results are between, using the handles the engine already
+        /// holds.
         ///
-        /// <b>Why this is not "resolve the keys".</b> A row on the board carries an
+        /// Not a key resolve. A row on the board carries an
         /// <see cref="CamelWorks.Core.Identity.ElementKey"/> for each side, and turning one of
-        /// those back into an element can mean an index of every geometry leaf in the federation.
-        /// That is the right price for a key that arrived in a file from somebody else. It is the
-        /// wrong price here: these results came out of this document a moment ago and the engine
-        /// still has the two items each one is between, so selecting them is a copy, not a search.
+        /// those back into an element can mean indexing every geometry leaf in the federation. That
+        /// is the right cost for a key that arrived in a file from elsewhere and the wrong cost
+        /// here: these results came out of this document and the engine still holds the two items
+        /// each is between, so selecting them is a copy rather than a search.
         ///
-        /// Pressing Focus is the commonest thing anybody does on a board, and it must cost
-        /// nothing.
+        /// Focus is the most frequent action on a board and must stay cheap.
         /// </summary>
         /// <param name="testId">Which test the results belong to.</param>
         /// <param name="resultIds">Which results.</param>
@@ -329,16 +325,14 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Everything the board needs, in one walk of the clash tree.
         ///
-        /// <b>Why one call and not three.</b> Reading a board used to be <c>Tests()</c>, then
-        /// <c>Results(id)</c> and <c>Sides(id)</c> for each test. Every one of those looked the
-        /// test up by walking the whole tree of tests, so the read was quadratic in how many
-        /// tests a document has - and <c>Tests()</c> also materialised every result in the
-        /// document a second time, only to count them. One walk answers all of it.
+        /// Reading a board was previously <c>Tests()</c>, then <c>Results(id)</c> and
+        /// <c>Sides(id)</c> per test. Each of those located the test by walking the whole test tree,
+        /// so the read was quadratic in the number of tests, and <c>Tests()</c> also materialised
+        /// every result a second time just to count them. One walk answers all of it.
         ///
-        /// The comment trail is deliberately not here: a board shows the newest comment and how
-        /// many there are, and reading every body of every comment is a large share of the read
-        /// for something almost nothing looks at. <see cref="CommentsFor"/> fetches them when
-        /// something does.
+        /// The comment trail is deliberately excluded: a board shows the newest comment and the
+        /// count, and reading every comment body is a large share of the read for something rarely
+        /// looked at. <see cref="CommentsFor"/> fetches them on demand.
         /// </summary>
         /// <param name="onProgress">Called with the running result count; return false to stop.</param>
         /// <returns>Every test, with what it is between and what it found.</returns>
@@ -347,10 +341,10 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Read named properties off the elements each of a test's results is between.
         ///
-        /// <b>Why this is on the clash seam.</b> The alternative is to take each result's element
-        /// keys and resolve them back through the document, which for a key that is not an
-        /// instance GUID means indexing every geometry leaf in the federation. The engine is
-        /// already holding both elements of every result, so there is nothing to look up.
+        /// On the clash seam rather than the document seam. The alternative is to take each result's
+        /// element keys and resolve them through the document, which for a key that is not an
+        /// instance GUID means indexing every geometry leaf in the federation. The engine already
+        /// holds both elements of every result.
         /// </summary>
         /// <param name="testId">Which test.</param>
         /// <param name="wanted">The properties to read, each with the id to answer under.</param>
@@ -405,9 +399,9 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Change what one comment says.
         ///
-        /// <b>The host has no edit.</b> Every field of a comment is read-only, so this is a
-        /// rebuild of the trail with a new comment in the old one's place - which means the
-        /// original's date and id do not survive it. The caller has to be willing to say so.
+        /// The host has no edit. Every field of a comment is read-only, so this rebuilds the trail
+        /// with a new comment in the old one's place, and the original's date and id do not survive.
+        /// The caller has to be prepared to state that.
         /// </summary>
         /// <param name="testId">Which test.</param>
         /// <param name="resultId">Which result.</param>
@@ -419,10 +413,10 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Every property name carried by the elements the clashes are between.
         ///
-        /// <b>Why not the model's.</b> A property column reads off a clashing element, so the list
-        /// to choose from is the vocabulary of the clashing elements - not a sample of the
+        /// Not the model's properties. A property column reads off a clashing element, so the list
+        /// to choose from is the vocabulary of the clashing elements rather than a sample of the
         /// federation, which is what it used to be. A sample can miss the one property only the
-        /// clashing pipes carry, and it reads thousands of elements nobody is asking about.
+        /// clashing pipes carry, and it reads thousands of elements nobody asked about.
         ///
         /// Across every test, because a column added here is added to all of them.
         /// </summary>
@@ -460,12 +454,12 @@ namespace CamelWorks.Core.Abstractions
         }
 
         /// <summary>
-        /// The folders the set sits in, innermost last, or null when nobody recorded them.
+        /// The folders the set sits in, innermost last, or null when none were recorded.
         ///
-        /// <b>A name is not an identity.</b> A real document has "MEP" inside Level 01, another
-        /// inside Level 02, and two more under a package folder somebody made in March. Resolved
-        /// by name, all four are whichever one a depth-first walk reaches first - so a matrix
-        /// carefully pointed at four different disciplines quietly tests one of them four times.
+        /// A name is not an identity. A real document has "MEP" inside Level 01, another inside
+        /// Level 02, and more under package folders. Resolved by name, all of them become whichever
+        /// one a depth-first walk reaches first, so a matrix pointed at four different disciplines
+        /// tests one of them four times.
         /// </summary>
         public string? Path { get; }
 

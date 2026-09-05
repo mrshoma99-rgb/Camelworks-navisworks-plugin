@@ -8,21 +8,17 @@ using System.Text;
 
 namespace CamelWorks.Core.Report
 {
-    /// <summary>One sheet to be written.</summary>
     /// <summary>
     /// How one cell is drawn: its ground, its ink, and how the text sits in it.
     ///
-    /// <b>A matrix is a picture before it is a table.</b> Exported as bare letters on white, the
-    /// grid a coordination meeting spent an afternoon arranging arrives as a wall of characters:
+    /// A matrix is a picture as much as a table. Exported as bare letters on white, the grid loses
     /// the folders that group it, the colour that says which kind of test each symbol is, the
-    /// dead triangle, the diagonal - every one of them a thing the screen draws and the
-    /// spreadsheet did not. What comes back from the client is then marked up in a different
-    /// vocabulary from the one it was sent in.
+    /// unused triangle and the diagonal — everything the screen draws. What comes back from the
+    /// client is then marked up in a different vocabulary from the one it was sent in.
     ///
-    /// Deliberately small. A ground, an ink, bold, centred, turned on its side and a hairline
-    /// box: what a matrix needs and nothing that would grow a format surface nobody asked for.
-    /// Colours are <c>RRGGBB</c>, without the hash, because that is what the format wants and a
-    /// converter between two spellings of the same thing is a place for a bug to live.
+    /// Deliberately small: a ground, an ink, bold, centred, rotated and a hairline box. Colours are
+    /// <c>RRGGBB</c> without the hash, because that is what the format takes and a converter
+    /// between two spellings of the same value is somewhere for a bug to live.
     /// </summary>
     public readonly struct XlsxStyle : IEquatable<XlsxStyle>
     {
@@ -139,13 +135,12 @@ namespace CamelWorks.Core.Report
         public bool FreezeHeader { get; set; } = true;
 
         /// <summary>
-        /// How particular cells are painted, by their row and column, both counted from nought.
+        /// How particular cells are painted, by their row and column, both counted from zero.
         ///
-        /// <b>Kept beside the text rather than in it.</b> Every caller in this codebase builds a
-        /// sheet by handing <see cref="Row(string[])"/> a line of strings, and a report that has
-        /// nothing to say about colour should go on doing exactly that. A grid that is a picture
-        /// as much as a table - a clash matrix is read by its blocks of colour before anybody
-        /// reads a letter in it - says so here, cell by cell, and nothing else has to change.
+        /// Kept beside the text rather than in it. Every caller in this codebase builds a sheet by
+        /// handing <see cref="Row(string[])"/> a line of strings, and a report with nothing to say
+        /// about colour continues to do that. A grid that is read by its blocks of colour, such as a
+        /// clash matrix, states its painting here cell by cell, and nothing else changes.
         /// </summary>
         public IDictionary<(int Row, int Column), XlsxStyle> Styles { get; } =
             new Dictionary<(int, int), XlsxStyle>();
@@ -218,19 +213,18 @@ namespace CamelWorks.Core.Report
     /// <summary>
     /// A minimal XLSX writer.
     ///
-    /// Hand-rolled for the same reason as the JSON: the architecture test forbids a third-party
-    /// runtime, and a free plug-in loading into four host years alongside whatever else the user
-    /// has installed cannot afford an assembly-binding argument with somebody else's copy of a
-    /// spreadsheet library. This is also what keeps EPPlus — Polyform Noncommercial, and therefore
-    /// unusable in a product advertised as free for commercial use — out of the bundle.
+    /// Hand-rolled for the same reason as the JSON writer: the architecture test forbids a
+    /// third-party runtime, and a free plug-in loading into four host years alongside whatever else
+    /// the user has installed cannot risk an assembly-binding conflict with another copy of a
+    /// spreadsheet library. It also keeps EPPlus — Polyform Noncommercial, and so unusable in a
+    /// product advertised as free for commercial use — out of the bundle.
     ///
     /// Deliberately small: strings and numbers, one header row, a frozen pane, auto-width. No
-    /// formulas, no styling beyond bold headers, no charts. Everything a report needs and nothing
-    /// that would grow a format surface nobody asked for.
+    /// formulas, no charts, and no styling beyond what <see cref="XlsxStyle"/> carries.
     ///
-    /// <b>Every value is written as an inline string except recognised numbers.</b> Excel's
-    /// helpfulness is the enemy here: left to guess, it turns "L03-1" into a date and a leading
-    /// zero into nothing. A takeoff quantity must survive the round trip exactly.
+    /// Every value is written as an inline string except recognised numbers. Left to guess, Excel
+    /// turns "L03-1" into a date and drops a leading zero, and a takeoff quantity must survive the
+    /// round trip exactly.
     /// </summary>
     public static class XlsxWriter
     {
@@ -255,11 +249,11 @@ namespace CamelWorks.Core.Report
                 Add(zip, "_rels/.rels", RootRels);
                 Add(zip, "xl/workbook.xml", Workbook(sheets));
                 Add(zip, "xl/_rels/workbook.xml.rels", WorkbookRels(sheets.Count));
-                // <b>The stylesheet is built from what the sheets actually ask for.</b> A fixed
-                // one could only ever offer what somebody thought of in advance, and a matrix
-                // wants a ground per symbol, per folder, per rank and per step of a heat scale -
-                // which is a number nobody can name up front. Every distinct style used across
-                // the workbook becomes one format, once, and the cells point at it.
+                // The stylesheet is built from what the sheets ask for. A fixed one could only
+                // offer what was anticipated, and a matrix wants a ground per symbol, per folder,
+                // per rank and per step of a heat scale, which is not a number that can be named up
+                // front. Every distinct style used across the workbook becomes one format, once,
+                // and the cells point at it.
                 var wanted = Wanted(sheets);
 
                 Add(zip, "xl/styles.xml", Styles(wanted));
@@ -355,31 +349,11 @@ namespace CamelWorks.Core.Report
         }
 
         /// <summary>
-        /// Two cell formats: 0 = normal, 1 = bold. Enough for a header row and nothing more.
-        ///
-        /// <b>Small, but not as small as it will go.</b> Three of the things here look like
-        /// padding and are not, because Excel treats a stylesheet missing them as a damaged
-        /// workbook and offers to repair it rather than open it:
-        ///
-        /// <list type="bullet">
-        /// <item>Two fills. Index 1 has to be <c>gray125</c> whether or not anything uses it -
-        /// it is the reserved second entry, and one fill is the shape Excel rejects.</item>
-        /// <item>A <c>cellStyles</c> entry naming the Normal style. Without it the workbook has
-        /// no default style for anything to inherit from.</item>
-        /// <item>Every <c>xf</c> stating its numFmtId, fontId, fillId and borderId outright.
-        /// Left off they are not defaulted, they are absent.</item>
-        /// </list>
-        ///
-        /// No theme part is shipped, so nothing here may name one: <c>color theme="1"</c> and
-        /// <c>scheme val="minor"</c> both point at a part that is not in the package, which is
-        /// its own kind of broken.
-        /// </summary>
-        /// <summary>
         /// Every distinct style the workbook uses, in the order their formats are written.
         ///
-        /// Index nought is the plain cell and index one is the bold header, because the sheet
-        /// writer hard-codes those two for every report that says nothing about colour - so a
-        /// sheet built the old way comes out byte for byte as it did.
+        /// Index zero is the plain cell and index one is the bold header, because the sheet writer
+        /// hard-codes those two for every report that says nothing about colour, so a sheet built
+        /// the old way comes out byte for byte as it did.
         /// </summary>
         /// <param name="sheets">The workbook.</param>
         private static List<XlsxStyle> Wanted(IReadOnlyList<XlsxSheet> sheets)
@@ -403,28 +377,25 @@ namespace CamelWorks.Core.Report
         }
 
         /// <summary>
-        /// The stylesheet: a font, a fill and a border per distinct thing asked for, and one
-        /// format per style pointing at them.
+        /// The stylesheet: a font, a fill and a border per distinct thing asked for, and one format
+        /// per style pointing at them.
         ///
-        /// <b>Small, but not as small as it will go.</b> Three of the things here look like
-        /// padding and are not, because Excel treats a stylesheet missing them as a damaged
-        /// workbook and offers to repair it rather than open it:
+        /// Three of the entries here look redundant and are not, because Excel treats a stylesheet
+        /// missing them as a damaged workbook and offers to repair it rather than open it:
         ///
         /// <list type="bullet">
-        /// <item>Two fills before any of ours. Index one has to be <c>gray125</c> whether or not
-        /// anything uses it - it is the reserved second entry, and one fill is the shape Excel
-        /// rejects.</item>
-        /// <item>A <c>cellStyles</c> entry naming the Normal style. Without it the workbook has
-        /// no default style for anything to inherit from.</item>
-        /// <item>Every <c>xf</c> stating its numFmtId, fontId, fillId and borderId outright.
-        /// Left off they are not defaulted, they are absent.</item>
+        /// <item>Two fills before any of ours. Index one must be <c>gray125</c> whether or not
+        /// anything uses it; it is the reserved second entry, and a single fill is rejected.</item>
+        /// <item>A <c>cellStyles</c> entry naming the Normal style. Without it the workbook has no
+        /// default style to inherit from.</item>
+        /// <item>Every <c>xf</c> stating its numFmtId, fontId, fillId and borderId explicitly. Left
+        /// off they are absent rather than defaulted.</item>
         /// </list>
         ///
         /// No theme part is shipped, so nothing here may name one: <c>color theme="1"</c> and
-        /// <c>scheme val="minor"</c> both point at a part that is not in the package, which is
-        /// its own kind of broken.
+        /// <c>scheme val="minor"</c> both point at a part that is not in the package.
         /// </summary>
-        /// <param name="wanted">The styles used, index nought plain and index one bold.</param>
+        /// <param name="wanted">The styles used, index zero plain and index one bold.</param>
         private static string Styles(List<XlsxStyle> wanted)
         {
             // Fonts and fills are shared between styles that ask for the same one, because two
@@ -563,12 +534,12 @@ namespace CamelWorks.Core.Report
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
             sb.Append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
 
-            // <b>Order is part of the format.</b> A worksheet's children are a sequence, not a
-            // set: sheetViews, then cols, then sheetData. Written the other way round the file
-            // is still well-formed XML and every parser will read it - and Excel throws the
-            // whole part away and opens a repaired workbook with the sheet replaced. Which is
-            // exactly what it did, on every export of more than one row, because the frozen
-            // header is on by default and a one-row sheet was the only shape that escaped it.
+            // Order is part of the format. A worksheet's children are a sequence, not a set:
+            // sheetViews, then cols, then sheetData. Written in another order the file is still
+            // well-formed XML and every parser reads it, but Excel discards the whole part and
+            // opens a repaired workbook with the sheet replaced. That happened on every export of
+            // more than one row, because the frozen header is on by default and a one-row sheet was
+            // the only shape that avoided it.
             if (sheet.FreezeHeader && sheet.Rows.Count > 1)
                 sb.Append("<sheetViews><sheetView workbookViewId=\"0\">")
                   .Append("<pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/>")
