@@ -4599,6 +4599,12 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                if (_shown == Showing.Results)
+                {
+                    CountProgress();
+                    return;
+                }
+
                 var live = 0;
                 var done = 0;
                 var ruled = 0;
@@ -5748,6 +5754,80 @@ namespace CamelWorks.UI.Views
             /// a symbol means happens in the inspector: a palette that is also a form is neither.
             /// </summary>
             /// <summary>
+            /// How much of the board has nothing left open on it.
+            ///
+            /// Of the pairs a test actually covers, because a pair nobody has run is not a pair
+            /// somebody has finished with - and a bar that counted them as either would say the
+            /// job was further along or further behind than it is.
+            /// </summary>
+            private void CountProgress()
+            {
+                var covered = 0;
+                var clear = 0;
+
+                foreach (var row in _board.Rows)
+                foreach (var column in _board.Columns)
+                {
+                    if (!_board.IsKeptHalf(row, column)) continue;
+                    if (_board.IsSelfPair(row, column)) continue;
+
+                    var open = _counts.OpenBetween(row, column);
+
+                    if (open < 0) continue;
+
+                    covered++;
+
+                    if (open == 0) clear++;
+                }
+
+                _progress.Children.Add(Ui.Eyebrow("Cleared"));
+
+                var track = new Border
+                {
+                    Height = 6,
+                    CornerRadius = new CornerRadius(3),
+                    Margin = new Thickness(0, 5, 0, 4),
+                    ClipToBounds = true,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
+
+                track.Tint(Border.BackgroundProperty, "Nav");
+
+                var run = new Grid();
+
+                run.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(covered == 0 ? 0 : clear, GridUnitType.Star),
+                });
+
+                run.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(covered == 0 ? 1 : Math.Max(0, covered - clear),
+                                           GridUnitType.Star),
+                });
+
+                var filled = new Border();
+
+                filled.Tint(Border.BackgroundProperty, "Accent");
+
+                Grid.SetColumn(filled, 0);
+                run.Children.Add(filled);
+
+                track.Child = run;
+
+                _progress.Children.Add(track);
+
+                _progress.Children.Add(Ui.Small(
+                    clear.ToString(CultureInfo.InvariantCulture) + " of "
+                    + covered.ToString(CultureInfo.InvariantCulture)
+                    + " tested pairs have nothing open"));
+
+                _progress.Children.Add(Ui.Small(
+                    Ui.Count(_counts.Open, "clash") + " open across "
+                    + Ui.Count(_counts.Tests, "test")));
+            }
+
+            /// <summary>
             /// How much of the priority picture is filled in: ranked, of the pairs that could be.
             ///
             /// Of the checked pairs, not of every pair, because an undecided cell has no test to
@@ -5821,7 +5901,9 @@ namespace CamelWorks.UI.Views
                 // Upper-cased here, because Ui.Eyebrow does it to the text it is handed and
                 // this writes over that text - which is how the one eyebrow on the screen ended
                 // up in sentence case beside DECIDED and RANKED.
-                _paletteTitle.Text = _shown == Showing.Priority ? "PRIORITY" : "PALETTE";
+                _paletteTitle.Text = _shown == Showing.Priority ? "PRIORITY"
+                    : _shown == Showing.Results ? "WHAT CAME BACK"
+                    : "PALETTE";
 
                 // The three things a legend button does - add a symbol, change one, give the
                 // unmeant ones meanings - are all about the symbols, so they go while the
@@ -5834,6 +5916,12 @@ namespace CamelWorks.UI.Views
                 if (_shown == Showing.Priority)
                 {
                     RankKeys();
+                    return;
+                }
+
+                if (_shown == Showing.Results)
+                {
+                    CountKeys();
                     return;
                 }
 
@@ -5919,6 +6007,105 @@ namespace CamelWorks.UI.Views
                 says.Margin = new Thickness(4, 6, 4, 4);
 
                 _palette.Children.Add(says);
+            }
+
+            /// <summary>
+            /// What the numbers and the washes in the results view mean.
+            ///
+            /// <b>A key, not a palette.</b> While the counts are showing, the list held the
+            /// symbol legend - and every entry in it armed a brush that a press in that grid
+            /// would not use, because nothing is painted over a number that came out of the
+            /// document. What belongs here is the one thing a heat map cannot say for itself:
+            /// where its scale runs from and to, and that a blank cell is not a nought.
+            /// </summary>
+            private void CountKeys()
+            {
+                var worst = Math.Max(1, _counts.Worst);
+
+                Keyed(Skin.Of("OkBg"), "0", "Nothing open",
+                      "tested, and everything on it is decided");
+
+                Keyed(Heat((worst + 1) / 2), "\u2026", "Some open",
+                      "the wash runs to the worst pair on this board");
+
+                Keyed(Heat(worst), worst.ToString(CultureInfo.InvariantCulture), "The worst pair",
+                      "which is where a meeting goes first");
+
+                Keyed(System.Windows.Media.Brushes.Transparent, string.Empty, "No test covers it",
+                      "a hole in the coordination, not a clean pair");
+
+                var says = Ui.Small("Open means active and new. Approved, reviewed and resolved "
+                                    + "are decisions somebody made, so they are not counted.");
+
+                says.TextWrapping = TextWrapping.Wrap;
+                says.Margin = new Thickness(4, 6, 4, 4);
+
+                _palette.Children.Add(says);
+            }
+
+            /// <summary>
+            /// One line of a key: a swatch, what it is, and what it means.
+            ///
+            /// Shaped like the palette's own keys so the panel reads as one thing, and without
+            /// their cursor or their press, because there is nothing here to arm.
+            /// </summary>
+            /// <param name="paint">The wash.</param>
+            /// <param name="mark">What is written in it.</param>
+            /// <param name="name">What it is.</param>
+            /// <param name="says">The quieter line under it.</param>
+            private void Keyed(System.Windows.Media.Brush paint, string mark, string name,
+                               string says)
+            {
+                var line = new DockPanel { LastChildFill = true, Margin = new Thickness(5, 3, 6, 3) };
+
+                var letter = new TextBlock
+                {
+                    Text = mark,
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Ui.InkOn(paint),
+                };
+
+                var swatch = new Border
+                {
+                    Width = 24,
+                    Height = 24,
+                    ClipToBounds = true,
+                    CornerRadius = new CornerRadius(5),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    BorderThickness = new Thickness(1),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Background = paint,
+                    Child = letter,
+                };
+
+                swatch.Tint(Border.BorderBrushProperty, "Bd");
+
+                DockPanel.SetDock(swatch, Dock.Left);
+                line.Children.Add(swatch);
+
+                var words = Ui.Stack();
+
+                words.VerticalAlignment = VerticalAlignment.Center;
+
+                words.Children.Add(new TextBlock
+                {
+                    Text = name,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                }.Wearing("Body"));
+
+                var under = Ui.Small(says);
+
+                under.TextWrapping = TextWrapping.Wrap;
+                words.Children.Add(under);
+
+                line.Children.Add(words);
+
+                _palette.Children.Add(line);
             }
 
             /// <summary>Put a rank on the hand.</summary>
@@ -6279,10 +6466,9 @@ namespace CamelWorks.UI.Views
                 // the render caught it reading "0 tests, 160 cells s" the first time one was.
                 // The chooser two inches above says which view is on and changes it, which is
                 // one place rather than two.
-                if (_shown == Showing.Results)
-                    Say(Ui.Small(Ui.Count(_counts.Open, "clash") + " open across "
-                                 + Ui.Count(_counts.Tests, "test")));
-
+                // Nothing here for the results view. It arms nothing, so there is no mode for
+                // the strip to state - and what it counts is said in the foot of the panel,
+                // under a bar, where the same sentence is doing more work than it would here.
                 if (_shown == Showing.Priority)
                 {
                     // The mark and the words in one panel: the strip sets a left margin on
