@@ -9,18 +9,18 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Works out what changed between two snapshots.
     ///
-    /// The whole of the matching problem is here, and it has exactly three moving parts:
+    /// The whole of the matching problem is here, in three parts:
     ///
-    /// 1. <b>Which model is which</b> — <see cref="ModelPairing"/>, done first, because an element
-    ///    key is scoped to its model's path and nothing can match across two files until somebody
-    ///    has said those two files are two revisions of one thing.
-    /// 2. <b>Which element is which</b> — rung by rung, strongest first, inside a pair. An element
-    ///    that matched on its instance GUID is never re-offered to the weaker rungs.
-    /// 3. <b>What is different about it</b> — position, size, orientation, name, type, properties,
-    ///    and, when anybody paid for a mesh signature, shape.
+    /// 1. Which model is which — <see cref="ModelPairing"/>, done first, because an element key is
+    ///    scoped to its model's path and nothing can match across two files until those two files
+    ///    have been declared two revisions of one thing.
+    /// 2. Which element is which — rung by rung, strongest first, inside a pair. An element matched
+    ///    on its instance GUID is never re-offered to the weaker rungs.
+    /// 3. What is different about it — position, size, orientation, name, type, properties, and,
+    ///    where a mesh signature was taken, shape.
     ///
-    /// Every one of the three can be wrong, and each records how it decided so that the row a
-    /// person is about to act on carries its own evidence.
+    /// Each of the three can be wrong, and each records how it decided, so a row carries its own
+    /// evidence.
     /// </summary>
     public static class ModelCompare
     {
@@ -104,17 +104,16 @@ namespace CamelWorks.Core.Compare
         }
 
         /// <summary>
-        /// The current-side elements a triangle read would actually tell you something about.
+        /// The current-side elements a triangle read would report something about.
         ///
-        /// <b>Every other element is minutes spent for nothing.</b> A shape signature only says
-        /// anything when both revisions have one, so an element whose baseline counterpart was
-        /// never measured cannot be reported as remodelled however long is spent on it. Neither
-        /// can one whose bounding box already differs — it is on the change list already, and
-        /// measuring it changes no answer.
+        /// Every other element is time spent for no result. A shape signature says something only
+        /// when both revisions have one, so an element whose baseline counterpart was never measured
+        /// cannot be reported as remodelled. Neither can one whose bounding box already differs: it
+        /// is on the change list already and measuring it changes no answer.
         ///
         /// Worked out from the two snapshots directly rather than from a first comparison, because
-        /// the elements this is about are the ones a comparison reports as unchanged — and those
-        /// are exactly the rows a comparison does not keep.
+        /// the elements this is about are the ones a comparison reports as unchanged, which are
+        /// exactly the rows a comparison does not keep.
         /// </summary>
         /// <param name="baseline">The baseline side.</param>
         /// <param name="current">The snapshot about to be measured.</param>
@@ -363,22 +362,21 @@ namespace CamelWorks.Core.Compare
         }
 
         /// <summary>
-        /// The fallback identity: the element's NAME as well as its category, type and size.
+        /// The fallback identity: the element's name as well as its category, type and size.
         ///
-        /// <b>The name is what makes this safe, and leaving it out would be a serious bug.</b>
-        /// Category, type and size alone are shared by an added duct and an unrelated deleted duct
-        /// of the same size somewhere else in the building — and pairing those turns a real
-        /// addition and a real deletion into a single fictitious "moved 40 metres", which is worse
-        /// than either mistake on its own because it removes both from the report.
+        /// The name is what makes this safe. Category, type and size alone are shared by an added
+        /// duct and an unrelated deleted duct of the same size elsewhere in the building, and
+        /// pairing those turns a real addition and a real deletion into one fictitious "moved 40
+        /// metres", which removes both from the report.
         ///
         /// An element that lost its instance GUID between exports keeps its display name, so
-        /// requiring the name costs nothing in the case this exists for. The proper geometry rung
-        /// deliberately does NOT include the name: two identical brackets are supposed to be
-        /// interchangeable there, and that is what lets a shifted bracket read as one move.
+        /// requiring the name costs nothing in the case this exists for. The geometry rung
+        /// deliberately does not include the name: two identical brackets are interchangeable there,
+        /// which is what lets a shifted bracket read as one move.
         ///
-        /// Built through <see cref="ElementKey.FromGeometry"/> so the quantisation is the same one
-        /// identity uses everywhere else. Null when an extent cannot be quantised — a degenerate
-        /// element genuinely produces that, and it must not throw mid-comparison.
+        /// Built through <see cref="ElementKey.FromGeometry"/> so the quantisation matches the one
+        /// identity uses elsewhere. Null when an extent cannot be quantised, which a degenerate
+        /// element does produce and which must not throw mid-comparison.
         /// </summary>
         private static string? NamedShape(ElementFingerprint print)
         {
@@ -454,14 +452,14 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// Which watched properties differ.
         ///
-        /// <b>Only properties BOTH sides were watching.</b> A baseline taken watching three named
+        /// Only properties both sides were watching. A baseline taken watching three named
         /// properties, compared against a run watching the standard list, would otherwise report
-        /// every standard property on every element as newly arrived — a hundred thousand changes,
-        /// not one of them real, and the report is thrown away rather than debugged.
+        /// every standard property on every element as newly arrived: a hundred thousand changes,
+        /// none of them real.
         ///
-        /// A merge-walk rather than a dictionary per element: both lists were sorted by the same
-        /// comparison when they were recorded, and a federation is a few hundred thousand elements
-        /// whose transient dictionaries are pure garbage collection.
+        /// A merge-walk rather than a dictionary per element, because both lists were sorted by the
+        /// same comparison when they were recorded and a federation is a few hundred thousand
+        /// elements whose transient dictionaries are pure garbage.
         /// </summary>
         private static List<ValueChange> Values(ElementFingerprint before, ElementFingerprint after,
                                                 CompareSettings settings, CompareSettings terms)

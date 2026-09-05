@@ -31,19 +31,17 @@ namespace CamelWorks.Core.Clash
     public static class MatrixSanity
     {
         /// <summary>
-        /// Everything wrong with a matrix, said before anything is built.
+        /// Everything wrong with a matrix, reported before anything is built.
         ///
-        /// <b>The set that is not there any more.</b> A matrix is drawn once and lived with for
-        /// months while the federation moves under it: sets get renamed, models get swapped, a
-        /// package gets re-cut. A test built on a set that no longer exists is a test that runs
-        /// and finds nothing, which reads exactly like a discipline with no clashes - the single
-        /// most dangerous thing a clash matrix can say. So the names are checked against what the
-        /// model actually has, before the build, and the check is a list lookup rather than a
-        /// walk of anything.
+        /// The main case is a set that no longer exists. A matrix is drawn once and used for months
+        /// while the federation moves under it: sets get renamed, models get swapped, a package gets
+        /// re-cut. A test built on a set that no longer exists runs and finds nothing, which reads
+        /// as a discipline with no clashes. So the names are checked against what the model has,
+        /// before the build, as a list lookup rather than a walk.
         ///
-        /// A capture is checked differently: it cannot go missing, because it is a list of
-        /// elements the matrix is carrying itself. What it can be is stale, and that is said
-        /// rather than treated as a fault.
+        /// A capture is checked differently: it cannot go missing, because it is a list of elements
+        /// the matrix carries itself. It can be stale, and that is reported rather than treated as a
+        /// fault.
         /// </summary>
         /// <param name="board">The grid.</param>
         /// <param name="legend">What each symbol means.</param>
@@ -81,11 +79,11 @@ namespace CamelWorks.Core.Clash
 
                     if (!known.Contains(trail))
                     {
-                        // <b>Moved is not missing, and saying so saves the afternoon.</b> A set
-                        // dragged into a package folder still exists, still has the name it had,
-                        // and no longer answers to where this row was pointed. Told "there is no
-                        // set called MEP" while looking at a set called MEP, nobody believes the
-                        // tool; told where it went, they fix it in one press.
+                        // Distinguish moved from missing. A set dragged into a package folder
+                        // still exists and still has its name, but no longer answers to where this
+                        // row was pointed. Reporting "there is no set called MEP" while a set called
+                        // MEP is on screen is not credible; reporting where it went is one press to
+                        // fix.
                         faults.Add(new MatrixFault(line.Where,
                             known.Contains(source.Name)
                                 ? "points at " + Quoted(trail) + ", and the set called "
@@ -145,10 +143,10 @@ namespace CamelWorks.Core.Clash
 
             var sheet = new XlsxSheet("Clash matrix");
 
-            // <b>What each row is, next to its name.</b> Two rows called "Ductwork" on two
-            // different sets exported identically, so a sheet issued to a client said nothing
-            // about what any of it was actually checking - and that is the question somebody
-            // asks about a matrix six weeks later, when the sets have been re-cut.
+            // Say what each row is, next to its name. Two rows called "Ductwork" on two different
+            // sets exported identically, so a sheet issued to a client did not say what any of it
+            // was checking — which is the question asked about a matrix weeks later, once the sets
+            // have been re-cut.
             var headings = new List<string?> { "#", "Row", "Points at" };
 
             foreach (var column in board.Columns) headings.Add(column.Titled);
@@ -201,9 +199,9 @@ namespace CamelWorks.Core.Clash
             if (ruled)
                 sheet.Row(MatrixBoard.NotRequired, "Not required, agreed - no test is made");
 
-            // <b>And the blank, said in words too.</b> The dash exists because blank meant two
-            // opposite things; a sheet that spells the dash out and leaves the blank to be
-            // guessed at has put the ambiguity straight back, at the moment it matters most.
+            // Spell the blank out as well as the dash. The dash exists because blank meant two
+            // opposite things, and a sheet that explains the dash while leaving the blank
+            // unexplained restores the ambiguity.
             if (open)
                 sheet.Row("(blank)", "Undecided - no test is made");
 
