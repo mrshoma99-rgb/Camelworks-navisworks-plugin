@@ -355,6 +355,24 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Which axis the picked lines are on. The two are never mixed.</summary>
             private bool _chosenRows;
+
+            /// <summary>
+            /// Whether the grid is showing what came back rather than what was asked for.
+            ///
+            /// <b>The board said what should be tested and never what the tests found.</b> A
+            /// coordinator drew it, built the tests, ran them - and then went somewhere else, or
+            /// to a spreadsheet somebody exported, to find out where the project is still
+            /// fighting. The one picture that already says which disciplines meet was the one
+            /// that could not say how badly, and that is the picture a weekly meeting wants.
+            ///
+            /// The same grid, the same rows, the same folders: only what is written in the cells
+            /// changes. Nothing is edited while it is on, because a number that came out of the
+            /// document is not something to paint over.
+            /// </summary>
+            private bool _showing;
+
+            /// <summary>What came back, when it has been read. Empty until somebody asks.</summary>
+            private MatrixCounts _counts = MatrixCounts.None;
             private MatrixSymbol? _pickedSymbol;
 
             /// <summary>
@@ -569,6 +587,14 @@ namespace CamelWorks.UI.Views
                 Add(Ui.Verb(Glyphs.Verify, "Check",
                             "Check it against the model — every row and column, against what "
                             + "this model actually has", Sanity));
+
+                // Beside Check and Changes: the three that go to the document and come back with
+                // something to look at, rather than the ones that change the board.
+                Add(Ui.Verb(Glyphs.Report, _showing ? "Hide results" : "Results",
+                            _showing
+                                ? "Go back to the symbols"
+                                : "Count what the tests found and show it in the grid",
+                            Showing));
 
                 Add(Ui.Verb(Glyphs.Changes, "Changes",
                             "See what would change — this matrix against the tests already in "
@@ -3299,6 +3325,13 @@ namespace CamelWorks.UI.Views
             {
                 if (_brush == null) return;
 
+                // <b>Nothing is painted over a number that came out of the document.</b> While
+                // the grid is showing what came back, a cell is a count of somebody's open
+                // clashes, not a decision to be changed - and a brush stroke across it would
+                // write symbols under a drawing that does not show them, so the board would
+                // quietly differ from the one that was saved.
+                if (_showing) return;
+
                 var laying = Laying;
 
                 // Dragging crosses the same cell many times; only a change is worth a repaint.
@@ -3489,8 +3522,103 @@ namespace CamelWorks.UI.Views
             /// symbol in either half still writes both, because somebody filling in the triangle
             /// they were handed should not have to know which one this drawing kept.
             /// </summary>
+            /// <summary>
+            /// One cell, showing what came back rather than what was asked for.
+            ///
+            /// <b>Nought and "never tested" are different answers.</b> A pair that ran and came
+            /// back clean is one somebody can stop thinking about; a pair no test covers is a
+            /// hole in the coordination that nobody has noticed, and drawing the two the same way
+            /// is how a matrix reassures a room about a discipline it never checked. Clean is a
+            /// nought on a pale ground; untested is left blank and counted in the strip.
+            ///
+            /// The heat runs to the worst pair on the board rather than to a number somebody
+            /// chose, because what a meeting wants from this picture is where to go first.
+            /// </summary>
+            /// <param name="cell">The cell.</param>
+            /// <param name="row">Its row.</param>
+            /// <param name="column">Its column.</param>
+            private void Counted(Border cell, MatrixLine row, MatrixLine column)
+            {
+                cell.Opacity = 1.0;
+
+                var at = Where(row, column);
+
+                if (_board.IsSelfPair(row, column))
+                {
+                    cell.Background = Skin.Of("Nav");
+                    cell.Child = null;
+                    cell.ToolTip = at + " — a discipline against itself";
+                    return;
+                }
+
+                var open = _counts.OpenBetween(row, column);
+                var ever = _counts.EverBetween(row, column);
+
+                if (open < 0)
+                {
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+                    cell.Child = null;
+                    cell.ToolTip = at + " — " + row.Titled + " against " + column.Titled
+                                   + ". No test in the document covers this pair.";
+                    return;
+                }
+
+                var ground = open == 0 ? Skin.Of("OkBg") : Heat(open);
+
+                cell.Background = ground;
+
+                cell.Child = new TextBlock
+                {
+                    Text = open.ToString(CultureInfo.InvariantCulture),
+                    FontSize = Math.Max(10, Lettering - 1),
+                    FontWeight = open == 0 ? FontWeights.Normal : FontWeights.SemiBold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    Foreground = Ui.InkOn(ground),
+                };
+
+                cell.ToolTip = at + " — " + row.Titled + " against " + column.Titled + ". "
+                               + (open == 0
+                                   ? "Tested, nothing open"
+                                   : Ui.Count(open, "clash") + " still open")
+                               + (ever > open
+                                   ? " of " + ever.ToString(CultureInfo.InvariantCulture) + " found."
+                                   : ".");
+            }
+
+            /// <summary>
+            /// The wash for a count, from the mildest thing on the board to the worst.
+            ///
+            /// Scaled to the worst pair rather than to a fixed number of clashes: a job with
+            /// nine thousand on its heaviest pair and one with ninety both want the same picture,
+            /// which is where to go first.
+            /// </summary>
+            /// <param name="open">How many are still open on this pair.</param>
+            private System.Windows.Media.Brush Heat(int open)
+            {
+                var worst = Math.Max(1, _counts.Worst);
+                var how = Math.Min(1.0, Math.Max(0.0, (double)open / worst));
+
+                // Pale amber to a strong red, which is the one ramp a coordinator reads without
+                // a key - and the only two ends this needs, because the question is "how bad".
+                var from = System.Windows.Media.Color.FromRgb(0xFF, 0xF3, 0xC4);
+                var to = System.Windows.Media.Color.FromRgb(0xE5, 0x39, 0x35);
+
+                return new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(
+                        (byte)(from.R + ((to.R - from.R) * how)),
+                        (byte)(from.G + ((to.G - from.G) * how)),
+                        (byte)(from.B + ((to.B - from.B) * how))));
+            }
+
             private void Paint(Border cell, MatrixLine row, MatrixLine column)
             {
+                // What came back is drawn over the whole grid, both halves alike: a heat map
+                // read across a triangle is a heat map somebody has to fold in their head.
+                if (_showing) { Counted(cell, row, column); return; }
+
                 var symbol = _board.At(row, column);
                 var meaning = symbol == null ? null : _legend.Meaning(symbol);
                 var mirrored = !_board.IsDrawnHalf(row, column);
@@ -5472,6 +5600,19 @@ namespace CamelWorks.UI.Views
                 // Kept, alone of the three, because it is the one state that is not visible in
                 // the thing it describes: nine cells in ten drawn faint reads as a fault unless
                 // something says it is a search, and the way out of it is the button beside it.
+                // <b>A grid of numbers is a different screen, and it has to say so.</b> The
+                // cells look nothing like the symbols they replaced, but somebody who walked away
+                // and came back needs to know the board is not what they drew - and what the
+                // numbers are counting, which is what is still open rather than what was ever
+                // found.
+                if (_showing)
+                {
+                    Say(Ui.Small(Ui.Count(_counts.Open, "clash") + " open across "
+                                 + Ui.Count(_counts.Tests, "test")));
+
+                    Say(Ui.Quiet("Show the symbols", Showing), 8);
+                }
+
                 if (_lit != null)
                 {
                     Say(Ui.Small("Showing only " + Quoted(_lit)));
@@ -7963,6 +8104,65 @@ namespace CamelWorks.UI.Views
                 _board.UpperIsLive = _style.UpperIsLive;
 
                 _found.Clear();
+            }
+
+            /// <summary>
+            /// Count what came back and show it in the grid, or put the counts away again.
+            ///
+            /// Reads results as well as sides, which is the one difference from reading a matrix
+            /// out of the model: the shape says which cell, the results say what is in it.
+            /// </summary>
+            private void Showing()
+            {
+                if (_showing)
+                {
+                    _showing = false;
+                    _counts = MatrixCounts.None;
+
+                    RedrawCells();
+                    RedrawStrip();
+                    return;
+                }
+
+                if (!_session.Clash.IsAvailable)
+                {
+                    Warned(Ui.Problem("This edition has no clash engine, so there are no results "
+                                      + "to count. Everything else on this tab still works."));
+                    return;
+                }
+
+                MatrixCounts? counted = null;
+
+                Ui.Working("Counting what came back…", job =>
+                {
+                    var read = new List<ClashTestRead>();
+                    var seen = 0;
+
+                    foreach (var test in _session.Clash.Tests())
+                    {
+                        if (!job.Step(++seen, "tests read")) return;
+
+                        read.Add(new ClashTestRead(test, _session.Clash.Sides(test.Id),
+                                                   _session.Clash.Results(test.Id)));
+                    }
+
+                    counted = MatrixTally.Of(read);
+                });
+
+                if (counted == null) return;
+
+                if (counted.IsEmpty)
+                {
+                    Warned(Ui.Note("None of the document's tests says what it is between, so "
+                                   + "nothing could be counted onto the matrix."));
+                    return;
+                }
+
+                _counts = counted;
+                _showing = true;
+
+                RedrawCells();
+                RedrawStrip();
             }
 
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>

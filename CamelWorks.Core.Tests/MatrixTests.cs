@@ -2190,4 +2190,139 @@ namespace CamelWorks.Core.Tests
             Assert.Empty(stale.FolderColours);
         }
     }
+
+    /// <summary>
+    /// What the matrix says came back: open clashes per pair, keyed by what the tests point at.
+    ///
+    /// The join between a board and the document's results has to key sides exactly the way the
+    /// board does, or the counts land on cells that do not exist and the grid draws nothing where
+    /// the work is - silently, which is the worst way for this to be wrong.
+    /// </summary>
+    public class MatrixTallyTests
+    {
+        private static ClashTestRead Run(string setA, string setB, params string?[] statuses)
+        {
+            var results = statuses
+                .Select((status, at) => new ClashResultInfo(
+                    "r" + at,
+                    default, default, 0, 0, 0, status, null))
+                .ToList();
+
+            return new ClashTestRead(
+                new ClashTestInfo(setA + " vs " + setB, setA + " vs " + setB, null, results.Count, 0),
+                new ClashTestSides(setA, setB, Array.Empty<string>(), Array.Empty<string>(),
+                                   "Hard", 0.01),
+                results);
+        }
+
+        private static MatrixBoard Board(params string[] sets)
+        {
+            var board = new MatrixBoard();
+
+            foreach (var set in sets)
+                board.AddPair(new MatrixLine(set, null, MatrixSource.SelectionSet(set)));
+
+            return board;
+        }
+
+        [Fact]
+        public void NothingCountedIsAnEmptyTally()
+        {
+            Assert.True(MatrixTally.Of(null).IsEmpty);
+            Assert.True(MatrixCounts.None.IsEmpty);
+        }
+
+        [Fact]
+        public void OnlyTheOpenOnesAreCounted()
+        {
+            var counts = MatrixTally.Of(new[]
+            {
+                Run("ARC", "STR", "New", "Active", "Approved", "Reviewed", "Resolved"),
+            });
+
+            var board = Board("ARC", "STR");
+
+            Assert.Equal(2, counts.OpenBetween(board.Rows[0], board.Columns[1]));
+            Assert.Equal(5, counts.EverBetween(board.Rows[0], board.Columns[1]));
+        }
+
+        [Fact]
+        public void AResultNobodyHasRuledOnIsOpen()
+        {
+            Assert.True(MatrixTally.IsOpen(null));
+            Assert.True(MatrixTally.IsOpen(" "));
+            Assert.True(MatrixTally.IsOpen("New"));
+            Assert.False(MatrixTally.IsOpen("approved"));
+        }
+
+        [Fact]
+        public void ThePairIsTheSameWhicheverWayRoundTheTestWasBuilt()
+        {
+            var counts = MatrixTally.Of(new[] { Run("STR", "ARC", "New", "New") });
+            var board = Board("ARC", "STR");
+
+            Assert.Equal(2, counts.OpenBetween(board.Rows[0], board.Columns[1]));
+            Assert.Equal(2, counts.OpenBetween(board.Rows[1], board.Columns[0]));
+        }
+
+        [Fact]
+        public void TwoTestsOnOnePairAreAddedTogether()
+        {
+            var counts = MatrixTally.Of(new[]
+            {
+                Run("ARC", "STR", "New"),
+                Run("ARC", "STR", "Active", "Active"),
+            });
+
+            var board = Board("ARC", "STR");
+
+            Assert.Equal(3, counts.OpenBetween(board.Rows[0], board.Columns[1]));
+            Assert.Equal(2, counts.Tests);
+        }
+
+        [Fact]
+        public void APairNoTestCoversIsNotNought()
+        {
+            var counts = MatrixTally.Of(new[] { Run("ARC", "STR", "New") });
+            var board = Board("ARC", "STR", "MEP");
+
+            // Tested and clean would be nought; never tested is a hole in the coordination, and
+            // the grid has to be able to draw them differently.
+            Assert.Equal(-1, counts.OpenBetween(board.Rows[0], board.Columns[2]));
+        }
+
+        [Fact]
+        public void APairTestedAndCleanIsNought()
+        {
+            var counts = MatrixTally.Of(new[] { Run("ARC", "STR") });
+            var board = Board("ARC", "STR");
+
+            Assert.Equal(0, counts.OpenBetween(board.Rows[0], board.Columns[1]));
+        }
+
+        [Fact]
+        public void ATestThatDoesNotSayWhatItIsBetweenIsSkipped()
+        {
+            var counts = MatrixTally.Of(new[]
+            {
+                new ClashTestRead(new ClashTestInfo("odd", "odd", null, 0, 0), null,
+                                  Array.Empty<ClashResultInfo>()),
+            });
+
+            Assert.True(counts.IsEmpty);
+        }
+
+        [Fact]
+        public void TheWorstPairIsWhatAHeatScaleRunsTo()
+        {
+            var counts = MatrixTally.Of(new[]
+            {
+                Run("ARC", "STR", "New"),
+                Run("ARC", "MEP", "New", "New", "New"),
+            });
+
+            Assert.Equal(3, counts.Worst);
+            Assert.Equal(4, counts.Open);
+        }
+    }
 }
