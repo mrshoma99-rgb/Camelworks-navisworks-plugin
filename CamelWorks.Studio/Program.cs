@@ -97,13 +97,19 @@ namespace CamelWorks.Studio
         {
             Directory.CreateDirectory(folder);
 
+            // <b>Nothing named is the default, not everything.</b> A push carries no dispatch
+            // input, so the workflow hands this an empty string - and an empty list read as "no
+            // filter" drew all nineteen pages off a Windows runner for a request that wanted two.
+            // Which is the cost this argument exists to avoid, arriving through the one trigger
+            // that cannot pass it.
+            if (string.IsNullOrWhiteSpace(only)) only = Only;
+
             var wanted = only.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                              .Select(one => one.Trim())
                              .Where(one => one.Length > 0)
                              .ToList();
 
-            var every = wanted.Count == 0
-                        || wanted.Any(one => string.Equals(one, "all", StringComparison.OrdinalIgnoreCase));
+            var every = wanted.Any(one => string.Equals(one, "all", StringComparison.OrdinalIgnoreCase));
 
             var pages = every
                 ? Everything
