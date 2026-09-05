@@ -42,6 +42,20 @@ namespace CamelWorks.UI.Views
         // The matrix survives a tab switch, like every other bench in this app: an afternoon's
         // grid lost to a glance at another tab is an afternoon nobody offers this tool again.
         private static MatrixBoard _board = new MatrixBoard();
+
+        /// <summary>
+        /// Whether the seat's standing notice has been put away for this session.
+        ///
+        /// <b>It could not be.</b> A seat with no clash engine is told so every time the tab is
+        /// opened, in a band across the top of the window, and there was no way to make it stop -
+        /// which on such a seat is every session, for ever, about a fact its owner learned once.
+        /// A notice nobody can dismiss is not information, it is furniture.
+        ///
+        /// Kept for as long as the application runs rather than written down: the fact is about
+        /// the seat, and a seat that gains a clash engine is a different Navisworks edition and a
+        /// different session.
+        /// </summary>
+        private static bool _hushed;
         private static MatrixLegend _legend = new MatrixLegend();
         private static string _pattern = MatrixNaming.Default;
         private static string _folder = string.Empty;
@@ -419,12 +433,25 @@ namespace CamelWorks.UI.Views
             {
                 var say = Ui.Stack();
 
-                if (!_session.Clash.IsAvailable)
-                    say.Children.Add(Ui.Info("This Navisworks edition has no clash engine, so the "
-                        + "matrix cannot be run into tests here - but everything else works. Draw "
-                        + "it, save it, send it out as a spreadsheet, and build it on a seat that "
-                        + "has one. "
-                        + (_session.ClashProblem ?? string.Empty).Trim()));
+                if (!_session.Clash.IsAvailable && !_hushed)
+                {
+                    UIElement? standing = null;
+
+                    standing = Ui.Info(
+                        "This Navisworks edition has no clash engine, so the matrix cannot be run "
+                        + "into tests here - but everything else works. Draw it, save it, send it "
+                        + "out as a spreadsheet, and build it on a seat that has one. "
+                        + (_session.ClashProblem ?? string.Empty).Trim(),
+                        "Dismiss",
+                        () => Ui.Safely(() =>
+                        {
+                            _hushed = true;
+
+                            if (standing != null) standing.Visibility = Visibility.Collapsed;
+                        }));
+
+                    say.Children.Add(standing);
+                }
 
                 var close = Ui.Icon(Glyphs.Close, "Dismiss", Quiet);
 
@@ -1641,9 +1668,20 @@ namespace CamelWorks.UI.Views
 
                 if (band > 0) Bands(_across, rows: false);
 
-                Put(_across, Adding("Add a discipline",
-                                    Adding, column: true),
-                    top + 1, _board.Columns.Count);
+                // <b>Two shapes for one act.</b> Past the last column sat a plus, and under the
+                // last row a box you type a name into - and on a mirrored board they did exactly
+                // the same thing, because a discipline is one line and adding it adds both. The
+                // plus did not even add anything: it put the caret in that same box. So a
+                // coordinator was offered two different-looking controls, learned them
+                // separately, and one of them was a detour to the other.
+                //
+                // Where the two axes are one list, there is one way in: the box, which is also
+                // the better of the two - a name and a Return each, straight down a list, without
+                // touching the mouse. The plus comes back the moment the axes are their own
+                // lists, because then a column really is something the box cannot add.
+                if (!_board.Paired)
+                    Put(_across, Adding("Add a column", AddColumn, column: true),
+                        top + 1, _board.Columns.Count);
             }
 
             /// <summary>The band down the left: the numbers, the names, and the box that adds one.</summary>
@@ -4215,9 +4253,9 @@ namespace CamelWorks.UI.Views
             /// Go to the box that makes a discipline, and put the caret in it.
             ///
             /// Every way of adding one arrives here, so there is one shape to the act wherever it
-            /// is started from: the strip over the grid, the plus past the last column, and the
-            /// box itself. A discipline gets its name as it is made rather than being made called
-            /// "New category" and left to be found again.
+            /// is started from: the strip over the grid, and the box itself. A discipline gets its
+            /// name as it is made rather than being made called "New category" and left to be
+            /// found again.
             /// </summary>
             private void Adding()
             {
@@ -4225,8 +4263,30 @@ namespace CamelWorks.UI.Views
                 _naming.Focus();
             }
 
-            /// <summary>A discipline, made and picked, for the menu that inserts one in place.</summary>
-            private void AddColumn() => AddRow();
+            /// <summary>
+            /// A column, made and picked.
+            ///
+            /// <b>On a mirrored board this is not a column, it is a discipline.</b> Rows and
+            /// columns are one list there - adding either adds both - so this goes to the same
+            /// place every other way of adding one goes, and the name is typed as it is made.
+            ///
+            /// Where the axes are their own lists it really is a column, and used to add a row
+            /// anyway: the method was a one-line alias written when there was no such board, and
+            /// the only thing that called it was a menu on a mirrored one. Nothing noticed
+            /// because nothing reached it.
+            /// </summary>
+            private void AddColumn()
+            {
+                if (_board.Paired) { AddRow(); return; }
+
+                Remember(what: "adding a column");
+
+                var made = _board.AddColumn(new MatrixLine(Fresh, Next(_board.Columns)));
+
+                Seed();
+                Redraw();
+                Pick(made, rows: false);
+            }
 
             /// <summary>What a category is called before anybody has said what it is.</summary>
             private const string Fresh = "New category";
