@@ -6103,8 +6103,10 @@ namespace CamelWorks.UI.Views
                         FontWeight = FontWeights.SemiBold,
                     }.Wearing("Body"), 0);
 
-                    Say(Ui.Small(Ui.Count(_board.Ranks().Count(), "pair") + " ranked"));
-
+                    // How many are ranked is not repeated here. The bar in the foot of the
+                    // panel says it with a picture and a fraction, and the strip is one line
+                    // that already carries the plan count - which the render caught being cut
+                    // off mid-word the moment this was added beside it.
                     Say(Ui.Quiet("Show the symbols", () => Show(Showing.Symbols)), 8);
                 }
 
