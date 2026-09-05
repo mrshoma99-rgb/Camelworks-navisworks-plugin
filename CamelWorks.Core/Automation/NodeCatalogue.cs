@@ -132,12 +132,11 @@ namespace CamelWorks.Core.Automation
     /// <summary>
     /// Every node the canvas offers.
     ///
-    /// <b>Each one is a service the ribbon already drives.</b> That is the whole architecture of
-    /// this product in one list: nothing here is a second implementation of anything, so a fix to
-    /// the takeoff or the appearance planner reaches the graph and the buttons at the same time —
-    /// and neither front door can quietly drift from the other.
+    /// Each one is a service the ribbon already drives. Nothing here is a second implementation, so
+    /// a fix to the takeoff or the appearance planner reaches the graph and the buttons at the same
+    /// time and neither front door can drift from the other.
     ///
-    /// Every setting has a default that works, so a node dropped on the canvas runs without being
+    /// Every setting has a working default, so a node dropped on the canvas runs without being
     /// configured first.
     /// </summary>
     public static class NodeCatalogue

@@ -20,16 +20,16 @@ namespace CamelWorks.Core.Identity
     /// Names one model element, stably enough to be written to disk and matched against a later
     /// re-export of the same model.
     ///
-    /// Three properties this type exists to guarantee:
+    /// Three properties this type guarantees:
     ///
-    /// 1. <b>It is scoped to its owning model.</b> Two elements in two different loaded models can
-    ///    share a tree path or a geometry signature, and an unscoped key would silently match them.
-    ///    A wrong match is far worse than a miss — it shows an unresolved clash as "Approved,
-    ///    signed off by J. Smith" and looks correct to everyone in the room.
-    /// 2. <b>The rung is part of the key.</b> A rung-3 match is not the same claim as a rung-1
-    ///    match, and callers that care (undo, carry-over) branch on it.
-    /// 3. <b>It is a value, not a handle.</b> A Navisworks ModelItem is a pointer into a native
-    ///    tree that a model refresh invalidates; this is a string that outlives the document.
+    /// 1. It is scoped to its owning model. Two elements in two different loaded models can share a
+    ///    tree path or a geometry signature, and an unscoped key would match them. A wrong match is
+    ///    worse than a miss: it shows an unresolved clash as approved and signed off, and looks
+    ///    correct.
+    /// 2. The rung is part of the key. A rung-3 match is not the same claim as a rung-1 match, and
+    ///    callers that care — undo, carry-over — branch on it.
+    /// 3. It is a value, not a handle. A Navisworks ModelItem is a pointer into a native tree that a
+    ///    model refresh invalidates; this is a string that outlives the document.
     /// </summary>
     public readonly struct ElementKey : IEquatable<ElementKey>
     {

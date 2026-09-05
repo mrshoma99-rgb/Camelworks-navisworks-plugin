@@ -10,23 +10,23 @@ namespace CamelWorks.Core.Sets
     ///
     /// Three passes, in order:
     ///
-    /// 1. <b>Negation normal form.</b> Push every NOT down to the leaves by De Morgan, so the tree
-    ///    below is nothing but ANDs, ORs and signed literals. Constants fold away here.
-    /// 2. <b>Distribution.</b> AND over OR, until the tree is an OR of ANDs. This is the pass that
-    ///    can explode, so it is the pass that counts.
-    /// 3. <b>Simplification.</b> Drop duplicate literals, drop clauses that contradict themselves,
-    ///    drop clauses another clause already covers, and order everything canonically.
+    /// 1. Negation normal form. Push every NOT down to the leaves by De Morgan, so the tree below is
+    ///    nothing but ANDs, ORs and signed literals. Constants fold away here.
+    /// 2. Distribution. AND over OR, until the tree is an OR of ANDs. This is the pass that can
+    ///    explode, so it is the pass that counts.
+    /// 3. Simplification. Drop duplicate literals, drop clauses that contradict themselves, drop
+    ///    clauses another clause already covers, and order everything canonically.
     ///
-    /// The third pass earns its place. Set expressions are built by dragging rows around a UI, and
-    /// they accumulate redundancy: the same condition twice, a term ANDed with its own negation, a
-    /// clause that is strictly narrower than one beside it. Without simplification a plan runs four
-    /// host searches where one would do, on a model where each takes seconds.
+    /// The third pass earns its place. Set expressions are built by dragging rows around a UI and
+    /// accumulate redundancy: the same condition twice, a term ANDed with its own negation, a clause
+    /// strictly narrower than one beside it. Without simplification a plan runs four host searches
+    /// where one would do, on a model where each takes seconds.
     ///
-    /// What it deliberately does NOT do is detect a tautology spread across clauses. <c>a or not a</c>
-    /// compiles to two clauses — search for a, and separately take everything and subtract a — whose
-    /// union is indeed everything. Recognising that in general is the co-NP-hard half of the problem,
-    /// and paying for it would slow down every ordinary set to flatter a set nobody writes. The plan
-    /// is correct; it just runs one search more than a person would.
+    /// It does not detect a tautology spread across clauses. <c>a or not a</c> compiles to two
+    /// clauses — search for a, and separately take everything and subtract a — whose union is
+    /// everything. Recognising that in general is the co-NP-hard half of the problem, and paying for
+    /// it would slow every ordinary set down. The plan is correct; it runs one search more than
+    /// necessary.
     /// </summary>
     public static class DnfCompiler
     {

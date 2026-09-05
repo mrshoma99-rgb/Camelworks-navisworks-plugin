@@ -3,21 +3,21 @@ namespace CamelWorks.Core.Identity
     /// <summary>
     /// An element as a file recorded it: what it is, and where the writing document had it.
     ///
-    /// <b>Why a key is not enough on its own.</b> An <see cref="ElementKey"/> is a hash, and a
-    /// hash cannot be turned back into the thing it names. Given only a key, a document has one
-    /// way to find the element: compute the key of every element it holds until one matches. On a
-    /// federated model that is the indexing pass, and it is why selecting the elements of a clash
-    /// read from a file used to do nothing at all rather than freeze.
+    /// A key alone is not enough. An <see cref="ElementKey"/> is a hash, and a hash cannot be turned
+    /// back into the thing it names: given only a key, a document has one route to the element,
+    /// which is to compute the key of every element it holds until one matches. On a federated model
+    /// that is the indexing pass, and it is why selecting the elements of a clash read from a file
+    /// previously did nothing at all.
     ///
-    /// <b>Why the writing seat can spare the reader that.</b> The clash file is written on a seat
-    /// that has the model open and the clash engine holding both elements - it never had to search
-    /// for anything. So it writes down where they were, and the reading seat looks them up.
+    /// The writing seat can spare the reader that. The clash file is written on a seat with the
+    /// model open and the clash engine holding both elements, so it records where they were and the
+    /// reading seat looks them up.
     ///
     /// Two records rather than one, because they fail differently. The host's own handle is exact
-    /// and immediate where it resolves, and resolves only against a document sharing the tree it
-    /// was made against. A path of display names is something any document holding the same tree
-    /// can walk, at the cost of a descent. Either may be absent - a file written before this
-    /// existed carries neither - and the key is what is left.
+    /// and immediate where it resolves, and resolves only against a document sharing the tree it was
+    /// made against. A path of display names is something any document holding the same tree can
+    /// walk, at the cost of a descent. Either may be absent — a file written before this existed
+    /// carries neither — and the key is the fallback.
     /// </summary>
     public readonly struct ElementLocator
     {

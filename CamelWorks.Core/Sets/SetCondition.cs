@@ -7,14 +7,12 @@ namespace CamelWorks.Core.Sets
     /// <summary>
     /// The comparisons a condition can make.
     ///
-    /// <b>There are no negated operators here, and that is deliberate.</b> "Not equals" is not the
-    /// complement of "equals" over a model: a host search for <c>Fire Rating != 60</c> does not
-    /// return the elements that have no Fire Rating property at all, because a condition on an
-    /// absent property matches nothing. The complement of "equals 60" does include them — they are
-    /// certainly not 60.
+    /// There are no negated operators here, deliberately. "Not equals" is not the complement of
+    /// "equals" over a model: a host search for <c>Fire Rating != 60</c> does not return the
+    /// elements that have no Fire Rating property at all, because a condition on an absent property
+    /// matches nothing. The complement of "equals 60" does include them.
     ///
-    /// Anybody who has built a set that quietly omitted every untagged element has met this. So
-    /// negation lives in the expression tree and compiles to a subtraction, where it is exact,
+    /// So negation lives in the expression tree and compiles to a subtraction, where it is exact,
     /// rather than to an operator that is nearly right.
     /// </summary>
     public enum SetOperator
