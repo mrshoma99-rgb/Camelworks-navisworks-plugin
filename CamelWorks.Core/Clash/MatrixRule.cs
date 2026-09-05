@@ -4,24 +4,21 @@ using CamelWorks.Core.Store;
 namespace CamelWorks.Core.Clash
 {
     /// <summary>
-    /// One standing instruction about a whole block of the matrix: this folder against that
-    /// folder is checked like this.
+    /// One standing instruction about a whole block of the matrix: this folder against that folder
+    /// is checked like this.
     ///
-    /// <b>Real matrices are filled by rule, and ours could only be filled by hand.</b> "All
-    /// services against all architecture, clearance at twenty-five millimetres" is one sentence
-    /// somebody says at a kick-off and it governs sixty cells. Block fill and folders got the
-    /// sixty cells written - once. Add a discipline the following week and the sentence somebody
-    /// said no longer covers it: the new row is blank, nothing says it should not be, and the
-    /// matrix quietly stops meaning what the meeting agreed.
+    /// Real matrices are filled by rule, and this one could previously only be filled by hand. "All
+    /// services against all architecture, clearance at twenty-five millimetres" is one sentence from
+    /// a kick-off and it governs sixty cells. Block fill and folders wrote those sixty once; a
+    /// discipline added the following week is not covered, the new row is blank, nothing says it
+    /// should not be, and the matrix stops meaning what was agreed.
     ///
     /// A rule is that sentence, kept. It is re-applied whenever the board changes shape, so a
-    /// discipline added next week arrives already checked the way its folder is checked - and a
-    /// rule that is changed or deleted takes its cells with it rather than leaving them behind
-    /// as decisions nobody made.
+    /// discipline added later arrives checked the way its folder is checked, and a rule that is
+    /// changed or deleted takes its cells with it rather than leaving them as decisions nobody made.
     ///
-    /// <b>An empty side means any.</b> "All services against everything" is as common as a
-    /// folder-to-folder pair, and writing it as one rule per folder is the same maintenance
-    /// problem one layer up.
+    /// An empty side means any. "All services against everything" is as common as a folder-to-folder
+    /// pair, and writing it as one rule per folder is the same maintenance problem one layer up.
     /// </summary>
     public sealed class MatrixRule
     {

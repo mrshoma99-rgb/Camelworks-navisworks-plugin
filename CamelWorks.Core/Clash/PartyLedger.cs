@@ -58,15 +58,15 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Who has what, and whether it is going down.
     ///
-    /// The single most-asked question of a coordination board, and the one it takes a spreadsheet
-    /// to answer today: not how many clashes there are, but how many each party still owes and
-    /// whether last week's list got shorter.
+    /// The most-asked question of a coordination board and the one that currently takes a
+    /// spreadsheet: not how many clashes there are, but how many each party still owes and whether
+    /// last week's list got shorter.
     ///
-    /// <b>Exactly two snapshots, never a series.</b> A trend line over twelve weeks looks like
-    /// management information and is not: groups get re-derived, tests get re-scoped, models get
-    /// republished, and a curve drawn through those is a curve through four different questions.
-    /// This week against last week, with both timestamps and the scope printed beside it, is a
-    /// comparison a coordinator can actually defend.
+    /// Exactly two snapshots, never a series. A trend line over twelve weeks looks like management
+    /// information and is not: groups get re-derived, tests get re-scoped, models get republished,
+    /// and a curve drawn through those is a curve through four different questions. This week
+    /// against last week, with both timestamps and the scope beside it, is a comparison that can be
+    /// defended.
     ///
     /// A party with no prior measurement gets an empty delta cell rather than a zero, because "did
     /// not move" and "was never measured" are different facts.

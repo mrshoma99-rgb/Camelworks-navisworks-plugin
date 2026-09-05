@@ -11,23 +11,23 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Clash results, as findings.
     ///
-    /// <b>The first producer to move.</b> Every check in this product emits the same shape of
-    /// thing — a problem, at a place, that somebody has to decide about — and each one had grown
-    /// its own record and its own storage. Clash goes first because it has the most at stake and
-    /// an existing store to be measured against.
+    /// The first producer to move. Every check in this product emits the same shape of thing — a
+    /// problem, at a place, that somebody has to decide about — and each had grown its own record
+    /// and storage. Clash goes first because it has the most at stake and an existing store to be
+    /// measured against.
     ///
-    /// <b>Identity.</b> A clash finding is its test, its two elements, and where it is. The last
-    /// of those is not decoration: a duct that crosses one beam twice is two results, and a key
-    /// that ignored position would fold them into one — the same mistake that put two topics at
-    /// one path in a BCF archive. Position is quantised into a cell, so a clash that shifts inside
-    /// its cell is still itself; a clash that shifts further is matched by looking at the
-    /// neighbouring cells, which is where tolerance belongs.
+    /// Identity: a clash finding is its test, its two elements, and where it is. The last is not
+    /// decoration — a duct that crosses one beam twice is two results, and a key that ignored
+    /// position would fold them into one, the same mistake that put two topics at one path in a BCF
+    /// archive. Position is quantised into a cell, so a clash that shifts inside its cell is still
+    /// itself, and a clash that shifts further is matched by looking at the neighbouring cells,
+    /// which is where tolerance belongs.
     ///
-    /// <b>What the host says is an observation, not a verdict.</b> The engine recomputes New,
-    /// Active and Resolved on every run, so reading them back as truth would overwrite a decision
-    /// somebody made with a machine's guess. Only the two statuses a human sets and the engine
-    /// never invents - Reviewed and Approved - are taken from the host as decisions; the rest ride
-    /// as the run's opinion and lose to the register's own status through the lattice.
+    /// What the host says is an observation rather than a verdict. The engine recomputes New, Active
+    /// and Resolved on every run, so reading them back as truth would overwrite a recorded decision
+    /// with a machine's guess. Only the two statuses a person sets and the engine never invents —
+    /// Reviewed and Approved — are taken from the host as decisions; the rest ride as the run's
+    /// opinion and lose to the register's own status through the lattice.
     /// </summary>
     public static class ClashFindings
     {

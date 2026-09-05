@@ -129,20 +129,19 @@ namespace CamelWorks.Core.Clash
     }
 
     /// <summary>
-    /// One immutable record that a scope was agreed, and what it was when it was.
+    /// One immutable record that a scope was agreed, and what it was at the time.
     ///
-    /// Two things a coordination board has to be able to say and cannot: this level was signed off
-    /// on the fourteenth, and these hangers were released to fabrication on the twentieth. Both are
-    /// the same act — somebody put their name to a state of the model — and both are worthless
-    /// unless the tool can afterwards say what has changed since.
+    /// Two things a coordination board has to be able to record: that a level was signed off on a
+    /// date, and that a set of components was released to fabrication on another. Both are the same
+    /// act — putting a name to a state of the model — and both are worthless unless the tool can
+    /// afterwards say what has changed since.
     ///
     /// So it is one mechanism. A sign-off is a freeze with a signatory; a fabrication release is a
     /// freeze with a release id. The record holds where every element was and how big it was, and
     /// the Change Notice is the difference between that and now.
     ///
-    /// <b>Immutable, and hashed.</b> Nothing edits a freeze. The hash is over its own contents, so
-    /// a record that has been altered in the project file no longer verifies — which is the least a
-    /// document somebody signed can offer.
+    /// Immutable and hashed. Nothing edits a freeze, and the hash is over its own contents, so a
+    /// record altered in the project file no longer verifies.
     /// </summary>
     public sealed class Freeze
     {
