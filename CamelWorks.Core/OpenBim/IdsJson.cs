@@ -8,15 +8,14 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// A specification as data, for the half of a rule set no IDS file can carry.
     ///
-    /// <b>Why this exists at all.</b> The published schema has no extension point anywhere - not
-    /// on the root, not on a specification, not on applicability - so a rule that says who it is
-    /// about in this model's own terms cannot be written as IDS without making the file invalid
-    /// for every other tool. It has to travel some other way, and "some other way" has to be a
-    /// real format with a reader, not a blob.
+    /// The published schema has no extension point anywhere — not on the root, not on a
+    /// specification, not on applicability — so a rule that says who it is about in this model's own
+    /// terms cannot be written as IDS without making the file invalid for every other tool. It has
+    /// to travel some other way, and that way has to be a real format with a reader.
     ///
-    /// <b>Why in Core rather than beside the editor.</b> It became a wire format the moment two
-    /// people could send each other a rule set. A shape that lives in a window is a shape nobody
-    /// can test without a window, and one that quietly changes when somebody rearranges a form.
+    /// In Core rather than beside the editor, because it became a wire format as soon as two people
+    /// could send each other a rule set. A shape that lives in a window cannot be tested without a
+    /// window, and changes when somebody rearranges a form.
     /// </summary>
     public static class IdsJson
     {

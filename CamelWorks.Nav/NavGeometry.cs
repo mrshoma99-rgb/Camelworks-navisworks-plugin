@@ -11,15 +11,15 @@ namespace CamelWorks.Nav
     /// <summary>
     /// Triangles out of the model.
     ///
-    /// <b>GenerateSimplePrimitives is the only way in.</b> Navisworks exposes no bulk vertex,
-    /// triangle or mesh buffer in either the .NET API or the COM one — this per-vertex callback is
-    /// it, and it is most of the wall clock on any export. There is no faster path to find; the
-    /// work is to make each callback cheap, not to avoid the callbacks.
+    /// GenerateSimplePrimitives is the only way in. Navisworks exposes no bulk vertex, triangle or
+    /// mesh buffer in either the .NET API or the COM one, so this per-vertex callback is it, and it
+    /// is most of the wall clock on any export. There is no faster path; the work is to make each
+    /// callback cheap rather than to avoid the callbacks.
     ///
-    /// The COM side is reached through <see cref="ComApiBridge"/>, which is the documented bridge
-    /// between a <see cref="ModelItem"/> and the fragment tree underneath it.
+    /// The COM side is reached through <see cref="ComApiBridge"/>, the documented bridge between a
+    /// <see cref="ModelItem"/> and the fragment tree underneath it.
     ///
-    /// <b>Main thread only</b>, like everything that touches the document.
+    /// Main thread only, like everything that touches the document.
     /// </summary>
     public sealed class NavGeometry
     {

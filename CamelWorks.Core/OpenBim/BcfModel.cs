@@ -179,10 +179,10 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// The camera a viewpoint restores.
     ///
-    /// <b>Coordinates are the model's own, Z-up.</b> BCF is Z-up and so is the host, so there is
-    /// no transform here and there must not be one. A viewer that renders Y-up converts on the way
-    /// in; doing it here would rotate every exported viewpoint ninety degrees, which is easy to do
-    /// by copying a viewer's import code and impossible to notice until somebody opens the file.
+    /// Coordinates are the model's own, Z-up. BCF is Z-up and so is the host, so there is no
+    /// transform here and there must not be one. A viewer that renders Y-up converts on the way in;
+    /// doing it here would rotate every exported viewpoint ninety degrees, which is easy to
+    /// introduce by copying a viewer's import code and hard to notice until somebody opens the file.
     /// </summary>
     public sealed class BcfCamera
     {

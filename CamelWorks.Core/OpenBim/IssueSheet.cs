@@ -208,15 +208,15 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// The worksheet leg of a coordination conversation.
     ///
-    /// BCF assumes the far end has a tool that reads BCF. Most of the far ends on a real project
-    /// have Excel, and a coordinator who sends a .bcfzip to a fabricator gets a phone call. So the
-    /// same issues go out as a worksheet with two empty columns, and come back through the same
-    /// merge policy as a returned BCF file — including the rule that a stale "Open" does not undo
-    /// an approval and an explicit re-open is honoured even downwards.
+    /// BCF assumes the far end has a tool that reads BCF. Most far ends on a real project have
+    /// Excel, and sending a .bcfzip to a fabricator produces a phone call. So the same issues go out
+    /// as a worksheet with two empty columns and come back through the same merge policy as a
+    /// returned BCF file, including the rule that a stale "Open" does not undo an approval and an
+    /// explicit re-open is honoured even downwards.
     ///
-    /// <b>Keyed on a short opaque id, not on the group name.</b> The name is what a person edits:
-    /// they fix a typo, add a level prefix, translate it. The id is six characters derived from the
-    /// name once, printed in a column headed "do not edit", and never written back.
+    /// Keyed on a short opaque id rather than the group name. The name is what a person edits: they
+    /// fix a typo, add a level prefix, translate it. The id is six characters derived from the name
+    /// once, printed in a column headed "do not edit", and never written back.
     /// </summary>
     public static class IssueSheet
     {

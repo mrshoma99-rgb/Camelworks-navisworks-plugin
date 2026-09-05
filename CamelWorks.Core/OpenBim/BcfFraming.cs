@@ -94,10 +94,10 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// Works out where to stand to see a set of points.
     ///
-    /// <b>Not a plan view and not a straight-on elevation.</b> A clash between a duct and a beam is
-    /// invisible from directly above and ambiguous from directly in front; the whole reason a
+    /// Not a plan view and not a straight-on elevation. A clash between a duct and a beam is
+    /// invisible from directly above and ambiguous from directly in front, and the reason a
     /// viewpoint is worth attaching is that it shows the two things missing each other. So the eye
-    /// goes off to one side and slightly above, which is where a person would stand.
+    /// goes off to one side and slightly above.
     /// </summary>
     public static class BcfFraming
     {

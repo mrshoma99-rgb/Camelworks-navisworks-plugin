@@ -9,12 +9,12 @@ namespace CamelWorks.Core.Abstractions
     ///
     /// Two things this seam exists to force:
     ///
-    /// 1. <b>Preview before write, always.</b> Every mutating command shows an affected-element
-    ///    count first. There is no API on the far side that lets a caller skip it.
-    /// 2. <b>Its own undo.</b> The host's transaction API does not cover us — COM user-defined
-    ///    property writes sit outside the host's undo entirely, so Ctrl+Z will not reverse them.
-    ///    Rather than pretend otherwise, every write captures a pre-edit snapshot into the sidecar
-    ///    journal, and the product says plainly in three places that Ctrl+Z is not the way back.
+    /// 1. Preview before write, always. Every mutating command shows an affected-element count
+    ///    first, and there is no API on the far side that lets a caller skip it.
+    /// 2. Its own undo. The host's transaction API does not cover us: COM user-defined property
+    ///    writes sit outside the host's undo entirely, so Ctrl+Z will not reverse them. Every write
+    ///    captures a pre-edit snapshot into the sidecar journal, and the product states in three
+    ///    places that Ctrl+Z is not the way back.
     /// </summary>
     public interface IModelWriteTransaction : IDisposable
     {

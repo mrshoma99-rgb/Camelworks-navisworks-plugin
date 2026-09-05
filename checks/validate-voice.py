@@ -12,10 +12,8 @@ things that are mechanically detectable.
    rhetorical setup; a comment states the constraint, the reason for a non-obvious choice, or
    the failure mode being guarded against.
 
-The rewrite is being done in passes. `CLEANED` lists the files a pass has been through;
-those fail the check. Everything else is counted and reported as a backlog so the size of
-the remaining work is visible without blocking the build. Add paths to `CLEANED` as passes
-land, until the list is the whole tree and it can be replaced with a blanket rule.
+The rewrite passes are complete, so this applies to every file under ROOTS and any hit
+fails the check.
 
     python3 checks/validate-voice.py
 """
@@ -25,172 +23,6 @@ import sys
 
 ROOTS = ["CamelWorks.UI", "CamelWorks.Core", "CamelWorks.Nav", "CamelWorks.Nav.Clash",
          "CamelWorks.Studio"]
-
-# Files a rewrite pass has been through. These must stay clean.
-CLEANED = (
-    "CamelWorks.UI/Views/MatrixWindow.cs",
-    "CamelWorks.UI/Views/Ui.cs",
-    "CamelWorks.UI/Views/Parts.cs",
-    "CamelWorks.Core/Clash/MatrixBoard.cs",
-    "CamelWorks.Nav/NavDocument.cs",
-    "CamelWorks.Core/Abstractions/IViewpointStore.cs",
-    "CamelWorks.Nav.Clash/NavClashSource.cs",
-    "CamelWorks.Core/Report/XlsxWriter.cs",
-    "CamelWorks.UI/Views/ProjectViews.cs",
-    "CamelWorks.Nav/NavViewSession.cs",
-    "CamelWorks.Core/Clash/ClashBcf.cs",
-    "CamelWorks.UI/Views/CompareViews.cs",
-    "CamelWorks.Core/Project/TeamRoster.cs",
-    "CamelWorks.Core/Findings/Finding.cs",
-    "CamelWorks.Core/Compare/ModelCompare.cs",
-    "CamelWorks.Core/Clash/MatrixSanity.cs",
-    "CamelWorks.UI/Views/TeamWindow.cs",
-    "CamelWorks.UI/Views/Skin.cs",
-    "CamelWorks.UI/Views/Pointer.cs",
-    "CamelWorks.UI/Views/Pickers.cs",
-    "CamelWorks.UI/Views/MatrixLook.cs",
-    "CamelWorks.UI/Views/MatrixKey.cs",
-    "CamelWorks.UI/Views/IdsWindow.cs",
-    "CamelWorks.UI/Views/HelpWindow.cs",
-    "CamelWorks.UI/Views/ClearanceViews.cs",
-    "CamelWorks.UI/Shell/HostWindow.cs",
-    "CamelWorks.Studio/Program.cs",
-    "CamelWorks.Studio/Panels.cs",
-    "CamelWorks.Core/Issues/Issue.cs",
-    "CamelWorks.Core/Findings/FindingBcf.cs",
-    "CamelWorks.Core/Clash/MatrixSource.cs",
-    "CamelWorks.Core/Clash/MatrixSheets.cs",
-    "CamelWorks.Core/Clash/MatrixPlan.cs",
-    "CamelWorks.UI/Views/Seat.cs",
-    "CamelWorks.UI/Views/MatrixRules.cs",
-    "CamelWorks.UI/Views/LeaseStrip.cs",
-    "CamelWorks.UI/Views/Host.cs",
-    "CamelWorks.UI/Views/DataViews.cs",
-    "CamelWorks.UI/Views/ClashIdentity.cs",
-    "CamelWorks.UI/Views/BoardList.cs",
-    "CamelWorks.UI/Views/Bench.cs",
-    "CamelWorks.UI/Shell/Tools.cs",
-    "CamelWorks.Nav/NavSearch.cs",
-    "CamelWorks.Nav/NavCompare.cs",
-    "CamelWorks.Core/Store/Journal.cs",
-    "CamelWorks.Core/People/Responsible.cs",
-    "CamelWorks.Core/OpenBim/IdsScope.cs",
-    "CamelWorks.Core/Issues/IssueFindings.cs",
-    "CamelWorks.Core/Field/MassProperties.cs",
-    "CamelWorks.Core/Compare/ModelSnapshot.cs",
-    "CamelWorks.Core/Compare/ModelPairing.cs",
-    "CamelWorks.Core/Compare/ElementFingerprint.cs",
-    "CamelWorks.Core/Compare/CompareStamp.cs",
-    "CamelWorks.Core/Compare/CompareResult.cs",
-    "CamelWorks.Core/Compare/CompareLayers.cs",
-    "CamelWorks.Core/Clash/MatrixTestsXml.cs",
-    "CamelWorks.Core/Clash/MatrixTally.cs",
-    "CamelWorks.Core/Clash/MatrixLegend.cs",
-    "CamelWorks.Core/Clash/MatrixDiff.cs",
-    "CamelWorks.Core/Clash/ClashNesting.cs",
-    "CamelWorks.Core/Clash/ClashItem.cs",
-    "CamelWorks.Core/Appearance/AppearanceStack.cs",
-    "CamelWorks.Core/Appearance/AppearancePlanner.cs",
-    "CamelWorks.Core/Abstractions/IModelDocument.cs",
-    "CamelWorks.UI/Views/ToolWindow.cs",
-    "CamelWorks.UI/Views/ToolViews.cs",
-    "CamelWorks.UI/Views/SiteWindow.cs",
-    "CamelWorks.UI/Views/SideBySideViews.cs",
-    "CamelWorks.UI/Views/SetsViews.cs",
-    "CamelWorks.UI/Views/SetLibraryWindow.cs",
-    "CamelWorks.UI/Views/IssueViews.cs",
-    "CamelWorks.UI/Views/GraphViews.cs",
-    "CamelWorks.UI/Views/FreezeViews.cs",
-    "CamelWorks.UI/Views/Follows.cs",
-    "CamelWorks.UI/Views/FixLinksWindow.cs",
-    "CamelWorks.UI/Views/ExportWindow.cs",
-    "CamelWorks.UI/Views/CompileWindow.cs",
-    "CamelWorks.UI/Views/ClashExportWindow.cs",
-    "CamelWorks.UI/Shell/AppWindow.cs",
-    "CamelWorks.UI/Shell/MarkerOverlayPlugin.cs",
-    "CamelWorks.UI/Shell/RibbonTabMerger.cs",
-    "CamelWorks.UI/CamelWorksPlugin.cs",
-    "CamelWorks.Core/Appearance/AppearanceTransfer.cs",
-    "CamelWorks.Core/Appearance/AppearanceLayer.cs",
-    "CamelWorks.Core/Store/VersionedDocument.cs",
-    "CamelWorks.Core/Store/JsonValue.cs",
-    "CamelWorks.Core/Store/ProjectLease.cs",
-    "CamelWorks.Core/Sets/Restructure.cs",
-    "CamelWorks.Core/Sets/SetDrift.cs",
-    "CamelWorks.Core/Sets/SetCondition.cs",
-    "CamelWorks.Core/Sets/DnfCompiler.cs",
-    "CamelWorks.Core/Sets/SetBaselineStore.cs",
-    "CamelWorks.Core/Sets/SetTree.cs",
-    "CamelWorks.Core/Sets/SetDriftFindings.cs",
-    "CamelWorks.Core/Identity/ElementKey.cs",
-    "CamelWorks.Core/Identity/ClashKey.cs",
-    "CamelWorks.Core/Identity/ElementLocator.cs",
-    "CamelWorks.Core/Automation/NodeCatalogue.cs",
-    "CamelWorks.Core/Automation/GraphRunner.cs",
-    "CamelWorks.Core/Findings/FindingStatus.cs",
-    "CamelWorks.Core/Findings/FindingRegister.cs",
-    "CamelWorks.Core/Findings/FindingJson.cs",
-    "CamelWorks.Core/Findings/FindingStore.cs",
-    "CamelWorks.Core/Compare/SnapshotBuilder.cs",
-    "CamelWorks.Core/Compare/BaselineModels.cs",
-    "CamelWorks.Core/Compare/CompareSettings.cs",
-    "CamelWorks.Core/Compare/ElementChange.cs",
-    "CamelWorks.Core/Compare/SnapshotStore.cs",
-    "CamelWorks.Core/Compare/CompareClusters.cs",
-    "CamelWorks.Core/Compare/CompareReport.cs",
-    "CamelWorks.Core/Compare/CompareIssues.cs",
-    "CamelWorks.Core/Clash/ClashCarryOver.cs",
-    "CamelWorks.Core/Clash/ClashTestNames.cs",
-    "CamelWorks.Core/Clash/MatrixFromModel.cs",
-    "CamelWorks.Core/Clash/ClashAside.cs",
-    "CamelWorks.Core/Clash/ClashPredicates.cs",
-    "CamelWorks.Core/Clash/ClashFile.cs",
-    "CamelWorks.Core/Clash/ExportProfile.cs",
-    "CamelWorks.Core/Clash/ClashXml.cs",
-    "CamelWorks.Core/Clash/MatrixNaming.cs",
-    "CamelWorks.Core/Clash/SheetMatrix.cs",
-    "CamelWorks.Core/Clash/DuplicateCollapse.cs",
-    "CamelWorks.Core/Clash/ClashMarkers.cs",
-    "CamelWorks.Core/Clash/SceneMarkers.cs",
-    "CamelWorks.Core/Clash/MatrixStyle.cs",
-    "CamelWorks.Core/Clash/ClashLegacy.cs",
-    "CamelWorks.Core/Clash/Freeze.cs",
-    "CamelWorks.Core/Clash/PartyLedger.cs",
-    "CamelWorks.Core/Clash/Penetrations.cs",
-    "CamelWorks.Core/Clash/ClashFindings.cs",
-    "CamelWorks.Core/Clash/MatrixRule.cs",
-    "CamelWorks.Core/Project/ProjectStore.cs",
-    "CamelWorks.Core/Project/FederationReview.cs",
-    "CamelWorks.Core/Project/SampleProject.cs",
-    "CamelWorks.Core/Project/HealthFindings.cs",
-    "CamelWorks.Core/Project/SelfTest.cs",
-    "CamelWorks.Core/Project/ProjectProfile.cs",
-    "CamelWorks.Core/Project/UserChoices.cs",
-    "CamelWorks.Core/Project/ToolMemory.cs",
-    "CamelWorks.Core/Project/ClashRuleSet.cs",
-    "CamelWorks.Core/Report/KeyPlan.cs",
-    "CamelWorks.Core/Report/DxfWriter.cs",
-    "CamelWorks.Core/Report/GltfWriter.cs",
-    "CamelWorks.Core/Field/FieldElement.cs",
-    "CamelWorks.Core/Field/LabelSheet.cs",
-    "CamelWorks.Core/Field/SettingOut.cs",
-    "CamelWorks.Core/Field/Dimensions.cs",
-    "CamelWorks.Core/Field/Attachments.cs",
-    "CamelWorks.Core/Field/QrCode.cs",
-    "CamelWorks.Core/Publish/Extract.cs",
-    "CamelWorks.Core/Publish/Compilation.cs",
-    "CamelWorks.Core/Data/XlsxReader.cs",
-    "CamelWorks.Core/Data/Formula.cs",
-    "CamelWorks.Core/Data/SheetImport.cs",
-    "CamelWorks.Core/Data/DataLink.cs",
-    "CamelWorks.Core/Data/ValueCleaner.cs",
-    "CamelWorks.Core/Data/LevelSet.cs",
-    "CamelWorks.Core/Data/ClearanceFindings.cs",
-    "CamelWorks.UI/Views/ClashManageViews.cs",
-    "CamelWorks.UI/Views/MatrixReadWindow.cs",
-    "CamelWorks.Core/Clash/MatrixNamePattern.cs",
-    "CamelWorks.Core/Clash/MatrixFromNames.cs",
-)
 
 LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
@@ -232,10 +64,9 @@ def files():
 
 def main() -> int:
     bad = []
-    backlog = []
 
     for path in files():
-        into = bad if str(path).replace("\\", "/") in CLEANED else backlog
+        into = bad
 
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             stripped = line.strip()
@@ -258,17 +89,10 @@ def main() -> int:
                         into.append((path, number, why, said[:90]))
                         break
 
-    if backlog:
-        files_left = len({str(one[0]) for one in backlog})
-
-        print(f"Backlog: {len(backlog)} place(s) in {files_left} file(s) not yet rewritten.")
-        print("These do not fail the check. Add each file to CLEANED as it is done.")
-        print()
-
     if not bad:
         return 0
 
-    print(f"{len(bad)} place(s) in cleaned files do not read like AEC software:")
+    print(f"{len(bad)} place(s) do not read like AEC software:")
     print()
 
     for path, number, why, said in bad[:60]:

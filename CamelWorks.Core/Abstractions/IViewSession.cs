@@ -41,12 +41,11 @@ namespace CamelWorks.Core.Abstractions
         /// <summary>
         /// Hide everything but what the host has selected right now.
         ///
-        /// <b>Why this exists beside the one above.</b> A caller that already has the elements -
-        /// the clash board asks the engine for the two a result is between, which costs nothing -
+        /// Separate from the call above because a caller that already has the elements — the clash
+        /// board asks the engine for the two a result is between, which costs nothing — previously
         /// had to turn them into keys and hand those over, and resolving a key that is not an
-        /// instance GUID means indexing every geometry leaf in the federation. So isolating what
-        /// was already selected started a walk of the whole model to find what it was already
-        /// holding.
+        /// instance GUID means indexing every geometry leaf in the federation. So isolating what was
+        /// already selected started a walk of the whole model to find what it was already holding.
         /// </summary>
         /// <returns>How many items were left visible. Zero means nothing was selected to keep.</returns>
         int IsolateSelection();

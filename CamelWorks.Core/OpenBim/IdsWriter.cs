@@ -63,18 +63,17 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// An IDS file, written.
     ///
-    /// We could read one and could not write one, which made this half a tool: a client sends an
-    /// IDS and we check against it, but the requirements a project sets for itself - the ones a
-    /// coordinator argues about all week and then enforces by eye - had nowhere to live. Writing
-    /// one turns those into a file the client's tool, the architect's tool and ours all agree on.
+    /// Reading an IDS worked and writing one did not, which made this half a tool: a client sends an
+    /// IDS and we check against it, but the requirements a project sets for itself had nowhere to
+    /// live. Writing one turns those into a file the client's tool, the architect's tool and ours all
+    /// read.
     ///
-    /// <b>It refuses a file nobody could load.</b> A specification with no applicability applies to
-    /// every element in the model, which IDS forbids and which would mark a whole federation
-    /// failing. An IDS that will not open is worse than no IDS, because the person who receives it
-    /// has to work out whose fault it is.
+    /// It refuses a file nobody could load. A specification with no applicability applies to every
+    /// element in the model, which IDS forbids and which would mark a whole federation failing. An
+    /// IDS that will not open is worse than no IDS.
     ///
-    /// <b>What it had to decide is said.</b> An IFC version nobody named, an applicability facet
-    /// carrying a cardinality the schema has nowhere to put, a restriction that restricts nothing -
+    /// What it had to decide is reported. An IFC version nobody named, an applicability facet
+    /// carrying a cardinality the schema has nowhere to put, a restriction that restricts nothing:
     /// each is written the only way it can be and reported, rather than silently normalised.
     /// </summary>
     public static class IdsWriter

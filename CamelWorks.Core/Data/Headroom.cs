@@ -117,12 +117,12 @@ namespace CamelWorks.Core.Data
     /// Clear height between a walkable surface and whatever is above it.
     ///
     /// The check a clash test cannot do. A duct 1.9 m above a corridor floor clashes with nothing —
-    /// there is air between them — so no clash test at any tolerance will ever report it, and the
-    /// first anybody hears of it is when somebody walks into it on site.
+    /// there is air between them — so no clash test at any tolerance reports it, and the first
+    /// anybody hears of it is on site.
     ///
-    /// <b>One row per surface, not per pair.</b> A slab under a plant room has a thousand things
-    /// above it and one of them is the lowest; reporting all thousand buries the answer. So each
-    /// surface contributes its single worst obstruction, which is the one that has to move.
+    /// One row per surface, not per pair. A slab under a plant room has a thousand things above it
+    /// and one of them is the lowest; reporting all thousand buries the answer. So each surface
+    /// contributes its single worst obstruction, which is the one that has to move.
     /// </summary>
     public static class Headroom
     {

@@ -29,16 +29,16 @@ namespace CamelWorks.Core.Data
     }
 
     /// <summary>
-    /// A number with a unit, parsed from what the host actually gives us.
+    /// A number with a unit, parsed from what the host gives us.
     ///
-    /// The host hands properties over as display strings with the unit baked in: "1200 mm",
-    /// "1.2 m", "3'-6\"", "4,5 m²". A takeoff that sums those as text, or strips the letters and
-    /// adds the numbers, produces a total that is wrong by whatever mixture of units the
-    /// federation happens to contain — and it looks completely plausible, which is the problem.
+    /// The host hands properties over as display strings with the unit included: "1200 mm", "1.2 m",
+    /// feet-and-inches, "4,5 m²". A takeoff that sums those as text, or strips the letters and adds
+    /// the numbers, produces a total wrong by whatever mixture of units the federation contains, and
+    /// the total looks plausible.
     ///
-    /// <b>An unrecognised unit is refused, not guessed.</b> A total that silently dropped the
-    /// values it could not read is worse than no total at all: nobody can tell it is short. What
-    /// the parser cannot read, the takeoff counts and reports.
+    /// An unrecognised unit is refused rather than guessed. A total that silently dropped the values
+    /// it could not read is worse than no total, because it cannot be told it is short. What the
+    /// parser cannot read, the takeoff counts and reports.
     /// </summary>
     public readonly struct Quantity : IEquatable<Quantity>
     {

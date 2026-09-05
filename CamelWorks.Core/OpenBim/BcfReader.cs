@@ -55,11 +55,11 @@ namespace CamelWorks.Core.OpenBim
     /// <summary>
     /// Reads a .bcfzip of either version.
     ///
-    /// <b>Strict on write, lenient on read.</b> The file being read was produced by somebody else's
-    /// tool, and it is routinely a little wrong: a 3.0 file with 2.1's flat comments, a missing
-    /// creation author, a topic folder whose name does not match the GUID inside it. None of that
-    /// is fixable from here, and refusing the file helps nobody — so the reader accepts either
-    /// shape for every element that moved between versions, and reports what it had to forgive.
+    /// Strict on write, lenient on read. The file being read was produced by another tool and is
+    /// routinely a little wrong: a 3.0 file with 2.1's flat comments, a missing creation author, a
+    /// topic folder whose name does not match the GUID inside it. None of that is fixable from here
+    /// and refusing the file helps nobody, so the reader accepts either shape for every element that
+    /// moved between versions and reports what it had to accept.
     /// </summary>
     public static class BcfReader
     {
