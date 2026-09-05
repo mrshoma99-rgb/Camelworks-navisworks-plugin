@@ -55,6 +55,11 @@ namespace CamelWorks.UI.Views
             {
                 list.Children.Clear();
 
+                // Labelled, because two boxes side by side with nothing over them is a form
+                // where the second one has to be guessed at — and the guess that matters is
+                // whether the number is metres or millimetres.
+                if (!plan.IsEmpty) list.Children.Add(Headings());
+
                 foreach (var storey in plan.Storeys.Reverse().ToList())
                     list.Children.Add(Storey(plan, storey, Keep, Redraw));
 
@@ -99,6 +104,53 @@ namespace CamelWorks.UI.Views
         /// <param name="plan">The storeys.</param>
         public static UIElement Drawn(LevelPlan plan) => Panel(plan, null);
 
+        /// <summary>The labels over the three columns.</summary>
+        private static UIElement Headings()
+        {
+            var row = Row();
+
+            var name = Ui.Eyebrow("Level");
+
+            name.Margin = new Thickness(0);
+
+            Grid.SetColumn(name, 0);
+            row.Children.Add(name);
+
+            var at = Ui.Eyebrow("Floor at, m");
+
+            at.Margin = new Thickness(8, 0, 0, 0);
+
+            Grid.SetColumn(at, 1);
+            row.Children.Add(at);
+
+            var span = Ui.Eyebrow("Covers");
+
+            span.Margin = new Thickness(10, 0, 0, 0);
+
+            Grid.SetColumn(span, 2);
+            row.Children.Add(span);
+
+            row.Margin = new Thickness(0, 0, 0, 6);
+
+            return row;
+        }
+
+        /// <summary>The four columns every row of this editor sits in.</summary>
+        private static Grid Row()
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(84) });
+            row.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+            });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            return row;
+        }
+
         /// <summary>One storey: its name, its floor height, and what it runs to.</summary>
         /// <param name="plan">The plan it belongs to.</param>
         /// <param name="storey">The storey.</param>
@@ -107,15 +159,7 @@ namespace CamelWorks.UI.Views
         private static UIElement Storey(LevelPlan plan, LevelStorey storey, Func<bool> onKeep,
                                         Action onChange)
         {
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition
-            {
-                Width = new GridLength(1, GridUnitType.Star),
-            });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var row = Row();
 
             var name = Ui.Text(storey.Name, "Level 1", typed =>
             {

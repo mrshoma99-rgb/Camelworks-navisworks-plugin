@@ -82,7 +82,7 @@ namespace CamelWorks.Studio
             // an empty plan draws the one line saying there are none, which is the state that
             // proves nothing about the editor.
             Page("app-clash-levels", "Clash Manager · Levels", 620,
-                 () => ClashLevels.Drawn(Storeyed())),
+                 () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
 
             // The naming, drawn on each of its panes. This is the surface that decides what the
             // manager can band, filter, sort and renumber by, and every one of those reads a
