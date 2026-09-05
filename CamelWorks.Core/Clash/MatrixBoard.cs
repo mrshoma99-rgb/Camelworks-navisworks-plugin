@@ -24,21 +24,20 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// What this line is, as against what it is called.
+        /// The line's identity, as distinct from its name.
         ///
-        /// <b>Two lines were judged the same thing by their names.</b> A row and the column
-        /// standing for it had to be recognised as one discipline - that is what mirrors the
-        /// grid, what makes the diagonal the diagonal, and what stops a pair being asked twice -
-        /// and with nothing else to go on the test was the name. Which is fine until somebody
-        /// adds six disciplines and names none of them yet: six rows called "New category" are
-        /// then all the same line as each other, every pair among them is a pair with itself,
-        /// the whole block is diagonal, and the grid quietly refuses to hold anything.
+        /// A row and the column standing for it must be recognised as one discipline: that is what
+        /// mirrors the grid, defines the diagonal and stops a pair being asked twice. Identity was
+        /// previously taken from the name, which fails as soon as several lines share one. Six rows
+        /// added and not yet named are all called "New category", so each is treated as the same
+        /// line as the others, every pair among them reads as a pair with itself, the whole block
+        /// counts as diagonal, and the grid holds nothing.
         ///
-        /// A discipline knows what it is. The pair is made together and says so here, so identity
-        /// survives being unnamed, being renamed, and being named the same as its neighbour.
+        /// The row and column of a discipline are created together and carry this identity, so it
+        /// survives being unnamed, renamed, or named the same as a neighbour.
         ///
-        /// Empty on a line read from a board saved before this existed, and the older test by
-        /// source and name still answers for those.
+        /// Empty on a line read from a board saved before this field existed; those fall back to
+        /// the older test by source and name.
         /// </summary>
         public string Key { get; set; } = Guid.NewGuid().ToString("N").Substring(0, 12);
 
@@ -52,15 +51,14 @@ namespace CamelWorks.Core.Clash
         public string Code { get; set; }
 
         /// <summary>
-        /// The folder it is filed in, or empty for one that is loose.
+        /// The folder it is filed in, or empty for a loose line.
         ///
-        /// <b>A folder is a name several lines share, not an object they hang off.</b> Twenty
-        /// disciplines is a readable matrix; sixty is a wall, and the way anybody makes sense of
-        /// sixty is "these eight are services". Held as a name on the line, a folder cannot go
-        /// stale against the lines in it, cannot be emptied without emptying itself, and
-        /// survives every reorder, save and undo that the lines survive - because it is the
-        /// lines. The board keeps the members of one folder next to each other; what a folder
-        /// <i>is</i> is the set of lines that answer to its name.
+        /// A folder is a name several lines share rather than an object they hang off. Twenty
+        /// disciplines make a readable matrix; sixty need grouping into packages. Held as a name on
+        /// the line, a folder cannot go stale against its members, cannot be emptied independently
+        /// of them, and survives every reorder, save and undo the lines survive. The board keeps
+        /// the members of one folder adjacent; the folder itself is the set of lines answering to
+        /// its name.
         /// </summary>
         public string Folder { get; set; } = string.Empty;
 
@@ -114,18 +112,16 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The clash matrix: rows down one side, columns across the top, a symbol where they meet.
     ///
-    /// <b>Rows and columns are two lists, not one.</b> The square, mirrored grid a coordination
-    /// kick-off draws is the case where they happen to hold the same things — and it is the
-    /// common case — but it is not the only shape anybody wants. A row is side A of a test and a
-    /// column is side B; that is the whole rule, and it lets somebody put four packages down the
-    /// side and every discipline across the top without inventing categories that mean nothing on
-    /// the other axis.
+    /// Rows and columns are two separate lists. The square, mirrored grid drawn at a coordination
+    /// kick-off is the case where both lists hold the same items, and it is the common case, but it
+    /// is not the only useful shape. A row is side A of a test and a column is side B, which allows
+    /// four packages down the side and every discipline across the top without inventing categories
+    /// that mean nothing on the other axis.
     ///
-    /// <b>What follows from that.</b> Nothing is mirrored: cell (r,c) is stored where it is put.
-    /// Where the two lists <em>do</em> hold the same thing, the pair (Ducts, Steel) and the pair
-    /// (Steel, Ducts) are two cells naming one test, and the planner is what notices — see
-    /// <see cref="MatrixPlan"/>. Storing one half and reflecting it would be the grid deciding
-    /// something about the matrix's shape that only the person drawing it knows.
+    /// Consequently nothing is mirrored: cell (r,c) is stored where it is put. Where both lists do
+    /// hold the same item, the pair (Ducts, Steel) and the pair (Steel, Ducts) are two cells naming
+    /// one test, and <see cref="MatrixPlan"/> is what detects that. Storing one half and reflecting
+    /// it would make the grid assume a shape only the author knows.
     /// </summary>
     public sealed class MatrixBoard
     {
@@ -163,18 +159,16 @@ namespace CamelWorks.Core.Clash
         public IReadOnlyList<MatrixLine> Columns => _columns;
 
         /// <summary>
-        /// The mark for a pair somebody has ruled out on purpose.
+        /// The mark for a pair deliberately ruled out.
         ///
-        /// <b>Blank used to mean two things.</b> "Nobody has got to this yet" and "we agreed at
-        /// the kick-off that these two are never checked" were the same empty cell, and forty
-        /// per cent of a real grid is empty - so a coordinator inheriting one in March cannot
-        /// tell an agreement from an abandonment, and the count of what is left to decide can
-        /// never reach the end.
+        /// Blank previously carried two meanings: "not yet decided" and "agreed at the kick-off as
+        /// never checked". Around forty per cent of a real grid is empty, so a coordinator
+        /// inheriting one cannot tell an agreement from an omission, and the count of undecided
+        /// pairs never reaches zero.
         ///
-        /// An en dash, which is what every paper matrix has used for this for as long as they
-        /// have been drawn. It is reserved rather than a legend entry: a symbol somebody can
-        /// give a tolerance to and switch on is a symbol that turns ninety agreed-not-required
-        /// pairs into ninety tests the first time anybody ticks it.
+        /// Drawn as an en dash, the conventional mark on a paper matrix. It is reserved rather than
+        /// a legend entry: a legend symbol can be given a tolerance and switched on, which would
+        /// turn every agreed-not-required pair into a test.
         /// </summary>
         public const string NotRequired = "\u2013";
 
@@ -197,19 +191,17 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Whether the two axes are one list of categories, kept in step.
         ///
-        /// <b>A clash matrix is a list of disciplines against itself.</b> Structure against
-        /// services is the same agreement as services against structure, which is the whole
-        /// reason the grid mirrors about its diagonal and half of it is dead. Two axes that can
-        /// be added to separately are not that: they are two lists that happen to overlap, and
-        /// the mirroring, the dead half and the diagonal all become coincidences of what somebody
-        /// typed twice.
+        /// A clash matrix is normally a list of disciplines against itself. Structure against
+        /// services is the same agreement as services against structure, which is why the grid
+        /// mirrors about its diagonal and half of it is unused. Two axes that can be edited
+        /// separately are a different thing: two lists that happen to overlap, where the mirroring,
+        /// the unused half and the diagonal are coincidences of what was typed twice.
         ///
-        /// So one act adds a category and it lands on both axes, one act takes it away and it
-        /// leaves both, and naming, numbering, coding and pointing already carry across.
+        /// So with this on, adding a category adds it to both axes, removing one removes it from
+        /// both, and naming, numbering, coding and colour carry across.
         ///
-        /// It can be turned off, because a matrix of one trade's sets against another's is a
-        /// real thing somebody builds and the grid is allowed to be it. Off is the exception a
-        /// person chooses, not the shape everybody starts in.
+        /// It can be turned off, because a matrix of one trade's sets against another's is a real
+        /// case. Off is a deliberate exception rather than the default.
         /// </summary>
         public bool Paired { get; set; } = true;
 
@@ -278,24 +270,23 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// What colour a folder is drawn in, by name, or empty for the skin's own.
+        /// Folder colours, by folder name; empty means the theme's own colour.
         ///
-        /// <b>A folder is a name its members share, and nothing else - which is why this is
-        /// kept here.</b> There is no folder object to hang a colour on: filing a line is
-        /// writing a string on it, and a folder exists exactly as long as some line is still
-        /// carrying its name. So the colour lives with the board, keyed by that name, and the
-        /// acts that change a name have to bring it along.
+        /// A folder is a name its members share and nothing more, so there is no folder object to
+        /// hold a colour. Filing a line writes a string on it, and a folder exists for as long as
+        /// some line carries its name. The colour therefore lives on the board, keyed by that name,
+        /// and any operation that changes a folder name must carry the colour with it.
         /// </summary>
         private readonly Dictionary<string, string> _folderColours =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// The colour a folder is drawn in, or empty when nobody has chosen one.
+        /// The colour a folder is drawn in, or empty when none has been chosen.
         ///
-        /// <b>Colour is how a band of eight rows becomes one thing at a glance.</b> Twenty-two
-        /// disciplines in five packages read as twenty-two disciplines until the packages are
-        /// told apart, and the band down the side is the only place on the screen with room to
-        /// say which is which without writing it out again on every row.
+        /// Colour is what makes a band of eight rows read as one package. Twenty-two disciplines in
+        /// five packages read as twenty-two disciplines unless the packages are distinguished, and
+        /// the band down the side is the only place with room to show that without repeating the
+        /// package name on every row.
         /// </summary>
         /// <param name="folder">The folder's name.</param>
         public string ColourOf(string? folder)
@@ -368,11 +359,9 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// File a line in a folder, and file its twin with it.
         ///
-        /// <b>Filing is also a move.</b> A folder is only legible while its members are next to
-        /// each other - a band down the side with two of its eight rows somewhere else is not a
-        /// folder, it is a label that lies - so a line dropped into a folder goes to the end of
-        /// that folder's block rather than staying where it was. A line taken out of one goes
-        /// after the block it just left, which is where a hand expects to find it.
+        /// Filing also moves the line. A folder is only legible while its members are adjacent, so a
+        /// line dropped into a folder goes to the end of that folder's block rather than staying
+        /// where it was. A line taken out of a folder is placed after the block it left.
         /// </summary>
         /// <param name="line">The row or column.</param>
         /// <param name="folder">The folder, or null or empty to take it out of one.</param>
@@ -456,11 +445,11 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// Take a folder away and leave its lines where they are.
+        /// Remove a folder and leave its lines in place.
         ///
-        /// <b>Dissolving is not deleting.</b> A folder holds nothing of its own - no source, no
-        /// symbol, no decision - so taking it away can never cost anybody a decision they made,
-        /// and the two acts have to be told apart on the menu that offers them.
+        /// Dissolving is not deleting. A folder holds nothing of its own — no source, no symbol, no
+        /// decision — so removing it cannot lose a decision, and the menu keeps the two commands
+        /// distinct.
         /// </summary>
         /// <param name="folder">The folder.</param>
         /// <returns>How many lines came loose.</returns>
@@ -612,10 +601,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Put a symbol where a row meets a column, or clear it with null. The mirror follows.
         ///
-        /// <b>A clash matrix is mirrored about its diagonal</b>, because A against B is the same
-        /// test as B against A. So where both axes carry the same two things, writing one cell
-        /// writes the other: the grid cannot hold two different answers about one pair, and a
-        /// person filling in the half they were given never has to fill the other.
+        /// A clash matrix is mirrored about its diagonal, because A against B is the same test as B
+        /// against A. Where both axes carry the same two items, writing one cell writes the other:
+        /// the grid cannot hold two different answers for one pair, and filling in one half fills
+        /// the other.
         /// </summary>
         /// <param name="row">The row.</param>
         /// <param name="column">The column.</param>
@@ -626,10 +615,9 @@ namespace CamelWorks.Core.Clash
 
             Write(row, column, symbol);
 
-            // <b>A hand beats a rule, and says so by writing here.</b> Somebody who overrides a
-            // rule-filled cell has made a decision, and a re-application that quietly put the
-            // rule's answer back would be the tool arguing with the person using it. The cell
-            // stops being the rule's the moment it is written by hand.
+            // A hand edit takes the cell from the rule. Overriding a rule-filled cell is a
+            // decision, and a later re-application must not put the rule's answer back over it, so
+            // the cell stops being the rule's as soon as it is written by hand.
             _byRule.Remove((row, column));
 
             var mirror = MirrorOf(row, column);
@@ -706,15 +694,15 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// Write every rule over the board again, and take back the cells no rule covers now.
+        /// Apply every rule over the board again, and release the cells no rule now covers.
         ///
-        /// <b>The last matching rule wins.</b> People write the general sentence first and the
-        /// exception after it - "everything against everything is a hard clash, except services
-        /// against architecture, which is a clearance" - so the later line is the more specific
-        /// one, and reading from the bottom is reading their intent.
+        /// The last matching rule wins. Rules are written general first and exception after —
+        /// "everything against everything is a hard clash, except services against architecture,
+        /// which is a clearance" — so the later line is the more specific one and reading from the
+        /// bottom matches the intent.
         ///
-        /// Cells written by hand are not touched, in either direction: a rule does not overwrite
-        /// one, and dropping a rule does not clear one.
+        /// Cells written by hand are untouched in either direction: a rule does not overwrite one,
+        /// and dropping a rule does not clear one.
         /// </summary>
         /// <returns>How many cells the rules changed.</returns>
         public int ApplyRules()
@@ -803,28 +791,25 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// Which triangle of a mirrored matrix is the one that is worked in.
+        /// Which triangle of a mirrored matrix is the one worked in.
         ///
-        /// <b>Nothing about a matrix says which one it should be.</b> One of the two has to be,
-        /// and every drawing of a clash matrix keeps one - but which one is a house habit, and
-        /// half the practices that draw these fill in the lower triangle because that is how the
-        /// sheet they inherited was drawn. Being handed the other one and told it is the dead
-        /// half is being told your own matrix is upside down.
+        /// Every drawing of a clash matrix keeps one triangle, but which one is a house convention;
+        /// many practices fill in the lower triangle. Forcing the other one makes the user's own
+        /// matrix read as inverted.
         ///
-        /// It changes what is drawn and nothing else: a pair is written to both cells whichever
-        /// half it is put in, so the tests that come out are the same either way.
+        /// This affects what is drawn and nothing else: a pair is written to both cells whichever
+        /// half it is entered in, so the tests produced are the same either way.
         /// </summary>
         public bool UpperIsLive { get; set; } = true;
 
         /// <summary>
         /// Whether this cell is the one of a mirrored pair that the matrix keeps.
         ///
-        /// <b>Always the earlier of the two, whichever half is drawn.</b> This is what walks the
-        /// cells, what the planner counts and what the test names are built from, so it cannot
-        /// follow a drawing preference: a pair kept the other way round would name every test
-        /// "Ducts vs Steel" where it said "Steel vs Ducts", and the difference against the
-        /// document would read as two hundred and thirty-one renames because somebody preferred
-        /// the lower triangle.
+        /// Always the earlier of the two, whichever half is drawn. This is what walks the cells,
+        /// what the planner counts and what the test names are built from, so it cannot follow a
+        /// drawing preference: keeping the pair the other way round would name every test "Ducts vs
+        /// Steel" where it previously said "Steel vs Ducts", and the difference against the document
+        /// would read as a rename of every test.
         /// </summary>
         /// <param name="row">The row.</param>
         /// <param name="column">The column.</param>
@@ -907,19 +892,18 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Whether a row and a column stand for the same thing.
         ///
-        /// <b>A line nobody has pointed yet is still the discipline it is named after.</b> This
-        /// used to say: if either side has a source, the two are the same only when their sources
-        /// are. Which is right for two pointed lines and catastrophic halfway through making a
-        /// matrix - twenty names typed, squared off, and then pointed one row at a time, every row
-        /// pointed stopped matching its own column. The pair stopped being mirrored, so both cells
-        /// of it became live and the grid quietly grew from a triangle of two hundred and ten to
-        /// a square of four hundred, with the dead half drawn as decisions nobody had made. And
-        /// nothing built, because the planner drops a pair whose column points at nothing.
+        /// A line with no source yet is still the discipline it is named after. This previously
+        /// held that if either side had a source, the two matched only when their sources matched.
+        /// That is correct for two pointed lines and wrong midway through building a matrix: with
+        /// twenty names typed, squared off and then pointed one row at a time, each row pointed
+        /// stopped matching its own column. The pair stopped being mirrored, so both of its cells
+        /// became live and the grid grew from a triangle of 210 pairs to a square of 400, with the
+        /// unused half drawn as decisions nobody had made — and nothing built, because the planner
+        /// drops a pair whose column points at nothing.
         ///
-        /// So an empty source is not a different source; it is no answer yet, and the name is
-        /// what is left to go on. Two lines that both point somewhere are the same when they
-        /// point at the same thing, whatever they are called - which is what lets two axes
-        /// deliberately diverge.
+        /// So an empty source is not a different source; it means no answer yet, and the name is
+        /// what remains to compare. Two lines that both point somewhere match when they point at the
+        /// same thing, whatever they are called, which is what lets the two axes diverge on purpose.
         /// </summary>
         /// <param name="one">One line.</param>
         /// <param name="other">The other.</param>
@@ -963,13 +947,12 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// Point a line at something, and take its twin on the other axis with it.
+        /// Point a line at a source, and point its twin on the other axis with it.
         ///
-        /// <b>Half of a pair pointed at nothing is a pair that builds nothing.</b> Saying what a
-        /// row is is one decision, and the column standing for the same discipline is the same
-        /// decision written twice - so the second one is not asked for. A twin that has already
-        /// been pointed somewhere is left alone, because two axes that have deliberately diverged
-        /// are a thing this grid is allowed to be.
+        /// A pair with one side pointed at nothing builds no test. Saying what a row is and saying
+        /// what its column is are the same decision, so the second is not asked for separately. A
+        /// twin that already points somewhere is left alone, because the two axes are allowed to
+        /// diverge deliberately.
         /// </summary>
         /// <param name="line">The row or column being pointed.</param>
         /// <param name="source">Where its elements come from.</param>
@@ -991,13 +974,13 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// Rename a line, and rename the one standing for it on the other axis with it.
+        /// Rename a line, and rename the line standing for it on the other axis with it.
         ///
-        /// <b>What makes two lines twins is what they are called, until somebody says what they
-        /// are.</b> So on a matrix typed out by hand - where nothing points anywhere yet - fixing
-        /// a typo in a row broke it away from its own column: the pair stopped being mirrored,
-        /// both its cells went live, and the triangle became a square for that discipline. Which
-        /// is the same fault pointing a row had, and the most likely act anybody performs.
+        /// Until a line has a source, its name is what makes it the twin of the line on the other
+        /// axis. On a matrix typed out by hand, correcting a typo in a row therefore separated it
+        /// from its own column: the pair stopped being mirrored, both cells went live, and the
+        /// triangle became a square for that discipline. Same failure as pointing a row, and
+        /// renaming is the more common operation.
         /// </summary>
         /// <param name="line">The row or column being renamed.</param>
         /// <param name="name">What it is called now.</param>
@@ -1030,12 +1013,12 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Put a symbol in every empty cell of the half that is worked in.
         ///
-        /// <b>The press that was missing.</b> A matrix is nearly always "this one thing, except
-        /// for the twenty pairs we talked about" - so the way it is filled is exceptions first,
-        /// blanket last, and the blanket had only two sizes: one line, or the whole grid over
-        /// everything already decided. Twenty gutter clicks, one per row, was the answer, and it
-        /// is not an answer. Empty cells only, so it cannot destroy a decision, and never the
-        /// diagonal, which no bulk fill writes.
+        /// A matrix is usually filled exceptions first and blanket last. The blanket fill
+        /// previously had only two sizes — one line, or the whole grid over everything already
+        /// decided — so the blanket step meant one gutter click per row.
+        ///
+        /// Empty cells only, so it cannot overwrite a decision, and never the diagonal, which no
+        /// bulk fill writes.
         /// </summary>
         /// <param name="symbol">The symbol to put in them.</param>
         /// <returns>How many pairs were filled.</returns>
@@ -1061,11 +1044,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Move a row or a column, and move its twin on the other axis to match.
         ///
-        /// <b>Grouping a matrix is one job, not two.</b> The block gesture is a rectangle over the
-        /// order the two axes are in, so "every MEP row against every structural column" is only
-        /// one rectangle when the disciplines sit in the same order down the side and across the
-        /// top. Moving them separately means doing the same reorder twice and getting it wrong
-        /// once; a square matrix has one order, and this keeps it.
+        /// The block gesture is a rectangle over the order the two axes are in, so "every MEP row
+        /// against every structural column" is a single rectangle only while the disciplines sit in
+        /// the same order down the side and across the top. Moving the axes separately means
+        /// repeating the same reorder twice. A square matrix has one order, and this keeps it.
         /// </summary>
         /// <param name="line">The row or column to move.</param>
         /// <param name="to">Where it should sit, from zero.</param>
@@ -1235,15 +1217,14 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Whether a cell is a discipline against itself.
         ///
-        /// <b>Not the same object - the same thing.</b> A square matrix is built by copying the
-        /// rows into the columns, so the row and the column on the diagonal are two objects
-        /// pointing at one saved set. What makes them the same pair is what they point at, and -
-        /// until somebody has said what that is - what they are called.
+        /// The row and the column on the diagonal are two objects standing for one discipline: a
+        /// square matrix is built by copying the rows into the columns. What makes them the same
+        /// pair is what they point at, or, until that is set, what they are called.
         ///
-        /// This used to answer "no" whenever either side had no source, which is every cell of
-        /// a matrix somebody is still typing the names of. So on a grid that had been squared
-        /// off but not yet pointed, the diagonal was not a diagonal: bulk fills wrote it, and
-        /// the spine was drawn as twenty ordinary cells.
+        /// This previously answered "no" whenever either side had no source, which is every cell of
+        /// a matrix whose names are still being typed. On a grid squared off but not yet pointed,
+        /// the diagonal was therefore not treated as one: bulk fills wrote it and the spine was
+        /// drawn as ordinary cells.
         /// </summary>
         /// <param name="row">The row.</param>
         /// <param name="column">The column.</param>
@@ -1275,14 +1256,13 @@ namespace CamelWorks.Core.Clash
 
             _cells.Clear();
 
-            // <b>What was in a cell survives when both its ends are still there.</b> Matched by
-            // name first, so squaring off a grid that was already square keeps every symbol in
-            // it - and then, when the name has moved, by where the old column sat.
+            // A cell's contents survive when both its ends still exist. Matched by name first, so
+            // squaring off a grid that was already square keeps every symbol; then, where the name
+            // has changed, by the old column's position.
             //
-            // The fallback used to look the old column up in a table keyed on rows, so it could
-            // never resolve: rename one row, press this to tidy the columns up, and every
-            // decision in that column was dropped. No count, no message, and the only way back
-            // was noticing in time to press undo.
+            // The fallback previously looked the old column up in a table keyed on rows, so it
+            // never resolved: renaming one row and then squaring off dropped every decision in that
+            // column, with no count and no message.
             var was = new Dictionary<MatrixLine, MatrixLine>();
 
             for (var at = 0; at < wasColumns.Count && at < _columns.Count; at++)

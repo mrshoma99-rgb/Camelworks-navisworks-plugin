@@ -126,19 +126,17 @@ namespace CamelWorks.UI.Views
     }
 
     /// <summary>
-    /// A long-running piece of work, and the only way this product has of staying responsive
-    /// during one.
+    /// A long-running piece of work, and the mechanism this product uses to stay responsive during
+    /// one.
     ///
-    /// <b>This is not a background thread, and it cannot be.</b> The Navisworks API is
-    /// main-thread-only: reading a property from another thread is undefined behaviour, not a
-    /// slower version of the same thing. So the work runs on the UI thread and pumps the dispatcher
-    /// between chunks, which is what lets the progress bar move and the Stop button be clickable at
-    /// all. Cancellation therefore happens between chunks, never inside one — stated plainly here
-    /// because a Stop button that takes twenty seconds to notice looks broken unless you know why.
+    /// This is not a background thread and cannot be. The Navisworks API is main-thread-only:
+    /// reading a property from another thread is undefined behaviour rather than a slower version
+    /// of the same call. The work therefore runs on the UI thread and pumps the dispatcher between
+    /// chunks, which is what lets the progress bar move and the Stop button respond. Cancellation
+    /// happens between chunks, never inside one, so a chunk in progress delays Stop.
     ///
-    /// Give it a <see cref="Total"/> whenever the count is known before the loop starts. The
-    /// difference between "12,300 of 29,000, about 20s left" and a bar that could mean anything is
-    /// the difference between waiting and force-quitting Navisworks.
+    /// Set <see cref="Total"/> whenever the count is known before the loop starts, so the bar can
+    /// report "12,300 of 29,000" and an estimate rather than indeterminate progress.
     /// </summary>
     public sealed class Job
     {
@@ -1148,21 +1146,22 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Ask for a path to write to, or null when the person changed their mind.
+        /// Ask for a path to write to, or null when the user cancels.
         ///
-        /// <b>Every file dialog in this product goes through here or its twin.</b> A file dialog
-        /// is a native modal, and one shown with no owner disables every top-level window on the
-        /// thread and then re-enables them from the owner it does not have. What somebody sees is
-        /// a dialog they closed and a Navisworks that never comes back — the same bug
-        /// <see cref="Shell.HostWindow"/> was written for, arriving through a different door.
+        /// Every file dialog in this product goes through here or its counterpart. A file dialog is
+        /// a native modal, and one shown with no owner disables every top-level window on the
+        /// thread and then re-enables them from an owner it does not have. The result is a closed
+        /// dialog and a Navisworks that never regains input — the same fault
+        /// <see cref="Shell.HostWindow"/> was written to prevent, by another route.
         ///
-        /// Owning it at each of twenty call sites is a rule that holds until the twenty-first is
-        /// written, so there is one door and a repository check that keeps it the only one.
+        /// Setting the owner at each call site is a convention that fails on the first call site
+        /// that forgets, so there is one entry point and a repository check that keeps it the only
+        /// one.
         /// </summary>
         /// <param name="title">What the dialog is called.</param>
         /// <param name="filter">The file-type filter.</param>
         /// <param name="suggested">The name to offer, or null.</param>
-        /// <param name="extension">The extension to add when somebody types none.</param>
+        /// <param name="extension">The extension to add when the user types none.</param>
         public static string? AskToSave(string title, string filter, string? suggested = null,
                                         string? extension = null)
         {
@@ -1419,26 +1418,23 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Pay for the element index here, inside a job that is already running, when the rows
-        /// this job just produced are going to need it.
+        /// Build the element index here, inside a job that is already running, when the rows this
+        /// job produced will need it.
         ///
-        /// <b>The rule.</b> A row verb - focus, isolate, a marker sphere, a snapshot - turns a
-        /// row's element keys back into elements. A key that is an instance GUID goes through the
-        /// host's own native search and costs nothing; anything else has no native search behind
-        /// it, so the first one resolved builds an index of every geometry leaf in the federation.
-        /// Inside a press that is minutes of managed work with no progress and no way out, which
-        /// is a Navisworks that has stopped answering.
+        /// A row verb — focus, isolate, a marker sphere, a snapshot — turns a row's element keys
+        /// back into elements. A key that is an instance GUID goes through the host's native search
+        /// and is cheap; anything else has no native search behind it, so the first key resolved
+        /// builds an index of every geometry leaf in the federation. Inside a button press that is
+        /// minutes of work with no progress and no cancel.
         ///
-        /// <b>Why it lives here.</b> This was written twice as a private method on the screen that
-        /// needed it, and deleted twice by a later commit rewriting that screen for something
-        /// else - the second time taking the freeze fix with it and nothing objecting. One shared
-        /// door, one check that the door is used, is the difference between a fix and a fix that
-        /// lasts.
+        /// It lives here rather than on a screen because it was written twice as a private method
+        /// on the screen that needed it and removed twice by later rewrites of that screen, taking
+        /// the fix with it. One shared entry point and a check that it is used keeps the fix in
+        /// place.
         ///
         /// Nothing is built when the rows all carry GUIDs, so a federation that resolves natively
-        /// never pays for a walk it does not need. Stopping leaves the index unbuilt rather than
-        /// partial: two thirds of a federation would report the other third as elements the model
-        /// does not have.
+        /// never pays for the walk. Stopping leaves the index unbuilt rather than partial: a
+        /// partial index would report the unindexed elements as missing from the model.
         /// </summary>
         /// <param name="job">The job already running, for its progress line and its Stop.</param>
         /// <param name="about">The keys the rows this job produced carry.</param>
@@ -1458,22 +1454,20 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Run something long that a press did not expect to be long, with a bar and a Stop.
+        /// Run work that a press did not expect to be long, with a progress bar and a Stop.
         ///
-        /// <b>What this is for.</b> Some presses are cheap almost always and expensive once: the
-        /// first Focus on a federation whose elements carry no GUIDs pays for an index of every
-        /// geometry leaf in it. A wait cursor is the right signal for a second; for a minute it is
-        /// a plug-in that has hung, and there is no way to change your mind.
+        /// Some presses are cheap almost always and expensive once: the first Focus on a federation
+        /// whose elements carry no GUIDs builds an index of every geometry leaf in it. A wait
+        /// cursor suits a second of work; over a minute it is indistinguishable from a hang and
+        /// offers no way to cancel.
         ///
-        /// So the work gets a small window of its own - owned, like everything here - reporting
-        /// what it is doing and offering to stop. It runs on this thread: the job's own progress
-        /// reporting pumps the message loop, which is what lets the window paint and the Stop be
-        /// clickable while the work is still going.
+        /// So the work gets a small owned window reporting what it is doing and offering to stop.
+        /// It runs on this thread: the job's own progress reporting pumps the message loop, which
+        /// is what lets the window paint and Stop stay clickable while the work continues.
         ///
-        /// <c>NavDocument.LongWork</c> is pointed here once, so every screen in the product gets
-        /// this without any of them knowing about it. Stopping one of those is remembered there:
-        /// the caller is usually resolving a list, and without that memory the next item in it
-        /// would open this window again and Stop would look like a restart.
+        /// <c>NavDocument.LongWork</c> is pointed here once, so every screen gets this without
+        /// referencing it. A stop is remembered there: the caller is usually resolving a list, and
+        /// without that the next item would reopen this window and Stop would look like a restart.
         /// </summary>
         /// <param name="what">What is happening, on the window's title and its first line.</param>
         /// <param name="work">The work, given a progress callback and a keep-going question.</param>
@@ -1889,22 +1883,20 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Several decisions taken in order, because each one depends on the last.
+        /// Several decisions taken in order, where each depends on the last.
         ///
-        /// <b>Only where the dependency is real.</b> You cannot map a spreadsheet's columns before
-        /// you have read the spreadsheet, and you cannot preview a write before you have mapped
-        /// them. Where the decisions are independent a wizard is a form with extra clicks, and a
-        /// form is the better answer.
+        /// Use only where the dependency is real: a spreadsheet's columns cannot be mapped before
+        /// the spreadsheet is read, and a write cannot be previewed before they are mapped. Where
+        /// the decisions are independent, a form is the better control.
         ///
-        /// <b>The irreversible thing lives on the last step and nowhere else.</b> That is most of
-        /// the value: a screen showing every control at once puts "Write it into the model" beside
-        /// the box you are still typing a file path into.
+        /// The irreversible action belongs on the last step and nowhere else, so that "Write it
+        /// into the model" is not sitting beside a file path still being typed.
         /// </summary>
         /// <param name="steps">The steps, in order.</param>
         /// <param name="finish">
-        /// The caption of the main action, on the last step - or null when the last step's own
-        /// surface already carries it. A wizard whose last step holds a two-stage commit does not
-        /// want a third button above it that says the same thing and does nothing.
+        /// The caption of the main action on the last step, or null when the last step's own
+        /// surface already carries it. A last step holding a two-stage commit does not want a third
+        /// button above it repeating the same caption.
         /// </param>
         /// <param name="onFinish">What the main action does.</param>
         public static UIElement Steps(IReadOnlyList<Step> steps, string? finish, Action? onFinish)
@@ -2085,15 +2077,14 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Run something that a user press or a window closing set off, and survive it throwing.
+        /// Run something set off by a user press or a window closing, and survive it throwing.
         ///
-        /// <b>Why this exists.</b> A WPF handler that throws does not fail politely: the exception
-        /// leaves the handler, reaches the dispatcher, and takes the whole Navisworks process with
-        /// it. The ribbon entry point has been guarded since the beginning, but everything reached
-        /// after the first screen is up - a symbol under a table, a redraw run from a window's
-        /// Closed event - had no guard at all, so one re-parented text box in one screen's redraw
-        /// was enough to close the host. A fault in one screen is worth a sentence, not the
-        /// user's session.
+        /// A WPF handler that throws does not fail locally: the exception leaves the handler,
+        /// reaches the dispatcher and terminates the Navisworks process. The ribbon entry point has
+        /// always been guarded, but everything reached after the first screen is up — a symbol
+        /// under a table, a redraw run from a window's Closed event — had no guard, so one
+        /// re-parented text box in one screen's redraw was enough to close the host. A fault in one
+        /// screen should cost a message, not the session.
         /// </summary>
         /// <param name="act">What to run.</param>
         public static void Safely(Action? act)
@@ -2106,10 +2097,10 @@ namespace CamelWorks.UI.Views
             }
             catch (Exception e)
             {
-                // <b>Named, not just described.</b> A message on its own - "the given key was not
-                // present" - says nothing about where to look, and a crash report from the host
-                // carries the type and nothing else. Both halves together are what makes a fault
-                // somebody can send in and somebody else can find.
+                // Report the exception type as well as its message. A message on its own — "the
+                // given key was not present" — does not say where to look, and a host crash report
+                // carries the type and nothing else. Both together make a fault reportable and
+                // locatable.
                 Told("Something went wrong: " + Describe(e)
                      + "\n\n" + e.GetType().Name + Where(e));
             }
@@ -2216,12 +2207,11 @@ namespace CamelWorks.UI.Views
 
             card.Wearing("RowCard");
 
-            // <b>Through Safely, like every menu line in the product.</b> This is the card an
-            // empty screen offers its ways in on - "read the tests", "open a workbook", "pick the
-            // sets" - so it is the first thing anybody presses, and it ran its action with no net
-            // at all. Every menu entry goes through Safely; these did not, and an exception
-            // anywhere under one of them was an unhandled dispatcher exception, which does not
-            // show a message: it takes Navisworks down with a CLR error naming only the type.
+            // Run through Safely, like every other menu line. This is the card an empty screen
+            // offers its entry points on — "read the tests", "open a workbook", "pick the sets" —
+            // so it is the first thing pressed, and it previously ran its action unguarded. An
+            // exception under one of these was an unhandled dispatcher exception, which shows no
+            // message and takes Navisworks down with a CLR error naming only the type.
             card.Click += (s, e) => Safely(onOpen);
 
             return card;
@@ -2452,18 +2442,17 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// One drawn glyph, in a box of the size asked for.
         ///
-        /// Drawn from path data rather than loaded from a file because these appear inside panes
-        /// the user can theme: a PNG is one colour for ever, and a grey glyph on a dark card is
-        /// the detail that makes a plug-in look unfinished.
+        /// Drawn from path data rather than loaded from a file because these appear inside panes the
+        /// user can theme: a PNG is one colour permanently, and a grey glyph on a dark card looks
+        /// unfinished.
         ///
-        /// <b>Every glyph is drawn on its whole 24-unit grid</b>, not on the part of it the path
-        /// happens to touch. A path with no stretch reports the box from the origin out to its
-        /// far edge as its size, so a chevron living between y 9 and y 15 was measured as 18 wide
-        /// by 15 tall: the box around it was not square, the empty top-left counted and the empty
-        /// bottom-right did not, and scaling that to fit left the mark low in its button. It was
-        /// reported on the export button's arrow and it was true of every glyph in the product,
-        /// each off by a different amount because each path covers a different part of the grid.
-        /// Sitting the path on a 24 by 24 canvas gives them all the same box, which is the box
+        /// Every glyph is drawn on its whole 24-unit grid rather than on the part of it the path
+        /// touches. A path with no stretch reports the box from the origin to its far edge as its
+        /// size, so a chevron between y 9 and y 15 measured as 18 wide by 15 tall: the box was not
+        /// square, the empty top-left counted and the empty bottom-right did not, and scaling that
+        /// to fit left the mark low in its button. This was reported on the export button's arrow
+        /// and applied to every glyph, each off by a different amount because each path covers a
+        /// different part of the grid. Placing the path on a 24 by 24 canvas gives them all the box
         /// they were drawn in.
         /// </summary>
         /// <param name="data">Path data, in a 24-unit box. One of <see cref="Glyphs"/>.</param>
@@ -2498,10 +2487,10 @@ namespace CamelWorks.UI.Views
             {
                 Data = Geometry.Parse(data),
 
-                // <b>Two units on a twenty-four unit canvas is a hairline.</b> Drawn at thirteen
-                // pixels that is 1.08 device pixels, anti-aliased to about half coverage - so a
-                // row of symbols came out visibly lighter than the twelve-pixel type beside it,
-                // and Muted's five and a half to one arrived on the screen as about three.
+                // Two units on a 24-unit canvas is a hairline: at thirteen pixels that is 1.08
+                // device pixels, anti-aliased to about half coverage, so a row of symbols came out
+                // visibly lighter than the twelve-pixel type beside it and Muted's 5.5:1 contrast
+                // reached the screen at about 3:1.
                 StrokeThickness = 2.4,
                 StrokeStartLineCap = PenLineCap.Round,
                 StrokeEndLineCap = PenLineCap.Round,
@@ -2518,12 +2507,11 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// A button with a symbol and the word for it, for a strip where there is room to say it.
+        /// A button with a symbol and its caption, for a strip with room for both.
         ///
-        /// <b>A symbol alone is a guess.</b> On a row where every button is a symbol they are at
-        /// least a set to be learned; on the top strip, beside three buttons that all carry their
-        /// own word, an unlabelled one reads as something that failed to draw. The tip still
-        /// carries the sentence.
+        /// On a row where every button is a symbol they read as a set to be learned. On the top
+        /// strip, beside three buttons that carry their own captions, an unlabelled one reads as a
+        /// symbol that failed to draw. The tooltip still carries the full sentence.
         /// </summary>
         /// <param name="glyph">The symbol.</param>
         /// <param name="caption">The word.</param>
@@ -2913,16 +2901,15 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The options a screen sets up once, in a window of their own.
+        /// The options a screen is set up with once, in a window of their own.
         ///
-        /// <b>Why they are not on the screen.</b> A bench with two tables and forty options laid
-        /// out beside them is a screen where the work and the setup compete for the same eye. The
-        /// handful of filters somebody touches every minute stay on the surface; everything that
-        /// is decided once for the job - which properties are columns, what the status verb writes,
-        /// how big a marker is, where the markups live - lives here, one section at a time.
+        /// Keeping forty options beside two tables makes the work and the setup compete for the
+        /// same space. The few filters used continuously stay on the surface; everything decided
+        /// once per job — which properties are columns, what the status verb writes, marker size,
+        /// where the markups live — lives here, one section at a time.
         ///
-        /// Edits apply as they are made, so there is no Apply to forget. Closing tells the caller
-        /// to redraw, because a column added here changes the grid behind it.
+        /// Edits apply as they are made, so there is no Apply button to miss. Closing tells the
+        /// caller to redraw, because a column added here changes the grid behind it.
         /// </summary>
         /// <param name="title">The window's title.</param>
         /// <param name="onClosed">Called when it closes, for the screen to redraw itself.</param>
@@ -3344,21 +3331,21 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// A table, and the bar saying what can be done to the rows picked in it.
+        /// A table, and the bar saying what can be done to the rows selected in it.
         ///
-        /// Every table in the product should have one. A table somebody can only act on a row at a
-        /// time is a table they act on with the mouse forty times - which was the complaint that
-        /// started this: no multi-select, no select-all, no way to clear.
+        /// Every table in the product should have one. A table that can be acted on only one row at
+        /// a time forces one action per row, which was the original complaint: no multi-select, no
+        /// select-all, no way to clear.
         ///
-        /// The bar carries four things, each for a reason:
+        /// The bar carries four things:
         ///
-        ///   * the <b>count</b>, because a selection made by shift-clicking down a long list is one
-        ///     somebody wants confirmed before acting on it;
-        ///   * <b>Select all</b> and <b>Clear</b>, because doing either by hand is the tax;
-        ///   * the <b>actions</b>, disabled until something is picked, so the bar reads as
-        ///     unavailable rather than broken;
-        ///   * the <b>count inside each caption</b>, so the last thing read before pressing says
-        ///     how much it is about to happen to.
+        ///   * the count, so a selection built by shift-clicking down a long list can be confirmed
+        ///     before it is acted on;
+        ///   * Select all and Clear, so neither has to be done by hand;
+        ///   * the actions, disabled until something is selected, so the bar reads as unavailable
+        ///     rather than broken;
+        ///   * the count inside each caption, so the last thing read before pressing states the
+        ///     scope.
         /// </summary>
         /// <param name="table">The table. It is switched to multi-select here.</param>
         /// <param name="actions">What can be done to the picked rows.</param>
@@ -3681,26 +3668,24 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// A button that runs something long, with a progress bar, a running count and a Stop.
+        /// A button that runs long work, with a progress bar, a running count and a Stop.
         ///
         /// Nothing in this product runs when a screen opens; everything runs from one of these.
-        /// That is what keeps clicking a tab from freezing a federation of half a million elements,
-        /// and it is also what makes the zero-setup rule honest — the button works on a raw model
+        /// That is what keeps opening a tab from freezing on a federation of half a million
+        /// elements, and it is what makes the zero-setup rule hold: the button works on a raw model
         /// with nothing configured.
         ///
-        /// <b>The first thing it does is paint itself.</b> The old version set a status line and
-        /// then called the work, which meant that a job which never reported progress showed
-        /// nothing at all: the pane simply stopped responding, and Navisworks looked hung. It now
-        /// pumps the dispatcher once before the work begins, so the disabled button, the moving bar
-        /// and the Stop are on screen before anything slow starts.
+        /// It paints itself before starting the work. The previous version set a status line and
+        /// then called the work, so a job that never reported progress showed nothing and the pane
+        /// simply stopped responding. It now pumps the dispatcher once before the work begins, so
+        /// the disabled button, the moving bar and the Stop are on screen first.
         /// </summary>
         /// <param name="caption">What the button says.</param>
         /// <param name="output">Where results are written. Cleared on each run.</param>
         /// <param name="work">The work. Check <see cref="Job.IsCancelled"/> in any loop.</param>
         /// <param name="primary">
-        /// Whether this is the action the card is for. False for the second long-running button on
-        /// a card: two primaries is the same as none, because the reader still has to work out
-        /// which of them the screen wanted them to press.
+        /// Whether this is the card's main action. False for a second long-running button on a
+        /// card: two primary buttons give the reader no indication which one is intended.
         /// </param>
         public static Panel Runner(string caption, Panel output, Action<Job> work, bool primary = true)
         {
@@ -3718,16 +3703,15 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// The same runner, handed back in its two pieces.
+        /// The same runner, returned in its two parts.
         ///
-        /// <b>Why a caller would want them apart.</b> Stacked, a runner is a button with a
-        /// progress bar and a status line growing underneath it. Put that whole column into a row
-        /// of ordinary buttons - a footer - and the row is three lines tall, the other buttons
-        /// centre themselves against a bar that is not there yet, and the moment the job runs
-        /// everything beside it moves. A footer wants the buttons on its own line and the progress
-        /// somewhere it can grow without pushing anything.
+        /// Stacked, a runner is a button with a progress bar and a status line beneath it. Placing
+        /// that column in a row of ordinary buttons — a footer — makes the row three lines tall,
+        /// centres the other buttons against a bar that is not yet visible, and moves everything
+        /// beside it when the job starts. A footer wants the buttons on one line and the progress
+        /// where it can grow without displacing them.
         ///
-        /// The two pieces are one runner: the same job drives both.
+        /// The two parts are one runner: the same job drives both.
         /// </summary>
         /// <param name="caption">What the button says.</param>
         /// <param name="output">Where the work writes its result.</param>
@@ -3914,13 +3898,13 @@ namespace CamelWorks.UI.Views
         // -----------------------------------------------------------------------------------
 
         /// <summary>
-        /// The ink to write on a colour somebody chose, rather than on one the theme picked.
+        /// The ink to write on a user-chosen colour rather than on a theme colour.
         ///
-        /// <b>A chosen colour does not change with the theme and the theme's ink does.</b> The
-        /// washes a symbol can be given are fixed - they are the matrix's, not the seat's - so in
-        /// the dark palette the letter on top of one was near-white on a pale pastel: one to one.
-        /// Every cell of a coloured symbol was a blank tile. Which ink to use is a property of
-        /// the colour underneath, and nothing else.
+        /// A chosen colour does not change with the theme, and the theme's ink does. The washes a
+        /// symbol can be given are fixed — they belong to the matrix, not the seat — so in the dark
+        /// palette the letter on top of one was near-white on a pale pastel, at 1:1 contrast, and
+        /// every cell of a coloured symbol read as blank. Which ink to use is a property of the
+        /// colour underneath and nothing else.
         /// </summary>
         /// <param name="on">The colour being written on.</param>
         public static Brush InkOn(Brush? on)
