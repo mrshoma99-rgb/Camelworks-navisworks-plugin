@@ -35,7 +35,20 @@ on:
       pages:
         description: "Which pages to draw, by id, comma-separated - or 'all'"
         required: false
-        default: "app-clash-matrix,app-clash-matrix-drawn"
+        default: "app-clash-matrix-drawn,app-clash-matrix-priority,app-clash-matrix-results,app-clash-matrix-read"
+
+  # A push to render/** is a request for a picture, and the only way an agent working in this
+  # repository can ask for one: dispatching a workflow needs actions:write, which the app it runs
+  # under does not have, so `gh workflow run` comes back 403 every time. Without this, every
+  # layout change had to be described in words to somebody with a browser and the answer waited on
+  # them coming back - which is how a clipped heading survived three rounds of fixes aimed at it.
+  #
+  # It is still on demand. Nothing fires on main, on a feature branch, or on any ordinary push:
+  # render/** is a branch that exists to be pushed to when a picture is the thing being asked for,
+  # and one push is one run.
+  push:
+    branches:
+      - "render/**"
 
 # One at a time per branch, and the newer one wins. This job force-pushes an orphan branch, so two
 # runs in flight together are two writers racing over the same ref - and the pictures that survive
@@ -85,7 +98,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish them to the ui-shots branch
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/')
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/claude/') || startsWith(github.ref, 'refs/heads/render/')
         shell: bash
         run: |
           set -euo pipefail

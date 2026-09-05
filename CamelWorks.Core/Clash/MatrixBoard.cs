@@ -140,6 +140,22 @@ namespace CamelWorks.Core.Clash
         private readonly Dictionary<(MatrixLine Row, MatrixLine Column), string> _cells =
             new Dictionary<(MatrixLine, MatrixLine), string>();
 
+        // Kept apart from the symbol rather than folded into it. A cell says two independent
+        // things - whether these two are checked and how, and how much anybody cares about the
+        // answer - and a grid that encoded both in one mark would need a legend entry per
+        // combination: twelve entries to say four things about three tolerances.
+        private readonly Dictionary<(MatrixLine Row, MatrixLine Column), int> _ranks =
+            new Dictionary<(MatrixLine, MatrixLine), int>();
+
+        // The standing instructions, and which cells they wrote. Kept apart from the cells
+        // themselves rather than inferred by re-running the rules, because what a rule would
+        // write now and what actually wrote a cell are different questions: a rule that has
+        // since been edited must take back the cells it wrote, not the cells it would write.
+        private readonly List<MatrixRule> _rules = new List<MatrixRule>();
+
+        private readonly HashSet<(MatrixLine Row, MatrixLine Column)> _byRule =
+            new HashSet<(MatrixLine, MatrixLine)>();
+
         /// <summary>The rows, which are side A.</summary>
         public IReadOnlyList<MatrixLine> Rows => _rows;
 
@@ -261,6 +277,85 @@ namespace CamelWorks.Core.Clash
             return found;
         }
 
+        /// <summary>
+        /// What colour a folder is drawn in, by name, or empty for the skin's own.
+        ///
+        /// <b>A folder is a name its members share, and nothing else - which is why this is
+        /// kept here.</b> There is no folder object to hang a colour on: filing a line is
+        /// writing a string on it, and a folder exists exactly as long as some line is still
+        /// carrying its name. So the colour lives with the board, keyed by that name, and the
+        /// acts that change a name have to bring it along.
+        /// </summary>
+        private readonly Dictionary<string, string> _folderColours =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The colour a folder is drawn in, or empty when nobody has chosen one.
+        ///
+        /// <b>Colour is how a band of eight rows becomes one thing at a glance.</b> Twenty-two
+        /// disciplines in five packages read as twenty-two disciplines until the packages are
+        /// told apart, and the band down the side is the only place on the screen with room to
+        /// say which is which without writing it out again on every row.
+        /// </summary>
+        /// <param name="folder">The folder's name.</param>
+        public string ColourOf(string? folder)
+        {
+            var name = (folder ?? string.Empty).Trim();
+
+            return name.Length > 0 && _folderColours.TryGetValue(name, out var colour)
+                ? colour
+                : string.Empty;
+        }
+
+        /// <summary>Give a folder a colour, or take the one it has away.</summary>
+        /// <param name="folder">The folder's name.</param>
+        /// <param name="colour">The colour, or null or empty for the skin's own.</param>
+        public void Paint(string? folder, string? colour)
+        {
+            var name = (folder ?? string.Empty).Trim();
+
+            if (name.Length == 0) return;
+
+            var wanted = (colour ?? string.Empty).Trim();
+
+            if (wanted.Length == 0) _folderColours.Remove(name);
+            else _folderColours[name] = wanted;
+        }
+
+        /// <summary>Every folder that has been given a colour, by name.</summary>
+        public IReadOnlyDictionary<string, string> FolderColours => _folderColours;
+
+        /// <summary>
+        /// Carry a folder's colour to a new name, and drop it when the folder is gone.
+        ///
+        /// Renaming a folder that somebody coloured must not lose the colour, and dissolving one
+        /// must not leave its colour behind to be inherited by the next folder that happens to be
+        /// given the same name.
+        /// </summary>
+        /// <param name="was">The name it had.</param>
+        /// <param name="wanted">The name it has now, or empty when it is being dissolved.</param>
+        private void Recoloured(string was, string wanted)
+        {
+            if (!_folderColours.TryGetValue(was, out var colour)) return;
+
+            _folderColours.Remove(was);
+
+            // Merging into a folder that already has a colour keeps the one it has: the name
+            // being merged into is the one that survives, so its colour is the one that survives.
+            if (wanted.Length > 0 && !_folderColours.ContainsKey(wanted))
+                _folderColours[wanted] = colour;
+        }
+
+        /// <summary>Forget the colours of folders no line answers to any more.</summary>
+        private void Swept()
+        {
+            var live = new HashSet<string>(Folders(rows: true).Concat(Folders(rows: false)),
+                                           StringComparer.OrdinalIgnoreCase);
+
+            foreach (var gone in _folderColours.Keys.Where(k => !live.Contains(k)).ToList())
+                _folderColours.Remove(gone);
+        }
+
         /// <summary>Every line filed in one folder, in the order they sit on their axis.</summary>
         /// <param name="rows">True for the rows.</param>
         /// <param name="folder">The folder's name.</param>
@@ -355,6 +450,8 @@ namespace CamelWorks.Core.Clash
                 moved++;
             }
 
+            Recoloured(was, wanted);
+
             return moved;
         }
 
@@ -396,6 +493,8 @@ namespace CamelWorks.Core.Clash
                 went++;
             }
 
+            _folderColours.Remove(wanted);
+
             return went;
         }
 
@@ -430,7 +529,10 @@ namespace CamelWorks.Core.Clash
                 moved++;
             }
 
+            foreach (var name in names) Recoloured(name, wanted);
+
             Tidy();
+            Swept();
 
             return moved;
         }
@@ -524,9 +626,153 @@ namespace CamelWorks.Core.Clash
 
             Write(row, column, symbol);
 
+            // <b>A hand beats a rule, and says so by writing here.</b> Somebody who overrides a
+            // rule-filled cell has made a decision, and a re-application that quietly put the
+            // rule's answer back would be the tool arguing with the person using it. The cell
+            // stops being the rule's the moment it is written by hand.
+            _byRule.Remove((row, column));
+
             var mirror = MirrorOf(row, column);
 
-            if (mirror != null) Write(mirror.Value.Row, mirror.Value.Column, symbol);
+            if (mirror != null)
+            {
+                Write(mirror.Value.Row, mirror.Value.Column, symbol);
+                _byRule.Remove((mirror.Value.Row, mirror.Value.Column));
+            }
+        }
+
+        /// <summary>The standing instructions, in the order they are read.</summary>
+        public IReadOnlyList<MatrixRule> Rules => _rules;
+
+        /// <summary>Add one, at the end, where it wins over the ones above it.</summary>
+        /// <param name="rule">The rule.</param>
+        public void AddRule(MatrixRule? rule)
+        {
+            if (rule == null || rule.IsEmpty) return;
+
+            _rules.Add(rule);
+        }
+
+        /// <summary>Take one away.</summary>
+        /// <param name="at">Where it sits in the list.</param>
+        public void RemoveRule(int at)
+        {
+            if (at < 0 || at >= _rules.Count) return;
+
+            _rules.RemoveAt(at);
+        }
+
+        /// <summary>Move one up or down the list, which is what changes who wins.</summary>
+        /// <param name="from">Where it is.</param>
+        /// <param name="to">Where it goes.</param>
+        public void MoveRule(int from, int to)
+        {
+            if (from < 0 || from >= _rules.Count) return;
+
+            var wanted = to < 0 ? 0 : to >= _rules.Count ? _rules.Count - 1 : to;
+
+            if (wanted == from) return;
+
+            var rule = _rules[from];
+
+            _rules.RemoveAt(from);
+            _rules.Insert(wanted, rule);
+        }
+
+        /// <summary>Whether a cell was written by a rule rather than by hand.</summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public bool IsByRule(MatrixLine? row, MatrixLine? column) =>
+            row != null && column != null && _byRule.Contains((row, column));
+
+        /// <summary>
+        /// Which rule owns a cell, or null when no rule wrote it.
+        ///
+        /// Answered by reading the rules rather than by remembering which one it was, so a cell
+        /// always names the rule that would write it now - which is the one a reader asking
+        /// "why is this here" needs to be sent to.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public MatrixRule? RuleOn(MatrixLine? row, MatrixLine? column)
+        {
+            if (!IsByRule(row, column)) return null;
+
+            for (var at = _rules.Count - 1; at >= 0; at--)
+                if (_rules[at].Covers(row!.Folder, column!.Folder))
+                    return _rules[at];
+
+            return null;
+        }
+
+        /// <summary>
+        /// Write every rule over the board again, and take back the cells no rule covers now.
+        ///
+        /// <b>The last matching rule wins.</b> People write the general sentence first and the
+        /// exception after it - "everything against everything is a hard clash, except services
+        /// against architecture, which is a clearance" - so the later line is the more specific
+        /// one, and reading from the bottom is reading their intent.
+        ///
+        /// Cells written by hand are not touched, in either direction: a rule does not overwrite
+        /// one, and dropping a rule does not clear one.
+        /// </summary>
+        /// <returns>How many cells the rules changed.</returns>
+        public int ApplyRules()
+        {
+            var changed = 0;
+
+            foreach (var row in _rows)
+            foreach (var column in _columns)
+            {
+                if (IsSelfPair(row, column)) continue;
+                if (!IsKeptHalf(row, column)) continue;
+
+                var hand = At(row, column) != null && !IsByRule(row, column);
+
+                if (hand) continue;
+
+                var wanted = Wanted(row, column);
+
+                if (string.Equals(At(row, column), wanted, StringComparison.Ordinal)) continue;
+
+                Ruled(row, column, wanted);
+                changed++;
+            }
+
+            return changed;
+        }
+
+        /// <summary>What the rules say about a pair, or null when none covers it.</summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public string? Wanted(MatrixLine? row, MatrixLine? column)
+        {
+            if (row == null || column == null) return null;
+
+            for (var at = _rules.Count - 1; at >= 0; at--)
+                if (_rules[at].Covers(row.Folder, column.Folder))
+                    return _rules[at].Symbol;
+
+            return null;
+        }
+
+        private void Ruled(MatrixLine row, MatrixLine column, string? symbol)
+        {
+            Write(row, column, symbol);
+            Marked(row, column, symbol != null);
+
+            var mirror = MirrorOf(row, column);
+
+            if (mirror == null) return;
+
+            Write(mirror.Value.Row, mirror.Value.Column, symbol);
+            Marked(mirror.Value.Row, mirror.Value.Column, symbol != null);
+        }
+
+        private void Marked(MatrixLine row, MatrixLine column, bool owned)
+        {
+            if (owned) _byRule.Add((row, column));
+            else _byRule.Remove((row, column));
         }
 
         /// <summary>
@@ -850,11 +1096,95 @@ namespace CamelWorks.Core.Clash
             return true;
         }
 
+        /// <summary>
+        /// What the host itself calls a clash test's priority: nought is not set, then high,
+        /// medium, low.
+        ///
+        /// The numbers are the host's, not ours. Navisworks writes a test's priority as one of
+        /// these four and shows it as a column in its own results, so a matrix that invented a
+        /// five-point scale would be a scale that could never be pushed into the document or
+        /// read back out of it.
+        /// </summary>
+        public const int NotSet = 0;
+
+        /// <summary>Highest of the three the host has.</summary>
+        public const int High = 1;
+
+        /// <summary>The middle one.</summary>
+        public const int Medium = 2;
+
+        /// <summary>The lowest.</summary>
+        public const int Low = 3;
+
+        /// <summary>What a rank is called, for a tip or a legend.</summary>
+        /// <param name="rank">The rank.</param>
+        public static string RankNamed(int rank) =>
+            rank == High ? "High" : rank == Medium ? "Medium" : rank == Low ? "Low" : "Not set";
+
+        /// <summary>How urgent this pair is, or <see cref="NotSet"/>.</summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        public int RankAt(MatrixLine? row, MatrixLine? column) =>
+            row != null && column != null && _ranks.TryGetValue((row, column), out var rank)
+                ? rank
+                : NotSet;
+
+        /// <summary>
+        /// Say how urgent a pair is, on both cells of a mirrored pair.
+        ///
+        /// Mirrored the same way a symbol is, and for the same reason: one pair cannot be two
+        /// different amounts of urgent depending on which triangle somebody was handed.
+        /// </summary>
+        /// <param name="row">The row.</param>
+        /// <param name="column">The column.</param>
+        /// <param name="rank">One of the four, anything else being taken as not set.</param>
+        public void Rank(MatrixLine? row, MatrixLine? column, int rank)
+        {
+            if (row == null || column == null) return;
+
+            Ranked(row, column, rank);
+
+            var mirror = MirrorOf(row, column);
+
+            if (mirror != null) Ranked(mirror.Value.Row, mirror.Value.Column, rank);
+        }
+
+        /// <summary>How many cells anybody has ranked.</summary>
+        public int RankedCells => _ranks.Count;
+
+        /// <summary>Every ranked pair, each once, in reading order.</summary>
+        public IEnumerable<(MatrixLine Row, MatrixLine Column, int Rank)> Ranks()
+        {
+            foreach (var row in _rows)
+                foreach (var column in _columns)
+                {
+                    if (!IsKeptHalf(row, column)) continue;
+
+                    var rank = RankAt(row, column);
+
+                    if (rank != NotSet) yield return (row, column, rank);
+                }
+        }
+
+        private void Ranked(MatrixLine row, MatrixLine column, int rank)
+        {
+            if (rank != High && rank != Medium && rank != Low) _ranks.Remove((row, column));
+            else _ranks[(row, column)] = rank;
+        }
+
         private void Write(MatrixLine row, MatrixLine column, string? symbol)
         {
             var text = symbol == null ? string.Empty : symbol.Trim();
 
-            if (text.Length == 0) _cells.Remove((row, column));
+            if (text.Length == 0)
+            {
+                _cells.Remove((row, column));
+
+                // A rank on an empty cell is a priority for a test that will never be built,
+                // and it would come back the moment somebody put a symbol there again - saying
+                // something about the new pair that nobody said.
+                _ranks.Remove((row, column));
+            }
             else _cells[(row, column)] = text;
         }
 
@@ -930,6 +1260,8 @@ namespace CamelWorks.Core.Clash
         public void SquareOffRows()
         {
             var kept = new Dictionary<(MatrixLine, MatrixLine), string>(_cells);
+            var keptRanks = new Dictionary<(MatrixLine, MatrixLine), int>(_ranks);
+            var keptRuled = new HashSet<(MatrixLine, MatrixLine)>(_byRule);
             var wasColumns = new List<MatrixLine>(_columns);
 
             _columns.Clear();
@@ -965,6 +1297,35 @@ namespace CamelWorks.Core.Clash
                 if (_rows.Contains(cell.Key.Item1) && column != null)
                     _cells[(cell.Key.Item1, column)] = cell.Value;
             }
+
+            // Whose cell it is follows the cell. A pair that survived squaring off is still the
+            // rule's if it was the rule's, and still somebody's decision if it was that.
+            _byRule.Clear();
+
+            foreach (var ruled in keptRuled)
+            {
+                var column = _columns.FirstOrDefault(
+                    c => string.Equals(c.Name, ruled.Item2.Name, StringComparison.OrdinalIgnoreCase))
+                    ?? (was.TryGetValue(ruled.Item2, out var moved) ? moved : null);
+
+                if (_rows.Contains(ruled.Item1) && column != null)
+                    _byRule.Add((ruled.Item1, column));
+            }
+
+            // The ranks follow their cells. A priority is about a pair, so a pair that survived
+            // squaring off keeps how urgent somebody said it was; one whose column went takes
+            // its rank with it rather than leaving it keyed to a line that is no longer here.
+            _ranks.Clear();
+
+            foreach (var rank in keptRanks)
+            {
+                var column = _columns.FirstOrDefault(
+                    c => string.Equals(c.Name, rank.Key.Item2.Name, StringComparison.OrdinalIgnoreCase))
+                    ?? (was.TryGetValue(rank.Key.Item2, out var moved) ? moved : null);
+
+                if (_rows.Contains(rank.Key.Item1) && column != null)
+                    _ranks[(rank.Key.Item1, column)] = rank.Value;
+            }
         }
 
         /// <summary>Write it down.</summary>
@@ -975,16 +1336,47 @@ namespace CamelWorks.Core.Clash
             json.Set("rows", JsonValue.Array(_rows.Select(r => r.ToJson())));
             json.Set("columns", JsonValue.Array(_columns.Select(c => c.ToJson())));
 
+            // The rule flag rides on the cell rather than in a list of its own, because it is a
+            // fact about that cell - and a board reloaded without it would turn every
+            // rule-filled cell into a decision somebody made by hand, which no later edit to the
+            // rule could ever take back.
             var cells = JsonValue.Array(Cells().Select(cell =>
-                JsonValue.Object()
+            {
+                var held = JsonValue.Object()
                     .Set("row", (double)_rows.IndexOf(cell.Row))
                     .Set("column", (double)_columns.IndexOf(cell.Column))
-                    .Set("symbol", cell.Symbol)));
+                    .Set("symbol", cell.Symbol);
+
+                if (IsByRule(cell.Row, cell.Column)) held.Set("rule", true);
+
+                return held;
+            }));
 
             json.Set("cells", cells);
 
+            // Only written when somebody has ranked something, so every board saved before the
+            // priority view existed reads back byte for byte as it did.
+            // Only when there are any, so a board that has never used one reads back as it did.
+            if (_rules.Count > 0)
+                json.Set("rules", JsonValue.Array(_rules.Select(one => one.ToJson())));
+
+            if (_ranks.Count > 0)
+                json.Set("ranks", JsonValue.Array(Ranks().Select(one =>
+                    JsonValue.Object()
+                        .Set("row", (double)_rows.IndexOf(one.Row))
+                        .Set("column", (double)_columns.IndexOf(one.Column))
+                        .Set("rank", (double)one.Rank))));
+
             if (!UpperIsLive) json.Set("lower", true);
             if (!Paired) json.Set("apart", true);
+
+            // Only the folders somebody has actually coloured, so a board that has never used
+            // one writes nothing and reads back the same as it always did.
+            if (_folderColours.Count > 0)
+                json.Set("folders", JsonValue.Array(_folderColours.Select(one =>
+                    JsonValue.Object()
+                        .Set("name", one.Key)
+                        .Set("colour", one.Value))));
 
             return json;
         }
@@ -1023,7 +1415,31 @@ namespace CamelWorks.Core.Clash
                 if (column < 0 || column >= board._columns.Count) continue;
 
                 board.Set(board._rows[row], board._columns[column], held["symbol"].AsString());
+
+                if (held["rule"].AsBool(false))
+                    board.Marked(board._rows[row], board._columns[column], true);
             }
+
+            foreach (var held in json["rules"].Items)
+                board.AddRule(MatrixRule.FromJson(held));
+
+            foreach (var held in json["ranks"].Items)
+            {
+                var row = (int)held["row"].AsDouble();
+                var column = (int)held["column"].AsDouble();
+
+                if (row < 0 || row >= board._rows.Count) continue;
+                if (column < 0 || column >= board._columns.Count) continue;
+
+                board.Rank(board._rows[row], board._columns[column], (int)held["rank"].AsDouble());
+            }
+
+            foreach (var held in json["folders"].Items)
+                board.Paint(held["name"].AsString(), held["colour"].AsString());
+
+            // A board saved with a folder that has since lost every member would otherwise carry
+            // its colour for ever, and hand it to the next folder given that name.
+            board.Swept();
 
             return board;
         }
@@ -1034,6 +1450,12 @@ namespace CamelWorks.Core.Clash
 
             foreach (var key in _cells.Keys.Where(k => k.Row == line || k.Column == line).ToList())
                 _cells.Remove(key);
+
+            foreach (var key in _ranks.Keys.Where(k => k.Row == line || k.Column == line).ToList())
+                _ranks.Remove(key);
+
+            foreach (var key in _byRule.Where(k => k.Row == line || k.Column == line).ToList())
+                _byRule.Remove(key);
         }
 
         private static void Move(List<MatrixLine> lines, int from, int to)

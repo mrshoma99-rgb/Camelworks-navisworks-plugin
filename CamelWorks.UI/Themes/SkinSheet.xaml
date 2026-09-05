@@ -424,9 +424,11 @@
               <Setter TargetName="b" Property="Background" Value="{DynamicResource AccentWash}"/>
               <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
             </Trigger>
+            <!-- Turning an action off must take ink away, not put a box round it. This drew a
+                 border the enabled button has not got, so Undo and Redo with nothing to undo
+                 became outlined pills beside three borderless blue captions - three shapes in one
+                 row, and most of why that strip read as a mess. Faint words, same shape. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Background" Value="Transparent"/>
-              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
               <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>

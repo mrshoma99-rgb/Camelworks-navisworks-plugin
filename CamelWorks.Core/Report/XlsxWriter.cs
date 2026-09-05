@@ -9,6 +9,117 @@ using System.Text;
 namespace CamelWorks.Core.Report
 {
     /// <summary>One sheet to be written.</summary>
+    /// <summary>
+    /// How one cell is drawn: its ground, its ink, and how the text sits in it.
+    ///
+    /// <b>A matrix is a picture before it is a table.</b> Exported as bare letters on white, the
+    /// grid a coordination meeting spent an afternoon arranging arrives as a wall of characters:
+    /// the folders that group it, the colour that says which kind of test each symbol is, the
+    /// dead triangle, the diagonal - every one of them a thing the screen draws and the
+    /// spreadsheet did not. What comes back from the client is then marked up in a different
+    /// vocabulary from the one it was sent in.
+    ///
+    /// Deliberately small. A ground, an ink, bold, centred, turned on its side and a hairline
+    /// box: what a matrix needs and nothing that would grow a format surface nobody asked for.
+    /// Colours are <c>RRGGBB</c>, without the hash, because that is what the format wants and a
+    /// converter between two spellings of the same thing is a place for a bug to live.
+    /// </summary>
+    public readonly struct XlsxStyle : IEquatable<XlsxStyle>
+    {
+        /// <summary>Describe one.</summary>
+        /// <param name="fill">The ground as <c>RRGGBB</c>, or null for none.</param>
+        /// <param name="ink">The text colour as <c>RRGGBB</c>, or null for black.</param>
+        /// <param name="bold">True for bold.</param>
+        /// <param name="centre">True to centre the text both ways.</param>
+        /// <param name="turned">True to write it bottom-to-top, as a narrow column header.</param>
+        /// <param name="boxed">True for a hairline box, which is what makes a grid a grid.</param>
+        public XlsxStyle(string? fill = null, string? ink = null, bool bold = false,
+                         bool centre = false, bool turned = false, bool boxed = false)
+        {
+            Fill = Six(fill);
+            Ink = Six(ink);
+            Bold = bold;
+            Centre = centre;
+            Turned = turned;
+            Boxed = boxed;
+        }
+
+        /// <summary>The ground as <c>RRGGBB</c>, or null.</summary>
+        public string? Fill { get; }
+
+        /// <summary>The ink as <c>RRGGBB</c>, or null.</summary>
+        public string? Ink { get; }
+
+        /// <summary>Bold.</summary>
+        public bool Bold { get; }
+
+        /// <summary>Centred both ways.</summary>
+        public bool Centre { get; }
+
+        /// <summary>Written bottom-to-top.</summary>
+        public bool Turned { get; }
+
+        /// <summary>Boxed with a hairline.</summary>
+        public bool Boxed { get; }
+
+        /// <summary>Whether this asks for nothing at all, and so needs no format of its own.</summary>
+        public bool IsPlain =>
+            Fill == null && Ink == null && !Bold && !Centre && !Turned && !Boxed;
+
+        /// <summary>The same style with a different ground.</summary>
+        /// <param name="fill">The ground as <c>RRGGBB</c>, or null for none.</param>
+        public XlsxStyle On(string? fill) =>
+            new XlsxStyle(fill, Ink, Bold, Centre, Turned, Boxed);
+
+        /// <summary>
+        /// A colour as six hex characters, however it arrived.
+        ///
+        /// The screen writes them with a hash and the format wants them without; a colour that
+        /// is not one at all becomes nothing, because a cell with no ground is a cell somebody
+        /// can still read.
+        /// </summary>
+        /// <param name="colour">The colour.</param>
+        private static string? Six(string? colour)
+        {
+            var said = (colour ?? string.Empty).Trim().TrimStart('#');
+
+            if (said.Length == 8) said = said.Substring(2);
+            if (said.Length != 6) return null;
+
+            foreach (var c in said)
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                    return null;
+
+            return said.ToUpperInvariant();
+        }
+
+        /// <inheritdoc />
+        public bool Equals(XlsxStyle other) =>
+            string.Equals(Fill, other.Fill, StringComparison.Ordinal)
+            && string.Equals(Ink, other.Ink, StringComparison.Ordinal)
+            && Bold == other.Bold && Centre == other.Centre
+            && Turned == other.Turned && Boxed == other.Boxed;
+
+        /// <inheritdoc />
+        public override bool Equals(object? obj) => obj is XlsxStyle other && Equals(other);
+
+        /// <inheritdoc />
+        public override int GetHashCode()
+        {
+            var hash = 17;
+
+            hash = (hash * 31) + (Fill?.GetHashCode() ?? 0);
+            hash = (hash * 31) + (Ink?.GetHashCode() ?? 0);
+            hash = (hash * 31) + (Bold ? 1 : 0);
+            hash = (hash * 31) + (Centre ? 2 : 0);
+            hash = (hash * 31) + (Turned ? 4 : 0);
+            hash = (hash * 31) + (Boxed ? 8 : 0);
+
+            return hash;
+        }
+    }
+
+    /// <summary>One tab of a workbook: its rows, and how any of them are painted.</summary>
     public sealed class XlsxSheet
     {
         /// <summary>Create a sheet.</summary>
@@ -26,6 +137,54 @@ namespace CamelWorks.Core.Report
 
         /// <summary>True to freeze the first row, which every report sheet wants.</summary>
         public bool FreezeHeader { get; set; } = true;
+
+        /// <summary>
+        /// How particular cells are painted, by their row and column, both counted from nought.
+        ///
+        /// <b>Kept beside the text rather than in it.</b> Every caller in this codebase builds a
+        /// sheet by handing <see cref="Row(string[])"/> a line of strings, and a report that has
+        /// nothing to say about colour should go on doing exactly that. A grid that is a picture
+        /// as much as a table - a clash matrix is read by its blocks of colour before anybody
+        /// reads a letter in it - says so here, cell by cell, and nothing else has to change.
+        /// </summary>
+        public IDictionary<(int Row, int Column), XlsxStyle> Styles { get; } =
+            new Dictionary<(int, int), XlsxStyle>();
+
+        /// <summary>Blocks of cells written as one, by their corners, counted from nought.</summary>
+        public IList<(int Row, int Column, int ToRow, int ToColumn)> Merges { get; } =
+            new List<(int, int, int, int)>();
+
+        /// <summary>Columns whose width is stated rather than measured, in characters.</summary>
+        public IDictionary<int, double> Widths { get; } = new Dictionary<int, double>();
+
+        /// <summary>Rows whose height is stated rather than left to the reader, in points.</summary>
+        public IDictionary<int, double> Heights { get; } = new Dictionary<int, double>();
+
+        /// <summary>Paint one cell.</summary>
+        /// <param name="row">Its row, from nought.</param>
+        /// <param name="column">Its column, from nought.</param>
+        /// <param name="style">How it is drawn.</param>
+        public XlsxSheet Paint(int row, int column, XlsxStyle style)
+        {
+            if (row >= 0 && column >= 0) Styles[(row, column)] = style;
+
+            return this;
+        }
+
+        /// <summary>Write a block of cells as one.</summary>
+        /// <param name="row">The top row, from nought.</param>
+        /// <param name="column">The left column, from nought.</param>
+        /// <param name="toRow">The bottom row.</param>
+        /// <param name="toColumn">The right column.</param>
+        public XlsxSheet Merge(int row, int column, int toRow, int toColumn)
+        {
+            if (row < 0 || column < 0 || toRow < row || toColumn < column) return this;
+            if (toRow == row && toColumn == column) return this;
+
+            Merges.Add((row, column, toRow, toColumn));
+
+            return this;
+        }
 
         /// <summary>Append a row.</summary>
         public XlsxSheet Row(params string?[] cells)
@@ -96,10 +255,17 @@ namespace CamelWorks.Core.Report
                 Add(zip, "_rels/.rels", RootRels);
                 Add(zip, "xl/workbook.xml", Workbook(sheets));
                 Add(zip, "xl/_rels/workbook.xml.rels", WorkbookRels(sheets.Count));
-                Add(zip, "xl/styles.xml", Styles);
+                // <b>The stylesheet is built from what the sheets actually ask for.</b> A fixed
+                // one could only ever offer what somebody thought of in advance, and a matrix
+                // wants a ground per symbol, per folder, per rank and per step of a heat scale -
+                // which is a number nobody can name up front. Every distinct style used across
+                // the workbook becomes one format, once, and the cells point at it.
+                var wanted = Wanted(sheets);
+
+                Add(zip, "xl/styles.xml", Styles(wanted));
 
                 for (var i = 0; i < sheets.Count; i++)
-                    Add(zip, "xl/worksheets/sheet" + (i + 1).ToString(CultureInfo.InvariantCulture) + ".xml", Sheet(sheets[i]));
+                    Add(zip, "xl/worksheets/sheet" + (i + 1).ToString(CultureInfo.InvariantCulture) + ".xml", Sheet(sheets[i], wanted));
             }
 
             return buffer.ToArray();
@@ -208,31 +374,190 @@ namespace CamelWorks.Core.Report
         /// <c>scheme val="minor"</c> both point at a part that is not in the package, which is
         /// its own kind of broken.
         /// </summary>
-        private const string Styles =
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
-            "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">" +
-            "<fonts count=\"2\">" +
-            "<font><sz val=\"11\"/><color rgb=\"FF000000\"/><name val=\"Calibri\"/><family val=\"2\"/></font>" +
-            "<font><b/><sz val=\"11\"/><color rgb=\"FF000000\"/><name val=\"Calibri\"/><family val=\"2\"/></font>" +
-            "</fonts>" +
-            "<fills count=\"2\">" +
-            "<fill><patternFill patternType=\"none\"/></fill>" +
-            "<fill><patternFill patternType=\"gray125\"/></fill>" +
-            "</fills>" +
-            "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>" +
-            "<cellStyleXfs count=\"1\">" +
-            "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/>" +
-            "</cellStyleXfs>" +
-            "<cellXfs count=\"2\">" +
-            "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>" +
-            "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>" +
-            "</cellXfs>" +
-            "<cellStyles count=\"1\">" +
-            "<cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/>" +
-            "</cellStyles>" +
-            "</styleSheet>";
+        /// <summary>
+        /// Every distinct style the workbook uses, in the order their formats are written.
+        ///
+        /// Index nought is the plain cell and index one is the bold header, because the sheet
+        /// writer hard-codes those two for every report that says nothing about colour - so a
+        /// sheet built the old way comes out byte for byte as it did.
+        /// </summary>
+        /// <param name="sheets">The workbook.</param>
+        private static List<XlsxStyle> Wanted(IReadOnlyList<XlsxSheet> sheets)
+        {
+            var wanted = new List<XlsxStyle>
+            {
+                new XlsxStyle(),
+                new XlsxStyle(bold: true),
+            };
 
-        private static string Sheet(XlsxSheet sheet)
+            foreach (var sheet in sheets)
+            foreach (var style in sheet.Styles.Values)
+            {
+                if (style.IsPlain) continue;
+                if (wanted.Contains(style)) continue;
+
+                wanted.Add(style);
+            }
+
+            return wanted;
+        }
+
+        /// <summary>
+        /// The stylesheet: a font, a fill and a border per distinct thing asked for, and one
+        /// format per style pointing at them.
+        ///
+        /// <b>Small, but not as small as it will go.</b> Three of the things here look like
+        /// padding and are not, because Excel treats a stylesheet missing them as a damaged
+        /// workbook and offers to repair it rather than open it:
+        ///
+        /// <list type="bullet">
+        /// <item>Two fills before any of ours. Index one has to be <c>gray125</c> whether or not
+        /// anything uses it - it is the reserved second entry, and one fill is the shape Excel
+        /// rejects.</item>
+        /// <item>A <c>cellStyles</c> entry naming the Normal style. Without it the workbook has
+        /// no default style for anything to inherit from.</item>
+        /// <item>Every <c>xf</c> stating its numFmtId, fontId, fillId and borderId outright.
+        /// Left off they are not defaulted, they are absent.</item>
+        /// </list>
+        ///
+        /// No theme part is shipped, so nothing here may name one: <c>color theme="1"</c> and
+        /// <c>scheme val="minor"</c> both point at a part that is not in the package, which is
+        /// its own kind of broken.
+        /// </summary>
+        /// <param name="wanted">The styles used, index nought plain and index one bold.</param>
+        private static string Styles(List<XlsxStyle> wanted)
+        {
+            // Fonts and fills are shared between styles that ask for the same one, because two
+            // hundred cells of the same colour is one fill and two hundred references to it.
+            var fonts = new List<string>();
+            var fills = new List<string?> { null, null };
+            var borders = new List<bool> { false };
+
+            int Font(XlsxStyle style)
+            {
+                var one = "<font>" + (style.Bold ? "<b/>" : string.Empty)
+                          + "<sz val=\"11\"/><color rgb=\"FF"
+                          + (style.Ink ?? "000000") + "\"/>"
+                          + "<name val=\"Calibri\"/><family val=\"2\"/></font>";
+
+                var at = fonts.IndexOf(one);
+
+                if (at >= 0) return at;
+
+                fonts.Add(one);
+
+                return fonts.Count - 1;
+            }
+
+            int Fill(XlsxStyle style)
+            {
+                if (style.Fill == null) return 0;
+
+                var at = fills.IndexOf(style.Fill);
+
+                if (at >= 0) return at;
+
+                fills.Add(style.Fill);
+
+                return fills.Count - 1;
+            }
+
+            int Border(XlsxStyle style)
+            {
+                if (!style.Boxed) return 0;
+
+                var at = borders.IndexOf(true);
+
+                if (at >= 0) return at;
+
+                borders.Add(true);
+
+                return borders.Count - 1;
+            }
+
+            var formats = new StringBuilder();
+
+            foreach (var style in wanted)
+            {
+                formats.Append("<xf numFmtId=\"0\" fontId=\"")
+                       .Append(Font(style).ToString(CultureInfo.InvariantCulture))
+                       .Append("\" fillId=\"").Append(Fill(style).ToString(CultureInfo.InvariantCulture))
+                       .Append("\" borderId=\"").Append(Border(style).ToString(CultureInfo.InvariantCulture))
+                       .Append("\" xfId=\"0\" applyFont=\"1\"");
+
+                if (style.Fill != null) formats.Append(" applyFill=\"1\"");
+                if (style.Boxed) formats.Append(" applyBorder=\"1\"");
+
+                if (style.Centre || style.Turned)
+                {
+                    formats.Append(" applyAlignment=\"1\"><alignment");
+
+                    if (style.Centre)
+                        formats.Append(" horizontal=\"center\" vertical=\"center\"");
+
+                    // Ninety degrees anticlockwise, which is how every clash matrix ever drawn
+                    // fits twenty discipline names across the top of a page.
+                    if (style.Turned) formats.Append(" textRotation=\"90\"");
+
+                    formats.Append("/></xf>");
+                }
+                else formats.Append("/>");
+            }
+
+            var sb = new StringBuilder();
+
+            sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            sb.Append("<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
+
+            sb.Append("<fonts count=\"").Append(fonts.Count.ToString(CultureInfo.InvariantCulture))
+              .Append("\">");
+
+            foreach (var one in fonts) sb.Append(one);
+
+            sb.Append("</fonts>");
+
+            sb.Append("<fills count=\"").Append(fills.Count.ToString(CultureInfo.InvariantCulture))
+              .Append("\">");
+            sb.Append("<fill><patternFill patternType=\"none\"/></fill>");
+            sb.Append("<fill><patternFill patternType=\"gray125\"/></fill>");
+
+            for (var at = 2; at < fills.Count; at++)
+                sb.Append("<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF")
+                  .Append(fills[at]).Append("\"/><bgColor rgb=\"FF").Append(fills[at])
+                  .Append("\"/></patternFill></fill>");
+
+            sb.Append("</fills>");
+
+            sb.Append("<borders count=\"").Append(borders.Count.ToString(CultureInfo.InvariantCulture))
+              .Append("\">");
+            sb.Append("<border><left/><right/><top/><bottom/><diagonal/></border>");
+
+            for (var at = 1; at < borders.Count; at++)
+                sb.Append("<border>")
+                  .Append("<left style=\"thin\"><color rgb=\"FFB0B0B0\"/></left>")
+                  .Append("<right style=\"thin\"><color rgb=\"FFB0B0B0\"/></right>")
+                  .Append("<top style=\"thin\"><color rgb=\"FFB0B0B0\"/></top>")
+                  .Append("<bottom style=\"thin\"><color rgb=\"FFB0B0B0\"/></bottom>")
+                  .Append("<diagonal/></border>");
+
+            sb.Append("</borders>");
+
+            sb.Append("<cellStyleXfs count=\"1\">");
+            sb.Append("<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/>");
+            sb.Append("</cellStyleXfs>");
+
+            sb.Append("<cellXfs count=\"").Append(wanted.Count.ToString(CultureInfo.InvariantCulture))
+              .Append("\">").Append(formats).Append("</cellXfs>");
+
+            sb.Append("<cellStyles count=\"1\">");
+            sb.Append("<cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/>");
+            sb.Append("</cellStyles>");
+            sb.Append("</styleSheet>");
+
+            return sb.ToString();
+        }
+
+        private static string Sheet(XlsxSheet sheet, List<XlsxStyle> wanted)
         {
             var sb = new StringBuilder();
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
@@ -256,21 +581,90 @@ namespace CamelWorks.Core.Report
             for (var r = 0; r < sheet.Rows.Count; r++)
             {
                 var row = sheet.Rows[r];
-                sb.Append("<row r=\"").Append((r + 1).ToString(CultureInfo.InvariantCulture)).Append("\">");
 
-                for (var c = 0; c < row.Count; c++)
-                    AppendCell(sb, Reference(c, r + 1), row[c], isHeader: r == 0);
+                sb.Append("<row r=\"").Append((r + 1).ToString(CultureInfo.InvariantCulture)).Append('"');
+
+                if (sheet.Heights.TryGetValue(r, out var tall))
+                    sb.Append(" ht=\"").Append(tall.ToString("0.##", CultureInfo.InvariantCulture))
+                      .Append("\" customHeight=\"1\"");
+
+                sb.Append('>');
+
+                // A merged block is written as its top-left cell and as empty cells for the rest
+                // of it - so a row shorter than the block still has to reach the far side of it,
+                // or Excel reads the merge as covering cells that are not there.
+                var wide = Math.Max(row.Count, Reaches(sheet, r));
+
+                for (var c = 0; c < wide; c++)
+                    AppendCell(sb, Reference(c, r + 1), c < row.Count ? row[c] : null,
+                               Format(sheet, wanted, r, c));
 
                 sb.Append("</row>");
             }
 
-            sb.Append("</sheetData></worksheet>");
+            sb.Append("</sheetData>");
+
+            if (sheet.Merges.Count > 0)
+            {
+                sb.Append("<mergeCells count=\"")
+                  .Append(sheet.Merges.Count.ToString(CultureInfo.InvariantCulture)).Append("\">");
+
+                foreach (var block in sheet.Merges)
+                    sb.Append("<mergeCell ref=\"")
+                      .Append(Reference(block.Column, block.Row + 1)).Append(':')
+                      .Append(Reference(block.ToColumn, block.ToRow + 1)).Append("\"/>");
+
+                sb.Append("</mergeCells>");
+            }
+
+            sb.Append("</worksheet>");
             return sb.ToString();
+        }
+
+        /// <summary>How far right a row has to be written, counting the merges that cross it.</summary>
+        /// <param name="sheet">The sheet.</param>
+        /// <param name="row">The row, from nought.</param>
+        private static int Reaches(XlsxSheet sheet, int row)
+        {
+            var wide = 0;
+
+            foreach (var block in sheet.Merges)
+                if (row >= block.Row && row <= block.ToRow && block.ToColumn + 1 > wide)
+                    wide = block.ToColumn + 1;
+
+            foreach (var at in sheet.Styles.Keys)
+                if (at.Row == row && at.Column + 1 > wide) wide = at.Column + 1;
+
+            return wide;
+        }
+
+        /// <summary>Which cell format one cell uses: its own, the header's, or the plain one.</summary>
+        /// <param name="sheet">The sheet.</param>
+        /// <param name="wanted">The styles, in the order they were written.</param>
+        /// <param name="row">The row, from nought.</param>
+        /// <param name="column">The column, from nought.</param>
+        private static int Format(XlsxSheet sheet, List<XlsxStyle> wanted,
+                                  int row, int column)
+        {
+            if (sheet.Styles.TryGetValue((row, column), out var style) && !style.IsPlain)
+            {
+                var at = wanted.IndexOf(style);
+
+                if (at >= 0) return at;
+            }
+
+            // The first row is the header of a report that said nothing about colour, and is
+            // bold for the same reason it always was. A sheet that paints its own cells has
+            // said what it wants there.
+            return row == 0 && sheet.Styles.Count == 0 ? 1 : 0;
         }
 
         private static void AppendColumnWidths(StringBuilder sb, XlsxSheet sheet)
         {
             var columns = sheet.Rows.Count == 0 ? 0 : sheet.Rows.Max(r => r.Count);
+
+            foreach (var at in sheet.Widths.Keys) columns = Math.Max(columns, at + 1);
+
             if (columns == 0) return;
 
             sb.Append("<cols>");
@@ -282,8 +676,13 @@ namespace CamelWorks.Core.Report
                     .DefaultIfEmpty(0)
                     .Max();
 
-                // Clamped: one pathological cell should not produce a column nobody can scroll past.
-                var width = Math.Min(60, Math.Max(9, longest + 2));
+                // Clamped: one pathological cell should not produce a column nobody can scroll
+                // past - unless the sheet has said outright how wide it wants a column, which a
+                // matrix does: its columns hold one letter and measuring them by their turned
+                // headings would give twenty columns forty characters wide.
+                var width = sheet.Widths.TryGetValue(c, out var said)
+                    ? said
+                    : Math.Min(60, Math.Max(9, longest + 2));
                 sb.Append("<col min=\"").Append((c + 1).ToString(CultureInfo.InvariantCulture))
                   .Append("\" max=\"").Append((c + 1).ToString(CultureInfo.InvariantCulture))
                   .Append("\" width=\"").Append(width.ToString(CultureInfo.InvariantCulture))
@@ -292,10 +691,12 @@ namespace CamelWorks.Core.Report
             sb.Append("</cols>");
         }
 
-        private static void AppendCell(StringBuilder sb, string reference, string? value, bool isHeader)
+        private static void AppendCell(StringBuilder sb, string reference, string? value, int format)
         {
             sb.Append("<c r=\"").Append(reference).Append('"');
-            if (isHeader) sb.Append(" s=\"1\"");
+
+            if (format > 0)
+                sb.Append(" s=\"").Append(format.ToString(CultureInfo.InvariantCulture)).Append('"');
 
             if (string.IsNullOrEmpty(value))
             {

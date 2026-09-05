@@ -46,7 +46,7 @@ namespace CamelWorks.Studio
         /// opens - and the cost of that is not the minutes, it is that a render stops being
         /// something you reach for. Named pages are two.
         /// </summary>
-        private const string Only = "app-clash-matrix,app-clash-matrix-drawn";
+        private const string Only = "app-clash-matrix-drawn,app-clash-matrix-priority,app-clash-matrix-results,app-clash-matrix-read";
 
         /// <summary>Run the harness.</summary>
         /// <param name="args">
@@ -97,13 +97,19 @@ namespace CamelWorks.Studio
         {
             Directory.CreateDirectory(folder);
 
+            // <b>Nothing named is the default, not everything.</b> A push carries no dispatch
+            // input, so the workflow hands this an empty string - and an empty list read as "no
+            // filter" drew all nineteen pages off a Windows runner for a request that wanted two.
+            // Which is the cost this argument exists to avoid, arriving through the one trigger
+            // that cannot pass it.
+            if (string.IsNullOrWhiteSpace(only)) only = Only;
+
             var wanted = only.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                              .Select(one => one.Trim())
                              .Where(one => one.Length > 0)
                              .ToList();
 
-            var every = wanted.Count == 0
-                        || wanted.Any(one => string.Equals(one, "all", StringComparison.OrdinalIgnoreCase));
+            var every = wanted.Any(one => string.Equals(one, "all", StringComparison.OrdinalIgnoreCase));
 
             var pages = every
                 ? Everything

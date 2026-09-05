@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
@@ -56,6 +57,38 @@ namespace CamelWorks.Studio
 
             Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn())),
+
+            // The window that says which tests become a matrix and what their names mean. Drawn
+            // as a panel rather than shown as a window, because a WPF window needs a screen to
+            // exist on and this harness has none - so until this was split out, every dialogue
+            // in the product was checked by a coordinator on a licensed seat and described to me
+            // in words.
+            Page("app-clash-matrix-read", "Clash Manager · Read from the model", 660,
+                 () => MatrixReadWindow.Draw(Named(), "{rowCode}-{rowNumber} {row} vs "
+                                                      + "{columnCode}-{columnNumber} {column}",
+                                             null, null)),
+
+            // The results view was the one that could not be photographed: it counts what the
+            // document holds and this seat holds none, so the heat scale, the number in each
+            // cell and the difference between a nought and a pair no test covers were drawing
+            // nobody had ever seen. It is handed the same list a real read hands back, and the
+            // tab counts it through MatrixTally exactly as a licensed seat does.
+            Page("app-clash-matrix-results", "Clash Manager · Matrix, results", 820,
+                 () =>
+                 {
+                     var board = Drawn(pointed: true);
+
+                     return MatrixWindow.Surface(Seated(), board, MatrixWindow.Showing.Results,
+                                                 Ran(board));
+                 }),
+
+            // The same board, turned over to the priority view. A view that cannot be
+            // photographed is a view whose drawing faults are found on a licensed seat and
+            // described to me in words, which is how every layout fault on this tab has been
+            // found so far. The results view is not here: it counts what a document holds, and
+            // this seat holds none.
+            Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
+                 () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
         };
 
         /// <summary>
@@ -90,7 +123,20 @@ namespace CamelWorks.Studio
         /// drawn; and a number that disagrees with its position, so the number gutter is drawn
         /// too. A matrix that exercises none of those proves nothing.
         /// </summary>
-        private static MatrixBoard Drawn()
+        private static MatrixBoard Drawn() => Drawn(pointed: false);
+
+        /// <summary>
+        /// The board every matrix page is drawn from.
+        /// </summary>
+        /// <param name="pointed">
+        /// True to give every line the saved set it stands for.
+        ///
+        /// Off for the two pages that photograph the drawing, because a board being typed has
+        /// nothing behind its lines yet and the marks that say so are part of what those pages
+        /// are for. On for the results page, where it is not decoration: what a test is between
+        /// is how a count finds its cell, so a board pointing at nothing counts onto nothing.
+        /// </param>
+        private static MatrixBoard Drawn(bool pointed)
         {
             var board = new MatrixBoard();
 
@@ -125,7 +171,11 @@ namespace CamelWorks.Studio
                 // The numbers skip one, so they stop agreeing with the position in the list and
                 // the gutter that prints them is drawn - which is a column of the header the
                 // empty screen never had to lay out.
-                var row = board.AddPair(new MatrixLine(name)
+                var row = board.AddPair(new MatrixLine(
+                    name,
+                    source: pointed && name.Length > 0
+                        ? MatrixSource.SelectionSet(name)
+                        : null)
                 {
                     Code = code,
                     Number = (at + (at > 8 ? 2 : 1)).ToString(CultureInfo.InvariantCulture),
@@ -133,6 +183,18 @@ namespace CamelWorks.Studio
 
                 if (folder.Length > 0) board.File(row, folder);
             }
+
+            // Coloured, because a folder that can carry a colour and is never drawn with one is
+            // a feature no picture has ever checked. Two of the four, so the render shows both a
+            // folder that has been given one and folders that have not.
+            board.Paint("Architecture", "#B3E5FC");
+            board.Paint("Wet services", "#C8E6C9");
+
+            // A standing rule, applied first so its cells are the rule's and carry the corner
+            // that says so. Filled by hand afterwards and the rule would have nothing left to
+            // write - which is a real board's order of events, not this page's.
+            board.AddRule(new MatrixRule("Architecture", "Wet services", "B"));
+            board.ApplyRules();
 
             // Enough decided cells that the sheet is read as a pattern rather than as a grid of
             // blanks, and a diagonal that has to be drawn as one.
@@ -144,12 +206,155 @@ namespace CamelWorks.Studio
                     if (down == across) continue;
                     if (((down * 7) + (across * 3)) % 5 == 0) continue;
 
+                    // What the rule wrote is left to the rule, so the render shows both kinds of
+                    // cell side by side.
+                    if (board.At(board.Rows[down], board.Columns[across]) != null) continue;
+
                     board.Set(board.Rows[down], board.Columns[across],
                               marks[((down * 3) + across) % marks.Length]);
                 }
 
+            // Ranked in a block rather than at random, so the picture says whether a run of
+            // ranks down a discipline reads as one thing - which is the question the view
+            // exists to answer.
+            for (var down = 0; down < board.Rows.Count; down++)
+                for (var across = 0; across < board.Columns.Count; across++)
+                {
+                    if (board.At(board.Rows[down], board.Columns[across]) == null) continue;
+
+                    var rank = down < 3 ? MatrixBoard.High
+                        : down < 6 ? MatrixBoard.Medium
+                        : across < 4 ? MatrixBoard.Low
+                        : MatrixBoard.NotSet;
+
+                    board.Rank(board.Rows[down], board.Columns[across], rank);
+                }
+
             return board;
         }
+
+        /// <summary>
+        /// The board's tests as a run of them hands them back, so the results view has something
+        /// to count.
+        ///
+        /// Not a tally written by hand. These are the product's own types - the shape of a test
+        /// and the results under it - so what the page photographs is
+        /// <see cref="MatrixTally"/> doing its own job: finding the cell from what the test is
+        /// between, and counting a result as open or not from the word the host wrote on it.
+        ///
+        /// A spread on purpose. Some pairs come back heavy, some light, some entirely approved -
+        /// which is the nought that has to be told from the pairs left blank because no test
+        /// covers them at all, and a third of them are left uncovered so that both are on the
+        /// picture.
+        /// </summary>
+        /// <param name="board">The pointed board.</param>
+        private static IReadOnlyList<ClashTestRead> Ran(MatrixBoard board)
+        {
+            var read = new List<ClashTestRead>();
+            var at = 0;
+
+            foreach (var cell in board.Cells())
+            {
+                at++;
+
+                if (board.IsSelfPair(cell.Row, cell.Column)) continue;
+
+                // A third of the pairs have no test at all, so the view has to draw "nobody has
+                // checked this" beside "checked, nothing left".
+                if (at % 3 == 0) continue;
+
+                // Nought open on one in five, which is the pair somebody has finished with.
+                var found = ((at * 37) % 240) + 1;
+                var open = at % 5 == 0 ? 0 : ((at * 17) % found) + 1;
+
+                var results = new List<ClashResultInfo>();
+
+                for (var one = 0; one < found; one++)
+                    results.Add(new ClashResultInfo(
+                        one.ToString(CultureInfo.InvariantCulture), default, default,
+                        0, 0, 0,
+                        one < open ? (one % 2 == 0 ? "New" : "Active") : "Approved", null));
+
+                var shape = new ClashTestSides(cell.Row.Name, cell.Column.Name,
+                                               Array.Empty<string>(), Array.Empty<string>(),
+                                               "Hard", 0.01);
+
+                read.Add(new ClashTestRead(
+                    new ClashTestInfo(at.ToString(CultureInfo.InvariantCulture),
+                                      cell.Row.Name + " vs " + cell.Column.Name, null,
+                                      results.Count, 0),
+                    shape, results));
+            }
+
+            return read;
+        }
+
+        /// <summary>
+        /// A document's tests as a read of them hands them back, named three different ways.
+        ///
+        /// Three conventions on one job, because that is what two years of set-up looks like: a
+        /// batch named to the standard, a batch from before it, and a handful somebody typed. A
+        /// fixture where every name fits the first pattern would photograph a screen that never
+        /// happens.
+        /// </summary>
+        private static IReadOnlyList<ClashTestRead> Named()
+        {
+            var read = new List<ClashTestRead>();
+
+            var sides = new (string Code, string Number, string Name)[]
+            {
+                ("ARC", "01", "General Elements"),
+                ("ARC", "02", "Internal Partitions"),
+                ("STR", "03", "Structural Frame"),
+                ("STR", "04", "Slabs and Decks"),
+                ("WSC", "05", "Pipes"),
+                ("WSC", "06", "Ducts"),
+                ("EIC", "07", "Cable Trays"),
+            };
+
+            var at = 0;
+
+            for (var one = 0; one < sides.Length; one++)
+            for (var other = one + 1; other < sides.Length; other++)
+            {
+                at++;
+
+                var a = sides[one];
+                var b = sides[other];
+
+                // Most of them to the standard, a run of older ones on the other separator, and
+                // two nobody named to any rule at all.
+                var name = at % 7 == 0
+                    ? "Coordination check " + at.ToString(CultureInfo.InvariantCulture)
+                    : at % 3 == 0
+                        ? a.Name + " | " + b.Name
+                        : a.Code + "-" + a.Number + " " + a.Name + " vs "
+                          + b.Code + "-" + b.Number + " " + b.Name;
+
+                read.Add(new ClashTestRead(
+                    new ClashTestInfo(at.ToString(CultureInfo.InvariantCulture), name, null, 0, 0),
+                    new ClashTestSides(Setted(a.Code, a.Name), Setted(b.Code, b.Name),
+                                       Array.Empty<string>(), Array.Empty<string>(),
+                                       at % 4 == 0 ? "Clearance" : "Hard",
+                                       at % 4 == 0 ? 0.025 : 0.010),
+                    Array.Empty<ClashResultInfo>()));
+            }
+
+            return read;
+        }
+
+        /// <summary>
+        /// A saved set named the way a real one is: a code, a name in capitals, and the revision
+        /// somebody issued it at - which is precisely what a matrix read from the sets used to be
+        /// named after, and why reading the test names is worth the window.
+        /// </summary>
+        /// <param name="code">The discipline code.</param>
+        /// <param name="name">The discipline's name.</param>
+        private static string Setted(string code, string name) =>
+            string.Join("_", new[]
+            {
+                code, name.Replace(" ", "_").ToUpperInvariant(), "REV21", "ISSUED",
+            });
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };
