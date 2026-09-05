@@ -115,7 +115,10 @@ namespace CamelWorks.UI.Views
             var says = Ui.Small(
                 "A field is filled the same way on every row and column. Counted writes a series "
                 + "down the axis, so renumbering the whole matrix is one edit here rather than one "
-                + "per line. A line can be taken out of a field and held by hand from its header.");
+                + "per line. A line can be taken out of a field and held by hand from its header."
+                + "\n\nThe order is the order: it is what the panel lists and what the board lays "
+                + "out. The name, number, code and folder are drawn where Settings \u25b8 Grid, "
+                + "symbols and fields says; a field of your own says on its own card.");
 
             says.TextWrapping = TextWrapping.Wrap;
             says.Margin = new Thickness(0, 0, 0, 10);
@@ -273,13 +276,13 @@ namespace CamelWorks.UI.Views
             // mechanical once the first is known, and the width was what squeezed the control.
             var token = new TextBlock
             {
-                Text = field.RowToken,
+                Text = Tokened(field),
                 FontSize = 11,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(10, 0, 0, 0),
-                ToolTip = "In a naming pattern: " + field.RowToken + " for the row, "
-                          + field.ColumnToken + " for the column.",
+                ToolTip = "In a naming pattern: " + Tokened(field) + " for the row, "
+                          + Tokened(field, column: true) + " for the column.",
             }.Wearing("Mono");
 
             token.Tint(TextBlock.ForegroundProperty, "Muted");
@@ -335,6 +338,26 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// The token a pattern actually carries for this field.
+        ///
+        /// The four built-in fields had their tokens before the scheme existed, and they are not
+        /// built from the key: the name is <c>{row}</c>, not <c>{rowName}</c>. Printing the key's
+        /// form put a token on screen that no pattern can parse, beside a tooltip inviting
+        /// somebody to write it into one.
+        /// </summary>
+        /// <param name="field">The field.</param>
+        /// <param name="column">True for the column's form.</param>
+        private static string Tokened(MatrixField field, bool column = false)
+        {
+            if (field.Key == MatrixField.NameKey) return column ? "{column}" : "{row}";
+            if (field.Key == MatrixField.NumberKey) return column ? "{columnNumber}" : "{rowNumber}";
+            if (field.Key == MatrixField.CodeKey) return column ? "{columnCode}" : "{rowCode}";
+            if (field.Key == MatrixField.FolderKey) return column ? "{columnFolder}" : "{rowFolder}";
+
+            return column ? field.ColumnToken : field.RowToken;
+        }
+
+        /// <summary>
         /// Where the field is drawn: on the board, in the panel, both, or neither.
         ///
         /// Two ticks rather than a four-way chooser, because they are two independent questions
@@ -342,26 +365,19 @@ namespace CamelWorks.UI.Views
         /// line is set up, and not as a fourth gutter down the side of a board that is already
         /// carrying a number, a code and a name.
         ///
-        /// The four built-in fields are drawn by the board's own appearance settings, which are
-        /// on the drawing window, so they say so rather than offering a second control that would
-        /// disagree with the first.
+        /// The four built-in fields are drawn by the board's own appearance settings, which are on
+        /// the drawing window, so their cards carry no placement row at all; the window says once,
+        /// at the top, where those settings live.
         /// </summary>
         /// <param name="field">The field.</param>
         /// <param name="onChange">Called after anything is edited.</param>
         private static UIElement Placing(MatrixField field, Action onChange)
         {
-            if (field.IsBuiltIn)
-            {
-                var says = Ui.Small(field.Key == MatrixField.NameKey
-                    ? "Always drawn, on the board and in the panel."
-                    : "Drawn where the matrix's own appearance settings say \u2014 Settings \u25b8 Grid, "
-                      + "symbols and fields.");
-
-                says.TextWrapping = TextWrapping.Wrap;
-                says.Margin = new Thickness(0, 0, 0, 2);
-
-                return says;
-            }
+            // Nothing on a built-in card. Where those four are drawn is the board's own
+            // appearance setting, said once at the top of the window: a sentence repeated on four
+            // cards is four lines of the same reading, and it pushed the fields this window is
+            // actually for off the bottom of it.
+            if (field.IsBuiltIn) return Ui.Stack();
 
             var board = Ui.Check("On the board",
                                  (field.Shown & MatrixShown.Header) == MatrixShown.Header,
