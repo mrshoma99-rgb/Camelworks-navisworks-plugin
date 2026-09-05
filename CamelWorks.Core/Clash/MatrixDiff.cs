@@ -36,9 +36,9 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// True when building this line only has to rename the test the document already has.
         ///
-        /// <b>Said here rather than worked out again by whoever builds.</b> The difference is
-        /// computed once, and what has to be done about it is part of the difference: a caller
-        /// that re-derives it from the words in <see cref="What"/> will get it wrong.
+        /// Stated here rather than re-derived by the builder. The difference is computed once, and
+        /// what has to be done about it is part of the difference: a caller that re-derives it from
+        /// the words in <see cref="What"/> will get it wrong.
         /// </summary>
         public bool Renames { get; }
 
@@ -67,15 +67,14 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The difference between what a matrix asks for and what the document already holds.
     ///
-    /// <b>Why this exists.</b> Without it, changing one cell means deleting every test on the job
-    /// and making them all again - which throws away every status, every assignment, every
-    /// comment and every group somebody has spent a fortnight putting on the results. A
-    /// coordination matrix is edited constantly and the results are the work; the tests are just
-    /// how the results got there.
+    /// Without it, changing one cell means deleting every test on the job and remaking them all,
+    /// which discards every status, assignment, comment and group put on the results. A coordination
+    /// matrix is edited constantly and the results are the work; the tests are how the results got
+    /// there.
     ///
-    /// <b>A test is matched by what it is between, not by what it is called.</b> Two sources and
-    /// a kind of test, in a settled order. A rename is therefore not a new test - it is the same
-    /// test under a new name, which is exactly what changing the naming pattern should do.
+    /// A test is matched by what it is between rather than by what it is called: two sources and a
+    /// kind of test, in a settled order. A rename is therefore not a new test but the same test
+    /// under a new name, which is what changing the naming pattern should do.
     /// </summary>
     public static class MatrixDiff
     {

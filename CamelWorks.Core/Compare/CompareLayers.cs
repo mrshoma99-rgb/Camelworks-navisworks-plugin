@@ -93,17 +93,17 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Turns a comparison into appearance layers.
     ///
-    /// <b>Layers, not overrides.</b> The host's own way of showing a comparison is to write colour
-    /// overrides straight onto the model, which cannot be undone selectively, cannot be explained
-    /// afterwards, and is destroyed by the next person who presses Unhide All. Going through the
-    /// appearance stack means the compare view is one row somebody can switch off, that says what
-    /// it is doing and why, and that leaves whatever was underneath it exactly as it was.
+    /// Layers rather than overrides. The host's own way of showing a comparison is to write colour
+    /// overrides onto the model, which cannot be undone selectively, cannot be explained afterwards,
+    /// and is destroyed by the next Unhide All. Going through the appearance stack makes the compare
+    /// view one row that can be switched off, that states what it is doing and why, and that leaves
+    /// what was underneath it unchanged.
     ///
-    /// <b>Removed elements are painted once the old revision is open.</b> They are not in the
-    /// current document — that is what removed means — but they are in the file the baseline was
-    /// taken from, and <see cref="BaselineModels"/> opens it beside the current one. The layer is
-    /// built either way and simply covers nothing until then, so the legend never quietly loses a
-    /// colour and the moment the old revision lands it starts working.
+    /// Removed elements are painted once the old revision is open. They are not in the current
+    /// document — that is what removed means — but they are in the file the baseline was taken from,
+    /// and <see cref="BaselineModels"/> opens it beside the current one. The layer is built either
+    /// way and covers nothing until then, so the legend never loses a colour and the layer starts
+    /// working as soon as the old revision lands.
     /// </summary>
     public static class CompareLayers
     {
@@ -123,12 +123,12 @@ namespace CamelWorks.Core.Compare
 
             // Bottom of the stack, so every coloured layer above it wins on the elements it names.
             //
-            // <b>Named elements, not "everything".</b> Targeting everything is the obvious way to
-            // write this and it is a one-way door: the fade then has to be undone by setting
-            // transparency back across the whole model, which also throws away transparency
-            // somebody applied by hand for their own reasons. Naming the unchanged elements makes
-            // the fade exactly reversible — clear the overrides on the elements the comparison
-            // touched, and nothing else in the document has been written to at all.
+            // Targets the named unchanged elements rather than everything. Targeting everything is
+            // the obvious way to write this and is one-way: the fade then has to be undone by
+            // setting transparency back across the whole model, which also discards transparency
+            // applied by hand. Naming the unchanged elements makes the fade exactly reversible —
+            // clear the overrides on the elements the comparison touched and nothing else in the
+            // document has been written to.
             var unchanged = result.KeysIn(ChangeBucket.Unchanged);
 
             if (ghostUnchanged && unchanged.Count > 0)

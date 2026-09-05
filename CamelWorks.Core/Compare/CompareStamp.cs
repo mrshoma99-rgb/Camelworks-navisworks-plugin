@@ -81,22 +81,22 @@ namespace CamelWorks.Core.Compare
     }
 
     /// <summary>
-    /// Writes a comparison onto the model as ordinary properties, so that everything else in
-    /// Navisworks can see it.
+    /// Writes a comparison onto the model as ordinary properties, so the rest of Navisworks can see
+    /// it.
     ///
-    /// <b>This is what makes a comparison last past the afternoon.</b> A coloured view lives in
-    /// one session on one machine. A property lives in the model: it shows in the properties
-    /// palette, it can be searched on with the host's own search, a selection set built from it
-    /// re-resolves, a clash test can be pointed at "only the things that changed", and a schedule
-    /// can be filtered by it. None of that is possible with a colour override.
+    /// This is what makes a comparison outlast the session. A coloured view lives in one session on
+    /// one machine. A property lives in the model: it shows in the properties palette, it can be
+    /// searched with the host's own search, a selection set built from it re-resolves, a clash test
+    /// can be pointed at "only the things that changed", and a schedule can be filtered by it. None
+    /// of that is possible with a colour override.
     ///
-    /// <b>Unchanged elements are not stamped by default.</b> Two hundred thousand writes that say
-    /// "nothing happened" cost a long wait, a large file and a journal nobody can read — and they
-    /// buy nothing, because "carries the property at all" already means "changed", which is what
-    /// <see cref="AnyChange"/> uses.
+    /// Unchanged elements are not stamped by default. Two hundred thousand writes saying "nothing
+    /// happened" cost a long wait, a large file and an unreadable journal, and buy nothing, because
+    /// carrying the property at all already means "changed", which is what <see cref="AnyChange"/>
+    /// uses.
     ///
     /// Writes go through <see cref="IModelWriteTransaction"/> like every other change CamelWorks
-    /// makes, which means a preview first and a journal entry after. Ctrl+Z will not reverse them;
+    /// makes, so there is a preview first and a journal entry after. Ctrl+Z will not reverse them;
     /// <see cref="Clear"/> is the way back.
     /// </summary>
     public static class CompareStamp
@@ -104,12 +104,12 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// The property tab the stamp writes under.
         ///
-        /// <b>Not a free choice.</b> The host adapter writes every custom property into one
-        /// user-defined tab of its own — <c>NavWriteTransaction.TabName</c> — because that is the
-        /// only shape the COM API offers. A stamp naming any other tab would be written to that
-        /// one anyway, and would then be invisible to the very search sets it exists to make
-        /// possible. Core cannot reference the adapter to say so in code, so the caller checks the
-        /// two agree and the screen says plainly if they ever stop agreeing.
+        /// Not a free choice. The host adapter writes every custom property into one user-defined
+        /// tab of its own — <c>NavWriteTransaction.TabName</c> — because that is the only shape the
+        /// COM API offers. A stamp naming any other tab would be written to that one anyway and
+        /// would then be invisible to the search sets it exists to enable. Core cannot reference the
+        /// adapter to assert this, so the caller checks the two agree and the screen reports it if
+        /// they stop agreeing.
         /// </summary>
         public const string Category = "CamelWorks";
 

@@ -72,11 +72,10 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// What a comparison found, and what it could not answer.
     ///
-    /// <b>The second half of that sentence is the point.</b> Every comparison rests on a matching,
-    /// and a matching that quietly fails looks exactly like a model that was quietly rebuilt: a
-    /// whole discipline reported as removed and re-added. So the counts come with the pairing that
-    /// produced them, the rung each match rested on, and a plain list of the questions this
-    /// particular baseline is not able to answer.
+    /// The second half matters as much as the first. Every comparison rests on a matching, and a
+    /// matching that fails silently looks exactly like a model that was rebuilt: a whole discipline
+    /// reported as removed and re-added. So the counts come with the pairing that produced them, the
+    /// rung each match rested on, and a list of the questions this baseline cannot answer.
     /// </summary>
     public sealed class CompareResult
     {
@@ -197,10 +196,9 @@ namespace CamelWorks.Core.Compare
         /// <summary>
         /// Every element in one bucket, uncapped.
         ///
-        /// <b>Not derivable from <see cref="Changes"/>, and that is the whole reason it exists.</b>
-        /// The change list is capped so a screen stays usable; colouring the model from that capped
-        /// list would leave every element past the five-hundredth uncoloured and looking unchanged
-        /// — a comparison that is visibly, confidently wrong about most of the model.
+        /// Not derivable from <see cref="Changes"/>, which is why it exists. The change list is
+        /// capped so a screen stays usable, and colouring the model from that capped list would
+        /// leave every element past the five-hundredth uncoloured and reading as unchanged.
         ///
         /// For <see cref="ChangeBucket.Removed"/> these are baseline keys, which do not resolve in
         /// the current document. See <see cref="CompareLayers"/> for what that means on screen.

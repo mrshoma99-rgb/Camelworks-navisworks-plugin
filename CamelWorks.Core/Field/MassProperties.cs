@@ -190,18 +190,18 @@ namespace CamelWorks.Core.Field
     /// <summary>
     /// Where the weight of an assembly sits.
     ///
-    /// The question a lift plan is: pick the module, and say where the crane's hook has to be over.
-    /// Getting it from the model rather than from a spreadsheet of guesses is the whole value, and
-    /// it is arithmetic over the triangles that are already there.
+    /// This is what a lift plan asks: pick the module, and say where the crane's hook has to be.
+    /// Taking it from the model rather than from a spreadsheet of estimates is the value, and it is
+    /// arithmetic over triangles that are already present.
     ///
-    /// <b>Three answers, and it says which one it gave.</b> Weighted by a mass the model carries is
-    /// the only one that is really a centre of gravity. Weighted by enclosed volume is right when
-    /// the assembly is one material and wrong when it is steel bolted to insulation. Weighted by
-    /// surface area is the fallback for geometry that does not enclose anything, which in a
-    /// federation is most of it - a duct exported as a surface has no inside.
+    /// Three answers, and it reports which one it gave. Weighted by a mass the model carries is the
+    /// only true centre of gravity. Weighted by enclosed volume is right when the assembly is one
+    /// material and wrong when it is steel bolted to insulation. Weighted by surface area is the
+    /// fallback for geometry that does not enclose anything, which in a federation is most of it: a
+    /// duct exported as a surface has no inside.
     ///
-    /// A centroid that quietly changed basis is the failure this exists to prevent: the number
-    /// looks identical either way, and only one of them will hold the load.
+    /// A centroid that changed basis silently is the failure this prevents: the number looks the
+    /// same either way, and only one of them will hold the load.
     /// </summary>
     public static class MassProperties
     {
@@ -353,13 +353,12 @@ namespace CamelWorks.Core.Field
         /// <summary>
         /// Whether one mesh encloses anything, and its volume, surface area and centroid.
         ///
-        /// The volume is the signed sum of tetrahedra from the origin, which is the standard way
-        /// and is only meaningful on a mesh that closes. <b>Whether it closes is a separate
-        /// question and is asked separately</b>: every edge shared by exactly two triangles. The
-        /// tempting shortcut - "an open mesh sums to about nothing" - is simply false. A single
-        /// triangle three metres above the origin encloses two cubic metres of the tetrahedron it
-        /// makes with it, and a wall exported as one surface will report a volume with as much
-        /// conviction as a solid.
+        /// The volume is the signed sum of tetrahedra from the origin, which is standard and is only
+        /// meaningful on a mesh that closes. Whether it closes is asked separately: every edge
+        /// shared by exactly two triangles. The shortcut of assuming an open mesh sums to about zero
+        /// is false — a single triangle three metres above the origin encloses two cubic metres of
+        /// the tetrahedron it makes with it, and a wall exported as one surface reports a volume as
+        /// confidently as a solid.
         /// </summary>
         /// <param name="part">The element.</param>
         public static (bool Closed, double Volume, double Surface, double X, double Y, double Z) Body(

@@ -49,17 +49,16 @@ namespace CamelWorks.Core.Issues
     /// <summary>
     /// The join between an issue and the findings it is about.
     ///
-    /// <b>Why an issue is not a finding.</b> A finding is what a check produced — a clash, a
-    /// clearance breach, a rule a model failed. An issue is what somebody decided to do about one
-    /// or several of them, and it can exist with no finding at all ("no access to this valve").
-    /// Collapsing the two would mean either inventing machine findings for things no machine
-    /// found, or giving every one of eighteen thousand clashes a conversation nobody will have.
+    /// A finding is what a check produced — a clash, a clearance breach, a rule a model failed. An
+    /// issue is what somebody decided to do about one or several of them, and it can exist with no
+    /// finding at all ("no access to this valve"). Collapsing the two would mean either inventing
+    /// machine findings for things no machine found, or giving every one of eighteen thousand
+    /// clashes a conversation nobody will have.
     ///
-    /// <b>Why the cascade asks.</b> Closing an issue usually means its clashes are dealt with, and
-    /// usually is not always: an issue closed because the RFI was answered says nothing about
-    /// whether the duct moved. An automatic invariant would quietly mark eighteen thousand
-    /// findings resolved on the strength of one dropdown, and the board would go green over a
-    /// building that had not changed. So it is offered, with the count, at the moment of the edit.
+    /// The cascade asks rather than assuming. Closing an issue usually means its clashes are dealt
+    /// with, but not always: an issue closed because the RFI was answered says nothing about whether
+    /// the duct moved. An automatic rule would mark eighteen thousand findings resolved on the
+    /// strength of one dropdown. So it is offered, with the count, at the moment of the edit.
     /// </summary>
     public static class IssueFindings
     {
@@ -162,12 +161,12 @@ namespace CamelWorks.Core.Issues
         /// <summary>
         /// Swap an older issue's clash keys for finding ids, using the findings a read just made.
         ///
-        /// <b>Why this is not a one-time migration.</b> A clash key names two elements and a place
-        /// but not the test that found them, so nothing can turn one into a finding id on its own.
-        /// It takes a read of the results, where the key and the finding are in hand together —
-        /// which is why this runs on every read and is written to be idempotent. A key whose
-        /// result this run did not report stays where it is rather than being dropped: the issue
-        /// still says which clash it is about, and next month's wider run may well find it.
+        /// Not a one-time migration. A clash key names two elements and a place but not the test
+        /// that found them, so nothing can turn one into a finding id on its own. It takes a read of
+        /// the results, where the key and the finding are in hand together, which is why this runs
+        /// on every read and is idempotent. A key whose result this run did not report stays where
+        /// it is rather than being dropped: the issue still records which clash it is about, and a
+        /// wider run later may find it.
         /// </summary>
         /// <param name="register">The issues.</param>
         /// <param name="found">The finding for a clash key, or null when this run reported none.</param>

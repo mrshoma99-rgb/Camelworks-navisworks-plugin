@@ -91,10 +91,10 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// The hand-made group this result was in last run, or null.
         ///
-        /// <b>Only hand-made groups carry.</b> A derived group must re-derive, because the stack is
-        /// the source of truth for it — carrying a derived name would freeze the board against its
+        /// Only hand-made groups carry over. A derived group must re-derive, because the stack is
+        /// the source of truth for it: carrying a derived name would freeze the board against its
         /// own rules, so adding a Grid rule would change nothing. A hand-made group has no other
-        /// memory, so it carries or it is lost.
+        /// record, so it carries or it is lost.
         /// </summary>
         public string? CarriedGroup { get; set; }
 
@@ -127,16 +127,15 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// How the document that wrote this file finds element A again, without searching for it.
         ///
-        /// <b>Why a file carries this at all.</b> The element keys in this file are hashes, and a
-        /// hash cannot be turned back into the thing it names: the only way from a key to an
-        /// element is to hash every element in the federation until one matches, which on a real
-        /// job is the indexing pass. That is a search the writing seat never needed to do - it had
-        /// both elements in its hand when the clash was read - so it writes down where they were
-        /// instead, and the reading seat looks them up rather than hunting for them.
+        /// The element keys in this file are hashes, and a hash cannot be turned back into the thing
+        /// it names: the only route from a key to an element is to hash every element in the
+        /// federation until one matches, which is the indexing pass. The writing seat never needed
+        /// that — it held both elements when the clash was read — so it records where they were and
+        /// the reading seat looks them up.
         ///
         /// Opaque here on purpose. This is the host's own handle for an element and Core neither
         /// builds nor reads it; the adapter that wrote it is the only thing that understands it,
-        /// which is what lets the encoding change without a new file format.
+        /// which lets the encoding change without a new file format.
         ///
         /// Null is ordinary: a file written before this existed, or one written from a file rather
         /// than a model. <see cref="TreeA"/> is the fallback, and the keys are the fallback to that.

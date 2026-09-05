@@ -49,15 +49,15 @@ namespace CamelWorks.Core.Appearance
     /// <summary>
     /// The writes that take the document from where it is to what the stack says.
     ///
-    /// A diff, not a repaint. Toggling one layer on a federation must not rewrite two hundred
+    /// A diff rather than a repaint. Toggling one layer on a federation must not rewrite two hundred
     /// thousand overrides, most of them to the value they already hold, so the planner compares
-    /// against what the document is actually in and emits only the difference.
+    /// against the document's current state and emits only the difference.
     ///
-    /// <b>Apply in order: Clear, then Hide and Show, then Colours, then Transparencies.</b> The
-    /// order is load-bearing, not tidiness. The host has no way to remove a colour override on its
-    /// own — the only eraser is a per-element clear, which takes visibility and transparency with
-    /// it. So an element that is losing its transparency but keeping its colour has to be cleared
-    /// and then repainted, and it appears in both lists on purpose.
+    /// Apply in order: Clear, then Hide and Show, then Colours, then Transparencies. The order is
+    /// required. The host cannot remove a colour override on its own; the only eraser is a
+    /// per-element clear, which takes visibility and transparency with it. So an element that is
+    /// losing its transparency but keeping its colour has to be cleared and then repainted, and it
+    /// appears in both lists deliberately.
     /// </summary>
     public sealed class AppearancePlan
     {
@@ -91,10 +91,9 @@ namespace CamelWorks.Core.Appearance
         /// <summary>
         /// Overridden elements that no layer claims and CamelWorks did not author.
         ///
-        /// <b>Reported, never cleared.</b> Somebody else — a colleague, another add-in, the model
-        /// itself — put those there, and a manager that quietly resets them the first time it runs
-        /// is a manager nobody can leave switched on. Clearing them stays something a person asks
-        /// for by name.
+        /// Reported, never cleared. Something else put those there — a colleague, another add-in,
+        /// the model itself — and a manager that resets them on its first run cannot be left switched
+        /// on. Clearing them remains an explicit request.
         /// </summary>
         public IReadOnlyList<ElementKey> Foreign { get; }
 
