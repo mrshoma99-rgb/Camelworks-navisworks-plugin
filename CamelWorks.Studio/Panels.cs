@@ -78,6 +78,13 @@ namespace CamelWorks.Studio
                                                       + "{columnCode}-{columnNumber} {column}",
                                              null, null)),
 
+            // The matrix in the state a real one is used in: more lines than fit, so the grid
+            // scrolls and the frozen bands have to track it. A page tall enough to show every
+            // row proves nothing about the bands, which is why the drift between them and the
+            // cells was reported off a seat rather than off a picture.
+            Page("app-clash-matrix-scrolled", "Clash Manager · Matrix, scrolled", 520,
+                 () => MatrixWindow.Surface(Seated(), Drawn(pointed: true))),
+
             // The levels a project declares, and what each covers. Drawn with a building in it:
             // an empty plan draws the one line saying there are none, which is the state that
             // proves nothing about the editor.
