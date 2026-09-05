@@ -548,30 +548,34 @@ namespace CamelWorks.UI.Views
 
                 var stack = new DockPanel { LastChildFill = true };
 
-                // <b>A notice must never move the work.</b> Docked over the grid, every report
-                // pushed the whole matrix down by its own height and pulled it back up when it
-                // was dismissed - so the cell somebody was aiming at moved out from under the
-                // pointer, twice, for a sentence they did not ask for. It floats now: same
-                // place, over the top-right of the grid, with its own ground and a shadow, and
-                // the matrix underneath does not know it is there.
                 // <b>Floating it stopped it pushing the work and started it covering the
                 // work.</b> Docked, a notice took its own height off the top of the grid and gave
                 // it back when it went, so the cell somebody was aiming at moved out from under
                 // the pointer twice for a sentence they did not ask for. Laid over the top-right
                 // instead, it stopped moving anything and sat on the words underneath it -
-                // which on the start screen is the paragraph explaining what a matrix is, cut
-                // off mid-sentence by a box explaining something else.
+                // squarely across the paragraph explaining what a matrix is, cut off
+                // mid-sentence by a box explaining something else.
                 //
-                // Neither is acceptable and they are not the only two options. A notice here is
-                // a standing fact about the seat - no clash engine, no document open, a report
-                // asked for by name - and a standing fact belongs in the layout, not hovering
-                // over it. It takes a row of its own above the grid, which it is welcome to,
-                // because it appears when the tab is opened and not in the middle of somebody's
-                // thirtieth cell. The transient confirmations that used to fire on every press,
-                // and that are what made a docked notice unbearable, are gone entirely.
+                // Neither is acceptable and they were never the only two options. A notice here
+                // is a standing fact about the seat - no clash engine, no document open, a
+                // report asked for by name - and a standing fact belongs in the layout rather
+                // than hovering over it. It takes a row of its own above the grid, which it is
+                // welcome to, because it appears when the tab is opened and not in the middle of
+                // somebody's thirtieth cell. The transient confirmations that used to fire on
+                // every press, and that are what made a docked notice unbearable, are gone.
+                //
+                // <b>Docked to the top, said outright.</b> A DockPanel's default is Dock.Left,
+                // so a notice added without one takes its width down the side and leaves the
+                // grid whatever is left - which for a sentence this long is about seventy pixels
+                // of a window eleven hundred wide. The whole matrix drew into that strip: no
+                // headers, no cells, and the inspector squeezed against the right-hand edge. It
+                // took a render to see, and nothing else could have: it compiles, it throws
+                // nothing, and every test passes over a grid that is not on the screen.
                 var top = Head();
 
                 if (top is FrameworkElement said) said.Margin = new Thickness(0, 0, 0, 8);
+
+                DockPanel.SetDock(top, Dock.Top);
 
                 stack.Children.Add(top);
                 stack.Children.Add(Ui.Loose(_grid));
