@@ -10,17 +10,16 @@ namespace CamelWorks.Core.Findings
     /// <summary>
     /// Findings as BCF topics, and what a returned file says about them.
     ///
-    /// <b>Out is easy; home is the whole problem.</b> Writing a finding as a topic is a field
-    /// mapping. Reading one back is not: a finding's identity is derived from its source, its
-    /// rule, its elements and what makes it distinct, and a markup edited in somebody else's tool
-    /// carries none of that - it carries a topic guid, a status and a conversation. So the return
-    /// leg matches on the topic guid, which is a function of the identity and travels in the file,
-    /// and lays the edits onto the finding it names.
+    /// Writing a finding as a topic is a field mapping. Reading one back is not: a finding's
+    /// identity is derived from its source, its rule, its elements and what makes it distinct, and a
+    /// markup edited in another tool carries none of that — it carries a topic guid, a status and a
+    /// conversation. So the return leg matches on the topic guid, which is a function of the
+    /// identity and travels in the file, and lays the edits onto the finding it names.
     ///
-    /// <b>A stranger's topic never becomes a finding.</b> Findings are only ever produced by a
-    /// check; a topic nothing here answers to is somebody's own issue, and it goes to the issue
-    /// register, which is where it already went. Inventing a machine finding for a thing no
-    /// machine found would put a row on a board no re-run can ever confirm or clear.
+    /// A stranger's topic never becomes a finding. Findings are produced by a check; a topic nothing
+    /// here answers to is somebody's own issue and goes to the issue register. Inventing a machine
+    /// finding for something no machine found would put a row on a board that no re-run can confirm
+    /// or clear.
     /// </summary>
     public static class FindingBcf
     {
@@ -116,11 +115,11 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// What a returned topic says, laid onto the finding it names.
         ///
-        /// <b>Only what somebody could have meant.</b> A status is taken through the lattice, so a
-        /// stale file cannot undo a decision made since it left. Priority, stage, due date, tags
-        /// and the assignee are latest-wins, because that is what setting one means. The title is
-        /// taken because a reviewer who renamed it said something; the rule, the source and the
-        /// elements are not, because they are what the finding IS and no file gets to change that.
+        /// Only the fields a reviewer could have meant to set. A status is taken through the
+        /// lattice, so a stale file cannot undo a decision made since it left. Priority, stage, due
+        /// date, tags and the assignee are latest-wins, because that is what setting one means. The
+        /// title is taken, because a reviewer who renamed it meant something by it. The rule, the
+        /// source and the elements are not, because they are what the finding is.
         /// </summary>
         /// <param name="topic">The topic as it came back.</param>
         /// <param name="finding">The finding it names.</param>
@@ -226,11 +225,10 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// The topics for a set of findings and the issues that carry them, related both ways.
         ///
-        /// <b>Why both, in one file.</b> An issue is the conversation and a finding is the thing
-        /// it is about, and sending only one of them makes the file half a story: the issues
-        /// without the geometry they concern, or eleven clashes with no sign that they are one
-        /// argument with one person. BCF has a relation for exactly this, and every tool that
-        /// reads BCF understands it.
+        /// Both go in one file. An issue is the conversation and a finding is what it is about, and
+        /// sending only one of them gives half the record: the issues without the geometry they
+        /// concern, or eleven clashes with no sign that they are one argument with one person. BCF
+        /// has a relation for this and every tool that reads BCF understands it.
         /// </summary>
         /// <param name="findings">The findings to send.</param>
         /// <param name="issues">Their issues, as topics - already written by the issue writer.</param>

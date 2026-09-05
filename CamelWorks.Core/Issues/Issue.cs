@@ -87,18 +87,17 @@ namespace CamelWorks.Core.Issues
     /// <summary>
     /// One coordination issue, whatever found it.
     ///
-    /// <b>Why this exists beside the clash result.</b> A clash result is what an engine measured;
-    /// an issue is what somebody decided to do about something. Most of what goes wrong in a
-    /// federation is not an intersection — a door swings into a corridor, a valve has nowhere to be
-    /// pulled to, the clear height under a duct is not there, a reviewer sent a BCF file with
-    /// eleven of their own — and none of those can live in a record whose identity is "two elements
-    /// that touch". So the issue is its own record, and the clash result, the clearance finding and
-    /// the imported topic are three of the four ways one gets raised.
+    /// Separate from the clash result because a clash result is what an engine measured and an issue
+    /// is what somebody decided to do about something. Most of what goes wrong in a federation is
+    /// not an intersection — a door swings into a corridor, a valve has nowhere to be pulled to, the
+    /// clear height under a duct is short, a reviewer sent a BCF file of their own — and none of
+    /// those fits a record whose identity is "two elements that touch". So the issue is its own
+    /// record, and the clash result, the clearance finding and the imported topic are three of the
+    /// four ways one gets raised.
     ///
-    /// <b>The origin is never edited.</b> Everything else about an issue is somebody's judgement
-    /// and can be changed by the next person; where it came from is a fact about the past, and an
-    /// issue that could be re-labelled as manual after being imported is a record that cannot be
-    /// reconciled with the file it came from.
+    /// The origin is never edited. Everything else about an issue is judgement and can be changed by
+    /// the next person; where it came from is a fact, and an issue that could be re-labelled as
+    /// manual after being imported could not be reconciled with the file it came from.
     /// </summary>
     public sealed class Issue
     {
@@ -203,12 +202,11 @@ namespace CamelWorks.Core.Issues
         /// <summary>
         /// The clash results it covers, when it was raised from any.
         ///
-        /// <b>Superseded by <see cref="Findings"/>, and kept only to be read.</b> An issue used to
-        /// be able to hold clash results and nothing else, so this is what older projects have.
-        /// A clash key names two elements and a place but not the test that found them, so nothing
-        /// can turn one into a finding id on its own - the swap happens on the next read of the
-        /// results, where both are in hand at once. Until then the issue still says which clashes
-        /// it is about, which is the point of not deleting it.
+        /// Superseded by <see cref="Findings"/> and kept for reading only. An issue could previously
+        /// hold clash results and nothing else, so this is what older projects have. A clash key
+        /// names two elements and a place but not the test that found them, so nothing can turn one
+        /// into a finding id on its own; the swap happens on the next read of the results, where
+        /// both are in hand. Until then the issue still records which clashes it is about.
         /// </summary>
         public IList<ClashKey> Clashes { get; } = new List<ClashKey>();
 
@@ -216,9 +214,9 @@ namespace CamelWorks.Core.Issues
         /// The findings it covers, by id — one clash, a whole test's worth, a clearance breach, a
         /// health rule's failures. Any check's, and any mixture.
         ///
-        /// <b>Ids rather than the findings themselves.</b> A finding's id is derived from what
-        /// makes it that finding, so it survives a re-run that renumbers everything the host
-        /// issued. An issue holding the record itself would be holding last month's copy of it.
+        /// Ids rather than the findings themselves. A finding's id is derived from what makes it
+        /// that finding, so it survives a re-run that renumbers everything the host issued. An issue
+        /// holding the record itself would be holding a stale copy.
         /// </summary>
         public IList<string> Findings { get; } = new List<string>();
 

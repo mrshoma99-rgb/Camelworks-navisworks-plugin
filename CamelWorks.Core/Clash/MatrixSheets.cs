@@ -9,11 +9,10 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The colours a matrix is read by, in one place.
     ///
-    /// <b>The screen and the spreadsheet have to agree.</b> A coordinator marks a printed matrix
-    /// up in red and hands it back; if the red on the sheet is not the red on the screen, the two
-    /// pictures are of two different boards. So the ranks and the heat scale live here, and the
-    /// screen and the export both read them rather than each carrying their own idea of what
-    /// "high" looks like.
+    /// The screen and the spreadsheet have to agree. A coordinator marks a printed matrix up and
+    /// hands it back, and if the colours on the sheet are not the colours on the screen the two are
+    /// pictures of different boards. So the ranks and the heat scale live here and both the screen
+    /// and the export read them.
     /// </summary>
     public static class MatrixInk
     {
@@ -134,20 +133,17 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The matrix as a workbook that looks like the matrix.
     ///
-    /// <b>What was exported was the letters and nothing else.</b> The grid a kick-off meeting
-    /// spent an afternoon arranging - the folders that group twenty disciplines into five
-    /// packages, the colour that says at a glance which kind of test each block is, the dead
-    /// triangle, the spine down the diagonal - arrived at the client as a wall of characters on
-    /// white. Every one of those is a decision somebody made, and a spreadsheet that drops them
-    /// is a spreadsheet that has to be re-read from scratch by whoever opens it.
+    /// The export previously carried the letters and nothing else. The folders that group twenty
+    /// disciplines into five packages, the colour that says which kind of test each block is, the
+    /// unused triangle and the spine down the diagonal all arrived at the client as characters on
+    /// white, so the sheet had to be re-read from scratch by whoever opened it.
     ///
-    /// <b>And it was one matrix of three.</b> The priorities and the counts are the same grid
-    /// saying two other things about the same pairs, and the meeting that asks for the sheet is
-    /// usually the meeting that wants to know where the work is - which is the results, not the
-    /// tolerances.
+    /// It was also one matrix of three. The priorities and the counts are the same grid saying two
+    /// other things about the same pairs, and the meeting that asks for the sheet usually wants to
+    /// know where the work is, which is the results rather than the tolerances.
     ///
-    /// One tab per matrix somebody has actually filled in, then the legend. A board with no
-    /// ranks writes no priority tab; a board with no counts writes no results tab.
+    /// One tab per matrix that has been filled in, then the legend. A board with no ranks writes no
+    /// priority tab; a board with no counts writes no results tab.
     /// </summary>
     public static class MatrixSheets
     {
@@ -359,13 +355,12 @@ namespace CamelWorks.Core.Clash
         }
 
         /// <summary>
-        /// The frame every matrix tab shares: the folder bands, the headings, and the rows down
-        /// the side.
+        /// The frame every matrix tab shares: the folder bands, the headings, and the rows down the
+        /// side.
         ///
-        /// <b>Written once for all three</b>, because three tabs whose rows were in three
-        /// different orders, or whose folders were drawn three ways, would be three matrices
-        /// rather than one matrix seen three ways - which is the whole point of the screen these
-        /// come off.
+        /// Written once for all three tabs. Three tabs whose rows were in different orders, or whose
+        /// folders were drawn differently, would be three matrices rather than one matrix seen three
+        /// ways.
         /// </summary>
         /// <param name="board">The matrix.</param>
         /// <param name="named">The tab's name.</param>
