@@ -255,6 +255,20 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private readonly StackPanel _palette = Ui.Stack();
 
+            /// <summary>
+            /// What the palette calls itself, which is not always "palette".
+            ///
+            /// <b>The panel that arms things has to arm the thing the grid is showing.</b> With
+            /// the priority view on, this list held the symbol legend and the two marks that
+            /// are not symbols - none of which a press in that grid lays down - while the rank
+            /// it actually lays down was a sentence in the strip and a line in a menu. So the
+            /// list is the ranks while the ranks are what is being drawn, and it says so.
+            /// </summary>
+            private readonly TextBlock _paletteTitle = Ui.Eyebrow("Palette");
+
+            /// <summary>Add, change and cover a symbol - which mean nothing but on the symbols.</summary>
+            private UIElement? _legendActs;
+
             /// <summary>What the last thing pressed has to say, down the right.</summary>
             private readonly StackPanel _inspector = Ui.Stack();
 
@@ -796,10 +810,8 @@ namespace CamelWorks.UI.Views
                 // what is on the brush and what to do with it, in the place somebody is looking
                 // while they do it - and three lines of the same thing here is three lines the
                 // panel takes off whatever the inspector is showing.
-                var titled = Ui.Eyebrow("Palette");
-
-                titled.Margin = new Thickness(10, 9, 10, 5);
-                keys.Children.Add(titled);
+                _paletteTitle.Margin = new Thickness(10, 9, 10, 5);
+                keys.Children.Add(Ui.Loose(_paletteTitle));
 
                 // Capped, and scrolling inside itself: a job with a dozen symbols must not push
                 // whatever the inspector is showing off the top of the panel.
@@ -834,6 +846,8 @@ namespace CamelWorks.UI.Views
                            CoverSymbols));
 
                 legend.Margin = new Thickness(7, 0, 7, 4);
+
+                _legendActs = legend;
 
                 keys.Children.Add(legend);
 
@@ -3611,6 +3625,37 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Pointing()
             {
+                // <b>The priority view arms a rank, so the pointer carries the rank.</b> The
+                // whole reason the cursor says what is armed is that a click in the grid is
+                // either "select this" or "lay that down", and which of the two it is has to be
+                // under the hand rather than along the top of the window. That is no less true
+                // of a rank than of a symbol.
+                if (_shown == Showing.Priority)
+                {
+                    var mark = _rank == MatrixBoard.High ? "H"
+                        : _rank == MatrixBoard.Medium ? "M"
+                        : _rank == MatrixBoard.Low ? "L"
+                        : string.Empty;
+
+                    var laid = "rank\u0001" + _rank.ToString(CultureInfo.InvariantCulture);
+
+                    if (string.Equals(laid, _carrying, StringComparison.Ordinal)) return;
+
+                    _carrying = laid;
+                    _sheet.ForceCursor = true;
+
+                    if (mark.Length == 0)
+                    {
+                        _sheet.Cursor = Cursors.Cross;
+                        return;
+                    }
+
+                    var paint = Ranked(_rank);
+
+                    _sheet.Cursor = Pointer.Carrying(mark, paint, Ui.InkOn(paint)) ?? Cursors.Pen;
+                    return;
+                }
+
                 var wash = Washed(_brush == null ? null : _legend.Meaning(_brush.Symbol) ?? _brush);
 
                 // Drawing a bitmap on every press of the palette is work nobody asked for, and
@@ -4356,6 +4401,16 @@ namespace CamelWorks.UI.Views
 
                 if (_board.Rows.Count == 0 || _board.Columns.Count == 0) return;
 
+                // <b>The foot counts what the grid is drawing.</b> A bar reading "160 of 190
+                // decided" under a picture of priorities is answering a question nobody on that
+                // screen is asking, and it is the same bar whichever view is on - so it says
+                // whether the picture is finished, for whichever picture that is.
+                if (_shown == Showing.Priority)
+                {
+                    RankProgress();
+                    return;
+                }
+
                 var live = 0;
                 var done = 0;
                 var ruled = 0;
@@ -4439,7 +4494,9 @@ namespace CamelWorks.UI.Views
 
                 _progress.Children.Add(Ui.Small(done.ToString(CultureInfo.InvariantCulture)
                     + " of " + live.ToString(CultureInfo.InvariantCulture) + " pairs"
-                    + (left == 0 ? ". All of them." : ", " + Ui.Count(left, "still open"))));
+                    + (left == 0
+                        ? ". All of them."
+                        : ", " + left.ToString(CultureInfo.InvariantCulture) + " still open")));
 
                 if (ruled > 0)
                     _progress.Children.Add(Ui.Small(Ui.Count(ruled, "of them ruled out")));
@@ -5502,9 +5559,92 @@ namespace CamelWorks.UI.Views
             /// symbol can be put down with the mouse or with a finger on a number. Editing what
             /// a symbol means happens in the inspector: a palette that is also a form is neither.
             /// </summary>
+            /// <summary>
+            /// How much of the priority picture is filled in: ranked, of the pairs that could be.
+            ///
+            /// Of the checked pairs, not of every pair, because an undecided cell has no test to
+            /// be urgent about - a bar counting those could never reach the end on a matrix that
+            /// deliberately leaves forty per cent of itself blank.
+            /// </summary>
+            private void RankProgress()
+            {
+                var live = 0;
+
+                foreach (var row in _board.Rows)
+                foreach (var column in _board.Columns)
+                {
+                    if (!_board.IsKeptHalf(row, column)) continue;
+                    if (_board.IsSelfPair(row, column)) continue;
+
+                    var held = _board.At(row, column);
+
+                    if (held == null || MatrixBoard.IsNotRequired(held)) continue;
+
+                    live++;
+                }
+
+                var done = _board.Ranks().Count(one => !_board.IsSelfPair(one.Row, one.Column));
+
+                _progress.Children.Add(Ui.Eyebrow("Ranked"));
+
+                var track = new Border
+                {
+                    Height = 6,
+                    CornerRadius = new CornerRadius(3),
+                    Margin = new Thickness(0, 5, 0, 4),
+                    ClipToBounds = true,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
+
+                track.Tint(Border.BackgroundProperty, "Nav");
+
+                var run = new Grid();
+
+                run.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(live == 0 ? 0 : done, GridUnitType.Star),
+                });
+
+                run.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(live == 0 ? 1 : Math.Max(0, live - done), GridUnitType.Star),
+                });
+
+                var filled = new Border();
+
+                filled.Tint(Border.BackgroundProperty, "Accent");
+
+                Grid.SetColumn(filled, 0);
+                run.Children.Add(filled);
+
+                track.Child = run;
+
+                _progress.Children.Add(track);
+
+                _progress.Children.Add(Ui.Small(
+                    done.ToString(CultureInfo.InvariantCulture) + " of "
+                    + live.ToString(CultureInfo.InvariantCulture) + " checked pairs ranked"));
+            }
+
             private void RedrawPalette()
             {
                 _palette.Children.Clear();
+
+                _paletteTitle.Text = _shown == Showing.Priority ? "Priority" : "Palette";
+
+                // The three things a legend button does - add a symbol, change one, give the
+                // unmeant ones meanings - are all about the symbols, so they go while the
+                // symbols are not what is being laid down.
+                if (_legendActs != null)
+                    _legendActs.Visibility = _shown == Showing.Symbols
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+
+                if (_shown == Showing.Priority)
+                {
+                    RankKeys();
+                    return;
+                }
 
                 if (_legend.IsEmpty)
                 {
@@ -5546,6 +5686,60 @@ namespace CamelWorks.UI.Views
                 _palette.Children.Add(Swatch(Rubber, "Not decided", "empties the cell", "Del",
                                           Erasing, false, () => Arm(Rubbing())));
 
+            }
+
+            /// <summary>
+            /// The four ranks, as the four keys a press in the priority view lays down.
+            ///
+            /// Drawn by the same swatch the symbols are, in the colours the cells carry, because
+            /// a key that is not drawn the way the thing it explains is drawn is not a key - and
+            /// this list is doing both jobs at once: it is the legend for the picture, and it is
+            /// what arms the hand.
+            /// </summary>
+            private void RankKeys()
+            {
+                var ranks = new[]
+                {
+                    (Rank: MatrixBoard.High, Says: "most urgent", Stroke: "1", Mark: "H"),
+                    (Rank: MatrixBoard.Medium, Says: "in the middle", Stroke: "2", Mark: "M"),
+                    (Rank: MatrixBoard.Low, Says: "when there is time", Stroke: "3", Mark: "L"),
+                };
+
+                foreach (var one in ranks)
+                {
+                    var wanted = one.Rank;
+
+                    _palette.Children.Add(Swatch(one.Mark, MatrixBoard.RankNamed(one.Rank),
+                                                 one.Says, one.Stroke, _rank == wanted, true,
+                                                 () => Arming(wanted),
+                                                 paint: Ranked(one.Rank)));
+                }
+
+                // Below the three, the way the eraser sits below the symbols: it is not a rank,
+                // it takes one off.
+                _palette.Children.Add(Swatch("\u00d7", "Not set", "takes the rank off", "0",
+                                             _rank == MatrixBoard.NotSet, false,
+                                             () => Arming(MatrixBoard.NotSet)));
+
+                var says = Ui.Small("A rank goes on a pair that is checked. Cells with nothing "
+                                    + "in them have no test to be urgent about.");
+
+                says.TextWrapping = TextWrapping.Wrap;
+                says.Margin = new Thickness(4, 6, 4, 4);
+
+                _palette.Children.Add(says);
+            }
+
+            /// <summary>Put a rank on the hand.</summary>
+            /// <param name="rank">The rank, or <see cref="MatrixBoard.NotSet"/> to take one off.</param>
+            private void Arming(int rank)
+            {
+                _rank = rank;
+
+                RedrawStrip();
+                RedrawPalette();
+                RedrawView();
+                Pointing();
             }
 
             /// <summary>One key on the palette, or one choice in the inspector.</summary>
@@ -7287,6 +7481,42 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                // <b>The keyboard lays down what the view is drawing.</b> The arrows, the
+                // marker and the block are the same in all three; what a number key means is
+                // not, and a "2" that armed the second symbol while the screen showed
+                // priorities would write a decision under a picture that does not show it.
+                if (_shown == Showing.Priority)
+                {
+                    var wanted = Ranking(e.Key);
+
+                    if (wanted >= 0)
+                    {
+                        _rank = wanted;
+
+                        RedrawPalette();
+                        RedrawStrip();
+                        Pointing();
+                        LayRank();
+
+                        e.Handled = true;
+                        return;
+                    }
+                }
+
+                // Nothing is laid down over a count that came out of the document, from the
+                // keyboard any more than from the hand.
+                if (_shown == Showing.Results)
+                    switch (e.Key)
+                    {
+                        case Key.Delete:
+                        case Key.Back:
+                        case Key.Space:
+                        case Key.OemMinus:
+                        case Key.Subtract:
+                            e.Handled = true;
+                            return;
+                    }
+
                 switch (e.Key)
                 {
                     case Key.Left: Step(0, -1); e.Handled = true; return;
@@ -7324,6 +7554,8 @@ namespace CamelWorks.UI.Views
                         return;
                 }
 
+                if (_shown != Showing.Symbols) return;
+
                 var nth = Nth(e.Key);
 
                 if (nth >= 0 && nth < _legend.Symbols.Count)
@@ -7344,6 +7576,106 @@ namespace CamelWorks.UI.Views
                         e.Handled = true;
                         return;
                     }
+            }
+
+            /// <summary>
+            /// Which rank a key stands for while the priority view is on, or -1 for a key that
+            /// is not one.
+            ///
+            /// The same three digits the palette prints on its keys, and nought for taking a
+            /// rank off - the way nought empties a cell on the symbols. The delete keys and the
+            /// space bar come here too, so the hands that already know this grid do not have to
+            /// learn a second set.
+            /// </summary>
+            /// <param name="key">The key.</param>
+            private int Ranking(Key key)
+            {
+                switch (key)
+                {
+                    case Key.D1:
+                    case Key.NumPad1: return MatrixBoard.High;
+
+                    case Key.D2:
+                    case Key.NumPad2: return MatrixBoard.Medium;
+
+                    case Key.D3:
+                    case Key.NumPad3: return MatrixBoard.Low;
+
+                    case Key.D0:
+                    case Key.NumPad0:
+                    case Key.Delete:
+                    case Key.Back: return MatrixBoard.NotSet;
+
+                    case Key.Space: return _rank;
+                }
+
+                return -1;
+            }
+
+            /// <summary>
+            /// Put the armed rank in the cell the cursor is on, or across the marked block.
+            ///
+            /// The same two shapes <see cref="Lay"/> has, for the same reason: a matrix is
+            /// ranked in runs - a discipline is urgent against everything wet, or a package is
+            /// not urgent against anything - and a run is a marked block and one key.
+            /// </summary>
+            private void LayRank()
+            {
+                if (_atRow < 0 || _atColumn < 0
+                    || _atRow >= _board.Rows.Count || _atColumn >= _board.Columns.Count) return;
+
+                if (Blocked)
+                {
+                    var laid = 0;
+
+                    Remember(what: _rank == MatrixBoard.NotSet
+                        ? "clearing the ranks on a block"
+                        : "ranking a block " + MatrixBoard.RankNamed(_rank).ToLowerInvariant());
+
+                    foreach (var (row, column) in Block())
+                    {
+                        if (_board.IsSelfPair(row, column)) continue;
+
+                        var held = _board.At(row, column);
+
+                        if (held == null || MatrixBoard.IsNotRequired(held)) continue;
+                        if (_board.RankAt(row, column) == _rank) continue;
+
+                        _board.Rank(row, column, _rank);
+                        Repaint(row, column);
+                        laid++;
+                    }
+
+                    Reported(laid,
+                             _rank == MatrixBoard.NotSet
+                                 ? "Unranked"
+                                 : "set to " + MatrixBoard.RankNamed(_rank).ToLowerInvariant(),
+                             "checked cell of the block");
+
+                    RedrawProgress();
+                    return;
+                }
+
+                var one = _board.Rows[_atRow];
+                var against = _board.Columns[_atColumn];
+                var symbol = _board.At(one, against);
+
+                // A rank goes on a pair somebody has agreed to check. On one that is undecided
+                // the cursor still moves on, because a hand ranking a run down a row should not
+                // stop dead at the one cell nobody has ruled on yet.
+                if (symbol != null && !MatrixBoard.IsNotRequired(symbol)
+                    && _board.RankAt(one, against) != _rank)
+                {
+                    Remember(what: _rank == MatrixBoard.NotSet
+                        ? "clearing a rank"
+                        : "ranking a pair " + MatrixBoard.RankNamed(_rank).ToLowerInvariant());
+
+                    _board.Rank(one, against, _rank);
+                    Repaint(one, against);
+                    RedrawProgress();
+                }
+
+                Step(0, 1);
             }
 
             /// <summary>Which symbol of the legend a number key stands for, or -1.</summary>
@@ -8418,11 +8750,11 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The three matrices, and - in the priority view - which rank a press lays down.
+            /// The three matrices, and which of them is on.
             ///
-            /// The rank sits on this menu rather than in the palette because the palette is the
-            /// legend, and a legend entry is something that becomes a clash test. A rank is not
-            /// a test; it is a thing said about one.
+            /// Only the three. Which rank a press lays down is the palette's job, because the
+            /// palette is what arms the hand - and while the ranks are what is being drawn, they
+            /// are what the palette holds.
             /// </summary>
             private List<Parts.Entry> Views()
             {
@@ -8434,31 +8766,6 @@ namespace CamelWorks.UI.Views
                     Ticked(Showing.Priority, "How urgent each pair is, in the host\u2019s own ranks"),
                     Ticked(Showing.Results, "How many clashes are still open on each pair"),
                 };
-
-                if (_shown != Showing.Priority) return items;
-
-                items.Add(Parts.Entry.Rule());
-                items.Add(Parts.Entry.Heading("A press lays down"));
-
-                foreach (var rank in new[] { MatrixBoard.High, MatrixBoard.Medium,
-                                             MatrixBoard.Low, MatrixBoard.NotSet })
-                {
-                    var wanted = rank;
-
-                    items.Add(Parts.Entry.Act(
-                        (wanted == _rank ? "\u2713  " : "     ")
-                        + (wanted == MatrixBoard.NotSet
-                            ? "Clear the rank"
-                            : MatrixBoard.RankNamed(wanted)),
-                        null,
-                        () =>
-                        {
-                            _rank = wanted;
-
-                            RedrawView();
-                            RedrawStrip();
-                        }));
-                }
 
                 return items;
             }
@@ -8494,6 +8801,9 @@ namespace CamelWorks.UI.Views
                     RedrawCells();
                     RedrawStrip();
                     RedrawView();
+                    RedrawPalette();
+                    RedrawProgress();
+                    Pointing();
                     return;
                 }
 
@@ -8537,6 +8847,9 @@ namespace CamelWorks.UI.Views
                 RedrawCells();
                 RedrawStrip();
                 RedrawView();
+                RedrawPalette();
+                RedrawProgress();
+                Pointing();
             }
 
             /// <summary>Read the matrix the document is already carrying in its tests.</summary>
