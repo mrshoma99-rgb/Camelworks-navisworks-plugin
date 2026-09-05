@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CamelWorks.Core.Clash;
+using CamelWorks.Core.Store;
 using Xunit;
 
 namespace CamelWorks.Core.Tests
@@ -276,6 +278,67 @@ namespace CamelWorks.Core.Tests
             // The test's own running number belongs to neither side, so it counts per test.
             Assert.Null(NamingWrite.Side("n"));
             Assert.Null(NamingWrite.Side("symbol"));
+        }
+
+        [Fact]
+        public void A_field_is_drawn_everywhere_until_it_is_told_otherwise()
+        {
+            var field = new MatrixField("phase", "Phase");
+
+            Assert.Equal(MatrixShown.Everywhere, field.Shown);
+            Assert.Equal(MatrixShown.Everywhere, field.Copy().Shown);
+        }
+
+        [Fact]
+        public void Where_a_field_is_drawn_survives_being_written_and_read()
+        {
+            var field = new MatrixField("phase", "Phase") { Shown = MatrixShown.Panel };
+
+            var read = MatrixField.FromJson(JsonReader.Parse(field.ToJson().ToJson()));
+
+            Assert.NotNull(read);
+            Assert.Equal(MatrixShown.Panel, read!.Shown);
+        }
+
+        [Fact]
+        public void A_field_drawn_everywhere_writes_nothing_about_it()
+        {
+            // A scheme nobody has hidden anything in saves the bytes it did before this existed.
+            var json = new MatrixField("phase", "Phase").ToJson().ToJson();
+
+            Assert.DoesNotContain("shown", json, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void A_field_drawn_nowhere_is_still_carried_by_the_line()
+        {
+            var scheme = new MatrixScheme();
+            var line = new MatrixLine("Steel");
+
+            scheme.Add("phase", "Phase").Shown = MatrixShown.Nowhere;
+
+            line.Set("phase", "P2");
+
+            // Hidden takes it off the screen, not off the line and not out of the names.
+            Assert.Equal("P2", line.Value("phase"));
+            Assert.Equal(MatrixShown.Nowhere, scheme.Field("phase")!.Shown);
+        }
+
+        [Fact]
+        public void Moving_a_field_changes_the_order_the_scheme_lists_them_in()
+        {
+            var scheme = new MatrixScheme();
+
+            scheme.Add("phase", "Phase");
+            scheme.Add("package", "Package");
+
+            var was = scheme.Fields.Select(one => one.Key).ToList();
+
+            Assert.True(scheme.Move("package", was.IndexOf("phase")));
+
+            var now = scheme.Fields.Select(one => one.Key).ToList();
+
+            Assert.True(now.IndexOf("package") < now.IndexOf("phase"));
         }
 
         [Fact]

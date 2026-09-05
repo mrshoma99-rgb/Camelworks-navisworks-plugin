@@ -1561,7 +1561,10 @@ namespace CamelWorks.UI.Views
                 if (rows && _carriedRows != null) return _carriedRows;
                 if (columns && _carriedColumns != null) return _carriedColumns;
 
+                // In the order the scheme lists them, which is the order the fields window sets,
+                // and only the ones asked to be on the board.
                 var held = MatrixNaming.Custom(_board.Scheme)
+                    .Where(one => (one.Shown & MatrixShown.Header) == MatrixShown.Header)
                     .Where(one => lines.Any(line => line.Value(one.Key).Length > 0))
                     .ToList();
 
@@ -7121,7 +7124,8 @@ namespace CamelWorks.UI.Views
                 // The project's own fields, in the order the scheme lists them. Without these a
                 // custom field could only ever be filled by a rule, so a sub-discipline code that
                 // differs line by line — which is what one usually is — had nowhere to be typed.
-                foreach (var field in MatrixNaming.Custom(_board.Scheme))
+                foreach (var field in MatrixNaming.Custom(_board.Scheme)
+                             .Where(one => (one.Shown & MatrixShown.Panel) == MatrixShown.Panel))
                 {
                     var here = field;
                     var held = Ui.Stack();

@@ -20,6 +20,23 @@ namespace CamelWorks.Core.Clash
         Same = 2,
     }
 
+    /// <summary>Where a field is drawn.</summary>
+    [Flags]
+    public enum MatrixShown
+    {
+        /// <summary>Carried on the line, and drawn nowhere.</summary>
+        Nowhere = 0,
+
+        /// <summary>In the panel beside the grid, where a line's fields are typed.</summary>
+        Panel = 1,
+
+        /// <summary>In the row and column headers, as a gutter beside the name.</summary>
+        Header = 2,
+
+        /// <summary>Both.</summary>
+        Everywhere = Panel | Header,
+    }
+
     /// <summary>What a series counts in.</summary>
     public enum MatrixSteps
     {
@@ -96,6 +113,17 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>How each line's value is arrived at.</summary>
         public MatrixFill Fill { get; set; } = MatrixFill.ByHand;
+
+        /// <summary>
+        /// Where it is drawn.
+        ///
+        /// A field is carried by every line whether it is drawn or not, so hiding one takes it
+        /// off the screen without taking it off the lines or out of the test names. That is the
+        /// distinction worth keeping: a package code that every test name is built from is not
+        /// something a coordinator wants as a fourth gutter down the side of the board, and
+        /// deleting the field to get rid of the gutter would take it out of the names too.
+        /// </summary>
+        public MatrixShown Shown { get; set; } = MatrixShown.Everywhere;
 
         /// <summary>What a series counts in.</summary>
         public MatrixSteps Steps { get; set; } = MatrixSteps.Numbers;
@@ -221,6 +249,7 @@ namespace CamelWorks.Core.Clash
         public MatrixField Copy() => new MatrixField(Key, Title)
         {
             Fill = Fill,
+            Shown = Shown,
             Steps = Steps,
             Start = Start,
             Step = Step,
@@ -233,6 +262,10 @@ namespace CamelWorks.Core.Clash
         public JsonValue ToJson()
         {
             var json = JsonValue.Object().Set("key", Key).Set("title", Title);
+
+            // Written only when it is not the default, so a scheme nobody has hidden anything in
+            // saves the bytes it did before this existed.
+            if (Shown != MatrixShown.Everywhere) json.Set("shown", (long)Shown);
 
             if (Fill != MatrixFill.ByHand)
                 json.Set("fill", Fill.ToString().ToLowerInvariant());
@@ -265,6 +298,12 @@ namespace CamelWorks.Core.Clash
             if (!IsUsable(key)) return null;
 
             var field = new MatrixField(key!, json["title"].AsString());
+
+            var shown = (int)json["shown"].AsDouble((double)MatrixShown.Everywhere);
+
+            field.Shown = shown >= 0 && shown <= (int)MatrixShown.Everywhere
+                ? (MatrixShown)shown
+                : MatrixShown.Everywhere;
 
             field.Fill = (json["fill"].AsString() ?? string.Empty).ToLowerInvariant() switch
             {
