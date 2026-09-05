@@ -620,6 +620,8 @@ namespace CamelWorks.UI.Views
             line.MouseLeftButtonUp += (s, e) =>
             {
                 e.Handled = true;
+
+                Shut(line);
                 Ui.Safely(onAct);
             };
 
@@ -1134,7 +1136,21 @@ namespace CamelWorks.UI.Views
             if (item.Why != null && !worded) line.ToolTip = item.Why;
 
             Lights(line, "Hover");
-            line.MouseLeftButtonUp += (s, e) => Ui.Safely(item.OnAct);
+
+            // Shut first, then act, exactly as an inline chip's option does. Every menu built out
+            // of these stayed open after its option was pressed: the choice was made and the menu
+            // still stood over the screen looking as though it had not been.
+            //
+            // Only an option closes it. Closing from the card was tried twice and was wrong both
+            // times — tunnelling tore the child out of the tree before the option's own handler
+            // ran, and bubbling shut the menu on any release inside it, including a click into a
+            // box. This runs inside the handler that has already been raised, so it has neither
+            // problem, and whatever the option opens is not fighting a menu still closing.
+            line.MouseLeftButtonUp += (s, e) =>
+            {
+                Shut(line);
+                Ui.Safely(item.OnAct);
+            };
 
             return line;
         }

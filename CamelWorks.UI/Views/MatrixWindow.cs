@@ -1246,6 +1246,16 @@ namespace CamelWorks.UI.Views
                         Width = new GridLength(CodeWide),
                     });
 
+                // A gutter per field of the project's own that any line actually carries. Without
+                // these a phase typed onto a line was written into the test names and read back
+                // by a pattern, and was nowhere on the board — so the one place somebody looks to
+                // check what a line holds was the one place that did not say.
+                foreach (var field in Carried(_board.Rows))
+                    words.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(FieldWide(field, _board.Rows)),
+                    });
+
                 words.ColumnDefinitions.Add(new ColumnDefinition
                 {
                     Width = new GridLength(NameWide),
@@ -1477,6 +1487,34 @@ namespace CamelWorks.UI.Views
             private const double CodeTall = 18;
 
             private const double WarnTall = 16;
+
+            /// <summary>
+            /// The project's own fields that any line actually holds a value for.
+            ///
+            /// Only the ones in use. A field somebody added and has not filled in yet would
+            /// otherwise take a column of the header on every row and say nothing in any of them,
+            /// which costs the names the width they need.
+            /// </summary>
+            /// <param name="lines">The rows or the columns.</param>
+            private IReadOnlyList<MatrixField> Carried(IReadOnlyList<MatrixLine> lines) =>
+                MatrixNaming.Custom(_board.Scheme)
+                    .Where(one => lines.Any(line => line.Value(one.Key).Length > 0))
+                    .ToList();
+
+            /// <summary>How wide one field's gutter is: its longest value, within reason.</summary>
+            /// <param name="field">The field.</param>
+            /// <param name="lines">The rows or the columns.</param>
+            private static double FieldWide(MatrixField field, IReadOnlyList<MatrixLine> lines)
+            {
+                var widest = 0.0;
+
+                foreach (var line in lines)
+                    widest = Math.Max(widest, Measured(line.Value(field.Key), 10));
+
+                // Floored so a gutter is worth pointing at, capped so one long value cannot take
+                // the room the names need.
+                return Math.Max(34, Math.Min(110, widest + 14));
+            }
 
             /// <summary>The longest number, or code, in one axis - at the size it is drawn.</summary>
             /// <param name="lines">The rows or the columns.</param>
@@ -2677,11 +2715,33 @@ namespace CamelWorks.UI.Views
                     words.Children.Add(chip);
                 }
 
+                var carried = Carried(_board.Rows);
+
+                foreach (var field in carried)
+                {
+                    var value = new TextBlock
+                    {
+                        Text = line.Value(field.Key),
+                        FontSize = 10,
+                        TextAlignment = TextAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        Margin = new Thickness(2, 0, 4, 0),
+                        ToolTip = field.Title + ": "
+                                  + (line.Value(field.Key).Length == 0
+                                      ? "not set on this line"
+                                      : line.Value(field.Key)),
+                    }.Wearing("Hint");
+
+                    Grid.SetColumn(value, column++);
+                    words.Children.Add(value);
+                }
+
                 var named = new DockPanel
                 {
                     LastChildFill = true,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(numbered || coded ? 0 : 8, 0, 6, 0),
+                    Margin = new Thickness(numbered || coded || carried.Count > 0 ? 0 : 8, 0, 6, 0),
                 };
 
                 // The warning mark is drawn only on rows that need it. Drawn on every row it

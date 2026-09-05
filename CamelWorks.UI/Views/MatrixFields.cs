@@ -233,7 +233,8 @@ namespace CamelWorks.UI.Views
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var title = Ui.Text(field.Title, "What it is called", typed =>
+            // Settled, not per keystroke: this card is rebuilt by what it reports.
+            var title = Ui.Settled(field.Title, "What it is called", typed =>
             {
                 var said = (typed ?? string.Empty).Trim();
 
@@ -352,13 +353,13 @@ namespace CamelWorks.UI.Views
                     onChange();
                 });
 
-            var start = Ui.Text(field.Start, "1", typed =>
+            var start = Ui.Settled(field.Start, "1", typed =>
             {
                 field.Start = (typed ?? string.Empty).Trim();
                 onChange();
             }, 62);
 
-            var step = Ui.Text(field.Step.ToString(CultureInfo.InvariantCulture), "1", typed =>
+            var step = Ui.Settled(field.Step.ToString(CultureInfo.InvariantCulture), "1", typed =>
             {
                 if (!int.TryParse((typed ?? string.Empty).Trim(), NumberStyles.Integer,
                                   CultureInfo.InvariantCulture, out var held) || held == 0)
@@ -375,7 +376,7 @@ namespace CamelWorks.UI.Views
 
             if (field.Steps == MatrixSteps.Numbers)
             {
-                var pad = Ui.Text(field.Pad == 0 ? string.Empty : field.Pad.ToString(CultureInfo.InvariantCulture),
+                var pad = Ui.Settled(field.Pad == 0 ? string.Empty : field.Pad.ToString(CultureInfo.InvariantCulture),
                     "none", typed =>
                     {
                         var said = (typed ?? string.Empty).Trim();
@@ -412,7 +413,7 @@ namespace CamelWorks.UI.Views
         /// <summary>The one box a same-everywhere field needs.</summary>
         private static UIElement Constant(MatrixField field, Action onChange)
         {
-            var box = Ui.Text(field.Same, "P2", typed =>
+            var box = Ui.Settled(field.Same, "P2", typed =>
             {
                 field.Same = (typed ?? string.Empty).Trim();
                 onChange();

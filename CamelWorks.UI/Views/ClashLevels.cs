@@ -161,7 +161,9 @@ namespace CamelWorks.UI.Views
         {
             var row = Row();
 
-            var name = Ui.Text(storey.Name, "Level 1", typed =>
+            // Settled, not per keystroke: this row is rebuilt by what it reports, so a box
+            // that reported per keystroke threw itself away after the first letter.
+            var name = Ui.Settled(storey.Name, "Level 1", typed =>
             {
                 if (plan.Rename(storey.Name, typed) && onKeep()) onChange();
             }, 160);
@@ -171,7 +173,7 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(name, 0);
             row.Children.Add(name);
 
-            var at = Ui.Text(Metres(storey.Elevation), "0", typed =>
+            var at = Ui.Settled(Metres(storey.Elevation), "0", typed =>
             {
                 if (!double.TryParse((typed ?? string.Empty).Trim(), NumberStyles.Float,
                                      CultureInfo.InvariantCulture, out var wanted))

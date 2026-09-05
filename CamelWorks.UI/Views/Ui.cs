@@ -1651,6 +1651,57 @@ namespace CamelWorks.UI.Views
             return box;
         }
 
+        /// <summary>
+        /// A text box that reports what was typed once, when the caret leaves it or Enter is
+        /// pressed — not on every keystroke.
+        ///
+        /// For a box whose panel is rebuilt by what it reports. <see cref="Text"/> reports per
+        /// keystroke, so a panel that redraws itself in response replaces the box mid-word: the
+        /// first letter lands, the box it landed in is thrown away, and the caret is left nowhere.
+        /// Every field in the product that sat on a self-redrawing panel behaved that way, which
+        /// on a form of them reads as the keyboard being broken.
+        ///
+        /// Escape puts back what was there, so a box abandoned halfway is abandoned cleanly.
+        /// </summary>
+        /// <param name="value">Starting value.</param>
+        /// <param name="placeholder">What to show while it is empty.</param>
+        /// <param name="onSettled">Called once, with what the box now holds.</param>
+        /// <param name="width">The narrowest it may be.</param>
+        public static TextBox Settled(string? value, string placeholder,
+                                      Action<string>? onSettled, double width = 180)
+        {
+            var was = value ?? string.Empty;
+            var box = Text(was, placeholder, null, width);
+
+            void Report()
+            {
+                if (string.Equals(box.Text, was, StringComparison.Ordinal)) return;
+
+                was = box.Text;
+                onSettled?.Invoke(box.Text);
+            }
+
+            box.LostFocus += (s, e) => Safely(Report);
+
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key == System.Windows.Input.Key.Enter)
+                {
+                    e.Handled = true;
+                    Safely(Report);
+                    return;
+                }
+
+                if (e.Key != System.Windows.Input.Key.Escape) return;
+
+                e.Handled = true;
+                box.Text = was;
+                box.CaretIndex = box.Text.Length;
+            };
+
+            return box;
+        }
+
         /// <summary>A dropdown of fixed options.</summary>
         /// <param name="options">What can be picked.</param>
         /// <param name="selected">What is picked now, or null.</param>
