@@ -2681,6 +2681,8 @@ namespace CamelWorks.UI.Views
                 head.Tint(Border.BorderBrushProperty, "Bd");
                 head.Tint(Border.BackgroundProperty, Chosen(line, rows: true) ? "NavActive" : "Pane");
 
+                Grouped(head, line, Chosen(line, rows: true));
+
                 var words = (Grid)head.Child;
 
                 var numbered = Numbered(_board.Rows);
@@ -2801,6 +2803,8 @@ namespace CamelWorks.UI.Views
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
                 head.Tint(Border.BackgroundProperty, Chosen(line, rows: false) ? "NavActive" : "Pane");
+
+                Grouped(head, line, Chosen(line, rows: false));
 
                 // <b>A column header is a row header turned, and it has to turn the same way
                 // round.</b> Everything in it is stood on its end - a turned name over an
@@ -3728,10 +3732,23 @@ namespace CamelWorks.UI.Views
                 cell.Opacity = 1.0;
 
                 var at = Where(row, column);
+                var spine = _board.IsSelfPair(row, column) && _style.Spine;
+
+                // The spine's heavier edge, set on every cell rather than only on the ones that
+                // have it - otherwise a cell that was on the diagonal in one view keeps the edge
+                // in the next, and the line the eye follows is drawn twice.
+                cell.BorderThickness = spine
+                    ? new Thickness(0, 0, 2, 2)
+                    : new Thickness(0, 0, 1, 1);
+
+                if (spine && _style.SpineColour.Length > 0)
+                    cell.BorderBrush = Painted(_style.SpineColour, "SpineBd");
+                else cell.Tint(Border.BorderBrushProperty, spine ? "SpineBd" : "Bd");
 
                 if (_board.IsSelfPair(row, column))
                 {
-                    cell.Background = Skin.Of("Nav");
+                    Ground(cell, spine ? _style.SpineColour : string.Empty, spine ? "Spine" : "Nav");
+
                     cell.Child = null;
                     cell.ToolTip = at + " — a discipline against itself";
                     return;
@@ -3795,53 +3812,131 @@ namespace CamelWorks.UI.Views
                 cell.Opacity = 1.0;
 
                 var at = Where(row, column);
+                var symbol = _board.At(row, column);
+                var rank = _board.RankAt(row, column);
+                var self = _board.IsSelfPair(row, column);
+                var spine = self && _style.Spine;
 
-                if (_board.IsSelfPair(row, column))
+                // <b>The same grid, so the same furniture.</b> The spine is the axis the matrix
+                // is mirrored about and the dead triangle is the half that is not worked in;
+                // both are facts about the board rather than about the symbols, and a view that
+                // dropped them was a different drawing of the same thing - which is exactly what
+                // turning a view over is supposed not to be. Set here rather than in a branch,
+                // so a cell that was on the spine in one view does not keep its heavier edge in
+                // the next.
+                cell.BorderThickness = spine
+                    ? new Thickness(0, 0, 2, 2)
+                    : new Thickness(0, 0, 1, 1);
+
+                if (spine && _style.SpineColour.Length > 0)
+                    cell.BorderBrush = Painted(_style.SpineColour, "SpineBd");
+                else cell.Tint(Border.BorderBrushProperty, spine ? "SpineBd" : "Bd");
+
+                var mark = rank == MatrixBoard.High ? "H"
+                    : rank == MatrixBoard.Medium ? "M"
+                    : rank == MatrixBoard.Low ? "L"
+                    : string.Empty;
+
+                // The half that is not worked in, drawn the way it is drawn on the symbols: the
+                // mark quietly, on no ground at all, so a row can still be read across without
+                // the dead triangle competing with the live one.
+                if (!_board.IsDrawnHalf(row, column))
                 {
-                    cell.Background = Skin.Of("Nav");
-                    cell.Child = null;
-                    cell.ToolTip = at + " \u2014 a discipline against itself";
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+
+                    cell.Child = mark.Length == 0 || !_style.Echo
+                        ? null
+                        : new TextBlock
+                        {
+                            Text = mark,
+                            FontSize = Math.Max(11, Lettering - 2),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            TextWrapping = TextWrapping.NoWrap,
+                            Opacity = 0.9,
+                        }.Tint(TextBlock.ForegroundProperty, "Faint");
+
+                    var pair = _board.MirrorOf(row, column);
+
+                    cell.ToolTip = pair == null
+                        ? at
+                        : "The same pair as " + pair.Value.Row.Titled + " against "
+                          + pair.Value.Column.Titled + ". A matrix is mirrored, so one rank "
+                          + "covers both.";
+
+                    Named(cell);
                     return;
                 }
 
-                var symbol = _board.At(row, column);
+                if (self)
+                {
+                    Ground(cell, _style.SpineColour, "Spine");
+
+                    cell.Child = null;
+                    cell.ToolTip = at + " \u2014 " + row.Titled + " against itself.";
+
+                    Named(cell);
+                    return;
+                }
 
                 if (symbol == null || MatrixBoard.IsNotRequired(symbol))
                 {
-                    cell.Background = System.Windows.Media.Brushes.Transparent;
-                    cell.Child = null;
+                    // Left the way the symbols view leaves them, so the two drawings agree about
+                    // which pairs exist: white for undecided, the ruled-out grey and its dash
+                    // for a pair somebody has agreed not to check.
+                    if (symbol == null)
+                    {
+                        cell.Background = System.Windows.Media.Brushes.Transparent;
+                        cell.Child = null;
+                    }
+                    else
+                    {
+                        Ground(cell, _style.RuledColour, "BdStrong");
+
+                        cell.Child = new TextBlock
+                        {
+                            Text = MatrixBoard.NotRequired,
+                            FontWeight = FontWeights.SemiBold,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                        }.Tint(TextBlock.ForegroundProperty, "Muted");
+                    }
+
                     cell.ToolTip = at + " \u2014 " + row.Titled + " against " + column.Titled
                                    + (symbol == null
                                        ? ". Not decided yet, so there is nothing to rank."
                                        : ". Agreed not required, so there is nothing to rank.");
+
+                    Named(cell);
                     return;
                 }
 
-                var rank = _board.RankAt(row, column);
                 var ground = Ranked(rank);
 
                 cell.Background = ground;
 
-                cell.Child = new TextBlock
-                {
-                    Text = rank == MatrixBoard.High ? "H"
-                        : rank == MatrixBoard.Medium ? "M"
-                        : rank == MatrixBoard.Low ? "L"
-                        : string.Empty,
-                    FontSize = Math.Max(10, Lettering - 1),
-                    FontWeight = FontWeights.SemiBold,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    TextWrapping = TextWrapping.NoWrap,
-                    Foreground = Ui.InkOn(ground),
-                };
+                cell.Child = mark.Length == 0
+                    ? null
+                    : new TextBlock
+                    {
+                        Text = mark,
+                        FontSize = Math.Max(10, Lettering - 1),
+                        FontWeight = FontWeights.SemiBold,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        TextWrapping = TextWrapping.NoWrap,
+                        Foreground = Ui.InkOn(ground),
+                    };
 
                 cell.ToolTip = at + " \u2014 " + row.Titled + " against " + column.Titled + ". "
                                + (rank == MatrixBoard.NotSet
                                    ? "Checked, no priority set."
                                    : MatrixBoard.RankNamed(rank) + " priority.")
                                + " Checked as " + Quoted(symbol) + ".";
+
+                Named(cell);
             }
 
             /// <summary>
@@ -4190,6 +4285,69 @@ namespace CamelWorks.UI.Views
             {
                 if (colour.Length > 0) cell.Background = Painted(colour, key);
                 else cell.Tint(Border.BackgroundProperty, key);
+            }
+
+            /// <summary>
+            /// Carry a folder's colour onto the header of every line in it, a great deal paler.
+            ///
+            /// <b>A colour on the band and nowhere else names the group and not its members.</b>
+            /// A band down the left is one narrow strip beside twenty rows, and on a matrix
+            /// scrolled sideways it is the part that has gone off the screen - so the colour
+            /// that says which package a discipline belongs to was the one thing not visible
+            /// beside the discipline. Read across from a row header forty columns in and there
+            /// was nothing to say which group the row was in.
+            ///
+            /// <b>Paler by a long way, and never on the cells.</b> The header is a label, and a
+            /// label washed at the band's own strength competes with the band and with the
+            /// symbols beside it; a fifth of the way from white is enough to group twenty
+            /// headers by eye and quiet enough to read a name on. The cells are left alone
+            /// entirely: a cell's colour is what is decided in it - the symbol's wash, a rank, a
+            /// count - and a second colour underneath saying which folder its row is in would
+            /// put two meanings on one ground.
+            ///
+            /// A picked line keeps its picked ground. What is selected has to be obvious, and it
+            /// is a state somebody is in for a moment rather than a fact about the line.
+            /// </summary>
+            /// <param name="head">The header.</param>
+            /// <param name="line">The row or column it stands for.</param>
+            /// <param name="chosen">True while it is one of the picked ones.</param>
+            private void Grouped(Border head, MatrixLine line, bool chosen)
+            {
+                if (chosen) return;
+
+                var colour = _board.ColourOf(line.Folder);
+
+                if (colour.Length == 0) return;
+
+                head.Background = Washing(colour, 0.8);
+            }
+
+            /// <summary>
+            /// A colour most of the way to white, for a ground something has to be read on.
+            ///
+            /// Blended rather than made transparent: the headers sit over a pane whose own
+            /// colour differs between the two palettes, and an alpha wash would come out a
+            /// different hue on each of them.
+            /// </summary>
+            /// <param name="colour">The colour, as <c>#RRGGBB</c>.</param>
+            /// <param name="toward">How far to white, nought being the colour itself.</param>
+            private static System.Windows.Media.Brush Washing(string colour, double toward)
+            {
+                var found = Painted(colour, "Pane");
+
+                if (!(found is System.Windows.Media.SolidColorBrush solid)) return found;
+
+                var how = Math.Min(1.0, Math.Max(0.0, toward));
+
+                var pale = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(
+                        (byte)(solid.Color.R + ((255 - solid.Color.R) * how)),
+                        (byte)(solid.Color.G + ((255 - solid.Color.G) * how)),
+                        (byte)(solid.Color.B + ((255 - solid.Color.B) * how))));
+
+                pale.Freeze();
+
+                return pale;
             }
 
             /// <summary>
@@ -6083,31 +6241,36 @@ namespace CamelWorks.UI.Views
                 // and came back needs to know the board is not what they drew - and what the
                 // numbers are counting, which is what is still open rather than what was ever
                 // found.
+                // <b>No way back on the strip, because the way back is the chooser.</b> Every
+                // line added here is a line the plan count is pushed towards the end by - and
+                // the render caught it reading "0 tests, 160 cells s" the first time one was.
+                // The chooser two inches above says which view is on and changes it, which is
+                // one place rather than two.
                 if (_shown == Showing.Results)
-                {
                     Say(Ui.Small(Ui.Count(_counts.Open, "clash") + " open across "
                                  + Ui.Count(_counts.Tests, "test")));
 
-                    Say(Ui.Quiet("Show the symbols", () => Show(Showing.Symbols)), 8);
-                }
-
                 if (_shown == Showing.Priority)
                 {
-                    Say(Ui.Glyph(Glyphs.Warn, 12, "Accent", new Thickness(0, 0, 8, 0)));
+                    // The mark and the words in one panel: the strip sets a left margin on
+                    // everything it is handed, so a gap asked for on the glyph itself is a gap
+                    // that is overwritten - which is why this read "(!)Laying high".
+                    var laying = new StackPanel { Orientation = Orientation.Horizontal };
 
-                    Say(new TextBlock
+                    laying.Children.Add(Ui.Glyph(Glyphs.Warn, 12, "Accent",
+                                                 new Thickness(0, 0, 7, 0)));
+
+                    laying.Children.Add(new TextBlock
                     {
                         Text = _rank == MatrixBoard.NotSet
                             ? "Clearing ranks"
                             : "Laying " + MatrixBoard.RankNamed(_rank).ToLowerInvariant(),
+                        FontSize = StripSize,
                         FontWeight = FontWeights.SemiBold,
-                    }.Wearing("Body"), 0);
+                        VerticalAlignment = VerticalAlignment.Center,
+                    }.Wearing("Body"));
 
-                    // How many are ranked is not repeated here. The bar in the foot of the
-                    // panel says it with a picture and a fraction, and the strip is one line
-                    // that already carries the plan count - which the render caught being cut
-                    // off mid-word the moment this was added beside it.
-                    Say(Ui.Quiet("Show the symbols", () => Show(Showing.Symbols)), 8);
+                    Say(laying);
                 }
 
                 if (_lit != null)
