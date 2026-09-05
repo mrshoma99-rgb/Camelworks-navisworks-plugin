@@ -3739,13 +3739,6 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Open the standing instructions, and let them fill the board.
-            ///
-            /// Remembered before the window opens rather than after it closes, because what a
-            /// person wants back from one press of undo is the matrix as it was before they went
-            /// in - not one of the four edits they made while they were in there.
-            /// </summary>
-            /// <summary>
             /// Edit the fields every line carries, then write them across the board.
             ///
             /// The apply is the point of the window rather than a step after it: a field counted
@@ -7017,6 +7010,203 @@ namespace CamelWorks.UI.Views
                 _acts.Children.Add(Ui.Across(row));
             }
 
+            /// <summary>
+            /// The fields the panel draws, in the scheme's order.
+            ///
+            /// The name is always here. It is the line's identity: the headers draw it, the diff
+            /// matches on it and a test is named from it, so a panel without it is a panel a line
+            /// cannot be set up from.
+            /// </summary>
+            private IEnumerable<MatrixField> Panelled() =>
+                _board.Scheme.Fields.Where(one =>
+                    string.Equals(one.Key, MatrixField.NameKey, StringComparison.OrdinalIgnoreCase)
+                    || (one.Shown & MatrixShown.Panel) == MatrixShown.Panel);
+
+            /// <summary>
+            /// One field on the panel: what this line holds under it, and what can be done to it.
+            ///
+            /// The card is the field. Its box edits this line, and its menu edits the field for
+            /// the whole board — where it sits, what it is called, whether the panel shows it at
+            /// all. Those were two different places before, and the second was a menu about the
+            /// board rather than anything next to the field it acted on.
+            /// </summary>
+            /// <param name="field">The field.</param>
+            /// <param name="line">The row or column the panel is showing.</param>
+            /// <param name="at">Where that line sits, for the undo note.</param>
+            /// <param name="rows">True for a row.</param>
+            private UIElement FieldCard(MatrixField field, MatrixLine line, int at, bool rows)
+            {
+                var here = field;
+
+                var name = string.Equals(here.Key, MatrixField.NameKey,
+                                         StringComparison.OrdinalIgnoreCase);
+
+                // Settled, not per keystroke. Each of these rewrites the two frozen bands and
+                // recounts the plan, which on a board of any size is a tenth of a second - so a
+                // box reporting per keystroke put that between every letter and the letter after
+                // it.
+                var box = Ui.Settled(line.Value(here.Key), string.Empty, typed =>
+                {
+                    Remember(here.Key + " " + at + rows);
+
+                    // Through the board, so typing over a counted field takes this line out of
+                    // the count rather than being overwritten by the next apply. That is the
+                    // gesture: a value typed on a line is a decision about that line.
+                    if (name) _board.Rename(line, typed);
+                    else _board.Write(line, here.Key, typed, byHand: Counted(here.Key));
+
+                    RedrawDown();
+                    RedrawAcross();
+                    Recount();
+                }, 120);
+
+                box.HorizontalAlignment = HorizontalAlignment.Stretch;
+                box.Margin = new Thickness(0, 4, 0, 0);
+
+                // Held so that adding a line can put the caret straight into its name.
+                if (name) _rename = box;
+
+                var head = new Grid();
+
+                head.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                });
+
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var title = Ui.Small(here.Title);
+
+                title.VerticalAlignment = VerticalAlignment.Center;
+                title.TextTrimming = TextTrimming.CharacterEllipsis;
+                head.Children.Add(title);
+
+                var more = Parts.MoreMenu(Glyphs.More, "What this field is, and where it sits",
+                                          FieldMenu(here));
+
+                Grid.SetColumn(more, 1);
+                head.Children.Add(more);
+
+                var card = new Border
+                {
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(8, 5, 8, 8),
+                    Margin = new Thickness(0, 0, 0, 6),
+                    Child = Ui.Stack(head, box),
+                };
+
+                card.Tint(Border.BorderBrushProperty, "Bd");
+                card.Tint(Border.BackgroundProperty, "Card");
+
+                return card;
+            }
+
+            /// <summary>What a field's card offers: its place, its name, and taking it away.</summary>
+            /// <param name="field">The field the card is for.</param>
+            private IReadOnlyList<Parts.Entry> FieldMenu(MatrixField field)
+            {
+                var here = field;
+                var fields = _board.Scheme.Fields;
+                var at = 0;
+
+                for (var walk = 0; walk < fields.Count; walk++)
+                    if (ReferenceEquals(fields[walk], here)) { at = walk; break; }
+
+                var items = new List<Parts.Entry> { Parts.Entry.Heading(here.Title) };
+
+                // The order is the scheme's, so moving a card here moves the field in the panel
+                // and in the board's gutters together.
+                items.Add(at > 0
+                    ? Parts.Entry.Act("Move up", Glyphs.Up,
+                                      () => Schemed("moving a field",
+                                                    () => _board.Scheme.Move(here.Key, at - 1)))
+                    : Parts.Entry.Barred("Move up", Glyphs.Up, "It is already first."));
+
+                items.Add(at < fields.Count - 1
+                    ? Parts.Entry.Act("Move down", Glyphs.Down,
+                                      () => Schemed("moving a field",
+                                                    () => _board.Scheme.Move(here.Key, at + 1)))
+                    : Parts.Entry.Barred("Move down", Glyphs.Down, "It is already last."));
+
+                items.Add(Parts.Entry.Rule());
+
+                if (here.IsBuiltIn)
+                    items.Add(Parts.Entry.Barred("Rename", Glyphs.Pencil,
+                        "The name, number, code and folder are named by the product."));
+                else
+                    items.Add(Parts.Entry.Act("Rename", Glyphs.Pencil, () => Retitled(here)));
+
+                items.Add(Parts.Entry.Saying("How it is filled", Glyphs.Tune,
+                    "Counted down the axis, the same on every line, or by hand", Fields));
+
+                if (!here.IsBuiltIn)
+                {
+                    items.Add(Parts.Entry.Saying("Take it off the panel", Glyphs.EyeOff,
+                        "Every line still carries it, and the test names still use it",
+                        () => Schemed("hiding a field", () =>
+                        {
+                            here.Shown &= ~MatrixShown.Panel;
+                            return true;
+                        })));
+
+                    items.Add(Parts.Entry.Rule());
+
+                    items.Add(Parts.Entry.Danger("Remove the field", Glyphs.Bin,
+                        () => Schemed("removing a field",
+                                      () => _board.Scheme.Remove(
+                                          here.Key, _board.Rows.Concat(_board.Columns)))));
+                }
+
+                return items;
+            }
+
+            /// <summary>Ask for a new title for a field, and give it one.</summary>
+            /// <param name="field">The field to rename.</param>
+            private void Retitled(MatrixField field)
+            {
+                var here = field;
+
+                Parts.Ask(_grid, "What should this field be called?", here.Title, "Rename", said =>
+                {
+                    var title = (said ?? string.Empty).Trim();
+
+                    if (title.Length == 0
+                        || string.Equals(title, here.Title, StringComparison.Ordinal))
+                        return;
+
+                    // The key is untouched, so every pattern that names this field goes on
+                    // reading. A title is what it is called on screen; the token is what a name
+                    // is written from, and renaming one must not silently break the other.
+                    Schemed("renaming a field", () => { here.Title = title; return true; });
+                });
+            }
+
+            /// <summary>
+            /// Make one change to the scheme, write it across the board, and make it undoable.
+            ///
+            /// The apply is part of the change rather than a step after it: a field counted down
+            /// the axis is a promise about every line, and leaving the board unwritten until
+            /// somebody found a second button would make the promise look broken.
+            /// </summary>
+            /// <param name="what">What to call it in the undo note.</param>
+            /// <param name="change">Makes the change, and says whether anything moved.</param>
+            private void Schemed(string what, Func<bool> change)
+            {
+                var was = Held();
+
+                if (change == null || !change()) return;
+
+                _board.ApplyScheme();
+
+                Touched();
+
+                _past.Push(new Doing(was, what));
+                _future.Clear();
+
+                Redraw();
+            }
+
             /// <summary>A row or a column: what it is called, and what it points at.</summary>
             /// <param name="line">The row or column.</param>
             /// <param name="rows">True for a row.</param>
@@ -7035,119 +7225,12 @@ namespace CamelWorks.UI.Views
 
                 _inspector.Children.Add(gap);
 
-                // A rename repaints the row and column headers only, not the whole screen. A
-                // full redraw rebuilt the grid and the panel, including this text box, so the
-                // caret was lost after each character. The name appears in exactly those two
-                // places; the panel is already correct, since that is where the text is being
-                // typed.
-                // Settled, not per keystroke. Each of these rewrites the two frozen bands and
-                // recounts the plan, which on a board of any size is a tenth of a second — so a
-                // box reporting per keystroke put that between every letter and the letter after
-                // it.
-                _rename = Ui.Settled(line.Name, string.Empty, typed =>
-                {
-                    Remember("name " + at + rows);
-
-                    _board.Rename(line, typed);
-
-                    RedrawDown();
-                    RedrawAcross();
-                    Recount();
-                }, 100);
-
-                Told("Name", _rename);
-
-                var pair = new Grid();
-
-                pair.ColumnDefinitions.Add(new ColumnDefinition
-                {
-                    Width = new GridLength(1, GridUnitType.Star),
-                });
-
-                pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
-
-                pair.ColumnDefinitions.Add(new ColumnDefinition
-                {
-                    Width = new GridLength(1, GridUnitType.Star),
-                });
-
-                var numbered = Ui.Stack();
-
-                numbered.Children.Add(Ui.Small("Number"));
-
-                var number = Ui.Settled(line.Number, string.Empty, typed =>
-                {
-                    Remember("number " + at + rows);
-
-                    // Through the board, so typing over a counted field takes this line out of
-                    // the count rather than being overwritten by the next apply. That is the
-                    // gesture: a value typed on a line is a decision about that line.
-                    _board.Write(line, MatrixField.NumberKey, typed,
-                                 byHand: Counted(MatrixField.NumberKey));
-
-                    RedrawDown();
-                    RedrawAcross();
-                    Recount();
-                }, 40);
-
-                number.Margin = new Thickness(0, 3, 0, 0);
-                numbered.Children.Add(number);
-
-                Grid.SetColumn(numbered, 0);
-                pair.Children.Add(numbered);
-
-                var coded = Ui.Stack();
-
-                coded.Children.Add(Ui.Small("Code"));
-
-                var code = Ui.Settled(line.Code, string.Empty, typed =>
-                {
-                    Remember("code " + at + rows);
-
-                    _board.Write(line, MatrixField.CodeKey, typed,
-                                 byHand: Counted(MatrixField.CodeKey));
-
-                    RedrawDown();
-                    RedrawAcross();
-                    Recount();
-                }, 40);
-
-                code.Margin = new Thickness(0, 3, 0, 0);
-                coded.Children.Add(code);
-
-                Grid.SetColumn(coded, 2);
-                pair.Children.Add(coded);
-
-                pair.Margin = new Thickness(0, 0, 0, 9);
-                _inspector.Children.Add(pair);
-
-                // The project's own fields, in the order the scheme lists them. Without these a
-                // custom field could only ever be filled by a rule, so a sub-discipline code that
-                // differs line by line — which is what one usually is — had nowhere to be typed.
-                foreach (var field in MatrixNaming.Custom(_board.Scheme)
-                             .Where(one => (one.Shown & MatrixShown.Panel) == MatrixShown.Panel))
-                {
-                    var here = field;
-                    var held = Ui.Stack();
-
-                    held.Children.Add(Ui.Small(here.Title));
-
-                    var box = Ui.Settled(line.Value(here.Key), string.Empty, typed =>
-                    {
-                        Remember(here.Key + " " + at + rows);
-
-                        _board.Write(line, here.Key, typed, byHand: Counted(here.Key));
-
-                        RedrawDown();
-                        RedrawAcross();
-                        Recount();
-                    }, 120);
-
-                    box.Margin = new Thickness(0, 3, 0, 9);
-                    held.Children.Add(box);
-
-                    _inspector.Children.Add(held);
-                }
+                // Every field the panel shows, as a card, in the scheme's order. The name, the
+                // number and the code were three fixed controls in a fixed order with the
+                // project's own fields listed under them, so the panel could not be arranged and
+                // a field's own settings were reachable only from a menu about the whole board.
+                foreach (var field in Panelled())
+                    _inspector.Children.Add(FieldCard(field, line, at, rows));
 
                 _inspector.Children.Add(Fielding());
 
