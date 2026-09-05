@@ -1030,8 +1030,36 @@ namespace CamelWorks.UI.Views
                 RedrawCells();
             }
 
-            /// <summary>How wide the name itself gets, before the gutters beside it.</summary>
-            private const double NameWide = 150;
+            /// <summary>
+            /// How wide the names get, measured, before the gutters beside them.
+            ///
+            /// <b>A hundred and fifty pixels was a guess, and a guess truncates.</b> It cut
+            /// "ARC_Ceilings and Soffits" down to "ARC_Ceilings and Sof...", and a discipline
+            /// whose name is not readable is a row nobody can check the symbols against - which
+            /// is the whole of what the band down the side is for. The number gutter and the code
+            /// gutter beside it have been measured for exactly this reason since the day one of
+            /// them cut "ARC" to "A...".
+            ///
+            /// Floored so a matrix of short names still has a band worth pointing at, and capped
+            /// so one absurd name cannot take a third of the window from the grid it labels. The
+            /// mark before the name is part of what a name costs, and it is reserved for the
+            /// whole axis whenever any row needs it, so this asks for it on the same terms.
+            /// </summary>
+            private double NameWide
+            {
+                get
+                {
+                    var widest = 0.0;
+
+                    foreach (var line in _board.Rows)
+                        widest = Math.Max(widest, Measured(line.Name, 12));
+
+                    // The mark and the gap after it, and the room the name is inset by.
+                    var mark = Unbacked(_board.Rows) ? 24.0 : 0;
+
+                    return Math.Max(150, Math.Min(300, widest + mark + 14));
+                }
+            }
 
             /// <summary>
             /// The number gutter and the code gutter, each as wide as its longest entry.
@@ -2784,7 +2812,7 @@ namespace CamelWorks.UI.Views
                     // everything above - the name ran ten pixels past the end of its own header
                     // and the tail was clipped by the border.
                     named = Turned(line.Name, NameRun, 11, FontWeights.SemiBold,
-                                   at: TextAlignment.Left).Wearing("Body");
+                                   at: TextAlignment.Left, flush: true).Wearing("Body");
                 }
 
                 Grid.SetRow(named, row);
@@ -2817,9 +2845,14 @@ namespace CamelWorks.UI.Views
             /// <param name="size">The type size.</param>
             /// <param name="weight">The weight.</param>
             /// <param name="at">Which end of its run the words sit at.</param>
+            /// <param name="flush">
+            /// True to sit against the end that meets the grid, false to sit in the middle
+            /// of whatever it labels.
+            /// </param>
             private static TextBlock Turned(string text, double along, double size,
                                             FontWeight weight,
-                                            TextAlignment at = TextAlignment.Center) =>
+                                            TextAlignment at = TextAlignment.Center,
+                                            bool flush = false) =>
                 new TextBlock
                 {
                     Text = text,
@@ -2828,33 +2861,47 @@ namespace CamelWorks.UI.Views
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
 
-                    Width = Math.Max(0, along),
+                    // <b>How long it may run, not how long it is.</b> Given this as a Width the
+                    // block asked its parent for a box longer than the column is wide, and WPF
+                    // cut it down to the slot it did not fit in - so a name reserved a hundred
+                    // and sixty pixels of band, drew five characters of itself in the middle of
+                    // it, and left the rest empty above and below. As a maximum it is the cap
+                    // the design wants and nothing overflows anything.
+                    MaxWidth = Math.Max(0, along),
 
-                    // <b>No height.</b> Given one, the words sat at the top of the box it made
-                    // and everything below them was empty - and the top of a box turned
-                    // anti-clockwise is the left-hand edge of the column, so the name and the
-                    // number were pinned to one side of a header whose box was centred to the
-                    // half pixel. Left to be as thick as its own line and centred, the letters
-                    // land in the middle of the column, which is where they were always meant to
-                    // be.
-
-                    // <b>Turned the way a column heading is turned everywhere else</b> -
-                    // counter-clockwise, reading upwards, which is what a spreadsheet does and
-                    // what anybody who has read a matrix before expects. Clockwise it was
-                    // legible but upside down against every other tool they use.
-                    //
-                    // Which end the words sit at is then set by hand rather than by the turn.
-                    // Counter-clockwise a box's left-hand edge lands at the bottom, so a name
-                    // set to its left starts at the grid and runs up away from it, and what
-                    // ellipsises is the far end rather than the end that matters. The order of
-                    // the pieces is the grid's business, not the rotation's: number, code and
-                    // name are three rows down the header, so they read downwards in the same
-                    // order the row reads across whichever way the letters face.
                     TextAlignment = at,
+
+                    // Across the column, always centred: the letters are thin in this direction
+                    // and a header is read as a column of marks in one line.
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    RenderTransformOrigin = new Point(0.5, 0.5),
-                    RenderTransform = new System.Windows.Media.RotateTransform(-90),
+
+                    // Down its length it sits either against the grid or in the middle of what
+                    // it labels. A name flushed to the grid ends where every other name ends,
+                    // which is the edge a reader scans down; a folder's label is centred on the
+                    // run it covers, because that is what says which rows are in it.
+                    VerticalAlignment = flush ? VerticalAlignment.Bottom : VerticalAlignment.Center,
+
+                    // <b>Turned in the layout, not only in the drawing.</b> A RenderTransform
+                    // moves pixels and tells the layout nothing, so the block still asked for a
+                    // box as long as its words and as thick as one line - lying on its side
+                    // across a column thirty-eight pixels wide. WPF clips a child to the slot it
+                    // was given, so what got rotated was a name already cut down to the width of
+                    // its own column: five characters out of the middle of every heading, in a
+                    // band with room for all of them.
+                    //
+                    // A LayoutTransform is measured through: the block is offered the slot turned
+                    // the other way round, so a column thirty-eight wide and a hundred and sixty
+                    // tall offers it a hundred and sixty to write in and thirty-eight to be thick
+                    // in. Which is the way round it is actually drawn, so what it asks for is
+                    // what it gets and there is nothing left over to clip.
+                    //
+                    // Counter-clockwise, reading upwards, which is what a spreadsheet does and
+                    // what anybody who has read a matrix before expects. Clockwise it was legible
+                    // but upside down against every other tool they use - and a box's left-hand
+                    // edge lands at the bottom this way round, so a name set to its left starts
+                    // at the grid and runs up away from it, and what ellipsises is the far end
+                    // rather than the end that matters.
+                    LayoutTransform = new System.Windows.Media.RotateTransform(-90),
                 };
 
             /// <summary>
