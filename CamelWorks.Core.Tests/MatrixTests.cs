@@ -2012,4 +2012,182 @@ namespace CamelWorks.Core.Tests
             Assert.False(board.IsSelfPair(board.Rows[0], board.Columns[1]));
         }
     }
+
+    /// <summary>
+    /// What a folder's colour is, and what happens to it when the folder changes.
+    ///
+    /// A folder is a name its members share and nothing more, so its colour is kept beside the
+    /// board rather than on an object - which makes every act that changes a folder's name a
+    /// chance to lose the colour or to leave one behind for a later folder to inherit.
+    /// </summary>
+    public class MatrixFolderColourTests
+    {
+        private static MatrixBoard Filed()
+        {
+            var board = new MatrixBoard();
+
+            var one = board.AddPair(new MatrixLine("ARC_Walls"));
+            var two = board.AddPair(new MatrixLine("ARC_Ceilings"));
+            var three = board.AddPair(new MatrixLine("STR_Frame"));
+
+            board.File(one, "Architecture");
+            board.File(two, "Architecture");
+            board.File(three, "Structure");
+
+            return board;
+        }
+
+        [Fact]
+        public void AFolderNobodyHasColouredHasNoColour()
+        {
+            Assert.Equal(string.Empty, Filed().ColourOf("Architecture"));
+        }
+
+        [Fact]
+        public void AColourIsKeptByName()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+
+            Assert.Equal("#2E7D32", board.ColourOf("Architecture"));
+            Assert.Equal(string.Empty, board.ColourOf("Structure"));
+        }
+
+        [Fact]
+        public void TheNameIsMatchedHoweverItIsCased()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+
+            Assert.Equal("#2E7D32", board.ColourOf("ARCHITECTURE"));
+        }
+
+        [Fact]
+        public void PaintingWithNothingTakesTheColourAway()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+            board.Paint("Architecture", null);
+
+            Assert.Equal(string.Empty, board.ColourOf("Architecture"));
+        }
+
+        [Fact]
+        public void RenamingAFolderCarriesItsColour()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+            board.RenameFolder("Architecture", "Arch");
+
+            Assert.Equal("#2E7D32", board.ColourOf("Arch"));
+            Assert.Equal(string.Empty, board.ColourOf("Architecture"));
+        }
+
+        [Fact]
+        public void DissolvingAFolderDropsItsColour()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+            board.DissolveFolder("Architecture");
+
+            Assert.Empty(board.FolderColours);
+        }
+
+        [Fact]
+        public void AColourIsNotInheritedByTheNextFolderOfTheSameName()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+            board.DissolveFolder("Architecture");
+
+            board.File(board.Rows[0], "Architecture");
+
+            Assert.Equal(string.Empty, board.ColourOf("Architecture"));
+        }
+
+        [Fact]
+        public void RemovingAFolderTakesItsColourWithIt()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+            board.RemoveFolder("Architecture");
+
+            Assert.Empty(board.FolderColours);
+        }
+
+        [Fact]
+        public void MergingKeepsTheColourOfTheNameThatSurvives()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+            board.Paint("Structure", "#1565C0");
+
+            board.MergeFolders(new[] { "Architecture", "Structure" }, "Structure");
+
+            Assert.Equal("#1565C0", board.ColourOf("Structure"));
+            Assert.Single(board.FolderColours);
+        }
+
+        [Fact]
+        public void MergingIntoANewNameCarriesTheFirstColourThere()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+
+            board.MergeFolders(new[] { "Architecture", "Structure" }, "Fabric");
+
+            Assert.Equal("#2E7D32", board.ColourOf("Fabric"));
+            Assert.Single(board.FolderColours);
+        }
+
+        [Fact]
+        public void AColourSurvivesBeingWrittenDownAndReadBack()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+
+            var back = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.Equal("#2E7D32", back.ColourOf("Architecture"));
+        }
+
+        [Fact]
+        public void ABoardWithNoColoursWritesNoneDown()
+        {
+            var json = Filed().ToJson();
+
+            Assert.Equal(0, json["folders"].Items.Count());
+        }
+
+        [Fact]
+        public void AColourForAFolderNobodyIsInIsNotReadBack()
+        {
+            var board = Filed();
+
+            board.Paint("Architecture", "#2E7D32");
+
+            var json = board.ToJson();
+
+            board.DissolveFolder("Architecture");
+
+            // The stored board still names it; the one read back has nobody filed under it.
+            var stale = MatrixBoard.FromJson(json);
+
+            Assert.Equal("#2E7D32", stale.ColourOf("Architecture"));
+
+            stale.DissolveFolder("Architecture");
+
+            Assert.Empty(stale.FolderColours);
+        }
+    }
 }

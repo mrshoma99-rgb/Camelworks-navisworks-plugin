@@ -337,6 +337,24 @@ namespace CamelWorks.UI.Views
             /// <summary>What the inspector is showing: a line, a symbol, or the cell.</summary>
             private MatrixLine? _picked;
             private bool _pickedRows;
+
+            /// <summary>
+            /// Every line picked, on one axis, with <see cref="_picked"/> as the anchor.
+            ///
+            /// <b>One row at a time, on a board of twenty-two.</b> Filing six disciplines into a
+            /// package was six presses of the menu, six times through the same dialogue; deleting
+            /// the four that turned out not to be in this phase was four confirmations. Every
+            /// spreadsheet ever written lets you take a run of rows and do one thing to all of
+            /// them, and this is a spreadsheet.
+            ///
+            /// The anchor stays what the panel on the right is about, because a panel that tried
+            /// to be about six rows at once would be six panels. What the set is for is the acts
+            /// that mean the same thing done six times.
+            /// </summary>
+            private readonly List<MatrixLine> _chosen = new List<MatrixLine>();
+
+            /// <summary>Which axis the picked lines are on. The two are never mixed.</summary>
+            private bool _chosenRows;
             private MatrixSymbol? _pickedSymbol;
 
             /// <summary>
@@ -1830,7 +1848,20 @@ namespace CamelWorks.UI.Views
                 };
 
                 block.Tint(Border.BorderBrushProperty, "Bd");
-                block.Tint(Border.BackgroundProperty, shut ? "Nav" : "Card2");
+
+                // <b>The colour is what makes a band of eight rows one thing.</b> Twenty-two
+                // disciplines in five packages read as twenty-two disciplines until the packages
+                // are told apart, and this strip is the only place with room to say which is
+                // which without writing it on every row. A folder nobody has coloured keeps the
+                // skin's own ground, so a matrix that has never used one looks as it did.
+                var chosen = _board.ColourOf(folder);
+
+                if (chosen.Length > 0) block.Background = Painted(chosen, "Card2");
+                else block.Tint(Border.BackgroundProperty, shut ? "Nav" : "Card2");
+
+                // Shut, it is a mark rather than a label, and a coloured folder says so by going
+                // quieter rather than by changing colour - the colour is what identifies it.
+                if (chosen.Length > 0 && shut) block.Opacity = 0.55;
 
                 // Along the band, which is down it for the rows and across it for the columns.
                 // The room a name has is the length of its own block, not the width of the strip.
@@ -2542,8 +2573,7 @@ namespace CamelWorks.UI.Views
                                + line.Source.Kinded() + ", " + line.Source.Describe();
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
-                head.Tint(Border.BackgroundProperty,
-                          ReferenceEquals(_picked, line) && _pickedRows ? "NavActive" : "Pane");
+                head.Tint(Border.BackgroundProperty, Chosen(line, rows: true) ? "NavActive" : "Pane");
 
                 var words = (Grid)head.Child;
 
@@ -2664,8 +2694,7 @@ namespace CamelWorks.UI.Views
                                + line.Source.Kinded() + ", " + line.Source.Describe();
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
-                head.Tint(Border.BackgroundProperty,
-                          ReferenceEquals(_picked, line) && !_pickedRows ? "NavActive" : "Pane");
+                head.Tint(Border.BackgroundProperty, Chosen(line, rows: false) ? "NavActive" : "Pane");
 
                 // <b>A column header is a row header turned, and it has to turn the same way
                 // round.</b> Everything in it is stood on its end - a turned name over an
@@ -2959,7 +2988,15 @@ namespace CamelWorks.UI.Views
                 head.MouseLeftButtonUp += (s, e) =>
                 {
                     e.Handled = true;
-                    Ui.Safely(() => Pick(line, rows));
+
+                    Ui.Safely(() =>
+                    {
+                        if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                            Upto(line, rows);
+                        else if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+                            Also(line, rows);
+                        else Pick(line, rows);
+                    });
                 };
 
                 // <b>Renaming was reachable from exactly one place.</b> The name of a row lived
@@ -3009,9 +3046,89 @@ namespace CamelWorks.UI.Views
                 _pickedRows = rows;
                 _pickedSymbol = null;
 
+                _chosen.Clear();
+                _chosenRows = rows;
+
+                if (line != null) _chosen.Add(line);
+
                 Lighting(null);
                 Editable();
 
+                RedrawAcross();
+                RedrawDown();
+                RedrawInspector();
+            }
+
+            /// <summary>Whether a line is one of the picked ones, on the axis they were picked on.</summary>
+            /// <param name="line">The row or column.</param>
+            /// <param name="rows">True when it is being drawn as a row.</param>
+            private bool Chosen(MatrixLine line, bool rows) =>
+                _chosenRows == rows && _chosen.Contains(line);
+
+            /// <summary>
+            /// Add one line to the picked ones, or take it out again.
+            ///
+            /// Control and a press, which is what it is everywhere else. Taking out the anchor
+            /// hands the anchor to whatever is left, so the panel on the right keeps describing
+            /// something that is actually picked.
+            /// </summary>
+            /// <param name="line">The row or column pressed.</param>
+            /// <param name="rows">True for a row.</param>
+            private void Also(MatrixLine line, bool rows)
+            {
+                // The two axes are never mixed: a set holding three rows and two columns has no
+                // act that means anything, and every act below reads one axis.
+                if (_chosenRows != rows) { Pick(line, rows); return; }
+
+                if (_chosen.Contains(line))
+                {
+                    _chosen.Remove(line);
+
+                    if (ReferenceEquals(_picked, line)) _picked = _chosen.LastOrDefault();
+                }
+                else
+                {
+                    _chosen.Add(line);
+                    _picked = line;
+                }
+
+                _pickedRows = rows;
+                _pickedSymbol = null;
+
+                Editable();
+                RedrawAcross();
+                RedrawDown();
+                RedrawInspector();
+            }
+
+            /// <summary>
+            /// Pick every line from the anchor to this one.
+            ///
+            /// Shift and a press, the run between what was last touched and this - the gesture
+            /// every sheet shares, and the fastest way to say "these eight".
+            /// </summary>
+            /// <param name="line">The row or column pressed.</param>
+            /// <param name="rows">True for a row.</param>
+            private void Upto(MatrixLine line, bool rows)
+            {
+                var lines = rows ? (IReadOnlyList<MatrixLine>)_board.Rows : _board.Columns;
+                var here = At(lines, line);
+                var from = _chosenRows == rows && _picked != null ? At(lines, _picked) : -1;
+
+                if (here < 0 || from < 0) { Pick(line, rows); return; }
+
+                _chosen.Clear();
+                _chosenRows = rows;
+
+                for (var i = Math.Min(from, here); i <= Math.Max(from, here); i++)
+                    if (!Hidden(lines[i]))
+                        _chosen.Add(lines[i]);
+
+                _picked = line;
+                _pickedRows = rows;
+                _pickedSymbol = null;
+
+                Editable();
                 RedrawAcross();
                 RedrawDown();
                 RedrawInspector();
@@ -3213,14 +3330,25 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                Remember(what: "filling that " + (rows ? "row" : "column"));
+                // <b>The gutter fills what is picked, when what was pressed is part of it.</b>
+                // Eight rows picked and the mark beside one of them pressed means the eight, not
+                // the one - anything else makes picking them pointless. Pressing the gutter of a
+                // row that is not in the set is that row alone, and leaves the set where it is.
+                var many = Chosen(line, rows) && _chosen.Count > 1
+                    ? _chosen.Where(l => !Hidden(l)).ToList()
+                    : new List<MatrixLine> { line };
+
+                Remember(what: many.Count > 1
+                             ? "filling " + Ui.Count(many.Count, rows ? "row" : "column")
+                             : "filling that " + (rows ? "row" : "column"));
 
                 var laid = 0;
 
+                foreach (var one in many)
                 foreach (var other in rows ? (IReadOnlyList<MatrixLine>)_board.Columns : _board.Rows)
                 {
-                    var row = rows ? line : other;
-                    var column = rows ? other : line;
+                    var row = rows ? one : other;
+                    var column = rows ? other : one;
 
                     if (_board.IsSelfPair(row, column)) continue;
 
@@ -4270,6 +4398,102 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>Everything that can be done to one row or column.</summary>
+            /// <summary>
+            /// What can be done to several picked lines at once.
+            ///
+            /// <b>Only the acts that mean the same thing done to each.</b> A name, a number and a
+            /// code are one line's own, so they are not here: offering "rename" for eight rows is
+            /// offering to give eight disciplines the same name. What is here is filing, filling
+            /// and removing - the three that were eight passes through the same dialogue.
+            /// </summary>
+            /// <param name="many">The picked lines, in the order they sit on their axis.</param>
+            /// <param name="rows">True when they are rows.</param>
+            private List<Parts.Entry> ManyMenu(IReadOnlyList<MatrixLine> many, bool rows)
+            {
+                var what = rows ? "row" : "column";
+                var folders = _board.Folders(rows);
+
+                var items = new List<Parts.Entry>
+                {
+                    Parts.Entry.Heading(Ui.Count(many.Count, what) + " picked"),
+                };
+
+                if (_brush != null)
+                    items.Add(Parts.Entry.Saying(
+                        Erasing ? "Clear their undecided cells" : "Fill with " + Quoted(_brush.Symbol),
+                        Glyphs.Sweep,
+                        Erasing
+                            ? "Takes the decisions off every cell on them"
+                            : "Puts it in every cell on them that is still undecided",
+                        () =>
+                        {
+                            // Through the same gutter act, so filling eight rows from the menu and
+                            // filling them from the mark beside them are one thing.
+                            var first = many[0];
+
+                            Sweep(first, rows);
+                        }));
+
+                items.Add(Parts.Entry.Rule());
+                items.Add(Parts.Entry.Heading("Folder"));
+
+                foreach (var folder in folders)
+                {
+                    var into = folder;
+
+                    items.Add(Parts.Entry.Act("Put in " + into, Glyphs.Layers, () =>
+                    {
+                        Remember(what: "filing " + Ui.Count(many.Count, what));
+
+                        foreach (var one in many) _board.File(one, into);
+
+                        Redraw();
+                    }));
+                }
+
+                items.Add(Parts.Entry.Act("Put in a new folder", Glyphs.Add,
+                    () => Parts.Ask(_grid, "What is the folder called?", string.Empty, "File",
+                        typed =>
+                        {
+                            if (string.IsNullOrWhiteSpace(typed)) return;
+
+                            Remember(what: "filing " + Ui.Count(many.Count, what));
+
+                            foreach (var one in many) _board.File(one, typed.Trim());
+
+                            Redraw();
+                        })));
+
+                if (many.Any(l => l.Folder.Length > 0))
+                    items.Add(Parts.Entry.Act("Take out of their folders", Glyphs.Up, () =>
+                    {
+                        Remember(what: "taking " + Ui.Count(many.Count, what) + " out of a folder");
+
+                        foreach (var one in many) _board.File(one, null);
+
+                        Redraw();
+                    }));
+
+                items.Add(Parts.Entry.Rule());
+
+                items.Add(Parts.Entry.Danger("Remove " + Ui.Count(many.Count, "discipline"),
+                    Glyphs.Bin,
+                    () => Parts.Sure(_grid,
+                        "Remove " + Ui.Count(many.Count, "discipline")
+                        + " and every decision on them, on both axes?",
+                        "Remove", () =>
+                        {
+                            Remember(what: "removing " + Ui.Count(many.Count, "discipline"));
+
+                            foreach (var one in many) _board.RemovePair(one);
+
+                            Pick(null, rows);
+                            Redraw();
+                        })));
+
+                return items;
+            }
+
             private List<Parts.Entry> LineMenu(MatrixLine line, int at, bool rows)
             {
                 var lines = rows ? _board.Rows : _board.Columns;
@@ -4284,6 +4508,16 @@ namespace CamelWorks.UI.Views
                 // points at, then where it is filed, then where it sits, then the one act that
                 // destroys something - last, behind a rule, in the danger colour. A reader who
                 // has opened one of these menus knows where to look on the next.
+                // <b>A menu opened on one of several picked lines is about all of them.</b>
+                // Right-clicking inside a selection and getting a menu about the one line under
+                // the pointer is the fault reported on the cells, in the one other place this
+                // screen lets you pick more than one thing.
+                var many = Chosen(line, rows) && _chosen.Count > 1
+                    ? _chosen.Where(l => !Hidden(l)).ToList()
+                    : new List<MatrixLine>();
+
+                if (many.Count > 1) return ManyMenu(many, rows);
+
                 var items = new List<Parts.Entry>
                 {
                     Parts.Entry.Heading(line.Titled),
@@ -4614,6 +4848,21 @@ namespace CamelWorks.UI.Views
 
                     Parts.Entry.Rule(),
                     Parts.Entry.Heading("Folder"),
+
+                    Parts.Entry.Act("Colour", Glyphs.Palette, () =>
+                    {
+                        var held = new Parts.Box { Colour = _board.ColourOf(folder) };
+
+                        Parts.Pick(_grid, "What colour is " + folder + "?", held,
+                            MatrixLook.Colours(held.Colour, colour => held.Colour = colour),
+                            colour =>
+                            {
+                                Remember(what: "colouring a folder");
+
+                                _board.Paint(folder, colour);
+                                Redraw();
+                            });
+                    }),
 
                     Parts.Entry.Act("Rename", Glyphs.Pencil,
                         () => Parts.Ask(_grid, "What is this folder called?", folder, "Rename",
@@ -5241,6 +5490,19 @@ namespace CamelWorks.UI.Views
                                  + " to " + Where(_board.Rows[Math.Max(_atRow, _markRow)],
                                                   _board.Columns[Math.Max(_atColumn, _markColumn)])
                                  + " — type a symbol for all of it"));
+
+                // <b>A set of picked lines is a mode, and modes are said here.</b> Eight rows
+                // lit down the side is visible enough while they are on the screen and invisible
+                // the moment they are scrolled past - and the next thing pressed acts on all
+                // eight. What it is, and the way out of it, in the row that carries the rest of
+                // the state.
+                if (_chosen.Count > 1)
+                {
+                    Say(Ui.Small(Ui.Count(_chosen.Count, _chosenRows ? "row" : "column")
+                                 + " picked"));
+
+                    Say(Ui.Quiet("Pick one", () => Pick(_picked, _chosenRows)), 8);
+                }
 
                 // The tally and whether it is saved are both state, and both belong with the
                 // rest of the state - on the left, where a sentence is read from.

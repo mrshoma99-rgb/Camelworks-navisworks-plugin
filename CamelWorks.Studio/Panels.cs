@@ -134,6 +134,12 @@ namespace CamelWorks.Studio
                 if (folder.Length > 0) board.File(row, folder);
             }
 
+            // Coloured, because a folder that can carry a colour and is never drawn with one is
+            // a feature no picture has ever checked. Two of the four, so the render shows both a
+            // folder that has been given one and folders that have not.
+            board.Paint("Architecture", "#B3E5FC");
+            board.Paint("Wet services", "#C8E6C9");
+
             // Enough decided cells that the sheet is read as a pattern rather than as a grid of
             // blanks, and a diagonal that has to be drawn as one.
             var marks = new[] { "A", "B", "C", "D" };

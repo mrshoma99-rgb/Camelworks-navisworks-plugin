@@ -1249,6 +1249,106 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
+        /// Choose a colour for something, or take the one it has away.
+        ///
+        /// The same swatches the legend and the style page offer, in a window, for the places
+        /// that reach a colour through a menu rather than through a panel that is already open.
+        /// </summary>
+        /// <param name="near">The element this belongs to; the window is owned by the host.</param>
+        /// <param name="prompt">What is being coloured.</param>
+        /// <param name="held">
+        /// Where the swatch strip is putting the colour as it is pressed. The caller builds the
+        /// strip against this, so what the window hands back is whatever was last chosen in it.
+        /// </param>
+        /// <param name="swatches">The swatch strip, built by the caller against <paramref name="held"/>.</param>
+        /// <param name="onDone">Called with the colour chosen, or empty when it was cleared.</param>
+        public static void Pick(FrameworkElement near, string prompt, Box held,
+                                UIElement swatches, Action<string> onDone)
+        {
+            _ = near;
+
+            var label = new TextBlock
+            {
+                Text = prompt ?? string.Empty,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10),
+            };
+
+            var window = new Window
+            {
+                Title = "CamelWorks",
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ShowInTaskbar = false,
+            };
+
+            string? said = null;
+
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 14, 0, 0),
+            };
+
+            // <b>No colour is a choice, not an absence.</b> A folder given a colour by mistake
+            // needs a way back to the skin's own ground, and hunting for the swatch that means
+            // "none" is not it.
+            var clear = Ui.Quiet("No colour", () =>
+            {
+                said = string.Empty;
+                window.Close();
+            });
+
+            clear.Margin = new Thickness(0, 0, 8, 0);
+
+            var press = Ui.Primary("Use it", () =>
+            {
+                said = (held?.Colour ?? string.Empty).Trim();
+                window.Close();
+            });
+
+            press.MinWidth = 92;
+
+            buttons.Children.Add(clear);
+            buttons.Children.Add(press);
+
+            var body = new StackPanel { Margin = new Thickness(18, 16, 18, 16), MaxWidth = 360 };
+
+            body.Children.Add(label.Wearing("Body"));
+            body.Children.Add(swatches);
+            body.Children.Add(buttons);
+
+            var ground = new Border { Child = body };
+
+            ground.Tint(Border.BackgroundProperty, "Bg");
+
+            window.Content = ground;
+
+            Skin.Apply(window);
+            Shell.HostWindow.Own(window);
+
+            window.KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Escape) window.Close();
+            };
+
+            window.ShowDialog();
+
+            if (said != null) onDone?.Invoke(said);
+        }
+
+        /// <summary>A colour on its way from a swatch strip to the window that closes over it.</summary>
+        public sealed class Box
+        {
+            /// <summary>The colour chosen so far.</summary>
+            public string Colour { get; set; } = string.Empty;
+        }
+
+        /// <summary>
         /// Say what is about to happen and let it happen, or not.
         ///
         /// For an act that reaches the document in bulk and cannot be undone by pressing the
