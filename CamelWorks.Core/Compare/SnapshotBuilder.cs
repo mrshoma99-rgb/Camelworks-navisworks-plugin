@@ -34,14 +34,13 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Takes a snapshot of a live document.
     ///
-    /// <b>In Core, not in the host adapter.</b> Everything a snapshot needs — identity, name,
+    /// In Core rather than in the host adapter. Everything a snapshot needs — identity, name,
     /// category, type, bounding box, properties — is on the seam, so the walk that produces a
     /// baseline is testable on a Linux CI job against a fake document. Only the optional mesh
-    /// signature needs the host, and that is the one thing that lives on the far side.
+    /// signature needs the host, and that lives on the far side.
     ///
-    /// <b>Stoppable, and reports how far it got.</b> A federation is a few hundred thousand
-    /// elements and this reads every property of every one of them. A modal progress dialog that
-    /// cannot be cancelled is how a plug-in earns the reputation of hanging Navisworks.
+    /// Stoppable, and reports how far it got. A federation is a few hundred thousand elements and
+    /// this reads every property of every one of them.
     /// </summary>
     public static class SnapshotBuilder
     {

@@ -99,16 +99,15 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// Where baselines are kept, and how they are found again.
     ///
-    /// Beside the document, in the same hidden folder as the project sidecar, so that a job handed
-    /// over on a memory stick arrives with its history rather than leaving it on somebody's C
-    /// drive. A baseline is useless to the person who did not take it, and that is exactly the
-    /// person who ends up asking what changed.
+    /// Beside the document, in the same hidden folder as the project sidecar, so a job handed over
+    /// arrives with its history rather than leaving it on one machine. A baseline is useless to the
+    /// person who did not take it, and that is the person who ends up asking what changed.
     ///
-    /// <b>A small index, so the picker does not read the files.</b> A snapshot of a real federation
-    /// is tens of megabytes; opening six of them to fill in a dropdown is several seconds of
-    /// nothing happening every time somebody opens the tab. The index holds the six lines the
-    /// picker needs, and <see cref="Rebuild"/> puts it back from the files themselves when it is
-    /// missing, deleted or out of step — so it is a cache and never the truth.
+    /// A small index, so the picker does not read the files. A snapshot of a real federation is tens
+    /// of megabytes, and opening six of them to fill a dropdown is several seconds every time the
+    /// tab is opened. The index holds the lines the picker needs, and <see cref="Rebuild"/> restores
+    /// it from the files themselves when it is missing, deleted or out of step, so it is a cache and
+    /// never the source of truth.
     /// </summary>
     public sealed class SnapshotStore
     {

@@ -41,20 +41,20 @@ namespace CamelWorks.Core.Findings
     /// <summary>
     /// Every finding this project holds, whatever produced it.
     ///
-    /// <b>One record for every check.</b> Clash results, clearance breaches, IDS failures, model
-    /// health faults and revision differences were each heading for their own store, their own
-    /// status field and their own export path. They converge here, which is what lets the board,
-    /// the report, the BCF exchange and the issue links each be written once.
+    /// One record for every check. Clash results, clearance breaches, IDS failures, model health
+    /// faults and revision differences were each heading for their own store, status field and
+    /// export path. They converge here, so the board, the report, the BCF exchange and the issue
+    /// links are each written once.
     ///
-    /// <b>A run is an observation, not an authority.</b> <see cref="Observe"/> takes what a check
-    /// just found and reconciles it with what is held: a finding already known keeps the decision
-    /// somebody made about it and takes the run's fresh facts; a finding the run no longer reports
-    /// is marked absent rather than deleted, because that is the record of it having been fixed
-    /// and an issue may point at it. This is what keeps the register from disagreeing with the
-    /// model without letting the model overwrite decisions it cannot itself hold.
+    /// A run is an observation rather than an authority. <see cref="Observe"/> takes what a check
+    /// found and reconciles it with what is held: a finding already known keeps the decision
+    /// recorded about it and takes the run's fresh facts; a finding the run no longer reports is
+    /// marked absent rather than deleted, because that is the record of the fix and an issue may
+    /// point at it. This keeps the register in step with the model without letting the model
+    /// overwrite decisions it cannot itself hold.
     ///
-    /// <b>Scoped by source.</b> An observation names which source it speaks for, so a clash run
-    /// never marks the IDS findings absent.
+    /// Scoped by source: an observation names which source it speaks for, so a clash run never marks
+    /// the IDS findings absent.
     /// </summary>
     public sealed class FindingRegister
     {

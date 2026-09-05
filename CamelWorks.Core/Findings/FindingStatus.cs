@@ -30,18 +30,16 @@ namespace CamelWorks.Core.Findings
     /// <summary>
     /// How two concurrent status edits reconcile.
     ///
-    /// <b>Promote-only, and only for merges.</b> When two people edited the same finding while
-    /// offline — one on the board, one returning a BCF file — the merge takes the higher status.
-    /// The reasoning is asymmetric on purpose: losing a "Resolved" costs a coordinator a second
-    /// look at something already fixed, which is a wasted minute. Silently overwriting a "Resolved"
-    /// with a stale "Active" is the same wasted minute; but silently overwriting an "Active" with a
-    /// stale "Resolved" hides an unresolved conflict behind a green row, and nobody looks again.
-    /// Only one of those two errors ends up in the building.
+    /// Promote-only, and only for merges. When two people edited the same finding while offline —
+    /// one on the board, one returning a BCF file — the merge takes the higher status. The reasoning
+    /// is asymmetric: overwriting a "Resolved" with a stale "Active" costs a second look at
+    /// something already fixed, while overwriting an "Active" with a stale "Resolved" hides an
+    /// unresolved conflict behind a green row. Only one of those two errors reaches the building.
     ///
-    /// <b>This is not a rule about what a user may do.</b> A coordinator deliberately re-opening an
-    /// Approved finding is a direct write, not a merge, and is always allowed — that is what the
-    /// board's Regressed state exists to show. Promote-only governs machine reconciliation of two
-    /// edits neither author knew about.
+    /// This is not a rule about what a user may do. A coordinator deliberately re-opening an
+    /// Approved finding is a direct write rather than a merge and is always allowed, which is what
+    /// the board's Regressed state shows. Promote-only governs machine reconciliation of two edits
+    /// neither author knew about.
     /// </summary>
     public static class FindingStatusLattice
     {

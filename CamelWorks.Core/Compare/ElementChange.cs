@@ -9,10 +9,9 @@ namespace CamelWorks.Core.Compare
     /// <summary>
     /// What happened to one element, as a set of facts rather than one label.
     ///
-    /// <b>Flags, because an element does more than one thing at a time.</b> A duct that was moved
-    /// up and resized and had its system name corrected is all three, and a comparison that has to
-    /// pick one calls it "modified" and throws the other two away — which is exactly the point at
-    /// which somebody stops trusting the answer and opens both models by hand.
+    /// Flags, because an element does more than one thing at a time. A duct that was moved up,
+    /// resized and had its system name corrected is all three, and a comparison that has to pick one
+    /// calls it "modified" and discards the other two.
     /// </summary>
     [Flags]
     public enum ChangeKind
