@@ -97,6 +97,9 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private MatrixSymbol? _brush;
 
+            /// <summary>Which symbol the cursor is currently carrying, so it is drawn once.</summary>
+            private string _carrying = "\u0000";
+
             /// <summary>The strip over the grid: what is armed, where the cursor is, undo.</summary>
             /// <summary>
             /// The strip over the grid, which wraps rather than losing its end.
@@ -1520,6 +1523,7 @@ namespace CamelWorks.UI.Views
                 RedrawPalette();
                 RedrawStrip();
                 RedrawInspector();
+                Pointing();
                 Recount();
             }
 
@@ -2944,10 +2948,14 @@ namespace CamelWorks.UI.Views
             /// <summary>One cell: the symbol in it, and every way of changing it.</summary>
             private Border Cell(MatrixLine row, MatrixLine column, int down, int across)
             {
+                // <b>No cursor of its own.</b> What the pointer looks like over a cell depends
+                // on what is armed, which changes without the cells being rebuilt - so it is said
+                // once, on the sheet they all sit in, and forced from there. Said here it would
+                // be a thousand assignments that all have to be revisited on every press of the
+                // palette, and were not.
                 var cell = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                 };
 
@@ -3205,7 +3213,60 @@ namespace CamelWorks.UI.Views
                 RedrawStrip();
                 RedrawPalette();
                 RedrawInspector();
+                Pointing();
                 Editable();
+            }
+
+            /// <summary>
+            /// Put what is armed on the cursor, so the pointer says what a click will do.
+            ///
+            /// <b>The strip said it, forty rows away from the hand.</b> A click in the grid is
+            /// either "select this cell" or "paint it with C", and which of the two it is was
+            /// written along the top of the window - out of the eye's way at the moment it
+            /// matters, and read once a session if at all. The rest of the time an armed brush
+            /// was discovered by painting a cell nobody meant to paint.
+            ///
+            /// Now the pointer carries the symbol. It says both things at once and neither has to
+            /// be looked up: that something is armed, and which one - so arming C and believing
+            /// you armed B is a thing seen before the first cell rather than after the thirtieth.
+            ///
+            /// <b>Said once, on the sheet.</b> The cells do not carry a cursor of their own, and
+            /// this forces the sheet's over all of them - because arming a symbol does not rebuild
+            /// the cells, and a cursor written into each of a thousand of them would go on saying
+            /// what was armed the last time they were drawn.
+            /// </summary>
+            private void Pointing()
+            {
+                var wash = Washed(_brush == null ? null : _legend.Meaning(_brush.Symbol) ?? _brush);
+
+                // Drawing a bitmap on every press of the palette is work nobody asked for, and
+                // the answer only changes when the symbol or its colour does.
+                var carrying = _brush == null
+                    ? string.Empty
+                    : _brush.Symbol + "\u0001" + (wash as System.Windows.Media.SolidColorBrush)?.Color.ToString(
+                          CultureInfo.InvariantCulture);
+
+                if (string.Equals(carrying, _carrying, StringComparison.Ordinal)) return;
+
+                _carrying = carrying;
+
+                // Forced, so a cell cannot answer for itself - and set even when nothing is
+                // armed, because the hand over a cell is what says the cell can be pressed.
+                _sheet.ForceCursor = true;
+
+                if (_brush == null)
+                {
+                    _sheet.Cursor = Cursors.Hand;
+                    return;
+                }
+
+                // The eraser takes the ground the palette gives it rather than a symbol's wash:
+                // it is not one of them, and colouring it as though it were says it lays
+                // something down.
+                var ground = Erasing ? Skin.Of("Nav") : wash;
+
+                _sheet.Cursor = Pointer.Carrying(_brush.Symbol, ground, Ui.InkOn(ground))
+                                ?? (Erasing ? Cursors.Cross : Cursors.Pen);
             }
 
             /// <summary>Whether there is a symbol for the pencil to change.</summary>
