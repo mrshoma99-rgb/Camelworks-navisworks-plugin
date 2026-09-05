@@ -38,6 +38,16 @@ namespace CamelWorks.Core.Clash
         /// <summary>The fields, in the order they are offered and drawn.</summary>
         public IReadOnlyList<MatrixField> Fields => _fields;
 
+        /// <summary>
+        /// Bumped whenever the list of fields changes.
+        ///
+        /// Anything that compiles against the scheme — a pattern, whose known tokens are this list
+        /// — has to notice a field being added or removed. A counter is what lets a cache check
+        /// that cheaply on every read rather than being told to clear itself by every caller that
+        /// might have changed something.
+        /// </summary>
+        public int Revision { get; private set; }
+
         /// <summary>The field with this key, or null.</summary>
         /// <param name="key">The key.</param>
         public MatrixField? Field(string? key) =>
@@ -66,6 +76,7 @@ namespace CamelWorks.Core.Clash
             var made = new MatrixField(key, title);
 
             _fields.Add(made);
+            Revision++;
 
             return made;
         }
@@ -86,6 +97,7 @@ namespace CamelWorks.Core.Clash
             if (found == null || found.IsBuiltIn) return false;
 
             _fields.Remove(found);
+            Revision++;
 
             foreach (var line in lines ?? Array.Empty<MatrixLine>())
             {
@@ -112,6 +124,7 @@ namespace CamelWorks.Core.Clash
 
             _fields.RemoveAt(at);
             _fields.Insert(wanted, found);
+            Revision++;
 
             return true;
         }

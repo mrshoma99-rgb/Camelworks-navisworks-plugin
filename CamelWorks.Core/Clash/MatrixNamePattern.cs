@@ -169,6 +169,61 @@ namespace CamelWorks.Core.Clash
             return new MatrixNameMatch(held);
         }
 
+        /// <summary>
+        /// The name this pattern produces from a set of token values.
+        ///
+        /// The inverse of <see cref="Match"/>, over the same string. Everything the pattern did not
+        /// name is literal text and comes back exactly as it was written, so changing one value in
+        /// a name changes that value and nothing else: the separators, the spacing and any job code
+        /// the pattern carries are all preserved because they were never taken apart.
+        ///
+        /// A token with no value is written as empty rather than left as a brace, since the caller
+        /// is producing a name rather than an editable pattern.
+        /// </summary>
+        /// <param name="values">What each token should say, without braces.</param>
+        public string Rebuild(IReadOnlyDictionary<string, string>? values)
+        {
+            var held = new StringBuilder();
+            var at = 0;
+
+            while (at < Pattern.Length)
+            {
+                var open = Pattern.IndexOf('{', at);
+
+                if (open < 0)
+                {
+                    held.Append(Pattern, at, Pattern.Length - at);
+                    break;
+                }
+
+                held.Append(Pattern, at, open - at);
+
+                var shut = Pattern.IndexOf('}', open);
+
+                if (shut < 0)
+                {
+                    held.Append(Pattern, open, Pattern.Length - open);
+                    break;
+                }
+
+                var named = Pattern.Substring(open + 1, shut - open - 1).Trim();
+
+                held.Append(values != null && values.TryGetValue(named, out var said)
+                    ? said ?? string.Empty
+                    : string.Empty);
+
+                at = shut + 1;
+            }
+
+            // The same tidying Fill does, so a name written here and a name written from a matrix
+            // cell cannot differ by a space where a token came back empty.
+            var made = held.ToString();
+
+            while (made.Contains("  ")) made = made.Replace("  ", " ");
+
+            return made.Trim().Trim('-', '|', '·', ' ');
+        }
+
         /// <summary>How many of the given names this pattern matches.</summary>
         /// <param name="names">The names.</param>
         public int Fits(IEnumerable<string?>? names) =>
