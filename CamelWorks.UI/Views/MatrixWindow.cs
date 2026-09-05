@@ -782,7 +782,6 @@ namespace CamelWorks.UI.Views
 
                 _band.Child = Ui.Loose(_across);
                 _band.ClipToBounds = true;
-                _band.Height = FrameHigh;
                 _band.HorizontalAlignment = HorizontalAlignment.Stretch;
 
                 _band.Tint(Border.BackgroundProperty, "Bg");
@@ -797,7 +796,6 @@ namespace CamelWorks.UI.Views
                 _side.Child = Ui.Loose(_down);
                 _side.ClipToBounds = true;
                 _side.Tint(Border.BackgroundProperty, "Bg");
-                _side.Width = FrameWide;
                 _side.VerticalAlignment = VerticalAlignment.Stretch;
 
                 Grid.SetRow(_side, 1);
@@ -1009,19 +1007,64 @@ namespace CamelWorks.UI.Views
             private double CodeWide => Widest(_board.Rows, 10, true, code: true) + 18;
 
             /// <summary>
-            /// How wide the row headers are: the name, plus a gutter for whatever is in use.
+            /// The shell a row header is built in: its edge, and the gutters it lays out across.
+            ///
+            /// <b>One declaration, built and measured.</b> A header used to be described twice -
+            /// once here, where it is put together, and once again in a formula that worked out
+            /// how wide the band holding it should be. Two descriptions of one box is a bug
+            /// waiting for somebody to add a gutter to one of them, and a compiler cannot see it,
+            /// because both are perfectly good arithmetic. So the band asks the header instead:
+            /// this is the only place that says what a row header is made of, and
+            /// <see cref="HeaderWide"/> measures one to find out how wide that came to.
+            ///
+            /// The number gutter and the code gutter are each as wide as their longest entry -
+            /// thirty-six pixels was a guess and it cut "ARC" down to "A..." - and a gutter
+            /// nothing is using is not drawn at all, so a matrix without numbers or codes is as
+            /// narrow as it ever was.
             ///
             /// <b>The number used to be glued to the front of the name.</b> "04 ARC_Walls" is
             /// one string to a reader and two facts to the job, and run down twenty rows the
             /// names started at four different places because the numbers were not all the same
             /// width. Its own column lines them up and gives the name back its own left edge -
-            /// and the code, which the test names are built out of, was not on the screen at
-            /// all. A gutter nothing is using is not drawn, so a matrix without numbers or codes
-            /// is as narrow as it was.
+            /// and the code, which the test names are built out of, was not on the screen at all.
             /// </summary>
-            private double HeaderWide =>
-                NameWide + (Numbered(_board.Rows) ? NumberWide : 0)
-                         + (Coded(_board.Rows) ? CodeWide : 0);
+            private Border RowShell()
+            {
+                var words = new Grid();
+
+                if (Numbered(_board.Rows))
+                    words.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(NumberWide),
+                    });
+
+                if (Coded(_board.Rows))
+                    words.ColumnDefinitions.Add(new ColumnDefinition
+                    {
+                        Width = new GridLength(CodeWide),
+                    });
+
+                words.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(NameWide),
+                });
+
+                return new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    Padding = new Thickness(0),
+                    Child = words,
+                };
+            }
+
+            /// <summary>
+            /// How wide the row headers turned out to be, asked of one rather than worked out.
+            ///
+            /// Built empty and measured: no name is put in it, so nothing here depends on a font
+            /// resolving or on which row happens to be first - only on the shell's own edge,
+            /// padding and gutters, which is exactly what the band has to be wide enough to hold.
+            /// </summary>
+            private double HeaderWide => Asked(RowShell()).Width;
 
             /// <summary>
             /// Whether the numbers are worth a column of their own.
@@ -1098,26 +1141,116 @@ namespace CamelWorks.UI.Views
             /// characters cost nine characters. It is floored so a one-word matrix still reads
             /// as a header, and capped so one absurd name cannot take a third of the window.
             /// </summary>
-            private double HeaderHigh
+            private double NameRun
             {
                 get
                 {
-                    // Upright, a name costs one line however long it is, and the band gives a
-                    // small matrix a hundred and thirty pixels of height back.
-                    // The header's own padding is part of what it costs. Left out of this sum,
-                    // the band was ten pixels smaller than the thing standing in it and the
-                    // words at the end were cut off - upright and turned alike.
-                    var padding = HeadPadTop + HeadPadFoot;
-
-                    if (Upright) return padding + NameTall + Above;
+                    // Upright, a name costs one line however long it is.
+                    if (Upright) return NameTall;
 
                     var longest = 0.0;
 
                     foreach (var line in _board.Columns)
                         longest = Math.Max(longest, Measured(line.Name));
 
-                    return Math.Max(64, Math.Min(200, longest + 14)) + Above + padding;
+                    return Math.Max(64, Math.Min(200, longest + 14));
                 }
+            }
+
+            /// <summary>
+            /// The shell a column header is built in: its padding, and the rows it stacks.
+            ///
+            /// <b>One declaration, built and measured.</b> This box used to be described twice.
+            /// Here, where it is put together with six pixels of padding over its words and four
+            /// under them - and again in a formula that worked out how tall the band holding it
+            /// should be. The formula did not know the padding existed, so the band came out ten
+            /// pixels shorter than the thing standing in it and every name in every column was
+            /// cut off by exactly that. Nothing in a compiler can see two descriptions of one box
+            /// disagree: both are good arithmetic, and only a picture shows which is right.
+            ///
+            /// So there is one description. The header is built from this shell and the band asks
+            /// <see cref="HeaderHigh"/>, which measures the same shell. A row added here is a
+            /// taller band with nothing else to remember.
+            /// </summary>
+            private Border ColumnShell()
+            {
+                var stacked = new Grid();
+
+                if (Numbered(_board.Columns))
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(NumberTall),
+                    });
+
+                if (Coded(_board.Columns))
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(CodeTall),
+                    });
+
+                if (Unbacked(_board.Columns))
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(WarnTall),
+                    });
+
+                // <b>The name's own row, as long as the name is allowed to run.</b> Star would
+                // have been the obvious thing and it cannot work here: a turned name is a text
+                // block rotated for the drawing only, so what it asks the layout for is one line
+                // tall and as wide as the words - the height it actually occupies on the screen
+                // is a thing only this code knows. It is stated once, here, and measured
+                // everywhere else.
+                stacked.RowDefinitions.Add(new RowDefinition
+                {
+                    Height = new GridLength(NameRun),
+                });
+
+                // The header's own padding, over the words and under them. It lives here and
+                // nowhere else: it used to be a pair of constants the whole class could read,
+                // and the formula that worked out how tall the band should be simply did not
+                // read them - so the band was ten pixels shorter than the header standing in it
+                // and every name in every column was cut off by exactly that. Whatever is put
+                // here is measured, because the only thing that reports the height is the thing
+                // that draws it.
+                const double top = 6;
+                const double foot = 4;
+
+                return new Border
+                {
+                    BorderThickness = new Thickness(0, 0, 1, 1),
+                    Padding = new Thickness(2, top, 2, foot),
+                    Child = stacked,
+                };
+            }
+
+            /// <summary>
+            /// How tall the column band turned out to be, asked of a header rather than guessed.
+            ///
+            /// <b>A hundred and thirty pixels was a guess, and a guess is white space.</b> The
+            /// names are turned and they end at the grid, so a band taller than the longest of
+            /// them is empty across the whole width of the screen - forty or sixty pixels of
+            /// nothing over every column, every time, on a matrix whose names happen to be short.
+            /// Measured, the band is as tall as it has to be and no taller: nine characters cost
+            /// nine characters. It is floored so a one-word matrix still reads as a header, and
+            /// capped so one absurd name cannot take a third of the window - both in
+            /// <see cref="NameRun"/>, which is the only number in it.
+            /// </summary>
+            private double HeaderHigh => Asked(ColumnShell()).Height;
+
+            /// <summary>
+            /// What a built part asks the layout for, measured against all the room in the world.
+            ///
+            /// The whole point of building the thing and asking it. A size worked out a second
+            /// time, in a formula beside the one that builds it, is a size that can disagree with
+            /// what is on the screen - and every way that has gone wrong here has gone wrong
+            /// silently, because two plausible sums compile exactly as well as one.
+            /// </summary>
+            /// <param name="part">The part, which need not be in a window.</param>
+            private static Size Asked(UIElement part)
+            {
+                part.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+                return part.DesiredSize;
             }
 
             /// <summary>Whether every column name fits across its column without being turned.</summary>
@@ -1141,18 +1274,16 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            /// <summary>
-            /// How much of every column header is taken by the number, the code and the mark.
-            ///
-            /// <b>The same for every column, not each one's own.</b> Sized per line, a column
-            /// without a code got its fifteen pixels back and its name started fifteen pixels
-            /// higher than its neighbours' - which is precisely the ragged edge the turning was
-            /// meant to fix. The space is reserved for all of them or for none.
-            /// </summary>
-            private double Above =>
-                (Numbered(_board.Columns) ? NumberTall : 0)
-                + (Coded(_board.Columns) ? CodeTall : 0)
-                + (Unbacked(_board.Columns) ? WarnTall : 0);
+            // <b>What sits above a column's name is reserved for all of them or for none.</b>
+            // Sized per line, a column without a code got its fifteen pixels back and its name
+            // started fifteen pixels higher than its neighbours' - precisely the ragged edge the
+            // turning was meant to fix. So the rows are the same in every header, which is why
+            // ColumnShell adds them for the whole board rather than for one line.
+            //
+            // There used to be a property here that added those three up, and its only reader was
+            // a formula working out the band's height a second time. Both are gone: the shell
+            // declares the rows and the band measures the shell, so there is nothing left for a
+            // sum of them to disagree with.
 
             /// <summary>
             /// How far down from the top of a column header the number, the code and the mark
@@ -1237,25 +1368,12 @@ namespace CamelWorks.UI.Views
                 return Math.Ceiling(Ruler.DesiredSize.Height);
             }
 
-            /// <summary>The column header's own padding, over the words and under them.</summary>
-            /// <remarks>
-            /// Named rather than written into the Thickness alone, because the band's height is
-            /// worked out from them and the two drifted apart: the header reserved ten pixels
-            /// for its own padding and the height that was supposed to cover it did not know
-            /// they existed. Every name in every column came out short by exactly this.
-            /// </remarks>
-            private const double HeadPadTop = 6;
-
-            private const double HeadPadFoot = 4;
-
             /// <summary>The gap between an upright name and the grid under it.</summary>
             private const double NameGap = 5;
 
             /// <summary>How much height one upright name needs, gap included.</summary>
             private static double NameTall => LineHigh() + NameGap;
 
-            /// <summary>How much of the band is left for the name once everything else has had its share.</summary>
-            private double NameRoom => HeaderHigh - Above - HeadPadTop - HeadPadFoot;
 
             /// <summary>Whether any of these lines points at nothing.</summary>
             /// <param name="lines">The rows or the columns.</param>
@@ -1301,22 +1419,18 @@ namespace CamelWorks.UI.Views
             private double FolderHigh =>
                 _board.Folders(rows: false).Count == 0 ? 0 : LineHigh(10, bold: true) + 8;
 
-            /// <summary>
-            /// How wide the frozen band down the side is, and how tall the one across the top.
-            ///
-            /// <b>Four places worked this out and two of them learned about the folder band.</b>
-            /// The corner, the top band and the side band are one frame: they have to agree to
-            /// the pixel or the headers stop sitting over the cells they name. Adding a strip for
-            /// the folders taught the two that redraw and left the two that are built once with
-            /// the old sum, so the frame disagreed with itself by exactly the band - and a row
-            /// band twenty-four pixels short of its own contents clips the names off the rows.
-            ///
-            /// One sum, named, used by all four. A part added to the frame is added here and
-            /// nothing else has to be found and told.
-            /// </summary>
-            private double FrameWide => FolderWide + IndexWide + HeaderWide;
-
-            private double FrameHigh => FolderHigh + IndexHigh + HeaderHigh;
+            // <b>How big the frozen frame is, is nobody's arithmetic any more.</b> The corner,
+            // the band across the top and the band down the side have to agree to the pixel or
+            // the headers stop sitting over the cells they name - and four places used to work
+            // that sum out. Adding a strip for the folders taught the two that redraw and left
+            // the two built once holding the old sum, so the frame disagreed with itself by
+            // exactly the band: the row names clipped off the side, the turned column names
+            // sliced, the corner a third of its size and nothing lining up with anything.
+            //
+            // There is no sum to get wrong now. The frame is a Grid whose first row and first
+            // column are auto, so it is as tall as the band across the top and as wide as the
+            // band down the side, worked out by the layout from what those bands actually
+            // contain. A part added to either band is a bigger frame with nothing to be told.
 
             /// <summary>The folders shut, by name. Both axes at once, because a folder is one thing.</summary>
             private readonly HashSet<string> _shut =
@@ -1425,10 +1539,6 @@ namespace CamelWorks.UI.Views
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(IndexHigh) });
                 _across.RowDefinitions.Add(new RowDefinition { Height = new GridLength(HeaderHigh) });
 
-                // The corner and the band it heads are as tall as the headers turned out to be.
-                _corner.Height = FrameHigh;
-                _band.Height = FrameHigh;
-
                 for (var c = 0; c <= _board.Columns.Count; c++)
                     _across.ColumnDefinitions.Add(new ColumnDefinition
                     {
@@ -1487,10 +1597,6 @@ namespace CamelWorks.UI.Views
 
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(IndexWide) });
                 _down.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(HeaderWide) });
-
-                // The corner and the band it heads are as wide as the headers turned out to be.
-                _corner.Width = FrameWide;
-                _side.Width = FrameWide;
 
                 for (var r = 0; r <= _board.Rows.Count; r++)
                     _down.RowDefinitions.Add(new RowDefinition
@@ -1749,7 +1855,11 @@ namespace CamelWorks.UI.Views
                 }
                 else
                 {
-                    drawer.Child = Turned(says, Math.Max(24, HeaderHigh - Above - 12), 11,
+                    // As long as the names it stands beside, less the room its own mark takes.
+                    // Taken from the band's height instead, this had to know the padding and the
+                    // gutters above the names to get back to the same number - three facts to
+                    // keep in step with a header it is only standing next to.
+                    drawer.Child = Turned(says, Math.Max(24, NameRun - 12), 11,
                                           FontWeights.SemiBold, at: TextAlignment.Left)
                                    .Wearing("Body");
                 }
@@ -2183,8 +2293,15 @@ namespace CamelWorks.UI.Views
 
                 corner.BorderThickness = new Thickness(0, 0, 1, 1);
                 corner.Padding = new Thickness(8, 6, 8, 6);
-                corner.Width = FrameWide;
-                corner.Height = FrameHigh;
+
+                // <b>The corner follows; it does not decide.</b> It sits in the same auto row
+                // and auto column of the frame as the two bands, so whichever of the three asks
+                // for the most room settles the size of all three - and the one whose size
+                // matters is the headers, because they are the thing with contents that have to
+                // fit over the cells they name. Its contents go in a panel that asks for
+                // nothing, so a search box and a legend cannot quietly become the reason the
+                // band across the top is taller than any header in it.
+                corner.ClipToBounds = true;
 
                 corner.Tint(Border.BorderBrushProperty, "Bd");
                 corner.Tint(Border.BackgroundProperty, "Pane");
@@ -2239,7 +2356,11 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(axes, Dock.Bottom);
                 inside.Children.Add(axes);
 
-                corner.Child = inside;
+                var follows = new Follows();
+
+                follows.Children.Add(inside);
+
+                corner.Child = follows;
 
                 return Ui.Loose(corner);
             }
@@ -2354,41 +2475,23 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement RowHead(MatrixLine line, int at)
             {
-                var head = new Border
-                {
-                    BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(0),
-                    Cursor = Cursors.Hand,
-                    Background = System.Windows.Media.Brushes.Transparent,
-                    ToolTip = "Row " + Number(at) + ": " + line.Titled + " — "
-                              + line.Source.Kinded() + ", " + line.Source.Describe(),
-                };
+                // The shell says what a row header is: its edge, and the gutters across it. The
+                // band down the side measures the same shell, so the two cannot disagree.
+                var head = RowShell();
+
+                head.Cursor = Cursors.Hand;
+                head.Background = System.Windows.Media.Brushes.Transparent;
+                head.ToolTip = "Row " + Number(at) + ": " + line.Titled + " — "
+                               + line.Source.Kinded() + ", " + line.Source.Describe();
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
                 head.Tint(Border.BackgroundProperty,
                           ReferenceEquals(_picked, line) && _pickedRows ? "NavActive" : "Pane");
 
-                var words = new Grid();
+                var words = (Grid)head.Child;
 
                 var numbered = Numbered(_board.Rows);
                 var coded = Coded(_board.Rows);
-
-                if (numbered)
-                    words.ColumnDefinitions.Add(new ColumnDefinition
-                    {
-                        Width = new GridLength(NumberWide),
-                    });
-
-                if (coded)
-                    words.ColumnDefinitions.Add(new ColumnDefinition
-                    {
-                        Width = new GridLength(CodeWide),
-                    });
-
-                words.ColumnDefinitions.Add(new ColumnDefinition
-                {
-                    Width = new GridLength(1, GridUnitType.Star),
-                });
 
                 var column = 0;
 
@@ -2482,8 +2585,6 @@ namespace CamelWorks.UI.Views
                 Grid.SetColumn(named, column);
                 words.Children.Add(named);
 
-                head.Child = words;
-
                 _rowHeads[line] = head;
 
                 Draggable(head, line, rows: true);
@@ -2495,15 +2596,15 @@ namespace CamelWorks.UI.Views
             /// <summary>One column's header, which is a row header stood on its end.</summary>
             private UIElement ColumnHead(MatrixLine line, int at)
             {
-                var head = new Border
-                {
-                    BorderThickness = new Thickness(0, 0, 1, 1),
-                    Padding = new Thickness(2, HeadPadTop, 2, HeadPadFoot),
-                    Cursor = Cursors.Hand,
-                    Background = System.Windows.Media.Brushes.Transparent,
-                    ToolTip = "Column " + Letter(at) + ": " + line.Titled + " — "
-                              + line.Source.Kinded() + ", " + line.Source.Describe(),
-                };
+                // The shell says what a column header is: its padding, and the rows it stacks.
+                // The band across the top measures the same shell, so the two cannot disagree -
+                // which is the whole of why the names used to come out ten pixels short.
+                var head = ColumnShell();
+
+                head.Cursor = Cursors.Hand;
+                head.Background = System.Windows.Media.Brushes.Transparent;
+                head.ToolTip = "Column " + Letter(at) + ": " + line.Titled + " — "
+                               + line.Source.Kinded() + ", " + line.Source.Describe();
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
                 head.Tint(Border.BackgroundProperty,
@@ -2516,30 +2617,7 @@ namespace CamelWorks.UI.Views
                 // leftmost in the row is uppermost in the column, so both read number, code,
                 // name: across in the row, down in the column. Turned the other way they came
                 // out backwards against the rows they belong to, which is what this was.
-                var stacked = new Grid();
-
-                if (Numbered(_board.Columns))
-                    stacked.RowDefinitions.Add(new RowDefinition
-                    {
-                        Height = new GridLength(NumberTall),
-                    });
-
-                if (Coded(_board.Columns))
-                    stacked.RowDefinitions.Add(new RowDefinition
-                    {
-                        Height = new GridLength(CodeTall),
-                    });
-
-                if (Unbacked(_board.Columns))
-                    stacked.RowDefinitions.Add(new RowDefinition
-                    {
-                        Height = new GridLength(WarnTall),
-                    });
-
-                stacked.RowDefinitions.Add(new RowDefinition
-                {
-                    Height = new GridLength(1, GridUnitType.Star),
-                });
+                var stacked = (Grid)head.Child;
 
                 var row = 0;
 
@@ -2662,17 +2740,16 @@ namespace CamelWorks.UI.Views
                 }
                 else
                 {
-                    // The room left after the padding, not the room before it. Given the
-                    // larger number the turned name ran ten pixels past the end of its own
-                    // header and the tail was clipped by the border.
-                    named = Turned(line.Name, NameRoom, 11, FontWeights.SemiBold,
+                    // Exactly the run the shell reserved for it, because they are the same
+                    // property. Worked out separately - the band's height less the padding less
+                    // everything above - the name ran ten pixels past the end of its own header
+                    // and the tail was clipped by the border.
+                    named = Turned(line.Name, NameRun, 11, FontWeights.SemiBold,
                                    at: TextAlignment.Left).Wearing("Body");
                 }
 
                 Grid.SetRow(named, row);
                 stacked.Children.Add(named);
-
-                head.Child = stacked;
 
                 _columnHeads[line] = head;
 
