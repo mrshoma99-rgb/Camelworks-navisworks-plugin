@@ -43,9 +43,9 @@ namespace CamelWorks.UI.Shell
     /// <summary>
     /// One tool: what it is for, the single thing it does, and how it shows itself.
     ///
-    /// <b>Every tool has exactly one main action.</b> The field is not optional and not a
-    /// description - it is the caption on the one filled button that tool exists to offer. If a
-    /// tool cannot name it in three or four words, that is the tool telling you it is two tools.
+    /// Every tool has exactly one main action. The field is required and is not a description: it is
+    /// the caption on the one filled button that tool exists to offer. A tool that cannot name it in
+    /// three or four words is two tools.
     /// </summary>
     public sealed class Tool
     {
@@ -90,20 +90,20 @@ namespace CamelWorks.UI.Shell
     /// <summary>
     /// Every tool CamelWorks has, and what each one is for.
     ///
-    /// <b>This replaces a workspace switcher and a tab strip.</b> The old model was one dock pane
-    /// with seven workspaces and eighteen tabs, and twenty-one of the twenty-seven ribbon buttons
-    /// opened that same pane on a different tab - three of them on tabs another button already
-    /// opened, so pressing either landed you in the identical place. A ribbon of buttons that all
-    /// open the same panel is a menu wearing a ribbon's clothes, and the tab strip underneath it
-    /// meant every tool looked like the same form with different fields.
+    /// This replaces a workspace switcher and a tab strip. The earlier model was one dock pane with
+    /// seven workspaces and eighteen tabs, and twenty-one of the twenty-seven ribbon buttons opened
+    /// that same pane on a different tab — three of them on tabs another button already opened, so
+    /// either button landed in the same place. A ribbon of buttons that all open the same panel is a
+    /// menu, and the tab strip underneath it made every tool look like the same form with different
+    /// fields.
     ///
-    /// So: a tool opens its own surface, sized and shaped to what it does. Six of them are
-    /// panels, because their work genuinely happens beside the model for an hour at a time.
-    /// Everything else is a window or a wizard, opens, does its one job, and closes.
+    /// So a tool opens its own surface, sized and shaped to what it does. Six are panels, because
+    /// their work happens beside the model over a long period. Everything else is a window or a
+    /// wizard that opens, does its one job and closes.
     ///
-    /// <b>The test each entry has to pass.</b> Name the one action in three or four words. A tool
-    /// that cannot is two tools - which is how a window holding weight, dimensions, setting out,
-    /// paperwork and labels behind five collapsible sections came to be five entries here.
+    /// Each entry has to name its one action in three or four words. A tool that cannot is two
+    /// tools, which is how a window holding weight, dimensions, setting out, paperwork and labels
+    /// behind five collapsible sections became five entries here.
     /// </summary>
     public static class Tools
     {

@@ -11,19 +11,19 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The standing instructions that fill a matrix, in one window.
     ///
-    /// <b>A matrix is agreed in sentences and was only ever filled in cells.</b> "All services
-    /// against all architecture, clearance at twenty-five" is one line of a kick-off minute and
-    /// it governs sixty cells. Folders and a block fill wrote those sixty - once, on the
-    /// afternoon somebody did it. The discipline added the following week arrived blank, nothing
-    /// said it should not be, and the grid quietly stopped saying what the room agreed.
+    /// A matrix is agreed in sentences and was previously only filled in cells. "All services
+    /// against all architecture, clearance at twenty-five" is one line of a kick-off minute and it
+    /// governs sixty cells. Folders and a block fill wrote those sixty once; a discipline added the
+    /// following week arrived blank, nothing said it should not be, and the grid stopped matching
+    /// what was agreed.
     ///
-    /// Kept as rules, the sentence goes on being true: a line added later arrives already
-    /// checked the way its folder is checked, and a rule that is edited or dropped takes its own
-    /// cells with it rather than leaving them behind as decisions nobody made.
+    /// Kept as rules, the instruction stays in force: a line added later arrives checked the way its
+    /// folder is checked, and a rule that is edited or dropped takes its own cells with it rather
+    /// than leaving them as decisions nobody made.
     ///
-    /// <b>The list is read from the bottom.</b> People write the general instruction first and
-    /// the exception after it, so the later line is the more specific one and it wins. The order
-    /// is therefore something to change, which is what the arrows are for.
+    /// The list is read from the bottom. The general instruction is written first and the exception
+    /// after it, so the later line is the more specific one and wins. The order is therefore
+    /// editable, which is what the arrows are for.
     /// </summary>
     internal static class MatrixRules
     {
@@ -52,9 +52,9 @@ namespace CamelWorks.UI.Views
 
             var list = Ui.Stack();
 
-            // <b>Anything is a folder like any other, at the top of both lists.</b> "All services
-            // against everything" is as ordinary a sentence as a folder-to-folder pair, and
-            // writing it as one rule per folder is the same maintenance problem one layer up.
+            // "Anything" is a folder like any other, at the top of both lists. "All services
+            // against everything" is as ordinary as a folder-to-folder pair, and writing it as one
+            // rule per folder is the same maintenance problem one layer up.
             var folders = new List<string> { Anything };
 
             folders.AddRange(board.Folders(rows: true));

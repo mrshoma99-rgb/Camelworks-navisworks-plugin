@@ -9,20 +9,19 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// A long list of rows where only the rows on screen exist.
     ///
-    /// <b>Why this is here.</b> The clash board drew every result it was showing as a grid of a
-    /// couple of dozen elements, all of them, into a stack panel — on screen or three thousand
-    /// rows below it. A test with five thousand results is well over a hundred thousand WPF
-    /// elements, built from scratch every time anything moved: a keystroke in the search box, a
-    /// tick on one row, every mouse-move of a column drag. That is the freeze, and no amount of
-    /// making the row cheaper fixes a list that builds all of them.
+    /// The clash board previously drew every result it was showing as a grid of a couple of dozen
+    /// elements, on screen or three thousand rows below it. A test with five thousand results is
+    /// well over a hundred thousand WPF elements, rebuilt whenever anything moved: a keystroke in
+    /// the search box, a tick on one row, every mouse-move of a column drag. That is the freeze, and
+    /// making the row cheaper does not fix a list that builds all of them.
     ///
-    /// So the rows arrive as plain objects and become visuals only when they are scrolled to.
-    /// The panel recycles containers, so scrolling a long board reuses a screenful of them rather
-    /// than making new ones.
+    /// So the rows arrive as plain objects and become visuals only when scrolled to. The panel
+    /// recycles containers, so scrolling a long board reuses a screenful rather than making new
+    /// ones.
     ///
-    /// <b>Why a subclass and not a data template.</b> Every row on this board is built in code —
-    /// its cells, its menu, its tick, the colours it takes from the skin — and a template would
-    /// mean writing all of it twice, in two languages, and keeping them in step. Overriding how a
+    /// A subclass rather than a data template, because every row on this board is built in code —
+    /// its cells, its menu, its tick, the colours it takes from the skin — and a template would mean
+    /// writing all of it twice, in two languages, and keeping them in step. Overriding how a
     /// container is prepared keeps the one builder and still gets the virtualisation.
     /// </summary>
     public sealed class BoardList : ItemsControl
@@ -103,19 +102,18 @@ namespace CamelWorks.UI.Views
 
                 if (scroll == null || value <= 0) return;
 
-                // Laid out first, then scrolled, then laid out again - all before this returns.
+                // Laid out, then scrolled, then laid out again — all before this returns.
                 //
-                // <b>Why the frame at the top happened anyway.</b> A list handed a new set of
-                // items has not been measured yet, so its ScrollableHeight is still zero: the
-                // restore clamped the offset to zero, scrolled there, and the deferred pass a
-                // moment later put it back. That is the table jumping to the top and returning
-                // "a second later" - the restore was not losing the offset, it was scrolling to
-                // the top with it in hand.
+                // A list handed a new set of items has not been measured, so its ScrollableHeight
+                // is still zero: the restore clamped the offset to zero, scrolled there, and the
+                // deferred pass a moment later put it back. That is the table jumping to the top and
+                // returning a second later; the restore was not losing the offset, it was scrolling
+                // to the top with it in hand.
                 //
                 // Measuring first costs one layout of a screenful of rows, which is what
                 // virtualising this list bought, and it means the scroll lands on a real height.
-                // Laying out again after applies the offset in this same pass, so the first
-                // frame anybody sees is already in the right place.
+                // Laying out again after applies the offset in the same pass, so the first frame is
+                // already in the right place.
                 scroll.UpdateLayout();
 
                 scroll.ScrollToVerticalOffset(Math.Min(value, Math.Max(0, scroll.ScrollableHeight)));

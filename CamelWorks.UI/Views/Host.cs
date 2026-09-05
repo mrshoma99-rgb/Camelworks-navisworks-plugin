@@ -226,8 +226,8 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The way in to Navisworks, and the only place in the UI that talks to it directly.
     ///
-    /// <b>Nothing here throws when there is no model.</b> <see cref="Current"/> is null, screens
-    /// say so, and no screen is left deciding what an absent document means.
+    /// Nothing here throws when there is no model. <see cref="Current"/> is null, screens report it,
+    /// and no screen is left deciding what an absent document means.
     /// </summary>
     public static class Host
     {
@@ -305,12 +305,12 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Run this whenever the open document changes.
         ///
-        /// <b>What this is for.</b> Several screens keep what they read in a static, on purpose:
-        /// re-reading eighteen thousand clash results because somebody glanced at another tab
-        /// would make the glance cost more than the work. But a static outlives the document it
-        /// describes, and nothing used to tell it so. Open a second federation and the clash board
-        /// still showed the first one's results, the clearance check still showed its findings,
-        /// and the pickers still offered its sets - all of it wrong, and none of it saying so.
+        /// Several screens cache what they read in a static, deliberately: re-reading eighteen
+        /// thousand clash results because another tab was glanced at would make the glance cost more
+        /// than the work. But a static outlives the document it describes, and nothing used to say
+        /// so. Opening a second federation left the clash board showing the first one's results, the
+        /// clearance check showing its findings and the pickers offering its sets, all of it wrong
+        /// and none of it reported.
         ///
         /// Registering here is what makes a cache safe to keep. The call goes in a static
         /// constructor, so a screen nobody has opened has nothing to forget and never registers.

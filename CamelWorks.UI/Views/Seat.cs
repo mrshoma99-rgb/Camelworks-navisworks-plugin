@@ -38,28 +38,24 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The seat a screen is running in: everything it needs from the host, and nothing else.
     ///
-    /// <b>Why this exists.</b> Every screen in this product took a <see cref="Session"/>, and a
-    /// Session cannot be made without Navisworks — its constructor takes an Autodesk document.
-    /// So no screen could be built anywhere except inside a licensed CAD application, and the
-    /// only way to look at one was to install the plug-in and click through to it.
+    /// Every screen in this product previously took a <see cref="Session"/>, and a Session cannot be
+    /// made without Navisworks — its constructor takes an Autodesk document. So no screen could be
+    /// built outside a licensed CAD application, and the only way to look at one was to install the
+    /// plug-in and click through to it.
     ///
-    /// That is not an inconvenience, it is why layout faults ship. A column header drawn four
-    /// pixels short of its own letters, a rotated name clipped by its border, a folder band that
-    /// collapses to nothing and cannot be pressed to open it again — every one of those is
-    /// visible in a picture and invisible in a compiler, and the picture cost a seat, a licence
-    /// and somebody's afternoon. They were all found by a person looking at a screen and
-    /// reporting it, which is the slowest and most expensive way a product can learn.
+    /// That is why layout faults shipped. A column header drawn four pixels short of its own
+    /// letters, a rotated name clipped by its border, a folder band that collapses to nothing and
+    /// cannot be pressed to reopen it: each is visible in an image and invisible to a compiler, and
+    /// each cost a seat, a licence and a person's time to find.
     ///
-    /// <b>What a seat is.</b> The narrow questions a screen actually asks, not the host's whole
-    /// API: what the clash engine can do, where the project is kept, what saved sets and models
-    /// there are, and what is selected. Answered by Navisworks on a real seat, and by
-    /// <see cref="EmptySeat"/> in the render harness — where the screen is the shipping screen,
-    /// drawn by WPF at the size WPF gives it, in the font it will really be read in.
+    /// A seat is the narrow set of questions a screen asks, not the host's whole API: what the clash
+    /// engine can do, where the project is kept, what saved sets and models there are, and what is
+    /// selected. Answered by Navisworks on a real seat, and by <see cref="EmptySeat"/> in the render
+    /// harness, where the screen is the shipping screen drawn by WPF at the size WPF gives it.
     ///
-    /// <b>What it is not.</b> It is not a way to fake a model. Nothing here pretends a document
-    /// is loaded that is not: an empty seat says it has no sets, no models and nothing selected,
-    /// and every screen already has to be right about that — it is the state a coordinator is in
-    /// for the first minute of every session.
+    /// It is not a way to fake a model. Nothing here pretends a document is loaded: an empty seat
+    /// reports no sets, no models and nothing selected, and every screen already has to be correct
+    /// in that state, which is the state at the start of every session.
     /// </summary>
     public interface ISeat
     {
@@ -100,10 +96,9 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// A seat with nothing in it: no clash engine, no sets, no models, nothing selected.
     ///
-    /// <b>This is a real state, not a stub.</b> It is what a screen faces before a document is
-    /// open, on a Navisworks edition with no clash engine, and in the render harness — and a
-    /// screen that draws wrongly in it draws wrongly on somebody's first minute of the day. The
-    /// harness renders this seat precisely because it is the state hardest to remember to check.
+    /// A real state rather than a stub. It is what a screen faces before a document is open, on a
+    /// Navisworks edition with no clash engine, and in the render harness. The harness renders this
+    /// seat because it is the state least often checked.
     /// </summary>
     public sealed class EmptySeat : ISeat
     {

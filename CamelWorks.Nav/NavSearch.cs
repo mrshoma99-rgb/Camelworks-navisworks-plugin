@@ -68,12 +68,11 @@ namespace CamelWorks.Nav
     /// The compiler above produces disjunctive normal form because that is the only shape the host
     /// can run: one search ANDs its conditions, and the only way to get an OR is more than one
     /// search. This class is where that shape meets the API — union the clauses, intersect the
-    /// included sets, and only then subtract, because subtracting first gives a different and wrong
-    /// answer whenever a subtracted element would have been intersected away anyway.
+    /// included sets, and only then subtract, because subtracting first gives a wrong answer
+    /// whenever a subtracted element would have been intersected away anyway.
     ///
-    /// <b>String comparisons ignore case.</b> The host would honour case if asked; coordination
-    /// data does not, and a set that misses "DUCT" because the rule said "Duct" is a bug report
-    /// waiting to be filed.
+    /// String comparisons ignore case. The host would honour case if asked; coordination data does
+    /// not, and a set that misses "DUCT" because the rule said "Duct" is a defect.
     /// </summary>
     public sealed class NavSearch
     {
@@ -305,11 +304,10 @@ namespace CamelWorks.Nav
         /// <summary>
         /// Put a set into the document, replacing one of the same name.
         ///
-        /// <b>Added before the old one is taken out.</b> The other order is how a refused write
-        /// destroys somebody's set: the document takes the removal, refuses the copy, and the set
-        /// that was there is simply gone - which is exactly what a read-only document does, and
-        /// what a full disk does at the moment of the save. Adding first means the worst outcome
-        /// is two sets with one name, which somebody can see and fix.
+        /// The new set is added before the old one is removed. The other order destroys a set when a
+        /// write is refused: the document takes the removal, refuses the copy, and the set that was
+        /// there is gone — which is what a read-only document does, and what a full disk does at the
+        /// moment of the save. Adding first means the worst outcome is two sets with one name.
         /// </summary>
         /// <param name="parent">The folder, or null for the top level.</param>
         /// <param name="set">The set to put in.</param>

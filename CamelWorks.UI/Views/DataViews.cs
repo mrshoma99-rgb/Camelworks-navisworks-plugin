@@ -627,14 +627,12 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Two legs of one trip, both on the glass.
+            /// Two legs of one trip, both on the screen.
             ///
-            /// <b>Not a wizard, deliberately.</b> Sending a sheet out and reading it back are not
-            /// two steps of one task - they are the same task on two different days, done by two
-            /// different people, and a Next button between them would make the person who came
-            /// back on Thursday click past the half they are not doing. Both legs are simply
-            /// visible; the report underneath is shared, because it is the answer to whichever
-            /// was pressed.
+            /// Not a wizard. Sending a sheet out and reading it back are the same task on two
+            /// different days, done by two different people, and a Next button between them would
+            /// make the person returning later click past the half they are not doing. Both legs are
+            /// visible; the report underneath is shared, because it answers whichever was pressed.
             /// </summary>
             internal UIElement Build() => Ui.Stack(
                 OutField(),
@@ -1275,18 +1273,17 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Writing a property, in two steps, and never over somebody else's answer by accident.
+        /// Writing a property, in two steps, and never over an existing value by accident.
         ///
-        /// Writing into a model is the one destructive thing CamelWorks does, and it is destructive
-        /// in a way Ctrl+Z does not reach — Navisworks does not put user-defined property writes on
-        /// its undo stack. So the button that writes is not the button you press first. You see the
-        /// diff, element by element, and then you decide.
+        /// Writing into a model is the one destructive thing CamelWorks does, and Ctrl+Z does not
+        /// reach it: Navisworks does not put user-defined property writes on its undo stack. So the
+        /// button that writes is not the first button pressed. The diff is shown element by element
+        /// first.
         ///
-        /// <b>Existing values are kept unless you say otherwise.</b> The failure this prevents is
-        /// mundane and expensive: a coordinator runs a zoning rule on Tuesday, a colleague runs
-        /// their own on Wednesday, and the first person's answers are gone with nothing to say they
-        /// were ever there. Keeping is the default; replacing is a choice made in front of a count
-        /// of exactly what would be replaced.
+        /// Existing values are kept unless replacing them is chosen. The failure this prevents: a
+        /// coordinator runs a zoning rule, a colleague runs their own the next day, and the first
+        /// person's answers are gone with no record that they were there. Keeping is the default;
+        /// replacing is chosen in front of a count of exactly what would be replaced.
         /// </summary>
         private sealed class WriteScreen
         {
