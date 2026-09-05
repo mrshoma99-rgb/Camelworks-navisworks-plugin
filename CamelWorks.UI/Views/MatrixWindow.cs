@@ -2006,9 +2006,34 @@ namespace CamelWorks.UI.Views
             private static string Shown(string folder, bool shut) =>
                 shut ? folder + "  \u25b8" : folder;
 
+            /// <summary>
+            /// Whether the frozen bands are drawn for the board the cells are about to be drawn
+            /// for.
+            ///
+            /// One definition per line plus the add-a-discipline slot, in both, so a mismatch is
+            /// exactly a band built against a different number of lines.
+            /// </summary>
+            private bool Banded() =>
+                _down.RowDefinitions.Count == _board.Rows.Count + 1
+                && _across.ColumnDefinitions.Count == _board.Columns.Count + 1;
+
             /// <summary>The cells themselves, which are all that scrolls.</summary>
             private void RedrawCells()
             {
+                // The bands and the cells are one drawing, and the cells are the only part with
+                // a path of its own: switching what the grid shows redraws them alone. A board
+                // that grew between the last band draw and this one leaves rows of symbols with
+                // no name beside them and columns with no heading over them — the grid still
+                // reads as a grid, so nothing about it says which rows those are.
+                //
+                // Checked here rather than fixed at each call site, because the call sites are
+                // where it was missed. A band that already matches costs one comparison.
+                if (!Banded())
+                {
+                    RedrawDown();
+                    RedrawAcross();
+                }
+
                 _sheet.Children.Clear();
                 _sheet.ColumnDefinitions.Clear();
                 _sheet.RowDefinitions.Clear();
