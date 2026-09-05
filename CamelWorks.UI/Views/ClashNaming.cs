@@ -144,8 +144,21 @@ namespace CamelWorks.UI.Views
             var head = Ui.Stack();
             var held = Ui.Stack();
             var foot = Ui.Stack();
+            var acts = Ui.Stack();
 
             void Touch() => onTouched?.Invoke();
+
+            // One action row for the window, led by whatever verb the open pane is for. Two
+            // primary-looking buttons stacked at the foot — the pane's own and Done — read as a
+            // choice between them rather than as an action and a way out.
+            void Acting(UIElement? verb)
+            {
+                acts.Children.Clear();
+
+                acts.Children.Add(verb == null
+                    ? Ui.Actions(Ui.Primary("Done", () => onDone?.Invoke()))
+                    : Ui.Actions(verb, Ui.Quiet("Done", () => onDone?.Invoke())));
+            }
 
             void Redraw()
             {
@@ -163,6 +176,8 @@ namespace CamelWorks.UI.Views
                 held.Children.Clear();
                 foot.Children.Clear();
 
+                Acting(null);
+
                 switch (pane)
                 {
                     case NamingPane.Patterns:
@@ -175,8 +190,8 @@ namespace CamelWorks.UI.Views
                         break;
 
                     case NamingPane.Write:
-                        Writing(held, foot, book, tests, rename, how, token,
-                                said => token = said, Touch);
+                        Writing(held, Acting, book, tests, rename, how, token,
+                                said => { token = said; Redraw(); }, Touch);
                         break;
 
                     default:
@@ -216,14 +231,14 @@ namespace CamelWorks.UI.Views
 
             var root = new DockPanel { LastChildFill = true, MaxWidth = 700 };
 
-            var acts = new Border
+            var bar = new Border
             {
                 Margin = new Thickness(16, 10, 16, 14),
-                Child = Ui.Actions(Ui.Primary("Done", () => onDone?.Invoke())),
+                Child = acts,
             };
 
-            DockPanel.SetDock(acts, Dock.Bottom);
-            root.Children.Add(acts);
+            DockPanel.SetDock(bar, Dock.Bottom);
+            root.Children.Add(bar);
             root.Children.Add(body);
 
             return root;
@@ -889,13 +904,24 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Write one field across the tests, and show what that would do before it is done.
         ///
-        /// Every line of this is a rename of a host test, so the plan is on the screen first,
-        /// refusals and all. A test the pattern cannot write still takes its place in the count,
-        /// so refusing the third of ten does not shift the seven under it.
+        /// Two cards: what to write, and what that would write. Every line of the second is a
+        /// rename of a host test, so the whole plan is on the screen — refusals and all — before
+        /// the button that does it is reachable. A test the pattern cannot write still takes its
+        /// place in the count, so refusing the third of ten does not shift the seven under it.
         /// </summary>
-        private static void Writing(Panel into, Panel foot, NamingBook book, List<Line> tests,
-                                    Func<string, string, bool> rename, MatrixField how,
-                                    string? token, Action<string?> onToken, Action touch)
+        /// <param name="into">Where the cards go.</param>
+        /// <param name="acts">The window's action row, which this pane leads with its own verb.</param>
+        /// <param name="book">The project's naming.</param>
+        /// <param name="tests">The tests, in the order they are counted.</param>
+        /// <param name="rename">Renames one test, and says whether it landed.</param>
+        /// <param name="how">The series, held across pane switches.</param>
+        /// <param name="token">The field being written, or null for the pane's own default.</param>
+        /// <param name="onToken">Called when the field changes, so the choice survives a switch.</param>
+        /// <param name="touch">Called when anything was actually renamed.</param>
+        private static void Writing(Panel into, Action<UIElement?> acts, NamingBook book,
+                                    List<Line> tests, Func<string, string, bool> rename,
+                                    MatrixField how, string? token, Action<string?> onToken,
+                                    Action touch)
         {
             var offered = Offered(book);
 
@@ -905,6 +931,8 @@ namespace CamelWorks.UI.Views
                     "Nothing to write",
                     "The tests are on no pattern, or the patterns carry no fields. Write a "
                     + "pattern and put the tests on it first."));
+
+                acts(null);
 
                 return;
             }
@@ -927,70 +955,84 @@ namespace CamelWorks.UI.Views
             // discipline a different number in every test it appears in.
             var perSide = NamingWrite.Side(chosen) != null;
 
+            var setting = Ui.Stack();
             var preview = Ui.Stack();
-            var says = Ui.Stack();
-            var note = Ui.Stack();
+            var counted = Ui.Stack();
 
-            void Fill()
+            // One card each. The controls used to sit loose on the page in two rows whose labels
+            // did not line up, with the plan under them as a bare list and two primary-looking
+            // buttons stacked at the foot.
+            var top = Card("What to write", setting);
+            var bottom = Card(null, preview);
+
+            void Redraw()
             {
                 var plan = NamingWrite.Plan(book, tests.Select(one => (one.Id, one.Name)),
-                                            chosen, how, perSide && how.Fill == MatrixFill.Series);
-
-                preview.Children.Clear();
-                says.Children.Clear();
-                note.Children.Clear();
-                note.Children.Add(Note(chosen, how, perSide));
-
-                foreach (var step in plan.Take(200))
-                    preview.Children.Add(Step(step));
-
-                if (plan.Count > 200)
-                    preview.Children.Add(Ui.Small(
-                        "and " + Ui.Count(plan.Count - 200, "more test") + ", not drawn here."));
+                                            chosen, how,
+                                            perSide && how.Fill == MatrixFill.Series);
 
                 var changing = NamingWrite.Changing(plan).Count;
                 var refused = NamingWrite.Refused(plan).Count;
 
-                var line = Ui.Small(changing == 0
-                    ? "No name would change."
-                    : Ui.Count(changing, "test") + " would be renamed"
-                      + (refused == 0
-                          ? "."
-                          : ", and " + refused + " left alone."));
+                counted.Children.Clear();
+                counted.Children.Add(Counting(chosen, how, perSide));
 
-                line.TextWrapping = TextWrapping.Wrap;
-                line.Margin = new Thickness(0, 8, 0, 6);
+                preview.Children.Clear();
 
-                says.Children.Add(line);
+                preview.Children.Add(Ui.Eyebrow(
+                    "What it would write  ·  " + Ui.Count(changing, "rename")
+                    + (refused == 0
+                        ? string.Empty
+                        : "  ·  " + refused + " left alone")));
 
-                var act = Ui.Primary("Rename " + Ui.Count(changing, "test"), () => Ui.Safely(() =>
+                var rows = Ui.Stack();
+
+                rows.Margin = new Thickness(0, 8, 0, 0);
+                rows.Children.Add(Headings());
+
+                foreach (var step in plan.Take(200)) rows.Children.Add(Step(step));
+
+                if (plan.Count > 200)
                 {
-                    var landed = 0;
+                    var more = Ui.Small("and " + Ui.Count(plan.Count - 200, "more test")
+                                        + ", not drawn here.");
 
-                    foreach (var step in NamingWrite.Changing(plan))
+                    more.Margin = new Thickness(0, 6, 0, 0);
+                    rows.Children.Add(more);
+                }
+
+                preview.Children.Add(rows);
+
+                var act = Ui.Primary(changing == 0
+                                         ? "Nothing to rename"
+                                         : "Rename " + Ui.Count(changing, "test"),
+                    () => Ui.Safely(() =>
                     {
-                        if (!rename(step.Id, step.Now!)) continue;
+                        var landed = 0;
 
-                        var line2 = tests.FirstOrDefault(one => one.Id == step.Id);
+                        foreach (var step in NamingWrite.Changing(plan))
+                        {
+                            if (!rename(step.Id, step.Now!)) continue;
 
-                        if (line2 != null) line2.Name = step.Now!;
+                            var line = tests.FirstOrDefault(one => one.Id == step.Id);
 
-                        landed++;
-                    }
+                            if (line != null) line.Name = step.Now!;
 
-                    if (landed > 0) touch();
+                            landed++;
+                        }
 
-                    Ui.Told(landed == 0
-                        ? "Nothing was renamed."
-                        : "Renamed " + Ui.Count(landed, "test") + ".");
+                        if (landed > 0) touch();
 
-                    Fill();
-                }));
+                        Ui.Told(landed == 0
+                            ? "Nothing was renamed."
+                            : "Renamed " + Ui.Count(landed, "test") + ".");
+
+                        Redraw();
+                    }));
 
                 act.IsEnabled = changing > 0;
-                act.HorizontalAlignment = HorizontalAlignment.Left;
 
-                says.Children.Add(act);
+                acts(act);
             }
 
             var field = Parts.Presser(Titled(book, chosen), Glyphs.Tune, "Pick a field",
@@ -1013,46 +1055,72 @@ namespace CamelWorks.UI.Views
                                          Fill();
                                      });
 
-            var top = Ui.Across(Ui.Field("Field", field, null),
-                                Ui.Field("Values", kinds, null));
+            // Every control gets a label of its own, so the row reads as one form rather than as
+            // a chooser floating beside three boxes whose labels start a line higher.
+            setting.Children.Add(Ui.Across(Ui.Field("Field", field, null),
+                                           Ui.Field("Values", kinds, null)));
 
-            top.Margin = new Thickness(0, 0, 0, 8);
-
-            into.Children.Add(top);
-            into.Children.Add(how.Fill == MatrixFill.Same
-                ? Constant(how, Fill)
-                : Series(how, Fill));
+            // The boxes redraw the plan; only the switches that change which boxes there are
+            // rebuild the pane. Rebuilding on a keystroke would replace the box being typed in.
+            setting.Children.Add(how.Fill == MatrixFill.Same
+                ? Constant(how, Redraw)
+                : Series(how, Redraw, Fill));
 
             var whose = NamingWrite.Side(chosen);
 
             if (whose != null && how.Fill == MatrixFill.Series)
             {
                 var shared = Ui.Check(
-                    "One value per " + (whose == "row" ? "row" : "column")
-                    + ", shared by every test it appears in",
-                    perSide, on => { perSide = on; Fill(); });
+                    "One value per " + whose + ", shared by every test it appears in",
+                    perSide, on => { perSide = on; Redraw(); });
 
-                shared.Margin = new Thickness(0, 8, 0, 0);
+                shared.Margin = new Thickness(0, 2, 0, 0);
                 shared.ToolTip = "Off, the count runs down the list of tests, so a discipline in "
                                  + "five tests takes five different values.";
 
-                into.Children.Add(shared);
+                setting.Children.Add(shared);
             }
 
-            into.Children.Add(note);
-            into.Children.Add(Ui.Eyebrow("What it would write"));
-            into.Children.Add(preview);
+            setting.Children.Add(counted);
 
-            foot.Children.Add(says);
+            into.Children.Add(top);
+            into.Children.Add(bottom);
 
-            Fill();
+            Redraw();
+
+            // The controls that change the shape of the card rebuild the pane; the ones that only
+            // change values redraw the plan.
+            void Fill() => onToken(chosen);
+        }
+
+        /// <summary>The plan's column headings, so the two names are labelled rather than guessed.</summary>
+        private static UIElement Headings()
+        {
+            var row = Twin(
+                Quiet("Called now"),
+                Quiet(string.Empty),
+                Quiet("Would become"));
+
+            row.Margin = new Thickness(0, 0, 0, 6);
+
+            return row;
+        }
+
+        /// <summary>A heading over a column of the plan.</summary>
+        private static TextBlock Quiet(string said)
+        {
+            var made = Ui.Eyebrow(said);
+
+            made.Margin = new Thickness(0);
+
+            return made;
         }
 
         /// <summary>What the write is about to do, in a sentence, under its controls.</summary>
         /// <param name="token">The field being written.</param>
         /// <param name="how">Where the values come from.</param>
         /// <param name="perSide">Whether one value is shared by every test on a side.</param>
-        private static UIElement Note(string? token, MatrixField how, bool perSide)
+        private static UIElement Counting(string? token, MatrixField how, bool perSide)
         {
             var whose = NamingWrite.Side(token);
 
@@ -1064,78 +1132,114 @@ namespace CamelWorks.UI.Views
                       + "sorted in.");
 
             said.TextWrapping = TextWrapping.Wrap;
-            said.Margin = new Thickness(0, 8, 0, 8);
+            said.Margin = new Thickness(0, 6, 0, 0);
 
             return said;
         }
 
-        /// <summary>One test's line in the plan: what it is called, and what it would become.</summary>
-        private static UIElement Step(NamingStep step)
+        /// <summary>A card with an optional eyebrow over it.</summary>
+        /// <param name="title">The eyebrow, or null when the body carries its own.</param>
+        /// <param name="body">What goes in it.</param>
+        private static UIElement Card(string? title, UIElement body)
         {
-            // A grid of three, not two docked halves. Docked, the two names sat at opposite edges
-            // of a seven-hundred-pixel window with nothing between them, so reading a rename meant
-            // crossing the gap and guessing which right-hand line belonged to which left-hand one.
-            var row = new Grid { Margin = new Thickness(0, 0, 0, 3) };
+            var stack = Ui.Stack();
+
+            if (title != null)
+            {
+                var said = Ui.Eyebrow(title);
+
+                said.Margin = new Thickness(0, 0, 0, 8);
+                stack.Children.Add(said);
+            }
+
+            stack.Children.Add(body);
+
+            var card = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 10),
+                Padding = new Thickness(12, 10, 12, 12),
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                Child = stack,
+            };
+
+            card.Tint(Border.BackgroundProperty, "Card2");
+            card.Tint(Border.BorderBrushProperty, "Bd");
+
+            return card;
+        }
+
+        /// <summary>Three columns: a name, a mark between, and the other name.</summary>
+        private static Grid Twin(UIElement left, UIElement middle, UIElement right)
+        {
+            var row = new Grid();
 
             row.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = new GridLength(1, GridUnitType.Star),
             });
 
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
 
             row.ColumnDefinitions.Add(new ColumnDefinition
             {
                 Width = new GridLength(1, GridUnitType.Star),
             });
-
-            var left = new TextBlock
-            {
-                Text = step.Was,
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                ToolTip = step.Was,
-            }.Wearing("Body");
-
-            left.Tint(TextBlock.ForegroundProperty, "Muted");
 
             Grid.SetColumn(left, 0);
-            row.Children.Add(left);
-
-            var arrow = new TextBlock
-            {
-                Text = "\u2192",
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10, 0, 10, 0),
-            }.Wearing("Body");
-
-            arrow.Tint(TextBlock.ForegroundProperty, "Faint");
-
-            Grid.SetColumn(arrow, 1);
-            row.Children.Add(arrow);
-
-            var right = new TextBlock
-            {
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Text = step.Why != NamingRefusal.None
-                    ? NamingWrite.Said(step.Why)
-                    : step.Changes ? step.Now : "unchanged",
-            }.Wearing("Body");
-
-            right.ToolTip = right.Text;
-
-            right.Tint(TextBlock.ForegroundProperty,
-                       step.Why != NamingRefusal.None ? "RedTx"
-                       : step.Changes ? "Accent" : "Muted");
-
+            Grid.SetColumn(middle, 1);
             Grid.SetColumn(right, 2);
+
+            row.Children.Add(left);
+            row.Children.Add(middle);
             row.Children.Add(right);
 
             return row;
+        }
+
+        /// <summary>One test's line in the plan: what it is called, and what it would become.</summary>
+        /// <param name="step">The step.</param>
+        private static UIElement Step(NamingStep step)
+        {
+            var arrow = Cell("→", "Faint");
+
+            arrow.HorizontalAlignment = HorizontalAlignment.Center;
+
+            var row = Twin(
+                Cell(step.Was, "Muted"),
+                arrow,
+                Cell(step.Why != NamingRefusal.None
+                         ? NamingWrite.Said(step.Why)
+                         : step.Changes ? step.Now ?? string.Empty : "unchanged",
+                     step.Why != NamingRefusal.None ? "RedTx"
+                     : step.Changes ? "Accent" : "Muted"));
+
+            row.Margin = new Thickness(0, 0, 0, 4);
+
+            return row;
+        }
+
+        /// <summary>One name in the plan, trimmed to its column and carried in full on the tip.</summary>
+        /// <param name="said">The text.</param>
+        /// <param name="ink">Which skin colour it takes.</param>
+        private static TextBlock Cell(string said, string ink)
+        {
+            var made = new TextBlock
+            {
+                Text = said,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                ToolTip = said.Length == 0 ? null : said,
+            }.Wearing("Body");
+
+            // After the style, which turns wrapping on: with it on, a long name wrapped to a
+            // second line and the trimming never came into it.
+            made.TextWrapping = TextWrapping.NoWrap;
+
+            made.Tint(TextBlock.ForegroundProperty, ink);
+
+            return made;
         }
 
         /// <summary>
@@ -1223,7 +1327,10 @@ namespace CamelWorks.UI.Views
             (token ?? string.Empty).Trim().Trim('{', '}');
 
         /// <summary>The controls a counted write needs, on one line.</summary>
-        private static UIElement Series(MatrixField how, Action onChange)
+        /// <param name="how">The series.</param>
+        /// <param name="onChange">Redraws the plan, for a value that was typed.</param>
+        /// <param name="onShape">Rebuilds the pane, for a switch that changes which boxes there are.</param>
+        private static UIElement Series(MatrixField how, Action onChange, Action onShape)
         {
             var kinds = Ui.Segmented(new[] { "1, 2, 3", "A, B, C" },
                 how.Steps == MatrixSteps.Letters ? "A, B, C" : "1, 2, 3",
@@ -1235,7 +1342,7 @@ namespace CamelWorks.UI.Views
 
                     how.Steps = wanted;
                     how.Start = wanted == MatrixSteps.Letters ? "A" : "10";
-                    onChange();
+                    onShape();
                 });
 
             var start = Ui.Text(how.Start, "10", typed =>
@@ -1255,7 +1362,8 @@ namespace CamelWorks.UI.Views
             }, 52);
 
             if (how.Steps == MatrixSteps.Letters)
-                return Ui.Across(kinds, Ui.Field("Start at", start, null),
+                return Ui.Across(Ui.Field("Count in", kinds, null),
+                                 Ui.Field("Start at", start, null),
                                  Ui.Field("Step", step, null));
 
             var pad = Ui.Text(how.Pad == 0
@@ -1277,8 +1385,12 @@ namespace CamelWorks.UI.Views
 
             pad.ToolTip = "Leading zeros, so 1 reads as 01.";
 
-            return Ui.Across(kinds, Ui.Field("Start at", start, null),
-                             Ui.Field("Step", step, null), Ui.Field("Digits", pad, null));
+            // Every control carries its own label, so the row reads as one form. The chooser used
+            // to sit unlabelled beside three labelled boxes, which put it half a line out.
+            return Ui.Across(Ui.Field("Count in", kinds, null),
+                             Ui.Field("Start at", start, null),
+                             Ui.Field("Step", step, null),
+                             Ui.Field("Digits", pad, null));
         }
 
         /// <summary>The one box a same-on-all write needs.</summary>

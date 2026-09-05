@@ -213,10 +213,57 @@ namespace CamelWorks.Core.Tests
                                         perSide: true);
 
             // Steel is one discipline, so it reads 10 in both tests it appears in. Counting down
-            // the list would have made it 10 in one and 20 in the other.
-            Assert.Equal("ST-10 Steel vs ME-04 Ducts", plan[0].Now);
-            Assert.Equal("ST-10 Steel vs ME-05 Pipes", plan[1].Now);
-            Assert.Equal("AR-20 Walls vs ME-04 Ducts", plan[2].Now);
+            // the list would have made it 10 in one and 20 in the other. Every discipline is
+            // placed once and written on whichever side it appears on, so Ducts is 20 as a
+            // column here and would be 20 as a row anywhere else.
+            Assert.Equal("ST-10 Steel vs ME-20 Ducts", plan[0].Now);
+            Assert.Equal("ST-10 Steel vs ME-30 Pipes", plan[1].Now);
+            Assert.Equal("AR-40 Walls vs ME-20 Ducts", plan[2].Now);
+        }
+
+        [Fact]
+        public void Counting_per_side_gives_a_discipline_the_same_number_on_both_sides()
+        {
+            var book = Booked(Standard);
+
+            var tests = new List<(string, string)>
+            {
+                ("t1", "ST-01 Steel vs ME-04 Ducts"),
+                ("t2", "ME-04 Ducts vs AR-09 Walls"),
+            };
+
+            foreach (var one in tests) book.Bind(one.Item1, 1);
+
+            var plan = NamingWrite.Plan(book, tests, "rowNumber", Series("1", 1, 2),
+                                        perSide: true);
+
+            // Ducts is one discipline: it reads 02 as a column in the first test and as a row in
+            // the second. Numbering the row side alone left the two disagreeing.
+            Assert.Equal("ST-01 Steel vs ME-02 Ducts", plan[0].Now);
+            Assert.Equal("ME-02 Ducts vs AR-03 Walls", plan[1].Now);
+        }
+
+        [Fact]
+        public void A_test_on_a_pattern_without_the_field_takes_no_number_from_the_run()
+        {
+            var book = Booked(Standard, "{row} | {column}");
+
+            var tests = new List<(string, string)>
+            {
+                ("t1", "Trays | Pipes"),
+                ("t2", "ST-01 Steel vs ME-04 Ducts"),
+            };
+
+            book.Bind("t1", 2);
+            book.Bind("t2", 1);
+
+            var plan = NamingWrite.Plan(book, tests, "rowNumber", Series("1", 1, 2),
+                                        perSide: true);
+
+            // Trays and Pipes cannot carry a number, so they do not consume 01 and 02 and leave
+            // Steel starting at 03.
+            Assert.Equal(NamingRefusal.NoToken, plan[0].Why);
+            Assert.Equal("ST-01 Steel vs ME-02 Ducts", plan[1].Now);
         }
 
         [Fact]

@@ -92,23 +92,23 @@ namespace CamelWorks.Core.Clash
             if (named.Length == 0) return made;
 
             var side = Side(named);
+            var held = (tests as IReadOnlyList<(string Id, string Name)>) ?? tests.ToList();
 
-            // One counter per distinct side when the field belongs to the side rather than to the
-            // test, and one running counter otherwise. Which of the two is wanted is decided by
-            // what the field is: a row's number is a fact about that discipline, so every test
-            // the discipline appears in has to read the same one.
-            var places = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            // One place per discipline when the field belongs to a side, and one running count
+            // down the list otherwise. Which of the two is wanted is decided by what the field
+            // is: a row's number is a fact about that discipline, so every test the discipline
+            // appears in has to read the same one.
+            var places = perSide && side != null ? Placed(book, held, named) : null;
 
             var at = 0;
 
-            foreach (var test in tests)
+            foreach (var test in held)
             {
                 var id = (test.Id ?? string.Empty).Trim();
 
                 if (id.Length == 0) continue;
 
                 var name = test.Name ?? string.Empty;
-
                 var read = book.Read(id, name);
 
                 // Counted whether or not it can be written: a test the pattern refuses still
@@ -116,34 +116,138 @@ namespace CamelWorks.Core.Clash
                 // seven under it.
                 var where = at++;
 
-                if (perSide && side != null)
-                {
-                    var whose = read?.Value(side) ?? string.Empty;
-
-                    if (!places.TryGetValue(whose, out var held))
-                        places[whose] = held = places.Count;
-
-                    where = held;
-                }
-
-                var value = how.At(where);
-
                 if (read == null)
                 {
-                    made.Add(new NamingStep(id, name, null, value,
+                    made.Add(new NamingStep(id, name, null, how.At(where),
                         book.Knows(id) ? NamingRefusal.Unread : NamingRefusal.Unbound));
                     continue;
                 }
 
-                var written = book.Written(id, name, named, value);
+                var pattern = book.Compiled(read.Pattern);
 
-                made.Add(written == null
-                    ? new NamingStep(id, name, null, value, NamingRefusal.NoToken)
-                    : new NamingStep(id, name, written, value, NamingRefusal.None));
+                if (pattern == null || !pattern.Tokens.Contains(named, StringComparer.Ordinal))
+                {
+                    made.Add(new NamingStep(id, name, null, how.At(where),
+                                            NamingRefusal.NoToken));
+                    continue;
+                }
+
+                if (places == null)
+                {
+                    var one = how.At(where);
+                    var only = book.Written(id, name, named, one);
+
+                    made.Add(only == null
+                        ? new NamingStep(id, name, null, one, NamingRefusal.NoToken)
+                        : new NamingStep(id, name, only, one, NamingRefusal.None));
+
+                    continue;
+                }
+
+                // Both sides in one write. Numbering only the side the field names left a
+                // discipline reading one number as a row and another as a column, which is a
+                // project whose names disagree with themselves.
+                var values = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                foreach (var one in pattern.Tokens) values[one] = read.Value(one);
+
+                var said = string.Empty;
+
+                foreach (var each in Sides(named))
+                {
+                    if (!pattern.Tokens.Contains(each.Token, StringComparer.Ordinal)) continue;
+
+                    var whose = Whose(read, pattern, each);
+
+                    if (!places.TryGetValue(whose, out var place)) continue;
+
+                    values[each.Token] = how.At(place);
+
+                    if (string.Equals(each.Token, named, StringComparison.Ordinal))
+                        said = values[each.Token];
+                }
+
+                made.Add(new NamingStep(id, name, pattern.Rebuild(values), said,
+                                        NamingRefusal.None));
             }
 
             return made;
         }
+
+        /// <summary>
+        /// Where each discipline falls, from zero, in the order they first appear.
+        ///
+        /// Over both sides at once. A discipline is one thing whether a test has it on the left or
+        /// the right, so the walk takes the row's identity then the column's from each test, and a
+        /// name already placed keeps the place it has. Counting one side alone left a discipline
+        /// reading one number as a row and another as a column.
+        /// </summary>
+        /// <param name="book">The project's naming.</param>
+        /// <param name="tests">The tests, in the order they are counted.</param>
+        /// <param name="named">The token being written.</param>
+        private static Dictionary<string, int> Placed(
+            NamingBook book, IReadOnlyList<(string Id, string Name)> tests, string named)
+        {
+            var places = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var test in tests)
+            {
+                var read = book.Read(test.Id, test.Name);
+
+                if (read == null) continue;
+
+                var pattern = book.Compiled(read.Pattern);
+
+                // Only tests this write can actually reach put disciplines in the run. A test on a
+                // pattern with no such field would otherwise consume numbers for a discipline
+                // nothing ever writes.
+                if (pattern == null || !pattern.Tokens.Contains(named, StringComparer.Ordinal))
+                    continue;
+
+                foreach (var each in Sides(named))
+                {
+                    if (!pattern.Tokens.Contains(each.Token, StringComparer.Ordinal)) continue;
+
+                    var whose = Whose(read, pattern, each);
+
+                    if (whose.Length > 0 && !places.ContainsKey(whose))
+                        places[whose] = places.Count;
+                }
+            }
+
+            return places;
+        }
+
+        /// <summary>The row and column forms of a field, as the token each side writes.</summary>
+        /// <param name="named">The token being written, one of the two.</param>
+        private static IEnumerable<(string Token, string Name)> Sides(string named)
+        {
+            var side = Side(named);
+
+            if (side == null) yield break;
+
+            var tail = named.Substring(side.Length);
+
+            yield return ("row" + tail, "row");
+            yield return ("column" + tail, "column");
+        }
+
+        /// <summary>
+        /// What names the discipline on one side of a test.
+        ///
+        /// The side's own name token where the pattern carries one, since that is what a person
+        /// calls the discipline and it is the same word on either side. Where it does not, the
+        /// field's current value stands in: a pattern of codes alone still has one code per
+        /// discipline.
+        /// </summary>
+        /// <param name="read">What the pattern read.</param>
+        /// <param name="pattern">The pattern.</param>
+        /// <param name="each">The side, as its token and its name.</param>
+        private static string Whose(NamingRead read, MatrixNamePattern pattern,
+                                    (string Token, string Name) each) =>
+            pattern.Tokens.Contains(each.Name, StringComparer.Ordinal)
+                ? read.Value(each.Name)
+                : read.Value(each.Token);
 
         /// <summary>
         /// The token naming the side a field belongs to, or null when the field is the test's own.
