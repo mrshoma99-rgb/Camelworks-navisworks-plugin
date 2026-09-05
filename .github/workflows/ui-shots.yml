@@ -5,10 +5,15 @@
 # enough that layouts stop being iterated, and it is unavailable entirely to anyone reviewing a
 # change who does not have Navisworks.
 #
-# It does not have to be either. The pane is ordinary WPF, so CamelWorks.Studio renders every
-# screen into a PNG with no Autodesk assembly anywhere near it. This job runs that, uploads the
-# images as an artifact, and force-pushes them to a branch called ui-shots so they can be fetched
-# and looked at without downloading a zip.
+# It does not have to be either. The pane is ordinary WPF, so CamelWorks.Studio renders a screen
+# into a PNG with no Autodesk assembly anywhere near it. This job runs that, uploads the images as
+# an artifact, and force-pushes them to a branch called ui-shots so they can be fetched and looked
+# at without downloading a zip.
+#
+# The screens it draws are named when the run is started, and it draws them in the light palette
+# only. Every page in both themes was thirty pictures a run - and a run happens because somebody
+# wants to look at one screen, so twenty-eight of them were Windows minutes spent at twice the
+# rate on images nobody opened. Name what you want to see, or pass `all`.
 #
 # On demand, not on every push. It is a Windows runner - billed at twice the rate - and what it
 # produces is something somebody looks at when they want to look at it, which is a fraction of the
@@ -26,6 +31,11 @@ on:
   # somebody asks for, not something every push owes them - run it from the Actions tab or with
   # `gh workflow run ui-shots.yml` when the pictures are the thing being asked for.
   workflow_dispatch:
+    inputs:
+      pages:
+        description: "Which pages to draw, by id, comma-separated - or 'all'"
+        required: false
+        default: "app-clash-matrix,app-clash-matrix-drawn"
 
 # One at a time per branch, and the newer one wins. This job force-pushes an orphan branch, so two
 # runs in flight together are two writers racing over the same ref - and the pictures that survive
@@ -55,10 +65,16 @@ jobs:
 
       # A WinExe writes nothing to the console it was started from, so the harness keeps its own
       # log beside the images and this prints it. Without that, a sheet that failed to render is
-      # simply a file that is not there.
-      - name: Render every pane, light and dark, at every pane width
+      # simply a file that is not there - and the log is also where a mistyped page id is named,
+      # which otherwise looks exactly like a clean run that drew nothing.
+      #
+      # The named pages only, in the light palette. Every page in both themes was thirty pictures
+      # a run, and a run happens because somebody wants to look at one screen: the other
+      # twenty-eight cost Windows minutes at twice the rate to be force-pushed and never opened.
+      # Pass `all` to draw the lot when that is genuinely what is wanted.
+      - name: Render the named panes
         run: |
-          dotnet run --project CamelWorks.Studio/CamelWorks.Studio.csproj -c Release --no-build -- --shoot "${{ github.workspace }}\shots"
+          dotnet run --project CamelWorks.Studio/CamelWorks.Studio.csproj -c Release --no-build -- --shoot "${{ github.workspace }}\shots" --only "${{ inputs.pages }}"
           Get-Content "${{ github.workspace }}\shots\_log.txt"
 
       - name: Upload the images
