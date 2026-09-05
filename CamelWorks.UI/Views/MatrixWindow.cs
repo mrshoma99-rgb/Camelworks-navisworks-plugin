@@ -3851,12 +3851,49 @@ namespace CamelWorks.UI.Views
                 var open = _counts.OpenBetween(row, column);
                 var ever = _counts.EverBetween(row, column);
 
+                // <b>The dead half is dead in every view.</b> Drawn at full strength over both
+                // triangles, a heat map is four hundred numbers where the board holds two
+                // hundred and ten pairs - every one of them printed twice, and the spine the
+                // grid is mirrored about lost in the middle of them. The argument for drawing it
+                // whole was that a triangle has to be folded in the head to be read across; the
+                // answer to that is the echo the other two views already use, which lets a row be
+                // read across without the mirror competing with the half that is live.
+                if (!_board.IsDrawnHalf(row, column))
+                {
+                    cell.Background = System.Windows.Media.Brushes.Transparent;
+
+                    cell.Child = open < 0 || !_style.Echo
+                        ? null
+                        : new TextBlock
+                        {
+                            Text = open.ToString(CultureInfo.InvariantCulture),
+                            FontSize = Math.Max(10, Lettering - 2),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            TextWrapping = TextWrapping.NoWrap,
+                            Opacity = 0.9,
+                        }.Tint(TextBlock.ForegroundProperty, "Faint");
+
+                    var pair = _board.MirrorOf(row, column);
+
+                    cell.ToolTip = pair == null
+                        ? at
+                        : "The same pair as " + pair.Value.Row.Titled + " against "
+                          + pair.Value.Column.Titled + ", which is the half this matrix keeps.";
+
+                    Named(cell);
+                    return;
+                }
+
                 if (open < 0)
                 {
                     cell.Background = System.Windows.Media.Brushes.Transparent;
                     cell.Child = null;
                     cell.ToolTip = at + " — " + row.Titled + " against " + column.Titled
                                    + ". No test in the document covers this pair.";
+
+                    Named(cell);
                     return;
                 }
 
@@ -3883,6 +3920,8 @@ namespace CamelWorks.UI.Views
                                + (ever > open
                                    ? " of " + ever.ToString(CultureInfo.InvariantCulture) + " found."
                                    : ".");
+
+                Named(cell);
             }
 
             /// <summary>
@@ -4068,8 +4107,9 @@ namespace CamelWorks.UI.Views
 
             private void Paint(Border cell, MatrixLine row, MatrixLine column)
             {
-                // What came back is drawn over the whole grid, both halves alike: a heat map
-                // read across a triangle is a heat map somebody has to fold in their head.
+                // All three views draw the same board: the spine down the diagonal, the half
+                // that is not worked in echoed quietly, and only the cells' own contents
+                // different between them.
                 if (_shown == Showing.Results) { Counted(cell, row, column); return; }
                 if (_shown == Showing.Priority) { Urgency(cell, row, column); return; }
 
@@ -9390,9 +9430,9 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                MatrixReading? reading = null;
+                List<ClashTestRead>? held = null;
 
-                Ui.Working("Reading the document's tests…", job =>
+                Ui.Working("Reading the document's tests\u2026", job =>
                 {
                     var tests = _session.Clash.Tests();
                     var read = new List<ClashTestRead>();
@@ -9406,8 +9446,23 @@ namespace CamelWorks.UI.Views
                                                    Array.Empty<ClashResultInfo>()));
                     }
 
-                    reading = MatrixFromModel.Read(read);
+                    held = read;
                 });
+
+                if (held == null) return;
+
+                if (held.Count == 0)
+                {
+                    Warned(Ui.Note("This document has no clash tests to read a matrix out of."));
+                    return;
+                }
+
+                // <b>Which tests, and what their names mean, are the person's to say.</b> This
+                // took every test in the document - the current round and the three abandoned
+                // ones, the sandbox tests somebody set up on a Friday - and made one grid of the
+                // lot; and it named the rows after whatever the saved sets happened to be called,
+                // while the discipline codes and the packages sat unread in the test names.
+                var reading = MatrixReadWindow.Ask(held, _pattern);
 
                 if (reading == null) return;
 

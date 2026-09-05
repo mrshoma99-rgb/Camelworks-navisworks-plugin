@@ -2992,4 +2992,338 @@ namespace CamelWorks.Core.Tests
             Assert.NotNull(XDocument.Parse(file.Text));
         }
     }
+
+    /// <summary>
+    /// A naming pattern read backwards: what a name has to look like, what each part of it means,
+    /// and what it refuses rather than guessing at.
+    /// </summary>
+    public class MatrixNamePatternTests
+    {
+        [Fact]
+        public void It_pulls_the_two_sides_out_of_a_name()
+        {
+            var found = MatrixNamePattern.Parse("{row} vs {column}").Match("Steel vs Ductwork");
+
+            Assert.NotNull(found);
+            Assert.Equal("Steel", found!.Value("row"));
+            Assert.Equal("Ductwork", found.Value("column"));
+        }
+
+        [Fact]
+        public void Braces_are_optional_when_asking_for_a_value()
+        {
+            var found = MatrixNamePattern.Parse("{row} vs {column}").Match("Steel vs Ductwork");
+
+            Assert.Equal("Steel", found!.Value("{row}"));
+        }
+
+        [Fact]
+        public void A_name_that_does_not_fit_is_not_forced()
+        {
+            Assert.Null(MatrixNamePattern.Parse("{row} vs {column}").Match("Steel | Ductwork"));
+        }
+
+        [Fact]
+        public void Numbers_split_a_name_at_the_right_place()
+        {
+            var found = MatrixNamePattern.Parse("{rowNumber} {row} vs {columnNumber} {column}")
+                                         .Match("01 Steel vs 04 Ductwork");
+
+            Assert.Equal("01", found!.Value("rowNumber"));
+            Assert.Equal("Steel", found.Value("row"));
+            Assert.Equal("04", found.Value("columnNumber"));
+        }
+
+        [Fact]
+        public void A_real_convention_reads_end_to_end()
+        {
+            var found = MatrixNamePattern
+                .Parse("{rowCode}-{rowNumber} {row} vs {columnCode}-{columnNumber} {column} ({symbol})")
+                .Match("ST-01 Steel vs ME-04 Ductwork (B)");
+
+            Assert.Equal("ST", found!.Value("rowCode"));
+            Assert.Equal("01", found.Value("rowNumber"));
+            Assert.Equal("Steel", found.Value("row"));
+            Assert.Equal("ME", found.Value("columnCode"));
+            Assert.Equal("Ductwork", found.Value("column"));
+            Assert.Equal("B", found.Value("symbol"));
+        }
+
+        [Fact]
+        public void It_does_not_care_about_case_in_the_literals()
+        {
+            Assert.NotNull(MatrixNamePattern.Parse("{row} vs {column}").Match("Steel VS Ductwork"));
+        }
+
+        [Fact]
+        public void Two_tokens_with_nothing_between_them_are_refused()
+        {
+            var pattern = MatrixNamePattern.Parse("{row}{column}");
+
+            Assert.False(pattern.IsUsable);
+            Assert.Contains("nothing between", pattern.Trouble);
+        }
+
+        [Fact]
+        public void The_same_token_twice_is_refused()
+        {
+            var pattern = MatrixNamePattern.Parse("{row} vs {row}");
+
+            Assert.False(pattern.IsUsable);
+            Assert.Contains("twice", pattern.Trouble);
+        }
+
+        [Fact]
+        public void A_token_nobody_has_is_refused()
+        {
+            var pattern = MatrixNamePattern.Parse("{discipline} vs {column}");
+
+            Assert.False(pattern.IsUsable);
+            Assert.Contains("not one of the tokens", pattern.Trouble);
+        }
+
+        [Fact]
+        public void An_unclosed_brace_is_refused()
+        {
+            Assert.False(MatrixNamePattern.Parse("{row vs {column}").IsUsable);
+        }
+
+        [Fact]
+        public void A_pattern_with_no_tokens_is_refused()
+        {
+            var pattern = MatrixNamePattern.Parse("Steel vs Ductwork");
+
+            Assert.False(pattern.IsUsable);
+            Assert.Contains("no tokens", pattern.Trouble);
+        }
+
+        [Fact]
+        public void An_empty_pattern_says_so_rather_than_throwing()
+        {
+            Assert.False(MatrixNamePattern.Parse(null).IsUsable);
+            Assert.False(MatrixNamePattern.Parse("   ").IsUsable);
+        }
+
+        [Fact]
+        public void It_counts_how_many_names_it_fits()
+        {
+            var pattern = MatrixNamePattern.Parse("{row} vs {column}");
+
+            Assert.Equal(2, pattern.Fits(new[] { "A vs B", "C vs D", "E | F" }));
+        }
+
+        [Fact]
+        public void A_pattern_reads_back_what_the_matrix_writes()
+        {
+            var row = new MatrixLine("Steel", "01") { Code = "ST" };
+            var column = new MatrixLine("Ductwork", "04") { Code = "ME" };
+            var symbol = new MatrixSymbol("B", MatrixTest.Clearance, 0.025);
+
+            var pattern = MatrixNamePattern.Parse(
+                "{rowCode}-{rowNumber} {row} vs {columnCode}-{columnNumber} {column} ({symbol})");
+
+            var written = MatrixNaming.Fill(pattern.Pattern, row, column, symbol, 1);
+            var found = pattern.Match(written);
+
+            Assert.NotNull(found);
+            Assert.Equal("Steel", found!.Value("row"));
+            Assert.Equal("B", found.Value("symbol"));
+        }
+    }
+
+    /// <summary>
+    /// The matrix read out of the document, using the job's own naming rather than whatever the
+    /// saved sets happen to be called.
+    /// </summary>
+    public class MatrixFromNamesTests
+    {
+        private static ClashTestRead Test(string name, string a, string b,
+                                          string kind = "Hard", double tolerance = 0.01) =>
+            new ClashTestRead(
+                new ClashTestInfo(name, name, null, 0, 0),
+                new ClashTestSides(a, b, Array.Empty<string>(), Array.Empty<string>(),
+                                   kind, tolerance),
+                Array.Empty<ClashResultInfo>());
+
+        private static IReadOnlyList<MatrixNamePattern> One(string pattern) =>
+            new[] { MatrixNamePattern.Parse(pattern) };
+
+        [Fact]
+        public void The_rows_are_named_the_way_the_tests_are()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET_R21", "ME_SET_R21") },
+                One("{row} vs {column}"));
+
+            Assert.Contains(read.Board.Rows, r => r.Name == "Steel");
+            Assert.Contains(read.Board.Rows, r => r.Name == "Ductwork");
+        }
+
+        [Fact]
+        public void The_row_still_points_at_the_set()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET_R21", "ME_SET_R21") },
+                One("{row} vs {column}"));
+
+            var steel = read.Board.Rows.First(r => r.Name == "Steel");
+
+            Assert.Equal("ST_SET_R21", steel.Source.Name);
+        }
+
+        [Fact]
+        public void The_code_and_the_folder_come_out_of_the_name()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("ARC/ST Steel vs MEP/ME Ductwork", "a", "b") },
+                One("{rowFolder}/{rowCode} {row} vs {columnFolder}/{columnCode} {column}"));
+
+            var steel = read.Board.Rows.First(r => r.Name == "Steel");
+
+            Assert.Equal("ST", steel.Code);
+            Assert.Equal("ARC", steel.Folder);
+        }
+
+        [Fact]
+        public void One_discipline_named_by_five_tests_is_one_row()
+        {
+            var read = MatrixFromNames.Read(
+                new[]
+                {
+                    Test("Steel vs Ductwork", "a", "b"),
+                    Test("Steel vs Pipes", "a", "c"),
+                    Test("Steel vs Trays", "a", "d"),
+                },
+                One("{row} vs {column}"));
+
+            Assert.Single(read.Board.Rows.Where(r => r.Name == "Steel"));
+        }
+
+        [Fact]
+        public void The_symbol_in_the_name_becomes_the_symbol_in_the_cell()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork (B)", "a", "b") },
+                One("{row} vs {column} ({symbol})"));
+
+            var steel = read.Board.Rows.First(r => r.Name == "Steel");
+            var duct = read.Board.Columns.First(c => c.Name == "Ductwork");
+
+            Assert.Equal("B", read.Board.At(steel, duct));
+            Assert.Contains(read.Legend.Symbols, s => s.Symbol == "B");
+        }
+
+        [Fact]
+        public void What_the_symbol_means_still_comes_from_the_test()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork (B)", "a", "b", "Clearance", 0.025) },
+                One("{row} vs {column} ({symbol})"));
+
+            var symbol = read.Legend.Symbols.First(s => s.Symbol == "B");
+
+            Assert.Equal(MatrixTest.Clearance, symbol.Test);
+            Assert.Equal(0.025, symbol.Tolerance, 6);
+        }
+
+        [Fact]
+        public void The_first_pattern_that_fits_claims_a_name()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel | Ductwork", "a", "b") },
+                new[]
+                {
+                    MatrixNamePattern.Parse("{row} vs {column}"),
+                    MatrixNamePattern.Parse("{row} | {column}"),
+                });
+
+            Assert.Contains(read.Board.Rows, r => r.Name == "Steel");
+        }
+
+        [Fact]
+        public void A_name_no_pattern_fits_falls_back_to_its_sets()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("something else entirely", "ST_SET", "ME_SET") },
+                One("{row} vs {column}"));
+
+            Assert.Equal(1, read.Tests);
+            Assert.Contains(read.Warnings, w => w.Contains("fits"));
+        }
+
+        [Fact]
+        public void It_can_be_told_to_leave_what_does_not_fit_out()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("something else entirely", "ST_SET", "ME_SET") },
+                One("{row} vs {column}"),
+                new MatrixReadOptions { TakeUnmatched = false });
+
+            Assert.Equal(0, read.Tests);
+        }
+
+        [Fact]
+        public void One_name_over_two_different_sets_is_said_out_loud()
+        {
+            var read = MatrixFromNames.Read(
+                new[]
+                {
+                    Test("Steel vs Ductwork", "ST_R21", "ME_R21"),
+                    Test("Steel vs Pipes", "ST_R22", "PIPE_R21"),
+                },
+                One("{row} vs {column}"));
+
+            Assert.Contains(read.Warnings, w => w.Contains("more than one saved set"));
+        }
+
+        [Fact]
+        public void No_patterns_at_all_is_the_read_it_always_was()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") },
+                Array.Empty<MatrixNamePattern>());
+
+            Assert.Contains(read.Board.Rows, r => r.Source.Name == "ST_SET");
+        }
+
+        [Fact]
+        public void The_names_can_be_told_not_to_win()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork", "ST_SET", "ME_SET") },
+                One("{row} vs {column}"),
+                new MatrixReadOptions { NamesWin = false });
+
+            Assert.Contains(read.Board.Rows, r => r.Source.Name == "ST_SET");
+            Assert.DoesNotContain(read.Board.Rows, r => r.Name == "Steel");
+        }
+
+        [Fact]
+        public void A_test_that_says_nothing_about_its_sides_is_left_out()
+        {
+            var read = MatrixFromNames.Read(
+                new[]
+                {
+                    new ClashTestRead(new ClashTestInfo("1", "Steel vs Ductwork", null, 0, 0),
+                                      null, Array.Empty<ClashResultInfo>()),
+                },
+                One("{row} vs {column}"));
+
+            Assert.Equal(0, read.Tests);
+            Assert.Contains(read.Warnings, w => w.Contains("does not say"));
+        }
+
+        [Fact]
+        public void The_matrix_it_makes_is_mirrored()
+        {
+            var read = MatrixFromNames.Read(
+                new[] { Test("Steel vs Ductwork (B)", "a", "b") },
+                One("{row} vs {column} ({symbol})"));
+
+            var duct = read.Board.Rows.First(r => r.Name == "Ductwork");
+            var steel = read.Board.Columns.First(c => c.Name == "Steel");
+
+            Assert.Equal("B", read.Board.At(duct, steel));
+        }
+    }
 }

@@ -58,6 +58,16 @@ namespace CamelWorks.Studio
             Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn())),
 
+            // The window that says which tests become a matrix and what their names mean. Drawn
+            // as a panel rather than shown as a window, because a WPF window needs a screen to
+            // exist on and this harness has none - so until this was split out, every dialogue
+            // in the product was checked by a coordinator on a licensed seat and described to me
+            // in words.
+            Page("app-clash-matrix-read", "Clash Manager · Read from the model", 660,
+                 () => MatrixReadWindow.Draw(Named(), "{rowCode}-{rowNumber} {row} vs "
+                                                      + "{columnCode}-{columnNumber} {column}",
+                                             null, null)),
+
             // The results view was the one that could not be photographed: it counts what the
             // document holds and this seat holds none, so the heat scale, the number in each
             // cell and the difference between a nought and a pair no test covers were drawing
@@ -278,6 +288,73 @@ namespace CamelWorks.Studio
 
             return read;
         }
+
+        /// <summary>
+        /// A document's tests as a read of them hands them back, named three different ways.
+        ///
+        /// Three conventions on one job, because that is what two years of set-up looks like: a
+        /// batch named to the standard, a batch from before it, and a handful somebody typed. A
+        /// fixture where every name fits the first pattern would photograph a screen that never
+        /// happens.
+        /// </summary>
+        private static IReadOnlyList<ClashTestRead> Named()
+        {
+            var read = new List<ClashTestRead>();
+
+            var sides = new (string Code, string Number, string Name)[]
+            {
+                ("ARC", "01", "General Elements"),
+                ("ARC", "02", "Internal Partitions"),
+                ("STR", "03", "Structural Frame"),
+                ("STR", "04", "Slabs and Decks"),
+                ("WSC", "05", "Pipes"),
+                ("WSC", "06", "Ducts"),
+                ("EIC", "07", "Cable Trays"),
+            };
+
+            var at = 0;
+
+            for (var one = 0; one < sides.Length; one++)
+            for (var other = one + 1; other < sides.Length; other++)
+            {
+                at++;
+
+                var a = sides[one];
+                var b = sides[other];
+
+                // Most of them to the standard, a run of older ones on the other separator, and
+                // two nobody named to any rule at all.
+                var name = at % 7 == 0
+                    ? "Coordination check " + at.ToString(CultureInfo.InvariantCulture)
+                    : at % 3 == 0
+                        ? a.Name + " | " + b.Name
+                        : a.Code + "-" + a.Number + " " + a.Name + " vs "
+                          + b.Code + "-" + b.Number + " " + b.Name;
+
+                read.Add(new ClashTestRead(
+                    new ClashTestInfo(at.ToString(CultureInfo.InvariantCulture), name, null, 0, 0),
+                    new ClashTestSides(Setted(a.Code, a.Name), Setted(b.Code, b.Name),
+                                       Array.Empty<string>(), Array.Empty<string>(),
+                                       at % 4 == 0 ? "Clearance" : "Hard",
+                                       at % 4 == 0 ? 0.025 : 0.010),
+                    Array.Empty<ClashResultInfo>()));
+            }
+
+            return read;
+        }
+
+        /// <summary>
+        /// A saved set named the way a real one is: a code, a name in capitals, and the revision
+        /// somebody issued it at - which is precisely what a matrix read from the sets used to be
+        /// named after, and why reading the test names is worth the window.
+        /// </summary>
+        /// <param name="code">The discipline code.</param>
+        /// <param name="name">The discipline's name.</param>
+        private static string Setted(string code, string name) =>
+            string.Join("_", new[]
+            {
+                code, name.Replace(" ", "_").ToUpperInvariant(), "REV21", "ISSUED",
+            });
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };
