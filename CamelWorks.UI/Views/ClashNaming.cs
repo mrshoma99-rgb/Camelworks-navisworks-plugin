@@ -190,8 +190,11 @@ namespace CamelWorks.UI.Views
                         break;
 
                     case NamingPane.Write:
+                        // Two callbacks, not one. Recording the pane's own default field through
+                        // a callback that redraws sent Redraw back into itself, and the copy it
+                        // had already built stayed on the panel: every card drawn twice.
                         Writing(held, Acting, book, tests, rename, how, token,
-                                said => { token = said; Redraw(); }, Touch);
+                                said => token = said, Redraw, Touch);
                         break;
 
                     default:
@@ -916,12 +919,17 @@ namespace CamelWorks.UI.Views
         /// <param name="rename">Renames one test, and says whether it landed.</param>
         /// <param name="how">The series, held across pane switches.</param>
         /// <param name="token">The field being written, or null for the pane's own default.</param>
-        /// <param name="onToken">Called when the field changes, so the choice survives a switch.</param>
+        /// <param name="onToken">Records the field, so the choice survives a pane switch.</param>
+        /// <param name="onShape">
+        /// Rebuilds the pane, for a switch that changes which controls there are. Kept apart from
+        /// <paramref name="onToken"/>, which only records: recording through a rebuild sent the
+        /// rebuild back into itself and drew every card twice.
+        /// </param>
         /// <param name="touch">Called when anything was actually renamed.</param>
         private static void Writing(Panel into, Action<UIElement?> acts, NamingBook book,
                                     List<Line> tests, Func<string, string, bool> rename,
                                     MatrixField how, string? token, Action<string?> onToken,
-                                    Action touch)
+                                    Action onShape, Action touch)
         {
             var offered = Offered(book);
 
@@ -1090,7 +1098,11 @@ namespace CamelWorks.UI.Views
 
             // The controls that change the shape of the card rebuild the pane; the ones that only
             // change values redraw the plan.
-            void Fill() => onToken(chosen);
+            void Fill()
+            {
+                onToken(chosen);
+                onShape();
+            }
         }
 
         /// <summary>The plan's column headings, so the two names are labelled rather than guessed.</summary>
