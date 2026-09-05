@@ -18,14 +18,13 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// The predicates the Suppress, Flag and Assign sections share.
     ///
-    /// One vocabulary across all three, because a coordinator who has learned to express
-    /// "insulation touching a wall, less than 5mm, same model" for suppression should not have to
-    /// learn a different way of saying it to assign it to somebody.
+    /// One vocabulary across all three, so a coordinator who has learned to express "insulation
+    /// touching a wall, less than 5 mm, same model" for suppression does not have to learn another
+    /// way of saying it to assign it.
     ///
-    /// <b>Every predicate is false when the data it needs is missing.</b> A rule about overlap
-    /// volume cannot decide anything about a result whose engine reported none, and treating
-    /// absent as zero would suppress results nobody asked to suppress — silently, which is the
-    /// worst way for a filter to be wrong.
+    /// Every predicate is false when the data it needs is missing. A rule about overlap volume
+    /// cannot decide anything about a result whose engine reported none, and treating absent as zero
+    /// would silently suppress results nobody asked to suppress.
     /// </summary>
     public static class ClashPredicates
     {

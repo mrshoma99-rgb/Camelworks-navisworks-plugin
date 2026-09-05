@@ -250,9 +250,9 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// Carry the snapshot's history onto this run's results, and report what changed.
         ///
-        /// <b>Mutates the items</b>, setting <see cref="ClashItem.Status"/> and
-        /// <see cref="ClashItem.CarriedGroup"/>. That is the point: everything downstream reads
-        /// those two fields, so carry-over is the one place that writes them.
+        /// Mutates the items, setting <see cref="ClashItem.Status"/> and
+        /// <see cref="ClashItem.CarriedGroup"/>. Everything downstream reads those two fields, so
+        /// carry-over is the only place that writes them.
         /// </summary>
         public static ClashDelta Apply(IEnumerable<ClashItem> items, ClashSnapshot? snapshot)
         {

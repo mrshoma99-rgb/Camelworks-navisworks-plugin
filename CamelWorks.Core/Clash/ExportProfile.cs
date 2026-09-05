@@ -221,22 +221,20 @@ namespace CamelWorks.Core.Clash
     /// <summary>
     /// Which of the board goes into the file, saved so the same answer comes out next week.
     ///
-    /// The choice is never "all of it". A weekly issue is one discipline's tests at three statuses;
-    /// a handover is everything resolved; a sub-contractor gets what is assigned to them and
-    /// nothing else. Re-deciding that every Friday is how a Friday gets lost, and how two
-    /// consecutive issues quietly cover different things.
+    /// The choice is never "all of it". A weekly issue is one discipline's tests at three statuses; a
+    /// handover is everything resolved; a sub-contractor gets what is assigned to them. Re-deciding
+    /// that every week costs time and makes two consecutive issues cover different things.
     ///
-    /// <b>Tests are matched by the host's id first and by name second.</b> A test somebody renamed
-    /// is still the test the profile chose, and dropping it silently because the name moved is the
-    /// failure mode this exists to avoid. The rename is reported rather than swallowed, because a
+    /// Tests are matched by the host's id first and by name second, so a test that was renamed is
+    /// still the test the profile chose. The rename is reported rather than swallowed, because a
     /// name changing usually means a scope changed with it.
     ///
-    /// <b>A test the profile never saw goes in.</b> A new test is the one thing a baseline must not
-    /// miss - the results nobody has looked at yet - so it arrives chosen, and is named so it can
-    /// be unchosen deliberately.
+    /// A test the profile never saw goes in. A new test is the one thing a baseline must not miss —
+    /// results nobody has looked at yet — so it arrives selected and is named so it can be
+    /// deselected deliberately.
     ///
-    /// <b>What was left out is always said.</b> A file that quietly holds a third of the board is
-    /// how a coordination meeting ends in an argument about what was sent.
+    /// What was left out is always stated. A file that holds a third of the board without saying so
+    /// leads to an argument about what was sent.
     /// </summary>
     public sealed class ExportProfile
     {
