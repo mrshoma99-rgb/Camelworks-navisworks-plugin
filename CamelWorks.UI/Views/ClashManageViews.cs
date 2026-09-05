@@ -584,7 +584,7 @@ namespace CamelWorks.UI.Views
             private const string Blank = "(not carried)";
             private const string ByAssignee = "Assignee";
             private const string ByStatus = "Status";
-            private const string ByHowBad = "How bad";
+            private const string ByHowBad = "Severity";
 
             private const string Anyone = "Anyone";
 
@@ -676,7 +676,7 @@ namespace CamelWorks.UI.Views
                 // Two calls rather than one with a ternary in its caption slot, so each caption
                 // is a literal the harness check can hold a picture to.
                 var read = already
-                    ? Ui.RunParts("Read again", _log, Read, primary: false)
+                    ? Ui.RunParts("Refresh", _log, Read, primary: false)
                     : Ui.RunParts("Read the results", _log, Read, primary: false);
 
                 read.Buttons.ToolTip = already
@@ -843,7 +843,7 @@ namespace CamelWorks.UI.Views
             /// <summary>What the funnel says it is doing, in full, on hover.</summary>
             private string WhatIsNarrowed()
             {
-                if (!Narrowed) return "Narrow the list";
+                if (!Narrowed) return "Filter";
 
                 var said = new List<string>();
 
@@ -852,7 +852,7 @@ namespace CamelWorks.UI.Views
                 if (_openOnly) said.Add("only tests with something open");
                 if (_railFind.Trim().Length > 0) said.Add("matching " + Quoted(_railFind.Trim()));
 
-                return "Narrowed to " + string.Join(" · ", said) + ". Press to change it.";
+                return "Filtered to " + string.Join(" · ", said) + ". Press to change it.";
             }
 
             /// <summary>
@@ -1040,11 +1040,11 @@ namespace CamelWorks.UI.Views
                     {
                         Padding = new Thickness(14),
                         Child = Current() == null
-                            ? Ui.Empty("Nothing has been read yet.",
+                            ? Ui.Empty("Nothing read yet.",
                                        "Press \"Read the results\" on the footer, and the tests "
                                        + "land here.")
                             : Ui.Empty("No test matches this.",
-                                       "Take a chip off above and the list comes back."),
+                                       "Remove a filter above to see the full list."),
                     });
 
                     return;
@@ -1213,7 +1213,7 @@ namespace CamelWorks.UI.Views
                     Padding = new Thickness(12, 6, 14, 5),
                     BorderThickness = new Thickness(0, 0, 0, 1),
                     ToolTip = folder + " — a CamelWorks folder, kept in this project. "
-                              + (shut ? "Click to open it." : "Click to fold it away.")
+                              + (shut ? "Expand" : "Collapse")
                               + " Double-click to rename it.",
                     Child = row,
                     Cursor = System.Windows.Input.Cursors.Hand,
@@ -1247,7 +1247,7 @@ namespace CamelWorks.UI.Views
 
                     e.Handled = true;
 
-                    Prompt("Rename this folder", folder, "Rename",
+                    Prompt("Rename", folder, "Rename",
                            named => RenameFolder(folder, named));
                 };
 
@@ -1344,7 +1344,7 @@ namespace CamelWorks.UI.Views
 
                         e.Handled = true;
 
-                        Prompt("Rename this test", entry.Test.Name, "Rename",
+                        Prompt("Rename", entry.Test.Name, "Rename",
                                renamed => RenameTest(entry, renamed));
                     };
 
@@ -1377,11 +1377,11 @@ namespace CamelWorks.UI.Views
                     _rows,
                     reaching.Count > 1
                         ? "Move " + Ui.Count(reaching.Count, "test") + " into a folder"
-                        : "Move this test into a folder",
+                        : "Move to a folder",
                     known,
                     now.Length == 0 ? null : now,
                     "Or a new folder",
-                    now.Length > 0 || reaching.Count > 1 ? "Take them out of any folder" : null,
+                    now.Length > 0 || reaching.Count > 1 ? "Remove from any folder" : null,
                     folder => MoveTests(reaching, folder, _log));
             }
 
@@ -1483,10 +1483,10 @@ namespace CamelWorks.UI.Views
 
                 return new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading(many ? "Do to " + what : "This test"),
-                    Parts.Entry.Act(many ? "Run them again" : "Run this test again", Glyphs.Play,
+                    Parts.Entry.Heading(many ? "Actions for " + what : "This test"),
+                    Parts.Entry.Act(many ? "Run again" : "Run this test", Glyphs.Play,
                                     () => RunTests(reaching, _log)),
-                    Parts.Entry.Act("Read every test's results again", Glyphs.Read,
+                    Parts.Entry.Act("Refresh every test's results", Glyphs.Read,
                                     () => _readButtons?.Children
                                         .OfType<System.Windows.Controls.Primitives.ButtonBase>()
                                         .FirstOrDefault()?
@@ -1497,18 +1497,18 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Heading("Name and file"),
                     many
                         ? Parts.Entry.Barred("Rename", Glyphs.Pencil,
-                            "One test at a time - a rename is one name.")
-                        : Parts.Entry.Act("Rename this test", Glyphs.Pencil,
-                            () => Prompt("Rename this test", entry?.Test.Name ?? string.Empty,
+                            "Select a single test to rename.")
+                        : Parts.Entry.Act("Rename", Glyphs.Pencil,
+                            () => Prompt("Rename", entry?.Test.Name ?? string.Empty,
                                          "Rename", name => RenameTest(entry, name))),
-                    Parts.Entry.Act(many ? "Renumber their results" : "Renumber the results",
+                    Parts.Entry.Act(many ? "Renumber the results" : "Renumber the results",
                         Glyphs.Number,
                         () => Prompt("Renumber the results", string.Empty, "Renumber",
                                      prefix => RenameResults(reaching, prefix, _log))),
-                    Parts.Entry.Act(many ? "Move them into a folder" : "Move into a folder",
+                    Parts.Entry.Act(many ? "Move to a folder" : "Move to a folder",
                         Glyphs.MoveIn, () => MoveInto(reaching, entry)),
-                    Parts.Entry.Act(many ? "Compact them - drop what is finished"
-                                         : "Compact - drop what is finished",
+                    Parts.Entry.Act(many ? "Compact — remove resolved results"
+                                         : "Compact — remove resolved results",
                                     Glyphs.Compact, () => CompactTests(reaching, _log)),
 
                     Parts.Entry.Rule(),
@@ -1526,7 +1526,7 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Act("Copy the list", Glyphs.Copy, () => CopyTests(read)),
 
                     Parts.Entry.Rule(),
-                    Parts.Entry.Danger(many ? "Delete " + what : "Delete this test", Glyphs.Bin,
+                    Parts.Entry.Danger(many ? "Delete " + what : "Delete", Glyphs.Bin,
                                        () => DeleteTests(reaching, _log)),
                 };
             }
@@ -1542,11 +1542,11 @@ namespace CamelWorks.UI.Views
 
                 if (!OnFile)
                 {
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all the tests again",
+                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all tests",
                         () => RunTests(read.Cast<object>().ToList(), _log)));
 
                     verbs.Children.Add(Parts.MoreMenu(Glyphs.More,
-                        "Everything else you can do to tests", TestMenu(entry), up: true));
+                        "More actions", TestMenu(entry), up: true));
                 }
                 else
                 {
@@ -1833,7 +1833,7 @@ namespace CamelWorks.UI.Views
                     _board.Children.Clear();
 
                     if (Current() != null)
-                        _board.Children.Add(Ui.Empty("No test is on the board.",
+                        _board.Children.Add(Ui.Empty("No tests on the board.",
                             "Pick one on the left, and its results land here."));
 
                     RedrawSelection();
@@ -2173,7 +2173,7 @@ namespace CamelWorks.UI.Views
                 verbs.Children.Add(Ui.Loose(_strip));
 
                 if (!OnFile)
-                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test again",
+                    verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run this test",
                         () => RunTests(One(entry), _log)));
 
                 verbs.Children.Add(Ui.Icon(Glyphs.Columns, "Which columns the board shows",
@@ -2234,7 +2234,7 @@ namespace CamelWorks.UI.Views
                     head.MouseLeftButtonDown += (s, e) =>
                     {
                         if (e.ClickCount == 2)
-                            Prompt("Rename this test", entry.Test.Name, "Rename",
+                            Prompt("Rename", entry.Test.Name, "Rename",
                                    name => RenameTest(entry, name));
                     };
                 }
@@ -2438,7 +2438,7 @@ namespace CamelWorks.UI.Views
 
                 if (values.Count == 0)
                 {
-                    items.Add(Parts.Entry.Barred("Nothing read into this column yet", null,
+                    items.Add(Parts.Entry.Barred("No values read yet", null,
                         "Press \"Read values\" on the Columns page. It reads the property off "
                         + "every clashing element, which is a walk of the federation."));
 
@@ -2452,7 +2452,7 @@ namespace CamelWorks.UI.Views
                 // being looked for. The window it opens is filtered by typing and shows how many
                 // results each value holds, which is what the choice actually turns on.
                 items.Add(Parts.Entry.Act(
-                    "Narrow to values  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
+                    "Filter by value  ·  " + Ui.Count(values.Count, "of them"), Glyphs.Find,
                     () => Parts.Search(_board, "Show results whose " + column.Title + " is any of",
                                        values, wanted,
                                        wanted.Count == 0 ? null : "Any " + column.Title,
@@ -2510,7 +2510,7 @@ namespace CamelWorks.UI.Views
                     said.Add("banded by " + string.Join(" then ", _bands.Select(Facet)));
 
                 return said.Count == 0
-                    ? "Sort the results"
+                    ? "Sort"
                     : "Sorted " + string.Join(", ", said) + ". Press to change it.";
             }
 
@@ -2533,7 +2533,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Heading("Order: by " + _by
                                                   + (_back ? ", backwards" : string.Empty)));
 
-                    items.Add(Parts.Entry.Act("Back to the test's own order", Glyphs.Close, () =>
+                    items.Add(Parts.Entry.Act("Restore the test's own order", Glyphs.Close, () =>
                     {
                         _by = null;
                         _back = false;
@@ -2586,7 +2586,7 @@ namespace CamelWorks.UI.Views
                 {
                     items.Add(Parts.Entry.Rule());
 
-                    items.Add(Parts.Entry.Act("Make these the test's clash groups", Glyphs.Group,
+                    items.Add(Parts.Entry.Act("Save as the test's clash groups", Glyphs.Group,
                                               AskToRealise));
 
                     items.Add(Parts.Entry.Act("No bands", Glyphs.Close, () =>
@@ -2631,7 +2631,7 @@ namespace CamelWorks.UI.Views
                     items.Add(Parts.Entry.Rule());
                     items.Add(Parts.Entry.Heading("Sharing an item with " + Both(_sameAs)));
 
-                    items.Add(Parts.Entry.Act("Every clash again, not just these", Glyphs.Close,
+                    items.Add(Parts.Entry.Act("All clashes, not only these", Glyphs.Close,
                         () =>
                         {
                             _sameAs = null;
@@ -2698,7 +2698,7 @@ namespace CamelWorks.UI.Views
                 {
                     items.Add(Parts.Entry.Rule());
 
-                    items.Add(Parts.Entry.Act("Reset the table", Glyphs.Round, () =>
+                    items.Add(Parts.Entry.Act("Reset the columns", Glyphs.Round, () =>
                     {
                         _status = null;
                         _party = null;
@@ -3086,7 +3086,7 @@ namespace CamelWorks.UI.Views
                         Padding = new Thickness(16),
                         Child = Filtering
                             ? Ui.Empty("Nothing on this board matches what you are showing.",
-                                       "Take a chip off above and the rows come back.")
+                                       "Remove a filter above to see every row.")
                             : Ui.Empty("Nothing on this board matches what you are showing.",
                                        "This test found nothing at " + Tolerance(entry) + "."),
                     };
@@ -3163,7 +3163,7 @@ namespace CamelWorks.UI.Views
                     IsThreeState = true,
                     IsChecked = picked == 0 ? false : picked == top.Count ? true : (bool?)null,
                     VerticalAlignment = VerticalAlignment.Center,
-                    ToolTip = "Pick every row on the board",
+                    ToolTip = "Select every row",
                 };
 
                 all.Click += (s, e) => Ui.Safely(() =>
@@ -3530,7 +3530,7 @@ namespace CamelWorks.UI.Views
                     renaming = true;
                     e.Handled = true;
 
-                    Prompt("Rename the clash group", row.Name, "Rename",
+                    Prompt("Rename the group", row.Name, "Rename",
                            renamed => Regroup(row.Rows.Cast<object>().ToList(), renamed,
                                               "Renamed the clash group to"));
                 };
@@ -3800,7 +3800,7 @@ namespace CamelWorks.UI.Views
 
                 name.Wearing("Mono");
                 name.Tint(TextBlock.ForegroundProperty, "Faint");
-                name.ToolTip = "Double-click to rename it.";
+                name.ToolTip = "Double-click to rename.";
 
                 name.MouseLeftButtonDown += (s, e) =>
                 {
@@ -3808,7 +3808,7 @@ namespace CamelWorks.UI.Views
 
                     e.Handled = true;
 
-                    Prompt("Rename this clash", result.Info.Name ?? string.Empty, "Rename",
+                    Prompt("Rename", result.Info.Name ?? string.Empty, "Rename",
                            renamed => RenameOne(result, renamed));
                 };
 
@@ -4261,7 +4261,7 @@ namespace CamelWorks.UI.Views
                     : Ui.Icon(Glyphs.Comment, "Read and write the comments on this clash",
                         () => Conversation(row.Rows[0])));
 
-                bar.Children.Add(Parts.MoreMenu(Glyphs.More, "Everything else for " + what,
+                bar.Children.Add(Parts.MoreMenu(Glyphs.More, "More actions for " + what,
                                                 RowMenu(row)));
 
                 // Ui.Icon spaces symbols for a row of twelve, where a striped block of them is
@@ -4296,23 +4296,23 @@ namespace CamelWorks.UI.Views
 
                 if (row.IsGroup)
                 {
-                    rest.Add(Parts.Entry.Act("Rename the clash group", Glyphs.Pencil,
-                        () => Prompt("Rename the clash group", row.Name, "Rename",
+                    rest.Add(Parts.Entry.Act("Rename the group", Glyphs.Pencil,
+                        () => Prompt("Rename the group", row.Name, "Rename",
                                      name => Regroup(picked, name, "Renamed the clash group to"))));
 
-                    rest.Add(Parts.Entry.Act("Dissolve the group", Glyphs.Group,
+                    rest.Add(Parts.Entry.Act("Ungroup", Glyphs.Group,
                         () => Regroup(picked, string.Empty,
                                       "Dissolved the clash group and put {0} back loose.")));
                 }
                 else if (row.Only.Group.Length > 0)
                 {
-                    rest.Add(Parts.Entry.Act("Remove from the group", Glyphs.MoveIn,
+                    rest.Add(Parts.Entry.Act("Remove from group", Glyphs.MoveIn,
                         () => Regroup(picked, string.Empty,
                                       "Took {0} out of their clash group.")));
                 }
                 else
                 {
-                    rest.Add(Parts.Entry.Act("Group with the picked rows", Glyphs.Group,
+                    rest.Add(Parts.Entry.Act("Group with the selection", Glyphs.Group,
                         () => GroupInto(WithPicked(picked), "Grouped {0} into")));
                 }
 
@@ -4467,7 +4467,7 @@ namespace CamelWorks.UI.Views
                     Grouping(rows),
                     Parts.Verb("Raise as issues", Glyphs.Issue, false,
                                () => RaiseIssue(picked, false)),
-                    Parts.MoreMenu(Glyphs.More, "Everything else for the picked rows",
+                    Parts.MoreMenu(Glyphs.More, "More actions",
                                    PickedMenu(rows), up: true));
             }
 
@@ -4520,12 +4520,12 @@ namespace CamelWorks.UI.Views
                 if (loose.Count == 0 && groups.Count > 0 && Whole(rows, groups))
                 {
                     if (groups.Count == 1)
-                        return Parts.Entry.Act("Dissolve the group", Glyphs.Group,
+                        return Parts.Entry.Act("Ungroup", Glyphs.Group,
                             () => Regroup(picked, string.Empty,
                                           "Dissolved the clash group and put {0} back loose."));
 
-                    return Parts.Entry.Danger("Merge the groups", Glyphs.Group,
-                        () => Prompt("Name the merged clash group", groups[0], "Merge",
+                    return Parts.Entry.Danger("Merge groups", Glyphs.Group,
+                        () => Prompt("Name for the merged group", groups[0], "Merge",
                                      name => Regroup(picked, name,
                                                      "Merged " + groups.Count + " clash groups, "
                                                      + "putting {0} into")));
@@ -4533,7 +4533,7 @@ namespace CamelWorks.UI.Views
 
                 // Anything already in a group, and the way out of it is the verb that matters.
                 if (groups.Count > 0)
-                    return Parts.Entry.Act("Remove from the group", Glyphs.MoveIn,
+                    return Parts.Entry.Act("Remove from group", Glyphs.MoveIn,
                         () => Regroup(inside, string.Empty, "Took {0} out of their clash group."));
 
                 if (loose.Count > 1)
@@ -4593,7 +4593,7 @@ namespace CamelWorks.UI.Views
                 {
                     // Grouped by what the line does to the world, in the order somebody works:
                     // look at it, say something about it, file it, send it somewhere.
-                    Parts.Entry.Heading("Look at " + what),
+                    Parts.Entry.Heading("View " + what),
                     Parts.Entry.Act("Focus", Glyphs.Focus, () => Focus(picked, _toast)),
                     Parts.Entry.Act("Isolate", Glyphs.Eye, () => Isolate(picked, _toast)),
                     Parts.Entry.Act(MarkerToggle(), Glyphs.EyeOff, () =>
@@ -4616,8 +4616,8 @@ namespace CamelWorks.UI.Views
 
                     Parts.Entry.Rule(),
                     Parts.Entry.Heading("File"),
-                    Parts.Entry.Act("Move into an existing group", Glyphs.MoveIn,
-                        () => Prompt("Move into which clash group", string.Empty, "Move",
+                    Parts.Entry.Act("Move to an existing group", Glyphs.MoveIn,
+                        () => Prompt("Which clash group", string.Empty, "Move",
                                      name => Regroup(picked, name, "Moved {0} into"))),
 
                     Parts.Entry.Rule(),
@@ -4686,7 +4686,7 @@ namespace CamelWorks.UI.Views
                 _send.VerticalAlignment = VerticalAlignment.Center;
                 right.Children.Add(Ui.Loose(_send));
 
-                _saveButton = Ui.Primary("Save the changes", () =>
+                _saveButton = Ui.Primary("Save changes", () =>
                 {
                     if (OnFile) SaveMarkup();
                     else SaveWork();
@@ -4735,7 +4735,7 @@ namespace CamelWorks.UI.Views
                 // is a footer of three buttons where two of them cannot do anything.
                 //
                 // Something read: the way in is the least useful thing in the footer, and
-                // "Read the results again" is on the test's own menu where somebody who wants it
+                // "Refresh the results" is on the test's own menu where somebody who wants it
                 // is already looking.
                 var empty = Current() == null;
 
@@ -4779,7 +4779,7 @@ namespace CamelWorks.UI.Views
                     // answer to a question somebody has rather than a standing reproach.
                     OnFile || WaitingCount == 0
                         ? null
-                        : Parts.Entry.Saying("See what is waiting", Glyphs.Clock,
+                        : Parts.Entry.Saying("Show what is pending", Glyphs.Clock,
                             Ui.Count(WaitingCount, "change") + " the document has not taken",
                             ShowHeld),
                     Parts.Entry.Saying(OnFile ? "Save the markup" : "Save as a clash file (BCF)",
@@ -4787,12 +4787,12 @@ namespace CamelWorks.UI.Views
                     Parts.Entry.Barred("Write a report", Glyphs.Report,
                         "Written on Clash Manager - Report, over this same board."),
                     Parts.Entry.Saying("The board to a spreadsheet", Glyphs.Table,
-                        "Exactly as it is filtered, columns and all", Sheet),
-                    Parts.Entry.Saying("Set up the review round", Glyphs.Round,
+                        "As filtered, with every column", Sheet),
+                    Parts.Entry.Saying("Set up a review round", Glyphs.Round,
                         "What a baseline carries, and where a markup comes back to",
                         () => Configure("round")),
                     Parts.Entry.Rule(),
-                    Parts.Entry.Saying("Raise the board as issues", Glyphs.Issue,
+                    Parts.Entry.Saying("Raise every row as an issue", Glyphs.Issue,
                         "Into the Issue Manager's register",
                         () => RaiseIssue(_shown.Cast<object>().ToList(), false)),
                 };
@@ -4907,7 +4907,7 @@ namespace CamelWorks.UI.Views
                     found.AddRange(ClashFindings.ForTest(entry.Test.Id, entry.Test.Name,
                                                          entry.Rows.Select(r => r.Info)));
 
-                job.Say("Keeping what was found...");
+                job.Say("Saving the results…");
 
                 var register = _session.Findings.Findings;
 
@@ -5109,7 +5109,7 @@ namespace CamelWorks.UI.Views
 
                 if (path.Length == 0)
                 {
-                    _log.Children.Add(Ui.Problem("Say which file to open first."));
+                    _log.Children.Add(Ui.Problem("Choose a file first."));
                     return;
                 }
 
@@ -5314,7 +5314,7 @@ namespace CamelWorks.UI.Views
                     : null,
 
                 Bench.Group("Focus",
-                    Ui.Field("Stand back", Ui.Text(
+                    Ui.Field("Zoom out", Ui.Text(
                         _focusBack.ToString(CultureInfo.InvariantCulture), text =>
                         {
                             if (double.TryParse(text, NumberStyles.Float,
@@ -5459,8 +5459,8 @@ namespace CamelWorks.UI.Views
                     Ui.Small("You are on the file leg: mark the results up and press \"Save "
                              + "markup\" on the Source page. A Manage seat reads it back."))
                 : Ui.Stack(
-                    Bench.Group("Send it out",
-                        // What "Save the changes" writes, said where somebody deciding to send a
+                    Bench.Group("Export",
+                        // What "Save changes" writes, said where somebody deciding to send a
                         // file is looking. It used to sit two levels down behind a symbol and a
                         // text button, which is a strange place for a setting that changes what
                         // the foot's own button produces.
@@ -5477,13 +5477,13 @@ namespace CamelWorks.UI.Views
                                 : new List<string> { Entry()!.Test.Id };
                             Ui.Told(Shell.AppWindow.Show("issues", "clashxml"));
                         }))),
-                    Bench.Group("Bring it back",
+                    Bench.Group("Restore",
                         Ui.PathField("Markups", _markups, PathKind.Open,
                                      ClashFile.Filter,
                                      "a markup file, or the baseline — every markup beside it is read"),
                         Ui.Runner("Sync markups", _sync, primary: false, work: Sync),
                         _sync,
-                        Ui.Check("Raise topics I cannot place as issues", _raiseStrangers,
+                        Ui.Check("Raise unmatched topics as issues", _raiseStrangers,
                                  v => _raiseStrangers = v),
                         Ui.Check("Note what this model has no field for, on the clash",
                                  _noteAsides, v => _noteAsides = v),
@@ -6097,7 +6097,7 @@ namespace CamelWorks.UI.Views
                 switch (by)
                 {
                     case ByAssignee:
-                        return row.Assigned.Length == 0 ? "Nobody yet" : row.Assigned;
+                        return row.Assigned.Length == 0 ? "Unassigned" : row.Assigned;
 
                     case ByStatus:
                         return row.Status;
@@ -6335,7 +6335,7 @@ namespace CamelWorks.UI.Views
                     "Group " + Ui.Count(Rows(picked).Count, "result"),
                     known,
                     null,
-                    "Or a new group, named",
+                    "Or a new group named",
                     null,
                     name => Regroup(picked, name, did),
                     Suggested());
@@ -6522,7 +6522,7 @@ namespace CamelWorks.UI.Views
 
                 if (entry == null)
                 {
-                    Warned(Ui.Problem("Pick a test on the left first."));
+                    Warned(Ui.Problem("Select a test first."));
                     return;
                 }
 
@@ -6557,7 +6557,7 @@ namespace CamelWorks.UI.Views
                           + "the host has no second place to put it."
                         : string.Empty)
                     + " Results the filters are hiding are not touched.",
-                    "Make the groups",
+                    "Create the groups",
                     () => Realise(entry, leaves));
             }
 
@@ -6714,7 +6714,7 @@ namespace CamelWorks.UI.Views
 
                 if (entry == null || wanted.Length == 0)
                 {
-                    Warned(Ui.Problem("Pick a test on the left and type a name for it."));
+                    Warned(Ui.Problem("Select a test, then enter a new name."));
                     return;
                 }
 
@@ -7520,7 +7520,7 @@ namespace CamelWorks.UI.Views
                                                   i.AssignedTo ?? string.Empty,
                                                   Ui.Count(i.Findings.Count, "finding"))),
                     ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
-                    ("Already on it", 0));
+                    ("Already assigned", 0));
 
                 _log.Children.Add(table);
 
@@ -7567,7 +7567,7 @@ namespace CamelWorks.UI.Views
                                           : Ui.Count(issues.Count, "issue") + ".")));
                     })));
 
-                say.Children.Add(Ui.Info("Pick the issue below the results.",
+                say.Children.Add(Ui.Info("Select an issue below.",
                     "Open the register", () => IssueViews.Open(null)));
             }
 
@@ -7809,7 +7809,7 @@ namespace CamelWorks.UI.Views
 
                     if (said.Count == 0)
                     {
-                        trail.Children.Add(Ui.Empty("Nothing has been said about this clash yet.",
+                        trail.Children.Add(Ui.Empty("No comments on this clash.",
                             "What is written here goes into the model's own clash data, and "
                             + "travels out with every report and BCF file."));
                         return;
@@ -7904,7 +7904,7 @@ namespace CamelWorks.UI.Views
                         () => Prompt("Change this comment", comment.Body, "Save",
                                      said => Amend(row, comment, said, redraw))));
 
-                    verbs.Children.Add(Ui.Icon(Glyphs.Bin, "Take this comment off the clash",
+                    verbs.Children.Add(Ui.Icon(Glyphs.Bin, "Delete this comment",
                         () => Erase(row, comment, redraw)));
                 }
 
@@ -8374,7 +8374,7 @@ namespace CamelWorks.UI.Views
             /// <summary>What the marker toggle should say right now.</summary>
             private string MarkerToggle() =>
                 _session.View.CanUnhideMarkers && !MarkerOverlay.Any
-                    ? "Show the markers again"
+                    ? "Show the markers"
                     : "Hide the markers";
 
             /// <summary>Put the switch in the state the markers are actually in.</summary>
@@ -8479,7 +8479,7 @@ namespace CamelWorks.UI.Views
 
                     var head = new DockPanel { LastChildFill = true };
 
-                    var bin = Ui.Icon(Glyphs.Bin, "Take the column out", () =>
+                    var bin = Ui.Icon(Glyphs.Bin, "Remove the column", () =>
                     {
                         _columns.Remove(here);
                         Indexed();
@@ -8581,7 +8581,7 @@ namespace CamelWorks.UI.Views
             {
                 if (_columns.Count == 0 || Current() == null || OnFile) return;
 
-                Ui.Working("Reading the values off the clashing elements...", FillColumns);
+                Ui.Working("Reading values from the clashing elements…", FillColumns);
             }
 
             /// <summary>
@@ -8628,12 +8628,12 @@ namespace CamelWorks.UI.Views
 
                 if (wanted.Count == 0)
                 {
-                    _fill.Children.Add(Ui.Problem("No column says which property to read yet."));
+                    _fill.Children.Add(Ui.Problem("No column names a property to read."));
                     return;
                 }
 
                 job.Total = read.Sum(e => e.Rows.Count);
-                job.Say("Reading the values off the clashing elements...");
+                job.Say("Reading values from the clashing elements…");
 
                 var byId = new Dictionary<string, Row>(StringComparer.Ordinal);
                 var filled = 0;
@@ -9029,7 +9029,7 @@ namespace CamelWorks.UI.Views
             {
                 if (_shown.Count == 0)
                 {
-                    Warned(Ui.Problem("Nothing is on the grid to write."));
+                    Warned(Ui.Problem("Nothing on the grid to write."));
                     return;
                 }
 
@@ -9225,7 +9225,7 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                job.Say("Matching the markups against the board...");
+                job.Say("Matching the markups…");
 
                 // The model's results, indexed two ways, both pointing at the same record so a
                 // second file sees what the first one asked for.
@@ -9573,7 +9573,7 @@ namespace CamelWorks.UI.Views
                 var carried = Harvest(_read);
                 var entries = new List<TestEntry>();
 
-                Ui.Working("Reading the results again", (onProgress, keepGoing) =>
+                Ui.Working("Refreshing the results", (onProgress, keepGoing) =>
                 {
                     foreach (var read in _session.Clash.ReadEverything(
                                  seen => { onProgress(seen); return keepGoing(); }))
@@ -9817,7 +9817,7 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The Save button, kept because what it writes depends on which source is open.
             ///
-            /// "Save the changes" is true and says nothing: from the model it writes the baseline
+            /// "Save changes" is true and says nothing: from the model it writes the baseline
             /// the whole review round is built on, and from a file it writes the markup a Manage
             /// seat reads back. Both are the file somebody came here to produce, and a button
             /// that will not name it is how the most useful thing on a screen goes unnoticed.
@@ -9862,7 +9862,7 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Say what the footer's one primary will write, and whether it can.
             ///
-            /// The design calls this button "Save the changes", and every edit on this board has
+            /// The design calls this button "Save changes", and every edit on this board has
             /// already been written — the chip on the row asks the host the moment it is picked.
             /// What is left to save is what the host refused, which a published NWD always does,
             /// so the button names that: it is the sync, and its caption counts what is waiting
@@ -9886,8 +9886,8 @@ namespace CamelWorks.UI.Views
 
                 _saveButton.Content = OnFile
                     ? "Save the markup"
-                    : waiting == 0 || why != null ? "Save the changes"
-                    : "Save, and write " + Ui.Count(waiting, "change") + " into the document";
+                    : waiting == 0 || why != null ? "Save changes"
+                    : "Save and write " + Ui.Count(waiting, "change") + " into the document";
 
                 _saveButton.ToolTip = OnFile
                     ? "Writes what is on this board into a markup beside the file it came from, "
@@ -9996,7 +9996,7 @@ namespace CamelWorks.UI.Views
 
                 if (waiting.Count == 0)
                 {
-                    Said(Ui.Line("Nothing is waiting.", 0.75));
+                    Said(Ui.Line("Nothing pending.", 0.75));
                     return;
                 }
 

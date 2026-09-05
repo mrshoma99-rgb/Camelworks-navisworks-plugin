@@ -1907,4 +1907,109 @@ namespace CamelWorks.Core.Tests
             Assert.Equal("Ducts", board.Rows[0].Name);
         }
     }
+
+    /// <summary>
+    /// A discipline is what it is, not what it is called. Six unnamed ones are six.
+    /// </summary>
+    public class MatrixIdentityTests
+    {
+        [Fact]
+        public void SixDisciplinesNobodyHasNamedYetAreSixDisciplines()
+        {
+            var board = new MatrixBoard();
+
+            for (var i = 0; i < 6; i++) board.AddPair(new MatrixLine("New category"));
+
+            // By name every one of these was every other, so every pair among them was a pair
+            // with itself: the whole block drew as diagonal and would hold nothing.
+            for (var r = 0; r < 6; r++)
+            for (var c = 0; c < 6; c++)
+                Assert.Equal(r == c, board.IsSelfPair(board.Rows[r], board.Columns[c]));
+        }
+
+        [Fact]
+        public void AndTheyCanBeFilledIn()
+        {
+            var board = new MatrixBoard();
+
+            for (var i = 0; i < 6; i++) board.AddPair(new MatrixLine("New category"));
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+
+            Assert.Equal("A", board.At(board.Rows[0], board.Columns[1]));
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[0]));
+            Assert.Null(board.At(board.Rows[2], board.Columns[3]));
+        }
+
+        [Fact]
+        public void RenamingOneDoesNotMakeItADifferentDiscipline()
+        {
+            var board = new MatrixBoard();
+            var row = board.AddPair(new MatrixLine("Structure"));
+
+            board.Rename(row, "Structural frame");
+
+            Assert.True(board.IsSelfPair(row, board.Columns[0]));
+            Assert.Same(board.Columns[0], board.TwinOf(row));
+        }
+
+        [Fact]
+        public void TwoUnnamedDisciplinesKeepTheirOwnCells()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("New category"));
+            board.AddPair(new MatrixLine("New category"));
+            board.AddPair(new MatrixLine("New category"));
+
+            board.Set(board.Rows[0], board.Columns[1], "A");
+            board.Set(board.Rows[0], board.Columns[2], "B");
+
+            Assert.Equal("A", board.At(board.Rows[0], board.Columns[1]));
+            Assert.Equal("B", board.At(board.Rows[0], board.Columns[2]));
+        }
+
+        [Fact]
+        public void WhatADisciplineIsSurvivesASaveAndRead()
+        {
+            var board = new MatrixBoard();
+
+            board.AddPair(new MatrixLine("New category"));
+            board.AddPair(new MatrixLine("New category"));
+
+            var read = MatrixBoard.FromJson(board.ToJson());
+
+            Assert.True(read.IsSelfPair(read.Rows[0], read.Columns[0]));
+            Assert.False(read.IsSelfPair(read.Rows[0], read.Columns[1]));
+        }
+
+        [Fact]
+        public void ABoardSavedBeforeALineKnewWhatItWasStillReadsByName()
+        {
+            // No key on either, which is every board written before this existed.
+            var one = new MatrixLine("Steel") { Key = string.Empty };
+            var other = new MatrixLine("Steel") { Key = string.Empty };
+
+            var board = new MatrixBoard();
+
+            board.AddRow(one);
+            board.AddColumn(other);
+
+            Assert.True(board.IsSelfPair(one, other));
+        }
+
+        [Fact]
+        public void SquaringOffCarriesWhatEachLineIs()
+        {
+            var board = new MatrixBoard();
+
+            board.AddRow(new MatrixLine("New category"));
+            board.AddRow(new MatrixLine("New category"));
+
+            board.SquareOffRows();
+
+            Assert.True(board.IsSelfPair(board.Rows[0], board.Columns[0]));
+            Assert.False(board.IsSelfPair(board.Rows[0], board.Columns[1]));
+        }
+    }
 }
