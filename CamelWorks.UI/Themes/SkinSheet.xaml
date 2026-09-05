@@ -270,9 +270,11 @@
             <!-- An explicit disabled pair, not a blanket opacity. Fading a filled button to 0.4
                  left white text on a washed fill at 1.76:1, and it faded the two themes
                  differently, so the same state was legible in neither. -->
+            <!-- Turning an action off must take ink away, not add a box round it. This drew a
+                 border the enabled button does not have, so Undo and Redo with nothing to undo
+                 became outlined pills beside three borderless blue captions - three shapes in one
+                 row, and the reason that strip read as a mess. Faint words, same shape. -->
             <Trigger Property="IsEnabled" Value="False">
-              <Setter TargetName="b" Property="Background" Value="Transparent"/>
-              <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource Bd}"/>
               <Setter Property="Foreground" Value="{DynamicResource Faint}"/>
               <Setter Property="Cursor" Value="Arrow"/>
             </Trigger>
