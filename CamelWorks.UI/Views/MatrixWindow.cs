@@ -1204,6 +1204,7 @@ namespace CamelWorks.UI.Views
             private double? _folderWide;
             private double? _folderHigh;
             private IReadOnlyList<MatrixField>? _carriedRows;
+            private IReadOnlyList<MatrixField>? _carriedColumns;
             private Dictionary<string, double>? _fieldWide;
 
             /// <summary>Throw the measured widths away, so the next draw works them out afresh.</summary>
@@ -1216,6 +1217,7 @@ namespace CamelWorks.UI.Views
                 _folderWide = null;
                 _folderHigh = null;
                 _carriedRows = null;
+                _carriedColumns = null;
                 _fieldWide = null;
             }
 
@@ -1432,6 +1434,19 @@ namespace CamelWorks.UI.Views
                         Height = new GridLength(WarnTall),
                     });
 
+                // The same gutters the row header carries, stood on end. A column is a discipline
+                // exactly as a row is, and a field shown down one side and not the other is a
+                // board that disagrees with itself about what it holds.
+                foreach (var field in Carried(_board.Columns))
+                {
+                    _ = field;
+
+                    stacked.RowDefinitions.Add(new RowDefinition
+                    {
+                        Height = new GridLength(FieldTall),
+                    });
+                }
+
                 // The name's row is sized explicitly rather than with Star. A rotated name is a
                 // TextBlock rotated for drawing only, so it reports one line of height and the
                 // width of the text; its occupied height on screen is known only here. Stated
@@ -1524,6 +1539,9 @@ namespace CamelWorks.UI.Views
 
             private const double WarnTall = 16;
 
+            /// <summary>How far down a column header one of the project's own fields reaches.</summary>
+            private const double FieldTall = 15;
+
             /// <summary>
             /// The project's own fields that any line actually holds a value for.
             ///
@@ -1534,15 +1552,21 @@ namespace CamelWorks.UI.Views
             /// <param name="lines">The rows or the columns.</param>
             private IReadOnlyList<MatrixField> Carried(IReadOnlyList<MatrixLine> lines)
             {
-                // Only the rows are held: they are what the header is measured against, and the
-                // columns ask for the same list through the same shell.
-                if (ReferenceEquals(lines, _board.Rows) && _carriedRows != null) return _carriedRows;
+                // Held per axis. Both shells ask for this once per header they build, so without
+                // it a board of twenty-two columns walks every column twenty-two times per field
+                // — the same shape of cost the widths were just taken off.
+                var rows = ReferenceEquals(lines, _board.Rows);
+                var columns = ReferenceEquals(lines, _board.Columns);
+
+                if (rows && _carriedRows != null) return _carriedRows;
+                if (columns && _carriedColumns != null) return _carriedColumns;
 
                 var held = MatrixNaming.Custom(_board.Scheme)
                     .Where(one => lines.Any(line => line.Value(one.Key).Length > 0))
                     .ToList();
 
-                if (ReferenceEquals(lines, _board.Rows)) _carriedRows = held;
+                if (rows) _carriedRows = held;
+                if (columns) _carriedColumns = held;
 
                 return held;
             }
@@ -1737,7 +1761,13 @@ namespace CamelWorks.UI.Views
                 // cells and counts are unaffected and nothing reading them needs to know about
                 // folders. Only the keyboard needs telling, so the cursor steps over hidden
                 // lines.
-                Redraw();
+                //
+                // Which is why this draws the three grids rather than going through Redraw. That
+                // re-applies the fill rules, re-plans every test to recount them, and rebuilds the
+                // palette, the strip and the panel — none of which a fold changes, and all of
+                // which were being paid for to hide six rows.
+                Relaid();
+                Pointing();
             }
 
             /// <summary>
@@ -3039,6 +3069,33 @@ namespace CamelWorks.UI.Views
 
                         Grid.SetRow(warn, row);
                         stacked.Children.Add(warn);
+                    }
+
+                    row++;
+                }
+
+                // Upright, like the number and the code beside them: a field's value is two or
+                // three characters and fits across a column without being turned.
+                foreach (var field in Carried(_board.Columns))
+                {
+                    var held = line.Value(field.Key);
+
+                    if (held.Length > 0)
+                    {
+                        var value = new TextBlock
+                        {
+                            Text = held,
+                            FontSize = 10,
+                            TextAlignment = TextAlignment.Center,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis,
+                            TextWrapping = TextWrapping.NoWrap,
+                            ToolTip = field.Title + ": " + held,
+                        }.Wearing("Hint");
+
+                        Grid.SetRow(value, row);
+                        stacked.Children.Add(value);
                     }
 
                     row++;

@@ -482,6 +482,10 @@ namespace CamelWorks.UI.Views
             private readonly System.Windows.Threading.DispatcherTimer _typing =
                 new System.Windows.Threading.DispatcherTimer();
 
+            /// <summary>The same, for the rail's own search.</summary>
+            private readonly System.Windows.Threading.DispatcherTimer _railTyping =
+                new System.Windows.Threading.DispatcherTimer();
+
             /// <summary>The lines the board is showing, and the list that draws the visible ones.</summary>
             private List<BoardLine>? _lines;
             private BoardList? _list;
@@ -630,6 +634,8 @@ namespace CamelWorks.UI.Views
 
                 if (!changed) return;
 
+                Reread();
+
                 if (!KeepBook())
                     Warned(Ui.Problem("The naming could not be kept in this project. "
                         + (_session.Store.LastSaveProblem ?? string.Empty)));
@@ -761,11 +767,24 @@ namespace CamelWorks.UI.Views
                 // Both search boxes are built here and placed once. Rebuilding a text box inside
                 // the handler for its own keystroke takes the caret out of it, which is a search
                 // that accepts one letter at a time.
+                // Once the typing stops, like the board's own search. Every keystroke redrew the
+                // rail's tools, its filter panel, every row and its foot, so typing a six-letter
+                // discipline did all of that six times — five of them for a string nobody was
+                // looking for yet.
                 _railBox = Ui.Text(string.Empty, "Search tests by name or discipline", text =>
                 {
                     _railFind = text;
-                    RedrawRail();
+
+                    _railTyping.Stop();
+                    _railTyping.Start();
                 }, 150);
+
+                _railTyping.Interval = TimeSpan.FromMilliseconds(160);
+                _railTyping.Tick += (s, e) => Ui.Safely(() =>
+                {
+                    _railTyping.Stop();
+                    RedrawRail();
+                });
 
                 _boardBox = Ui.Text(string.Empty, "Search", text =>
                 {
@@ -1240,7 +1259,16 @@ namespace CamelWorks.UI.Views
             /// <param name="token">The token, without braces.</param>
             private string Said(TestEntry entry, string token)
             {
-                var read = Book.Read(entry.Test.Id, entry.Test.Name);
+                // Held per test. Banding asks this of every row on the board and every row of one
+                // test has one answer, so a board of six hundred results was matching the same
+                // dozen names against their patterns six hundred times.
+                _readAt ??= new Dictionary<string, NamingRead?>(StringComparer.Ordinal);
+
+                if (!_readAt.TryGetValue(entry.Test.Id, out var read))
+                {
+                    read = Book.Read(entry.Test.Id, entry.Test.Name);
+                    _readAt[entry.Test.Id] = read;
+                }
 
                 if (read == null) return NoPattern;
 
@@ -1248,6 +1276,17 @@ namespace CamelWorks.UI.Views
 
                 return held.Length == 0 ? Blank : held;
             }
+
+            /// <summary>
+            /// What each test's name reads as, for one draw.
+            ///
+            /// Thrown away whenever a name or the naming changes, which is the only way the
+            /// answer can move.
+            /// </summary>
+            private Dictionary<string, NamingRead?>? _readAt;
+
+            /// <summary>Forget what the names read as, so the next draw reads them again.</summary>
+            private void Reread() => _readAt = null;
 
             /// <summary>The column labels over the rail's rows.</summary>
             private UIElement RailLabels()
@@ -1380,22 +1419,101 @@ namespace CamelWorks.UI.Views
                 _railOrder.Clear();
                 _railCommon = common;
 
+                _railFolder.Clear();
+                _railBandAt.Clear();
+
                 foreach (var group in filed)
                 {
-                    if (group.Key.Length > 0)
+                    var filedAway = group.Key.Length > 0;
+                    var shut = filedAway && _shutFolders.Contains(group.Key);
+
+                    if (filedAway)
+                    {
+                        _railBandAt[group.Key] = _rows.Children.Count;
                         _rows.Children.Add(FolderBand(group.Key, group.Count()));
+                    }
 
-                    // Shut folders keep their heading and hide their tests, so a rail of eighty
-                    // tests can be read as a dozen folders.
-                    if (_shutFolders.Contains(group.Key)) continue;
+                    var held = new List<string>();
 
+                    // A shut folder's rows are built and hidden rather than left out. Left out,
+                    // shutting one folder rebuilt every row on the rail — eighty cards, each with
+                    // its counts, its tip and its menu, to hide eight of them. Hidden, a fold
+                    // costs one visibility flag per row and nothing else.
+                    //
+                    // It also puts the rail's own record of its order back in step with what the
+                    // list actually holds. The record left shut folders out while the filter that
+                    // it is compared against did not, so with any folder shut the two never
+                    // matched and every status write took the whole rail down and rebuilt it.
                     foreach (var entry in group)
                     {
                         _railAt[entry.Test.Id] = _rows.Children.Count;
                         _railOrder.Add(entry.Test.Id);
-                        _rows.Children.Add(RailRow(entry, common));
+
+                        held.Add(entry.Test.Id);
+
+                        var row = RailRow(entry, common);
+
+                        if (shut) row.Visibility = Visibility.Collapsed;
+
+                        _rows.Children.Add(row);
+                    }
+
+                    if (filedAway) _railFolder[group.Key] = held;
+                }
+            }
+
+            /// <summary>Which tests each folder holds, so a fold does not have to rebuild them.</summary>
+            private readonly Dictionary<string, List<string>> _railFolder =
+                new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>Where each folder's heading sits, so it alone can be redrawn.</summary>
+            private readonly Dictionary<string, int> _railBandAt =
+                new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>Whether a test's row is hidden because the folder it is in is shut.</summary>
+            /// <param name="testId">The test.</param>
+            private bool Hushed(string? testId)
+            {
+                if (testId == null) return false;
+
+                foreach (var one in _railFolder)
+                    if (_shutFolders.Contains(one.Key)
+                        && one.Value.Contains(testId, StringComparer.OrdinalIgnoreCase))
+                        return true;
+
+                return false;
+            }
+
+            /// <summary>
+            /// Show or hide one folder's rows, and redraw its heading.
+            ///
+            /// The rows themselves are untouched: a fold is about what is on screen, not about
+            /// what the rail holds.
+            /// </summary>
+            /// <param name="folder">The folder that was pressed.</param>
+            private void Folding(string folder)
+            {
+                var shut = _shutFolders.Contains(folder);
+
+                if (_railFolder.TryGetValue(folder, out var held))
+                {
+                    foreach (var id in held)
+                    {
+                        if (!_railAt.TryGetValue(id, out var at)
+                            || at < 0 || at >= _rows.Children.Count)
+                            continue;
+
+                        _rows.Children[at].Visibility =
+                            shut ? Visibility.Collapsed : Visibility.Visible;
                     }
                 }
+
+                if (!_railBandAt.TryGetValue(folder, out var band)
+                    || band < 0 || band >= _rows.Children.Count)
+                    return;
+
+                _rows.Children.RemoveAt(band);
+                _rows.Children.Insert(band, FolderBand(folder, held?.Count ?? 0));
             }
 
             /// <summary>Where each test's row sits in the rail, so one can be redrawn alone.</summary>
@@ -1465,8 +1583,14 @@ namespace CamelWorks.UI.Views
 
                 if (entry == null) return;
 
+                var row = RailRow(entry, _railCommon);
+
+                // A row rebuilt inside a shut folder stays hidden. Without this, writing a status
+                // on a test in a folder that is shut made that one row appear under the heading.
+                if (Hushed(testId)) row.Visibility = Visibility.Collapsed;
+
                 _rows.Children.RemoveAt(at);
-                _rows.Children.Insert(at, RailRow(entry, _railCommon));
+                _rows.Children.Insert(at, row);
             }
 
             /// <summary>
@@ -1535,7 +1659,8 @@ namespace CamelWorks.UI.Views
                     if (e.ClickCount > 1) return;
 
                     if (!_shutFolders.Remove(folder)) _shutFolders.Add(folder);
-                    RedrawRailList();
+
+                    Folding(folder);
                 });
 
                 // Renaming it, where it is, by the gesture that renames a test and a clash and a
@@ -7189,6 +7314,8 @@ namespace CamelWorks.UI.Views
             /// <param name="wanted">Its new name.</param>
             private void Called(TestEntry entry, string wanted)
             {
+                Reread();
+
                 _session.Record(ActivityKind.Regroup,
                                 "renamed the test \"" + entry.Test.Name + "\" to \"" + wanted + "\"");
 
