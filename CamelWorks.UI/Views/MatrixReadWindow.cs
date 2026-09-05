@@ -167,7 +167,7 @@ namespace CamelWorks.UI.Views
             // set as it is edited.
             List<MatrixNamePattern> Read()
             {
-                var read = patterns.Select(MatrixNamePattern.Parse).ToList();
+                var read = patterns.Select(one => MatrixNamePattern.Parse(one)).ToList();
 
                 foreach (var row in rows)
                 {
@@ -303,7 +303,7 @@ namespace CamelWorks.UI.Views
                     how.Assigned[row.Id] = row.Put!.Value;
 
                 var reading = MatrixFromNames.Read(chosen,
-                    patterns.Select(MatrixNamePattern.Parse).ToList(), how);
+                    patterns.Select(one => MatrixNamePattern.Parse(one)).ToList(), how);
 
                 if (!reading.IsUsable)
                 {

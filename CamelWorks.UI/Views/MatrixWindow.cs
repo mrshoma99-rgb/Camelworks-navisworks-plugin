@@ -2615,6 +2615,14 @@ namespace CamelWorks.UI.Views
 
                 // Left, and staying left. Twenty-two names centred share no edge to scan down,
                 // which is the whole of what a column of names in a table is for.
+                var held = Custom(line);
+
+                if (held != null)
+                {
+                    DockPanel.SetDock(held, Dock.Right);
+                    named.Children.Add(held);
+                }
+
                 named.Children.Add(new TextBlock
                 {
                     Text = line.Name,
@@ -2634,6 +2642,34 @@ namespace CamelWorks.UI.Views
                 Picks(head, line, rows: true, at: at);
 
                 return head;
+            }
+
+            /// <summary>
+            /// The mark that says a line has left the scheme, or null when it has not.
+            ///
+            /// A field counted down the axis is a promise that every line reads the same way, so
+            /// the line that does not has to say so where the line is — not in the window where
+            /// the promise was made. The tip names which fields are held, because "custom" on its
+            /// own sends somebody opening the line to find out what about it is.
+            /// </summary>
+            /// <param name="line">The row or column.</param>
+            private UIElement? Custom(MatrixLine line)
+            {
+                if (line == null || !line.IsCustom) return null;
+
+                var named = line.Pinned
+                    .Select(one => _board.Scheme.Field(one)?.Title ?? one)
+                    .OrderBy(one => one, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+
+                var mark = Ui.Glyph(Glyphs.Pencil, 11, "Accent", new Thickness(4, 0, 0, 0));
+
+                mark.VerticalAlignment = VerticalAlignment.Center;
+                mark.ToolTip = "Held by hand, outside the fields: "
+                               + string.Join(", ", named)
+                               + ". The rest of this line still follows the fields.";
+
+                return mark;
             }
 
             /// <summary>One column's header, which is a row header stood on its end.</summary>
@@ -3380,6 +3416,31 @@ namespace CamelWorks.UI.Views
             /// person wants back from one press of undo is the matrix as it was before they went
             /// in - not one of the four edits they made while they were in there.
             /// </summary>
+            /// <summary>
+            /// Edit the fields every line carries, then write them across the board.
+            ///
+            /// The apply is the point of the window rather than a step after it: a field counted
+            /// down the axis is a promise about forty lines, and leaving the board unwritten until
+            /// somebody found a second button would make the promise look broken.
+            /// </summary>
+            private void Fields()
+            {
+                var was = Held();
+
+                if (!MatrixFields.Ask(_board)) return;
+
+                var changed = _board.ApplyScheme();
+
+                Touched();
+
+                _past.Push(new Doing(was, "changing the fields"));
+                _future.Clear();
+
+                Redraw();
+
+                Reported(changed, "written", "value");
+            }
+
             private void Rulebook()
             {
                 var was = Held();
@@ -8509,6 +8570,15 @@ namespace CamelWorks.UI.Views
                         Glyphs.Checklist,
                         "\u201cAll services against all architecture, B\u201d - and it stays "
                         + "true as the matrix grows", Rulebook),
+
+                    // Alongside the fill rules rather than in the drawing window: both write
+                    // across the whole board from one sentence, where the drawing window only
+                    // changes how what is already there is shown.
+                    Parts.Entry.Saying(
+                        Ui.Count(_board.Scheme.Fields.Count, "field") + "\u2026",
+                        Glyphs.Columns,
+                        "What each line carries, and whether it is counted down the axis rather "
+                        + "than typed line by line", Fields),
                 };
 
                 var folders = _board.Folders(rows: true);
