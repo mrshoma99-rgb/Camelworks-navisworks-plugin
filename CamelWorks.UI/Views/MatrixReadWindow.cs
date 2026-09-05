@@ -175,7 +175,8 @@ namespace CamelWorks.UI.Views
             {
                 var read = Read();
 
-                DrawPatterns(list, patterns, read, rows, written, box => focused = box, Redraw);
+                DrawPatterns(list, patterns, read, rows, written, box => focused = box,
+                             () => { patterns.Add(string.Empty); Redraw(); }, Redraw);
                 DrawTable(table, rows, find.Text, Redraw);
                 DrawStrip(strip, rows, read);
             }
@@ -205,14 +206,7 @@ namespace CamelWorks.UI.Views
 
             var side = new DockPanel { LastChildFill = true, Width = 420 };
 
-            var adding = Ui.Quiet("Add a pattern", () =>
-            {
-                patterns.Add(string.Empty);
-                Redraw();
-            });
-
             var under = Ui.Stack(
-                adding,
                 Ui.Eyebrow("Drop a token in"),
                 chips,
                 take,
@@ -355,7 +349,7 @@ namespace CamelWorks.UI.Views
         private static void DrawPatterns(Panel into, List<string> patterns,
                                          IReadOnlyList<MatrixNamePattern> read,
                                          IReadOnlyList<Row> rows, List<TextBox> written,
-                                         Action<TextBox> onFocus, Action redraw)
+                                         Action<TextBox> onFocus, Action onAdd, Action redraw)
         {
             into.Children.Clear();
             written.Clear();
@@ -369,6 +363,15 @@ namespace CamelWorks.UI.Views
                                   typed => { patterns[here] = typed; redraw(); }, 240);
 
                 box.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                // <b>A pattern is longer than a field.</b> Written on one line it scrolled out of
+                // its own box - "{columnCode}-{columnNumb" - so the half somebody was checking
+                // was the half they could not see, on the one control whose exact text is the
+                // whole point of the screen.
+                box.TextWrapping = TextWrapping.Wrap;
+                box.AcceptsReturn = false;
+                box.MinHeight = 46;
+
                 box.GotKeyboardFocus += (s, e) => onFocus(box);
 
                 written.Add(box);
@@ -474,6 +477,12 @@ namespace CamelWorks.UI.Views
                 card.Child = stack;
                 into.Children.Add(card);
             }
+
+            var adding = Ui.Quiet("Add a pattern", onAdd);
+
+            adding.HorizontalAlignment = HorizontalAlignment.Left;
+
+            into.Children.Add(adding);
         }
 
         /// <summary>
