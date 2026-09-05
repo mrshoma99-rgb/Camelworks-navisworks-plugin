@@ -54,8 +54,11 @@ namespace CamelWorks.Studio
             Page("app-clash-matrix", "Clash Manager · Matrix", 820,
                  () => MatrixWindow.Surface(Seated())),
 
+            // Drawn from the fielded board: it is the same grid plus a scheme, so one page
+            // covers the matrix and the two things the fields add to it — a number counted down
+            // the axis, and the mark on the row that has left the counting.
             Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
-                 () => MatrixWindow.Surface(Seated(), Drawn())),
+                 () => MatrixWindow.Surface(Seated(), Fielded())),
 
             // The fields window, and the state that matters in it: a built-in field counted down
             // the axis, a custom field of the project's own, and a line held by hand. A board with
