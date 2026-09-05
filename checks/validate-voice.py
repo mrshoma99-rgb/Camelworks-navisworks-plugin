@@ -28,6 +28,8 @@ ROOTS = ["CamelWorks.UI", "CamelWorks.Core", "CamelWorks.Nav", "CamelWorks.Nav.C
 
 # Files a rewrite pass has been through. These must stay clean.
 CLEANED = (
+    "CamelWorks.UI/Views/MatrixWindow.cs",
+    "CamelWorks.UI/Views/ClashManageViews.cs",
     "CamelWorks.UI/Views/MatrixReadWindow.cs",
     "CamelWorks.Core/Clash/MatrixNamePattern.cs",
     "CamelWorks.Core/Clash/MatrixFromNames.cs",
