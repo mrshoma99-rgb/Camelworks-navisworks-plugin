@@ -6051,11 +6051,15 @@ namespace CamelWorks.UI.Views
                     Say(told);
                 }
 
-                if (_brush == null)
+                // What is on the brush belongs on the strip only while the brush is what a
+                // press puts down. On the other two views it is a fact about a screen nobody is
+                // looking at - and "No symbol selected" under a picture of priorities reads as
+                // something being wrong.
+                if (_shown == Showing.Symbols && _brush == null)
                 {
                     Say(Ui.Small("No symbol selected"));
                 }
-                else
+                else if (_shown == Showing.Symbols && _brush != null)
                 {
                     Say(Ui.Glyph(Glyphs.Pencil, 12, "Accent", new Thickness(0, 0, 8, 0)));
 
@@ -6089,10 +6093,17 @@ namespace CamelWorks.UI.Views
 
                 if (_shown == Showing.Priority)
                 {
-                    Say(Ui.Small(Ui.Count(_board.Ranks().Count(), "pair") + " ranked \u00b7 laying "
-                                 + (_rank == MatrixBoard.NotSet
-                                     ? "nothing"
-                                     : MatrixBoard.RankNamed(_rank).ToLowerInvariant())));
+                    Say(Ui.Glyph(Glyphs.Warn, 12, "Accent", new Thickness(0, 0, 8, 0)));
+
+                    Say(new TextBlock
+                    {
+                        Text = _rank == MatrixBoard.NotSet
+                            ? "Clearing ranks"
+                            : "Laying " + MatrixBoard.RankNamed(_rank).ToLowerInvariant(),
+                        FontWeight = FontWeights.SemiBold,
+                    }.Wearing("Body"), 0);
+
+                    Say(Ui.Small(Ui.Count(_board.Ranks().Count(), "pair") + " ranked"));
 
                     Say(Ui.Quiet("Show the symbols", () => Show(Showing.Symbols)), 8);
                 }
