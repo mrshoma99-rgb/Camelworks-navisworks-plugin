@@ -203,8 +203,9 @@ namespace CamelWorks.UI.Views
 
             var stack = Ui.Stack();
 
-            stack.Children.Add(Head(board, field, at, of, onChange,
-                                    field.Fill == MatrixFill.ByHand));
+            // Never inline now: the placement row always follows the head, so a head with no
+            // gap under it would sit hard against its own ticks.
+            stack.Children.Add(Head(board, field, at, of, onChange, inline: false));
 
             // Where it is drawn, on every card. A field is carried by every line whether it is
             // drawn or not, so this hides one from the screen without taking it off the lines or
@@ -212,14 +213,14 @@ namespace CamelWorks.UI.Views
             stack.Children.Add(Placing(field, onChange));
 
             // A field typed line by line has nothing to configure and nothing to preview, so it
-            // is one line rather than a card with a sentence in it saying so. Four of those
-            // sentences down a window is the state a scheme starts in, and it read as four
-            // warnings rather than as the default.
+            // carries no filling block and no sentence saying so. Four of those sentences down a
+            // window is the state a scheme starts in, and they read as four warnings rather than
+            // as the default.
             if (field.Fill != MatrixFill.ByHand)
                 stack.Children.Add(Filling(board, field, onChange));
 
             card.Padding = field.Fill == MatrixFill.ByHand
-                ? new Thickness(12, 8, 12, 8)
+                ? new Thickness(12, 9, 12, 9)
                 : new Thickness(12, 10, 12, 12);
 
             card.Child = stack;
