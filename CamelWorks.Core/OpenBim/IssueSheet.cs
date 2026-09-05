@@ -122,7 +122,7 @@ namespace CamelWorks.Core.OpenBim
                      + " since it went out, so it stays where it is.";
 
             if (IsReopen && Changes)
-                return Group + ": somebody re-opened it, so it goes back to "
+                return Group + ": re-opened, so it goes back to "
                      + FindingStatusLattice.ToName(Merged) + ".";
 
             if (!Changes) return Group + ": no change.";
@@ -188,7 +188,7 @@ namespace CamelWorks.Core.OpenBim
 
             if (Reopened > 0) s += ", " + Measure.Count(Reopened) + " re-opened";
             if (Refused > 0) s += ", " + Measure.Count(Refused) + " refused as stale";
-            if (Unknown > 0) s += ", " + Measure.Count(Unknown) + " with a status nobody knows";
+            if (Unknown > 0) s += ", " + Measure.Count(Unknown) + " with an unrecognised status";
 
             if (Unmatched.Count > 0)
                 s += ", " + Measure.Count(Unmatched.Count) + " naming an issue this project never sent";

@@ -99,8 +99,8 @@ namespace CamelWorks.UI.Views
                 // colour field is the second of them - so the ring never moved and choosing a
                 // colour looked like pressing a dead control.
                 MatrixLook.Colours(held.Colour, colour => held.Colour = colour),
-                "Automatic gives it one from where it sits in the legend, which is what a matrix "
-                + "nobody has coloured looks like."));
+                "Automatic assigns a colour from its position in the legend, which is the "
+                + "default appearance."));
 
             Fill(body, held, mm);
 

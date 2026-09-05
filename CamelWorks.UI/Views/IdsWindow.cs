@@ -68,7 +68,7 @@ namespace CamelWorks.UI.Views
             if (document.Specifications.Count == 0)
             {
                 problem = "This project has no rules of its own yet. Write them in Model Audit's "
-                          + "IDS tab, or point this at a rule file somebody sent.";
+                          + "IDS tab, or point this at a supplied rule file.";
 
                 return null;
             }
@@ -1325,8 +1325,8 @@ namespace CamelWorks.UI.Views
                 if (packed.Scoped > 0)
                     _output.Children.Add(Ui.Note(
                         "The " + Ui.Count(packed.Scoped, "scoped rule") + " in it name sets by "
-                        + "name, so on somebody else's model they apply to whatever their sets of "
-                        + "those names hold - and a run says plainly when a set is not there. "
+                        + "name, so against another model they apply to whatever that model's sets of "
+                        + "those names hold. A run reports any set that is not present. "
                         + "That is what makes one rule set runnable against several models."));
 
                 _output.Children.Add(Ui.Actions(Ui.Quiet("Check it",

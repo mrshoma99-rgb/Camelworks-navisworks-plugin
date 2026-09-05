@@ -186,8 +186,7 @@ namespace CamelWorks.UI.Views
                     Fielded(style.Warnings, at => { style.Warnings = at; onChanged(); }),
                     "On its own, the room is kept only when some line on that axis needs it."),
 
-                Ui.Small("The name is always drawn. A line with nothing to call it is not a line "
-                         + "anybody can act on.")));
+                Ui.Small("The name is always drawn; an unnamed line cannot be identified.")));
 
             into.Children.Add(Ui.Small("What one symbol means and what colour it is belong to that "
                                        + "symbol: they are on the palette, under the pencil beside "

@@ -280,7 +280,7 @@ namespace CamelWorks.Core.Automation
                 }),
 
             new NodeKind("sets.publish", "Deliver", "Publish a set",
-                "Puts the elements into the host's selection sets, where anybody can find them.",
+                "Puts the elements into the host's selection sets, where any user can find them.",
                 new[] { Keys("in", "elements") }, None,
                 new[] { Text("name", "Set name", "CamelWorks working set") }),
 
@@ -296,8 +296,8 @@ namespace CamelWorks.Core.Automation
 
             new NodeKind("model.append", "Model", "Append a file",
                 "Adds a file to the federation, the way File > Append does. The step that makes an "
-                + "overnight job possible: a job that assembles its own federation does not need "
-                + "somebody to have assembled it first.",
+                + "overnight job possible: a job that assembles its own federation needs no "
+                + "prior manual assembly.",
                 None, None,
                 new[] { Text("path", "File") }, foundational: true),
 
@@ -308,8 +308,8 @@ namespace CamelWorks.Core.Automation
 
             new NodeKind("model.save", "Model", "Save the federation",
                 "Writes the document out. The extension decides it: .nwf keeps the links so the next "
-                + "refresh still works, .nwd bakes the geometry in so somebody without the source "
-                + "files can open it.",
+                + "refresh still works, .nwd embeds the geometry so it opens without the source "
+                + "files.",
                 None, None,
                 new[] { Text("path", "File") }, foundational: true),
 

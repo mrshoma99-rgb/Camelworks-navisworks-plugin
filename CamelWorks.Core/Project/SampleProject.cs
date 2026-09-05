@@ -126,7 +126,7 @@ namespace CamelWorks.Core.Project
             library.Put(new SavedSet("set-1", "Ductwork",
                 SetExpression.Where("Element", "Category", SetOperator.Equals, "Ducts"))
             {
-                Note = "A rule, not a list, so it still covers the ducts somebody adds tomorrow.",
+                Note = "A rule, not a list, so it also covers ducts added later.",
             });
 
             library.Put(new SavedSet("set-2", "Level 01 structure",
@@ -201,7 +201,7 @@ namespace CamelWorks.Core.Project
                 new string('=', JobName.Length),
                 string.Empty,
                 "A sample CamelWorks project file. The job, the firms and the models in it are made "
-                + "up; nothing here came from anybody's project.",
+                + "up; none of it comes from a real project.",
                 string.Empty,
                 "Open a model, save it in this folder, and rename this file to match the model's "
                 + "name to have CamelWorks pick it up. Or just read it: it is JSON, and every "

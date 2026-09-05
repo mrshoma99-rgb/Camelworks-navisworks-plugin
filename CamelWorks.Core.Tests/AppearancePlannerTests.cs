@@ -192,7 +192,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Empty(plan.Clear);
             Assert.Equal(A, Assert.Single(plan.Foreign));
-            Assert.Contains("overridden by somebody else, left alone", plan.Explain(), StringComparison.Ordinal);
+            Assert.Contains("overridden by another tool, left alone", plan.Explain(), StringComparison.Ordinal);
         }
 
         [Fact]

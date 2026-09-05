@@ -127,7 +127,7 @@ namespace CamelWorks.Core.Appearance
 
             if (Foreign.Count > 0)
                 s += " · " + Foreign.Count.ToString("N0", CultureInfo.InvariantCulture)
-                   + " overridden by somebody else, left alone";
+                   + " overridden by another tool, left alone";
 
             return s;
         }

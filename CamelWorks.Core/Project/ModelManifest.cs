@@ -566,7 +566,7 @@ namespace CamelWorks.Core.Project
                      + (Arrived.Count == 1 ? " model" : " models") + ", nothing to compare against";
 
             if (NothingNew && Missing.Count == 0)
-                return "nobody has published since the last run - all "
+                return "nothing has been published since the last run - all "
                      + Measure.Count(Unchanged.Count) + " models are byte-identical";
 
             var parts = new List<string>();

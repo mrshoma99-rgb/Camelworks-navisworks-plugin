@@ -151,7 +151,7 @@ namespace CamelWorks.Core.Clash
                 return Refuse("There are no clashes to mark.", materialFile);
 
             if (how.RadiusMetres <= 0)
-                return Refuse("A marker of no size is a marker nobody can see. Give it a radius.",
+                return Refuse("A marker radius of zero produces nothing visible. Set a radius.",
                               materialFile);
 
             if (how.MetresPerUnit <= 0)
@@ -161,7 +161,7 @@ namespace CamelWorks.Core.Clash
             if (all.Count > Math.Max(1, how.Ceiling))
                 return Refuse("That would write " + Measure.Count(all.Count) + " markers, and the "
                     + "ceiling is " + Measure.Count(Math.Max(1, how.Ceiling)) + ". A model with "
-                    + "that many balls in it is one nobody can spin. Mark one test at a time, or "
+                    + "that many markers will not navigate acceptably. Mark one test at a time, or "
                     + "raise the ceiling deliberately.", materialFile);
 
             var detail = how.Detail < 0 ? 0 : how.Detail > MarkerRecipe.MaxDetail

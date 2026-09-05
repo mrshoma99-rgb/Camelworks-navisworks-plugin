@@ -272,7 +272,7 @@ namespace CamelWorks.Core.Report
             if (overflowed)
                 notes.Add("More than " + MaxLayers.ToString("N0", CultureInfo.InvariantCulture)
                           + " layers were asked for. The rest went on \"" + DefaultLayer
-                          + "\" - a drawing with a layer per element is a drawing nobody can use.");
+                          + "\" - a layer per element is not usable in a drawing.");
 
             var text = new StringBuilder();
 

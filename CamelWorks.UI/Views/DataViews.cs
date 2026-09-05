@@ -300,7 +300,7 @@ namespace CamelWorks.UI.Views
             });
 
             return Ui.Stack(
-                Heading("Somebody else's file"),
+                Heading("An external file"),
                 Ui.Actions(open));
         }
 
@@ -491,8 +491,8 @@ namespace CamelWorks.UI.Views
                 if (coverage.InvalidValues.Count > 0)
                     _status.Children.Add(Ui.Problem("Not in " + table.Name + ": "
                         + string.Join(", ", coverage.InvalidValues.Take(10))
-                        + ". Those elements are left alone. Either the table is missing a row or the "
-                        + "model is carrying a value nobody agreed to."));
+                        + ". Those elements are left alone. Either the table is missing a row, or the "
+                        + "model carries a value outside the agreed list."));
 
                 var diff = PropertyDiff.Of(NavWriteTransaction.TabName, target,
                     PropertyDiff.Resolve(_session.Model, _keys),
@@ -1664,8 +1664,8 @@ namespace CamelWorks.UI.Views
                 _status.Children.Add(Ui.Note(Ui.Count(blank, "element")
                     + " either already hold this value or carry nothing the formula needs. The ones "
                     + "missing a property are left alone rather than written an empty value — an "
-                    + "element with no width has no area, and a zero would go into a schedule "
-                    + "somebody adds up."));
+                    + "element with no width has no area, and a zero would be totalled in a "
+                    + "schedule."));
             }
 
             private static string Word(WriteChange kind) => kind switch
@@ -1949,8 +1949,8 @@ namespace CamelWorks.UI.Views
                             + ", all at the same height (" + units.Length(levels.Bands[0].Elevation)
                             + "). Nothing can be grouped by these - every element falls in the "
                             + "first one. A grid usually reads this way when its levels were "
-                            + "authored for their names and nobody set their heights. Pick another "
-                            + "source below, or set the elevations in the authoring tool."));
+                            + "authored for their names without elevations. Choose another source "
+                            + "below, or set the elevations in the authoring tool."));
 
                     if (levels.Source == LevelSource.Property && levels.Bands.Count > 25)
                         results.Children.Add(Ui.Note(Ui.Count(levels.Bands.Count, "distinct level")

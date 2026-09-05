@@ -353,7 +353,7 @@ namespace CamelWorks.Core.Project
                 string.IsNullOrWhiteSpace(user) ? "no signed-in user to read" : "the signed-in Windows user"));
 
             settings.Add(new ProfileSetting(ProfileKeys.ClashTolerance, "Clash tolerance (m)", "0.010",
-                "10 mm — the value most coordination specifications settle on when nobody states one"));
+                "10 mm — the usual default where the coordination specification is silent"));
 
             settings.Add(new ProfileSetting(ProfileKeys.ClashProximity, "Grouping distance (m)", "5",
                 "clashes within 5 m of each other are usually one problem seen three times"));
@@ -396,7 +396,7 @@ namespace CamelWorks.Core.Project
                 Measure.Denominators.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList()));
 
             settings.Add(new ProfileSetting(ProfileKeys.Priorities, "Priorities", "High, Medium, Low",
-                "the three every coordination board settles on when nobody states otherwise"));
+                "the usual three where the coordination specification is silent"));
 
             settings.Add(new ProfileSetting(ProfileKeys.LevelSource, "Levels from", "Model, then geometry",
                 "the model's own level property where it has one, and a height histogram where it does not",

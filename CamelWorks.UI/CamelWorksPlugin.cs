@@ -53,7 +53,7 @@ namespace CamelWorks.UI
     [Command("ID_CW_AppScenes", Icon = "Resources\\AppScenes_16.png", LargeIcon = "Resources\\AppScenes_32.png",
         DisplayName = "Scene Kit", ToolTip = "What is visible, and what colour it is")]
     [Command("ID_CW_AppExports", Icon = "Resources\\AppExports_16.png", LargeIcon = "Resources\\AppExports_32.png",
-        DisplayName = "Export Kit", ToolTip = "The model as a file somebody else opens")]
+        DisplayName = "Export Kit", ToolTip = "The model as a file for other applications")]
     [Command("ID_CW_AppSite", Icon = "Resources\\AppSite_16.png", LargeIcon = "Resources\\AppSite_32.png",
         DisplayName = "Site Pack", ToolTip = "The model reaching the people building it")]
     [Command("ID_CW_AppAutomate", Icon = "Resources\\AppAutomate_16.png", LargeIcon = "Resources\\AppAutomate_32.png",

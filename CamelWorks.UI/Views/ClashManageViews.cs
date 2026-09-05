@@ -680,10 +680,9 @@ namespace CamelWorks.UI.Views
                     : Ui.RunParts("Read the results", _log, Read, primary: false);
 
                 read.Buttons.ToolTip = already
-                    ? "Reads every test and result out of the document again. Worth pressing "
-                      + "after somebody runs a test in Navisworks' own clash window, or when the "
-                      + "board might have moved under you — nothing on this screen goes stale on "
-                      + "its own."
+                    ? "Reads every test and result out of the document again. Use after a test is "
+                      + "run in the Navisworks clash window, or when the board may be out of "
+                      + "date. This screen does not refresh on its own."
                     : "Pulls every test and every result out of the document, with status, "
                       + "assignee, comments and grouping.";
 
@@ -5362,7 +5361,7 @@ namespace CamelWorks.UI.Views
                              + "elements meet. It is a temporary graphic, not geometry: nothing "
                              + "is added to the document and nothing appears in the selection "
                              + "tree. Export \u25b8 Marker spheres as .obj writes the same balls "
-                             + "to a file, for somebody who has neither this plug-in nor "
+                             + "to a file, readable without this plug-in or "
                              + "Navisworks.")));
 
             /// <summary>

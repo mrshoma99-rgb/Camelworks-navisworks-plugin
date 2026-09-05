@@ -129,7 +129,7 @@ namespace CamelWorks.Core.OpenBim
 
             if (Reopened > 0) s += " - " + Reopened.ToString("N0", CultureInfo.InvariantCulture) + " re-opened";
             if (Refused > 0) s += " - " + Refused.ToString("N0", CultureInfo.InvariantCulture) + " left where they are";
-            if (Unknown > 0) s += " - " + Unknown.ToString("N0", CultureInfo.InvariantCulture) + " with a status nobody knows";
+            if (Unknown > 0) s += " - " + Unknown.ToString("N0", CultureInfo.InvariantCulture) + " with an unrecognised status";
 
             if (Unmatched.Count > 0)
                 s += " - " + Unmatched.Count.ToString("N0", CultureInfo.InvariantCulture)

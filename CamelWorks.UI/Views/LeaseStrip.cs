@@ -55,7 +55,7 @@ namespace CamelWorks.UI.Views
                 var strip = new Border();
 
                 strip.Child = Ui.Info(
-                    lease.Reason ?? "Somebody else is editing project settings.",
+                    lease.Reason ?? "Another user is editing project settings.",
                     "Take it over",
                     () => Take(strip, session, lease.Holder));
 

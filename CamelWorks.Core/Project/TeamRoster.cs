@@ -596,7 +596,7 @@ namespace CamelWorks.Core.Project
         public string Explain()
         {
             if (_members.Count == 0)
-                return "Nobody on the roster yet, so a party is whatever somebody types.";
+                return "No members on the roster yet, so a party is whatever is typed.";
 
             var active = Active.Count;
             var parties = Parties.Count;

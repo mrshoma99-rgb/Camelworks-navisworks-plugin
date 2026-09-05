@@ -844,7 +844,7 @@ namespace CamelWorks.UI.Views
 
                 if (_recipe.IsUnshifted)
                     _note.Children.Add(Ui.Note("Those are model coordinates. The file says so in "
-                        + "its own header, but somebody has to read it."));
+                        + "its own header."));
             }
 
             private void KeepPoints()

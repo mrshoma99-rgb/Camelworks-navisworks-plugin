@@ -805,7 +805,7 @@ namespace CamelWorks.UI.Views
 
             if (list.Children.Count == 0)
             {
-                var none = Ui.Small("Nobody on the team yet.");
+                var none = Ui.Small("No team members yet.");
 
                 none.Margin = new Thickness(8, 4, 8, 6);
                 list.Children.Add(none);
@@ -832,7 +832,7 @@ namespace CamelWorks.UI.Views
             var foot = Menu(new List<Entry?>
             {
                 Entry.Rule(),
-                Entry.Act("Nobody \u2014 clear it", Glyphs.Close, () =>
+                Entry.Act("Unassigned \u2014 clear it", Glyphs.Close, () =>
                 {
                     ticked.Clear();
                     changed = true;

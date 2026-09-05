@@ -5838,7 +5838,7 @@ namespace CamelWorks.UI.Views
                 items.Add(Parts.Entry.Rule());
 
                 items.Add(Parts.Entry.Saying("Not required", Glyphs.Close,
-                    "Agreed, and no test is made. Different from a cell nobody has got to yet.",
+                    "Agreed, and no test is made. Distinct from an undecided cell.",
                     () => Laid(reach, MatrixBoard.NotRequired,
                                many ? "ruling out " + Ui.Count(reach.Count, "pair")
                                     : "ruling out a pair")));
@@ -5873,8 +5873,8 @@ namespace CamelWorks.UI.Views
                     // afterwards would be a count of everything they had done all afternoon.
                     Parts.Sure(_grid,
                         "This puts " + Quoted(here) + " in every cell of the matrix, over "
-                        + "everything already decided. The diagonal is left alone - a discipline "
-                        + "against itself is a test somebody chooses, not one a fill makes.",
+                        + "everything already decided. The diagonal is left alone: a discipline "
+                        + "against itself is set deliberately, not by a fill.",
                         "Fill", () =>
                         {
                             Remember(what: "filling the whole grid with " + Quoted(here));
@@ -9797,8 +9797,7 @@ namespace CamelWorks.UI.Views
                 // the difference.
                 if (spare.Count > 0)
                     Said(Ui.Info(Ui.Count(spare.Count, "test") + " in the document is for a pair "
-                                 + "this matrix no longer asks for. They keep running until "
-                                 + "somebody says otherwise.",
+                                 + "this matrix no longer asks for. They keep running until retired.",
                                  "Retire them", () => Retire(spare)),
                          hold: true);
             }
@@ -9941,9 +9940,8 @@ namespace CamelWorks.UI.Views
                           + "model does not have, so its cells are skipped — check it first.")
                     + (open == 0
                         ? string.Empty
-                        : " " + Ui.Count(open, "pair") + " still has nobody's decision on it and "
-                          + "makes no test either way — building now builds the rest, and it can "
-                          + "be built again when they are settled.")
+                        : " " + Ui.Count(open, "pair") + " is still undecided and makes no test either way. "
+                          + "Building now builds the rest; build again once they are settled.")
                     + (_folder.Length == 0 ? string.Empty : " They go in " + Quoted(_folder) + "."),
                     "Build",
                     () => Write(making));
@@ -10182,10 +10180,10 @@ namespace CamelWorks.UI.Views
 
                 return new List<Parts.Entry>
                 {
-                    Parts.Entry.Heading("For somebody to read"),
+                    Parts.Entry.Heading("For review"),
 
                     Parts.Entry.Saying("Spreadsheet\u2026", Glyphs.Table,
-                        "A tab per matrix - " + tabs + " - drawn the way this screen draws them",
+                        "A tab per matrix (" + tabs + "), formatted as shown on this screen",
                         Sheet),
 
                     Parts.Entry.Rule(),

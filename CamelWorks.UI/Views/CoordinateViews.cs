@@ -1321,7 +1321,7 @@ namespace CamelWorks.UI.Views
                                           () => Configure("where")));
                 foot.Children.Add(Ui.Icon(Glyphs.Sphere, "Markers in the model",
                                           () => Configure("markers")));
-                foot.Children.Add(Ui.Icon(Glyphs.Onward, "Send it as a file somebody works in",
+                foot.Children.Add(Ui.Icon(Glyphs.Onward, "Send it as an exchange file",
                                           () => Configure("file")));
 
                 return Bench.Surface(
@@ -1364,7 +1364,7 @@ namespace CamelWorks.UI.Views
                         break;
 
                     case "file":
-                        page = new Ui.Page("A file somebody works in", Exchange);
+                        page = new Ui.Page("Exchange file", Exchange);
                         break;
 
                     default:
@@ -1555,7 +1555,7 @@ namespace CamelWorks.UI.Views
                 });
 
                 // The clash file has its own tool; this is the way over to it, at the end of setup.
-                return Bench.Group("A file somebody can work in",
+                return Bench.Group("Exchange file",
                     open,
                     Ui.Small("BCF, which Solibri, BIMcollab, Revizto and every other reviewing "
                              + "tool opens. A file that comes back lands on the elements it left "
@@ -1570,7 +1570,8 @@ namespace CamelWorks.UI.Views
 
                 Penetration => "Every service that goes through structure - what the model says it "
                                + "is and where. No opening size derived and no host thickness "
-                               + "inferred, because those are numbers somebody cuts concrete from.",
+                               + "inferred: those dimensions are used to cut concrete and must not be "
+                               + "estimated.",
 
                 _ => "The whole board, laid out for a desk: every issue with its clashes, party "
                      + "and priority.",
@@ -1609,8 +1610,8 @@ namespace CamelWorks.UI.Views
                 if (groups.Count == 0)
                 {
                     _results.Children.Add(Ui.Empty("Nothing to report.",
-                        "No group on the board matches that filter. That is a real answer — it is what "
-                        + "an empty week looks like — but check the audience if you were expecting one."));
+                        "No group on the board matches this filter. Check the selected audience if "
+                        + "results were expected."));
                     return;
                 }
 
@@ -1665,7 +1666,7 @@ namespace CamelWorks.UI.Views
 
                 if (parties.Count == 0)
                 {
-                    _results.Children.Add(Ui.Empty("Nobody to write to.",
+                    _results.Children.Add(Ui.Empty("No recipients.",
                         "No group on the board is assigned, and there are no unassigned ones either."));
                     return;
                 }
@@ -2254,8 +2255,8 @@ namespace CamelWorks.UI.Views
 
             document.Paragraph(
                 "Sizes and systems are what the model states, not what CamelWorks worked out. No "
-                + "opening size is derived and no host thickness is inferred: both are numbers "
-                + "somebody cuts concrete from, and neither is this tool's to guess.");
+                + "opening size is derived and no host thickness is inferred: both are used to "
+                + "cut concrete and are not estimated here.");
 
             WhatItWasRunAgainst(document, session);
 
@@ -2712,8 +2713,8 @@ namespace CamelWorks.UI.Views
                         : (UIElement)Ui.Problem(refused));
 
                     results.Children.Add(Ui.Note("Nothing has been written into the model's own "
-                        + "clash data: somebody else's answers are theirs until you take them on, "
-                        + "which is the button below."));
+                        + "clash data. Incoming statuses are not applied until accepted, using the "
+                        + "button below."));
 
                     Reply(session, read.Topics, results);
                 }
@@ -2925,8 +2926,8 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Problem(
                     Ui.Count(report.Unmatched.Count, "row") + " name an issue this project never sent "
                     + "- rows " + string.Join(", ", report.Unmatched.Take(8).Select(r => r.Number))
-                    + ". Somebody added them, or they came from another package. They are somebody's "
-                    + "list and not this board's status to change."));
+                    + ". They were added elsewhere or came from another package, so this board "
+                    + "does not change their status."));
 
             if (report.Duplicates.Count > 0)
                 results.Children.Add(Ui.Problem(
@@ -2967,8 +2968,7 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Note(Ui.Count(report.Refused, "row")
                     + " asked for a status lower than the board holds and will stay where they are. "
                     + "The sheet went out before those decisions were made, and a stale \"Open\" must "
-                    + "not undo an approval nobody has disputed. A deliberate re-open is different "
-                    + "and is honoured."));
+                    + "not undo an undisputed approval. A deliberate re-open is applied."));
 
             if (report.Changes == 0)
             {
@@ -3184,7 +3184,7 @@ namespace CamelWorks.UI.Views
 
                 if (merged.Conflicts.Count > 0)
                 {
-                    results.Children.Add(Ui.Eyebrow("Nobody won these"));
+                    results.Children.Add(Ui.Eyebrow("Unresolved conflicts"));
 
                     var clashRows = merged.Conflicts.Take(100).Select(c => new TableRow(c,
                         c.Title,
@@ -3297,7 +3297,7 @@ namespace CamelWorks.UI.Views
             if (report.Matched.Count == 0)
             {
                 results.Children.Add(Ui.Note("None of these topics came from this project, so there is "
-                    + "nothing on the board to reconcile. Read them as somebody else's list."));
+                    + "nothing on the board to reconcile. Treat them as an external list."));
                 return;
             }
 
@@ -3332,8 +3332,7 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Note(Ui.Count(report.Refused, "topic")
                     + " asked for a status lower than the board holds and will stay where they are. "
                     + "The file was exported before those decisions were made, and a stale \"Open\" "
-                    + "must not undo an approval nobody has disputed. A deliberate re-open is "
-                    + "different and is honoured."));
+                    + "must not undo an undisputed approval. A deliberate re-open is applied."));
 
             if (report.Unknown > 0)
                 results.Children.Add(Ui.Note(Ui.Count(report.Unknown, "topic")

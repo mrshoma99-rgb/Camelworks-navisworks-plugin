@@ -421,8 +421,8 @@ namespace CamelWorks.UI.Views
                     _onlyCommented = on;
                     RedrawGroups();
                 }),
-                Ui.Small("The status ticks and the search are on the strip above the findings, "
-                         + "not here: they are what somebody changes every few minutes."));
+                Ui.Small("The status filters and the search are on the strip above the findings "
+                         + "because they are changed frequently."));
 
             private UIElement ColumnsPage()
             {
@@ -1202,8 +1202,8 @@ namespace CamelWorks.UI.Views
 
                 if (radius <= 0)
                 {
-                    say.Children.Add(Ui.Problem("A marker of no size is a marker nobody can see. "
-                        + "Give it a size on the Model page."));
+                    say.Children.Add(Ui.Problem("A marker radius of zero produces nothing visible. "
+                        + "Set a size on the Model page."));
                     return;
                 }
 

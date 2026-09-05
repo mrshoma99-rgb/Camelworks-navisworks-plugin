@@ -190,7 +190,7 @@ namespace CamelWorks.UI.Views
                 results.Children.Add(Ui.Note(Ui.Count(intake.Missing.Count, "model")
                     + " the last manifest saw is no longer loaded: "
                     + string.Join(", ", intake.Missing.Select(m => m.DisplayName))
-                    + ". Either it was removed on purpose, or an append was lost when somebody saved."));
+                    + ". Either it was removed deliberately, or an append was lost on save."));
 
             var units = session.Profile.Units;
             var table = manifest.ModelTable(units);

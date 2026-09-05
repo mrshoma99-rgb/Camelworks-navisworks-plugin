@@ -380,7 +380,7 @@ namespace CamelWorks.Core.Project
         /// </summary>
         private string Refusal()
         {
-            var reason = Lease?.Reason ?? "somebody else is editing project settings.";
+            var reason = Lease?.Reason ?? "another user is editing project settings.";
 
             try
             {

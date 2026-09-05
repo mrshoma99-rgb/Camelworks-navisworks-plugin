@@ -222,9 +222,8 @@ namespace CamelWorks.Core.Sets
                 return Refuse(category, levels,
                     "Three properties is as deep as this goes, and you have picked "
                     + levels.Count.ToString(CultureInfo.InvariantCulture)
-                    + ". A fourth level on a real federation is thousands of sets, most of them "
-                    + "holding one element, in a tree nobody can navigate - and the fourth thing "
-                    + "people actually want is a filter, not a folder.");
+                    + ". A fourth level on a real federation produces thousands of sets, most "
+                    + "holding one element. Use a filter rather than a further folder level.");
 
             var counted = new Dictionary<string, int>(StringComparer.Ordinal);
             var spelling = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
@@ -274,10 +273,9 @@ namespace CamelWorks.Core.Sets
             if (leaves.Count > Math.Max(1, options.Ceiling))
                 return Refuse(category, levels,
                     "That would make " + Measure.Count(leaves.Count) + " sets, and the ceiling is "
-                    + Measure.Count(options.Ceiling) + ". A library that size is a Selection Tree "
-                    + "nobody can scroll and a document that takes a minute to open. Split on fewer "
-                    + "properties, raise the floor so the small ones are left out, or raise the "
-                    + "ceiling deliberately.");
+                    + Measure.Count(options.Ceiling) + ". A library that size is impractical to "
+                    + "navigate and slow to open. Split on fewer properties, raise the floor so "
+                    + "small sets are left out, or raise the ceiling deliberately.");
 
             var roots = Build(category, levels, leaves, Array.Empty<string>(), 0, options.NamePattern);
 

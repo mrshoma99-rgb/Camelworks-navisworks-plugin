@@ -600,9 +600,9 @@ namespace CamelWorks.Core.Sets
                 return Refuse(how,
                     "That would make " + Measure.Count(keeping.Count) + " sets, and the ceiling is "
                     + Measure.Count(Math.Max(1, how.Ceiling))
-                    + ". A library that size is a tree nobody can scroll and a document that takes "
-                    + "a minute to open. Use fewer levels, raise the floor so the small branches "
-                    + "are left out, or raise the ceiling deliberately.");
+                    + ". A library that size is impractical to navigate and slow to open. Use fewer "
+                    + "levels, raise the floor so small branches are left out, or raise the "
+                    + "ceiling deliberately.");
 
             var warnings = new List<string>();
             var buckets = new string[levels.Count];

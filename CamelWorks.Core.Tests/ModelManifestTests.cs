@@ -190,7 +190,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.True(intake.NothingNew);
             Assert.Equal(2, intake.Unchanged.Count);
-            Assert.Contains("nobody has published", intake.Explain());
+            Assert.Contains("nothing has been published", intake.Explain());
         }
 
         [Fact]
@@ -236,7 +236,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal("STR.nwc", Assert.Single(intake.Moved).DisplayName);
 
-            // Not "nobody has published": the file is untouched, and that early answer would bury
+            // Not "nothing has been published": the file is untouched, and that early answer would bury
             // exactly the thing worth reporting.
             Assert.False(intake.NothingNew);
             Assert.Contains("MOVED BY THE FEDERATION", intake.Explain());

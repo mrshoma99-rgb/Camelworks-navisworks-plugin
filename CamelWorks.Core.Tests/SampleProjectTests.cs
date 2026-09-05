@@ -159,7 +159,7 @@ namespace CamelWorks.Core.Tests
 
             Assert.StartsWith(SampleProject.JobName, readme);
             Assert.Contains("made up", readme);
-            Assert.Contains("nothing here came from anybody's project", readme);
+            Assert.Contains("none of it comes from a real project", readme);
 
             // Every claim on the card is in the note, so the two cannot drift.
             foreach (var claim in SampleProject.Explains) Assert.Contains(claim, readme);

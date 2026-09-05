@@ -874,7 +874,7 @@ namespace CamelWorks.UI.Views
                     if (foreign.Count > 0)
                         _results.Children.Add(Ui.Note(Ui.Count(foreign.Count, "element")
                             + " kept an override CamelWorks did not author. They are visible again "
-                            + "but still coloured, because that colour is somebody else's work."));
+                            + "but still coloured, as that override belongs to another tool."));
                 });
 
                 return Ui.Stack(
@@ -906,8 +906,8 @@ namespace CamelWorks.UI.Views
 
                     if (plan.Foreign.Count > 0)
                         _results.Children.Add(Ui.Note(Ui.Count(plan.Foreign.Count, "element")
-                            + " carry an override CamelWorks did not author. They are left exactly as they are: "
-                            + "clearing somebody else's work because it was in the way is how a tool loses trust."));
+                            + " carry an override CamelWorks did not author. They are left unchanged; "
+                            + "overrides from other tools are never cleared."));
 
                     if (plan.IsEmpty)
                     {
@@ -1086,7 +1086,7 @@ namespace CamelWorks.UI.Views
                     + ". Scan again to see what is left.", 0.8));
 
                 session.Record(ActivityKind.Appearance,
-                    "reset " + Ui.Count(cleared, "element") + " somebody else had overridden");
+                    "reset " + Ui.Count(cleared, "element") + " overridden by another tool");
             }
 
             private static void Execute(Session session, AppearancePlan plan)
@@ -1125,8 +1125,8 @@ namespace CamelWorks.UI.Views
                     _stack.Children.Add(Ui.Empty("No layers yet, so CamelWorks is deciding nothing "
                         + "about how the model looks.",
                         "What you see now is the host's state — isolates, colours and hidden elements "
-                        + "somebody left behind. Press \"Scan the model\" below to see exactly what "
-                        + "that is, or add a layer from a set or the current selection."));
+                        + "already applied. Press \"Scan the model\" below to list them, or add a "
+                        + "layer from a set or the current selection."));
                     return;
                 }
 
@@ -1993,8 +1993,8 @@ namespace CamelWorks.UI.Views
                     copy,
                     Ui.Note("Rewriting a saved viewpoint replaces its redlines with the source's. That is "
                             + "the host's own behaviour and there is no call that avoids it, so a viewpoint "
-                            + "somebody has drawn on will lose the drawing. Nothing else about the target "
-                            + "changes - not its name, not its folder, not its camera."));
+                            + "any redlines on the target are lost. Nothing else about the target changes: "
+                            + "not its name, its folder or its camera."));
             }
 
             /// <summary>

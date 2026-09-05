@@ -40,7 +40,10 @@ LITERAL = re.compile(r'"((?:[^"\\]|\\.)*)"')
 IN_STRINGS = [
     (re.compile(r'\b(somebody|nobody|anybody|everybody)\b', re.I),
      "refers to an unnamed person"),
-    (re.compile(r'\bused to\b', re.I), "recounts previous behaviour"),
+    # "used to be/have/do" only. "used to cut concrete" is ordinary technical English.
+    (re.compile(r'\bused to (be|have|has|do|show|say|mean|sit|read|take|go|open|carry|draw)\b',
+                re.I),
+     "recounts previous behaviour"),
     (re.compile(r'\b(for ever|an afternoon|a fortnight|on a Friday)\b', re.I),
      "anecdotal"),
     (re.compile(r'\bthe way (every|any)\b', re.I), "appeals to universal practice"),

@@ -139,7 +139,7 @@ namespace CamelWorks.UI.Shell
                 new AppTab("Viewpoints", "viewpoints")),
 
             new App("exports", "Export Kit",
-                "The model as a file somebody else opens.", "Batch",
+                "The model as a file for other applications.", "Batch",
                 new AppTab("IFC", "ifc"),
                 new AppTab("GLB", "exportglb"),
                 new AppTab("Drawing", "exportdxf"),

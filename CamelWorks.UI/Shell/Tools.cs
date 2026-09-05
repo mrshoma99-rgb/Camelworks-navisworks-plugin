@@ -113,8 +113,8 @@ namespace CamelWorks.UI.Shell
             // ---- Project ----------------------------------------------------------------------
 
             Of("health", "Health Check", ToolShape.Window, Glyph.Tick,
-               "Say whether this federation is fit to coordinate against, before anybody spends a "
-               + "week coordinating against it.",
+               "Reports whether this federation is fit to coordinate against, before "
+               + "coordination starts.",
                "Check this federation"),
 
             Of("project", "Project Settings", ToolShape.Window, Glyph.Tune,
@@ -129,8 +129,8 @@ namespace CamelWorks.UI.Shell
                "Take a manifest"),
 
             Of("history", "History", ToolShape.Window, Glyph.Clock,
-               "What has happened on this project and who did it, newest first, so a question "
-               + "about a decision has an answer that is not somebody's memory.",
+               "What has happened on this project and who did it, newest first, so decisions "
+               + "have a recorded answer.",
                "Copy {n}"),
 
             Of("links", "Fix Broken Links", ToolShape.Window, Glyph.Folder,
@@ -162,9 +162,8 @@ namespace CamelWorks.UI.Shell
                "Try these on the board"),
 
             Of("issuelist", "Issues", ToolShape.Window, Glyph.Report,
-               "Every issue on this project, however it was raised - written by hand, made from "
-               + "clash results, made from the clearance check, or read out of somebody's BCF - "
-               + "with the detail panel that works one.",
+               "Every issue on this project, however it was raised: by hand, from clash results, "
+               + "from the clearance check, or imported from BCF. Includes the detail panel.",
                "New issue"),
 
             Of("issuein", "Import Issues", ToolShape.Window, Glyph.Onward,
@@ -178,7 +177,7 @@ namespace CamelWorks.UI.Shell
                "Write"),
 
             Of("clashreport", "Clash Report", ToolShape.Window, Glyph.Report,
-               "Get the board out as a document somebody who does not have Navisworks can read.",
+               "Exports the board as a document readable without Navisworks.",
                "Write the report"),
 
             Of("bcf", "BCF", ToolShape.Window, Glyph.Onward,
@@ -241,8 +240,8 @@ namespace CamelWorks.UI.Shell
                "Read properties"),
 
             Of("excel", "Excel Round-trip", ToolShape.Window, Glyph.Table,
-               "Take the properties out to a workbook, let somebody who does not have Navisworks "
-               + "edit them, and read the edits back in.",
+               "Exports properties to a workbook for editing without Navisworks, then reads the "
+               + "edits back in.",
                "Write a sheet"),
 
             Of("datalink", "External Data", ToolShape.Wizard, Glyph.Folder,
@@ -319,8 +318,8 @@ namespace CamelWorks.UI.Shell
             // ---- Publish and site ---------------------------------------------------------------
 
             Of("extract", "Extract", ToolShape.Wizard, Glyph.Model,
-               "Cut a piece out of the federation - a level, a zone, a room, a view - as a set, a "
-               + "drawing or a model somebody else can open.",
+               "Extracts part of the federation (a level, zone, room or view) as a set, a drawing "
+               + "or a standalone model.",
                "Read it"),
 
             Of("compile", "Compile", ToolShape.Wizard, Glyph.Save,
@@ -359,8 +358,8 @@ namespace CamelWorks.UI.Shell
                "Find what is attached"),
 
             Of("labels", "Site Labels", ToolShape.Window, Glyph.Table,
-               "Print a sheet of stickers with a code on each and the identifier underneath, for "
-               + "somebody to put on the work.",
+               "Prints a sheet of labels, each carrying a code and its identifier, for "
+               + "application on site.",
                "Make the labels"),
 
             Of("batch", "Batch", ToolShape.Window, Glyph.Clock,

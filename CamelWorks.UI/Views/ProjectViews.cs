@@ -636,7 +636,7 @@ namespace CamelWorks.UI.Views
             if (missing.Count > 0)
                 review.Fault(Check, Ui.Count(missing.Count, "model") + " has no file on disk",
                     "A model whose source cannot be found still displays: Navisworks is showing its "
-                    + "own cached copy, which is as old as the last time anybody opened this file.",
+                    + "own cached copy, dated to the last time this file was opened.",
                     "Repoint it, or refresh from the folder it moved to, before coordinating.",
                     missing, "source-missing");
 
@@ -775,7 +775,7 @@ namespace CamelWorks.UI.Views
             if (intake.Missing.Count > 0)
                 review.Watch(Check, Ui.Count(intake.Missing.Count, "model")
                     + " the last sweep saw is no longer in the federation",
-                    "Either it was deliberately removed, or an append was lost when somebody saved.",
+                    "Either it was removed deliberately, or an append was lost on save.",
                     null,
                     intake.Missing.Select(m => m.DisplayName).ToList(), "model-gone");
 
@@ -843,8 +843,8 @@ namespace CamelWorks.UI.Views
             {
                 review.Fault(Check, Ui.Count(intake.Moved.Count, "model")
                     + " has been moved by the federation since the last sweep",
-                    "Nobody is told when this happens, and every clash from that moment on is in "
-                    + "the wrong place.",
+                    "The federation gives no notification of this, and every clash produced "
+                    + "afterwards is in the wrong place.",
                     "Run the clash tests again once it is back.",
                     intake.Moved.Select(m => m.DisplayName).ToList(), "model-moved");
 
@@ -881,7 +881,7 @@ namespace CamelWorks.UI.Views
                 review.Watch(Check, Ui.Count(carried.Count, "model") + " carries a transform",
                     "That is legitimate - it is how a survey-grid model is brought onto a project "
                     + "grid - and it is worth knowing which ones, because a transform is also the "
-                    + "thing nobody remembers applying.",
+                    + "thing most easily overlooked.",
                     null,
                     carried.Select(m => m.DisplayName).ToList(), "model-transformed");
         }
@@ -939,9 +939,9 @@ namespace CamelWorks.UI.Views
             if (coverage.Invalid > 0)
                 review.Fault(Check, Ui.Count(coverage.Invalid, "element")
                     + " carries a value " + table.Name + " does not list",
-                    "Either the table is missing a row or the model is carrying a value nobody "
-                    + "agreed to, and the difference matters: one is a five-second edit and the "
-                    + "other is a conversation.",
+                    "Either the table is missing a row, or the model carries a value outside the "
+                    + "agreed list. The first is a table edit; the second needs resolving with "
+                    + "the author.",
                     null,
                     coverage.InvalidValues.Take(6).ToList(), "code-unlisted");
         }
@@ -1103,8 +1103,8 @@ namespace CamelWorks.UI.Views
                     if (file.Length == 0)
                     {
                         results.Children.Add(Ui.Problem(
-                            "Type the path of the rule file somebody sent - an .ids or a .bcids - "
-                            + "or switch \"Rules from\" to this project's own."));
+                            "Enter the path of the supplied rule file (.ids or .bcids), or switch "
+                            + "\"Rules from\" to this project's own."));
 
                         return;
                     }
@@ -1244,7 +1244,7 @@ namespace CamelWorks.UI.Views
 
             return Bench.Group("The rules",
                 Ui.Field("Rules from", source,
-                         "this project's own, or a file somebody sent"),
+                         "this project's own, or a supplied file"),
                 Ui.PathField("Rule file", path, PathKind.Open, IdsFile.Filter),
                 Ui.Field("Check over", scopePicker,
                          "the whole federation, or one part of it"),
@@ -2246,8 +2246,8 @@ namespace CamelWorks.UI.Views
                 }
 
                 if (roster.Members.Count == 0)
-                    list.Children.Add(Ui.Small("Nobody yet. Until there is somebody here, whoever "
-                        + "a clash is assigned to is whatever name was typed on the board."));
+                    list.Children.Add(Ui.Small("No members yet. Until the roster is populated, an "
+                        + "assignment is whatever name was typed on the board."));
             }
 
             Fill();

@@ -82,7 +82,7 @@ namespace CamelWorks.UI.Views
                            + "and a quarter turn about an axis; a rotation that leaves the box "
                            + "identical leaves nothing to see. Reading the actual triangles does not "
                            + "help with this one either — the triangles move with the element."),
-                    Bullet("Comparing two different files needs somebody to say which model is which. "
+                    Bullet("Comparing two different files requires a statement of which model is which. "
                            + "CamelWorks pairs them by path, then by name, then by name with the revision "
                            + "marker taken off, and says on every row which rule paired it and why. Where "
                            + "two candidates fit equally well it pairs neither and asks, because guessing "
@@ -335,9 +335,8 @@ namespace CamelWorks.UI.Views
 
             var body = Ui.Stack();
 
-            body.Children.Add(Ui.Line("Every screen works with nothing set up, which is the point of "
-                + "the product and also the reason nobody ever sees what a set-up project looks like. "
-                + "This is one, on a made-up job.", 0.85));
+            body.Children.Add(Ui.Line("Every screen works with nothing configured, so a fully "
+                + "configured project is rarely seen. This is one, on a sample job.", 0.85));
 
             foreach (var line in SampleProject.Explains) body.Children.Add(Ui.Line("- " + line, 0.8));
 

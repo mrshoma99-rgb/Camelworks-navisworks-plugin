@@ -205,7 +205,7 @@ namespace CamelWorks.Core.Clash
             // opposite things; a sheet that spells the dash out and leaves the blank to be
             // guessed at has put the ambiguity straight back, at the moment it matters most.
             if (open)
-                sheet.Row("(blank)", "Nobody has ruled on this pair yet - no test is made");
+                sheet.Row("(blank)", "Undecided - no test is made");
 
             foreach (var symbol in legend?.Symbols ?? Array.Empty<MatrixSymbol>())
                 sheet.Row(symbol.Symbol,

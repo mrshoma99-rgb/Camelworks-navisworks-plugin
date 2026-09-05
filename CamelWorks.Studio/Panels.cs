@@ -486,7 +486,7 @@ namespace CamelWorks.Studio
                 Bench.Group("The rules",
                     Ui.Field("Rules from", Ui.Choice(
                         new[] { "This project's rules", "An IDS file" }, "An IDS file", null, 200),
-                        "this project's own, or a file somebody sent"),
+                        "this project's own, or a supplied file"),
                     Ui.PathField("An .ids file", Ui.Text(string.Empty, "none — built-in rules only",
                                                          null, 200), PathKind.Open),
                     Ui.Field("Check over", Ui.Choice(

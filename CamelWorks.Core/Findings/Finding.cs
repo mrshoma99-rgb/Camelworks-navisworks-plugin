@@ -444,7 +444,7 @@ namespace CamelWorks.Core.Findings
         {
             if (child == null) throw new ArgumentNullException(nameof(child));
             if (ReferenceEquals(child, this)) throw new ArgumentException("a finding cannot be its own child", nameof(child));
-            if (child.IsParent) throw new ArgumentException("children are leaves; nesting beyond one level makes the board a tree nobody reads", nameof(child));
+            if (child.IsParent) throw new ArgumentException("children are leaves; nesting beyond one level is not supported", nameof(child));
 
             if (child.Status != FindingStatus.New || child.AssignedTo != null || child.DueDayNumber != null)
                 throw new ArgumentException(

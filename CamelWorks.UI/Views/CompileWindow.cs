@@ -453,7 +453,7 @@ namespace CamelWorks.UI.Views
                             _recipe.Stamped = on;
                             DrawVerdict();
                         }),
-                        "So last week's is still there when somebody asks what changed")));
+                        "Keeps the previous issue for comparison")));
 
                 _shape.Children.Add(Ui.PathField("Folder", _folder, PathKind.Folder));
             }

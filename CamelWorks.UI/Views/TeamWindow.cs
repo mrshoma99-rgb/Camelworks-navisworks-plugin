@@ -142,9 +142,9 @@ namespace CamelWorks.UI.Views
                     rows.Children.Add(Line(roster, member, Fill, Kept));
 
                 if (roster.Members.Count == 0)
-                    rows.Children.Add(Ui.Small("Nobody yet. Press “Add somebody” and fill "
-                        + "the row in — every field is editable where it stands, and the roles, "
-                        + "teams and companies you use turn up in the lists afterwards."));
+                    rows.Children.Add(Ui.Small("No members yet. Press “Add member” and complete "
+                        + "the row. Every field is editable in place, and the roles, teams and "
+                        + "companies used appear in the lists afterwards."));
             }
 
             Fill();
@@ -179,7 +179,7 @@ namespace CamelWorks.UI.Views
             DockPanel.SetDock(headings, Dock.Top);
             body.Children.Add(headings);
 
-            var adding = Ui.Primary("Add somebody", () =>
+            var adding = Ui.Primary("Add member", () =>
             {
                 var name = Fresh(roster);
 

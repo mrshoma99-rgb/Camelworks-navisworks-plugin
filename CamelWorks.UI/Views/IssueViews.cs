@@ -372,7 +372,7 @@ namespace CamelWorks.UI.Views
                     _list.Children.Add(Ui.Empty("No issues yet.",
                         "Press \"New issue\" to raise one, right-click results in the Clash "
                         + "Manager or the Clearance Check to make issues out of them, or import a "
-                        + "BCF file somebody sent."));
+                        + "BCF file."));
 
                     RedrawDetail();
                     return;
@@ -1086,12 +1086,11 @@ namespace CamelWorks.UI.Views
                     Bench.Group("The file",
                         Ui.PathField("BCF", _path, PathKind.Open,
                                      "BCF|*.bcf;*.bcfzip|All files|*.*",
-                                     "a BCF file somebody sent back")),
+                                     "a returned BCF file")),
                     Bench.Group(string.Empty,
                         Ui.Small("Reading the same file again updates the issues it already "
                                  + "brought in and adds only what is new — statuses, replies and "
-                                 + "due dates — so an exchange that runs for a fortnight stays "
-                                 + "one list.")),
+                                 + "due dates — so a long-running exchange stays one list.")),
                     Bench.Group(string.Empty,
                         Ui.Small("A topic answering a finding this project sent out goes back "
                                  + "onto that finding rather than arriving as a new issue: it is "

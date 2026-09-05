@@ -94,9 +94,9 @@ namespace CamelWorks.UI.Views
             var release = Ui.Text(string.Empty, "a works order, a drawing number", null, 140);
 
             results.Children.Add(Bench.Ready(
-                "Records where every element in the scope is, right now, under somebody's name.",
-                "Nothing edits the record afterwards - which is what makes it worth signing. "
-                + "The Change Notice next door says what has moved since."));
+                "Records the current position of every element in scope, against a named author.",
+                "The record cannot be edited afterwards. Change Notice reports what has "
+                + "moved since."));
 
             var choices = new List<string> { Selection, ASet, Everything };
 
@@ -117,9 +117,9 @@ namespace CamelWorks.UI.Views
                         Ui.Field("Signed by", signatory),
                         Ui.Field("Release reference", release, "for a fabrication release")),
                     Bench.Group(string.Empty,
-                        Ui.Small("A freeze is a baseline somebody put their name to. It records "
-                                 + "each element's box, hashes the lot, and refuses to look intact "
-                                 + "if the record is edited afterwards."))),
+                        Ui.Small("A freeze is an authored baseline. It records each element's "
+                                 + "bounding box and hashes the set, so later edits to the record "
+                                 + "are detectable."))),
                 Ui.Runner("Freeze", results,
                           job => Do(results, scope, signatory, release, job)),
                 Ui.Stack(FrozenState(), results));
@@ -135,7 +135,7 @@ namespace CamelWorks.UI.Views
             var results = Ui.Stack();
 
             results.Children.Add(Bench.Ready(
-                "Says what has moved since somebody put their name to the freeze.",
+                "Reports what has moved since the freeze was authored.",
                 "Measured against the freeze, not against last week."));
 
             return Bench.Surface(
@@ -268,8 +268,8 @@ namespace CamelWorks.UI.Views
             if (held == null)
             {
                 results.Children.Add(Ui.Empty("Nothing is frozen.",
-                    "A change notice is the difference between a record somebody agreed to and "
-                    + "the model as it stands, so there has to be a freeze first."));
+                    "A change notice compares an agreed record against the model as it stands, "
+                    + "so a freeze is required first."));
 
                 results.Children.Add(Ui.Actions(Ui.Quiet("Freeze something",
                     () => Ui.Told(Shell.AppWindow.Show("track", "freeze")))));

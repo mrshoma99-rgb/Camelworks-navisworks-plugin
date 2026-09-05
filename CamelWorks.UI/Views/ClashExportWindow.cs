@@ -365,7 +365,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var gone in match.Missing.Take(6))
                     _match.Children.Add(Ui.Note("\"" + gone.Name + "\" is not in this document. Kept "
-                        + "in the profile, in case it is a document somebody opened without running."));
+                        + "in the profile, in case this document was opened without running the tests."));
 
                 // Built by hand rather than ToDictionary: two tests may share a name, and the
                 // second one would throw rather than shrug.

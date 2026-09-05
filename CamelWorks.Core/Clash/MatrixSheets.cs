@@ -580,7 +580,7 @@ namespace CamelWorks.Core.Clash
             Line(MatrixBoard.NotRequired, "Not required, agreed - no test is made",
                  MatrixInk.Ruled);
 
-            Line(string.Empty, "Nobody has ruled on this pair yet - no test is made",
+            Line(string.Empty, "Undecided - no test is made",
                  string.Empty);
 
             sheet.Row();

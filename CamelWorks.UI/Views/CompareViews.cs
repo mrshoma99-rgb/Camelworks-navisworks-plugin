@@ -848,9 +848,9 @@ namespace CamelWorks.UI.Views
 
                     if (framed > 0)
                         _output.Children.Add(Ui.Note(Ui.Count(framed, "viewpoint")
-                            + " look at where removed elements used to be. There is nothing in "
-                            + "this document at those coordinates — that is what removed means — "
-                            + "so the view is framed on the extent the baseline recorded."));
+                            + " look at the former location of removed elements. Nothing exists at "
+                            + "those coordinates in this document, so each view is framed on the "
+                            + "extent recorded in the baseline."));
 
                     _session.Record(ActivityKind.Reconcile,
                         "made " + Ui.Count(made, "viewpoint") + " from the comparison");
@@ -1025,9 +1025,9 @@ namespace CamelWorks.UI.Views
                         return;
                     }
 
-                    _output.Children.Add(Ui.Note("Moves are left off by default: on most revisions "
-                        + "they are hundreds of elements settling by a few millimetres, and a "
-                        + "register full of them is a register nobody opens."));
+                    _output.Children.Add(Ui.Note("Moves are excluded by default. On most revisions they "
+                        + "are hundreds of elements shifted by a few millimetres, which "
+                        + "obscures the substantive changes."));
 
                     _output.Children.Add(Ui.Info("Raised " + Ui.Count(made, "issue")
                         + " in the register, each carrying the elements it is about.",
