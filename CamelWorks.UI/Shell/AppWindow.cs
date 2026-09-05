@@ -32,17 +32,17 @@ namespace CamelWorks.UI.Shell
         private bool _hooked;
 
         /// <summary>
-        /// Every tab this window has already built, so switching back is instant.
+        /// Every tab this window has already built, so switching back is immediate.
         ///
-        /// <b>Switching a tab used to rebuild it.</b> Every visit to Manage built the rail again
-        /// - a row per test, a hundred and sixty of them - then the board, the columns and the
-        /// legend, from nothing. The state behind them survived a switch, because these screens
-        /// keep it; what did not survive was the several thousand elements drawn from it, and
-        /// rebuilding those is the lag. A tab that has been built once is kept and put back.
+        /// Switching a tab used to rebuild it. Every visit to Manage built the rail again — a row
+        /// per test, a hundred and sixty of them — then the board, the columns and the legend, from
+        /// nothing. The state behind them survives a switch, because these screens keep it; what did
+        /// not survive was the several thousand elements drawn from it, and rebuilding those is the
+        /// lag. A tab that has been built once is kept and restored.
         ///
-        /// <b>Thrown away when the document changes.</b> A surface built against one federation
-        /// is a surface full of another model's tests, sets and levels, so the whole cache goes
-        /// the moment the document does - which is the same rule the pickers already follow.
+        /// The cache is dropped when the document changes. A surface built against one federation is
+        /// full of another model's tests, sets and levels, so the whole cache goes with the
+        /// document, which is the rule the pickers already follow.
         /// </summary>
         private readonly Dictionary<string, UIElement> _built =
             new Dictionary<string, UIElement>(StringComparer.OrdinalIgnoreCase);

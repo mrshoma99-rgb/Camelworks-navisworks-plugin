@@ -9,27 +9,25 @@ namespace CamelWorks.UI
     /// <summary>
     /// The CamelWorks buttons on the BIMCamel ribbon tab.
     ///
-    /// One flat row: the hub, one button per app of the suite, the section-box act and Help. A
-    /// button goes to one of three places, decided by the catalogue entry: the hub window, an
-    /// app's window on the tab its work stopped at, or a tool that lives outside the apps —
-    /// Review's palette, the acts, Help. No button opens a modal, because a modal over a 3D view
-    /// hides the very thing the user is deciding about.
+    /// One flat row: the hub, one button per app of the suite, the section-box action and Help. A
+    /// button goes to one of three places, decided by the catalogue entry: the hub window, an app's
+    /// window on the tab its work stopped at, or a tool that lives outside the apps — Review's
+    /// palette, the immediate actions, Help. No button opens a modal, because a modal over a 3D view
+    /// hides what the user is deciding about.
     ///
     /// The command ids here must match CamelWorks.xaml exactly. They also appear in
-    /// <see cref="CommandCatalogue"/>, which is the one place the routing and the tooltips come
-    /// from — a check asserts the three lists agree, because a command present in one and missing
-    /// from another is invisible in exactly one place.
+    /// <see cref="CommandCatalogue"/>, which is the single source of the routing and the tooltips; a
+    /// check asserts the three lists agree, because a command present in one and missing from
+    /// another is invisible in exactly one place.
     ///
-    /// <b>The tab is shared.</b> Dyncamelo and the BIMCamel IFC exporter declare the same tab id,
-    /// and <see cref="Shell.RibbonTabMerger"/> folds the separately-composed tabs into one - so a
-    /// machine with all three installed gets one BIMCamel tab with three panels on it rather than
-    /// three tabs of the same name. The merger is installed by CamelWorksStartup, and again here
-    /// as a fallback for the case where the startup plug-in did not load.
+    /// The tab is shared. Dyncamelo and the BIMCamel IFC exporter declare the same tab id, and
+    /// <see cref="Shell.RibbonTabMerger"/> folds the separately-composed tabs into one, so a machine
+    /// with all three installed gets one BIMCamel tab with three panels. The merger is installed by
+    /// CamelWorksStartup, and again here as a fallback for when the startup plug-in did not load.
     ///
-    /// <b>Icons are Google Material Symbols</b>, Apache-2.0, rasterised into the Resources folder by
+    /// Icons are Google Material Symbols, Apache-2.0, rasterised into the Resources folder by
     /// <c>tools/icons.py</c> and committed. The tool is in the repository rather than the icons
-    /// alone, because a folder of PNGs with no provenance is a folder nobody dares change: it says
-    /// which symbol each button uses, where it came from and how to make a matching one.
+    /// alone, so that the provenance of each icon and the way to make a matching one are recorded.
     /// </summary>
     [Plugin("CamelWorks.Command", "CamelWorks",
         DisplayName = "CamelWorks",

@@ -18,14 +18,14 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// A folder of supplier drops, turned into the file the project ships.
     ///
-    /// The hard part is not the writing. It is knowing what goes in: the delivery folder holds
-    /// three revisions of half the models, two of them superseded and none of them saying so except
-    /// in the file name. So the list is read, the revisions are worked out, older ones lose, and
-    /// the plan says exactly what is going in and what was left out before anything runs.
+    /// The hard part is not the writing but knowing what goes in: the delivery folder holds three
+    /// revisions of half the models, two of them superseded and none of them saying so except in the
+    /// file name. So the list is read, the revisions are worked out, older ones lose, and the plan
+    /// states what is going in and what was left out before anything runs.
     ///
-    /// <b>It takes the session over.</b> Navisworks has one document, not many - there is no call
-    /// that builds a file on the side. Compiling clears what is open, appends the sources and
-    /// saves. That is said on the glass, in front of the button, every time.
+    /// It takes the session over. Navisworks has one document and no call that builds a file on the
+    /// side, so compiling clears what is open, appends the sources and saves. That is stated in
+    /// front of the button every time.
     /// </summary>
     public static class CompileWindow
     {

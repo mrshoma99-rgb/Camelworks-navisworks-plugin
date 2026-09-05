@@ -22,20 +22,18 @@ namespace CamelWorks.Core.Store
     /// <summary>
     /// The envelope every CamelWorks-authored file carries.
     ///
-    /// Two rules, both of which exist because these files outlive the build that wrote them:
+    /// Two rules, both because these files outlive the build that wrote them:
     ///
-    /// 1. <b>Unknown keys survive a round trip.</b> A newer CamelWorks writes a key this build has
-    ///    never heard of; loading and re-saving must not delete it. Without this, one colleague on
-    ///    last month's build silently strips everyone else's newer settings every time they open
-    ///    the project — a data-loss bug that looks like nothing at all until somebody notices their
-    ///    rules are gone.
-    /// 2. <b>A file from the future is read-only.</b> This build can display it, but saving would
-    ///    write a lower <c>schemaVersion</c> over a higher one and claim a downgrade it did not
-    ///    perform. So it refuses, and the pane says why.
+    /// 1. Unknown keys survive a round trip. A newer CamelWorks writes a key this build has never
+    ///    seen; loading and re-saving must not delete it. Without this, one colleague on an older
+    ///    build strips everyone else's newer settings every time they open the project.
+    /// 2. A file from the future is read-only. This build can display it, but saving would write a
+    ///    lower <c>schemaVersion</c> over a higher one and claim a downgrade it did not perform. So
+    ///    it refuses, and the pane says why.
     ///
     /// Versioning starts at the first commit rather than at the first breaking change: the
-    /// compatibility burden that does not exist today begins on release day, and adding the field
-    /// afterwards means guessing at what unversioned files meant.
+    /// compatibility burden begins on release day, and adding the field afterwards means guessing at
+    /// what unversioned files meant.
     /// </summary>
     public sealed class VersionedDocument
     {

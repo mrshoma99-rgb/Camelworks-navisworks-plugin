@@ -12,31 +12,29 @@ namespace CamelWorks.UI.Shell
     /// Merges the BIMCamel ribbon tabs of every installed BIMCamel plug-in into one.
     ///
     /// CamelWorks, Dyncamelo and the BIMCamel IFC exporter all declare the same ribbon tab id
-    /// (<c>ID_Tab_BIMCamel</c>) in their <c>RibbonLayout</c> markup — but Navisworks composes each
-    /// plug-in's layout independently and does <b>not</b> merge tabs that share an id. With three
-    /// BIMCamel tools installed the user gets three tabs all called BIMCamel, which is worse than
-    /// three differently-named ones.
+    /// (<c>ID_Tab_BIMCamel</c>) in their <c>RibbonLayout</c> markup, but Navisworks composes each
+    /// plug-in's layout independently and does not merge tabs that share an id. With three BIMCamel
+    /// tools installed the user gets three tabs all called BIMCamel.
     ///
     /// So each plug-in carries an identical copy of this helper and each installs it. It is
-    /// idempotent: whichever runs last does the merge, and with a single tool installed it finds
-    /// one tab and does nothing. <b>Keep this file in step with the copies in the Dyncamelo and
-    /// exporter repositories</b> — it is deliberately duplicated rather than shared, because a
-    /// shared assembly would have to be installed by all three and versioned across all three,
-    /// which is a harder problem than one file that does not change.
+    /// idempotent: whichever runs last does the merge, and with a single tool installed it finds one
+    /// tab and does nothing. Keep this file in step with the copies in the Dyncamelo and exporter
+    /// repositories. It is duplicated rather than shared because a shared assembly would have to be
+    /// installed and versioned by all three.
     ///
-    /// <b>Why reflection.</b> The ribbon object model is AdWindows, and the per-year Navisworks
-    /// NuGet reference packages do not include <c>AdWindows.dll</c>. The host has it loaded, so
-    /// this reaches it through <see cref="AppDomain.CurrentDomain"/> instead. The shape touched —
-    /// RibbonControl → Tabs → Panels, all observable collections — is stable across 2024–2027.
+    /// Reflection is used because the ribbon object model is AdWindows and the per-year Navisworks
+    /// NuGet reference packages do not include <c>AdWindows.dll</c>. The host has it loaded, so this
+    /// reaches it through <see cref="AppDomain.CurrentDomain"/>. The shape touched — RibbonControl →
+    /// Tabs → Panels, all observable collections — is stable across 2024–2027.
     ///
-    /// <b>Why two ways of finding the ribbon.</b> <c>ComponentManager.Ribbon</c> is the AutoCAD-era
-    /// static and is often unpopulated in Navisworks, so a visual-tree walk over every live
-    /// presentation source is the fallback.
+    /// Two ways of finding the ribbon: <c>ComponentManager.Ribbon</c> is the AutoCAD-era static and
+    /// is often unpopulated in Navisworks, so a visual-tree walk over every live presentation source
+    /// is the fallback.
     ///
-    /// Runs on <c>Application.Idle</c>, so it executes on the UI thread after the ribbon exists,
-    /// and keeps watching cheaply (guarded by a tab-count check) so a ribbon rebuild — a workspace
-    /// or user-profile load — is re-merged too. Any failure unhooks and leaves the ribbon alone:
-    /// the worst case is the several-tabs behaviour it set out to fix, never a crash.
+    /// Runs on <c>Application.Idle</c>, so it executes on the UI thread after the ribbon exists, and
+    /// keeps watching cheaply (guarded by a tab-count check) so a ribbon rebuild from a workspace or
+    /// user-profile load is re-merged. Any failure unhooks and leaves the ribbon alone: the worst
+    /// case is the several-tabs behaviour it set out to fix.
     /// </summary>
     internal static class RibbonTabMerger
     {

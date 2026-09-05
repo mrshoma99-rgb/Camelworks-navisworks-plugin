@@ -306,20 +306,20 @@ namespace CamelWorks.Core.Appearance
     /// <summary>
     /// A colour scheme, taken off one model and put onto another.
     ///
-    /// The layer stack is better than anything else here at deciding what a model looks like, and
-    /// it cannot leave the machine. A scheme agreed in a workshop - services by system, structure
-    /// by phase, everything else at eighty per cent - is an afternoon's work that exists in one
-    /// person's document and dies with it.
+    /// The layer stack decides what a model looks like better than anything else here, and it cannot
+    /// leave the machine. A scheme agreed in a workshop — services by system, structure by phase,
+    /// everything else at eighty per cent — is an afternoon's work that exists in one person's
+    /// document.
     ///
-    /// <b>Identity first, name second.</b> A key is exact and does not travel: a re-export
-    /// renumbers, and another discipline's model of the same building keys nothing the same way.
-    /// So the snapshot carries the display path too, and an element the key cannot find is looked
-    /// for by the path a person would have used. Which way each one landed is reported, because
-    /// "found by name" is a guess and the reader is entitled to know how many of them there were.
+    /// Matched by identity first, name second. A key is exact and does not travel: a re-export
+    /// renumbers, and another discipline's model of the same building keys nothing the same way. So
+    /// the snapshot carries the display path too, and an element the key cannot find is looked for
+    /// by that path. Which way each one landed is reported, because a name match is a guess and the
+    /// count of them matters.
     ///
-    /// <b>It arrives as a layer, not as a set of writes.</b> Replayed through the stack, it sits
-    /// above or below what is already there, can be switched off, and can be taken back - where a
-    /// direct write would be indistinguishable from the overrides it landed on top of.
+    /// It arrives as a layer rather than a set of writes. Replayed through the stack it sits above
+    /// or below what is already there, can be switched off and can be taken back, where a direct
+    /// write would be indistinguishable from the overrides it landed on.
     /// </summary>
     public static class AppearanceTransfer
     {

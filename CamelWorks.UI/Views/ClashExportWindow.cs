@@ -109,13 +109,13 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// Two legs, one on screen at a time, each built to the surface anatomy.
             ///
-            /// <b>Not a wizard.</b> Writing a file out and reading a reviewer's file back are the
-            /// same trip a fortnight apart, not two steps of one task. The switch at the top of
-            /// each setup column says which one you are on, and swapping it swaps the whole
-            /// surface — the two legs share nothing but the switch's caption.
+            /// Not a wizard. Writing a file out and reading a reviewer's file back are the same trip
+            /// weeks apart rather than two steps of one task. The switch at the top of each setup
+            /// column says which leg is showing, and changing it swaps the whole surface; the two
+            /// legs share nothing but the switch's caption.
             ///
-            /// The write leg's primary is the two-stage Commit, so it leads the stage and the
-            /// setup column has no foot; the read leg's Runner is an ordinary foot action.
+            /// The write leg's primary is the two-stage Commit, so it leads the stage and the setup
+            /// column has no foot; the read leg's Runner is an ordinary foot action.
             /// </summary>
             private UIElement Build()
             {
