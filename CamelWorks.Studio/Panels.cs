@@ -77,6 +77,20 @@ namespace CamelWorks.Studio
                                                       + "{columnCode}-{columnNumber} {column}",
                                              null, null)),
 
+            // The naming, drawn on each of its panes. This is the surface that decides what the
+            // manager can band, filter, sort and renumber by, and every one of those reads a
+            // test's name through a pattern somebody wrote here.
+            Page("app-clash-naming-tests", "Clash Manager · Naming, tests", 720,
+                 () => ClashNaming.Drawn(Booked(), Testing(), NamingPane.Tests)),
+
+            Page("app-clash-naming-patterns", "Clash Manager · Naming, patterns", 720,
+                 () => ClashNaming.Drawn(Booked(), Testing(), NamingPane.Patterns)),
+
+            // Renumbering with the plan on screen: what each test is called, what it would
+            // become, and the ones the naming refuses with the reason beside them.
+            Page("app-clash-naming-write", "Clash Manager · Naming, renumber", 720,
+                 () => ClashNaming.Drawn(Booked(), Testing(), NamingPane.Write)),
+
             // The results view was the one that could not be photographed: it counts what the
             // document holds and this seat holds none, so the heat scale, the number in each
             // cell and the difference between a nought and a pair no test covers were drawing
@@ -334,6 +348,40 @@ namespace CamelWorks.Studio
         /// fixture where every name fits the first pattern would photograph a screen that never
         /// happens.
         /// </summary>
+        /// <summary>The naming window's tests: the same list, as id and name.</summary>
+        private static IReadOnlyList<(string Id, string Name)> Testing() =>
+            Named().Select(one => (one.Test.Id, one.Test.Name)).ToList();
+
+        /// <summary>
+        /// A project's naming as it stands after a job has been running a while: two conventions,
+        /// a field of the project's own, most tests bound and a few on nothing.
+        ///
+        /// The unbound ones are the state the window exists for. A book where every test reads
+        /// cleanly draws none of the refusals, none of the proposal, and none of the count that
+        /// says how many are left.
+        /// </summary>
+        private static NamingBook Booked()
+        {
+            var book = new NamingBook();
+
+            book.Scheme.Add("phase", "Phase");
+
+            book.Patterned(new[]
+            {
+                "{rowCode}-{rowNumber} {row} vs {columnCode}-{columnNumber} {column}",
+                "{row} | {column}",
+            });
+
+            foreach (var test in Named())
+            {
+                var at = book.Fitting(test.Test.Name);
+
+                if (at > 0) book.Bind(test.Test.Id, at);
+            }
+
+            return book;
+        }
+
         private static IReadOnlyList<ClashTestRead> Named()
         {
             var read = new List<ClashTestRead>();

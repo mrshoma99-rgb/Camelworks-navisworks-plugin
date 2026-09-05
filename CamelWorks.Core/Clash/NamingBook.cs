@@ -46,6 +46,9 @@ namespace CamelWorks.Core.Clash
     /// </summary>
     public sealed class NamingBook
     {
+        /// <summary>Where the book sits in the project file's clash section.</summary>
+        public const string Key = "naming";
+
         private readonly List<string> _patterns = new List<string>();
 
         private readonly Dictionary<string, int> _bound =
