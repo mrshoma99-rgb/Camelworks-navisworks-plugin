@@ -35,7 +35,7 @@ on:
       pages:
         description: "Which pages to draw, by id, comma-separated - or 'all'"
         required: false
-        default: "app-clash-matrix-scrolled,app-clash-matrix-drawn"
+        default: "app-clash-matrix-line"
 
   # A push to render/** is a request for a picture, and the only way an agent working in this
   # repository can ask for one: dispatching a workflow needs actions:write, which the app it runs

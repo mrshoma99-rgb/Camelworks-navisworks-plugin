@@ -109,11 +109,30 @@ namespace CamelWorks.UI.Views
         /// on a seat.
         /// </param>
         public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view,
-                                        IReadOnlyList<ClashTestRead>? counted)
+                                        IReadOnlyList<ClashTestRead>? counted) =>
+            Surface(seat, drawn, view, counted, null);
+
+        /// <summary>
+        /// The matrix tab, opened with one row already picked.
+        /// </summary>
+        /// <param name="seat">The seat it is running in.</param>
+        /// <param name="drawn">A matrix already open, or null to arrive at the start screen.</param>
+        /// <param name="view">Which of the three the grid starts on.</param>
+        /// <param name="counted">Tests as a read of the document hands them back, or null.</param>
+        /// <param name="picked">
+        /// The name of the row to open on, or null for none.
+        ///
+        /// Here for the render harness, which cannot press a row header. The panel beside the
+        /// grid — every field of a line, and the way to make one — only draws once something is
+        /// picked, so until this existed the whole of it was a surface no picture had ever shown
+        /// and its faults were found on a licensed seat and described to me in words.
+        /// </param>
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view,
+                                        IReadOnlyList<ClashTestRead>? counted, string? picked)
         {
             if (drawn != null) _board = drawn;
 
-            return new Editor(seat, view, counted).View;
+            return new Editor(seat, view, counted, picked).View;
         }
 
         /// <summary>
@@ -449,7 +468,8 @@ namespace CamelWorks.UI.Views
             private readonly Dictionary<(MatrixLine Row, MatrixLine Column), Border> _cells =
                 new Dictionary<(MatrixLine, MatrixLine), Border>();
 
-            internal Editor(ISeat session, Showing view, IReadOnlyList<ClashTestRead>? counted)
+            internal Editor(ISeat session, Showing view, IReadOnlyList<ClashTestRead>? counted,
+                            string? picked = null)
             {
                 _session = session ?? throw new ArgumentNullException(nameof(session));
 
@@ -468,6 +488,12 @@ namespace CamelWorks.UI.Views
                 _build = Ui.Primary("Build the tests", Build);
 
                 Load();
+
+                // After Load, which is what puts the board's rows there to be picked.
+                if (!string.IsNullOrEmpty(picked))
+                    Pick(_board.Rows.FirstOrDefault(
+                             one => string.Equals(one.Name, picked, StringComparison.Ordinal)),
+                         rows: true);
 
                 _saver.Tick += (s, e) => Ui.Safely(() =>
                 {
@@ -3563,6 +3589,84 @@ namespace CamelWorks.UI.Views
 
                 Reported(changed, "written", "value");
             }
+
+            /// <summary>
+            /// The way to make a field, on the line where fields are met.
+            ///
+            /// A field was reachable only from Arrange, which is a menu about the whole board, so
+            /// somebody looking at a line and wanting to put a phase on it had no way in and
+            /// nothing on the panel saying there was one. The panel is where a line's fields are
+            /// typed, so it is where one is made.
+            ///
+            /// Arrange still holds the rest of it: what a field is called, whether it is counted
+            /// down the axis, and taking one away. This is the one act that is about the line in
+            /// front of you.
+            /// </summary>
+            private UIElement Fielding()
+            {
+                var held = Ui.Stack();
+
+                if (!MatrixNaming.Custom(_board.Scheme).Any())
+                {
+                    var says = Ui.Small(
+                        "A field of your own \u2014 a phase, a sub-discipline, a package \u2014 is "
+                        + "carried by every row and column, can be counted down the axis, and can "
+                        + "be written into the test names.");
+
+                    says.TextWrapping = TextWrapping.Wrap;
+                    says.Margin = new Thickness(0, 0, 0, 2);
+
+                    held.Children.Add(says);
+                }
+
+                var add = Ui.Link("Add a field", () => Ui.Safely(Fielded));
+
+                add.HorizontalAlignment = HorizontalAlignment.Left;
+                add.Margin = new Thickness(0, 0, 0, 9);
+                add.ToolTip = "Adds it to every row and column. Arrange \u25b8 Fields is where a "
+                              + "field is counted down the axis rather than typed line by line.";
+
+                held.Children.Add(add);
+
+                return held;
+            }
+
+            /// <summary>Ask for a field's name, and add it to the scheme.</summary>
+            private void Fielded() =>
+                Parts.Ask(_grid,
+                          "What is the field called? \u201cPhase\u201d, \u201cSub-discipline\u201d, "
+                          + "\u201cPackage\u201d.",
+                          string.Empty, "Add", said =>
+                {
+                    var title = (said ?? string.Empty).Trim();
+
+                    if (title.Length == 0) return;
+
+                    var key = new string(title.Where(char.IsLetterOrDigit).ToArray());
+
+                    if (!MatrixField.IsUsable(key))
+                    {
+                        Ui.Told("A field's name has to start with a letter.");
+                        return;
+                    }
+
+                    if (_board.Scheme.Has(key))
+                    {
+                        Ui.Told("There is already a field called \u201c" + title + "\u201d.");
+                        return;
+                    }
+
+                    var was = Held();
+
+                    _board.Scheme.Add(key, title);
+
+                    Touched();
+
+                    _past.Push(new Doing(was, "adding the " + title + " field"));
+                    _future.Clear();
+
+                    Redraw();
+                });
 
             private void Rulebook()
             {
@@ -6848,6 +6952,8 @@ namespace CamelWorks.UI.Views
 
                     _inspector.Children.Add(held);
                 }
+
+                _inspector.Children.Add(Fielding());
 
                 if (line.IsCustom) _inspector.Children.Add(Released(line, at, rows));
 
