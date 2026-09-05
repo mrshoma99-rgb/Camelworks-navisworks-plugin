@@ -730,11 +730,11 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void AFieldIsDrawnWhenItSaysSomething_UnlessSomebodySaidOtherwise()
         {
-            Assert.True(MatrixStyle.Drawn(MatrixField.Auto, worthIt: true));
-            Assert.False(MatrixStyle.Drawn(MatrixField.Auto, worthIt: false));
+            Assert.True(MatrixStyle.Drawn(MatrixDrawn.Auto, worthIt: true));
+            Assert.False(MatrixStyle.Drawn(MatrixDrawn.Auto, worthIt: false));
 
-            Assert.True(MatrixStyle.Drawn(MatrixField.Shown, worthIt: false));
-            Assert.False(MatrixStyle.Drawn(MatrixField.Hidden, worthIt: true));
+            Assert.True(MatrixStyle.Drawn(MatrixDrawn.Shown, worthIt: false));
+            Assert.False(MatrixStyle.Drawn(MatrixDrawn.Hidden, worthIt: true));
         }
 
         [Fact]
@@ -746,9 +746,9 @@ namespace CamelWorks.Core.Tests
                 Echo = false,
                 Spine = false,
                 SpineColour = "#CBD5E3",
-                Numbers = MatrixField.Shown,
-                Codes = MatrixField.Hidden,
-                Warnings = MatrixField.Shown,
+                Numbers = MatrixDrawn.Shown,
+                Codes = MatrixDrawn.Hidden,
+                Warnings = MatrixDrawn.Shown,
             };
 
             var read = MatrixStyle.FromJson(style.ToJson());
@@ -757,9 +757,9 @@ namespace CamelWorks.Core.Tests
             Assert.False(read.Echo);
             Assert.False(read.Spine);
             Assert.Equal("#CBD5E3", read.SpineColour);
-            Assert.Equal(MatrixField.Shown, read.Numbers);
-            Assert.Equal(MatrixField.Hidden, read.Codes);
-            Assert.Equal(MatrixField.Shown, read.Warnings);
+            Assert.Equal(MatrixDrawn.Shown, read.Numbers);
+            Assert.Equal(MatrixDrawn.Hidden, read.Codes);
+            Assert.Equal(MatrixDrawn.Shown, read.Warnings);
 
             // Nothing stored is the ordinary one, not a blank one: a matrix saved before any of
             // this existed opens drawn the way it was drawn then.
@@ -768,7 +768,7 @@ namespace CamelWorks.Core.Tests
             Assert.True(fresh.UpperIsLive);
             Assert.True(fresh.Echo);
             Assert.True(fresh.Spine);
-            Assert.Equal(MatrixField.Auto, fresh.Numbers);
+            Assert.Equal(MatrixDrawn.Auto, fresh.Numbers);
         }
     }
 

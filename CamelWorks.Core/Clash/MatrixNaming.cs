@@ -73,8 +73,9 @@ namespace CamelWorks.Core.Clash
         /// <param name="column">The column.</param>
         /// <param name="symbol">The cell's symbol, and what it means.</param>
         /// <param name="at">Where this falls in the build, from one.</param>
+        /// <param name="scheme">The board's scheme, for its custom fields. Null for none.</param>
         public static string Fill(string? pattern, MatrixLine row, MatrixLine column,
-                                  MatrixSymbol? symbol, int at)
+                                  MatrixSymbol? symbol, int at, MatrixScheme? scheme = null)
         {
             if (row == null) throw new ArgumentNullException(nameof(row));
             if (column == null) throw new ArgumentNullException(nameof(column));
@@ -99,15 +100,54 @@ namespace CamelWorks.Core.Clash
                 .Replace("{symbol}", symbol?.Symbol ?? string.Empty)
                 .Replace("{test}", symbol == null ? string.Empty : Worded(symbol.Test))
                 .Replace("{tolerance}", millimetres)
-                .Replace("{n}", at.ToString(CultureInfo.InvariantCulture))
-                .ToString();
+                .Replace("{n}", at.ToString(CultureInfo.InvariantCulture));
+
+            // The scheme's own fields, after the built-in ones so a project that names a field
+            // "code" cannot shadow the token the rest of the product already writes.
+            foreach (var field in Custom(scheme))
+            {
+                filled.Replace(field.RowToken, row.Value(field.Key));
+                filled.Replace(field.ColumnToken, column.Value(field.Key));
+            }
+
+            var made = filled.ToString();
 
             // Two spaces where a token was empty read as a typo in every export. Collapsed, and
             // the ends trimmed, so a pattern that carries a number nobody filled in still names
             // something a person would have written.
-            while (filled.Contains("  ")) filled = filled.Replace("  ", " ");
+            while (made.Contains("  ")) made = made.Replace("  ", " ");
 
-            return filled.Trim().Trim('-', '|', '·', ' ');
+            return made.Trim().Trim('-', '|', '·', ' ');
+        }
+
+        /// <summary>The scheme's fields that are not one of the four the tokens already cover.</summary>
+        /// <param name="scheme">The board's scheme, or null.</param>
+        public static IEnumerable<MatrixField> Custom(MatrixScheme? scheme) =>
+            (scheme?.Fields ?? Array.Empty<MatrixField>()).Where(one => !one.IsBuiltIn);
+
+        /// <summary>
+        /// Every token a pattern can carry on this board: the built-in list, then one row and one
+        /// column token per custom field.
+        ///
+        /// A token picker reads from here rather than from <see cref="Tokens"/>, so a field added
+        /// to the scheme is offered everywhere a pattern is written without any surface having to
+        /// be told about it.
+        /// </summary>
+        /// <param name="scheme">The board's scheme, or null for the built-in list alone.</param>
+        public static IReadOnlyList<NameToken> Offered(MatrixScheme? scheme)
+        {
+            var held = new List<NameToken>(Tokens);
+
+            foreach (var field in Custom(scheme))
+            {
+                held.Add(new NameToken(field.RowToken, "Row " + field.Title.ToLowerInvariant(),
+                                       "The row's " + field.Title.ToLowerInvariant() + "."));
+
+                held.Add(new NameToken(field.ColumnToken, "Column " + field.Title.ToLowerInvariant(),
+                                       "The column's " + field.Title.ToLowerInvariant() + "."));
+            }
+
+            return held;
         }
 
         /// <summary>A test kind as a person writes it.</summary>
