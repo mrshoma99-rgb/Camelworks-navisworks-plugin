@@ -9,21 +9,18 @@ namespace CamelWorks.Core.Project
     /// <summary>
     /// What a model review found, as findings.
     ///
-    /// <b>The producer with least to lose and most to gain.</b> The review had no persistence at
-    /// all: it said "37 elements sit on top of each other at the origin", offered to select them,
-    /// and forgot the whole thing the moment the tab was left. Nobody could mark one as accepted,
-    /// nothing could be assigned, and there was no way to raise an issue from one. All of that
-    /// arrives at once by emitting findings.
+    /// The review previously had no persistence: it reported what it found, offered to select the
+    /// elements, and discarded everything on leaving the tab. Nothing could be marked accepted,
+    /// assigned, or raised as an issue. Emitting findings supplies all three.
     ///
-    /// <b>Parent and child.</b> One rule failing four hundred elements is one thing to decide
-    /// about and four hundred things to look at. So the rule emits a parent carrying the decision
-    /// and a child per element carrying the location — which is what <see cref="Finding"/> was
-    /// shaped for, and the first producer to use it.
+    /// Parent and child. One rule failing four hundred elements is one thing to decide about and
+    /// four hundred things to look at, so the rule emits a parent carrying the decision and a child
+    /// per element carrying the location, which is what <see cref="Finding"/> was shaped for.
     ///
-    /// <b>Identity is the rule, not the sentence.</b> A review headline reads "37 elements sit on
-    /// top of each other", with the count in the words: identifying off one would hand every
-    /// re-run a fresh finding and throw away every decision anybody had taken. The rule id is what
-    /// identifies, and it does not move when the answer does.
+    /// Identity is the rule rather than the headline. A review headline reads "37 elements sit on
+    /// top of each other", with the count in the words, so identifying off one would give every
+    /// re-run a fresh finding and discard every decision. The rule id does not move when the answer
+    /// does.
     /// </summary>
     public static class HealthFindings
     {

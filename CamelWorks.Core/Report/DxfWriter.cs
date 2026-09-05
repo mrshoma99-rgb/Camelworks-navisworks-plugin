@@ -149,36 +149,33 @@ namespace CamelWorks.Core.Report
     /// <summary>
     /// The model as a drawing every CAD package opens.
     ///
-    /// The ask is always "give me a DWG". DWG is Autodesk's own format with no published
-    /// specification, so anything writing one without their library is reverse-engineering a moving
-    /// target. DXF is the same company's published interchange format for exactly this, AutoCAD
-    /// opens it natively, and so does every other package that has ever claimed to read DWG. It is
-    /// the honest answer to the question, and it is the whole answer for what the question is
-    /// actually for: getting the coordinated geometry, on the right layers, with the model's data
-    /// still attached, into somebody's drawing.
+    /// The request is always for a DWG. DWG is Autodesk's own format with no published
+    /// specification, so writing one without their library means reverse-engineering a moving
+    /// target. DXF is the same company's published interchange format for this purpose, AutoCAD
+    /// opens it natively, and so does every other package that reads DWG. It also answers what the
+    /// request is for: getting the coordinated geometry, on the right layers, with the model's data
+    /// attached, into somebody's drawing.
     ///
     /// Three things make it a deliverable rather than a mesh dump.
     ///
-    /// <b>Layers come from the model.</b> A drawing whose geometry is all on layer 0 is worthless -
-    /// nobody can freeze the ductwork. The caller says which property names the layer, and every
-    /// distinct value becomes a layer, declared in the table with its own colour.
+    /// Layers come from the model. A drawing whose geometry is all on layer 0 cannot be worked with,
+    /// because the ductwork cannot be frozen. The caller says which property names the layer, and
+    /// every distinct value becomes a layer declared in the table with its own colour.
     ///
-    /// <b>Properties travel.</b> Each face carries the element's properties as extended entity
-    /// data under an application name of the caller's choosing, so a downstream tool can read the
-    /// mark, the system and the asset tag straight off the entity. That is the whole point of an
-    /// "intelligent" export, and it is four group codes.
+    /// Properties travel. Each face carries the element's properties as extended entity data under
+    /// an application name of the caller's choosing, so a downstream tool reads the mark, the system
+    /// and the asset tag off the entity.
     ///
-    /// <b>R12, deliberately.</b> The oldest and most widely readable DXF there is: a header, a
-    /// layer table, an entity section, and nothing else to get wrong. Its cost is the colour model
-    /// - an index into a fixed palette rather than 24-bit RGB - so each element takes the nearest
-    /// of the standard sixteen and the result says so rather than quietly shifting the greens.
+    /// R12, deliberately: the oldest and most widely readable DXF, being a header, a layer table and
+    /// an entity section. Its cost is the colour model — an index into a fixed palette rather than
+    /// 24-bit RGB — so each element takes the nearest of the standard sixteen and the result says so
+    /// rather than shifting the colours silently.
     ///
-    /// <b>One mesh per element, not one face per triangle.</b> The obvious way to write triangles
-    /// is a 3DFACE each, and it produces a file nobody can open: extended data hangs off an entity,
-    /// so a element with two hundred triangles carries its properties two hundred times, and a
-    /// model of five thousand such elements is three hundred megabytes of repeated text. A polyface
-    /// mesh is one entity holding all of an element's triangles, which is where its properties
-    /// belong anyway - the element is the thing that has a mark, not the facet.
+    /// One mesh per element, not one face per triangle. The obvious way to write triangles is a
+    /// 3DFACE each, and it produces a file nobody can open: extended data hangs off an entity, so an
+    /// element with two hundred triangles carries its properties two hundred times, and five
+    /// thousand such elements is three hundred megabytes of repeated text. A polyface mesh is one
+    /// entity holding all of an element's triangles, which is where its properties belong.
     /// </summary>
     public static class DxfWriter
     {

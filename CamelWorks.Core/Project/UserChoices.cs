@@ -8,17 +8,17 @@ using CamelWorks.Core.Store;
 namespace CamelWorks.Core.Project
 {
     /// <summary>
-    /// The small settings somebody sets once and expects to still be there tomorrow.
+    /// The small settings somebody sets once and expects to find again.
     ///
-    /// <b>The person's, not the project's.</b> How far Focus stands back, how big a marker is,
-    /// whether clicking a row moves the camera - none of that is a fact about the job, and putting
-    /// it in the project file would mean the coordinator who prefers a close camera imposing it on
-    /// everybody else who opens the same model. It lives beside the user, in their own roaming
-    /// application data, and follows them from job to job.
+    /// The person's rather than the project's. How far Focus stands back, how big a marker is,
+    /// whether clicking a row moves the camera: none of that is a fact about the job, and putting it
+    /// in the project file would impose one coordinator's preference on everybody who opens the same
+    /// model. It lives beside the user, in their own roaming application data, and follows them from
+    /// job to job.
     ///
-    /// <b>Nothing here is worth failing over.</b> A settings file that cannot be read is a set of
-    /// defaults, and one that cannot be written is a preference that lasts until the session ends.
-    /// Neither is a reason to stop somebody working, so every path in here is guarded and silent.
+    /// Nothing here is worth failing over. A settings file that cannot be read is a set of defaults,
+    /// and one that cannot be written is a preference that lasts until the session ends. Neither is
+    /// a reason to stop somebody working, so every path here is guarded and silent.
     /// </summary>
     public sealed class UserChoices
     {

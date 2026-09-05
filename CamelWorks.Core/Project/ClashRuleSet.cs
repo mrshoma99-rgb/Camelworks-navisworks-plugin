@@ -423,10 +423,9 @@ namespace CamelWorks.Core.Project
     /// <summary>
     /// Every clash rule on the project, in one saveable object.
     ///
-    /// <b>Empty is a working state.</b> <see cref="ToOptions"/> on a fresh rule set produces the
-    /// default grouping stack and no filters, which is exactly what the board needs to open
-    /// populated on a model nobody has configured — the zero-setup rule, at the one screen where it
-    /// is hardest to keep.
+    /// Empty is a working state. <see cref="ToOptions"/> on a fresh rule set produces the default
+    /// grouping stack and no filters, which is what the board needs to open populated on a model
+    /// nobody has configured.
     /// </summary>
     public sealed class ClashRuleSet
     {

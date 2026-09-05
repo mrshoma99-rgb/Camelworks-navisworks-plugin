@@ -99,19 +99,18 @@ namespace CamelWorks.Core.Project
     /// The contract suite, shipped.
     ///
     /// A thousand tests run on every push and none of them run on the machine where the product
-    /// actually breaks. What breaks there is not the logic — that is the same assembly CI built —
-    /// it is the environment: a .NET that resolves a different culture, a locale whose decimal
-    /// separator is a comma, a temp folder nobody can write to, a compression stack a security
-    /// agent has replaced. Those failures are invisible to CI by construction, and they are the
-    /// ones that produce a support email saying "the report is empty".
+    /// breaks. What breaks there is not the logic — that is the same assembly CI built — but the
+    /// environment: a .NET that resolves a different culture, a locale whose decimal separator is a
+    /// comma, a temp folder nobody can write to, a compression stack a security agent has replaced.
+    /// Those failures are invisible to CI by construction and are the ones that produce a support
+    /// email saying the report is empty.
     ///
-    /// So the checks here are deliberately about the seams to the platform rather than about the
-    /// logic: does a written PDF come back with the bytes a PDF needs, does a zip round-trip, does
-    /// a number written in this locale read back as the same number, does the store actually write
-    /// where it says it does.
+    /// So the checks here are about the seams to the platform rather than the logic: does a written
+    /// PDF come back with the bytes a PDF needs, does a zip round-trip, does a number written in
+    /// this locale read back as the same number, does the store write where it says it does.
     ///
-    /// <b>Nothing here touches the host.</b> This assembly cannot see Navisworks, which is exactly
-    /// why the suite can run on a support call in thirty seconds without a model open.
+    /// Nothing here touches the host. This assembly cannot see Navisworks, which is why the suite
+    /// runs on a support call in thirty seconds with no model open.
     /// </summary>
     public static class SelfTest
     {

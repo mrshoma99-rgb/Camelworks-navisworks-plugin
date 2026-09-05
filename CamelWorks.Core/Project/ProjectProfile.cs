@@ -257,12 +257,12 @@ namespace CamelWorks.Core.Project
     }
 
     /// <summary>
-    /// Everything the product would otherwise have made the user configure, derived from the model
-    /// and overridable one line at a time.
+    /// Everything the product would otherwise ask the user to configure, derived from the model and
+    /// overridable one line at a time.
     ///
-    /// <b>A profile always exists.</b> <see cref="Derive"/> runs against whatever is open, including
-    /// an empty document, and returns a complete profile — so no feature anywhere has to handle the
-    /// case of "not set up yet", and none of them has a reason to send the user to Setup first.
+    /// A profile always exists. <see cref="Derive"/> runs against whatever is open, including an
+    /// empty document, and returns a complete profile, so no feature has to handle a "not set up
+    /// yet" case or send the user to Setup first.
     /// </summary>
     public sealed class ProjectProfile
     {
