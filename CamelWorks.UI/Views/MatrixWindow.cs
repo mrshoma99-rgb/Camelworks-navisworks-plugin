@@ -17,25 +17,21 @@ using CamelWorks.UI.Shell;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// The clash matrix: draw one, read one out of the model, or open one from a spreadsheet -
-    /// and make the tests it asks for.
+    /// The clash matrix: draw one, read one out of the model, or open one from a
+    /// spreadsheet, and build the clash tests it asks for.
     ///
-    /// <b>The matrix is the document, and the tests are what falls out of it.</b> That is the
-    /// whole shape of this screen. A coordination matrix is drawn at a kick-off, argued over,
-    /// re-cut when a package moves, and lived with for a year; the clash tests are how it gets
-    /// run this week. So the grid is editable whatever it came from, it saves into the project,
-    /// it goes back out as a spreadsheet, and building it a second time changes only what
-    /// actually changed rather than throwing every status and comment away.
+    /// The matrix is the record and the tests are derived from it. The grid is editable
+    /// whatever it came from, it saves into the project, it exports as a spreadsheet, and
+    /// rebuilding changes only what actually changed rather than discarding statuses and
+    /// comments.
     ///
-    /// <b>Rows are side A, columns are side B.</b> Both axes are lists of their own, so the
-    /// square grid everybody draws is the case where they hold the same things - and a matrix of
-    /// four packages against every discipline is possible without inventing categories that mean
-    /// nothing on the other axis.
+    /// Rows are side A, columns are side B. Both axes are independent lists; the square grid
+    /// is the case where they hold the same items. This allows, for example, four packages
+    /// against every discipline.
     ///
-    /// <b>Nothing here walks the model.</b> Listing the sets, listing the loaded models, reading
-    /// the tests and their sides - all of it is the document answering about itself. Capturing a
-    /// selection reads what is already selected. The one press that costs anything is the build,
-    /// and it is a press somebody chose.
+    /// Nothing here walks the model. Listing sets, listing loaded models and reading tests and
+    /// their sides are all document queries. Capturing a selection reads the current selection.
+    /// Only the build has a cost, and it is explicit.
     /// </summary>
     public static class MatrixWindow
     {
@@ -44,16 +40,11 @@ namespace CamelWorks.UI.Views
         private static MatrixBoard _board = new MatrixBoard();
 
         /// <summary>
-        /// Whether the seat's standing notice has been put away for this session.
+        /// Whether the seat's standing notice has been dismissed for this session.
         ///
-        /// <b>It could not be.</b> A seat with no clash engine is told so every time the tab is
-        /// opened, in a band across the top of the window, and there was no way to make it stop -
-        /// which on such a seat is every session, for ever, about a fact its owner learned once.
-        /// A notice nobody can dismiss is not information, it is furniture.
-        ///
-        /// Kept for as long as the application runs rather than written down: the fact is about
-        /// the seat, and a seat that gains a clash engine is a different Navisworks edition and a
-        /// different session.
+        /// A seat with no clash engine showed the notice on every open with no way to dismiss
+        /// it. Held in memory rather than persisted: the condition is a property of the
+        /// Navisworks edition, and a seat that gains a clash engine is a different session.
         /// </summary>
         private static bool _hushed;
         private static MatrixLegend _legend = new MatrixLegend();
@@ -79,16 +70,9 @@ namespace CamelWorks.UI.Views
         /// <param name="drawn">
         /// A matrix already open, or null to arrive at the start screen.
         ///
-        /// <b>The render harness could only ever photograph the empty screen.</b> A seat with no
-        /// document has no board, so every picture taken of this tab was the four cards that
-        /// offer to make one - and the grid, which is the whole tab and where every layout fault
-        /// reported against it has been, was never in a single shot. Faults in it were found by a
-        /// coordinator on a licensed seat and described to me in words, which is the slowest and
-        /// least exact way a drawing bug can be reported.
-        ///
-        /// A board handed in here is not a pretended model. It is the product's own type, the
-        /// same object a saved matrix is read back into, and it puts the tab in the state a
-        /// coordinator is in for most of their day: a matrix open, being worked on.
+        /// Supplied so the render harness can capture the populated grid; a seat with no
+        /// document has no board, so otherwise only the start screen can be photographed. The
+        /// board is the product's own type, the same object a saved matrix is read into.
         /// </param>
         public static UIElement Surface(ISeat seat, MatrixBoard? drawn) =>
             Surface(seat, drawn, Showing.Symbols);
@@ -120,12 +104,9 @@ namespace CamelWorks.UI.Views
         /// <param name="counted">
         /// Tests as a read of the document hands them back, or null.
         ///
-        /// <b>The results view was the one that could not be photographed.</b> It counts what the
-        /// document holds, and the render harness has no document - so the heat scale, the
-        /// difference between a nought and a pair no test covers, and every number in the grid
-        /// were drawing nobody had ever seen. Handed the same list a real read produces, the
-        /// harness counts it through <see cref="MatrixTally"/> exactly as the seat does: what is
-        /// photographed is the counting, not a picture of it.
+        /// Supplied so the render harness can capture the results view, which otherwise has no
+        /// document to count. The tests are counted through <see cref="MatrixTally"/> exactly as
+        /// on a seat.
         /// </param>
         public static UIElement Surface(ISeat seat, MatrixBoard? drawn, Showing view,
                                         IReadOnlyList<ClashTestRead>? counted)
@@ -136,18 +117,14 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>
-        /// Which of the three things a cell can say is the one written in it.
+        /// Which of the three values a cell shows.
         ///
-        /// <b>One grid, three questions.</b> A pair of disciplines carries three separate facts -
-        /// whether they are checked and how, how much anybody cares about the answer, and what
-        /// came back last time it ran - and every one of them belongs in the same twenty-by-twenty
-        /// picture, because the picture is what says which pairs exist at all. Written into one
-        /// cell together they would need a legend with an entry per combination, and read at
-        /// eleven point they would be unreadable.
+        /// A pair of disciplines carries three independent facts: whether it is checked and how,
+        /// its priority, and its open clash count. Combining them into one cell would need a
+        /// legend entry per combination and would not be legible at cell size.
         ///
-        /// So the rows, the columns, the folders and the order never move: only what is written
-        /// in the cells changes, and the strip and the chooser both say which of the three is on.
-        /// A coordinator holds one grid in their head and turns it over.
+        /// Rows, columns, folders and ordering do not change between views; only the cell
+        /// contents do. The strip and the chooser both report which view is active.
         /// </summary>
         public enum Showing
         {
@@ -190,55 +167,28 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// The symbol on the brush, or null while there is none.
             ///
-            /// <b>A cell at a time was the whole cost of a matrix.</b> Twenty disciplines is two
-            /// hundred and ten cells to fill, and every one of them was a click, a menu, and a
-            /// press on a line of that menu. Armed from the legend, a symbol is painted by
-            /// clicking a cell or dragging across a run of them, and a whole row or column by
-            /// clicking its number or its letter - which is how a person fills in a grid with a
-            /// pen, and how every spreadsheet has worked for forty years.
+            /// Filling cells one at a time through a menu is prohibitive: twenty disciplines is
+            /// 210 cells. Armed from the legend, a symbol is applied by clicking a cell, dragging
+            /// across a run, or clicking a row number or column letter to fill the line.
             ///
-            /// The menu is still there on the right button, and on the left one whenever nothing
-            /// is armed, so nothing has been taken away.
+            /// The menu remains on the right button, and on the left button whenever nothing is
+            /// armed.
             /// </summary>
             private MatrixSymbol? _brush;
 
             /// <summary>Which symbol the cursor is currently carrying, so it is drawn once.</summary>
             private string _carrying = "\u0000";
 
-            /// <summary>The strip over the grid: what is armed, where the cursor is, undo.</summary>
             /// <summary>
-            /// The strip over the grid, which wraps rather than losing its end.
+            /// The band over the grid: current state on the left, controls against the right edge.
             ///
-            /// A horizontal stack in a docked pane has no width to be too wide for: it simply
-            /// draws past the edge. Its content already ended nine pixels short at working size,
-            /// so a narrower pane, a longer symbol on the brush or a four-digit test count pushed
-            /// undo, redo and - worst - "hide the options" off the right, which is the one control
-            /// that gives the grid its width back.
-            /// </summary>
-            /// <summary>
-            /// The band over the grid: what is going on, and what can be done about it.
+            /// Two panels rather than one, so that a change in the state text does not move the
+            /// controls sideways under the pointer.
             ///
-            /// <b>Two panels, because they answer to different things.</b> One strip meant every
-            /// control sat wherever the sentence in front of it happened to end - so arming a
-            /// symbol, moving the cursor or picking a row slid Undo, Redo and the rest sideways
-            /// under the hand that was already reaching for them. What the screen is saying
-            /// changes; where a button is must not. The state reads from the left, the controls
-            /// are held against the right-hand edge, and neither moves the other.
-            /// </summary>
-            /// <summary>
-            /// The strip is one line, at one size, on one centre.
-            ///
-            /// <b>It was three of each.</b> The facts on the left were Hint-styled text, the
-            /// actions on the right were buttons at the button size, and the gaps between them
-            /// were written one at a time - nought, six, eight, ten, twelve and sixteen. Three
-            /// type sizes centred in one row put their baselines in three places, which is what
-            /// "nothing lines up" is: not a missing alignment, a row of things that were never
-            /// the same size to begin with.
-            ///
-            /// And it wrapped. A WrapPanel that gains an item gains a line, and a line here moves
-            /// the whole matrix down - which is the one thing this strip must never do. It is a
-            /// fixed height now and it clips: what does not fit is cut, in an order that puts the
-            /// state that matters first, rather than shoving the grid.
+            /// One line, one font size, one baseline. Mixed type sizes centred in a row put their
+            /// baselines in different places. The height is fixed and the content clips, ordered
+            /// so the most important state survives; a wrapping strip would gain a line and push
+            /// the grid down.
             /// </summary>
             private const double StripSize = 11;
 
@@ -253,37 +203,27 @@ namespace CamelWorks.UI.Views
             private readonly Border _grid = new Border();
 
             /// <summary>
-            /// The blue button, kept so it can say what stands between here and a build.
+            /// The build button, which reports what stands between the current matrix and a build.
             ///
-            /// <b>It said "Build the tests" over a matrix with fifty-two pairs nobody had ruled
-            /// on and two rows pointing at nothing.</b> Neither is a reason to stop somebody
-            /// building - a matrix half decided is a matrix worth building the decided half of -
-            /// but both are things they would want to know before they did, and the screen knew
-            /// them and said neither.
+            /// Undecided pairs and rows pointing at nothing do not prevent a build, but they
+            /// change what gets built, so they are stated on the button.
             /// </summary>
             private readonly System.Windows.Controls.Button _build;
 
             /// <summary>
             /// The palette rail: the symbols, as keys to paint with.
             ///
-            /// <b>A legend under the grid was the wrong thing in the wrong place.</b> It was a
-            /// key - a thing you read - drawn as an editor: a dropdown, a number field, a tick
-            /// and a bin per symbol, docked to the foot of the window. On a matrix of any size
-            /// the grid pushed it off the screen entirely, so the palette you paint from was not
-            /// on the screen you paint on. Beside the grid, as a column of keys, it is where the
-            /// hand already is, it says which keystroke each symbol answers to, and editing one
-            /// happens in the inspector like everything else.
+            /// Previously a legend docked under the grid, which a matrix of any size pushed off
+            /// screen. As a column beside the grid it stays in view, shows the keystroke for each
+            /// symbol, and leaves editing to the inspector.
             /// </summary>
             private readonly StackPanel _palette = Ui.Stack();
 
             /// <summary>
-            /// What the palette calls itself, which is not always "palette".
+            /// The palette's heading, which changes with the active view.
             ///
-            /// <b>The panel that arms things has to arm the thing the grid is showing.</b> With
-            /// the priority view on, this list held the symbol legend and the two marks that
-            /// are not symbols - none of which a press in that grid lays down - while the rank
-            /// it actually lays down was a sentence in the strip and a line in a menu. So the
-            /// list is the ranks while the ranks are what is being drawn, and it says so.
+            /// The panel must arm whatever the grid is drawing. In the priority view it holds the
+            /// ranks, not the symbol legend.
             /// </summary>
             private readonly TextBlock _paletteTitle = Ui.Eyebrow("Palette");
 
@@ -303,14 +243,10 @@ namespace CamelWorks.UI.Views
             private System.Windows.Controls.Button? _editing;
 
             /// <summary>
-            /// What can be done to it, on a strip of its own at the foot of the panel.
+            /// Row and column actions, pinned above the palette at the foot of the panel.
             ///
-            /// <b>They used to sit wherever the page ended.</b> A row with three pairs decided
-            /// put them high, a row with twenty put them low, and a row whose list of what it is
-            /// checked against ran long put them off the bottom - so the five things you do to a
-            /// row were in a different place on the screen for every row. Pinned above the
-            /// palette they are one target, always the same distance from the hand, and the
-            /// reading above them can be as long as it likes.
+            /// Pinned rather than following the end of the panel content, so their position does
+            /// not vary with the length of what is above them.
             /// </summary>
             private readonly StackPanel _acts = Ui.Stack();
 
@@ -320,14 +256,11 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _progress = Ui.Stack();
 
             /// <summary>
-            /// The frozen bands and the cells that slide under them.
+            /// The frozen header bands and the cells that scroll under them.
             ///
-            /// <b>Nothing else on this screen mattered as much.</b> The grid was one panel in one
-            /// scroller: scroll right on a matrix of twenty-two and the row names go with it, so
-            /// the cell under the pointer belongs to a row nobody can name any more; scroll down
-            /// and the columns go the same way. Every symbol after the first screenful was a
-            /// guess. So the headers are their own two bands, clipped and slid by the cells'
-            /// own scroll, and they never leave.
+            /// A single scrolling panel takes the row and column headers out of view as soon as
+            /// the grid is scrolled, leaving cells unidentifiable. The headers are separate bands,
+            /// clipped and translated by the cells' own scroll offset.
             /// </summary>
             private readonly Grid _across = new Grid();
 
@@ -345,11 +278,10 @@ namespace CamelWorks.UI.Views
             private readonly Border _ring = new Border();
 
             /// <summary>
-            /// The headers, by the line they belong to, so a cell can light its own two up.
+            /// The headers indexed by line, so a hovered cell can highlight both of its own.
             ///
-            /// <b>Tracking a row across a scrolling grid is the thing a triangle costs you.</b>
-            /// Under a pointer, both ends of the pair say so - which answers "which two is this"
-            /// without a tooltip and without reading two long names off two edges of the screen.
+            /// Identifies the pair under the pointer without requiring both long names to be read
+            /// off opposite edges of the grid.
             /// </summary>
             private readonly Dictionary<MatrixLine, Border> _rowHeads =
                 new Dictionary<MatrixLine, Border>();
@@ -379,13 +311,11 @@ namespace CamelWorks.UI.Views
             private UIElement? _frame;
 
             /// <summary>
-            /// The options panel, which gives its width back when it is asked to.
+            /// The options panel, which collapses on request.
             ///
-            /// <b>There were two panels, one down each side.</b> Four hundred and fifty pixels
-            /// of them on a screen whose whole subject is a grid that never has enough width.
-            /// One panel now, and it does not stand aside on its own any more: it holds the
-            /// palette, and a window that hides the tools because it got narrow is a window
-            /// arguing with the person using it. It goes when somebody says so and not before.
+            /// One panel rather than two, since the grid is the subject of the screen and needs
+            /// the width. It does not collapse automatically on a narrow window: it holds the
+            /// palette, and hiding it without being asked would remove the tools mid-task.
             /// </summary>
             private readonly Border _sidePane = new Border();
 
@@ -397,14 +327,12 @@ namespace CamelWorks.UI.Views
             private int _atColumn = -1;
 
             /// <summary>
-            /// The other corner of the block, or -1 when the cursor is on its own.
+            /// The other corner of the marked block, or -1 when the cursor is on its own.
             ///
-            /// <b>The real work is blocks.</b> "Every MEP row against every structural column is
-            /// a clearance" is one decision and thirty cells, and the only sizes this screen had
-            /// were one cell, one whole line and the whole grid - so a decision that is neither
-            /// was thirty presses, or a line fill and then corrections. Shift and an arrow, or a
-            /// shift-click, take the block from the cursor to here; a symbol then goes in all of
-            /// it at once.
+            /// Decisions are usually made per block ("every MEP row against every structural
+            /// column is a clearance"), and the only available scopes were one cell, one line and
+            /// the whole grid. Shift with an arrow, or a shift-click, extends the block from the
+            /// cursor to here; a symbol then fills all of it.
             /// </summary>
             private int _markRow = -1;
             private int _markColumn = -1;
@@ -417,17 +345,12 @@ namespace CamelWorks.UI.Views
             private bool _pickedRows;
 
             /// <summary>
-            /// Every line picked, on one axis, with <see cref="_picked"/> as the anchor.
+            /// Every line selected, on one axis, with <see cref="_picked"/> as the anchor.
             ///
-            /// <b>One row at a time, on a board of twenty-two.</b> Filing six disciplines into a
-            /// package was six presses of the menu, six times through the same dialogue; deleting
-            /// the four that turned out not to be in this phase was four confirmations. Every
-            /// spreadsheet ever written lets you take a run of rows and do one thing to all of
-            /// them, and this is a spreadsheet.
+            /// Filing or removing several disciplines one at a time is one dialogue per line.
+            /// The selection supports the acts that mean the same thing applied to each.
             ///
-            /// The anchor stays what the panel on the right is about, because a panel that tried
-            /// to be about six rows at once would be six panels. What the set is for is the acts
-            /// that mean the same thing done six times.
+            /// The anchor remains the subject of the inspector panel, which is about one line.
             /// </summary>
             private readonly List<MatrixLine> _chosen = new List<MatrixLine>();
 
@@ -470,13 +393,10 @@ namespace CamelWorks.UI.Views
             private readonly Stack<Doing> _future = new Stack<Doing>();
 
             /// <summary>
-            /// One thing somebody did, and the matrix as it was before they did it.
+            /// One edit, and the matrix as it was before it.
             ///
-            /// <b>Undo used to say nothing at all.</b> A press, the grid changes, and no word
-            /// anywhere about what came back - so on a matrix of five hundred cells the only way
-            /// to know whether the right thing was undone was to find the cell again and look at
-            /// it. What it was is recorded when it happens, which is the only moment anybody
-            /// knows.
+            /// The description is recorded at the time of the edit, so undo can name what it
+            /// reversed rather than leaving the user to find the changed cell.
             /// </summary>
             private sealed class Doing
             {
@@ -491,17 +411,13 @@ namespace CamelWorks.UI.Views
             private string _remembered = string.Empty;
 
             /// <summary>
-            /// Saving, on its own, a few seconds after the last thing anybody did.
+            /// Autosave, a few seconds after the last edit.
             ///
-            /// <b>An afternoon's matrix was one closed window from gone.</b> The only save was a
-            /// line in a menu called "Out", nothing said whether it had ever been used, and
-            /// nothing asked on the way out - so a grid a kick-off meeting argued over for two
-            /// hours lived in memory until somebody remembered a menu. A matrix is a document,
-            /// and a document saves itself.
+            /// The only save was a menu item, with no indication of whether it had been used and
+            /// no prompt on close, so unsaved work could be lost by closing the window.
             ///
-            /// Quiet on the way through: a save that announces itself twenty times an afternoon
-            /// is a save nobody reads. The strip says when it last happened; only a failure
-            /// interrupts.
+            /// Silent in normal operation: the strip reports when the last save happened, and
+            /// only a failure interrupts.
             /// </summary>
             private readonly System.Windows.Threading.DispatcherTimer _saver =
                 new System.Windows.Threading.DispatcherTimer
@@ -515,14 +431,12 @@ namespace CamelWorks.UI.Views
             /// <summary>Why the last save did not happen, or null.</summary>
             private string? _unsaved;
             /// <summary>
-            /// What the last act had to say, in a strip that can be put away.
+            /// Messages from the last action, in a strip that can be dismissed.
             ///
-            /// <b>It used to be an open-ended stack.</b> A sanity check on a real matrix says
-            /// twenty things, a spreadsheet read says five, a build says one per test it could
-            /// not write - and each of them was another line pushed into the top of the screen,
-            /// with nothing to close them and the grid squeezed into whatever was left. So the
-            /// notes live in a bordered strip with a fixed height, they scroll inside it, and
-            /// the cross puts the whole strip away.
+            /// A sanity check can produce twenty messages, a spreadsheet read five, a build one
+            /// per test it could not write. As an open-ended stack these pushed the grid down
+            /// with no way to close them. The strip has a fixed height, scrolls internally, and
+            /// the close button dismisses it.
             /// </summary>
             private readonly StackPanel _notes = Ui.Stack();
 
@@ -664,34 +578,27 @@ namespace CamelWorks.UI.Views
                     row.Children.Add(line);
                 }
 
-                // <b>The strip reads in the order the work happens</b>, in four groups: make the
-                // matrix, then look at it, then keep and send it, then check it and build.
+                // The strip reads in the order the work happens, in four groups: build the
+                // matrix, view it, save and send it, then check and build the tests.
                 //
-                // Nine controls in an undifferentiated row is a row nobody reads - and it had
-                // grown to nine one button at a time, each one filed by an argument that made
-                // sense against the eight beside it and never against the shape of the whole
-                // strip. Three things had drifted before that: "Start from" held four ways to
-                // make a matrix and four ways to rearrange one, which are opposite acts on one
-                // menu; "Save it in this project" was filed under "Out", and out is where work
-                // goes when it is over, not where it is kept; and the settings were in three
-                // places, none of them called settings.
+                // It had grown to nine controls in an undifferentiated row. Earlier problems
+                // fixed at the same time: "Start from" held both ways to create a matrix and ways
+                // to rearrange one; "Save it in this project" was filed under "Out"; and the
+                // settings were split across three menus, none named settings.
                 //
-                // <b>First: what the matrix is.</b> Where it came from, and the order and the
-                // folders it is in - the two menus that change the board itself.
+                // First group: what the matrix is. Where it came from, and its order and folders.
                 Add(Parts.MenuButton("Start from", Glyphs.Read, Starting()));
                 Add(Parts.MenuButton("Arrange", Glyphs.Sort, Arranging()));
 
                 Apart();
 
-                // <b>Second: how it is being looked at.</b> Which of the three matrices is in
-                // the cells, and how the grid is drawn - one is a mode and one is a set of
-                // preferences, and neither of them touches what the board says.
+                // Second group: how it is being viewed. Which of the three matrices is in the
+                // cells, and how the grid is drawn. Neither changes the board's contents.
                 //
-                // The chooser was filed with the menus, drawn as one, and read as a fourth menu
-                // of actions. It is not: it is the state the screen is in, so it is drawn as a
-                // mode - lit, and prefixed - and the settings that belong beside it came with
-                // it. Its own label was built once at start-up too, and said "Results" for ever
-                // however many times it had been pressed; it is redrawn when it changes.
+                // The view chooser was drawn as a menu and read as one, though it holds the
+                // screen's current state. It is drawn as a mode indicator instead: prefixed, and
+                // lit while the board is turned over. Its label is rebuilt on each change, having
+                // previously been built once at start-up.
                 RedrawView();
 
                 Add(_viewPick);
@@ -699,24 +606,21 @@ namespace CamelWorks.UI.Views
 
                 Apart();
 
-                // <b>Third: out of here.</b> Into the project, and into a spreadsheet for
-                // whoever asked.
+                // Third group: output. Into the project, and out as a file.
                 Add(Ui.Verb(Glyphs.Save, "Save",
                             "Keep it in this project, so it is here next time this model is "
                             + "opened. It also saves itself as you work.", Keep));
 
-                // <b>Two things go out of here now, so it is a menu.</b> The spreadsheet is for
-                // a person to read; the test file is for the seat that will run it, and it is
-                // the whole reason a matrix drawn on a laptop can become two hundred tests
-                // without the person who drew it being the person who has the licence.
+                // A menu because two things are exported: the spreadsheet, for review, and the
+                // test file, for the seat that will run the tests. The latter lets a matrix drawn
+                // on one machine be built on another.
                 Add(Parts.MenuButton("Export", Glyphs.Export, Exports()));
 
                 Apart();
 
-                // <b>Fourth: the build, and the two things to do before it.</b> They were filed
-                // under "Out" - the top two lines of a menu every user reads as "export", which
-                // is where things go when the work is over. Beside the button they are the
-                // pre-flight for, they are what they are.
+                // Fourth group: the build and its two pre-flight checks. These were previously
+                // the top two items of the export menu, which reads as output rather than
+                // preparation.
                 Add(Ui.Verb(Glyphs.Verify, "Check",
                             "Check it against the model — every row and column, against what "
                             + "this model actually has", Sanity));
@@ -733,12 +637,11 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The screen: the notices, then the three parts that make a matrix.
+            /// The screen: the notices, then the three parts of the matrix.
             ///
-            /// <b>Left, the palette; middle, the grid; right, what you last pressed.</b> All
-            /// three are always there and none of them moves, so the two things the job is made
-            /// of - choose a symbol, put it in a cell - are a press apart, and the third thing -
-            /// say what a row or a symbol actually is - stopped being four dialogues.
+            /// Palette on the left, grid in the middle, inspector on the right. All three are
+            /// always present and do not move, so choosing a symbol and placing it are adjacent,
+            /// and naming a row or a symbol happens in place rather than in a dialogue.
             /// </summary>
             private UIElement Body()
             {
@@ -746,37 +649,26 @@ namespace CamelWorks.UI.Views
 
                 var stack = new DockPanel { LastChildFill = true };
 
-                // <b>Floating it stopped it pushing the work and started it covering the
-                // work.</b> Docked, a notice took its own height off the top of the grid and gave
-                // it back when it went, so the cell somebody was aiming at moved out from under
-                // the pointer twice for a sentence they did not ask for. Laid over the top-right
-                // instead, it stopped moving anything and sat on the words underneath it -
-                // squarely across the paragraph explaining what a matrix is, cut off
-                // mid-sentence by a box explaining something else.
+                // Notices take a row above the grid rather than floating over it or being docked
+                // into the grid's space.
                 //
-                // Neither is acceptable and they were never the only two options. A notice here
-                // is a standing fact about the seat - no clash engine, no document open, a
-                // report asked for by name - and a standing fact belongs in the layout rather
-                // than hovering over it. It takes a row of its own above the grid, which it is
-                // welcome to, because it appears when the tab is opened and not in the middle of
-                // somebody's thirtieth cell. The transient confirmations that used to fire on
-                // every press, and that are what made a docked notice unbearable, are gone.
+                // Docked into the grid, a notice took height from the grid and returned it on
+                // dismissal, moving the target cell under the pointer. Floated over the top-right
+                // it covered the text beneath. A notice here is a standing fact about the seat
+                // (no clash engine, no document open) and appears on open rather than mid-edit,
+                // so a row of its own is appropriate. The transient per-action confirmations that
+                // made a docked notice unworkable have been removed.
                 //
-                // <b>Docked to the top, said outright.</b> A DockPanel's default is Dock.Left,
-                // so a notice added without one takes its width down the side and leaves the
-                // grid whatever is left - which for a sentence this long is about seventy pixels
-                // of a window eleven hundred wide. The whole matrix drew into that strip: no
-                // headers, no cells, and the inspector squeezed against the right-hand edge. It
-                // took a render to see, and nothing else could have: it compiles, it throws
-                // nothing, and every test passes over a grid that is not on the screen.
+                // Dock.Top is set explicitly. DockPanel defaults to Dock.Left, which gave the
+                // notice the full height down the left side and left the grid about 70px of an
+                // 1100px window. This compiled, threw nothing and passed every test; only a
+                // render showed it.
                 stack.Children.Add(Ui.Loose(_grid));
 
-                // <b>Undo belongs to the screen, not to the grid.</b> It was bound to the cells'
-                // own scroller, so it worked while the pointer had last touched a cell and did
-                // nothing at all while somebody was in the inspector, the palette or the box
-                // that makes rows - which is exactly where the edits it needs to take back are
-                // made. On the bubbling event rather than the preview one, so a text box being
-                // typed into still gets its own undo first and keeps it.
+                // Undo is bound at the screen level rather than to the cells' scroller, where it
+                // did nothing while focus was in the inspector, the palette or the row-name box.
+                // On the bubbling event rather than the preview one, so a focused text box keeps
+                // its own undo.
                 stack.KeyDown += (s, e) => Ui.Safely(() =>
                 {
                     if ((Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
@@ -811,12 +703,8 @@ namespace CamelWorks.UI.Views
                 _sidePane.BorderThickness = new Thickness(1, 0, 0, 0);
                 _sidePane.Child = Options();
 
-                // <b>Said, not inherited.</b> Whether the panel is on the screen was written
-                // down in one place - the press that toggles it - so until somebody pressed
-                // that, the panel's state was whatever a Border happens to default to rather
-                // than what this screen believes. A screen that keeps a flag and never states
-                // it is a screen that can disagree with itself, and the flag is what the strip
-                // reports to the reader.
+                // The panel's visibility is set explicitly rather than left to the Border's
+                // default, so the flag the strip reports always matches what is on screen.
                 _sidePane.Visibility = _sideOpen ? Visibility.Visible : Visibility.Collapsed;
 
                 _sidePane.Tint(Border.BackgroundProperty, "Pane");
@@ -833,16 +721,12 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// One panel, down the right, holding everything that is not the grid.
             ///
-            /// <b>There were two of them, one down each side.</b> Four hundred and fifty pixels
-            /// of options on a screen whose whole subject is a grid that never has enough width -
-            /// and the two were doing one job between them, because choosing a symbol and saying
-            /// what a row is are the same kind of act. Together they cost one panel instead of
-            /// two, the grid gets the other side of the window back, and the eye stops crossing
-            /// the matrix to get from a symbol to the row it is going in.
+            /// Previously two panels, one on each side, costing about 450px on a screen whose
+            /// subject is a grid that needs the width. Choosing a symbol and describing a row are
+            /// related acts, so they share one panel and the grid gets the other side back.
             ///
-            /// Whatever was last pressed is at the top, where it changes; the palette is
-            /// underneath it, where the hand can find it in the same place every time; and how
-            /// much is left to decide is at the foot.
+            /// Ordered: the last thing pressed at the top, where it changes; the palette below
+            /// it, in a fixed position; and the remaining-decisions count at the foot.
             /// </summary>
             private UIElement Options()
             {
@@ -927,15 +811,10 @@ namespace CamelWorks.UI.Views
                 DockPanel.SetDock(_actsPane, Dock.Bottom);
                 panel.Children.Add(Ui.Loose(_actsPane));
 
-                // <b>A notice that neither pushes the work nor covers it.</b> Above the grid it
-                // took its own height off the matrix and gave it back when it went, so the cell
-                // somebody was aiming at moved out from under the pointer twice. Laid over the
-                // grid instead it stopped moving anything and sat on the words underneath. Both
-                // were rejected, and rightly: the two were never the only options.
-                //
-                // It goes in the panel on the right, which is open at every moment of every
-                // session, is already the answer to "what is this thing", and is not where the
-                // work is. Whatever it says, the grid does not move by a pixel.
+                // Notices go in the right-hand panel, which is open throughout a session and is
+                // not where the editing happens. Above the grid they took height from the matrix
+                // and returned it on dismissal, moving the target cell; over the grid they
+                // covered the content beneath. Here the grid does not move.
                 var told = Head();
 
                 DockPanel.SetDock(told, Dock.Top);
@@ -1062,20 +941,16 @@ namespace CamelWorks.UI.Views
                 _scroll.Focusable = true;
                 _scroll.FocusVisualStyle = null;
 
-                // <b>The white below the last row was the pane, not the sheet.</b> A grid of six
-                // rows in a window that holds thirty left two thirds of the screen the same
-                // colour as the cells, with no edge anywhere, so the matrix looked like a table
-                // that had failed to finish drawing rather than a small matrix. The desk behind
-                // it is the app's own background: the sheet now has an edge and stops where it
-                // stops, and the space beneath it reads as space.
+                // The area below the last row is the pane background, not the sheet. Previously
+                // it was the same colour as the cells with no edge, so a small matrix looked like
+                // a table that had failed to finish drawing. The sheet now has an edge and ends
+                // where it ends.
                 _scroll.Tint(Control.BackgroundProperty, "Bg");
 
-                // <b>The bands have no scrollbars and the cells do.</b> A vertical bar takes
-                // seventeen pixels off the right of the cells' viewport and nothing off the
-                // band's, so the band went on showing a strip of a column whose cells had
-                // already been cut off - a header with no rows under it, hard against the right
-                // edge. The horizontal bar did the same thing at the bottom to the row names.
-                // Whatever the cells lose to a bar, the band beside them gives back.
+                // The header bands have no scrollbars and the cell area does. A vertical bar
+                // takes 17px from the cells' viewport and nothing from the band's, so the band
+                // showed a column whose cells were already clipped. The horizontal bar did the
+                // same to the row names. Each band is inset by whatever the cells lose to a bar.
                 _scroll.ScrollChanged += (s, e) =>
                 {
                     _slidX.X = -_scroll.HorizontalOffset;
@@ -1108,17 +983,14 @@ namespace CamelWorks.UI.Views
                 _ring.Visibility = Visibility.Collapsed;
                 _ring.Tint(Border.BorderBrushProperty, "Accent");
 
-                // Over the cells rather than in them: a block is a shape, and a shape drawn by
-                // tinting thirty backgrounds one at a time is thirty repaints and a border that
-                // stops at every cell edge. One translucent pane spanning the rows and columns
-                // it covers is one element, and the cells underneath keep the fills that say
-                // what is in them.
-                // <b>The block and the cursor were the same mark, and the cursor is always on a
-                // corner of the block.</b> Two 2px accent rectangles, one inside the other and
-                // sharing an edge, drew as one - so while a block was held there was no way to
-                // see which end shift and the arrows would move. The block is a dashed edge and
-                // a wash; the cursor stays the solid ring it has always been, and now reads on
-                // top of it.
+                // The block highlight is drawn over the cells rather than by tinting each cell:
+                // one translucent pane spanning the range is a single element, and the cells keep
+                // their own fills.
+                //
+                // The block and the cursor are drawn differently. As two 2px accent rectangles
+                // sharing an edge they read as one mark, so the end that shift and the arrows
+                // move was not identifiable. The block is a dashed edge and a wash; the cursor
+                // remains a solid ring and reads on top of it.
                 _range.BorderThickness = new Thickness(1.5);
                 _range.IsHitTestVisible = false;
                 _range.Visibility = Visibility.Collapsed;
@@ -1134,24 +1006,20 @@ namespace CamelWorks.UI.Views
             // ---------------------------------------------------------------------------
 
             /// <summary>
-            /// Cell sizes, fixed, so nothing measures itself out of existence.
+            /// Fixed cell sizes.
             ///
-            /// <b>A column is as wide as a symbol, not as wide as a name.</b> The names went
-            /// across the top and were cut off anyway - "WSC_Process st..." - while every column
-            /// paid a hundred pixels for a letter. Stood on their end they cost height once, and
-            /// every column of a twenty-two-discipline matrix fits on a screen instead of six.
+            /// A column is sized for a symbol, not a name. Horizontal names were truncated
+            /// anyway while costing about 100px per column. Rotated, they cost height once, and a
+            /// 22-discipline matrix fits on one screen.
             /// </summary>
             private const double LeastWide = 38;
 
             /// <summary>
-            /// How big a cell is drawn: the smallest that reads, grown to fill what is there.
+            /// The drawn cell size: the smallest legible size, grown to fill the available space.
             ///
-            /// <b>A six-row matrix in a window that holds thirty left two thirds of it empty.</b>
-            /// Colouring that space did not use it. A grid that fits with room to spare has no
-            /// reason to be drawn at the size a grid that does not fit has to be, so the cells
-            /// take the room: bigger targets to click, more of the name in each header, and no
-            /// dead half-window under a small matrix. Once it stops fitting the cells go back to
-            /// the smallest size that still reads, and the sheet scrolls as before.
+            /// A grid that fits with room to spare is drawn larger: bigger click targets and more
+            /// of each name visible. Once it no longer fits, the cells return to the smallest
+            /// legible size and the sheet scrolls.
             /// </summary>
             private double CellWide => _wide;
 
@@ -1175,13 +1043,10 @@ namespace CamelWorks.UI.Views
             private double CellHigh => _high;
 
             /// <summary>
-            /// How big the letter in a cell is drawn, which follows how big the cell is.
+            /// The cell font size, which follows the cell size.
             ///
-            /// <b>The cells grew and nothing in them did.</b> A thirteen-pixel letter centred in
-            /// a hundred-and-ten by sixty-two cell is a small matrix stretched, not a big one:
-            /// the room bought a larger target to click and nothing to look at. Between the
-            /// smallest cell and the largest the letter goes from thirteen to twenty, which is
-            /// the same letter at the size the cell is asking for.
+            /// Between the smallest and largest cell the letter scales from 13 to 20, so a grown
+            /// grid is not a small grid stretched.
             /// </summary>
             private double Lettering
             {
@@ -1201,13 +1066,12 @@ namespace CamelWorks.UI.Views
             private double _high = LeastHigh;
 
             /// <summary>
-            /// Work out the cell size for the room there is, and say whether it changed.
+            /// Computes the cell size for the available space and reports whether it changed.
             ///
-            /// <b>Growing only when the smallest size already fits</b> is what keeps this from
-            /// oscillating. Filled exactly to the viewport a scrollbar appears, which takes the
-            /// room away, which shrinks the cells, which takes the scrollbar away again. Every
-            /// grown size is worked out from a viewport already known to be big enough and is
-            /// rounded down, so the total always lands inside it and no bar is ever summoned.
+            /// Growth only happens when the smallest size already fits. Filling the viewport
+            /// exactly would summon a scrollbar, which removes space, which shrinks the cells,
+            /// which removes the scrollbar. Grown sizes are computed from a viewport already known
+            /// to be large enough and rounded down, so the total always fits.
             /// </summary>
             private bool Fits()
             {
@@ -1247,19 +1111,13 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How wide the names get, measured, before the gutters beside them.
+            /// The measured width of the row names, excluding the gutters beside them.
             ///
-            /// <b>A hundred and fifty pixels was a guess, and a guess truncates.</b> It cut
-            /// "ARC_Ceilings and Soffits" down to "ARC_Ceilings and Sof...", and a discipline
-            /// whose name is not readable is a row nobody can check the symbols against - which
-            /// is the whole of what the band down the side is for. The number gutter and the code
-            /// gutter beside it have been measured for exactly this reason since the day one of
-            /// them cut "ARC" to "A...".
-            ///
-            /// Floored so a matrix of short names still has a band worth pointing at, and capped
-            /// so one absurd name cannot take a third of the window from the grid it labels. The
-            /// mark before the name is part of what a name costs, and it is reserved for the
-            /// whole axis whenever any row needs it, so this asks for it on the same terms.
+            /// Measured rather than fixed: a fixed 150px truncated "ARC_Ceilings and Soffits",
+            /// and an unreadable discipline name makes the row unusable. Floored so short names
+            /// still give a band worth pointing at, and capped so one long name cannot take a
+            /// third of the window. The leading mark is included, since it is reserved for the
+            /// whole axis whenever any row needs it.
             /// </summary>
             private double NameWide
             {
@@ -1278,37 +1136,29 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The number gutter and the code gutter, each as wide as its longest entry.
+            /// The number and code gutters, each measured to its longest entry.
             ///
-            /// <b>Thirty-six pixels was a guess and it cut "ARC" down to "A...".</b> Every one of
-            /// these is a short string whose length is known, so none of them is worth guessing
-            /// at: measured, "01" costs what "01" costs and a four-digit number still fits.
+            /// A fixed 36px truncated "ARC". These are short strings of known length, so they are
+            /// measured rather than estimated.
             /// </summary>
             private double NumberWide => Widest(_board.Rows, 11, false) + 12;
 
             private double CodeWide => Widest(_board.Rows, 10, true, code: true) + 18;
 
             /// <summary>
-            /// The shell a row header is built in: its edge, and the gutters it lays out across.
+            /// The container a row header is built in: its edge, and the gutters it lays out.
             ///
-            /// <b>One declaration, built and measured.</b> A header used to be described twice -
-            /// once here, where it is put together, and once again in a formula that worked out
-            /// how wide the band holding it should be. Two descriptions of one box is a bug
-            /// waiting for somebody to add a gutter to one of them, and a compiler cannot see it,
-            /// because both are perfectly good arithmetic. So the band asks the header instead:
-            /// this is the only place that says what a row header is made of, and
-            /// <see cref="HeaderWide"/> measures one to find out how wide that came to.
+            /// This is the only description of a row header's composition. <see cref="HeaderWide"/>
+            /// measures one to size the band. Previously the composition was described here and
+            /// again in a width formula, which is two descriptions of one box that a compiler
+            /// cannot check against each other.
             ///
-            /// The number gutter and the code gutter are each as wide as their longest entry -
-            /// thirty-six pixels was a guess and it cut "ARC" down to "A..." - and a gutter
-            /// nothing is using is not drawn at all, so a matrix without numbers or codes is as
-            /// narrow as it ever was.
+            /// The number and code gutters are each as wide as their longest entry, and an unused
+            /// gutter is not drawn, so a matrix without numbers or codes is no wider than before.
             ///
-            /// <b>The number used to be glued to the front of the name.</b> "04 ARC_Walls" is
-            /// one string to a reader and two facts to the job, and run down twenty rows the
-            /// names started at four different places because the numbers were not all the same
-            /// width. Its own column lines them up and gives the name back its own left edge -
-            /// and the code, which the test names are built out of, was not on the screen at all.
+            /// The number has its own column rather than being prefixed to the name. Numbers of
+            /// differing width made the names start at different positions, and the code, which
+            /// test names are built from, was not shown at all.
             /// </summary>
             private Border RowShell()
             {
@@ -1349,17 +1199,14 @@ namespace CamelWorks.UI.Views
             private double HeaderWide => Asked(RowShell()).Width;
 
             /// <summary>
-            /// Whether the numbers are worth a column of their own.
+            /// Whether the numbers carry information beyond the index gutter beside them.
             ///
-            /// <b>Not whether they exist - whether they say anything.</b> Rows made from saved
-            /// sets are numbered 01, 02, 03 down the list, which is what the index gutter beside
-            /// them already says, so the matrix paid thirty pixels a row to print the same number
-            /// twice twenty-four pixels apart. The moment one of them is 19 against an ordinal of
-            /// 20 - a row taken out, a package renumbered - they are saying two different things
-            /// and the column comes back.
+            /// Rows made from saved sets are numbered 01, 02, 03 in order, duplicating the index.
+            /// The column is drawn as soon as one number differs from its ordinal, which happens
+            /// when a row is removed or a package is renumbered.
             /// </summary>
             /// <param name="lines">The rows or the columns.</param>
-            /// <summary>Whether the number gutter is drawn, which the style can insist on either way.</summary>
+            /// <summary>Whether the number gutter is drawn, which the style can override.</summary>
             /// <param name="lines">The rows or the columns.</param>
             private bool Numbered(IReadOnlyList<MatrixLine> lines) =>
                 MatrixStyle.Drawn(_style.Numbers, Numbering(lines));
@@ -1413,15 +1260,12 @@ namespace CamelWorks.UI.Views
                 return false;
             }
             /// <summary>
-            /// How tall the column band is: the longest name in it, and what sits under them.
+            /// The column band's height: the longest name in it, plus what sits under the names.
             ///
-            /// <b>A hundred and thirty pixels was a guess, and a guess is white space.</b> The
-            /// names are turned and they end at the grid, so a band taller than the longest of
-            /// them is empty across the whole width of the screen - forty or sixty pixels of
-            /// nothing over every column, every time, on a matrix whose names happen to be
-            /// short. Measured, the band is as tall as it has to be and no taller: nine
-            /// characters cost nine characters. It is floored so a one-word matrix still reads
-            /// as a header, and capped so one absurd name cannot take a third of the window.
+            /// Measured rather than fixed. The names are rotated and end at the grid, so a band
+            /// taller than the longest name is empty across the full width of the screen. Floored
+            /// so a short-named matrix still reads as a header, and capped so one long name cannot
+            /// take a third of the window.
             /// </summary>
             private double NameRun
             {
@@ -1440,19 +1284,15 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The shell a column header is built in: its padding, and the rows it stacks.
+            /// The container a column header is built in: its padding, and the rows it stacks.
             ///
-            /// <b>One declaration, built and measured.</b> This box used to be described twice.
-            /// Here, where it is put together with six pixels of padding over its words and four
-            /// under them - and again in a formula that worked out how tall the band holding it
-            /// should be. The formula did not know the padding existed, so the band came out ten
-            /// pixels shorter than the thing standing in it and every name in every column was
-            /// cut off by exactly that. Nothing in a compiler can see two descriptions of one box
-            /// disagree: both are good arithmetic, and only a picture shows which is right.
+            /// This is the only description of a column header's composition; the band asks
+            /// <see cref="HeaderHigh"/>, which measures the same container.
             ///
-            /// So there is one description. The header is built from this shell and the band asks
-            /// <see cref="HeaderHigh"/>, which measures the same shell. A row added here is a
-            /// taller band with nothing else to remember.
+            /// Previously the composition was described here and again in a height formula that
+            /// did not account for the 6px/4px padding, so the band was 10px shorter than its
+            /// content and every column name was clipped by that amount. Two descriptions of one
+            /// box are both valid arithmetic; only a render shows which is right.
             /// </summary>
             private Border ColumnShell()
             {
@@ -1476,12 +1316,10 @@ namespace CamelWorks.UI.Views
                         Height = new GridLength(WarnTall),
                     });
 
-                // <b>The name's own row, as long as the name is allowed to run.</b> Star would
-                // have been the obvious thing and it cannot work here: a turned name is a text
-                // block rotated for the drawing only, so what it asks the layout for is one line
-                // tall and as wide as the words - the height it actually occupies on the screen
-                // is a thing only this code knows. It is stated once, here, and measured
-                // everywhere else.
+                // The name's row is sized explicitly rather than with Star. A rotated name is a
+                // TextBlock rotated for drawing only, so it reports one line of height and the
+                // width of the text; its occupied height on screen is known only here. Stated
+                // once and measured everywhere else.
                 stacked.RowDefinitions.Add(new RowDefinition
                 {
                     Height = new GridLength(NameRun),
@@ -1506,16 +1344,10 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How tall the column band turned out to be, asked of a header rather than guessed.
+            /// The column band's height, measured from a header rather than fixed.
             ///
-            /// <b>A hundred and thirty pixels was a guess, and a guess is white space.</b> The
-            /// names are turned and they end at the grid, so a band taller than the longest of
-            /// them is empty across the whole width of the screen - forty or sixty pixels of
-            /// nothing over every column, every time, on a matrix whose names happen to be short.
-            /// Measured, the band is as tall as it has to be and no taller: nine characters cost
-            /// nine characters. It is floored so a one-word matrix still reads as a header, and
-            /// capped so one absurd name cannot take a third of the window - both in
-            /// <see cref="NameRun"/>, which is the only number in it.
+            /// A fixed height leaves empty space across the full width of the screen when the
+            /// names are short. The floor and cap are in <see cref="NameRun"/>.
             /// </summary>
             private double HeaderHigh => Asked(ColumnShell()).Height;
 
@@ -1542,11 +1374,9 @@ namespace CamelWorks.UI.Views
                 {
                     if (_board.Columns.Count == 0) return false;
 
-                    // <b>Room to spare, not room exactly.</b> Measured against the column to the
-                    // pixel, a name that just fits is a name drawn hard against both edges of its
-                    // cell - and one measured a shade short of what it draws at is a name with
-                    // its tail cut off. A column narrower than this is not somewhere a horizontal
-                    // name belongs anyway; below it they turn, which is what the turning is for.
+                    // Compared with room to spare rather than to the pixel. A name that exactly
+                    // fits is drawn hard against both cell edges, and a measurement a shade short
+                    // of the drawn width clips the tail. Below this width names are rotated.
                     if (CellWide < 64) return false;
 
                     foreach (var line in _board.Columns)
@@ -1556,25 +1386,21 @@ namespace CamelWorks.UI.Views
                 }
             }
 
-            // <b>What sits above a column's name is reserved for all of them or for none.</b>
-            // Sized per line, a column without a code got its fifteen pixels back and its name
-            // started fifteen pixels higher than its neighbours' - precisely the ragged edge the
-            // turning was meant to fix. So the rows are the same in every header, which is why
-            // ColumnShell adds them for the whole board rather than for one line.
+            // The rows above a column's name are reserved for the whole axis or for none of it.
+            // Sized per line, a column without a code reclaimed its 15px and started its name
+            // higher than its neighbours', producing the ragged edge the rotation was meant to
+            // remove. ColumnShell therefore adds them for the whole board.
             //
-            // There used to be a property here that added those three up, and its only reader was
-            // a formula working out the band's height a second time. Both are gone: the shell
-            // declares the rows and the band measures the shell, so there is nothing left for a
-            // sum of them to disagree with.
+            // A property that summed these three existed only to let a second formula recompute
+            // the band height. Both are gone: the container declares the rows and the band
+            // measures the container.
 
             /// <summary>
-            /// How far down from the top of a column header the number, the code and the mark
-            /// reach.
+            /// How far down a column header the number, code and mark reach.
             ///
-            /// <b>A line of type, not the length of a word.</b> They were measured to the longest
-            /// number and the longest code because they were turned, so their length ran down the
-            /// column; upright they are one line each, whatever they say, and a matrix whose codes
-            /// are four letters stops paying forty pixels off the top of every column for it.
+            /// One line of type each, since they are drawn upright. Measuring them to the longest
+            /// number and code applied when they were rotated and their length ran down the
+            /// column.
             /// </summary>
             private const double NumberTall = 16;
 
@@ -1625,13 +1451,10 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How tall one line of type is, at the size a header draws it.
+            /// The height of one line of type at the size a header draws it.
             ///
-            /// <b>Measured, because the last guess at it was four pixels short.</b> A header's
-            /// height was a constant that had been read off a screenshot, and a line of eleven
-            /// point type is not eleven pixels tall - so every upright name was drawn into a
-            /// space too small for it and lost its feet. The ruler that already measures how
-            /// wide a name is measures how tall a line is, and neither is guessed again.
+            /// Measured rather than constant: the previous constant was 4px short, so upright
+            /// names were drawn into a space too small and lost their descenders.
             /// </summary>
             /// <param name="size">The type size.</param>
             /// <param name="bold">Whether it is drawn semibold.</param>
@@ -1667,52 +1490,39 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How wide the index gutter down the left is, and how tall the one across.
+            /// The width of the index gutter down the left, and the height of the one across.
             ///
-            /// <b>Twenty pixels, and a click in it writes twenty-two cells.</b> The band beside
-            /// it is two hundred pixels of header that only selects, so the smallest target on
-            /// the screen was the one with the largest consequence, flush against the largest
-            /// target with the smallest. Twenty-four is a target, and the gutter is drawn on its
-            /// own ground so the eye can see where one band stops and the other starts.
+            /// A click in the gutter writes a whole line, so it needs a usable target: at 20px it
+            /// was the smallest target on the screen with the largest consequence, flush against
+            /// the 200px header that only selects. It is 24px and drawn on its own ground so the
+            /// boundary between the two bands is visible.
             /// </summary>
             private const double IndexWide = 26;
             private const double IndexHigh = 24;
 
             /// <summary>
-            /// How much of each band a folder's own label takes, when there are any.
+            /// The width or height each band gives to folder labels, when any folder is in use.
             ///
-            /// <b>Perpendicular to the names it gathers.</b> A row's name reads across, so the
-            /// folder holding eight rows reads down the band beside them, its length spanning
-            /// exactly the rows it holds. A column's name reads down, so its folder reads across
-            /// the top of them. Either way the label runs the length of what it covers, which is
-            /// the whole of how a band says "these ones, and not those".
+            /// Perpendicular to the names it groups: a row's name reads across, so its folder
+            /// label reads down the band beside it, spanning exactly the rows it holds. A column's
+            /// folder label reads across the top of its columns.
             ///
-            /// Zero when nothing is filed, so a matrix that has never used a folder pays no width
-            /// for the idea.
+            /// Zero when nothing is filed, so an unfoldered matrix costs no width.
             /// </summary>
-            /// <b>Wide enough for the letters, not for the idea of them.</b> Twenty-four pixels
-            /// is narrower than a line of ten point type is tall, so a name turned into it is cut
-            /// off along its whole length rather than at its ends - it reads as a smudge with two
-            /// letters showing. The strip is as wide as the type in it needs, measured, plus the
-            /// room either side of it.
             private double FolderWide =>
                 _board.Folders(rows: true).Count == 0 ? 0 : LineHigh(10, bold: true) + 10;
 
             private double FolderHigh =>
                 _board.Folders(rows: false).Count == 0 ? 0 : LineHigh(10, bold: true) + 8;
 
-            // <b>How big the frozen frame is, is nobody's arithmetic any more.</b> The corner,
-            // the band across the top and the band down the side have to agree to the pixel or
-            // the headers stop sitting over the cells they name - and four places used to work
-            // that sum out. Adding a strip for the folders taught the two that redraw and left
-            // the two built once holding the old sum, so the frame disagreed with itself by
-            // exactly the band: the row names clipped off the side, the turned column names
-            // sliced, the corner a third of its size and nothing lining up with anything.
+            // The frozen frame's size is taken from layout rather than computed. The corner, the
+            // top band and the side band must agree to the pixel, or the headers stop sitting over
+            // the cells they name. Four places used to compute that sum; adding the folder strip
+            // updated two of them and left the two built once holding the old value, so the frame
+            // disagreed with itself by exactly the band width.
             //
-            // There is no sum to get wrong now. The frame is a Grid whose first row and first
-            // column are auto, so it is as tall as the band across the top and as wide as the
-            // band down the side, worked out by the layout from what those bands actually
-            // contain. A part added to either band is a bigger frame with nothing to be told.
+            // The frame is now a Grid whose first row and column are Auto, so it takes its size
+            // from what the bands actually contain.
 
             /// <summary>The folders shut, by name. Both axes at once, because a folder is one thing.</summary>
             private readonly HashSet<string> _shut =
@@ -1724,18 +1534,15 @@ namespace CamelWorks.UI.Views
                 line.Folder.Length > 0 && _shut.Contains(line.Folder) && !Folded(line);
 
             /// <summary>
-            /// The one line a shut folder collapses to, and the line that speaks for it.
+            /// The single line a collapsed folder occupies, and the line that represents it.
             ///
-            /// <b>Every member given no height is a folder with no height, and a folder with no
-            /// height cannot be pressed to open it again.</b> Shutting one made it vanish - band,
-            /// name, chevron and all - and the only way back was undo, which does not take back a
-            /// drawing state. A drawer that shuts has to leave its handle out.
+            /// Giving every member zero height leaves the folder with no height and therefore no
+            /// target to reopen it. The first member keeps its place and carries the folder label
+            /// instead.
             ///
-            /// So the first member keeps its place and carries the folder on it: the name across
-            /// the row, where a row's name goes, at the width a row header has - rather than
-            /// turned inside a band twenty-four pixels wide and thirty tall, which is a name with
-            /// three letters of it showing. Across the top the same line keeps its column and the
-            /// name stays turned, because a column header is tall and that is where the room is.
+            /// Down the side the label reads across the row at row-header width; a rotated label
+            /// in a 24 x 30px band shows about three characters. Across the top it stays rotated,
+            /// where a column header has the height for it.
             /// </summary>
             /// <param name="line">The row or column.</param>
             private bool Folded(MatrixLine line)
@@ -1761,11 +1568,11 @@ namespace CamelWorks.UI.Views
 
                 if (!_shut.Remove(folder)) _shut.Add(folder);
 
-                // <b>Shut is a drawing state, not a change to the matrix.</b> The lines are still
-                // there, still in the same order, still carrying their symbols - they are given
-                // no height and no width, so every index, every cell and every count stays what
-                // it was and nothing that reads them has to learn about folders. Only the
-                // keyboard needs telling, so the cursor steps over what it cannot see.
+                // Collapsing is a drawing state, not a change to the matrix. The lines remain in
+                // place with their symbols; they are given zero height and width, so indexes,
+                // cells and counts are unaffected and nothing reading them needs to know about
+                // folders. Only the keyboard needs telling, so the cursor steps over hidden
+                // lines.
                 Redraw();
             }
 
@@ -1777,28 +1584,22 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private void Redraw()
             {
-                // <b>A rule that only held when somebody pressed something is not a rule.</b>
-                // The whole reason to keep one is that a discipline added next week arrives
-                // already checked the way its folder is checked - and that means the fifteen
-                // acts that change the board's shape all have to re-state them. Fifteen call
-                // sites is fifteen chances to add a sixteenth act and forget, which is exactly
-                // how a matrix comes to disagree with the rules written at the top of it.
+                // Fill rules are re-applied here, once, before drawing. The alternative is to
+                // re-apply at each of the ~15 call sites that change the board's shape, where a
+                // sixteenth is easily missed and the matrix silently stops matching its rules.
                 //
-                // The rule-filled cells are derived, so they are reconciled here, once, before
-                // anything is drawn. It costs a pass over the grid and only when there are rules
-                // at all; and every path in - a menu, an import, an undo - goes through here.
+                // Rule-filled cells are derived state. The cost is one pass over the grid, and
+                // only when rules exist. Every path in (menu, import, undo) passes through here.
                 if (_board.Rules.Count > 0) _board.ApplyRules();
 
                 _cells.Clear();
 
                 var bare = _board.Rows.Count == 0 && _board.Columns.Count == 0;
 
-                // <b>Twenty rows and nothing across the top is a dead end that looked like a
-                // bug.</b> The typing box makes rows, so a matrix typed out by hand arrives here
-                // with a column of names and no grid at all: no cells, no keyboard, no progress.
-                // The one press that fixes it was the fifth line of a menu called "Start from",
-                // beside four entries about where a matrix comes from and one that empties it.
-                // It is on the screen now, where the grid would be.
+                // Rows with no columns produce no grid: no cells, no keyboard, no progress. The
+                // typing box creates rows only, so a hand-typed matrix arrives in this state. The
+                // action that fixes it is offered here, in place of the grid, rather than as the
+                // fifth item of the "Start from" menu.
                 var half = !bare && _board.Columns.Count == 0;
 
                 // Nothing drawn yet is a screen about starting, and a palette, a strip and an
@@ -1869,15 +1670,13 @@ namespace CamelWorks.UI.Views
 
                 if (band > 0) Bands(_across, rows: false);
 
-                // <b>One shape for one act, at both ends of it.</b> Past the last column sat a
-                // plus and under the last row a box you typed a name into - two different-looking
-                // controls for the same thing, learned separately, and on a mirrored board one of
-                // them a detour to the other. Both ends are the plus now, which is the one that
-                // belongs in a grid: a cell shaped like the cells it continues, reading as the
-                // next place rather than as a form somebody left in the frame.
+                // One control for one action at both ends. Previously a plus past the last column
+                // and a name box under the last row: two controls for the same act, and on a
+                // mirrored board one was a detour to the other. Both are now the plus, shaped like
+                // the cells it continues.
                 //
-                // The name is typed where every other thing about a line is said - the panel on
-                // the right, which is already open and already the answer to "what is this row".
+                // The name is typed in the right-hand panel, where everything else about a line is
+                // set.
                 Put(_across, Adding("Add a discipline", AddColumn, column: true),
                     top + 1, _board.Columns.Count);
             }
@@ -2012,11 +1811,9 @@ namespace CamelWorks.UI.Views
 
                 block.Tint(Border.BorderBrushProperty, "Bd");
 
-                // <b>The colour is what makes a band of eight rows one thing.</b> Twenty-two
-                // disciplines in five packages read as twenty-two disciplines until the packages
-                // are told apart, and this strip is the only place with room to say which is
-                // which without writing it on every row. A folder nobody has coloured keeps the
-                // skin's own ground, so a matrix that has never used one looks as it did.
+                // The band colour is what groups a run of rows into one package. Without it,
+                // 22 disciplines in five packages read as 22 disciplines. An uncoloured folder
+                // keeps the skin's own ground.
                 var chosen = _board.ColourOf(folder);
 
                 if (chosen.Length > 0) block.Background = Painted(chosen, "Card2");
@@ -2069,10 +1866,9 @@ namespace CamelWorks.UI.Views
 
                 block.ContextMenu = Parts.Context(() => FolderMenu(folder), null);
 
-                // <b>Dropping a line on a folder files it.</b> The bands already carry a line
-                // from one place in the order to another; a folder is a place in the order too,
-                // and a hand that has just dragged a row past a band expects the band to take it.
-                // Either axis, because the folder is one thing across both.
+                // Dropping a line on a folder band files it there. The bands already accept a line
+                // being moved within the order, and a folder is a position in that order. Applies
+                // to either axis, since a folder spans both.
                 block.AllowDrop = true;
 
                 block.DragOver += (s, e) =>
@@ -2220,19 +2016,17 @@ namespace CamelWorks.UI.Views
                 _sheet.HorizontalAlignment = HorizontalAlignment.Left;
                 _sheet.VerticalAlignment = VerticalAlignment.Top;
 
-                // <b>The last row could not be scrolled clear of the horizontal bar.</b> The bar
-                // is drawn inside the viewport and takes its seventeen pixels off the bottom of
-                // it, so a sheet whose content ends exactly at its own last row has nowhere left
-                // to scroll to: wound fully down, the row nearest the bar is still sitting under
-                // it, cut in half. It is the box that makes rows that ends up there on a matrix
-                // of any size, which is the one thing on that band somebody needs to reach.
+                // A scrollbar's worth of extra scroll range past the last row.
                 //
-                // A bar's worth of room past the end, always. The cells and the band beside them
-                // are slid by the same offset, so the extra range carries both: the row names
-                // and the typing box come up with the cells rather than lagging a bar behind
-                // them. Kept even when no bar is showing, because a grid wants a little space
-                // after its last row anyway, and a margin that appears and disappears with the
-                // bar is a layout pass that can ask for itself again.
+                // The horizontal bar is drawn inside the viewport and takes 17px off the bottom,
+                // so content ending exactly at the last row cannot be scrolled clear of it: fully
+                // wound down, the last row sits under the bar. On a matrix of any size that row is
+                // the add-line control.
+                //
+                // The cells and the band beside them use the same offset, so row names and the
+                // add control track the cells. Kept even when no bar is showing: a grid wants some
+                // space after its last row, and a margin that appears with the bar can trigger a
+                // further layout pass.
                 _sheet.Margin = new Thickness(0, 0, 0, SystemParameters.HorizontalScrollBarHeight);
 
                 for (var c = 0; c <= _board.Columns.Count; c++)
@@ -2255,10 +2049,10 @@ namespace CamelWorks.UI.Views
 
                     if (Hidden(row)) continue;
 
-                    // <b>A shut folder's line is the folder, not one of its members.</b> Drawing
-                    // that member's own cells there would put one discipline's decisions on a
-                    // line labelled with the folder's name, which is eight disciplines - so what
-                    // sits across it is a closed strip, and no symbol on it is anybody's.
+                    // A collapsed folder's line represents the folder, not its first member.
+                    // Drawing that member's cells there would attribute one discipline's decisions
+                    // to a line labelled with the folder's name, so the line is drawn as a closed
+                    // strip carrying no symbols.
                     if (Folded(row))
                     {
                         var strip = new Border();
@@ -2397,13 +2191,10 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// The screen before there is a matrix: the four ways in, as things to press.
+            /// The screen shown before a matrix exists: the four ways to create one.
             ///
-            /// <b>What it replaced.</b> A sentence in the top corner and three buttons, over an
-            /// empty white screen the height of the window. The question this screen has to
-            /// answer is "where does a matrix come from", and the answer is four different
-            /// places - so it says all four, says what each one gives you, and leaves the one
-            /// that costs nothing and finds the most until last.
+            /// Replaces a sentence and three buttons on an empty screen. Each option states what
+            /// it produces; the one that costs nothing and finds the most is listed last.
             /// </summary>
             private UIElement Empty()
             {
@@ -2455,17 +2246,14 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// One row per saved set, named after it, numbered, and already pointing at it.
+            /// One row per saved set, named and numbered after it and already pointing at it.
             ///
-            /// <b>The four presses a row used to cost.</b> Add a row, name it, number it, point
-            /// it at something - each its own dialogue, times twenty disciplines. But the
-            /// disciplines are already in the document, as the saved sets somebody made to run
-            /// the tests with: WSC_Pipes, CIV_C_Concrete, FGT_Ducts. Ticking them is the whole
-            /// job, and the columns follow from the rows.
+            /// The disciplines are already in the document as the saved sets used to run the
+            /// tests, so selecting them replaces adding, naming, numbering and pointing each row
+            /// individually. The columns follow from the rows.
             ///
-            /// <b>Nothing is overwritten.</b> A set already on the matrix is left where it is,
-            /// so this can be pressed again after a set is added without disturbing the grid
-            /// that has been filled in.
+            /// Sets already on the matrix are left in place, so this can be run again after a set
+            /// is added without disturbing the existing grid.
             /// </summary>
             private void FromSets()
             {
@@ -2556,13 +2344,11 @@ namespace CamelWorks.UI.Views
                 corner.BorderThickness = new Thickness(0, 0, 1, 1);
                 corner.Padding = new Thickness(8, 6, 8, 6);
 
-                // <b>The corner follows; it does not decide.</b> It sits in the same auto row
-                // and auto column of the frame as the two bands, so whichever of the three asks
-                // for the most room settles the size of all three - and the one whose size
-                // matters is the headers, because they are the thing with contents that have to
-                // fit over the cells they name. Its contents go in a panel that asks for
-                // nothing, so a search box and a legend cannot quietly become the reason the
-                // band across the top is taller than any header in it.
+                // The corner takes its size from the bands rather than setting it. It sits in the
+                // same Auto row and column as the two bands, so the largest of the three sets the
+                // size; that must be the headers, which have to fit over the cells they name. The
+                // corner's contents go in a panel that requests no size, so a search box or legend
+                // cannot make the top band taller than any header in it.
                 corner.ClipToBounds = true;
 
                 corner.Tint(Border.BorderBrushProperty, "Bd");
@@ -2570,10 +2356,8 @@ namespace CamelWorks.UI.Views
 
                 var inside = new DockPanel { LastChildFill = false };
 
-                // <b>The largest empty space on the screen, holding two lines of eight words.</b>
-                // A hundred and ninety by two hundred and thirty pixels of corner, and the thing
-                // a matrix of forty rows most needs - a way of getting to one of them by name -
-                // did not exist anywhere. It does now, in the room that was already there.
+                // The corner is about 190 x 230px and previously held two lines of text. A matrix
+                // of forty rows needs a way to reach a row by name, which is placed here.
                 var find = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
 
                 var glass = Ui.Glyph(Glyphs.Find, 12, "Muted", new Thickness(0, 0, 5, 0));
@@ -2630,14 +2414,13 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// A row's number or a column's letter, in the gutter beside it.
             ///
-            /// <b>A matrix of twenty by twenty needs coordinates.</b> Without them the only way
-            /// to say which cell is wrong is to read two long names off two edges of the screen
-            /// and hope the eye tracked the right line across - which on a grid this size it does
-            /// not. Numbers down and letters across is what every spreadsheet does and what a
-            /// coordination meeting already says out loud: "C7 should be a clearance".
+            /// Coordinates make a cell nameable. Without them the only way to identify a cell is
+            /// to read two long names off opposite edges of the grid. Numbers down and letters
+            /// across matches spreadsheet convention and how a coordination meeting refers to a
+            /// cell.
             /// </summary>
             /// <param name="mark">The number or letter.</param>
-            /// <param name="what">What it stands for, for the tip.</param>
+            /// <param name="what">What it stands for, for the tooltip.</param>
             /// <param name="line">The row or column it indexes.</param>
             /// <param name="rows">True when it indexes a row.</param>
             private UIElement Marker(string mark, string what, MatrixLine line, bool rows)
@@ -2730,10 +2513,9 @@ namespace CamelWorks.UI.Views
             /// <summary>
             /// One row's header: its name, and a press that puts it in the inspector.
             ///
-            /// <b>It used to open a menu of fourteen lines</b>, four of which opened a dialogue
-            /// of their own. The inspector says all of it at once and lets it be edited where it
-            /// stands, so pressing a row is now how you read one as well as how you change it.
-            /// The menu is still on the right button, where a menu belongs.
+            /// Previously opened a 14-item menu, four items of which opened further dialogues.
+            /// The inspector shows all of it at once and allows editing in place. The menu remains
+            /// on the right button.
             /// </summary>
             private UIElement RowHead(MatrixLine line, int at)
             {
@@ -2807,12 +2589,10 @@ namespace CamelWorks.UI.Views
                     Margin = new Thickness(numbered || coded ? 0 : 8, 0, 6, 0),
                 };
 
-                // <b>A mark on every row marked nothing.</b> Twenty-two identical glyphs down
-                // the left edge said "this one is normal" twenty-two times, and the one that
-                // meant something - a row pointing at nothing - was a shape change inside a
-                // column of shapes. The warning is drawn and the ordinary row is not; the room
-                // is reserved for the whole axis whenever any row needs it, so the names still
-                // start on one line.
+                // The warning mark is drawn only on rows that need it. Drawn on every row it
+                // marked nothing, and the case that matters (a row pointing at nothing) was a
+                // shape change within a column of identical shapes. The space is reserved for the
+                // whole axis whenever any row needs it, so the names stay aligned.
                 if (Unbacked(_board.Rows))
                 {
                     UIElement mark;
@@ -2874,23 +2654,18 @@ namespace CamelWorks.UI.Views
 
                 Grouped(head, line, Chosen(line, rows: false));
 
-                // <b>A column header is a row header turned, and it has to turn the same way
-                // round.</b> Everything in it is stood on its end - a turned name over an
-                // upright number was two writing directions in one cell forty pixels wide - and
-                // the pieces come in the order the row puts them in. Turned clockwise, what is
-                // leftmost in the row is uppermost in the column, so both read number, code,
-                // name: across in the row, down in the column. Turned the other way they came
-                // out backwards against the rows they belong to, which is what this was.
+                // A column header is a rotated row header and rotates the same way. Everything in
+                // it is rotated: a rotated name over an upright number is two writing directions
+                // in a 40px cell. The parts are in the same order as the row's, so both read
+                // number, code, name: across in the row, down in the column.
                 var stacked = (Grid)head.Child;
 
                 var row = 0;
 
-                // <b>Two characters and three do not need turning.</b> The name does - a name
-                // turned is the whole reason twenty-two columns fit on a screen - but "10" and
-                // "ME" fit upright inside a column thirty-eight pixels wide, which the row header
-                // proves by drawing them that way. Turned, they cost legibility for a symmetry
-                // nobody perceives: a reader tips their head to read a number they could have
-                // read straight.
+                // Two- and three-character values are not rotated. The name is, which is what
+                // makes 22 columns fit; but "10" and "ME" fit upright in a 38px column, as the
+                // row header demonstrates. Rotating them costs legibility for a symmetry that is
+                // not perceived.
                 if (Numbered(_board.Columns))
                 {
                     if (line.Number.Length > 0)
@@ -2964,20 +2739,17 @@ namespace CamelWorks.UI.Views
                     row++;
                 }
 
-                // <b>Centred across the column, flush along it.</b> Two axes, and they do not
-                // want the same answer. Across the column - the direction the letters are thick
-                // in - everything in a header is centred, which is what the letter above, the
-                // number and the code all do. Along the column, a name centred floats: twenty-two
-                // of them at twenty-two different lengths start and end in twenty-two different
-                // places, and the top edge of the grid stops being an edge. Flushed to the end
-                // that meets the grid they all finish on one line, and what ellipsises is the far
-                // end rather than the end that matters.
-                // <b>Turning it is the answer to a width problem, and a wide column has not got
-                // one.</b> At six disciplines a column is a hundred and ten pixels and the
-                // longest name fits upright in it - so the band was spending a hundred and
-                // seventy-seven pixels of height, and asking the reader to tilt their head, to
-                // solve a problem that had gone away. Upright whenever the names fit, turned
-                // whenever they do not.
+                // Centred across the column, flush along it.
+                //
+                // Across the column, everything in a header is centred. Along the column, a
+                // centred name floats: names of differing length start and end at differing
+                // positions and the top edge of the grid stops reading as an edge. Flushed to the
+                // end that meets the grid they align, and the ellipsis falls at the far end.
+                //
+                // Rotation solves a width problem, so it is applied only when there is one. At
+                // six disciplines a column is 110px and the longest name fits upright, so the band
+                // would be spending 177px of height for nothing. Upright when the names fit,
+                // rotated when they do not.
                 UIElement named;
 
                 if (Upright)
@@ -3024,18 +2796,17 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// One piece of a column header, stood on its end and reading up the column.
+            /// One part of a column header, rotated to read up the column.
             ///
-            /// <b>Wrapping did not work</b>, and neither did turning it and letting the layout
-            /// work the size out. A column had to be a hundred pixels wide to hold two words of
-            /// a name, and the names were cut off anyway - "WSC_Process st...". Turned through
-            /// ninety degrees with a LayoutTransform they came out cut off after three letters
-            /// instead: a rotated child is measured against the inverse-transformed space it is
-            /// given, and inside a cell forty pixels wide that arithmetic ends with the name's
-            /// length limited by the column's width. Which is the constraint the rotation was
-            /// there to escape. So the text is given the box it is to occupy - as long up the
-            /// column as it is allowed, as thick as the column is wide - and turned about its
-            /// own centre for the drawing only.
+            /// Neither wrapping nor rotating with layout-driven sizing works here. A column would
+            /// have to be 100px wide to hold two words, and the names were truncated anyway. With
+            /// a plain LayoutTransform a rotated child is measured against the inverse-transformed
+            /// space it is given, so inside a 40px cell the name's length is limited by the
+            /// column's width, which is the constraint the rotation exists to escape.
+            ///
+            /// The text is therefore given the box it is to occupy explicitly (as long up the
+            /// column as permitted, as thick as the column is wide) and rotated about its centre
+            /// for drawing.
             /// </summary>
             /// <param name="text">What it says.</param>
             /// <param name="along">How far up the column it may run.</param>
@@ -3058,12 +2829,10 @@ namespace CamelWorks.UI.Views
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
 
-                    // <b>How long it may run, not how long it is.</b> Given this as a Width the
-                    // block asked its parent for a box longer than the column is wide, and WPF
-                    // cut it down to the slot it did not fit in - so a name reserved a hundred
-                    // and sixty pixels of band, drew five characters of itself in the middle of
-                    // it, and left the rest empty above and below. As a maximum it is the cap
-                    // the design wants and nothing overflows anything.
+                    // MaxWidth, not Width. As a Width the block requested a box longer than the
+                    // column is wide and WPF clipped it to the slot, so a name reserved 160px of
+                    // band and drew five characters in the middle of it. As a maximum it caps the
+                    // run without overflowing.
                     MaxWidth = Math.Max(0, along),
 
                     TextAlignment = at,
@@ -3078,42 +2847,33 @@ namespace CamelWorks.UI.Views
                     // run it covers, because that is what says which rows are in it.
                     VerticalAlignment = flush ? VerticalAlignment.Bottom : VerticalAlignment.Center,
 
-                    // <b>Turned in the layout, not only in the drawing.</b> A RenderTransform
-                    // moves pixels and tells the layout nothing, so the block still asked for a
-                    // box as long as its words and as thick as one line - lying on its side
-                    // across a column thirty-eight pixels wide. WPF clips a child to the slot it
-                    // was given, so what got rotated was a name already cut down to the width of
-                    // its own column: five characters out of the middle of every heading, in a
-                    // band with room for all of them.
+                    // LayoutTransform, not RenderTransform. A RenderTransform moves pixels
+                    // without affecting layout, so the block still requested a box as long as its
+                    // text and one line thick, lying across a 38px column. WPF clips a child to
+                    // its slot, so the rotated result was a name already truncated to the column
+                    // width: about five characters per heading.
                     //
-                    // A LayoutTransform is measured through: the block is offered the slot turned
-                    // the other way round, so a column thirty-eight wide and a hundred and sixty
-                    // tall offers it a hundred and sixty to write in and thirty-eight to be thick
-                    // in. Which is the way round it is actually drawn, so what it asks for is
-                    // what it gets and there is nothing left over to clip.
+                    // A LayoutTransform is measured through: a 38 x 160px slot is offered to the
+                    // block as 160px to write in and 38px to be thick in, which is how it is
+                    // drawn, so nothing is clipped.
                     //
-                    // Counter-clockwise, reading upwards, which is what a spreadsheet does and
-                    // what anybody who has read a matrix before expects. Clockwise it was legible
-                    // but upside down against every other tool they use - and a box's left-hand
-                    // edge lands at the bottom this way round, so a name set to its left starts
-                    // at the grid and runs up away from it, and what ellipsises is the far end
-                    // rather than the end that matters.
+                    // Counter-clockwise, reading upwards, matching spreadsheet convention.
+                    // Clockwise is legible but inverted relative to other tools. This way round
+                    // the box's left edge lands at the bottom, so a left-aligned name starts at
+                    // the grid and the ellipsis falls at the far end.
                     LayoutTransform = new System.Windows.Media.RotateTransform(-90),
                 };
 
             /// <summary>
-            /// Make one part of the grid reachable without a mouse, and nameable by a reader.
+            /// Makes one part of the grid keyboard-reachable and nameable by a screen reader.
             ///
-            /// <b>Every header, every gutter mark and every key on the palette was a Border with
-            /// a mouse handler.</b> A Border is not focusable, takes no part in the tab order and
-            /// reports no name, so the keyboard model this screen is proud of stopped dead at the
-            /// edge of the cells: you could type symbols into the grid all afternoon and never
-            /// reach the palette to change which one, or press a row to say what it points at.
-            /// And a narrator had nothing to read out but the tips, which need a hover the
-            /// keyboard cannot produce.
+            /// Headers, gutter marks and palette keys are Borders with mouse handlers. A Border is
+            /// not focusable, takes no part in the tab order and reports no name, so keyboard
+            /// navigation stopped at the edge of the cells and a screen reader had only the
+            /// tooltips, which require a hover.
             /// </summary>
             /// <param name="on">The part.</param>
-            /// <param name="name">What it is, said as a reader would say it.</param>
+            /// <param name="name">What it is, as a screen reader would read it.</param>
             /// <param name="onPress">What Space or Return does, which is what a click does.</param>
             private static void Reachable(UIElement on, string name, Action? onPress)
             {
@@ -3123,11 +2883,8 @@ namespace CamelWorks.UI.Views
 
                 on.Focusable = true;
 
-                // <b>A Border has no theme style, so it has no focus visual.</b> Every header,
-                // every gutter mark and every palette key was made reachable by the keyboard and
-                // then drew nothing at all to say the keyboard was on it - so the model this
-                // screen is proudest of could not be used without a mouse to remember where you
-                // had got to.
+                // A Border has no theme style and therefore no focus visual, so parts made
+                // keyboard-reachable drew nothing to indicate focus.
                 if (on is Border edged)
                 {
                     var was = edged.BorderThickness;
@@ -3177,12 +2934,10 @@ namespace CamelWorks.UI.Views
                     });
                 };
 
-                // <b>Renaming was reachable from exactly one place.</b> The name of a row lived
-                // in the inspector and nowhere else, so a panel that is shut - or, as it turned
-                // out, one that is not on the screen at all - takes the only way of naming a row
-                // with it, and the first row of a new matrix stays called "New row" with nothing
-                // a person can press. The name is on the header; the header is what somebody
-                // aims at to change it. It is how a test folder is already renamed here.
+                // Renaming is available from the header as well as the inspector. With the
+                // inspector closed, or absent, the inspector was the only way to name a row, so a
+                // new matrix's first row stayed "New row" with nothing to press. Matches how a
+                // test folder is renamed elsewhere.
                 head.MouseLeftButtonDown += (s, e) =>
                 {
                     if (e.ClickCount != 2) return;
@@ -3315,11 +3070,10 @@ namespace CamelWorks.UI.Views
             /// <summary>One cell: the symbol in it, and every way of changing it.</summary>
             private Border Cell(MatrixLine row, MatrixLine column, int down, int across)
             {
-                // <b>No cursor of its own.</b> What the pointer looks like over a cell depends
-                // on what is armed, which changes without the cells being rebuilt - so it is said
-                // once, on the sheet they all sit in, and forced from there. Said here it would
-                // be a thousand assignments that all have to be revisited on every press of the
-                // palette, and were not.
+                // Cells set no cursor of their own. The pointer over a cell depends on what is
+                // armed, which changes without the cells being rebuilt, so it is set once on the
+                // containing sheet and forced from there. Set per cell it would be a thousand
+                // assignments to revisit on every palette press.
                 var cell = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
@@ -3431,13 +3185,11 @@ namespace CamelWorks.UI.Views
             private MatrixLine? _crossColumn;
 
             /// <summary>
-            /// Put the cursor on one cell, the keyboard on the grid, and the cell in the
-            /// inspector.
+            /// Puts the cursor on one cell, focus on the grid, and the cell in the inspector.
             ///
-            /// <b>The inspector shows what was last touched, and a cell is a touch.</b> It did
-            /// not let go of a row or a symbol when one was pressed, and nothing on the screen
-            /// released either - so the first time somebody pressed a row header, the inspector
-            /// stopped answering about cells for the rest of the session.
+            /// The inspector shows the last thing touched, and a cell is a touch. Previously it
+            /// kept a row or symbol once one had been pressed, so pressing a row header stopped it
+            /// answering about cells for the rest of the session.
             /// </summary>
             /// <param name="down">Which row.</param>
             /// <param name="across">Which column.</param>
