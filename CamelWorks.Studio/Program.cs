@@ -20,8 +20,9 @@ namespace CamelWorks.Studio
     /// dotnet run --project CamelWorks.Studio -- --shoot out\shots     write them to PNG
     /// </code>
     ///
-    /// The second form draws every page in both themes at all three pane widths and exits, which
-    /// is what the ui-shots workflow runs on every push that touches the UI.
+    /// The second form draws pages and exits, which is what the ui-shots workflow runs. It takes
+    /// <c>--only &lt;ids&gt;</c> to name which, because a Windows runner bills at twice the rate
+    /// and a render is nearly always asked for to settle one screen.
     /// </summary>
     public static class Program
     {
@@ -37,8 +38,21 @@ namespace CamelWorks.Studio
         internal static IReadOnlyList<Sheet> Everything { get; } =
             Sheets.All.Concat(Panels.All).Concat(Dialogs.All).ToList();
 
+        /// <summary>
+        /// Which pages a shoot draws when it is not told, and the word that means all of them.
+        ///
+        /// <b>A render is asked for to settle one screen.</b> Every page in both themes is thirty
+        /// pictures off a Windows runner billed at twice the rate, twenty-eight of which nobody
+        /// opens - and the cost of that is not the minutes, it is that a render stops being
+        /// something you reach for. Named pages are two.
+        /// </summary>
+        private const string Only = "app-clash-matrix,app-clash-matrix-drawn";
+
         /// <summary>Run the harness.</summary>
-        /// <param name="args">Pass <c>--shoot &lt;folder&gt;</c> to write PNGs instead of opening a window.</param>
+        /// <param name="args">
+        /// Pass <c>--shoot &lt;folder&gt;</c> to write PNGs instead of opening a window, and
+        /// <c>--only &lt;id,id&gt;</c> to name which pages - or <c>all</c> for every one of them.
+        /// </param>
         /// <returns>Zero on success.</returns>
         [STAThread]
         public static int Main(string[] args)
@@ -55,23 +69,46 @@ namespace CamelWorks.Studio
             if (shoot >= 0)
             {
                 var folder = shoot + 1 < args.Length ? args[shoot + 1] : "shots";
-                return Shoot(folder);
+                var picked = Array.IndexOf(args, "--only");
+                var only = picked >= 0 && picked + 1 < args.Length ? args[picked + 1] : Only;
+
+                return Shoot(folder, only);
             }
 
             return application.Run(new StudioWindow());
         }
 
         /// <summary>
-        /// Render every sheet, in both themes, at every width, and write them out.
+        /// Render the named sheets at every width and write them out.
         ///
         /// This is the part that makes the harness worth having on a build agent rather than only
         /// on a desk: the pictures come back from the machine that compiled the change, so a
         /// layout can be reviewed by whoever wrote it without a Navisworks licence anywhere.
+        ///
+        /// <b>Light only, and only what was asked for.</b> Every page in both themes was thirty
+        /// pictures a run, and a run happens because somebody wants to look at one screen. The
+        /// other twenty-eight cost Windows minutes at twice the rate to be force-pushed and never
+        /// opened. The dark palette is a skin over the same layout, and no fault reported against
+        /// this product has ever been visible in one and not the other.
         /// </summary>
         /// <param name="folder">Where to write the PNGs.</param>
-        private static int Shoot(string folder)
+        /// <param name="only">Which pages, by id, comma-separated - or <c>all</c> for every one.</param>
+        private static int Shoot(string folder, string only)
         {
             Directory.CreateDirectory(folder);
+
+            var wanted = only.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                             .Select(one => one.Trim())
+                             .Where(one => one.Length > 0)
+                             .ToList();
+
+            var every = wanted.Count == 0
+                        || wanted.Any(one => string.Equals(one, "all", StringComparison.OrdinalIgnoreCase));
+
+            var pages = every
+                ? Everything
+                : Everything.Where(sheet => wanted.Any(
+                      one => string.Equals(one, sheet.Id, StringComparison.OrdinalIgnoreCase))).ToList();
 
             // Checked before anything is drawn. Sixteen pictures of Windows' default controls look
             // enough like a deliberate design to be reviewed as one.
@@ -88,31 +125,45 @@ namespace CamelWorks.Studio
             Log("skin loaded: " + Skin.Sheet.MergedDictionaries[0].Count.ToString(CultureInfo.InvariantCulture)
                 + " styles and resources");
 
+            // A name that matched nothing is a typo, and a typo must not look like a clean run
+            // that happened to draw nothing: the branch would be force-pushed empty and whoever
+            // asked for the picture would go looking for a fault in the screen instead.
+            foreach (var one in wanted)
+                if (!every && !Everything.Any(sheet => string.Equals(one, sheet.Id,
+                                                                     StringComparison.OrdinalIgnoreCase)))
+                    Log("NO SUCH PAGE: " + one);
+
+            if (pages.Count == 0)
+            {
+                Log("nothing to draw: --only named " + only);
+                File.WriteAllLines(System.IO.Path.Combine(folder, "_log.txt"), _log);
+                return 3;
+            }
+
+            Log("drawing " + pages.Count.ToString(CultureInfo.InvariantCulture) + " of "
+                + Everything.Count.ToString(CultureInfo.InvariantCulture) + " pages, light");
+
+            Skin.Mode = SkinMode.Light;
+
             var written = 0;
 
-            foreach (var dark in new[] { false, true })
+            foreach (var sheet in pages)
             {
-                Skin.Mode = dark ? SkinMode.Dark : SkinMode.Light;
-                var suffix = dark ? "dark" : "light";
-
-                foreach (var sheet in Everything)
+                foreach (var width in sheet.Widths ?? Widths)
                 {
-                    foreach (var width in sheet.Widths ?? Widths)
-                    {
-                        var name = sheet.Id + "-" + width.ToString(CultureInfo.InvariantCulture) + "-" + suffix + ".png";
-                        var path = System.IO.Path.Combine(folder, name);
+                    var name = sheet.Id + "-" + width.ToString(CultureInfo.InvariantCulture) + ".png";
+                    var path = System.IO.Path.Combine(folder, name);
 
-                        try
-                        {
-                            Capture(sheet, width, path);
-                            written++;
-                            Log("wrote " + name);
-                        }
-                        catch (Exception e)
-                        {
-                            // One sheet that cannot be rendered must not cost the other fourteen.
-                            Log("FAILED " + name + ": " + e);
-                        }
+                    try
+                    {
+                        Capture(sheet, width, path);
+                        written++;
+                        Log("wrote " + name);
+                    }
+                    catch (Exception e)
+                    {
+                        // One sheet that cannot be rendered must not cost the others.
+                        Log("FAILED " + name + ": " + e);
                     }
                 }
             }
