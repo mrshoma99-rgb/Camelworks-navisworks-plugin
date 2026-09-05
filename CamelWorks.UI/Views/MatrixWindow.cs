@@ -54,7 +54,34 @@ namespace CamelWorks.UI.Views
         /// the machine.
         /// </summary>
         /// <param name="seat">The host it is running in.</param>
-        public static UIElement Surface(ISeat seat) => new Editor(seat).View;
+        /// <summary>The matrix tab, arriving at the start screen.</summary>
+        /// <param name="seat">The seat it is running in.</param>
+        public static UIElement Surface(ISeat seat) => Surface(seat, null);
+
+        /// <summary>
+        /// The matrix tab, ready to be put in a window.
+        /// </summary>
+        /// <param name="seat">The seat it is running in.</param>
+        /// <param name="drawn">
+        /// A matrix already open, or null to arrive at the start screen.
+        ///
+        /// <b>The render harness could only ever photograph the empty screen.</b> A seat with no
+        /// document has no board, so every picture taken of this tab was the four cards that
+        /// offer to make one - and the grid, which is the whole tab and where every layout fault
+        /// reported against it has been, was never in a single shot. Faults in it were found by a
+        /// coordinator on a licensed seat and described to me in words, which is the slowest and
+        /// least exact way a drawing bug can be reported.
+        ///
+        /// A board handed in here is not a pretended model. It is the product's own type, the
+        /// same object a saved matrix is read back into, and it puts the tab in the state a
+        /// coordinator is in for most of their day: a matrix open, being worked on.
+        /// </param>
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn)
+        {
+            if (drawn != null) _board = drawn;
+
+            return new Editor(seat).View;
+        }
 
         /// <summary>Which slot of the project file the matrix is kept in.</summary>
         private const string Slot = "clashmatrix";
@@ -527,23 +554,27 @@ namespace CamelWorks.UI.Views
                 // pointer, twice, for a sentence they did not ask for. It floats now: same
                 // place, over the top-right of the grid, with its own ground and a shadow, and
                 // the matrix underneath does not know it is there.
-                var over = new Grid();
-
-                over.Children.Add(Ui.Loose(_grid));
-
+                // <b>Floating it stopped it pushing the work and started it covering the
+                // work.</b> Docked, a notice took its own height off the top of the grid and gave
+                // it back when it went, so the cell somebody was aiming at moved out from under
+                // the pointer twice for a sentence they did not ask for. Laid over the top-right
+                // instead, it stopped moving anything and sat on the words underneath it -
+                // which on the start screen is the paragraph explaining what a matrix is, cut
+                // off mid-sentence by a box explaining something else.
+                //
+                // Neither is acceptable and they are not the only two options. A notice here is
+                // a standing fact about the seat - no clash engine, no document open, a report
+                // asked for by name - and a standing fact belongs in the layout, not hovering
+                // over it. It takes a row of its own above the grid, which it is welcome to,
+                // because it appears when the tab is opened and not in the middle of somebody's
+                // thirtieth cell. The transient confirmations that used to fire on every press,
+                // and that are what made a docked notice unbearable, are gone entirely.
                 var top = Head();
 
-                if (top is FrameworkElement floated)
-                {
-                    floated.VerticalAlignment = VerticalAlignment.Top;
-                    floated.HorizontalAlignment = HorizontalAlignment.Right;
-                    floated.Margin = new Thickness(0, 8, 14, 0);
-                    floated.MaxWidth = 460;
-                }
+                if (top is FrameworkElement said) said.Margin = new Thickness(0, 0, 0, 8);
 
-                over.Children.Add(top);
-
-                stack.Children.Add(over);
+                stack.Children.Add(top);
+                stack.Children.Add(Ui.Loose(_grid));
 
                 // <b>Undo belongs to the screen, not to the grid.</b> It was bound to the cells'
                 // own scroller, so it worked while the pointer had last touched a cell and did
