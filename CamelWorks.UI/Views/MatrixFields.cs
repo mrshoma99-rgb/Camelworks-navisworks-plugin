@@ -94,8 +94,10 @@ namespace CamelWorks.UI.Views
             {
                 list.Children.Clear();
 
-                foreach (var field in board.Scheme.Fields.ToList())
-                    list.Children.Add(Card(board, field,
+                var fields = board.Scheme.Fields.ToList();
+
+                for (var at = 0; at < fields.Count; at++)
+                    list.Children.Add(Card(board, fields[at], at, fields.Count,
                                            () => { onTouched?.Invoke(); Redraw(); }));
 
                 foot.Children.Clear();
@@ -182,8 +184,11 @@ namespace CamelWorks.UI.Views
         /// <summary>One field, as a card.</summary>
         /// <param name="board">The board.</param>
         /// <param name="field">The field.</param>
+        /// <param name="at">Where it sits in the list, from zero.</param>
+        /// <param name="of">How many fields there are, so the last one cannot move down.</param>
         /// <param name="onChange">Called after anything is edited.</param>
-        private static UIElement Card(MatrixBoard board, MatrixField field, Action onChange)
+        private static UIElement Card(MatrixBoard board, MatrixField field, int at, int of,
+                                      Action onChange)
         {
             var card = new Border
             {
@@ -198,7 +203,13 @@ namespace CamelWorks.UI.Views
 
             var stack = Ui.Stack();
 
-            stack.Children.Add(Head(board, field, onChange, field.Fill == MatrixFill.ByHand));
+            stack.Children.Add(Head(board, field, at, of, onChange,
+                                    field.Fill == MatrixFill.ByHand));
+
+            // Where it is drawn, on every card. A field is carried by every line whether it is
+            // drawn or not, so this hides one from the screen without taking it off the lines or
+            // out of the test names — which is what deleting it would do.
+            stack.Children.Add(Placing(field, onChange));
 
             // A field typed line by line has nothing to configure and nothing to preview, so it
             // is one line rather than a card with a sentence in it saying so. Four of those
@@ -217,8 +228,8 @@ namespace CamelWorks.UI.Views
         }
 
         /// <summary>The card's top line: what it is called, its token, and the way to remove it.</summary>
-        private static UIElement Head(MatrixBoard board, MatrixField field, Action onChange,
-                                      bool inline)
+        private static UIElement Head(MatrixBoard board, MatrixField field, int at, int of,
+                                      Action onChange, bool inline)
         {
             // A grid rather than a dock. Docked, the title, the chooser and the token each took
             // the width they wanted and the chooser was the one that lost: on a field set to
@@ -275,6 +286,33 @@ namespace CamelWorks.UI.Views
             Grid.SetColumn(token, 2);
             head.Children.Add(token);
 
+            // The order is the order. It is what the panel lists the boxes in and what the board
+            // lays the gutters out in, so moving a card here moves the field in both.
+            var moves = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var up = Ui.Quiet("\u2191", () => Ui.Safely(() =>
+            {
+                if (board.Scheme.Move(field.Key, at - 1)) onChange();
+            }));
+
+            up.IsEnabled = at > 0;
+            up.ToolTip = "Move it up, in the panel and on the board.";
+
+            var down = Ui.Quiet("\u2193", () => Ui.Safely(() =>
+            {
+                if (board.Scheme.Move(field.Key, at + 1)) onChange();
+            }));
+
+            down.IsEnabled = at < of - 1;
+            down.ToolTip = "Move it down, in the panel and on the board.";
+
+            moves.Children.Add(up);
+            moves.Children.Add(down);
+
             if (!field.IsBuiltIn)
             {
                 var drop = Ui.Quiet("Remove", () => Ui.Safely(() =>
@@ -286,13 +324,87 @@ namespace CamelWorks.UI.Views
                 drop.ToolTip = "Remove this field and every line's value for it. "
                                + "The matrix's own undo takes it back.";
 
-                drop.VerticalAlignment = VerticalAlignment.Center;
-
-                Grid.SetColumn(drop, 3);
-                head.Children.Add(drop);
+                moves.Children.Add(drop);
             }
 
+            Grid.SetColumn(moves, 3);
+            head.Children.Add(moves);
+
             return head;
+        }
+
+        /// <summary>
+        /// Where the field is drawn: on the board, in the panel, both, or neither.
+        ///
+        /// Two ticks rather than a four-way chooser, because they are two independent questions
+        /// and a coordinator asks them separately: a package code belongs in the panel where a
+        /// line is set up, and not as a fourth gutter down the side of a board that is already
+        /// carrying a number, a code and a name.
+        ///
+        /// The four built-in fields are drawn by the board's own appearance settings, which are
+        /// on the drawing window, so they say so rather than offering a second control that would
+        /// disagree with the first.
+        /// </summary>
+        /// <param name="field">The field.</param>
+        /// <param name="onChange">Called after anything is edited.</param>
+        private static UIElement Placing(MatrixField field, Action onChange)
+        {
+            if (field.IsBuiltIn)
+            {
+                var says = Ui.Small(field.Key == MatrixField.NameKey
+                    ? "Always drawn, on the board and in the panel."
+                    : "Drawn where the matrix's own appearance settings say \u2014 Settings \u25b8 Grid, "
+                      + "symbols and fields.");
+
+                says.TextWrapping = TextWrapping.Wrap;
+                says.Margin = new Thickness(0, 0, 0, 2);
+
+                return says;
+            }
+
+            var board = Ui.Check("On the board",
+                                 (field.Shown & MatrixShown.Header) == MatrixShown.Header,
+                                 on =>
+                                 {
+                                     field.Shown = on
+                                         ? field.Shown | MatrixShown.Header
+                                         : field.Shown & ~MatrixShown.Header;
+
+                                     onChange();
+                                 });
+
+            board.ToolTip = "A gutter beside the name, down the side and across the top. "
+                            + "A field no line has a value for takes no room either way.";
+
+            var panel = Ui.Check("In the panel",
+                                 (field.Shown & MatrixShown.Panel) == MatrixShown.Panel,
+                                 on =>
+                                 {
+                                     field.Shown = on
+                                         ? field.Shown | MatrixShown.Panel
+                                         : field.Shown & ~MatrixShown.Panel;
+
+                                     onChange();
+                                 });
+
+            panel.ToolTip = "A box on the panel beside the grid, where a line's fields are typed.";
+
+            var row = Ui.Across(board, panel);
+
+            row.Margin = new Thickness(0, 0, 0, 2);
+
+            if (field.Shown != MatrixShown.Nowhere) return row;
+
+            // Said out loud, because a field drawn nowhere is still carried by every line and
+            // still written into the test names, and a card with both ticks off would otherwise
+            // read as a field that had been switched off altogether.
+            var kept = Ui.Small("Drawn nowhere. Every line still carries it and the test names "
+                                + "still use it.");
+
+            kept.TextWrapping = TextWrapping.Wrap;
+            kept.Margin = new Thickness(0, 2, 0, 2);
+
+            return Ui.Stack(row, kept);
         }
 
         /// <summary>The three ways a field can be filled.</summary>

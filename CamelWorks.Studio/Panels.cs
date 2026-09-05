@@ -188,6 +188,17 @@ namespace CamelWorks.Studio
 
             board.Scheme.Add("sub", "Sub-discipline");
 
+            // A package every test name is built from and nobody wants as a fourth gutter down
+            // the side of the board. It is the state the placement ticks exist for, so the card
+            // that shows it is drawn on every render.
+            board.Scheme.Add("package", "Package");
+
+            var package = board.Scheme.Field("package")!;
+
+            package.Fill = MatrixFill.Same;
+            package.Same = "PK1";
+            package.Shown = MatrixShown.Panel;
+
             board.ApplyScheme();
 
             if (board.Rows.Count > 2) board.Write(board.Rows[2], MatrixField.NumberKey, "99", byHand: true);

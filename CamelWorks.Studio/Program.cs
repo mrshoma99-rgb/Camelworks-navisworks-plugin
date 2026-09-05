@@ -45,7 +45,7 @@ namespace CamelWorks.Studio
         /// from a Windows runner billed at twice the rate, twenty-eight of which nobody opens. Named
         /// pages are two.
         /// </summary>
-        private const string Only = "app-clash-matrix-line";
+        private const string Only = "app-clash-matrix-fields,app-clash-matrix-line";
 
         /// <summary>Run the harness.</summary>
         /// <param name="args">
