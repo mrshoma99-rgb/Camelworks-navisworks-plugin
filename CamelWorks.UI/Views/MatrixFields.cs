@@ -220,11 +220,59 @@ namespace CamelWorks.UI.Views
         private static UIElement Head(MatrixBoard board, MatrixField field, Action onChange,
                                       bool inline)
         {
-            var head = new DockPanel
+            // A grid rather than a dock. Docked, the title, the chooser and the token each took
+            // the width they wanted and the chooser was the one that lost: on a field set to
+            // "Same on all" the selected segment was clipped away entirely, so the row did not
+            // say which of the three it was on. The star column takes the squeeze, and the token
+            // — the one part that can be read from the tooltip instead — trims before the
+            // control does.
+            var head = new Grid { Margin = new Thickness(0, 0, 0, inline ? 0 : 8) };
+
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var title = Ui.Text(field.Title, "What it is called", typed =>
             {
-                LastChildFill = true,
-                Margin = new Thickness(0, 0, 0, inline ? 0 : 8),
-            };
+                var said = (typed ?? string.Empty).Trim();
+
+                if (said.Length == 0 || said == field.Title) return;
+
+                field.Title = said;
+                onChange();
+            }, 150);
+
+            title.VerticalAlignment = VerticalAlignment.Center;
+
+            Grid.SetColumn(title, 0);
+            head.Children.Add(title);
+
+            var pick = Picker(field, onChange);
+
+            pick.Margin = new Thickness(10, 0, 0, 0);
+            pick.VerticalAlignment = VerticalAlignment.Center;
+
+            Grid.SetColumn(pick, 1);
+            head.Children.Add(pick);
+
+            // One token rather than the pair. Both forms doubled the width for a value that is
+            // mechanical once the first is known, and the width was what squeezed the control.
+            var token = new TextBlock
+            {
+                Text = field.RowToken,
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(10, 0, 0, 0),
+                ToolTip = "In a naming pattern: " + field.RowToken + " for the row, "
+                          + field.ColumnToken + " for the column.",
+            }.Wearing("Mono");
+
+            token.Tint(TextBlock.ForegroundProperty, "Muted");
+
+            Grid.SetColumn(token, 2);
+            head.Children.Add(token);
 
             if (!field.IsBuiltIn)
             {
@@ -237,52 +285,11 @@ namespace CamelWorks.UI.Views
                 drop.ToolTip = "Remove this field and every line's value for it. "
                                + "The matrix's own undo takes it back.";
 
-                DockPanel.SetDock(drop, Dock.Right);
+                drop.VerticalAlignment = VerticalAlignment.Center;
+
+                Grid.SetColumn(drop, 3);
                 head.Children.Add(drop);
             }
-
-            // The token is the whole point of naming a field, so it is on the card rather than
-            // somewhere a person has to go and look it up while writing a pattern.
-            var token = new TextBlock
-            {
-                Text = field.RowToken + " " + field.ColumnToken,
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10, 0, 8, 0),
-                ToolTip = "Use these in a naming pattern to read this field.",
-            }.Wearing("Mono");
-
-            token.Tint(TextBlock.ForegroundProperty, "Muted");
-
-            DockPanel.SetDock(token, Dock.Right);
-            head.Children.Add(token);
-
-            var title = Ui.Text(field.Title, "What it is called", typed =>
-            {
-                var said = (typed ?? string.Empty).Trim();
-
-                if (said.Length == 0 || said == field.Title) return;
-
-                field.Title = said;
-                onChange();
-            }, 170);
-
-            title.HorizontalAlignment = HorizontalAlignment.Left;
-            title.Width = 150;
-
-            DockPanel.SetDock(title, Dock.Left);
-            head.Children.Add(title);
-
-            var pick = Picker(field, onChange);
-
-            pick.Margin = new Thickness(10, 0, 0, 0);
-            pick.VerticalAlignment = VerticalAlignment.Center;
-            pick.HorizontalAlignment = HorizontalAlignment.Left;
-
-            DockPanel.SetDock(pick, Dock.Left);
-            head.Children.Add(pick);
-
-            head.Children.Add(new Border());
 
             return head;
         }
