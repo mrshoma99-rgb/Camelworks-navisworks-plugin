@@ -196,6 +196,42 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_field_of_the_row_counts_once_per_row_not_once_per_test()
+        {
+            var book = Booked(Standard);
+
+            var tests = new List<(string, string)>
+            {
+                ("t1", "ST-01 Steel vs ME-04 Ducts"),
+                ("t2", "ST-01 Steel vs ME-05 Pipes"),
+                ("t3", "AR-02 Walls vs ME-04 Ducts"),
+            };
+
+            foreach (var one in tests) book.Bind(one.Item1, 1);
+
+            var plan = NamingWrite.Plan(book, tests, "rowNumber", Series("10", 10, 2),
+                                        perSide: true);
+
+            // Steel is one discipline, so it reads 10 in both tests it appears in. Counting down
+            // the list would have made it 10 in one and 20 in the other.
+            Assert.Equal("ST-10 Steel vs ME-04 Ducts", plan[0].Now);
+            Assert.Equal("ST-10 Steel vs ME-05 Pipes", plan[1].Now);
+            Assert.Equal("AR-20 Walls vs ME-04 Ducts", plan[2].Now);
+        }
+
+        [Fact]
+        public void The_side_a_token_belongs_to_is_the_word_it_starts_with()
+        {
+            Assert.Equal("row", NamingWrite.Side("rowNumber"));
+            Assert.Equal("row", NamingWrite.Side("row"));
+            Assert.Equal("column", NamingWrite.Side("columnPhase"));
+
+            // The test's own running number belongs to neither side, so it counts per test.
+            Assert.Null(NamingWrite.Side("n"));
+            Assert.Null(NamingWrite.Side("symbol"));
+        }
+
+        [Fact]
         public void A_scheme_absorbs_the_fields_it_does_not_have_and_keeps_the_ones_it_does()
         {
             var mine = new MatrixScheme();

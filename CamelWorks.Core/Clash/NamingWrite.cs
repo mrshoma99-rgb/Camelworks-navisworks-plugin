@@ -74,9 +74,14 @@ namespace CamelWorks.Core.Clash
         /// <param name="tests">The tests, in the order they should be counted.</param>
         /// <param name="token">The token to write, without braces.</param>
         /// <param name="how">Where the values come from.</param>
+        /// <param name="perSide">
+        /// True to give every test that shares a side the same value, rather than counting down
+        /// the list. What a field of the side wants: a discipline's number is the same wherever
+        /// that discipline appears.
+        /// </param>
         public static IReadOnlyList<NamingStep> Plan(
             NamingBook? book, IEnumerable<(string Id, string Name)>? tests, string? token,
-            MatrixField? how)
+            MatrixField? how, bool perSide = false)
         {
             var made = new List<NamingStep>();
 
@@ -85,6 +90,14 @@ namespace CamelWorks.Core.Clash
             var named = (token ?? string.Empty).Trim().Trim('{', '}');
 
             if (named.Length == 0) return made;
+
+            var side = Side(named);
+
+            // One counter per distinct side when the field belongs to the side rather than to the
+            // test, and one running counter otherwise. Which of the two is wanted is decided by
+            // what the field is: a row's number is a fact about that discipline, so every test
+            // the discipline appears in has to read the same one.
+            var places = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
             var at = 0;
 
@@ -96,12 +109,24 @@ namespace CamelWorks.Core.Clash
 
                 var name = test.Name ?? string.Empty;
 
+                var read = book.Read(id, name);
+
                 // Counted whether or not it can be written: a test the pattern refuses still
                 // occupies its place in the run, so refusing the third of ten does not shift the
                 // seven under it.
-                var value = how.At(at++);
+                var where = at++;
 
-                var read = book.Read(id, name);
+                if (perSide && side != null)
+                {
+                    var whose = read?.Value(side) ?? string.Empty;
+
+                    if (!places.TryGetValue(whose, out var held))
+                        places[whose] = held = places.Count;
+
+                    where = held;
+                }
+
+                var value = how.At(where);
 
                 if (read == null)
                 {
@@ -118,6 +143,28 @@ namespace CamelWorks.Core.Clash
             }
 
             return made;
+        }
+
+        /// <summary>
+        /// The token naming the side a field belongs to, or null when the field is the test's own.
+        ///
+        /// A token beginning "row" or "column" is a fact about that discipline, not about the
+        /// pair. Numbering such a field down a list of tests gives one discipline a different
+        /// number in every test it appears in, which is the opposite of what the number is for.
+        /// </summary>
+        /// <param name="token">The token being written, without braces.</param>
+        public static string? Side(string? token)
+        {
+            var said = (token ?? string.Empty).Trim();
+
+            if (string.Equals(said, "row", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(said, "column", StringComparison.OrdinalIgnoreCase))
+                return said.ToLowerInvariant();
+
+            if (said.StartsWith("row", StringComparison.OrdinalIgnoreCase)) return "row";
+            if (said.StartsWith("column", StringComparison.OrdinalIgnoreCase)) return "column";
+
+            return null;
         }
 
         /// <summary>What to tell somebody about a refusal.</summary>

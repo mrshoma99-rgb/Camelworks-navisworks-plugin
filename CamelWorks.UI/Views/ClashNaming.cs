@@ -428,6 +428,10 @@ namespace CamelWorks.UI.Views
                 ToolTip = said,
             }.Wearing("Body");
 
+            // Set after the style, which turns wrapping on: without this the line still wrapped
+            // to a second row and the trimming never came into it.
+            under.TextWrapping = TextWrapping.NoWrap;
+
             under.Tint(TextBlock.ForegroundProperty, "Muted");
 
             stack.Children.Add(under);
@@ -674,27 +678,58 @@ namespace CamelWorks.UI.Views
         private static UIElement Palette(NamingBook book, TextBox box, List<string> patterns,
                                          int at, Action touch, Action redraw)
         {
-            var chips = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
-
-            foreach (var token in MatrixNaming.Offered(book.Scheme))
+            void Insert(NameToken one)
             {
-                var one = token;
+                var where = Math.Max(0, Math.Min(box.Text.Length, box.SelectionStart));
 
-                chips.Children.Add(Chip(one, () =>
-                {
-                    var where = Math.Max(0, Math.Min(box.Text.Length, box.SelectionStart));
+                box.Text = box.Text.Substring(0, where) + one.Token + box.Text.Substring(where);
+                box.SelectionStart = where + one.Token.Length;
 
-                    box.Text = box.Text.Substring(0, where) + one.Token + box.Text.Substring(where);
-                    box.SelectionStart = where + one.Token.Length;
-
-                    patterns[at] = box.Text;
-                    book.Patterned(patterns);
-                    touch();
-                    redraw();
-                }));
+                patterns[at] = box.Text;
+                book.Patterned(patterns);
+                touch();
+                redraw();
             }
 
-            var held = Ui.Stack(Ui.Eyebrow("Insert a field"), chips);
+            WrapPanel Chips(IEnumerable<NameToken> these)
+            {
+                var made = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+
+                foreach (var token in these)
+                {
+                    var one = token;
+
+                    made.Children.Add(Chip(one, () => Insert(one)));
+                }
+
+                return made;
+            }
+
+            var offered = MatrixNaming.Offered(book.Scheme);
+            var mine = MatrixNaming.Custom(book.Scheme)
+                .SelectMany(one => new[] { one.RowToken, one.ColumnToken })
+                .ToList();
+
+            var own = offered.Where(one => mine.Contains(one.Token, StringComparer.Ordinal))
+                             .ToList();
+
+            var rest = offered.Where(one => !mine.Contains(one.Token, StringComparer.Ordinal))
+                              .ToList();
+
+            var held = Ui.Stack();
+
+            // The project's own fields first, under their own heading. They were last, after
+            // fourteen built-in chips, so a field somebody had just added on the Fields pane was
+            // the hardest one on the card to find — and nothing said which of the sixteen was
+            // theirs.
+            if (own.Count > 0)
+            {
+                held.Children.Add(Ui.Eyebrow("This project's fields"));
+                held.Children.Add(Chips(own));
+            }
+
+            held.Children.Add(Ui.Eyebrow(own.Count > 0 ? "Always available" : "Insert a field"));
+            held.Children.Add(Chips(rest));
 
             held.Margin = new Thickness(0, 8, 0, 0);
 
@@ -886,16 +921,25 @@ namespace CamelWorks.UI.Views
             }
 
             var chosen = token;
+
+            // On by default for a field of the row or the column, because a discipline's number
+            // is a fact about that discipline: counting it down a list of tests gives one
+            // discipline a different number in every test it appears in.
+            var perSide = NamingWrite.Side(chosen) != null;
+
             var preview = Ui.Stack();
             var says = Ui.Stack();
+            var note = Ui.Stack();
 
             void Fill()
             {
                 var plan = NamingWrite.Plan(book, tests.Select(one => (one.Id, one.Name)),
-                                            chosen, how);
+                                            chosen, how, perSide && how.Fill == MatrixFill.Series);
 
                 preview.Children.Clear();
                 says.Children.Clear();
+                note.Children.Clear();
+                note.Children.Add(Note(chosen, how, perSide));
 
                 foreach (var step in plan.Take(200))
                     preview.Children.Add(Step(step));
@@ -954,6 +998,7 @@ namespace CamelWorks.UI.Views
                                       {
                                           onToken(one);
                                           chosen = one;
+                                          perSide = NamingWrite.Side(one) != null;
                                           Fill();
                                       })));
 
@@ -978,13 +1023,21 @@ namespace CamelWorks.UI.Views
                 ? Constant(how, Fill)
                 : Series(how, Fill));
 
-            var note = Ui.Small(how.Fill == MatrixFill.Same
-                ? "Every test gets the same value."
-                : "Counted in the order the list shows them, which is the order the rail is "
-                  + "sorted in.");
+            var whose = NamingWrite.Side(chosen);
 
-            note.TextWrapping = TextWrapping.Wrap;
-            note.Margin = new Thickness(0, 8, 0, 8);
+            if (whose != null && how.Fill == MatrixFill.Series)
+            {
+                var shared = Ui.Check(
+                    "One value per " + (whose == "row" ? "row" : "column")
+                    + ", shared by every test it appears in",
+                    perSide, on => { perSide = on; Fill(); });
+
+                shared.Margin = new Thickness(0, 8, 0, 0);
+                shared.ToolTip = "Off, the count runs down the list of tests, so a discipline in "
+                                 + "five tests takes five different values.";
+
+                into.Children.Add(shared);
+            }
 
             into.Children.Add(note);
             into.Children.Add(Ui.Eyebrow("What it would write"));
@@ -993,6 +1046,27 @@ namespace CamelWorks.UI.Views
             foot.Children.Add(says);
 
             Fill();
+        }
+
+        /// <summary>What the write is about to do, in a sentence, under its controls.</summary>
+        /// <param name="token">The field being written.</param>
+        /// <param name="how">Where the values come from.</param>
+        /// <param name="perSide">Whether one value is shared by every test on a side.</param>
+        private static UIElement Note(string? token, MatrixField how, bool perSide)
+        {
+            var whose = NamingWrite.Side(token);
+
+            var said = Ui.Small(how.Fill == MatrixFill.Same
+                ? "Every test gets the same value."
+                : perSide && whose != null
+                    ? "Counted once per " + whose + ", in the order they first appear."
+                    : "Counted in the order the list shows them, which is the order the rail is "
+                      + "sorted in.");
+
+            said.TextWrapping = TextWrapping.Wrap;
+            said.Margin = new Thickness(0, 8, 0, 8);
+
+            return said;
         }
 
         /// <summary>One test's line in the plan: what it is called, and what it would become.</summary>
@@ -1268,7 +1342,7 @@ namespace CamelWorks.UI.Views
                 CornerRadius = new CornerRadius(10),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
-                ToolTip = token.Why,
+                ToolTip = token.Why + "  " + token.Token,
                 Child = new TextBlock { Text = token.Title, FontSize = 11 }.Wearing("Body"),
             };
 
