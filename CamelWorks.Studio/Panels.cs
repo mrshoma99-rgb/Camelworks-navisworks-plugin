@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using CamelWorks.Core.Clash;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
@@ -52,6 +53,9 @@ namespace CamelWorks.Studio
             // the width WPF gives it, in the font it will really be read in.
             Page("app-clash-matrix", "Clash Manager · Matrix", 820,
                  () => MatrixWindow.Surface(Seated())),
+
+            Page("app-clash-matrix-drawn", "Clash Manager · Matrix, drawn", 820,
+                 () => MatrixWindow.Surface(Seated(), Drawn())),
         };
 
         /// <summary>
@@ -68,6 +72,84 @@ namespace CamelWorks.Studio
                               System.IO.Path.Combine(System.IO.Path.GetTempPath(),
                                                      "camelworks-shots")),
             Host.WithoutClash());
+
+        /// <summary>
+        /// A matrix of the size and shape a real one is, so the grid can be looked at.
+        ///
+        /// <b>Every picture of this tab was the empty start screen.</b> A seat with no document
+        /// has no board, so the grid - the whole of the tab, and where every layout fault
+        /// reported against it has been - was never photographed once. The clipped column names,
+        /// the row band that ran out of names, the dead strip beside the last column: all of them
+        /// were described in words by somebody on a licensed seat, and fixed by reasoning about
+        /// arithmetic rather than by looking.
+        ///
+        /// So the shapes that break it are here on purpose. Names long enough to have to be
+        /// turned and long enough to be cut off if the band is short by a pixel; enough
+        /// disciplines that the cells reach their smallest size; folders on both axes, one of
+        /// them holding a run; codes that are not the front of their names, so the code gutter is
+        /// drawn; and a number that disagrees with its position, so the number gutter is drawn
+        /// too. A matrix that exercises none of those proves nothing.
+        /// </summary>
+        private static MatrixBoard Drawn()
+        {
+            var board = new MatrixBoard();
+
+            var named = new[]
+            {
+                ("ARC", "ARC_General Elements", "Architecture"),
+                ("ARC", "ARC_Internal Partitions", "Architecture"),
+                ("ARC", "ARC_Ceilings and Soffits", "Architecture"),
+                ("STR", "STR_Structural Frame", "Structure"),
+                ("STR", "STR_Slabs and Decks", "Structure"),
+                ("STR", "STR_Foundations", "Structure"),
+                ("FGT", "FGT_Equipment", string.Empty),
+                ("FGT", "FGT_Insulation", string.Empty),
+                ("WSC", "WSC_Pipes", "Wet services"),
+                ("WSC", "WSC_Ducts", "Wet services"),
+                ("WSC", "WSC_Equipment", "Wet services"),
+                ("WSC", "WSC_Insulation", "Wet services"),
+                ("AUX", "AUX_General Purpose Pipes", string.Empty),
+                ("AUX", "AUX_Equipment", string.Empty),
+                ("AUX", "AUX_Insulation", string.Empty),
+                ("EIC", "EIC_Cable Trays and Supports", "Electrical"),
+                ("EIC", "EIC_Containment", "Electrical"),
+                ("EIC", "EIC_Lighting", "Electrical"),
+                (string.Empty, string.Empty, string.Empty),
+                (string.Empty, string.Empty, string.Empty),
+            };
+
+            for (var at = 0; at < named.Length; at++)
+            {
+                var (code, name, folder) = named[at];
+
+                // The numbers skip one, so they stop agreeing with the position in the list and
+                // the gutter that prints them is drawn - which is a column of the header the
+                // empty screen never had to lay out.
+                var row = board.AddPair(new MatrixLine(name)
+                {
+                    Code = code,
+                    Number = (at + (at > 8 ? 2 : 1)).ToString(CultureInfo.InvariantCulture),
+                });
+
+                if (folder.Length > 0) board.File(row, folder);
+            }
+
+            // Enough decided cells that the sheet is read as a pattern rather than as a grid of
+            // blanks, and a diagonal that has to be drawn as one.
+            var marks = new[] { "A", "B", "C", "D" };
+
+            for (var down = 0; down < board.Rows.Count; down++)
+                for (var across = 0; across < board.Columns.Count; across++)
+                {
+                    if (down == across) continue;
+                    if (((down * 7) + (across * 3)) % 5 == 0) continue;
+
+                    board.Set(board.Rows[down], board.Columns[across],
+                              marks[((down * 3) + across) % marks.Length]);
+                }
+
+            return board;
+        }
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };

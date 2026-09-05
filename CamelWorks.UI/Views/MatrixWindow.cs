@@ -54,7 +54,34 @@ namespace CamelWorks.UI.Views
         /// the machine.
         /// </summary>
         /// <param name="seat">The host it is running in.</param>
-        public static UIElement Surface(ISeat seat) => new Editor(seat).View;
+        /// <summary>The matrix tab, arriving at the start screen.</summary>
+        /// <param name="seat">The seat it is running in.</param>
+        public static UIElement Surface(ISeat seat) => Surface(seat, null);
+
+        /// <summary>
+        /// The matrix tab, ready to be put in a window.
+        /// </summary>
+        /// <param name="seat">The seat it is running in.</param>
+        /// <param name="drawn">
+        /// A matrix already open, or null to arrive at the start screen.
+        ///
+        /// <b>The render harness could only ever photograph the empty screen.</b> A seat with no
+        /// document has no board, so every picture taken of this tab was the four cards that
+        /// offer to make one - and the grid, which is the whole tab and where every layout fault
+        /// reported against it has been, was never in a single shot. Faults in it were found by a
+        /// coordinator on a licensed seat and described to me in words, which is the slowest and
+        /// least exact way a drawing bug can be reported.
+        ///
+        /// A board handed in here is not a pretended model. It is the product's own type, the
+        /// same object a saved matrix is read back into, and it puts the tab in the state a
+        /// coordinator is in for most of their day: a matrix open, being worked on.
+        /// </param>
+        public static UIElement Surface(ISeat seat, MatrixBoard? drawn)
+        {
+            if (drawn != null) _board = drawn;
+
+            return new Editor(seat).View;
+        }
 
         /// <summary>Which slot of the project file the matrix is kept in.</summary>
         private const string Slot = "clashmatrix";
@@ -96,6 +123,9 @@ namespace CamelWorks.UI.Views
             /// is armed, so nothing has been taken away.
             /// </summary>
             private MatrixSymbol? _brush;
+
+            /// <summary>Which symbol the cursor is currently carrying, so it is drawn once.</summary>
+            private string _carrying = "\u0000";
 
             /// <summary>The strip over the grid: what is armed, where the cursor is, undo.</summary>
             /// <summary>
@@ -524,23 +554,27 @@ namespace CamelWorks.UI.Views
                 // pointer, twice, for a sentence they did not ask for. It floats now: same
                 // place, over the top-right of the grid, with its own ground and a shadow, and
                 // the matrix underneath does not know it is there.
-                var over = new Grid();
-
-                over.Children.Add(Ui.Loose(_grid));
-
+                // <b>Floating it stopped it pushing the work and started it covering the
+                // work.</b> Docked, a notice took its own height off the top of the grid and gave
+                // it back when it went, so the cell somebody was aiming at moved out from under
+                // the pointer twice for a sentence they did not ask for. Laid over the top-right
+                // instead, it stopped moving anything and sat on the words underneath it -
+                // which on the start screen is the paragraph explaining what a matrix is, cut
+                // off mid-sentence by a box explaining something else.
+                //
+                // Neither is acceptable and they are not the only two options. A notice here is
+                // a standing fact about the seat - no clash engine, no document open, a report
+                // asked for by name - and a standing fact belongs in the layout, not hovering
+                // over it. It takes a row of its own above the grid, which it is welcome to,
+                // because it appears when the tab is opened and not in the middle of somebody's
+                // thirtieth cell. The transient confirmations that used to fire on every press,
+                // and that are what made a docked notice unbearable, are gone entirely.
                 var top = Head();
 
-                if (top is FrameworkElement floated)
-                {
-                    floated.VerticalAlignment = VerticalAlignment.Top;
-                    floated.HorizontalAlignment = HorizontalAlignment.Right;
-                    floated.Margin = new Thickness(0, 8, 14, 0);
-                    floated.MaxWidth = 460;
-                }
+                if (top is FrameworkElement said) said.Margin = new Thickness(0, 0, 0, 8);
 
-                over.Children.Add(top);
-
-                stack.Children.Add(over);
+                stack.Children.Add(top);
+                stack.Children.Add(Ui.Loose(_grid));
 
                 // <b>Undo belongs to the screen, not to the grid.</b> It was bound to the cells'
                 // own scroller, so it worked while the pointer had last touched a cell and did
@@ -1520,6 +1554,7 @@ namespace CamelWorks.UI.Views
                 RedrawPalette();
                 RedrawStrip();
                 RedrawInspector();
+                Pointing();
                 Recount();
             }
 
@@ -2944,10 +2979,14 @@ namespace CamelWorks.UI.Views
             /// <summary>One cell: the symbol in it, and every way of changing it.</summary>
             private Border Cell(MatrixLine row, MatrixLine column, int down, int across)
             {
+                // <b>No cursor of its own.</b> What the pointer looks like over a cell depends
+                // on what is armed, which changes without the cells being rebuilt - so it is said
+                // once, on the sheet they all sit in, and forced from there. Said here it would
+                // be a thousand assignments that all have to be revisited on every press of the
+                // palette, and were not.
                 var cell = new Border
                 {
                     BorderThickness = new Thickness(0, 0, 1, 1),
-                    Cursor = Cursors.Hand,
                     Background = System.Windows.Media.Brushes.Transparent,
                 };
 
@@ -3205,7 +3244,60 @@ namespace CamelWorks.UI.Views
                 RedrawStrip();
                 RedrawPalette();
                 RedrawInspector();
+                Pointing();
                 Editable();
+            }
+
+            /// <summary>
+            /// Put what is armed on the cursor, so the pointer says what a click will do.
+            ///
+            /// <b>The strip said it, forty rows away from the hand.</b> A click in the grid is
+            /// either "select this cell" or "paint it with C", and which of the two it is was
+            /// written along the top of the window - out of the eye's way at the moment it
+            /// matters, and read once a session if at all. The rest of the time an armed brush
+            /// was discovered by painting a cell nobody meant to paint.
+            ///
+            /// Now the pointer carries the symbol. It says both things at once and neither has to
+            /// be looked up: that something is armed, and which one - so arming C and believing
+            /// you armed B is a thing seen before the first cell rather than after the thirtieth.
+            ///
+            /// <b>Said once, on the sheet.</b> The cells do not carry a cursor of their own, and
+            /// this forces the sheet's over all of them - because arming a symbol does not rebuild
+            /// the cells, and a cursor written into each of a thousand of them would go on saying
+            /// what was armed the last time they were drawn.
+            /// </summary>
+            private void Pointing()
+            {
+                var wash = Washed(_brush == null ? null : _legend.Meaning(_brush.Symbol) ?? _brush);
+
+                // Drawing a bitmap on every press of the palette is work nobody asked for, and
+                // the answer only changes when the symbol or its colour does.
+                var carrying = _brush == null
+                    ? string.Empty
+                    : _brush.Symbol + "\u0001" + (wash as System.Windows.Media.SolidColorBrush)?.Color.ToString(
+                          CultureInfo.InvariantCulture);
+
+                if (string.Equals(carrying, _carrying, StringComparison.Ordinal)) return;
+
+                _carrying = carrying;
+
+                // Forced, so a cell cannot answer for itself - and set even when nothing is
+                // armed, because the hand over a cell is what says the cell can be pressed.
+                _sheet.ForceCursor = true;
+
+                if (_brush == null)
+                {
+                    _sheet.Cursor = Cursors.Hand;
+                    return;
+                }
+
+                // The eraser takes the ground the palette gives it rather than a symbol's wash:
+                // it is not one of them, and colouring it as though it were says it lays
+                // something down.
+                var ground = Erasing ? Skin.Of("Nav") : wash;
+
+                _sheet.Cursor = Pointer.Carrying(_brush.Symbol, ground, Ui.InkOn(ground))
+                                ?? (Erasing ? Cursors.Cross : Cursors.Pen);
             }
 
             /// <summary>Whether there is a symbol for the pencil to change.</summary>
