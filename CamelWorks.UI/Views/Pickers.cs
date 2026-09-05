@@ -10,23 +10,23 @@ using CamelWorks.Core.Clash;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Inputs fed from the model, so nobody types a property name from memory.
+    /// Inputs fed from the model, so a property name never has to be typed from memory.
     ///
-    /// Half the fields in this product used to ask for a property, a tab or a category as bare
-    /// text — which means the user alt-tabs to the host, opens an element, reads the spelling,
-    /// and types it back in. The model already knows every name it carries; these pickers read
-    /// them once, on first open, and offer them. Every picker stays editable, because a name the
-    /// bounded scan did not reach is still a valid answer.
+    /// Half the fields in this product previously asked for a property, a tab or a category as bare
+    /// text, which means switching to the host, opening an element, reading the spelling and typing
+    /// it back. The model already knows every name it carries; these pickers read them once, on
+    /// first open, and offer them. Every picker stays editable, because a name the bounded scan did
+    /// not reach is still valid.
     ///
-    /// <b>Nothing is read until somebody asks.</b> Reading properties off a half-million-element
-    /// federation to fill a dropdown is a walk of the model, and it happens on the host's own
-    /// thread — so the property and tab pickers open on one line offering to go and look, rather
-    /// than going. Typing the name is always the faster answer and it never touches the model at
-    /// all; the list is for when you cannot remember the spelling. Once a scan has run it is
-    /// cached until the federation changes shape, so the offer only appears once.
+    /// Nothing is read until it is asked for. Reading properties off a half-million-element
+    /// federation to fill a dropdown is a walk of the model on the host's own thread, so the
+    /// property and tab pickers open on one line offering to scan rather than scanning. Typing the
+    /// name is faster and touches the model not at all; the list is for when the spelling is not
+    /// remembered. Once a scan has run it is cached until the federation changes shape, so the offer
+    /// appears once.
     ///
-    /// The scan itself is bounded twice over: a cap on elements read, a budget on the host's
-    /// thread, and an early stop as soon as the vocabulary stops growing.
+    /// The scan is bounded three ways: a cap on elements read, a budget on the host's thread, and an
+    /// early stop once the vocabulary stops growing.
     /// </summary>
     public static class Pickers
     {
@@ -75,13 +75,13 @@ namespace CamelWorks.UI.Views
                  onDemand: true);
 
         /// <summary>
-        /// A property picker filled from the elements the clashes are actually between.
+        /// A property picker filled from the elements the clashes are between.
         ///
-        /// <b>Why not the model's properties.</b> A property column on the clash board reads off
-        /// a clashing element, so the names worth offering are the ones those elements carry. The
-        /// general picker samples the federation instead - capped, and stopping once fifty
-        /// elements in a row add nothing - which reads thousands of elements nobody asked about
-        /// and can still miss the one property only the clashing pipes have.
+        /// Not the model's properties. A property column on the clash board reads off a clashing
+        /// element, so the names worth offering are the ones those elements carry. The general
+        /// picker samples the federation instead — capped, and stopping once fifty elements in a row
+        /// add nothing — which reads thousands of elements nobody asked about and can still miss the
+        /// one property only the clashing pipes have.
         ///
         /// Across every test, because a column added on this board is added to all of them.
         /// </summary>
@@ -298,16 +298,15 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The model's property vocabulary, read once and kept until the federation changes shape.
         ///
-        /// <b>The whole document, not one screen's elements.</b> A picker's job is to spell a
-        /// property name, and the names live on the model rather than on whatever a board happens
-        /// to be showing.
+        /// Read from the whole document rather than one screen's elements. A picker's job is to
+        /// spell a property name, and the names live on the model rather than on whatever a board is
+        /// showing.
         ///
-        /// <b>What it is not.</b> This walked the tree depth-first and the comment here claimed it
-        /// went round-robin across models, so that the vocabulary came from every discipline
-        /// rather than whichever one is first in the federation. It never did: the traversal seam
-        /// has no per-model scope to interleave, so a scan that stops early stops inside the first
-        /// model. The names it offers are therefore that model's, and the box stays editable for
-        /// the rest — which was always the reason it is editable.
+        /// This walks the tree depth-first. An earlier comment here claimed it went round-robin
+        /// across models so the vocabulary came from every discipline rather than the first in the
+        /// federation; it never did, because the traversal seam has no per-model scope to interleave,
+        /// so a scan that stops early stops inside the first model. The names offered are therefore
+        /// that model's, and the box stays editable for the rest.
         /// </summary>
         private static IReadOnlyList<(string Category, string Name)> Scan()
         {

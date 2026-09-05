@@ -11,20 +11,18 @@ using CamelWorks.Core.Store;
 namespace CamelWorks.UI.Views
 {
     /// <summary>
-    /// Everybody on the job, in one window, reachable from wherever somebody needs one of them.
+    /// Everybody on the job, in one window, reachable from wherever one of them is needed.
     ///
-    /// <b>One roster, two homes.</b> It is kept beside the person - so the same architect, the
-    /// same fire engineer and the same three companies are there the moment a new model is
-    /// opened, instead of being retyped per job - and it is written into the project as well, so
-    /// somebody opening the job who has never met this roster still gets the team. Opening it
-    /// merges what the project knows into what the person already had, which means a coordinator
-    /// handing over a model hands over the team with it.
+    /// One roster, two homes. It is kept with the person, so the same architect, fire engineer and
+    /// companies are present as soon as a new model is opened rather than retyped per job, and it is
+    /// written into the project as well, so somebody opening the job who has not met this roster
+    /// still gets the team. Opening it merges what the project knows into what the person already
+    /// had, so a coordinator handing over a model hands over the team with it.
     ///
-    /// <b>Roles, companies and teams are not lists.</b> They are what the people on the roster
-    /// say they are, so there is nothing here to keep in step with anything: type "ARC" against
-    /// two people and ARC becomes a thing that clashes can be given to. Take the last one off and
-    /// it stops being one. A role nobody holds cannot be assigned to, which is the right answer
-    /// and needs no rule of its own.
+    /// Roles, companies and teams are not maintained lists. They are what the people on the roster
+    /// say they are, so there is nothing to keep in step: type "ARC" against two people and ARC
+    /// becomes something clashes can be assigned to; remove the last one and it stops being one. A
+    /// role nobody holds cannot be assigned to, which needs no rule of its own.
     /// </summary>
     internal static class TeamWindow
     {
@@ -274,11 +272,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// The one column layout the headings and every row share.
         ///
-        /// <b>Shares, never fixed widths.</b> Six columns at their old fixed widths came to more
-        /// than the window and the last of them - the folder and its Browse - was simply cut off
-        /// at the right edge, with no scrollbar to say so. Shares cannot do that: a narrow window
-        /// squeezes every column a little instead of losing one whole, and a wide one spends the
-        /// room on the fields that hold long text rather than on the end of the row.
+        /// Shares rather than fixed widths. Six columns at their previous fixed widths exceeded the
+        /// window and the last of them — the folder and its Browse — was cut off at the right edge
+        /// with no scrollbar. Shares squeeze every column a little in a narrow window instead of
+        /// losing one entirely, and spend extra room on the fields that hold long text.
         /// </summary>
         private static Grid Columns()
         {
@@ -319,11 +316,10 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// One person, as a row of editable fields.
         ///
-        /// <b>Suggested, never insisted on.</b> The role list starts with the roles this roster
-        /// already uses and then the ones a job usually has; team and company are whatever the
-        /// roster already holds. All three are editable, so a job with its own words for things
-        /// types them once and finds them in the list from then on. That is the whole difference
-        /// between a picker that helps and one that argues.
+        /// The lists are suggestions. The role list starts with the roles this roster already uses
+        /// and then the ones a job usually has; team and company are whatever the roster holds. All
+        /// three are editable, so a job with its own vocabulary types it once and finds it in the
+        /// list afterwards.
         /// </summary>
         /// <param name="roster">The team, for the lists the boxes offer.</param>
         /// <param name="member">The person.</param>

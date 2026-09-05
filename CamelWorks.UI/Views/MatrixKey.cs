@@ -28,14 +28,14 @@ namespace CamelWorks.UI.Views
     /// <summary>
     /// The one place a legend entry is written, whether it is being made or changed.
     ///
-    /// <b>A symbol is five decisions and they arrive together.</b> Adding one used to ask for the
-    /// letter and nothing else, so every symbol was born a hard clash at the default tolerance and
-    /// the other four decisions were made somewhere else afterwards - if the person knew where to
-    /// look. And its colour, which is the thing you see first on the grid, could only be reached
-    /// from a window about how the whole matrix is drawn: a per-item setting filed under general
-    /// ones, which is where you go looking for it last.
+    /// A symbol carries five decisions and they arrive together. Adding one previously asked for the
+    /// letter only, so every symbol was created as a hard clash at the default tolerance and the
+    /// other four decisions were made elsewhere afterwards. Its colour, which is what is seen first
+    /// on the grid, could only be reached from a window about how the whole matrix is drawn: a
+    /// per-item setting filed under general ones.
     ///
-    /// One form, from the plus and from the pencil beside it, in the panel the palette lives in.
+    /// One form, reached from the plus and from the pencil beside it, in the panel the palette lives
+    /// in.
     /// </summary>
     internal static class MatrixKey
     {
@@ -80,10 +80,10 @@ namespace CamelWorks.UI.Views
 
             var name = Ui.Text(held.Symbol, "A", typed => held.Symbol = typed.Trim(), 70);
 
-            // <b>A cell is thirty-eight pixels wide and nothing was clipping it.</b> The field
-            // invites "a letter, a mark or a word", and a word overdrew its neighbours in the
-            // grid and in the twenty-four pixel chip on the palette. Four characters is a mark;
-            // longer than that is a name, and a name belongs in the legend line beside it.
+            // A cell is thirty-eight pixels wide and nothing was clipping it. The field invites "a
+            // letter, a mark or a word", and a word overdrew its neighbours in the grid and in the
+            // twenty-four pixel chip on the palette. Four characters is a mark; anything longer is a
+            // name, and a name belongs in the legend line beside it.
             name.MaxLength = 4;
 
             var mm = Ui.Text(
@@ -124,12 +124,11 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
-                // <b>A tolerance that cannot be read is refused, not ignored.</b> It was parsed
-                // as it was typed, against the invariant culture only, and anything that did not
-                // parse simply did not assign - so on a seat where the decimal separator is a
-                // comma, typing "12,5" left the box saying 12,5, said nothing, and saved the old
-                // number. A wrong clearance is not a thing anybody catches by eye in a grid of a
-                // hundred and ninety cells.
+                // A tolerance that cannot be parsed is refused rather than ignored. It was parsed
+                // against the invariant culture only, and anything that did not parse simply did not
+                // assign, so on a seat whose decimal separator is a comma, typing "12,5" left the
+                // box showing 12,5, reported nothing, and saved the old number. A wrong clearance is
+                // not something caught by eye in a grid of a hundred and ninety cells.
                 if (!Millimetres(mm.Text, out var tolerance))
                 {
                     trouble.Children.Add(Ui.Problem(
