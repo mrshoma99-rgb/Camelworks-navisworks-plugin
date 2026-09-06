@@ -101,7 +101,7 @@ namespace CamelWorks.Studio
             // a filter narrowing them and a split that writes a pack per trade. Drawn from the
             // project file rather than a document, so the table and the filter chips can be
             // looked at rather than described from a licensed seat.
-            Page("app-clash-exchange", "Clash Manager · Exchange", 760,
+            Page("app-clash-exchange", "Clash Manager · Exchange", 900,
                  () => ClashExchangeViews.Drawn(Filed(), "Riverside", Sent())),
 
             Page("app-clash-levels", "Clash Manager · Levels", 620,

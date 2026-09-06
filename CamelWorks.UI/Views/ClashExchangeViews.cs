@@ -275,7 +275,7 @@ namespace CamelWorks.UI.Views
 
                 _table = Ui.Table(rows,
                     ("Clash", 0), ("Test", 150), ("Status", 80),
-                    ("Assigned to", 110), ("Level", 70), ("Models", 150)).Multi();
+                    ("Assigned to", 110), ("Level", 70), ("Models", 0)).Multi();
 
                 _grid.Children.Add(Ui.Line(
                     Ui.Count(showing.Count, "clash") + " to go out"
@@ -286,16 +286,16 @@ namespace CamelWorks.UI.Views
                 _grid.Children.Add(Ui.Loose(_table));
 
                 _grid.Children.Add(Ui.Picking(_table,
-                    new Ui.OnPicked("Send only these {n}", (picked, said) =>
+                    new Ui.OnPicked("Just these {n}", (picked, said) =>
                     {
                         _only = new HashSet<Core.Identity.ClashKey>(
                             picked.OfType<ClashItem>().Select(one => one.Key));
 
                         said.Children.Add(Ui.Note(
                             Ui.Count(_only.Count, "clash") + " will go, not the whole list. "
-                            + "Press “Send everything shown” to undo it."));
+                            + "Press “The whole list” to undo it."));
                     }, primary: true),
-                    new Ui.OnPicked("Send everything shown", (picked, said) =>
+                    new Ui.OnPicked("The whole list", (picked, said) =>
                     {
                         _only = null;
 
@@ -761,7 +761,7 @@ namespace CamelWorks.UI.Views
 
                 var table = Ui.Table(rows,
                     ("Clash", 0), ("Test", 140), ("Board has", 90),
-                    ("Coming back", 100), ("Who answered", 140), ("Taking", 70)).Multi();
+                    ("Coming back", 100), ("Who answered", 0), ("Taking", 70)).Multi();
 
                 _rows.Children.Add(Ui.Eyebrow("What came back"));
                 _rows.Children.Add(table);

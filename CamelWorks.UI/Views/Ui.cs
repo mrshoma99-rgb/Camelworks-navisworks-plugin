@@ -3457,6 +3457,10 @@ namespace CamelWorks.UI.Views
             var all = Link("All", () => table.SelectAll());
             var none = Link("None", () => table.UnselectAll());
 
+            // A gap, or the two read as one word. They had none, so every table on every screen
+            // ended its bar with "AllNone".
+            all.Margin = new Thickness(0, 0, Gap, 0);
+
             var buttons = new List<System.Windows.Controls.Button>();
 
             bar.Children.Add(tally);
@@ -4001,7 +4005,32 @@ namespace CamelWorks.UI.Views
         /// <param name="count">How many.</param>
         /// <param name="unit">What of, singular.</param>
         public static string Count(int count, string unit) =>
-            count.ToString("N0", CultureInfo.InvariantCulture) + " " + unit + (count == 1 ? string.Empty : "s");
+            count.ToString("N0", CultureInfo.InvariantCulture) + " " + Plural(count, unit);
+
+        /// <summary>
+        /// A unit, pluralised.
+        ///
+        /// An "s" on the end covers almost everything a screen counts, but not the words ending in
+        /// a sibilant: a board that says "96 clashs" reads as a typo in a product, and clash is the
+        /// noun this one counts most.
+        /// </summary>
+        /// <param name="count">How many.</param>
+        /// <param name="unit">What of, singular.</param>
+        private static string Plural(int count, string unit)
+        {
+            if (count == 1 || string.IsNullOrEmpty(unit)) return unit;
+
+            var said = unit.TrimEnd();
+
+            if (said.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+                || said.EndsWith("x", StringComparison.OrdinalIgnoreCase)
+                || said.EndsWith("z", StringComparison.OrdinalIgnoreCase)
+                || said.EndsWith("ch", StringComparison.OrdinalIgnoreCase)
+                || said.EndsWith("sh", StringComparison.OrdinalIgnoreCase))
+                return unit + "es";
+
+            return unit + "s";
+        }
     }
 
     /// <summary>
