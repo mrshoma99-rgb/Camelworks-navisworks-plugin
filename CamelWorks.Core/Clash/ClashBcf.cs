@@ -46,6 +46,40 @@ namespace CamelWorks.Core.Clash
         public double MetresPerUnit { get; set; } = 1.0;
 
         /// <summary>
+        /// Which way each topic's camera looks at its clash.
+        ///
+        /// A reviewer works through a pack faster when every topic faces the same way, and which
+        /// way that is depends on the job: a plan for a ceiling void, an elevation for a riser.
+        /// </summary>
+        public OpenBim.BcfView View { get; set; } = OpenBim.BcfView.Standing;
+
+        /// <summary>
+        /// Whether the two clashing elements are coloured in the viewpoint.
+        ///
+        /// On by default: red for the first side and amber for the second, so the reviewer can see
+        /// which is which without reading the description. Off for a receiving tool that treats a
+        /// colouring as a permanent override on the model.
+        /// </summary>
+        public bool Highlight { get; set; } = true;
+
+        /// <summary>
+        /// Whether the viewpoint carries a section box around the clash.
+        ///
+        /// A camera on a clash inside a plant room shows the wall in front of it. The box is the
+        /// clash point plus <see cref="SectionMetres"/> each way.
+        /// </summary>
+        public bool Section { get; set; }
+
+        /// <summary>How far the section box reaches from the clash point, in metres.</summary>
+        public double SectionMetres { get; set; } = 2.0;
+
+        /// <summary>How wide a snapshot is asked for, in pixels.</summary>
+        public int SnapshotWidth { get; set; } = 1024;
+
+        /// <summary>How tall a snapshot is asked for, in pixels.</summary>
+        public int SnapshotHeight { get; set; } = 768;
+
+        /// <summary>
         /// Renders one clash as a PNG, or returns null.
         ///
         /// A callback rather than an image, because rendering needs the host. This assembly has no
@@ -536,7 +570,8 @@ namespace CamelWorks.Core.Clash
 
             var view = new BcfViewpoint(guid + "-v");
 
-            view.Camera = BcfFraming.Around(new[] { point }).ToCamera();
+            view.Camera = BcfFraming.Around(new[] { point },
+                                            BcfFraming.DefaultFieldOfView, how.View).ToCamera();
 
             var a = Component(item.Key.A, item.IfcGuidA);
             var b = Component(item.Key.B, item.IfcGuidB);
@@ -544,10 +579,29 @@ namespace CamelWorks.Core.Clash
             view.Selection.Add(a);
             view.Selection.Add(b);
 
-            // Red for the first side, amber for the second: the receiving tool colours them and
-            // the reviewer can see which is which without reading the description.
-            view.Colouring.Add(new BcfColouring("FF3B30", new[] { a }));
-            view.Colouring.Add(new BcfColouring("FF9F0A", new[] { b }));
+            if (how.Highlight)
+            {
+                // Red for the first side, amber for the second: the receiving tool colours them
+                // and the reviewer can see which is which without reading the description.
+                view.Colouring.Add(new BcfColouring("FF3B30", new[] { a }));
+                view.Colouring.Add(new BcfColouring("FF9F0A", new[] { b }));
+            }
+
+            if (how.Section && how.SectionMetres > 0)
+            {
+                // A camera on a clash inside a plant room shows the wall in front of it. The box
+                // is the clash point plus the stated reach each way.
+                // Six planes, each facing inwards at the stated reach. BCF has no box of its own;
+                // a box is what six planes make.
+                var reach = how.SectionMetres;
+
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X - reach, point.Y, point.Z, 1, 0, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X + reach, point.Y, point.Z, -1, 0, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y - reach, point.Z, 0, 1, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y + reach, point.Z, 0, -1, 0));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z - reach, 0, 0, 1));
+                view.ClippingPlanes.Add(new BcfClippingPlane(point.X, point.Y, point.Z + reach, 0, 0, -1));
+            }
 
             return view;
         }

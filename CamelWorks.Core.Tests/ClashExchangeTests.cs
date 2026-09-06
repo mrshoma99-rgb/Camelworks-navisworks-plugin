@@ -520,6 +520,61 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void Three_parties_disagreeing_keeps_every_answer_readable()
+        {
+            // Three parties disagreeing is ordinary, and a resolution that hides what the other
+            // two said is one nobody can check.
+            var one = Item("a");
+
+            var reading = ClashExchange.Read(new[]
+            {
+                Pack("Mechanical", Answered(one, FindingStatus.Resolved)),
+                Pack("Structure", Answered(one, FindingStatus.Reviewed)),
+                Pack("Electrical", Answered(one, FindingStatus.Approved)),
+            }, new[] { one });
+
+            var row = Assert.Single(reading.Rows);
+
+            Assert.True(row.IsThreeWay);
+            Assert.Equal(3, row.Parties);
+            Assert.Equal(1, reading.ThreeWay);
+
+            row.Chosen = "Structure";
+            row.Take = true;
+
+            Assert.Equal(2, row.Overruled.Count);
+            Assert.DoesNotContain(row.Overruled, say => say.Party == "Structure");
+        }
+
+        [Fact]
+        public void The_coordinators_note_is_written_onto_the_finding()
+        {
+            var one = Item("a");
+
+            var register = new FindingRegister();
+            register.Put(Recorded(one));
+
+            var reading = ClashExchange.Read(new[]
+            {
+                Pack("Mechanical", Answered(one, FindingStatus.Resolved)),
+                Pack("Structure", Answered(one, FindingStatus.Reviewed)),
+            }, new[] { one });
+
+            var row = Assert.Single(reading.Rows);
+
+            row.Chosen = "Structure";
+            row.Take = true;
+            row.Note = "Beam is fixed; mechanical to re-route. Agreed Thursday.";
+
+            ClashExchange.Apply(reading, register);
+
+            var kept = register.Find(Recorded(one).Id)!;
+
+            Assert.Contains(kept.Comments,
+                            one2 => one2.Body.StartsWith("Beam is fixed", System.StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void Nothing_to_read_says_so_rather_than_looking_empty()
         {
             var reading = ClashExchange.Read(null, new[] { Item("a") });

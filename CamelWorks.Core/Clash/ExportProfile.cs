@@ -606,7 +606,23 @@ namespace CamelWorks.Core.Clash
                 SourceFile = sourceFile,
                 WhenTicks = whenTicks,
                 MetresPerUnit = metresPerUnit <= 0 ? 1.0 : metresPerUnit,
+                View = View,
+                Highlight = Highlight,
+                Section = Section,
+                SectionMetres = SectionMetres,
             };
+
+        /// <summary>Which way each topic's camera looks at its clash.</summary>
+        public OpenBim.BcfView View { get; set; } = OpenBim.BcfView.Standing;
+
+        /// <summary>Whether the two clashing elements are coloured in the viewpoint.</summary>
+        public bool Highlight { get; set; } = true;
+
+        /// <summary>Whether the viewpoint carries a section box around the clash.</summary>
+        public bool Section { get; set; }
+
+        /// <summary>How far that box reaches from the clash point, in metres.</summary>
+        public double SectionMetres { get; set; } = 2.0;
 
         /// <summary>
         /// Record that these tests have just been written into a file.
@@ -652,6 +668,10 @@ namespace CamelWorks.Core.Clash
             JsonValue.Object()
                 .Set("name", Name)
                 .Set("keepGroups", KeepGroups)
+                .Set("view", View.ToString())
+                .Set("highlight", Highlight)
+                .Set("section", Section)
+                .Set("sectionMetres", SectionMetres)
                 .Set("tests", JsonValue.Array(_tests.Select(t => t.ToJson())))
                 .Set("statuses", JsonValue.Array(
                     Statuses.OrderBy(s => (int)s).Select(s => JsonValue.String(s.ToString()))))
@@ -669,6 +689,16 @@ namespace CamelWorks.Core.Clash
 
             profile.Name = json["name"].AsString("Everything") ?? "Everything";
             profile.KeepGroups = json["keepGroups"].AsBool(true);
+
+            if (Enum.TryParse<OpenBim.BcfView>(json["view"].AsString(), out var view))
+                profile.View = view;
+
+            profile.Highlight = json["highlight"].AsBool(true);
+            profile.Section = json["section"].AsBool(false);
+
+            var reach = json["sectionMetres"];
+
+            if (reach.Kind == Store.JsonKind.Number) profile.SectionMetres = reach.AsDouble();
 
             foreach (var item in json["tests"].Items)
             {

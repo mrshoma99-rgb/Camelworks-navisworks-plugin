@@ -145,6 +145,45 @@ namespace CamelWorks.Core.Clash
 
         private string? _chosen;
 
+        /// <summary>
+        /// What the coordinator decided, in their own words.
+        ///
+        /// Three parties disagreeing is ordinary, and the resolution is usually a note and an
+        /// action rather than a winner: "Structure is right, mechanical to re-route, agreed on
+        /// Thursday". Kept on the row and carried onto the finding, because a decision with no
+        /// reasoning is one the same three people argue about again next week.
+        /// </summary>
+        public string? Note { get; set; }
+
+        /// <summary>How many parties answered this clash.</summary>
+        public int Parties => _answers.Count;
+
+        /// <summary>
+        /// True when more than two parties answered and they do not agree.
+        ///
+        /// Told apart from a two-sided dispute because the screen has to offer more than a choice
+        /// between two names, and because the losing answers are worth keeping in front of the
+        /// person deciding.
+        /// </summary>
+        public bool IsThreeWay => IsDisputed && _answers.Count > 2;
+
+        /// <summary>
+        /// The answers that were not taken, so the screen can keep them readable.
+        ///
+        /// A resolution that hides what the other parties said is one nobody can check.
+        /// </summary>
+        public IReadOnlyList<ExchangeSay> Overruled
+        {
+            get
+            {
+                var settled = Settled;
+
+                return settled == null
+                    ? Array.Empty<ExchangeSay>()
+                    : _answers.Where(one => !ReferenceEquals(one, settled)).ToList();
+            }
+        }
+
         /// <summary>True when two parties answered this differently.</summary>
         public bool IsDisputed => _disputed ??= Disagrees();
 
@@ -280,6 +319,9 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>How many rows two parties answered differently.</summary>
         public int Disputed => Rows.Count(one => one.IsDisputed);
+
+        /// <summary>How many rows more than two parties answered differently.</summary>
+        public int ThreeWay => Rows.Count(one => one.IsThreeWay);
 
         /// <summary>How many rows still need somebody to pick a side.</summary>
         public int Undecided => Rows.Count(one => one.IsDisputed && one.Chosen == null);
@@ -596,6 +638,21 @@ namespace CamelWorks.Core.Clash
                     // and their own labels. These are on the returned result and were being read
                     // by the Manage tab's sync and dropped by this one.
                     Reviewed(finding, settled.Result);
+
+                    // What the coordinator decided, in their own words, alongside what the parties
+                    // said. Three parties disagreeing is ordinary and the resolution is usually a
+                    // note rather than a winner.
+                    if (!string.IsNullOrWhiteSpace(row.Note))
+                    {
+                        var decided = new FindingComment("The coordinator", when, row.Note!.Trim());
+
+                        if (!finding.Comments.Any(one => one.Repeats(decided)))
+                        {
+                            finding.Comments.Add(decided);
+                            finding.Hold(FindingField.Comments);
+                            comments++;
+                        }
+                    }
                 }
                 else if (matcher == null)
                 {

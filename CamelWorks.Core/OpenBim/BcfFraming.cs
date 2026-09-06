@@ -99,8 +99,53 @@ namespace CamelWorks.Core.OpenBim
     /// viewpoint is worth attaching is that it shows the two things missing each other. So the eye
     /// goes off to one side and slightly above.
     /// </summary>
+    /// <summary>
+    /// Which way a written viewpoint looks at the clash it frames.
+    ///
+    /// A pack of two hundred topics reads faster when they all face the same way, and which way
+    /// that is depends on the job: a plan for a ceiling void, an elevation for a riser.
+    /// </summary>
+    public enum BcfView
+    {
+        /// <summary>Down and across, at eye level.</summary>
+        Standing = 0,
+
+        /// <summary>Straight down.</summary>
+        Plan = 1,
+
+        /// <summary>Looking north.</summary>
+        North = 2,
+
+        /// <summary>Looking south.</summary>
+        South = 3,
+
+        /// <summary>Looking east.</summary>
+        East = 4,
+
+        /// <summary>Looking west.</summary>
+        West = 5,
+    }
+
+    /// <summary>
+    /// Where a camera stands so that what it is about is in the picture.
+    ///
+    /// The one piece of viewpoint arithmetic in the product, in Core so that both writers use it
+    /// and both are tested on a machine with no graphics.
+    /// </summary>
     public static class BcfFraming
     {
+        /// <summary>Which way a written viewpoint looks at what it frames.</summary>
+        /// <param name="from">The direction asked for.</param>
+        private static (double X, double Y, double Z) Facing(BcfView from) => from switch
+        {
+            BcfView.Plan => (0, 0, -1),
+            BcfView.North => (0, -1, 0),
+            BcfView.South => (0, 1, 0),
+            BcfView.East => (-1, 0, 0),
+            BcfView.West => (1, 0, 0),
+            _ => (-0.62, -0.62, -0.48),
+        };
+
         /// <summary>How far back to stand, as a multiple of what has to fit on screen.</summary>
         public const double Pullback = 2.2;
 
@@ -115,8 +160,10 @@ namespace CamelWorks.Core.OpenBim
         /// </summary>
         /// <param name="points">What has to be visible, in metres. An empty set frames the origin.</param>
         /// <param name="fieldOfViewDegrees">Vertical field of view.</param>
+        /// <param name="from">Which way the camera looks at it.</param>
         public static ViewFraming Around(IReadOnlyList<(double X, double Y, double Z)> points,
-                                         double fieldOfViewDegrees = DefaultFieldOfView)
+                                         double fieldOfViewDegrees = DefaultFieldOfView,
+                                         BcfView from = BcfView.Standing)
         {
             if (points == null) throw new ArgumentNullException(nameof(points));
 
@@ -139,7 +186,7 @@ namespace CamelWorks.Core.OpenBim
                 minZ = Math.Min(minZ, z); maxZ = Math.Max(maxZ, z);
             }
 
-            return Box(minX, minY, minZ, maxX, maxY, maxZ, fieldOfViewDegrees);
+            return Box(minX, minY, minZ, maxX, maxY, maxZ, fieldOfViewDegrees, from);
         }
 
         /// <summary>Frame a box.</summary>
@@ -149,7 +196,8 @@ namespace CamelWorks.Core.OpenBim
             Box(box.MinX, box.MinY, box.MinZ, box.MaxX, box.MaxY, box.MaxZ, fieldOfViewDegrees);
 
         private static ViewFraming Box(double minX, double minY, double minZ,
-                                       double maxX, double maxY, double maxZ, double fov)
+                                       double maxX, double maxY, double maxZ, double fov,
+                                       BcfView from = BcfView.Standing)
         {
             var cx = (minX + maxX) / 2;
             var cy = (minY + maxY) / 2;
@@ -158,9 +206,9 @@ namespace CamelWorks.Core.OpenBim
             var span = Math.Max(maxX - minX, Math.Max(maxY - minY, maxZ - minZ));
             var distance = Math.Max(MinimumDistance, span * Pullback);
 
-            // Down and across, at roughly the angle somebody looking at a ceiling void stands at.
-            // Normalised so the distance means what it says.
-            const double dx = -0.62, dy = -0.62, dz = -0.48;
+            // Down and across at eye level, or whichever way the caller asked for. Normalised so
+            // the distance means what it says.
+            var (dx, dy, dz) = Facing(from);
             var length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
 
             var eyeX = cx - dx / length * distance;

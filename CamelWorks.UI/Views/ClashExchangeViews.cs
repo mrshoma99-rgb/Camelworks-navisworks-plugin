@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Data;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Project;
 using CamelWorks.Core.Store;
 using CamelWorks.UI.Shell;
@@ -1334,8 +1335,13 @@ namespace CamelWorks.UI.Views
                     one.Item.Name ?? one.Item.Key.ToString(),
                     one.Item.TestName,
                     one.Current.ToString(),
-                    one.IsDisputed && one.Chosen == null ? "Conflict" : one.Would.ToString(),
-                    string.Join(", ", one.Answers.Select(say => say.Party)),
+                    one.IsDisputed && one.Chosen == null
+                        ? (one.IsThreeWay
+                            ? Ui.Count(one.Parties, "way") + " conflict"
+                            : "Conflict")
+                        : one.Would.ToString(),
+                    string.Join(", ", one.Answers.Select(say => say.Party))
+                    + (string.IsNullOrWhiteSpace(one.Note) ? string.Empty : " · noted"),
                     one.Take ? "Yes" : "No")
                 {
                     Tone = one.IsDisputed && one.Chosen == null ? Tone.Warn
@@ -1366,7 +1372,40 @@ namespace CamelWorks.UI.Views
                     Parts.PopMenu(settling, Sides(picked));
                 });
 
-                _rows.Children.Add(Ui.Picking(table, settling,
+                var noting = Ui.Link("Say why…", () => { });
+
+                noting.Click += (s, e) => Ui.Safely(() =>
+                {
+                    var picked = table.PickedMany().OfType<ExchangeRow>().ToList();
+
+                    if (picked.Count == 0)
+                    {
+                        Ui.Told("Select the rows the note is about first.");
+                        return;
+                    }
+
+                    // What the coordinator decided, in their own words. Three parties disagreeing
+                    // is ordinary and the resolution is usually a note and an action rather than
+                    // a winner; the note travels onto the finding with the answer.
+                    Parts.Ask(_rows, "What was decided", picked[0].Note, "Keep this note",
+                              said => Ui.Safely(() =>
+                              {
+                                  foreach (var row in picked) row.Note = said;
+
+                                  DrawReading();
+                              }));
+                });
+
+                var says = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                says.Children.Add(settling);
+                says.Children.Add(noting);
+
+                _rows.Children.Add(Ui.Picking(table, says,
                     new Ui.OnPicked("Accept these {n}", (picked, said) =>
                         Decide(picked, said, row =>
                         {
@@ -1566,6 +1605,40 @@ namespace CamelWorks.UI.Views
 
                 box.Children.Add(Ui.Check("Keep the folder structure", _profile.KeepGroups,
                                           on => _profile.KeepGroups = on));
+
+                box.Children.Add(Ui.Eyebrow("The viewpoint on each topic"));
+
+                var facing = Ui.Choice(
+                    Enum.GetNames(typeof(BcfView)), _profile.View.ToString(),
+                    said =>
+                    {
+                        if (Enum.TryParse<BcfView>(said, out var view)) _profile.View = view;
+                    }, 150);
+
+                facing.ToolTip = "A reviewer works through a pack faster when every topic faces "
+                                 + "the same way. Standing is eye level and across; Plan is "
+                                 + "straight down.";
+
+                box.Children.Add(Ui.Field("Camera", facing));
+
+                box.Children.Add(Ui.Check("Colour the two clashing elements", _profile.Highlight,
+                                          on => _profile.Highlight = on));
+
+                box.Children.Add(Ui.Check("Cut a section box around the clash", _profile.Section,
+                                          on => _profile.Section = on));
+
+                var reach = Ui.Text(
+                    _profile.SectionMetres.ToString("0.##", CultureInfo.InvariantCulture),
+                    null, 70);
+
+                reach.TextChanged += (s, e) => Ui.Safely(() =>
+                {
+                    if (double.TryParse(reach.Text, NumberStyles.Any, CultureInfo.InvariantCulture,
+                                        out var metres) && metres > 0)
+                        _profile.SectionMetres = metres;
+                });
+
+                box.Children.Add(Ui.Field("How far the box reaches (m)", reach));
 
                 return box;
             }
