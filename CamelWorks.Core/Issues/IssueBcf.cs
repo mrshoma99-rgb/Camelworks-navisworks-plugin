@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.OpenBim;
 
 namespace CamelWorks.Core.Issues
@@ -61,8 +62,8 @@ namespace CamelWorks.Core.Issues
             var topic = new BcfTopic(issue.BcfGuid ?? BcfGuid.For(issue.Id), issue.Title, created,
                                      issue.Author ?? "CamelWorks")
             {
-                TopicType = string.IsNullOrWhiteSpace(issue.Type) ? "Issue" : issue.Type,
-                TopicStatus = string.IsNullOrWhiteSpace(issue.Status) ? Issue.OpenStatus : issue.Status,
+                TopicType = string.IsNullOrWhiteSpace(issue.Type) ? "Issue" : issue.Type!,
+                TopicStatus = FindingStatusLattice.ToName(issue.Status),
                 Priority = issue.Priority,
                 AssignedTo = issue.AssignedTo,
                 Description = issue.Description,
@@ -71,8 +72,9 @@ namespace CamelWorks.Core.Issues
             if (issue.ModifiedTicks > 0)
                 topic.ModifiedDate = new DateTimeOffset(issue.ModifiedTicks, TimeSpan.Zero);
 
-            if (issue.DueTicks > 0)
-                topic.DueDate = new DateTimeOffset(issue.DueTicks, TimeSpan.Zero);
+            if (issue.DueDayNumber != null)
+                topic.DueDate = new DateTimeOffset(Finding.DateOf(issue.DueDayNumber.Value),
+                                                   TimeSpan.Zero);
 
             // The register's own number travels as a label: BCF has no field for it, and a
             // coordinator reading a reply needs to know which of their issues it answers.
@@ -82,7 +84,9 @@ namespace CamelWorks.Core.Issues
                 if (!topic.Labels.Contains(label, StringComparer.OrdinalIgnoreCase))
                     topic.Labels.Add(label);
 
-            if (!string.IsNullOrWhiteSpace(issue.Level)) topic.Labels.Add(issue.Level!);
+            if (issue.Facts.TryGetValue(Issue.LevelFact, out var level)
+                && !string.IsNullOrWhiteSpace(level))
+                topic.Labels.Add(level!);
 
             var n = 0;
 
@@ -107,27 +111,30 @@ namespace CamelWorks.Core.Issues
         {
             if (topic == null) throw new ArgumentNullException(nameof(topic));
 
-            var issue = new Issue(id, topic.Title, IssueOrigin.Imported)
+            var issue = new Issue(id, topic.Title, Issue.ByImport)
             {
                 Type = string.IsNullOrWhiteSpace(topic.TopicType) ? "Coordination" : topic.TopicType,
                 Status = Status(topic.TopicStatus),
-                Priority = string.IsNullOrWhiteSpace(topic.Priority) ? "Normal" : topic.Priority!,
+                Priority = topic.Priority,
                 Description = topic.Description,
                 AssignedTo = topic.AssignedTo,
                 Author = topic.CreationAuthor,
-                Source = source,
                 BcfGuid = topic.Guid,
                 CreatedTicks = topic.CreationDate.UtcTicks,
                 ModifiedTicks = (topic.ModifiedDate ?? topic.CreationDate).UtcTicks,
-                DueTicks = topic.DueDate?.UtcTicks ?? 0,
+                DueDayNumber = topic.DueDate == null
+                    ? (int?)null
+                    : Finding.DayNumberFor(topic.DueDate.Value.UtcDateTime),
             };
+
+            if (!string.IsNullOrWhiteSpace(source)) issue.Facts[Issue.SourceFact] = source;
 
             foreach (var label in topic.Labels)
                 if (!string.IsNullOrWhiteSpace(label)) issue.Labels.Add(label);
 
             foreach (var comment in topic.Comments)
-                issue.Comments.Add(new IssueComment(comment.Author, comment.Date.UtcTicks,
-                                                    comment.Text ?? string.Empty));
+                issue.Comments.Add(new FindingComment(comment.Author, comment.Date.UtcTicks,
+                                                      comment.Text ?? string.Empty));
 
             Place(issue, topic);
 
@@ -173,7 +180,8 @@ namespace CamelWorks.Core.Issues
                 existing.Priority = string.IsNullOrWhiteSpace(topic.Priority) ? existing.Priority : topic.Priority!;
                 existing.ModifiedTicks = (topic.ModifiedDate ?? topic.CreationDate).UtcTicks;
 
-                if (topic.DueDate.HasValue) existing.DueTicks = topic.DueDate.Value.UtcTicks;
+                if (topic.DueDate.HasValue)
+                    existing.DueDayNumber = Finding.DayNumberFor(topic.DueDate.Value.UtcDateTime);
 
                 foreach (var comment in topic.Comments)
                 {
@@ -186,7 +194,7 @@ namespace CamelWorks.Core.Issues
                             && string.Equals(c.Body, body, StringComparison.Ordinal)))
                         continue;
 
-                    existing.Comments.Add(new IssueComment(comment.Author, comment.Date.UtcTicks, body));
+                    existing.Comments.Add(new FindingComment(comment.Author, comment.Date.UtcTicks, body));
                     comments++;
                 }
 
@@ -224,36 +232,36 @@ namespace CamelWorks.Core.Issues
         }
 
         /// <summary>
-        /// A topic's status, said the way this register says it.
+        /// A topic's status, on this register's lattice.
         ///
         /// Every tool spells these differently — "Closed", "Resolved", "Done" all mean the issue is
         /// over — and a register that kept each sender's spelling would show six statuses that are
-        /// two. Anything unrecognised is kept as it was written rather than forced into a bucket:
-        /// a status nobody here has a word for is information, not an error.
+        /// two. A word with no rung here is read as Active, which keeps the issue on somebody's
+        /// list rather than closing it on a spelling nobody agreed.
         /// </summary>
-        private static string Status(string? status)
+        private static FindingStatus Status(string? status)
         {
-            if (string.IsNullOrWhiteSpace(status)) return Issue.OpenStatus;
+            if (FindingStatusLattice.TryParse(status, out var known)) return known;
 
-            var text = status!.Trim();
-
-            foreach (var known in Issue.Statuses)
-                if (string.Equals(known, text, StringComparison.OrdinalIgnoreCase)) return known;
-
-            switch (text.ToLowerInvariant())
+            switch ((status ?? string.Empty).Trim().ToLowerInvariant())
             {
-                case "resolved":
+                case "closed":
                 case "done":
                 case "completed":
-                    return Issue.ClosedStatus;
+                    return FindingStatus.Resolved;
 
-                case "active":
-                case "reopened":
-                case "new":
-                    return Issue.OpenStatus;
+                case "approved":
+                case "accepted":
+                    return FindingStatus.Approved;
+
+                case "answered":
+                case "readyforreview":
+                case "ready for review":
+                case "in review":
+                    return FindingStatus.Reviewed;
 
                 default:
-                    return text;
+                    return FindingStatus.Active;
             }
         }
     }

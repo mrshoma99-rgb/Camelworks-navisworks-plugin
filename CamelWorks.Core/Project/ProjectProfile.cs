@@ -300,7 +300,12 @@ namespace CamelWorks.Core.Project
         /// <summary>The parties a clash can be assigned to.</summary>
         public IReadOnlyList<string> Parties => Listed(ProfileKeys.Parties);
 
-        /// <summary>What this project calls its priorities, most urgent first.</summary>
+        /// <summary>
+        /// What this project calls its priorities, most urgent first.
+        ///
+        /// The one priority vocabulary. A finding and an issue both draw from it, seeded from
+        /// <see cref="Project.Priorities.All"/>.
+        /// </summary>
         public IReadOnlyList<string> Priorities => Listed(ProfileKeys.Priorities);
 
         private IReadOnlyList<string> Listed(string key) =>
@@ -395,8 +400,9 @@ namespace CamelWorks.Core.Project
                 + "in feet and inches",
                 Measure.Denominators.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList()));
 
-            settings.Add(new ProfileSetting(ProfileKeys.Priorities, "Priorities", "High, Medium, Low",
-                "the usual three where the coordination specification is silent"));
+            settings.Add(new ProfileSetting(ProfileKeys.Priorities, "Priorities", Project.Priorities.Default,
+                "the words a finding and an issue are both given, where the coordination "
+                + "specification is silent"));
 
             settings.Add(new ProfileSetting(ProfileKeys.LevelSource, "Levels from", "Model, then geometry",
                 "the model's own level property where it has one, and a height histogram where it does not",

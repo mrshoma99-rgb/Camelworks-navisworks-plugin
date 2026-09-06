@@ -25,7 +25,7 @@ namespace CamelWorks.Core.Findings
         /// <summary>The shape's version, so a later change can be told apart.</summary>
         public const int Version = 1;
 
-        /// <summary>Write one finding, and its children.</summary>
+        /// <summary>Write one finding, and its locations.</summary>
         /// <param name="finding">The finding.</param>
         public static JsonValue Write(Finding finding)
         {
@@ -33,7 +33,7 @@ namespace CamelWorks.Core.Findings
 
             var json = JsonValue.Object()
                 .Set("id", finding.Id)
-                .Set("source", finding.Source.ToString())
+                .Set("source", finding.Source)
                 .Set("rule", finding.Rule)
                 .Set("title", finding.Title)
                 .Set("status", FindingStatusLattice.ToName(finding.Status));
@@ -90,10 +90,78 @@ namespace CamelWorks.Core.Findings
                 json.Set("facts", facts);
             }
 
-            if (finding.Children.Count > 0)
-                json.Set("children", JsonValue.Array(finding.Children.Select(Write)));
+            if (finding.Locations.Count > 0)
+                json.Set("locations", JsonValue.Array(finding.Locations.Select(WriteLocation)));
 
             return json;
+        }
+
+        private static JsonValue WriteLocation(FindingLocation location)
+        {
+            var json = JsonValue.Object().Set("id", location.Id);
+
+            if (!string.IsNullOrWhiteSpace(location.Detail)) json.Set("detail", location.Detail);
+
+            if (location.X != null) json.Set("x", location.X.Value);
+            if (location.Y != null) json.Set("y", location.Y.Value);
+            if (location.Z != null) json.Set("z", location.Z.Value);
+
+            if (location.Elements.Count > 0)
+                json.Set("elements", JsonValue.Array(
+                    location.Elements.Select(e => JsonValue.String(e.ToString()))));
+
+            if (location.Facts.Count > 0)
+            {
+                var facts = JsonValue.Object();
+
+                foreach (var pair in location.Facts.OrderBy(f => f.Key, StringComparer.Ordinal))
+                    facts.Set(pair.Key, pair.Value);
+
+                json.Set("facts", facts);
+            }
+
+            if (location.Notes.Count > 0)
+                json.Set("notes", JsonValue.Array(location.Notes.Select(n =>
+                    JsonValue.Object()
+                        .Set("author", n.Author)
+                        .Set("when", n.WhenTicks)
+                        .Set("body", n.Body))));
+
+            return json;
+        }
+
+        private static FindingLocation? ReadLocation(JsonValue? json)
+        {
+            if (json == null || json.Kind != JsonKind.Object) return null;
+
+            var id = json["id"].AsString();
+
+            // A location with no id cannot be pointed at, and one invented here would collide with
+            // every other location that lost its own.
+            if (string.IsNullOrWhiteSpace(id)) return null;
+
+            var elements = new List<ElementKey>();
+
+            foreach (var element in json["elements"].Items)
+                if (ElementKey.TryParse(element.AsString(), out var key) && !key.IsEmpty)
+                    elements.Add(key);
+
+            var location = new FindingLocation(id!, elements, json["detail"].AsString());
+
+            if (json.Has("x")) location.X = json["x"].AsDouble();
+            if (json.Has("y")) location.Y = json["y"].AsDouble();
+            if (json.Has("z")) location.Z = json["z"].AsDouble();
+
+            var facts = json["facts"];
+
+            foreach (var field in facts.Keys) location.Facts[field] = facts[field].AsString();
+
+            foreach (var note in json["notes"].Items)
+                if (note["body"].AsString() is string body)
+                    location.Notes.Add(new FindingComment(note["author"].AsString(),
+                                                          note["when"].AsLong(), body));
+
+            return location;
         }
 
         /// <summary>
@@ -115,8 +183,14 @@ namespace CamelWorks.Core.Findings
 
             if (string.IsNullOrEmpty(rule) || string.IsNullOrEmpty(title)) return null;
 
-            if (!Enum.TryParse<FindingSource>(json["source"].AsString(), false, out var source))
-                return null;
+            var source = json["source"].AsString();
+
+            // A record with no source is counted unreadable and dropped. It must never become a
+            // finding with an empty source: that finding's id would be derived from the empty
+            // string and would collide with every other record that lost its source. An unknown
+            // but non-empty source reads through, so a finding written by a check this build does
+            // not have survives a round trip.
+            if (string.IsNullOrWhiteSpace(source)) return null;
 
             var elements = new List<ElementKey>();
 
@@ -127,16 +201,18 @@ namespace CamelWorks.Core.Findings
             var discriminator = json["discriminator"].AsString();
 
             // A clash finding's identity is made from the host's id for the test, not from the
-            // test's name. Registers written before that change hold ids derived from the name,
-            // and this is where they move: the id is derived again on every load anyway, so a
-            // file written under the old scheme comes back under the new one carrying everything
-            // it held, and the mismatch is reported as a rename rather than passing silently.
-            var identity = source == FindingSource.Clash
+            // test's name, so a test rename does not detach every status under it.
+            //
+            // The comparison is ordinal and case-sensitive, and must stay that way. Matched loosely,
+            // or with a producer emitting "clash" rather than "Clash", every clash finding in the
+            // project takes a different branch here, re-identifies at once, and loses its status,
+            // its assignee and its issue attachments.
+            var identity = string.Equals(source, FindingSource.Clash, StringComparison.Ordinal)
                 ? Clash.ClashFindings.Identity(json["facts"][Clash.ClashFindings.HostTest].AsString())
                 : null;
 
             // Derived again rather than restored. See the type remarks.
-            var finding = Finding.Create(source, rule!, title!, elements, discriminator, identity);
+            var finding = Finding.Create(source!, rule!, title!, elements, discriminator, identity);
 
             var written = json["id"].AsString();
 
@@ -183,23 +259,8 @@ namespace CamelWorks.Core.Findings
 
             foreach (var field in facts.Keys) finding.Facts[field] = facts[field].AsString();
 
-            foreach (var record in json["children"].Items)
-            {
-                var child = Read(record, out var childRenamed);
-
-                renamed |= childRenamed;
-
-                // A child restored with triage state of its own would be refused by AddChild,
-                // which is right: children inherit. Cleared rather than dropped, because the
-                // location is still worth keeping.
-                if (child == null) continue;
-
-                child.Status = FindingStatus.New;
-                child.AssignedTo = null;
-                child.DueDayNumber = null;
-
-                finding.AddChild(child);
-            }
+            foreach (var record in json["locations"].Items)
+                if (ReadLocation(record) is FindingLocation location) finding.AddLocation(location);
 
             return finding;
         }

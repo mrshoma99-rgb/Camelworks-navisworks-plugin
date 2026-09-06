@@ -1255,8 +1255,7 @@ namespace CamelWorks.UI.Views
                 var register = IssueViews.Read(_session);
 
                 var open = register.Issues
-                    .OrderBy(i => string.Equals(i.Status, Issue.ClosedStatus,
-                                                StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(i => !i.IsOpen)
                     .ThenBy(i => i.Id, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
@@ -1273,7 +1272,8 @@ namespace CamelWorks.UI.Views
                                              + " to an issue"));
 
                 var table = Ui.Table(
-                    open.Select(i => new TableRow(i, i.Id, i.Title, i.Status,
+                    open.Select(i => new TableRow(i, i.Id, i.Title,
+                                                  FindingStatusLattice.ToName(i.Status),
                                                   i.AssignedTo ?? string.Empty,
                                                   Ui.Count(i.Findings.Count, "finding"))),
                     ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
@@ -1348,10 +1348,9 @@ namespace CamelWorks.UI.Views
                         : Ui.Count(from.Count, "place") + " under " + Units.Length(first.Minimum)
                           + ", worst " + Units.Length(worst.Clear);
 
-                    var issue = new Issue(id, title, IssueOrigin.Clearance)
+                    var issue = new Issue(id, title, "Clearance")
                     {
                         Type = "Clearance",
-                        Source = "Clearance Check",
                         Description = "Asked for " + Units.Length(first.Minimum) + "."
                             + Environment.NewLine
                             + string.Join(Environment.NewLine, from.Take(20).Select(r =>
@@ -1365,6 +1364,8 @@ namespace CamelWorks.UI.Views
                         Y = from.Average(r => r.Span.Y),
                         Z = from.Average(r => r.Floor.Box.MaxZ + r.Clear / 2),
                     };
+
+                    issue.Facts[Issue.SourceFact] = "Clearance Check";
 
                     IssueFindings.Attach(issue, from.Select(r => r.Found)
                                                      .Where(f => f != null).Select(f => f!));

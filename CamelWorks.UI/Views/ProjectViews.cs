@@ -295,7 +295,7 @@ namespace CamelWorks.UI.Views
             }
 
             var show = Ui.Quiet("Show me what left"
-                + (finding.Children.Count < Count(finding) ? " (the first " + keys.Count + ")" : string.Empty),
+                + (finding.Locations.Count < Count(finding) ? " (the first " + keys.Count + ")" : string.Empty),
                 () =>
                 {
                     session.Model.Select(keys);
@@ -312,7 +312,7 @@ namespace CamelWorks.UI.Views
             finding.Facts.TryGetValue(SetDriftFindings.Left, out var left)
             && int.TryParse(left, out var many)
                 ? many
-                : finding.Children.Count;
+                : finding.Locations.Count;
 
         /// <summary>Whether a drift is the kind that disarms rather than merely narrows.</summary>
         private static bool Fault(Finding finding) =>
@@ -524,15 +524,16 @@ namespace CamelWorks.UI.Views
 
                 var (made, problem) = IssueViews.Raise(session, id =>
                 {
-                    var issue = new Issue(id, kept.Title)
+                    var issue = new Issue(id, kept.Title, kept.Source)
                     {
                         Type = "Quality",
-                        Source = kept.Rule,
                         Description = kept.Detail
                             ?? (kept.Facts.TryGetValue(HealthFindings.Fix, out var fix)
                                 ? fix
                                 : null),
                     };
+
+                    issue.Facts[Issue.SourceFact] = kept.Rule;
 
                     IssueFindings.Attach(issue, new[] { kept });
 
@@ -1319,15 +1320,15 @@ namespace CamelWorks.UI.Views
             {
                 var finding = findings[at++];
 
-                var issue = new Issue(id, finding.Title)
+                var issue = new Issue(id, finding.Title, finding.Source)
                 {
                     Type = "Quality",
-                    Source = finding.Facts.TryGetValue(IdsFindings.Document, out var from)
-                        ? from
-                        : "IDS",
                     Description = finding.Detail
                         ?? (finding.Facts.TryGetValue(IdsFindings.Why, out var why) ? why : null),
                 };
+
+                issue.Facts[Issue.SourceFact] =
+                    finding.Facts.TryGetValue(IdsFindings.Document, out var from) ? from : "IDS";
 
                 IssueFindings.Attach(issue, new[] { finding });
 

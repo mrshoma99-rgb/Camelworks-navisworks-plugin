@@ -77,6 +77,10 @@ namespace CamelWorks.Core.Clash
 
             // The topic this exports as, derived here so a markup coming back from somebody
             // else's tool finds its way home without re-deriving the key.
+            //
+            // The other half of the agreement is in FindingBcf.TopicGuidFor, which prefers a
+            // stamped value over one derived from the finding id. Both writers therefore emit the
+            // same topic for the same clash; dropping either half gives one clash two guids.
             if (elements.Count == 2) finding.TopicGuid = ClashBcf.TopicGuidFor(result.Key(cell));
 
             // Read out of the host, so the host has it. Anything set on the board afterwards

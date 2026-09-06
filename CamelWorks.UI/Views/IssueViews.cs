@@ -118,19 +118,55 @@ namespace CamelWorks.UI.Views
             Ui.Told(Shell.AppWindow.Show("issuemgr", "issuelist"));
         }
 
-        /// <summary>How an issue's origin reads in a column.</summary>
-        internal static string Origin(IssueOrigin origin)
+        /// <summary>The five status words, in the order they read.</summary>
+        internal static readonly string[] Marks =
         {
-            switch (origin)
+            FindingStatusLattice.ToName(FindingStatus.New),
+            FindingStatusLattice.ToName(FindingStatus.Active),
+            FindingStatusLattice.ToName(FindingStatus.Reviewed),
+            FindingStatusLattice.ToName(FindingStatus.Approved),
+            FindingStatusLattice.ToName(FindingStatus.Resolved),
+        };
+
+        /// <summary>The word for an issue nobody has to do anything more about.</summary>
+        internal const string Settled = "Resolved";
+
+        /// <summary>How an issue's provenance reads in a column.</summary>
+        /// <param name="provenance">What the issue says it came from.</param>
+        internal static string Origin(string? provenance)
+        {
+            switch (provenance)
             {
-                case IssueOrigin.Clash: return "Clash";
-                case IssueOrigin.Clearance: return "Clearance";
-                case IssueOrigin.Imported: return "Imported";
-                case IssueOrigin.Compare: return "Compare";
-                case IssueOrigin.Health: return "Health";
-                case IssueOrigin.Ids: return "IDS";
-                default: return "Raised";
+                case Issue.ByImport: return "Imported";
+                case FindingSource.Ids: return "IDS";
+                case FindingSource.Manual:
+                case Issue.ByHand: return "Raised";
+                default: return string.IsNullOrWhiteSpace(provenance) ? "Raised" : provenance!;
             }
+        }
+
+        /// <summary>One of an issue's facts, as a cell, or empty.</summary>
+        /// <param name="issue">The issue.</param>
+        /// <param name="key">One of the <see cref="Issue"/> fact keys.</param>
+        internal static string Told(Issue issue, string key) =>
+            issue.Facts.TryGetValue(key, out var value) && value != null ? value : string.Empty;
+
+        /// <summary>A due date, as a person reads one, or a dash.</summary>
+        /// <param name="dayNumber">The day number, or null.</param>
+        internal static string Due(int? dayNumber) =>
+            dayNumber == null
+                ? "—"
+                : Finding.DateOf(dayNumber.Value).ToString("d MMM yyyy", CultureInfo.CurrentCulture);
+
+        /// <summary>Read a typed due date back, or null when it is not one.</summary>
+        /// <param name="text">What was typed.</param>
+        internal static int? ReadDue(string? text)
+        {
+            var ticks = ReadDay(text);
+
+            return ticks <= 0
+                ? (int?)null
+                : Finding.DayNumberFor(new DateTime(ticks, DateTimeKind.Utc));
         }
 
         /// <summary>A date, as a person reads one, or a dash.</summary>
@@ -175,7 +211,7 @@ namespace CamelWorks.UI.Views
             private bool _onlyOverdue;
             private bool _onlyMine;
 
-            private string _mark = Issue.ClosedStatus;
+            private string _mark = Settled;
 
             internal Screen(Session session)
             {
@@ -184,7 +220,7 @@ namespace CamelWorks.UI.Views
 
                 // Everything but the ones somebody has already finished with: the register opens
                 // on the work, not on the archive.
-                _show = new HashSet<string>(Issue.Statuses.Where(s => s != Issue.ClosedStatus),
+                _show = new HashSet<string>(Marks.Where(s => s != Settled),
                                             StringComparer.OrdinalIgnoreCase);
 
                 _find = Ui.Text(string.Empty, null, 150);
@@ -192,6 +228,8 @@ namespace CamelWorks.UI.Views
             }
 
             private long Now => DateTime.UtcNow.Ticks;
+
+            private static int Today => Finding.DayNumberFor(DateTime.UtcNow);
 
             internal UIElement Build()
             {
@@ -231,7 +269,7 @@ namespace CamelWorks.UI.Views
                 row.Children.Add(Ui.Loose(_find));
                 row.Children.Add(new Border { Width = 14 });
 
-                foreach (var status in Issue.Statuses)
+                foreach (var status in Marks)
                 {
                     var here = status;
 
@@ -253,9 +291,9 @@ namespace CamelWorks.UI.Views
 
                 _strip.Children.Add(Ui.Across(
                     Ui.Figure(Skin.Num(_register.Open), "open"),
-                    Ui.Figure(Skin.Num(_register.Overdue(Now)), "overdue",
-                              _register.Overdue(Now) > 0 ? Tone.Bad : Tone.Plain),
-                    Ui.Figure(Skin.Num(_register.Of(Issue.ClosedStatus)), "closed", Tone.Good)));
+                    Ui.Figure(Skin.Num(_register.Overdue(Today)), "overdue",
+                              _register.Overdue(Today) > 0 ? Tone.Bad : Tone.Plain),
+                    Ui.Figure(Skin.Num(_register.Of(FindingStatus.Resolved)), "closed", Tone.Good)));
             }
 
             /// <summary>The action row: raise one, then the windows the rest lives in.</summary>
@@ -285,7 +323,7 @@ namespace CamelWorks.UI.Views
                 people.AddRange(Assignees());
 
                 var types = new List<string> { AnyType };
-                types.AddRange(_register.Issues.Select(i => i.Type)
+                types.AddRange(_register.Issues.Select(i => i.Type ?? string.Empty)
                                        .Concat(Issue.Types)
                                        .Where(t => !string.IsNullOrWhiteSpace(t))
                                        .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -340,8 +378,8 @@ namespace CamelWorks.UI.Views
                     value != null && value.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0;
 
                 return _register.Issues
-                    .Where(i => _show.Contains(i.Status))
-                    .Where(i => !_onlyOverdue || i.IsOverdue(Now))
+                    .Where(i => _show.Contains(FindingStatusLattice.ToName(i.Status)))
+                    .Where(i => !_onlyOverdue || i.IsOverdue(Today))
                     .Where(i => !_onlyMine
                                 || string.Equals(i.AssignedTo, me, StringComparison.OrdinalIgnoreCase)
                                 || string.Equals(i.Author, me, StringComparison.OrdinalIgnoreCase))
@@ -350,10 +388,10 @@ namespace CamelWorks.UI.Views
                     .Where(i => _type == AnyType
                                 || string.Equals(i.Type, _type, StringComparison.OrdinalIgnoreCase))
                     .Where(i => _source == AnySource
-                                || string.Equals(Origin(i.Origin), _source, StringComparison.OrdinalIgnoreCase))
+                                || string.Equals(Origin(i.Provenance), _source, StringComparison.OrdinalIgnoreCase))
                     .Where(i => wanted.Length == 0
                                 || Has(i.Title) || Has(i.Description) || Has(i.Id)
-                                || Has(i.AssignedTo) || Has(i.Author) || Has(i.Level))
+                                || Has(i.AssignedTo) || Has(i.Author) || Has(Fact(i, Issue.LevelFact)))
                     .ToList();
             }
 
@@ -408,7 +446,7 @@ namespace CamelWorks.UI.Views
 
                 var setTo = Ui.Across(
                     Ui.Tally("Set to"),
-                    Ui.Choice(Issue.Statuses, _mark, pick => { _mark = pick; Redraw(); }, 120));
+                    Ui.Choice(Marks, _mark, pick => { _mark = pick; Redraw(); }, 120));
 
                 _list.Children.Add(Ui.Picking(table, setTo,
                     new Ui.OnPicked("Show {n}", ShowPicked, primary: true),
@@ -426,18 +464,18 @@ namespace CamelWorks.UI.Views
                 new TableRow(issue,
                     issue.Id,
                     issue.Title,
-                    issue.Status,
-                    issue.Priority,
+                    FindingStatusLattice.ToName(issue.Status),
+                    issue.Priority ?? string.Empty,
                     string.IsNullOrWhiteSpace(issue.AssignedTo) ? "—" : issue.AssignedTo,
-                    Day(issue.DueTicks),
-                    issue.Type,
-                    Origin(issue.Origin),
+                    Due(issue.DueDayNumber),
+                    issue.Type ?? string.Empty,
+                    Origin(issue.Provenance),
                     issue.Comments.Count == 0
                         ? string.Empty
                         : Skin.Num(issue.Comments.Count),
-                    issue.Level ?? string.Empty)
+                    Fact(issue, Issue.LevelFact) ?? string.Empty)
                 {
-                    Tone = issue.IsOverdue(Now) ? Tone.Bad
+                    Tone = issue.IsOverdue(Today) ? Tone.Bad
                          : !issue.IsOpen ? Tone.Good
                          : string.Equals(issue.Priority, "Critical", StringComparison.OrdinalIgnoreCase)
                            || string.Equals(issue.Priority, "High", StringComparison.OrdinalIgnoreCase)
@@ -467,14 +505,14 @@ namespace CamelWorks.UI.Views
                 description.TextWrapping = TextWrapping.Wrap;
                 description.MinHeight = 60;
 
-                var status = Ui.Choice(Statuses(issue), issue.Status, null, 150);
-                var type = Ui.Choice(Types(issue), issue.Type, null, 150);
-                var priority = Ui.Choice(Issue.Priorities, issue.Priority, null, 130);
+                var status = Ui.Choice(Marks, FindingStatusLattice.ToName(issue.Status), null, 150);
+                var type = Ui.Choice(Types(issue), issue.Type ?? string.Empty, null, 150);
+                var priority = Ui.Choice(PriorityWords(issue), issue.Priority ?? string.Empty, null, 130);
                 var cause = Ui.Choice(Causes(issue), issue.RootCause ?? string.Empty, null, 150);
                 var who = Suggesting(Assignees(), issue.AssignedTo);
-                var due = Ui.Text(issue.DueTicks > 0 ? Day(issue.DueTicks) : string.Empty, null, 130);
-                var level = Ui.Text(issue.Level ?? string.Empty, null, 150);
-                var zone = Ui.Text(issue.Zone ?? string.Empty, null, 150);
+                var due = Ui.Text(Due(issue.DueDayNumber) == "—" ? string.Empty : Due(issue.DueDayNumber), null, 130);
+                var level = Ui.Text(Fact(issue, Issue.LevelFact) ?? string.Empty, null, 150);
+                var zone = Ui.Text(Fact(issue, Issue.ZoneFact) ?? string.Empty, null, 150);
 
                 var facts = Ui.Stack(
                     Ui.Field("Title", title),
@@ -491,14 +529,16 @@ namespace CamelWorks.UI.Views
 
                             issue.Title = title.Text.Trim().Length == 0 ? issue.Title : title.Text.Trim();
                             issue.Description = description.Text.Trim();
-                            issue.Status = status.Text;
+                            if (FindingStatusLattice.TryParse(status.Text, out var picked))
+                                issue.Status = picked;
+
                             issue.Type = type.Text;
                             issue.Priority = priority.Text;
                             issue.AssignedTo = (who.Text ?? string.Empty).Trim();
                             issue.RootCause = cause.Text;
-                            issue.Level = level.Text.Trim();
-                            issue.Zone = zone.Text.Trim();
-                            issue.DueTicks = ReadDay(due.Text);
+                            issue.Facts[Issue.LevelFact] = level.Text.Trim();
+                            issue.Facts[Issue.ZoneFact] = zone.Text.Trim();
+                            issue.DueDayNumber = ReadDue(due.Text);
                             issue.ModifiedTicks = Now;
 
                             var problem = Write(_session, _register);
@@ -510,14 +550,11 @@ namespace CamelWorks.UI.Views
 
                             if (problem != null) return;
 
-                            // Asked, not done. Closing an issue usually means its clashes are
-                            // dealt with, and usually is not always: one closed because the RFI
-                            // was answered says nothing about whether the duct moved. An
-                            // automatic rule would mark eighteen thousand findings resolved off
-                            // one dropdown and turn the board green over a building that had not
-                            // changed. So the offer is made, with the count, and somebody says.
-                            if (!string.Equals(was, issue.Status, StringComparison.OrdinalIgnoreCase))
-                                Offer(issue, says);
+                            // Applied, not offered. The cascade merges on the lattice, so it
+                            // cannot demote a finding somebody has already settled, and every
+                            // status cascades rather than the two an older mapping covered. What
+                            // it did is reported.
+                            if (was != issue.Status) Cascade(issue, says);
 
                             Redraw();
                         }),
@@ -565,7 +602,9 @@ namespace CamelWorks.UI.Views
                             return;
                         }
 
-                        issue.Say(Environment.UserName ?? "coordinator", text, Now);
+                        issue.Comments.Add(new FindingComment(Environment.UserName ?? "coordinator",
+                                                             Now, text));
+                        issue.ModifiedTicks = Now;
 
                         var problem = Write(_session, _register);
 
@@ -582,42 +621,35 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Offer the cascade the new status implies, if it implies one.
+            /// Merge the issue's new status into the findings attached to it, and say what that
+            /// did.
             ///
-            /// Nothing happens unless somebody presses it. See the remarks on
-            /// <see cref="IssueFindings"/> for why this is an offer rather than an invariant.
+            /// Applied rather than offered: the merge cannot demote a finding, so there is nothing
+            /// to ask about. See <see cref="IssueCascade"/>.
             /// </summary>
-            private void Offer(Issue issue, Panel says)
+            private void Cascade(Issue issue, Panel says)
             {
-                var cascade = IssueFindings.Proposed(issue, _session.Findings.Findings);
+                var cascade = IssueCascade.Plan(issue, issue.Status, _session.Findings.Findings);
 
-                if (cascade.IsEmpty) return;
+                if (cascade.IsEmpty && cascade.Missing.Count == 0) return;
 
-                says.Children.Add(Ui.Info(cascade.Ask(),
-                    "Mark " + (cascade.Findings.Count == 1 ? "it" : "them") + " too",
-                    () =>
-                    {
-                        var changed = cascade.Apply();
+                var changed = cascade.Apply();
 
-                        says.Children.Clear();
+                if (changed > 0 && !_session.Findings.Save())
+                {
+                    says.Children.Add(Ui.Problem(
+                        "They are marked here but could not be kept: "
+                        + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.")));
 
-                        if (!_session.Findings.Save())
-                        {
-                            says.Children.Add(Ui.Problem(
-                                "They are marked here but could not be kept: "
-                                + (_session.Findings.LastSaveProblem
-                                   ?? "there was nowhere to write.")));
+                    return;
+                }
 
-                            return;
-                        }
+                if (changed > 0)
+                    _session.Record(ActivityKind.Regroup,
+                        "marked " + Ui.Count(changed, "finding") + " "
+                        + FindingStatusLattice.ToName(cascade.To) + " with " + issue.Id);
 
-                        _session.Record(ActivityKind.Regroup,
-                            "marked " + Ui.Count(changed, "finding") + " "
-                            + FindingStatusLattice.ToName(cascade.To) + " with " + issue.Id);
-
-                        says.Children.Add(Ui.Done(Ui.Count(changed, "finding") + " marked "
-                            + FindingStatusLattice.ToName(cascade.To) + "."));
-                    }));
+                says.Children.Add(Ui.Done(cascade.Describe()));
             }
 
             /// <summary>
@@ -632,14 +664,9 @@ namespace CamelWorks.UI.Views
 
                 if (findings.Count == 0)
                 {
-                    var said = issue.Clashes.Count > 0
-                        ? Ui.Small(Ui.Count(issue.Clashes.Count, "clash result")
-                            + " raised before findings existed. Read the clash results in the "
-                            + "Clash Manager and they will join this issue by name.")
-                        : Ui.Small("Nothing attached. Pick results on any findings grid and "
-                                   + "\"Attach to an issue\".");
-
-                    return Ui.Card("Findings", null, said);
+                    return Ui.Card("Findings", null,
+                        Ui.Small("Nothing attached. Pick results on any findings grid and "
+                                 + "\"Attach to an issue\"."));
                 }
 
                 var table = Ui.Table(
@@ -689,15 +716,17 @@ namespace CamelWorks.UI.Views
             /// <summary>What the detail card's subtitle says about where an issue came from.</summary>
             private string Where(Issue issue)
             {
-                var from = Origin(issue.Origin) switch
+                var from = Origin(issue.Provenance) switch
                 {
-                    "Clash" => "Made from " + Ui.Count(issue.Findings.Count + issue.Clashes.Count,
-                                                       "clash result"),
+                    "Clash" => "Made from " + Ui.Count(issue.Findings.Count, "clash result"),
                     "Clearance" => "Made from a clearance finding",
                     "Compare" => "Made from what changed between two revisions",
                     "Health" => "Made from a model review finding",
                     "IDS" => "Made from a specification the model failed",
-                    "Imported" => "Imported" + (issue.Source == null ? string.Empty : " from " + issue.Source),
+                    "Imported" => "Imported"
+                                  + (Fact(issue, Issue.SourceFact) is string file
+                                      ? " from " + file
+                                      : string.Empty),
                     _ => "Raised by hand",
                 };
 
@@ -705,13 +734,35 @@ namespace CamelWorks.UI.Views
                        + (issue.Author == null ? string.Empty : " by " + issue.Author);
             }
 
+            /// <summary>
+            /// The priority words this project uses, plus whatever this issue already carries.
+            ///
+            /// One vocabulary, from the profile, so an issue over three findings does not offer
+            /// different words from the findings it covers. A word no longer in the list is still
+            /// offered on the record that has it, because rewriting somebody's judgement to fit a
+            /// later setting would be the setting editing the record.
+            /// </summary>
+            private IReadOnlyList<string> PriorityWords(Issue issue)
+            {
+                var list = _session.Profile.Priorities.ToList();
+
+                if (list.Count == 0) list.AddRange(Core.Project.Priorities.All);
+
+                if (!string.IsNullOrWhiteSpace(issue.Priority)
+                    && !list.Contains(issue.Priority!, StringComparer.OrdinalIgnoreCase))
+                    list.Insert(0, issue.Priority!);
+
+                return list;
+            }
+
+            private static string? Fact(Issue issue, string key) =>
+                issue.Facts.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
+                    ? value
+                    : null;
+
             private static IReadOnlyList<string> Statuses(Issue issue)
             {
-                var list = Issue.Statuses.ToList();
-
-                // A status another tool spelled its own way is kept; the picker has to be able to
-                // show what the record actually says, or saving would silently change it.
-                if (!list.Contains(issue.Status, StringComparer.OrdinalIgnoreCase)) list.Insert(0, issue.Status);
+                var list = Marks.ToList();
 
                 return list;
             }
@@ -719,7 +770,10 @@ namespace CamelWorks.UI.Views
             private static IReadOnlyList<string> Types(Issue issue)
             {
                 var list = Issue.Types.ToList();
-                if (!list.Contains(issue.Type, StringComparer.OrdinalIgnoreCase)) list.Insert(0, issue.Type);
+
+                if (!string.IsNullOrWhiteSpace(issue.Type)
+                    && !list.Contains(issue.Type!, StringComparer.OrdinalIgnoreCase))
+                    list.Insert(0, issue.Type!);
                 return list;
             }
 
@@ -825,9 +879,13 @@ namespace CamelWorks.UI.Views
                     + " across " + Ui.Count(issues.Count, "issue") + "."));
             }
 
-            private void MarkPicked(IReadOnlyList<object> picked, Panel say) =>
-                Edit(picked, say, issue => issue.Status = _mark,
+            private void MarkPicked(IReadOnlyList<object> picked, Panel say)
+            {
+                if (!FindingStatusLattice.TryParse(_mark, out var to)) return;
+
+                Edit(picked, say, issue => issue.Status = to,
                      count => "Set " + count + " to " + _mark + ".");
+            }
 
             private void AssignPicked(IReadOnlyList<object> picked, Panel say)
             {
@@ -876,7 +934,11 @@ namespace CamelWorks.UI.Views
 
                         var author = Environment.UserName ?? "coordinator";
 
-                        foreach (var issue in issues) issue.Say(author, body, Now);
+                        foreach (var issue in issues)
+                        {
+                            issue.Comments.Add(new FindingComment(author, Now, body));
+                            issue.ModifiedTicks = Now;
+                        }
 
                         var problem = Write(_session, _register);
 
@@ -1023,14 +1085,17 @@ namespace CamelWorks.UI.Views
                                            "Latest comment", "Raised", "Source");
 
                 foreach (var issue in rows)
-                    block.Row(issue.Id, issue.Title, issue.Description ?? string.Empty, issue.Status,
-                              issue.Type, issue.Priority, issue.AssignedTo ?? string.Empty,
-                              Day(issue.DueTicks), Origin(issue.Origin), issue.Author ?? string.Empty,
-                              issue.Level ?? string.Empty, issue.Zone ?? string.Empty,
+                    block.Row(issue.Id, issue.Title, issue.Description ?? string.Empty,
+                              FindingStatusLattice.ToName(issue.Status),
+                              issue.Type ?? string.Empty, issue.Priority ?? string.Empty,
+                              issue.AssignedTo ?? string.Empty,
+                              Due(issue.DueDayNumber), Origin(issue.Provenance),
+                              issue.Author ?? string.Empty,
+                              Told(issue, Issue.LevelFact), Told(issue, Issue.ZoneFact),
                               issue.RootCause ?? string.Empty,
                               issue.Comments.Count.ToString(CultureInfo.InvariantCulture),
                               issue.LastComment?.Body ?? string.Empty,
-                              Day(issue.CreatedTicks), issue.Source ?? string.Empty);
+                              Day(issue.CreatedTicks), Told(issue, Issue.SourceFact));
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
@@ -1192,12 +1257,12 @@ namespace CamelWorks.UI.Views
             {
                 _session = session;
                 _register = IssueViews.Read(session);
-                _show = new HashSet<string>(Issue.Statuses, StringComparer.OrdinalIgnoreCase);
+                _show = new HashSet<string>(Marks, StringComparer.OrdinalIgnoreCase);
             }
 
             internal UIElement Build()
             {
-                var ticks = Issue.Statuses.Select(status => (UIElement)Ui.Check(status,
+                var ticks = Marks.Select(status => (UIElement)Ui.Check(status,
                     _show.Contains(status), on =>
                     {
                         if (on) _show.Add(status); else _show.Remove(status);
@@ -1235,7 +1300,7 @@ namespace CamelWorks.UI.Views
             private void Write(Job job)
             {
                 var going = _register.Issues
-                    .Where(i => _show.Contains(i.Status))
+                    .Where(i => _show.Contains(FindingStatusLattice.ToName(i.Status)))
                     .Where(i => !_openOnly || i.IsOpen)
                     .ToList();
 

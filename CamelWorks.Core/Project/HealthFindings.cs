@@ -34,13 +34,13 @@ namespace CamelWorks.Core.Project
         public const string Counted = "Elements";
 
         /// <summary>
-        /// One review finding, as a finding with a child per element it names.
+        /// One review finding, as a finding with a location per element it names.
         /// </summary>
         /// <param name="finding">What the review said.</param>
         /// <param name="cap">
-        /// How many children to make at most. A rule that fails ninety thousand elements is one
-        /// decision and ninety thousand rows nobody scrolls, and the file it would write is worse
-        /// than useless. The parent still says how many there were.
+        /// How many locations to make at most. A rule that fails ninety thousand elements is one
+        /// decision and ninety thousand places nobody scrolls, and the file it would write is worse
+        /// than useless. The finding still says how many there were.
         /// </param>
         public static Finding From(ReviewFinding finding, int cap = DefaultCap)
         {
@@ -66,9 +66,8 @@ namespace CamelWorks.Core.Project
             {
                 if (element.IsEmpty || made >= Math.Max(0, cap)) continue;
 
-                parent.AddChild(Finding.Create(FindingSource.Health, finding.Check,
-                                               finding.Headline, new[] { element },
-                                               finding.Named));
+                parent.AddLocation(new FindingLocation(element.ToString(), new[] { element },
+                                                       finding.Headline));
                 made++;
             }
 
@@ -76,7 +75,7 @@ namespace CamelWorks.Core.Project
         }
 
         /// <summary>
-        /// How many children one rule may make.
+        /// How many locations one rule may make.
         ///
         /// Five hundred: enough that "show me all of them" is still the whole answer on any
         /// federation somebody actually coordinates, and few enough that a pathological rule
@@ -86,7 +85,7 @@ namespace CamelWorks.Core.Project
 
         /// <summary>A whole review, as findings. Clean checks say nothing, so they make none.</summary>
         /// <param name="review">The review.</param>
-        /// <param name="cap">How many children each rule may make.</param>
+        /// <param name="cap">How many locations each rule may make.</param>
         public static IReadOnlyList<Finding> For(FederationReview? review, int cap = DefaultCap)
         {
             var found = new List<Finding>();

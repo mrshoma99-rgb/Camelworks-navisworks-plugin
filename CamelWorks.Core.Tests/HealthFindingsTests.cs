@@ -40,8 +40,8 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(FindingSource.Health, parent.Source);
             Assert.Equal("Geometry", parent.Rule);
-            Assert.True(parent.IsParent);
-            Assert.Equal(3, parent.Children.Count);
+            Assert.True(parent.HasLocations);
+            Assert.Equal(3, parent.Locations.Count);
             Assert.Empty(parent.Elements);
             Assert.Equal(3, parent.AllElements().Count);
             Assert.Equal("Fault", parent.Facts[HealthFindings.Grade]);
@@ -88,10 +88,10 @@ namespace CamelWorks.Core.Tests
         [Fact]
         public void ARerunShowsThisRunsElementsRatherThanLastRuns()
         {
-            // Children are locations, not decisions. A rule that failed 400 elements last week and
+            // A location is a place, not a decision. A rule that failed 400 elements last week and
             // 401 today must show today's 401, or "show me all of them" points at a set that has
             // moved on and misses the one that is new. Nothing anybody decided is lost by the
-            // swap, because triage lives on the parent.
+            // swap, because triage lives on the finding.
             var register = new FindingRegister();
 
             register.Observe(FindingSource.Health, new[] { HealthFindings.From(Said(2)) }, 1);
@@ -103,7 +103,7 @@ namespace CamelWorks.Core.Tests
 
             var after = register.All.Single();
 
-            Assert.Equal(5, after.Children.Count);
+            Assert.Equal(5, after.Locations.Count);
             Assert.Equal(5, after.AllElements().Count);
             Assert.Equal(FindingStatus.Approved, after.Status);
         }
@@ -122,7 +122,7 @@ namespace CamelWorks.Core.Tests
 
             register.Observe(FindingSource.Health, HealthFindings.For(review), 2);
 
-            Assert.Empty(register.All.Single().Children);
+            Assert.Empty(register.All.Single().Locations);
         }
 
         [Fact]
@@ -132,7 +132,7 @@ namespace CamelWorks.Core.Tests
             // how many there were, which is the part anybody reads.
             var parent = HealthFindings.From(Said(2000), cap: 500);
 
-            Assert.Equal(500, parent.Children.Count);
+            Assert.Equal(500, parent.Locations.Count);
             Assert.Equal("2000", parent.Facts[HealthFindings.Counted]);
         }
 
@@ -149,7 +149,7 @@ namespace CamelWorks.Core.Tests
 
             var parent = HealthFindings.For(review).Single();
 
-            Assert.False(parent.IsParent);
+            Assert.False(parent.HasLocations);
             Assert.Empty(parent.AllElements());
             Assert.Equal("Placement", parent.Rule);
         }
@@ -162,16 +162,17 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void AChildCarriesNoDecisionOfItsOwn()
+        public void ALocationCarriesNoDecisionOfItsOwn()
         {
-            // Status, assignee and due date live on the parent, which is the unit of decision.
+            // Status, assignee and due date live on the finding, which is the unit of decision. A
+            // location has nowhere to put any of them and names one element and one place.
             var parent = HealthFindings.From(Said(2));
 
-            Assert.All(parent.Children, child =>
+            Assert.All(parent.Locations, location =>
             {
-                Assert.Equal(FindingStatus.New, child.Status);
-                Assert.Null(child.AssignedTo);
-                Assert.Single(child.Elements);
+                Assert.Single(location.Elements);
+                Assert.Equal(location.Elements[0].ToString(), location.Id);
+                Assert.Empty(location.Notes);
             });
         }
     }

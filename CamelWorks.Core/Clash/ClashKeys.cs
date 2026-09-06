@@ -25,9 +25,6 @@ namespace CamelWorks.Core.Clash
         /// <summary>The suppress, flag, group and assign rules.</summary>
         public const string Rules = "rules";
 
-        /// <summary>Issues somebody raised by hand, which ride on the board beside the results.</summary>
-        public const string Issues = "issues";
-
         /// <summary>Who is on which group.</summary>
         public const string Assignments = "assignments";
 

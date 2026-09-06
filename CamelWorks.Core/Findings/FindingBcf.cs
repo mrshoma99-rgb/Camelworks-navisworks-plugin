@@ -35,6 +35,12 @@ namespace CamelWorks.Core.Findings
         /// The one it already has when it has one - a markup must go home under the name it came
         /// out under, or the seat syncing it cannot place it - and otherwise one derived from the
         /// finding's own identity, so the same problem is the same topic in every export.
+        ///
+        /// This is the half of one agreement that makes the two BCF writers emit the same topic for
+        /// the same clash: <c>ClashFindings.From</c> stamps <c>ClashBcf.TopicGuidFor(key)</c> onto
+        /// the finding, and preferring the stamped value here is what keeps it. Deriving from the
+        /// id unconditionally would give one clash two topic guids depending on which writer
+        /// exported it, and a file coming back would match neither.
         /// </summary>
         /// <param name="finding">The finding.</param>
         public static string TopicGuidFor(Finding finding) =>
@@ -296,9 +302,9 @@ namespace CamelWorks.Core.Findings
                 if (!string.IsNullOrWhiteSpace(fact.Value))
                     said.Add(fact.Key + ": " + fact.Value);
 
-            if (finding.IsParent)
-                said.Add(finding.Children.Count.ToString(CultureInfo.InvariantCulture)
-                         + " elements are named on it.");
+            if (finding.HasLocations)
+                said.Add(finding.Locations.Count.ToString(CultureInfo.InvariantCulture)
+                         + " places are named on it.");
 
             if (!finding.IsPresent)
                 said.Add("The latest run no longer reports this.");

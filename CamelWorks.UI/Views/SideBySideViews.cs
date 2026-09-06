@@ -511,7 +511,6 @@ namespace CamelWorks.UI.Views
                     var issue = new Issue(id, title)
                     {
                         Type = "Coordination",
-                        Source = _leftName + " vs " + _rightName,
                         Description = string.Join(Environment.NewLine, from.Take(20).Select(c =>
                             c.Print.Name + ": " + Where(c) + " — " + c.Summary())),
                         HasPoint = true,

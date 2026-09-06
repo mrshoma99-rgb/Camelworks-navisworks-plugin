@@ -49,35 +49,48 @@ namespace CamelWorks.Core.Findings
         public override string ToString() => Author + ": " + Body;
     }
 
-    /// <summary>What produced a finding. Not a category for display — a provenance.</summary>
-    public enum FindingSource
+    /// <summary>
+    /// Which check produced a finding. A string, so the list of checks is open.
+    ///
+    /// Constants rather than an enum. A finding's id is hashed from this value, so the text of each
+    /// constant is a persisted format: renaming one re-derives every id under it and detaches every
+    /// status, assignee, comment and issue attachment already recorded against them. The values are
+    /// the names the enum this replaced was written and hashed by, so no finding is re-identified.
+    /// </summary>
+    public static class FindingSource
     {
         /// <summary>A clash result from the host's clash engine.</summary>
-        Clash = 0,
+        public const string Clash = "Clash";
 
         /// <summary>Raised by hand from a selection — "no access to this valve".</summary>
-        Manual = 1,
+        public const string Manual = "Manual";
 
         /// <summary>A model, set or data health rule.</summary>
-        Health = 2,
+        public const string Health = "Health";
 
         /// <summary>A headroom or access check.</summary>
-        Headroom = 3,
+        public const string Headroom = "Headroom";
 
         /// <summary>An IDS specification the model failed.</summary>
-        Ids = 4,
+        public const string Ids = "Ids";
 
         /// <summary>A set that stopped returning what it used to.</summary>
-        SetDrift = 5,
+        public const string SetDrift = "SetDrift";
+
+        /// <summary>A difference between two revisions of the model.</summary>
+        public const string Compare = "Compare";
+
+        /// <summary>A place somebody could fall from.</summary>
+        public const string FallHazard = "FallHazard";
 
         /// <summary>
-        /// A difference between two revisions of the model.
-        ///
-        /// Added last, and numbered last, deliberately: a finding's identity is hashed from this
-        /// member's NAME, so appending one leaves every existing finding's id — and with it every
-        /// sign-off anybody has already given — exactly as it was.
+        /// The sources this build knows. A finding written by a check this build does not have is
+        /// read and drawn by its own key rather than refused, so this list is not a gate.
         /// </summary>
-        Compare = 6,
+        public static IReadOnlyList<string> Known { get; } = new[]
+        {
+            Clash, Manual, Health, Headroom, Ids, SetDrift, Compare, FallHazard,
+        };
     }
 
     /// <summary>
@@ -111,11 +124,13 @@ namespace CamelWorks.Core.Findings
     /// places for the same bug. They converge here, so the board, the report, the BCF exporter and
     /// the journals are each written once.
     ///
-    /// Parent and child. One rule failing 400 elements is one thing to decide about and 400 things
-    /// to look at. Modelling that as 400 findings floods the board; modelling it as one loses the
-    /// ability to point at an element. So a rule emits a parent carrying the decision and children
-    /// carrying the locations. Status, assignee and due date live on the parent; children inherit
-    /// and are never separately triaged.
+    /// A finding is the unit of decision; a location is one of the places it is. One rule failing
+    /// 400 elements is one thing to decide about and 400 things to look at. Modelling that as 400
+    /// findings floods the board and re-identifies a row whenever its element moves or is renamed;
+    /// modelling it as one finding with no locations loses the ability to point at an element. So a
+    /// rule emits one finding carrying the decision and a location per element. Status, assignee
+    /// and due date live on the finding, and a location never carries any of them — see
+    /// <see cref="FindingLocation"/>.
     ///
     /// Identity is derived, never allocated. A finding's id is a hash of what makes it that finding,
     /// so the same problem in next week's run has the same id with no stored mapping. That is what
@@ -123,9 +138,9 @@ namespace CamelWorks.Core.Findings
     /// </summary>
     public sealed class Finding
     {
-        private readonly List<Finding> _children = new List<Finding>();
+        private readonly List<FindingLocation> _locations = new List<FindingLocation>();
 
-        private Finding(string id, FindingSource source, string rule, string title,
+        private Finding(string id, string source, string rule, string title,
                         IReadOnlyList<ElementKey> elements, KeyRung weakestRung,
                         string? discriminator)
         {
@@ -150,8 +165,9 @@ namespace CamelWorks.Core.Findings
         /// <summary>Derived identity — stable across runs. See the type remarks.</summary>
         public string Id { get; }
 
-        /// <summary>What produced it.</summary>
-        public FindingSource Source { get; }
+        /// <summary>Which check produced it. One of <see cref="FindingSource"/>, or a key this build
+        /// does not know, which is read through rather than refused.</summary>
+        public string Source { get; }
 
         /// <summary>The rule or test that produced it, as the user named it.</summary>
         public string Rule { get; private set; }
@@ -174,13 +190,14 @@ namespace CamelWorks.Core.Findings
         /// </summary>
         public KeyRung WeakestRung { get; }
 
-        /// <summary>Children, for a rule that failed many elements. Empty for a leaf.</summary>
-        public IReadOnlyList<Finding> Children => _children;
+        /// <summary>The places this finding is, for a rule that failed many elements. Empty when the
+        /// finding's own elements are the whole of it.</summary>
+        public IReadOnlyList<FindingLocation> Locations => _locations;
 
-        /// <summary>True when this finding carries children and is therefore the unit of decision.</summary>
-        public bool IsParent => _children.Count > 0;
+        /// <summary>True when this finding carries locations.</summary>
+        public bool HasLocations => _locations.Count > 0;
 
-        // --- triage state; on a parent this governs its children too ---
+        // --- triage state; the locations carry none of their own ---
 
         /// <summary>Where it is in the process.</summary>
         public FindingStatus Status { get; set; } = FindingStatus.New;
@@ -414,13 +431,15 @@ namespace CamelWorks.Core.Findings
         /// for the test goes here instead; the name stays on <see cref="Rule"/>, where it is read.
         /// </param>
         public static Finding Create(
-            FindingSource source,
+            string source,
             string rule,
             string title,
             IReadOnlyList<ElementKey> elements,
             string? discriminator = null,
             string? identity = null)
         {
+            if (string.IsNullOrWhiteSpace(source))
+                throw new ArgumentException("source is required", nameof(source));
             if (string.IsNullOrWhiteSpace(rule)) throw new ArgumentException("rule is required", nameof(rule));
             if (elements == null) throw new ArgumentNullException(nameof(elements));
 
@@ -430,7 +449,7 @@ namespace CamelWorks.Core.Findings
 
             var named = string.IsNullOrWhiteSpace(identity) ? rule : identity!.Trim();
 
-            var parts = new List<string?> { source.ToString(), named, discriminator };
+            var parts = new List<string?> { source, named, discriminator };
             parts.AddRange(ordered.Select(s => (string?)s));
 
             var id = Hash.Of(Hash.ComponentWidth, parts.ToArray());
@@ -440,59 +459,55 @@ namespace CamelWorks.Core.Findings
         }
 
         /// <summary>
-        /// Create a parent for a rule that failed many elements. Its identity depends on the rule
-        /// and its own elements — NOT on the children, so a rule that fails 401 elements next week
-        /// instead of 400 is still the same finding and keeps its sign-off.
+        /// Create a finding for a rule that failed many elements, to be given a location each. Its
+        /// identity depends on the rule and the discriminator — NOT on the locations, so a rule that
+        /// fails 401 elements next week instead of 400 is still the same finding and keeps its
+        /// sign-off.
         /// </summary>
-        public static Finding CreateParent(FindingSource source, string rule, string title, string? discriminator = null) =>
+        /// <param name="source">What produced it.</param>
+        /// <param name="rule">The rule or test name.</param>
+        /// <param name="title">One line for the board.</param>
+        /// <param name="discriminator">What makes it distinct from another finding by the same rule.</param>
+        public static Finding CreateParent(string source, string rule, string title, string? discriminator = null) =>
             Create(source, rule, title, Array.Empty<ElementKey>(), discriminator);
 
-        /// <summary>
-        /// Add a child. Children inherit the parent's triage state and are never separately
-        /// triaged, so this rejects a child that has already been given one.
-        /// </summary>
-        public Finding AddChild(Finding child)
+        /// <summary>Add a place this finding is.</summary>
+        /// <param name="location">The place.</param>
+        public Finding AddLocation(FindingLocation location)
         {
-            if (child == null) throw new ArgumentNullException(nameof(child));
-            if (ReferenceEquals(child, this)) throw new ArgumentException("a finding cannot be its own child", nameof(child));
-            if (child.IsParent) throw new ArgumentException("children are leaves; nesting beyond one level is not supported", nameof(child));
+            if (location == null) throw new ArgumentNullException(nameof(location));
 
-            if (child.Status != FindingStatus.New || child.AssignedTo != null || child.DueDayNumber != null)
-                throw new ArgumentException(
-                    "a child carries no triage state of its own — set it on the parent, which is the unit of decision",
-                    nameof(child));
-
-            _children.Add(child);
+            _locations.Add(location);
             return this;
         }
 
         /// <summary>
         /// Take this run's locations in place of the last run's.
         ///
-        /// Replacing is safe because a child carries no decision of its own: triage lives on the
-        /// parent, which is the unit of decision, so nothing recorded is lost by swapping them.
-        /// Keeping them is not safe: a rule that failed four hundred elements last week and four
-        /// hundred and one today would still show last week's four hundred, so "show me all of them"
-        /// would point at a stale set and miss the new one.
+        /// Replacing is safe because a location carries no decision: triage lives on the finding,
+        /// which is the unit of decision, so nothing recorded is lost by swapping them. Keeping them
+        /// is not safe: a rule that failed four hundred elements last week and four hundred and one
+        /// today would still show last week's four hundred, so "show me all of them" would point at
+        /// a stale set and miss the new one.
         /// </summary>
-        /// <param name="children">This run's children. Null or empty leaves a leaf.</param>
-        public void ReplaceChildren(IEnumerable<Finding>? children)
+        /// <param name="locations">This run's locations. Null or empty leaves none.</param>
+        public void ReplaceLocations(IEnumerable<FindingLocation>? locations)
         {
-            _children.Clear();
+            _locations.Clear();
 
-            foreach (var child in children ?? Array.Empty<Finding>())
-                if (child != null) AddChild(child);
+            foreach (var location in locations ?? Array.Empty<FindingLocation>())
+                if (location != null) _locations.Add(location);
         }
 
         /// <summary>
-        /// Every element this finding covers, itself and its children, without duplicates.
+        /// Every element this finding covers, its own and its locations', without duplicates.
         /// What the section box, the isolate and the report image are all built from.
         /// </summary>
         public IReadOnlyList<ElementKey> AllElements()
         {
             var seen = new List<ElementKey>(Elements);
-            foreach (var child in _children)
-                foreach (var e in child.Elements)
+            foreach (var location in _locations)
+                foreach (var e in location.Elements)
                     if (!seen.Contains(e)) seen.Add(e);
             return seen;
         }
@@ -543,6 +558,6 @@ namespace CamelWorks.Core.Findings
         /// <inheritdoc />
         public override string ToString() =>
             Id + " [" + Source + "/" + FindingStatusLattice.ToName(Status) + "] " + Title
-            + (IsParent ? " (+" + _children.Count.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty);
+            + (HasLocations ? " (+" + _locations.Count.ToString(CultureInfo.InvariantCulture) + ")" : string.Empty);
     }
 }

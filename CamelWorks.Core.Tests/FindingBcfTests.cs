@@ -224,7 +224,7 @@ namespace CamelWorks.Core.Tests
         public void AnIssueAndItsFindingsTravelRelatedBothWays()
         {
             var finding = Made();
-            var issue = new Issue("I1", "Duct run through the transfer beam", IssueOrigin.Clash);
+            var issue = new Issue("I1", "Duct run through the transfer beam", FindingSource.Clash);
 
             IssueFindings.Attach(issue, new[] { finding });
 
@@ -245,7 +245,7 @@ namespace CamelWorks.Core.Tests
         public void TheRelationSurvivesTheArchive()
         {
             var finding = Made();
-            var issue = new Issue("I1", "Duct run through the transfer beam", IssueOrigin.Clash);
+            var issue = new Issue("I1", "Duct run through the transfer beam", FindingSource.Clash);
 
             IssueFindings.Attach(issue, new[] { finding });
 
@@ -264,15 +264,14 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void AParentSaysHowManyElementsAreOnIt()
+        public void AFindingSaysHowManyPlacesAreOnIt()
         {
-            var parent = Finding.CreateParent(FindingSource.Health, "Geometry",
-                                              "37 elements sit on top of each other", "origin-stack");
+            var finding = Finding.CreateParent(FindingSource.Health, "Geometry",
+                                               "37 elements sit on top of each other", "origin-stack");
 
-            parent.AddChild(Finding.Create(FindingSource.Health, "Geometry", "x",
-                                           new[] { Key('a') }, "origin-stack"));
+            finding.AddLocation(new FindingLocation("x", new[] { Key('a') }));
 
-            Assert.Contains("1 elements are named on it.", FindingBcf.ToTopic(parent).Description);
+            Assert.Contains("1 places are named on it.", FindingBcf.ToTopic(finding).Description);
         }
 
         [Fact]

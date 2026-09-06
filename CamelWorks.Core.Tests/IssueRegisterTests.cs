@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
 using CamelWorks.Core.OpenBim;
@@ -17,7 +18,6 @@ namespace CamelWorks.Core.Tests
                 AssignedTo = "Mechanical",
                 Author = "coordinator",
                 Priority = "High",
-                Level = "Level 03",
                 CreatedTicks = 638_000_000_000_000_000L,
                 HasPoint = true,
                 X = 1, Y = 2, Z = 3,
@@ -27,7 +27,9 @@ namespace CamelWorks.Core.Tests
         public void An_issue_survives_a_round_trip_through_the_project_file()
         {
             var issue = Raised("CW-1");
-            issue.Say("coordinator", "Raised on site walk.", 638_000_000_000_000_001L);
+            issue.Comments.Add(new FindingComment("coordinator", 638_000_000_000_000_001L,
+                                                  "Raised on site walk."));
+            issue.Facts[Issue.LevelFact] = "Level 03";
             issue.Elements.Add(ClashFixture.Mep("Duct"));
 
             var back = Issue.FromJson(JsonReader.Parse(issue.ToJson().ToString()));
@@ -40,28 +42,33 @@ namespace CamelWorks.Core.Tests
             Assert.True(back.HasPoint);
             Assert.Equal(3, back.Z);
             Assert.Equal("Raised on site walk.", back.LastComment!.Body);
+            Assert.Equal("Level 03", back.Facts[Issue.LevelFact]);
             Assert.Single(back.Elements);
         }
 
         [Fact]
-        public void The_origin_of_an_issue_survives_the_round_trip()
+        public void The_provenance_of_an_issue_survives_the_round_trip()
         {
-            // The one field nobody may edit is worthless if it does not come back.
-            var issue = new Issue("CW-9", "From the clearance check", IssueOrigin.Clearance);
+            // Where an issue came from is what the list screens filter on, and an imported issue
+            // with no findings attached is indistinguishable from a hand-typed one without it.
+            var issue = new Issue("CW-9", "From the clearance check", "Clearance");
 
             var back = Issue.FromJson(JsonReader.Parse(issue.ToJson().ToString()));
 
-            Assert.Equal(IssueOrigin.Clearance, back!.Origin);
+            Assert.Equal("Clearance", back!.Provenance);
+            Assert.Equal(Issue.ByHand, new Issue("CW-10", "Typed here").Provenance);
         }
 
         [Fact]
         public void An_unreadable_record_is_counted_rather_than_thrown()
         {
-            var json = JsonValue.Array(new[]
-            {
-                Raised("CW-1").ToJson(),
-                JsonValue.Object().Set("title", "no id at all"),
-            });
+            var json = JsonValue.Object()
+                .Set("version", IssueRegister.Version)
+                .Set("issues", JsonValue.Array(new[]
+                {
+                    Raised("CW-1").ToJson(),
+                    JsonValue.Object().Set("title", "no id at all"),
+                }));
 
             var register = IssueRegister.FromJson(json);
 
@@ -86,42 +93,43 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void One_clash_belongs_to_at_most_the_issue_that_holds_it()
+        public void A_register_round_trips_as_a_versioned_object()
         {
-            var key = ClashKey.Create(ClashFixture.Mep("Duct"), ClashFixture.Arch("Beam"), 1, 1, 1);
-
             var register = new IssueRegister();
-            var issue = Raised("CW-1");
-            issue.Clashes.Add(key);
-            register.Put(issue);
+            register.Put(Raised("CW-1"));
 
-            Assert.Same(issue, register.Holding(key));
-            Assert.Null(register.Holding(ClashKey.Create(ClashFixture.Mep("Pipe"),
-                                                         ClashFixture.Arch("Wall"), 9, 9, 9)));
+            var written = register.ToJson();
+
+            Assert.Equal(IssueRegister.Version, (int)written["version"].AsLong());
+
+            var back = IssueRegister.FromJson(JsonReader.Parse(written.ToString()));
+
+            Assert.Single(back.Issues);
+            Assert.Equal(0, back.Unreadable);
         }
 
         [Fact]
         public void Open_and_overdue_are_counted_the_way_the_list_reads_them()
         {
-            var now = 638_100_000_000_000_000L;
+            var today = Finding.DayNumberFor(new DateTime(2026, 4, 20));
 
             var register = new IssueRegister();
 
             var open = Raised("CW-1");
-            open.DueTicks = now - 1;
+            open.DueDayNumber = today - 1;
 
             var closed = Raised("CW-2");
-            closed.Status = Issue.ClosedStatus;
-            closed.DueTicks = now - 1;
+            closed.Status = FindingStatus.Resolved;
+            closed.DueDayNumber = today - 1;
 
             register.Put(open);
             register.Put(closed);
 
             Assert.Equal(1, register.Open);
-            Assert.Equal(1, register.Of(Issue.ClosedStatus));
+            Assert.Equal(1, register.Of(FindingStatus.Resolved));
 
             // A closed issue past its date is not overdue. It is done.
-            Assert.Equal(1, register.Overdue(now));
+            Assert.Equal(1, register.Overdue(today));
         }
     }
 
@@ -155,8 +163,8 @@ namespace CamelWorks.Core.Tests
             var issue = Assert.Single(register.Issues);
 
             Assert.Equal(1, result.Added);
-            Assert.Equal(IssueOrigin.Imported, issue.Origin);
-            Assert.Equal("client.bcf", issue.Source);
+            Assert.Equal(Issue.ByImport, issue.Provenance);
+            Assert.Equal("client.bcf", issue.Facts[Issue.SourceFact]);
             Assert.Equal("Duct through beam", issue.Title);
             Assert.Equal("Structural", issue.AssignedTo);
             Assert.Single(issue.Comments);
@@ -182,7 +190,7 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(0, second.Added);
             Assert.Equal(1, second.Updated);
             Assert.Equal(1, second.Comments);
-            Assert.Equal("Closed", issue.Status);
+            Assert.Equal(FindingStatus.Resolved, issue.Status);
             Assert.Equal(2, issue.Comments.Count);
         }
 
@@ -191,19 +199,23 @@ namespace CamelWorks.Core.Tests
         {
             var register = new IssueRegister();
 
-            IssueBcf.Merge(register, new[] { Topic(BcfGuid.For("t2"), "Answered elsewhere", "Resolved") });
+            IssueBcf.Merge(register, new[] { Topic(BcfGuid.For("t2"), "Answered elsewhere", "Done") });
 
-            Assert.Equal(Issue.ClosedStatus, register.Issues[0].Status);
+            Assert.Equal(FindingStatus.Resolved, register.Issues[0].Status);
         }
 
         [Fact]
-        public void A_status_nobody_here_has_a_word_for_is_kept_as_it_was_written()
+        public void A_status_nobody_here_has_a_word_for_leaves_the_issue_open()
         {
+            // The status is a rung on the lattice, so a word with no rung has to land somewhere.
+            // Active keeps it on somebody's list; reading it as closed would close an issue on a
+            // spelling nobody agreed.
             var register = new IssueRegister();
 
             IssueBcf.Merge(register, new[] { Topic(BcfGuid.For("t3"), "Odd one", "Awaiting client") });
 
-            Assert.Equal("Awaiting client", register.Issues[0].Status);
+            Assert.Equal(FindingStatus.Active, register.Issues[0].Status);
+            Assert.True(register.Issues[0].IsOpen);
         }
 
         [Fact]
@@ -213,18 +225,19 @@ namespace CamelWorks.Core.Tests
             {
                 Author = "coordinator",
                 CreatedTicks = 638_000_000_000_000_000L,
-                DueTicks = 638_100_000_000_000_000L,
-                Status = "Open",
+                DueDayNumber = Finding.DayNumberFor(new DateTime(2026, 4, 20)),
+                Status = FindingStatus.Active,
                 Type = "Coordination",
             };
 
-            issue.Say("coordinator", "Needs a builder's work opening.", 638_000_000_000_000_001L);
+            issue.Comments.Add(new FindingComment("coordinator", 638_000_000_000_000_001L,
+                                                  "Needs a builder's work opening."));
 
             var topic = IssueBcf.ToTopic(issue);
 
             Assert.Contains("CW-7", topic.Labels);
             Assert.Equal("Riser has no opening", topic.Title);
-            Assert.Equal("Open", topic.TopicStatus);
+            Assert.Equal("Active", topic.TopicStatus);
             Assert.NotNull(topic.DueDate);
             Assert.Single(topic.Comments);
         }

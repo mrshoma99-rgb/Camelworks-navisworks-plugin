@@ -999,13 +999,14 @@ namespace CamelWorks.UI.Views
                         var finding = held[at++];
 
                         var issue = new Core.Issues.Issue(id, finding.Title,
-                                                          Core.Issues.IssueOrigin.Compare)
+                                                          FindingSource.Compare)
                         {
                             Type = "Coordination",
-                            Source = against,
-                            Description = Ui.Count(finding.Children.Count, "element")
+                            Description = Ui.Count(finding.Locations.Count, "element")
                                           + " — " + against,
                         };
+
+                        issue.Facts[Core.Issues.Issue.SourceFact] = against;
 
                         IssueFindings.Attach(issue, new[] { finding });
 

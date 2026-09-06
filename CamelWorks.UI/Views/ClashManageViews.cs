@@ -4381,17 +4381,13 @@ namespace CamelWorks.UI.Views
                     var attached = new HashSet<string>(
                         register.Issues.SelectMany(i => i.Findings), StringComparer.OrdinalIgnoreCase);
 
-                    var keyed = new HashSet<ClashKey>(register.Issues.SelectMany(i => i.Clashes));
-
-                    if (attached.Count == 0 && keyed.Count == 0) return found;
+                    if (attached.Count == 0) return found;
 
                     foreach (var row in read.SelectMany(e => e.Rows))
                     {
                         var finding = Found(row);
 
-                        if ((finding != null && attached.Contains(finding.Id))
-                            || (!row.Info.A.IsEmpty && !row.Info.B.IsEmpty
-                                && keyed.Contains(row.Info.Key())))
+                        if (finding != null && attached.Contains(finding.Id))
                             found.Add(Where(row.TestId, row.Info.Id));
                     }
                 }
@@ -5613,17 +5609,11 @@ namespace CamelWorks.UI.Views
                     foreach (var row in entry.Rows)
                         Apply(Found(row), row);
 
-                var rejoined = Rejoin(entries);
-
                 if (!_session.Findings.Save())
                     return "These results are on the board but could not be kept: "
                            + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.");
 
                 return intake.Explain()
-                       + (rejoined > 0
-                           ? " " + Ui.Count(rejoined, "issue") + " raised before findings existed "
-                             + "now names its findings rather than its clash results."
-                           : string.Empty)
                        + (carried > 0
                            ? " " + Ui.Count(carried, "clash") + " took back what an earlier "
                              + "version of this tool was keeping in the project file."
@@ -5689,42 +5679,6 @@ namespace CamelWorks.UI.Views
 
                 return ClashLegacy.Fold(held, asides,
                                         register.From(FindingSource.Clash).Where(f => f.IsPresent));
-            }
-
-            /// <summary>
-            /// Swap an older issue's clash keys for the finding ids this read just made.
-            ///
-            /// A clash key names two elements and a place but not the test that found them, so
-            /// nothing can turn one into a finding id on its own - it takes a read, where both are
-            /// in hand at once. Idempotent, so it runs on every read; an issue whose clash this
-            /// run did not report keeps its key and waits for a wider one.
-            /// </summary>
-            private int Rejoin(IReadOnlyList<TestEntry> entries)
-            {
-                var byKey = new Dictionary<string, Finding>(StringComparer.Ordinal);
-
-                foreach (var entry in entries)
-                    foreach (var row in entry.Rows)
-                    {
-                        if (row.Info.A.IsEmpty || row.Info.B.IsEmpty) continue;
-
-                        var finding = Found(row);
-
-                        if (finding != null) byKey[row.Info.Key().ToString()] = finding;
-                    }
-
-                if (byKey.Count == 0) return 0;
-
-                var register = IssueViews.Read(_session);
-
-                var moved = IssueFindings.Carry(register,
-                    key => byKey.TryGetValue(key.ToString(), out var finding) ? finding : null);
-
-                // Not saving is not a failure worth stopping a read for: the issue still says
-                // which clash it is about, and the next read will offer the swap again.
-                if (moved > 0) IssueViews.Write(_session, register);
-
-                return moved;
             }
 
             /// <summary>The finding a row is a view of, or null when this read kept none.</summary>
@@ -8374,8 +8328,7 @@ namespace CamelWorks.UI.Views
                 var register = IssueViews.Read(_session);
 
                 var open = register.Issues
-                    .OrderBy(i => string.Equals(i.Status, Issue.ClosedStatus,
-                                                StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(i => !i.IsOpen)
                     .ThenBy(i => i.Id, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
@@ -8392,7 +8345,8 @@ namespace CamelWorks.UI.Views
                                              + " to an issue"));
 
                 var table = Ui.Table(
-                    open.Select(i => new TableRow(i, i.Id, i.Title, i.Status,
+                    open.Select(i => new TableRow(i, i.Id, i.Title,
+                                                  FindingStatusLattice.ToName(i.Status),
                                                   i.AssignedTo ?? string.Empty,
                                                   Ui.Count(i.Findings.Count, "finding"))),
                     ("Issue", 70), ("Title", 240), ("Status", 90), ("Assigned", 110),
@@ -8479,10 +8433,9 @@ namespace CamelWorks.UI.Views
                         : Ui.Count(from.Count, "clash") + " in "
                           + (tests.Count == 1 ? tests[0] : Ui.Count(tests.Count, "test"));
 
-                    var issue = new Issue(id, title, IssueOrigin.Clash)
+                    var issue = new Issue(id, title, FindingSource.Clash)
                     {
                         Type = "Clash",
-                        Source = tests.Count == 1 ? tests[0] : string.Join(", ", tests.Take(4)),
                         Description = string.Join(Environment.NewLine, from.Take(20).Select(r =>
                             (r.Info.Name ?? "result") + ": " + (r.Info.NameA ?? "?") + " vs "
                             + (r.Info.NameB ?? "?"))),
@@ -8493,16 +8446,17 @@ namespace CamelWorks.UI.Views
                         Z = from.Average(r => r.Info.PointZ) * scale,
                     };
 
+                    issue.Facts[Issue.SourceFact] =
+                        tests.Count == 1 ? tests[0] : string.Join(", ", tests.Take(4));
+
                     foreach (var row in from)
                     {
-                        // The finding, when this read kept one - which is what the issue is
-                        // really about, and what lets it hold a clearance breach or a health
-                        // failure alongside. The clash key stays for a read that kept none, so
-                        // an issue raised off a file still says which conflict it is about.
+                        // The finding, when this read kept one. An issue may only be attached to
+                        // findings that already exist; a row this read kept none for contributes
+                        // its elements and nothing else.
                         var finding = Found(row);
 
                         if (finding != null) IssueFindings.Attach(issue, new[] { finding });
-                        else issue.Clashes.Add(row.Info.Key());
 
                         if (!row.Info.A.IsEmpty && !issue.Elements.Contains(row.Info.A))
                             issue.Elements.Add(row.Info.A);

@@ -66,10 +66,10 @@ namespace CamelWorks.Core.Sets
         public const string Sampled = "Named elements";
 
         /// <summary>
-        /// How many of the departed elements to name as children.
+        /// How many of the departed elements to name as locations.
         ///
         /// A set that lost nine thousand elements is one thing to decide about and nine thousand
-        /// rows nobody scrolls. The parent still says how many there were.
+        /// places nobody scrolls. The finding still says how many there were.
         /// </summary>
         public const int DefaultCap = 500;
 
@@ -109,8 +109,7 @@ namespace CamelWorks.Core.Sets
             {
                 if (element.IsEmpty || made >= Math.Max(0, cap)) continue;
 
-                parent.AddChild(Finding.Create(FindingSource.SetDrift, Rule,
-                                               drift.Explain(), new[] { element }, drift.Name));
+                parent.AddLocation(new FindingLocation(element.ToString(), new[] { element }));
                 made++;
             }
 

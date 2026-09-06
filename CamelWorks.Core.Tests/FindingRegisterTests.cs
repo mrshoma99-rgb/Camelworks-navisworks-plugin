@@ -31,6 +31,37 @@ namespace CamelWorks.Core.Tests
         // -----------------------------------------------------------------------------------
 
         [Fact]
+        public void A_closed_finding_this_run_reports_again_is_listed_as_reopened()
+        {
+            // The register does not demote it: the lattice promotes only, so "was closed, is open
+            // now" cannot be read back off the status. The intake is the only moment that knows,
+            // and this is the board's Regressed line.
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 1);
+
+            var held = register.All.Single();
+            held.Status = FindingStatus.Approved;
+
+            var intake = register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 2);
+
+            Assert.Equal(held.Id, Assert.Single(intake.Reopened));
+            Assert.Equal(FindingStatus.Approved, held.Status);
+        }
+
+        [Fact]
+        public void A_finding_nobody_has_settled_is_not_reopened()
+        {
+            var register = new FindingRegister();
+
+            var first = register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 1);
+            var second = register.Observe(FindingSource.Clash, new[] { Clash(A, B) }, 2);
+
+            Assert.Empty(first.Reopened);
+            Assert.Empty(second.Reopened);
+        }
+
+        [Fact]
         public void ARerunKeepsTheDecisionAndTakesTheFacts()
         {
             var register = new FindingRegister();
@@ -242,24 +273,24 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
-        public void AParentKeepsItsChildrenAndTheirLocations()
+        public void AFindingKeepsItsLocationsAndTheirElements()
         {
-            var parent = Finding.CreateParent(FindingSource.Ids, "Fire rating", "12 walls unrated");
+            var finding = Finding.CreateParent(FindingSource.Ids, "Fire rating", "12 walls unrated");
 
-            parent.AddChild(Finding.Create(FindingSource.Ids, "Fire rating", "Wall 1", new[] { A }));
-            parent.AddChild(Finding.Create(FindingSource.Ids, "Fire rating", "Wall 2", new[] { B }));
+            finding.AddLocation(new FindingLocation("Wall 1", new[] { A }, "no FireRating"));
+            finding.AddLocation(new FindingLocation("Wall 2", new[] { B }));
 
-            parent.Status = FindingStatus.Active;
+            finding.Status = FindingStatus.Active;
 
             var register = new FindingRegister();
-            register.Put(parent);
+            register.Put(finding);
 
             var back = FindingRegister.FromJson(JsonReader.Parse(register.ToJson().ToJson()));
             var read = back.All.Single();
 
-            Assert.Equal(2, read.Children.Count);
+            Assert.Equal(2, read.Locations.Count);
             Assert.Equal(FindingStatus.Active, read.Status);
-            Assert.All(read.Children, c => Assert.Equal(FindingStatus.New, c.Status));
+            Assert.Equal("no FireRating", read.Locations[0].Detail);
             Assert.Equal(2, read.AllElements().Count);
         }
 

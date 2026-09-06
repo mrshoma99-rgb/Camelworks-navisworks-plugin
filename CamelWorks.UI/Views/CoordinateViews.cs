@@ -238,7 +238,7 @@ namespace CamelWorks.UI.Views
             // engine's results and call it resolved every single week.
             var everything = new List<ClashItem>(survivors);
             var issues = Issues(session);
-            var raised = issues.Open();
+            var raised = IssueItems.Open(issues);
             everything.AddRange(raised);
 
             var board = ClashPipeline.Run(everything, options);
@@ -362,7 +362,7 @@ namespace CamelWorks.UI.Views
             var raised = Issues(session);
 
             var everything = new List<ClashItem>(hydrated.Items);
-            everything.AddRange(raised.Open());
+            everything.AddRange(IssueItems.Open(raised));
 
             var board = ClashPipeline.Run(everything, options);
 
@@ -547,26 +547,24 @@ namespace CamelWorks.UI.Views
         /// </summary>
         /// <param name="board">The board that has just been built.</param>
         /// <param name="issues">Every issue raised on this project.</param>
-        private static void Instruct(ClashPipelineResult board, ManualIssueList issues)
+        private static void Instruct(ClashPipelineResult board, IssueRegister issues)
         {
             foreach (var issue in issues.Issues)
             {
-                if (!issue.Instruction.IsStated) continue;
+                var said = IssueItems.Instruction(issue);
+
+                if (!said.IsStated) continue;
 
                 var group = board.Groups.FirstOrDefault(g =>
                     string.Equals(g.Name, issue.Title, StringComparison.Ordinal));
 
-                if (group != null && !group.Instruction.IsStated) group.Instruct(issue.Instruction);
+                if (group != null && !group.Instruction.IsStated) group.Instruct(said);
             }
         }
 
-        /// <summary>Every issue somebody raised on this project, from the project file.</summary>
-        internal static ManualIssueList Issues(Session session) =>
-            ManualIssueList.FromJson(session.Store.Section(ProjectStore.ClashSection)[ClashKeys.Issues]);
-
-        /// <summary>Write the issue list back.</summary>
-        private static void SaveIssues(Session session, ManualIssueList issues) =>
-            session.Store.Section(ProjectStore.ClashSection).Set(ClashKeys.Issues, issues.ToJson());
+        /// <summary>Every issue on this project, from the project file.</summary>
+        internal static IssueRegister Issues(Session session) =>
+            IssueRegister.FromJson(session.Store.Section(ProjectStore.IssuesSection)["register"]);
 
         /// <summary>The decisions made by hand, which outrank the rules and survive a re-run.</summary>
         private static IReadOnlyDictionary<string, GroupDecision> Decisions(Session session)
@@ -684,7 +682,7 @@ namespace CamelWorks.UI.Views
             // is what the next run's carry-over compares the ENGINE's results against, and a record
             // the engine can never produce would read as resolved on every single run.
             section.Set(ClashKeys.Snapshot, ClashSnapshotJson.ToJson(snapshot,
-                r => !string.Equals(r.TestName, ManualIssue.RaisedByHand, StringComparison.Ordinal)));
+                r => !string.Equals(r.TestName, IssueItems.RaisedByHand, StringComparison.Ordinal)));
             session.Record(ActivityKind.Regroup, summary ?? "ran the rules: " + board.Funnel);
         }
 
