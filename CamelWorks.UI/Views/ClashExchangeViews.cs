@@ -212,6 +212,7 @@ namespace CamelWorks.UI.Views
             private UIElement SendingOut()
             {
                 var strip = Ui.Across(
+                    Ui.Field("Half", Switch(SendOut)),
                     Ui.Field("Export profile", Saved()),
                     Ui.Field("Find a test", _find),
                     Ui.Field("One file per", Splitting()),
@@ -908,10 +909,15 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement TakingBack()
             {
+                var reading = Ui.Runner("Read the packs", _back, Receive, primary: false);
+
+                reading.VerticalAlignment = VerticalAlignment.Bottom;
+
                 var strip = Ui.Across(
+                    Ui.Field("Half", Switch(TakeBack)),
                     Ui.Field("Returned packs", Ui.Quiet("Choose files…", Chosen)),
                     Ui.Field("Show", Showing()),
-                    Ui.Runner("Read the packs", _back, Receive, primary: false));
+                    reading);
 
                 var foot = new WrapPanel();
 

@@ -122,14 +122,6 @@ namespace CamelWorks.Studio
                                                       importing: true),
                  }),
 
-            // The two remaining tabs of the app, so a sweep of the Clash Manager has every
-            // surface in it rather than the ones that happened to be easy to draw.
-            Page("app-clash-rules", "Clash Manager · Filter Clashes", 820,
-                 () => CoordinateViews.Rules()),
-
-            Page("app-clash-report", "Clash Manager · Report", 820,
-                 () => CoordinateViews.Report()),
-
             Page("app-clash-levels", "Clash Manager · Levels", 620,
                  () => Ui.Loose(Bench.Group("Levels", ClashLevels.Drawn(Storeyed())))),
 
