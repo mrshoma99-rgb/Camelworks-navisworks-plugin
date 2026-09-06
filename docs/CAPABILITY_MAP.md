@@ -129,6 +129,8 @@ surface each type will be reached through rather than a screen that exists today
 
 | Engine | Surface |
 |---|---|
+| `ClashCheck` | **Clash Manager ▸ Manage** — clash detection as a check: the host's own tests read through the clash seam, with the host echo, grouping, runner, naming, geometry and properties a licensed seat offers. The host handle stays private to it; a finding carries its host test and result id as facts. |
+| `FileCheck` | **Clash Manager ▸ Manage** — clash results read out of a file rather than a document: a baseline somebody exported, or a markup sent back. The same check with five capabilities null, which is how a seat with no clash engine still takes part in a review. |
 | `CheckCatalogue` | **Manage ▸ the check picker** — every check the session can offer, registered once when the document opens. Adding a check is one class and one `Add` call: no enum member, no switch, no board edit. An empty catalogue is the ordinary state of a seat with nothing available, and the picker says so. |
 | `CheckRun` | **Manage ▸ the run rail** — one line per test, saved run, specification or rule: what it is called, what it covers, its threshold, its trades and how many results it holds. The check writes the wording, because only the check knows what its own settings mean. |
 | `CheckRunSpec`, `CheckRunStore` | **Manage ▸ the runs this project owns** — the runs this product created, saved in the project file rather than the model, so a run survives a published file that will not hold one. The settings are an open bag of strings, so a new check adds a run type without a schema change. Shares the `checks` section with `RunJournal`, each writing only its own key. |
