@@ -1140,8 +1140,8 @@ namespace CamelWorks.UI.Views
                 if (_returns.Count == 0)
                 {
                     _files.Children.Add(Ui.Empty("No packs chosen.",
-                        "Choose the .bcfzip files the parties returned. The party is taken from "
-                        + "the file name, so Mechanical.bcfzip is read as Mechanical's response."));
+                        "Choose the .bcfzip files the parties returned. The party is read from "
+                        + "the file name, and can be corrected on the row once they are listed."));
 
                     return;
                 }
