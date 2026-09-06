@@ -387,8 +387,24 @@ namespace CamelWorks.Nav
                 foreach (var item in Everything()) working.Add(item);
             }
 
+            // Keyed once per item and kept. The working set was keyed to build the list, keyed
+            // again to test membership at the end, and keyed a third and fourth time for every
+            // set clause: four passes of the key ladder over the same items.
+            var keyed = new Dictionary<ModelItem, string>();
+
+            string KeyOf(ModelItem item)
+            {
+                if (keyed.TryGetValue(item, out var known)) return known;
+
+                var made = NavKeys.Of(item).ToString();
+
+                keyed[item] = made;
+
+                return made;
+            }
+
             var keep = new HashSet<string>(StringComparer.Ordinal);
-            foreach (ModelItem item in working) keep.Add(NavKeys.Of(item).ToString());
+            foreach (ModelItem item in working) keep.Add(KeyOf(item));
 
             // Intersections first. See the type remarks for why this cannot be reordered.
             var skipFirstSet = clause.Include.Count == 0;
@@ -396,21 +412,21 @@ namespace CamelWorks.Nav
             for (var i = skipFirstSet ? 1 : 0; i < clause.IncludeSets.Count; i++)
             {
                 var members = new HashSet<string>(
-                    ItemsOfSet(clause.IncludeSets[i]).Select(x => NavKeys.Of(x).ToString()), StringComparer.Ordinal);
+                    ItemsOfSet(clause.IncludeSets[i]).Select(KeyOf), StringComparer.Ordinal);
 
                 keep.IntersectWith(members);
             }
 
             foreach (var condition in clause.Exclude)
                 foreach (var item in Execute(Build(new[] { condition })))
-                    keep.Remove(NavKeys.Of(item).ToString());
+                    keep.Remove(KeyOf(item));
 
             foreach (var name in clause.ExcludeSets)
                 foreach (var item in ItemsOfSet(name))
-                    keep.Remove(NavKeys.Of(item).ToString());
+                    keep.Remove(KeyOf(item));
 
             foreach (ModelItem item in working)
-                if (keep.Contains(NavKeys.Of(item).ToString()))
+                if (keep.Contains(KeyOf(item)))
                     yield return item;
         }
 

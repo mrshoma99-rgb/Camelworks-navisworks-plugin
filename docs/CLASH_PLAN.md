@@ -162,6 +162,23 @@ the virtualiser.
 `MatrixWindow`'s per-cell `ContextMenu` construction is suspected, not
 confirmed. Measure before changing it.
 
+**Read and left alone.** Three items on the list above were traced and judged
+not worth the change they would take:
+
+- `NavDocument.Sets()`. The document generation bumps when a model is appended,
+  removed or refreshed and never when somebody makes a selection set, so a cache
+  keyed on it would answer with the list from before the set they just made. The
+  host offers no cheaper signal.
+- `MatrixWindow.Hidden`/`Folded`. Both return before the scan unless the line's
+  folder is actually shut, so the quadratic only bites while folders are
+  collapsed, and the cache it would take has no reliable invalidation.
+- The issue register re-read. The four call sites are edit actions, not
+  per-row draws.
+
+`ElementKey.UnscopedValue` stays eager. Making it lazy means the struct
+retaining its parts array, which pins a host tree path for each of 500,000
+leaves — a memory cost in place of a hash that is now cheap.
+
 **Do not touch:** `BoardList`, `Shape`, `Row.Blob`, the 160 ms search debounce,
 `Resize()`, `RailChanged`/`RepaintRail`, `NavClashSource.Described` and `Focus`,
 the `_byId` generation cache, `ClashPick.Take`'s facet hoisting,

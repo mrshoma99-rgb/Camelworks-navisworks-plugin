@@ -160,8 +160,27 @@ namespace CamelWorks.UI.Views
             private IReadOnlyList<ClashGroup> Board() =>
                 _board ?? CoordinateViews.LastBoard?.Groups ?? Array.Empty<ClashGroup>();
 
-            private IReadOnlyList<ClashItem> Results() =>
-                Board().SelectMany(one => one.Items).Where(one => one != null).ToList();
+            /// <summary>
+            /// Every clash on the board, flattened once.
+            ///
+            /// Drawing the export half asks for this a dozen times over — the facets, the values
+            /// behind each filter chip, the counts, the selection — and each ask walked every
+            /// group of an eighteen-thousand-result board and built a new list.
+            /// </summary>
+            private IReadOnlyList<ClashItem> Results()
+            {
+                var board = Board();
+
+                if (_flattened != null && ReferenceEquals(_resultsFrom, board)) return _flattened;
+
+                _flattened = board.SelectMany(one => one.Items).Where(one => one != null).ToList();
+                _resultsFrom = board;
+
+                return _flattened;
+            }
+
+            private IReadOnlyList<ClashItem>? _flattened;
+            private IReadOnlyList<ClashGroup>? _resultsFrom;
 
             /// <summary>The project's storeys, so a filter can name one.</summary>
             private LevelPlan Storeys() => LevelPlan.FromJson(

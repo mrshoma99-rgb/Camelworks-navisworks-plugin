@@ -305,6 +305,36 @@ namespace CamelWorks.UI.Views
 
             var read = 0;
 
+            // Two answers per element, kept. A model name is a scan of the loaded models and a
+            // category is a resolve through the document index, and both were asked twice per
+            // result — for a board where the same beam appears in forty clashes, eighty times.
+            var models = new Dictionary<string, string?>(StringComparer.Ordinal);
+            var categories = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+            string? ModelFor(ElementKey key)
+            {
+                if (models.TryGetValue(key.ModelScope, out var known)) return known;
+
+                var found = ModelOf(session, key);
+
+                models[key.ModelScope] = found;
+
+                return found;
+            }
+
+            string? CategoryFor(ElementKey key)
+            {
+                var id = key.ToString();
+
+                if (categories.TryGetValue(id, out var known)) return known;
+
+                var found = CategoryOf(session, key);
+
+                categories[id] = found;
+
+                return found;
+            }
+
             foreach (var item in hydrated.Items)
             {
                 read++;
@@ -312,12 +342,12 @@ namespace CamelWorks.UI.Views
 
                 // Everything except the coordinates is re-derived from the elements themselves,
                 // which Simulate reads perfectly well. Only the clash engine is missing.
-                item.ModelA = ModelOf(session, item.Key.A);
-                item.ModelB = ModelOf(session, item.Key.B);
+                item.ModelA = ModelFor(item.Key.A);
+                item.ModelB = ModelFor(item.Key.B);
                 item.DisciplineA = session.Profile.DisciplineOf(item.Key.A.ModelScope);
                 item.DisciplineB = session.Profile.DisciplineOf(item.Key.B.ModelScope);
-                item.CategoryA = CategoryOf(session, item.Key.A);
-                item.CategoryB = CategoryOf(session, item.Key.B);
+                item.CategoryA = CategoryFor(item.Key.A);
+                item.CategoryB = CategoryFor(item.Key.B);
                 item.Level = levels.LevelAt(item.Z);
             }
 

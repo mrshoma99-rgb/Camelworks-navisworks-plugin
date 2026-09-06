@@ -1209,6 +1209,11 @@ namespace CamelWorks.Nav.Clash
 
             var items = new ModelItemCollection();
 
+            // De-duplicated in a set rather than by asking the host collection whether it already
+            // holds each item: Contains on a ModelItemCollection is a walk, so selecting five
+            // thousand results was a quadratic scan of what had been added so far.
+            var taken = new HashSet<ModelItem>();
+
             foreach (var wanted in resultIds)
             {
                 // Straight to the result. This used to walk every result the test holds to find
@@ -1218,8 +1223,8 @@ namespace CamelWorks.Nav.Clash
 
                 // The two items the engine recorded when the test ran. No key, no lookup: it is
                 // still holding them.
-                Take(items, result.CompositeItem1);
-                Take(items, result.CompositeItem2);
+                Take(items, taken, result.CompositeItem1);
+                Take(items, taken, result.CompositeItem2);
             }
 
             try
@@ -1228,8 +1233,12 @@ namespace CamelWorks.Nav.Clash
 
                 if (add)
                 {
+                    // What is already selected, once. Asking the host collection per item was the
+                    // same quadratic walk again, on the collection that is usually the larger.
+                    var already = new HashSet<ModelItem>(selection.SelectedItems.Cast<ModelItem>());
+
                     foreach (ModelItem item in items)
-                        if (!selection.SelectedItems.Contains(item)) selection.SelectedItems.Add(item);
+                        if (already.Add(item)) selection.SelectedItems.Add(item);
                 }
                 else
                 {
@@ -1246,9 +1255,9 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>Add one of a result's sides to a collection, when the engine recorded one.</summary>
-        private static void Take(ModelItemCollection items, ModelItem? item)
+        private static void Take(ModelItemCollection items, HashSet<ModelItem> taken, ModelItem? item)
         {
-            if (item == null || items.Contains(item)) return;
+            if (item == null || !taken.Add(item)) return;
 
             items.Add(item);
         }
@@ -2001,6 +2010,8 @@ namespace CamelWorks.Nav.Clash
         {
             _byId.Clear();
             _cachedAt = -1;
+            _tests = null;
+            _testsAt = -1;
         }
 
         /// <summary>
@@ -2040,11 +2051,40 @@ namespace CamelWorks.Nav.Clash
             return clash;
         }
 
-        private static ClashTest? FindTest(DocumentClash clash, string testId) =>
-            AllTests(clash)
-                .Select(t => t.Test)
-                .FirstOrDefault(t => string.Equals(t.Guid.ToString(), testId,
-                                                   StringComparison.OrdinalIgnoreCase));
+        /// <summary>
+        /// The tests by id, so finding one is not a walk of the tree.
+        ///
+        /// Every bulk operation names its tests by id and asked for each in turn, and each ask
+        /// walked the whole test tree: renumbering four hundred tests was four hundred traversals.
+        /// Held against the document's generation, like the result cache above, and dropped by the
+        /// same <see cref="Forget"/>.
+        /// </summary>
+        private Dictionary<string, ClashTest>? _tests;
+
+        private int _testsAt = -1;
+
+        /// <summary>One test by its id, or null when the document no longer has it.</summary>
+        /// <param name="clash">The document's clash data.</param>
+        /// <param name="testId">Which test.</param>
+        private ClashTest? FindTest(DocumentClash clash, string testId)
+        {
+            if (testId == null) return null;
+
+            if (_tests == null || _testsAt != _document.Generation)
+            {
+                _tests = new Dictionary<string, ClashTest>(StringComparer.OrdinalIgnoreCase);
+                _testsAt = _document.Generation;
+
+                foreach (var found in AllTests(clash))
+                {
+                    var id = found.Test.Guid.ToString();
+
+                    if (!_tests.ContainsKey(id)) _tests[id] = found.Test;
+                }
+            }
+
+            return _tests.TryGetValue(testId, out var test) ? test : null;
+        }
 
         private static ClashTestFolder? FolderIn(GroupItem root, string name)
         {

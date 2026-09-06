@@ -2811,21 +2811,30 @@ namespace CamelWorks.UI.Views
                     ascending = sortedBy == index ? !ascending : true;
                     sortedBy = index;
 
-                    var numeric = current.All(row =>
-                    {
-                        var cell = row[index];
-                        return cell.Length == 0
-                               || double.TryParse(cell, NumberStyles.Any,
-                                                  CultureInfo.InvariantCulture, out _);
-                    });
+                    // One pass over the column, deciding whether it reads as numbers and keeping
+                    // each row's key as it goes. Asking twice parsed every cell of an
+                    // eighteen-thousand-row column twice over before the sort began.
+                    var numeric = true;
+                    var keys = new double[current.Count];
 
-                    var sorted = numeric
-                        ? current.OrderBy(row => double.TryParse(row[index], NumberStyles.Any,
-                              CultureInfo.InvariantCulture, out var value)
-                              ? value
-                              : double.MinValue).ToList()
-                        : current.OrderBy(row => row[index],
-                                          StringComparer.OrdinalIgnoreCase).ToList();
+                    for (var i = 0; i < current.Count; i++)
+                    {
+                        var cell = current[i][index];
+
+                        if (cell.Length == 0) { keys[i] = double.MinValue; continue; }
+
+                        if (double.TryParse(cell, NumberStyles.Any, CultureInfo.InvariantCulture,
+                                            out var value))
+                            keys[i] = value;
+                        else { numeric = false; break; }
+                    }
+
+                    var order = Enumerable.Range(0, current.Count);
+
+                    var sorted = (numeric
+                        ? order.OrderBy(i => keys[i])
+                        : order.OrderBy(i => current[i][index], StringComparer.OrdinalIgnoreCase))
+                        .Select(i => current[i]).ToList();
 
                     if (!ascending) sorted.Reverse();
 
@@ -2842,16 +2851,42 @@ namespace CamelWorks.UI.Views
                 if (table.ItemContainerGenerator.Status != System.Windows.Controls.Primitives.GeneratorStatus.ContainersGenerated)
                     return;
 
-                foreach (var item in table.Items)
+                // The realised containers, not every item. ContainerFromItem is a walk of the
+                // whole list, so asking it once per item was quadratic in the rows on every
+                // scroll batch — and a recycled container kept the colour of the row it used to
+                // hold, which is why the brush is set either way.
+                foreach (var container in Realised(table))
                 {
-                    if (!(item is TableRow row)) continue;
-                    if (!(table.ItemContainerGenerator.ContainerFromItem(item) is ListViewItem container)) continue;
+                    if (!(container.DataContext is TableRow row)) continue;
 
-                    if (row.Tone != Tone.Plain) container.BorderBrush = Skin.Ink(row.Tone);
+                    container.BorderBrush = row.Tone == Tone.Plain
+                        ? System.Windows.Media.Brushes.Transparent
+                        : Skin.Ink(row.Tone);
                 }
             };
 
             return table;
+        }
+
+        /// <summary>
+        /// The row containers a virtualised list has actually made.
+        ///
+        /// Walked out of the visual tree, because that is the only place a virtualising panel says
+        /// which rows exist right now.
+        /// </summary>
+        /// <param name="table">The list.</param>
+        private static IEnumerable<ListViewItem> Realised(DependencyObject table)
+        {
+            var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(table);
+
+            for (var i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(table, i);
+
+                if (child is ListViewItem row) { yield return row; continue; }
+
+                foreach (var deeper in Realised(child)) yield return deeper;
+            }
         }
 
         /// <summary>

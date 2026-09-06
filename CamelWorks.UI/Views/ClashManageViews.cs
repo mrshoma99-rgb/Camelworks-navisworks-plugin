@@ -134,9 +134,6 @@ namespace CamelWorks.UI.Views
             internal string Name { get; }
 
             internal List<Row> Rows { get; } = new List<Row>();
-
-            internal int Of(string status) =>
-                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>One file, read for markup, with where it came from.</summary>
@@ -168,8 +165,73 @@ namespace CamelWorks.UI.Views
 
             internal List<Row> Rows { get; } = new List<Row>();
 
-            internal int Of(string status) =>
-                Rows.Count(r => string.Equals(r.Status, status, StringComparison.OrdinalIgnoreCase));
+            /// <summary>
+            /// How many of this test's results stand at one status.
+            ///
+            /// Counted once into five slots rather than scanned per ask. The rail asks a test for
+            /// five of these to draw one row, and the ordering asks for two more per test: on a
+            /// test with five thousand results that was forty thousand comparisons to draw one
+            /// line. The tally is thrown away by <see cref="Restate"/>, which the row's own status
+            /// setter calls.
+            /// </summary>
+            /// <param name="status">The status, by name.</param>
+            internal int Of(string status)
+            {
+                if (_tally == null || _tallyOf != Rows.Count)
+                {
+                    var tally = new int[5];
+
+                    foreach (var row in Rows)
+                    {
+                        var at = Rank(row.Status);
+
+                        if (at >= 0 && at < tally.Length) tally[at]++;
+                    }
+
+                    _tally = tally;
+                    _tallyOf = Rows.Count;
+                }
+
+                var which = Rank(status);
+
+                return which >= 0 && which < _tally.Length ? _tally[which] : 0;
+            }
+
+            /// <summary>Say that a row's status changed, so the tally is counted again.</summary>
+            internal void Restate() => _tally = null;
+
+            /// <summary>Put a result under this test, so its status changes reach the tally.</summary>
+            /// <param name="row">The result.</param>
+            internal Row Take(Row row)
+            {
+                row.Owner = this;
+                Rows.Add(row);
+                _tally = null;
+
+                return row;
+            }
+
+            /// <summary>Take every result out, before reading them again.</summary>
+            internal void Empty()
+            {
+                foreach (var row in Rows) row.Owner = null;
+
+                Rows.Clear();
+                _tally = null;
+            }
+
+            private int[]? _tally;
+            private int _tallyOf = -1;
+
+            /// <summary>The five statuses, in the order the tally holds them.</summary>
+            /// <param name="status">The status, by name.</param>
+            private static int Rank(string? status) =>
+                string.Equals(status, "New", StringComparison.OrdinalIgnoreCase) ? 0
+                : string.Equals(status, "Active", StringComparison.OrdinalIgnoreCase) ? 1
+                : string.Equals(status, "Reviewed", StringComparison.OrdinalIgnoreCase) ? 2
+                : string.Equals(status, "Approved", StringComparison.OrdinalIgnoreCase) ? 3
+                : string.Equals(status, "Resolved", StringComparison.OrdinalIgnoreCase) ? 4
+                : -1;
 
             /// <summary>Take a new name without re-reading anything.</summary>
             /// <param name="named">The test's new name.</param>
@@ -216,8 +278,11 @@ namespace CamelWorks.UI.Views
             internal string Status
             {
                 get => _status;
-                set { _status = value; Blob = null; }
+                set { _status = value; Blob = null; Owner?.Restate(); }
             }
+
+            /// <summary>The test this row belongs to, so a status change re-counts its tally.</summary>
+            internal TestEntry? Owner { get; set; }
 
             internal string Assigned
             {
@@ -3339,19 +3404,54 @@ namespace CamelWorks.UI.Views
                 return order;
             }
 
-            /// <summary>Which cell of a row a named column is drawn in.</summary>
-            /// <param name="column">The column.</param>
-            private int Where(string column)
+            /// <summary>
+            /// Where each column sits, by name.
+            ///
+            /// Every cell of every row asks where its column is, which is about fifteen asks per
+            /// row; each one rebuilt the order and then scanned it. The key is what the order is
+            /// made of, so it goes stale when a column is added, removed or dragged.
+            /// </summary>
+            private Dictionary<string, int> Places()
             {
-                var at = Order().FindIndex(
-                    one => string.Equals(one, column, StringComparison.Ordinal));
+                var key = string.Join("\u001f", _arranged) + "\u001e"
+                        + string.Join("\u001f", _columns.Select(c => c.Title));
 
-                // Column zero is the tick box, so every column is one to the right of its place.
-                return at < 0 ? 1 : at + 1;
+                if (_places != null && string.Equals(_placesKey, key, StringComparison.Ordinal))
+                    return _places;
+
+                var order = Order();
+                var places = new Dictionary<string, int>(order.Count, StringComparer.Ordinal);
+
+                for (var i = 0; i < order.Count; i++)
+                    if (!places.ContainsKey(order[i])) places[order[i]] = i;
+
+                _places = places;
+                _placesKey = key;
+                _placesCount = order.Count;
+
+                return places;
             }
 
+            private Dictionary<string, int>? _places;
+            private string? _placesKey;
+            private int _placesCount;
+
+            /// <summary>Which cell of a row a named column is drawn in.</summary>
+            /// <param name="column">The column.</param>
+            private int Where(string column) =>
+                // Column zero is the tick box, so every column is one to the right of its place.
+                Places().TryGetValue(column, out var at) ? at + 1 : 1;
+
             /// <summary>The last cell of a row, which holds the verbs.</summary>
-            private int VerbsColumn => Order().Count + 1;
+            private int VerbsColumn
+            {
+                get
+                {
+                    Places();
+
+                    return _placesCount + 1;
+                }
+            }
 
             /// <summary>
             /// The order the headers have been dragged into, or empty while nobody has moved one.
@@ -5296,7 +5396,7 @@ namespace CamelWorks.UI.Views
                     var entry = new TestEntry(read.Test) { Shape = read.Shape };
 
                     foreach (var result in read.Results)
-                        entry.Rows.Add(Restored(new Row(read.Test.Id, read.Test.Name, result),
+                        entry.Take(Restored(new Row(read.Test.Id, read.Test.Name, result),
                                                 carried));
 
                     entries.Add(entry);
@@ -5393,6 +5493,22 @@ namespace CamelWorks.UI.Views
             /// longer has, and an index entry for it would hand a row to the wrong clash the next
             /// time the engine reused the id.
             /// </summary>
+            /// <summary>
+            /// Add one finding to the way back from a row, without rebuilding the index.
+            /// </summary>
+            /// <param name="register">The register, for the first build.</param>
+            /// <param name="one">The finding just raised.</param>
+            private static void Index(FindingRegister register, Finding one)
+            {
+                if (_byHost == null) { Index(register); return; }
+
+                if (one.IsPresent
+                    && one.Facts.TryGetValue(ClashFindings.HostTest, out var test)
+                    && one.Facts.TryGetValue(ClashFindings.HostId, out var result)
+                    && test != null && result != null)
+                    _byHost[Where(test, result)] = one;
+            }
+
             private static void Index(FindingRegister register)
             {
                 var index = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
@@ -5500,7 +5616,10 @@ namespace CamelWorks.UI.Views
                                  origin: _session.Store.Path,
                                  scope: f => false);
 
-                Index(register);
+                // One entry rather than a rebuild: grouping five hundred rows raises a finding for
+                // each one that has none yet, and rebuilding the index behind every one of them
+                // walked the whole register five hundred times.
+                Index(register, register.Find(made.Id) ?? made);
 
                 return Found(row);
             }
@@ -5628,7 +5747,7 @@ namespace CamelWorks.UI.Views
                         Distance = result.Item?.Distance,
                     };
 
-                    entry.Rows.Add(new Row(result.Test, result.Test, info)
+                    entry.Take(new Row(result.Test, result.Test, info)
                     {
                         FileItem = result.Item,
                     });
@@ -10181,7 +10300,7 @@ namespace CamelWorks.UI.Views
                         var entry = new TestEntry(read.Test) { Shape = read.Shape };
 
                         foreach (var result in read.Results)
-                            entry.Rows.Add(Restored(new Row(read.Test.Id, read.Test.Name, result),
+                            entry.Take(Restored(new Row(read.Test.Id, read.Test.Name, result),
                                                     carried));
 
                         entries.Add(entry);
@@ -10224,10 +10343,10 @@ namespace CamelWorks.UI.Views
                 {
                     if (!wanted.Contains(entry.Test.Id)) continue;
 
-                    entry.Rows.Clear();
+                    entry.Empty();
 
                     foreach (var result in _session.Clash.Results(entry.Test.Id))
-                        entry.Rows.Add(Restored(new Row(entry.Test.Id, entry.Test.Name, result),
+                        entry.Take(Restored(new Row(entry.Test.Id, entry.Test.Name, result),
                                                 carried));
                 }
 
