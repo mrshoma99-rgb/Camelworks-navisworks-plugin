@@ -206,6 +206,16 @@ namespace CamelWorks.UI.Views
         /// <param name="force">Take it from a live holder — what the "Take it over" button does.</param>
         public LeaseResult Claim(bool force = false) => Store.TakeLease(Owner, NowTicks, force);
 
+        /// <summary>
+        /// Save the findings sidecar and the project file together, in that order.
+        ///
+        /// The one door for any edit that spans both — raising an issue, attaching findings to
+        /// one, cascading a status onto them. Delegates to <see cref="WorkSave"/> and adds
+        /// nothing, so what it guarantees is asserted in Core.Tests over a fake file system.
+        /// </summary>
+        /// <param name="problem">Why nothing was saved, or null when both writes landed.</param>
+        public bool SaveWork(out string? problem) => WorkSave.Save(Store, Findings, out problem);
+
         /// <summary>Record something in the activity log and save the project file.</summary>
         /// <param name="kind">One of <see cref="ActivityKind"/>.</param>
         /// <param name="summary">One line, in the past tense.</param>

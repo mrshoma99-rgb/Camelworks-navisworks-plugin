@@ -58,16 +58,23 @@ namespace CamelWorks.UI.Views
         internal static IssueRegister Read(Session session) =>
             IssueRegister.FromJson(session.Store.Section(ProjectStore.IssuesSection)["register"]);
 
-        /// <summary>Write the register back, and say what stopped it when it would not go.</summary>
+        /// <summary>
+        /// Write the register back, and say what stopped it when it would not go.
+        ///
+        /// Through <see cref="Session.SaveWork"/> rather than the project file alone: an issue
+        /// names finding ids, and the findings are in the sidecar beside it. Saving the project
+        /// file on its own is how an issue comes to name a finding that is nowhere, so the
+        /// sidecar goes first and the project file is not written unless it landed.
+        /// </summary>
         /// <param name="session">The open document.</param>
         /// <param name="register">The register to keep.</param>
         internal static string? Write(Session session, IssueRegister register)
         {
             session.Store.Section(ProjectStore.IssuesSection).Set("register", register.ToJson());
 
-            return session.Store.Save()
+            return session.SaveWork(out var problem)
                 ? null
-                : session.Store.LastSaveProblem ?? "Could not write the project file.";
+                : problem ?? "Could not write the project file.";
         }
 
         /// <summary>
@@ -541,20 +548,38 @@ namespace CamelWorks.UI.Views
                             issue.DueDayNumber = ReadDue(due.Text);
                             issue.ModifiedTicks = Now;
 
+                            // Applied, not offered. The cascade merges on the lattice, so it
+                            // cannot demote a finding somebody has already settled, and every
+                            // status cascades rather than the two an older mapping covered.
+                            //
+                            // Applied before the write, so the one save covers the issue and the
+                            // findings it moved. Written the other way round, an issue naming
+                            // findings landed in the project file while the sidecar those
+                            // findings live in was left to a second write that could fail alone.
+                            var cascade = was != issue.Status
+                                ? IssueCascade.Plan(issue, issue.Status, _session.Findings.Findings)
+                                : null;
+
+                            var moved = cascade?.Apply() ?? 0;
+
                             var problem = Write(_session, _register);
 
                             says.Children.Clear();
-                            says.Children.Add(problem == null
-                                ? Ui.Done("Saved.")
-                                : Ui.Problem(problem));
 
-                            if (problem != null) return;
+                            if (problem != null)
+                            {
+                                says.Children.Add(Ui.Problem(problem
+                                    + (moved > 0
+                                        ? " " + Ui.Count(moved, "finding") + " moved on the board "
+                                          + "with it and were not kept either."
+                                        : string.Empty)));
 
-                            // Applied, not offered. The cascade merges on the lattice, so it
-                            // cannot demote a finding somebody has already settled, and every
-                            // status cascades rather than the two an older mapping covered. What
-                            // it did is reported.
-                            if (was != issue.Status) Cascade(issue, says);
+                                return;
+                            }
+
+                            says.Children.Add(Ui.Done("Saved."));
+
+                            if (cascade != null) Cascaded(cascade, moved, issue, says);
 
                             Redraw();
                         }),
@@ -621,32 +646,22 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Merge the issue's new status into the findings attached to it, and say what that
-            /// did.
+            /// Say what marking the issue did to the findings attached to it.
             ///
-            /// Applied rather than offered: the merge cannot demote a finding, so there is nothing
-            /// to ask about. See <see cref="IssueCascade"/>.
+            /// Reporting only: the merge itself has already been applied and saved through the
+            /// one save door. See <see cref="IssueCascade"/>.
             /// </summary>
-            private void Cascade(Issue issue, Panel says)
+            /// <param name="cascade">What the merge worked out and applied.</param>
+            /// <param name="moved">How many findings it moved.</param>
+            /// <param name="issue">The issue that was marked.</param>
+            /// <param name="says">Where to say it.</param>
+            private void Cascaded(IssueCascade cascade, int moved, Issue issue, Panel says)
             {
-                var cascade = IssueCascade.Plan(issue, issue.Status, _session.Findings.Findings);
-
                 if (cascade.IsEmpty && cascade.Missing.Count == 0) return;
 
-                var changed = cascade.Apply();
-
-                if (changed > 0 && !_session.Findings.Save())
-                {
-                    says.Children.Add(Ui.Problem(
-                        "They are marked here but could not be kept: "
-                        + (_session.Findings.LastSaveProblem ?? "there was nowhere to write.")));
-
-                    return;
-                }
-
-                if (changed > 0)
+                if (moved > 0)
                     _session.Record(ActivityKind.Regroup,
-                        "marked " + Ui.Count(changed, "finding") + " "
+                        "marked " + Ui.Count(moved, "finding") + " "
                         + FindingStatusLattice.ToName(cascade.To) + " with " + issue.Id);
 
                 says.Children.Add(Ui.Done(cascade.Describe()));
@@ -1199,14 +1214,12 @@ namespace CamelWorks.UI.Views
                 var (answered, strangers) =
                     FindingBcf.Merge(_session.Findings.Findings, read.Topics, named);
 
-                if (answered > 0 && !_session.Findings.Save())
-                    _log.Children.Add(Ui.Note("The answers are on the board but could not be "
-                        + "kept: " + (_session.Findings.LastSaveProblem
-                                      ?? "there was nowhere to write.")));
-
                 var register = IssueViews.Read(_session);
                 var result = IssueBcf.Merge(register, strangers, named);
 
+                // One write for both halves of the file. The answers went onto findings and the
+                // strangers became issues that may name them, so saving the register without the
+                // sidecar would leave the second naming what the first never kept.
                 var problem = Write(_session, register);
 
                 if (problem != null)
