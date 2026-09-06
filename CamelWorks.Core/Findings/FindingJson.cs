@@ -126,8 +126,17 @@ namespace CamelWorks.Core.Findings
 
             var discriminator = json["discriminator"].AsString();
 
+            // A clash finding's identity is made from the host's id for the test, not from the
+            // test's name. Registers written before that change hold ids derived from the name,
+            // and this is where they move: the id is derived again on every load anyway, so a
+            // file written under the old scheme comes back under the new one carrying everything
+            // it held, and the mismatch is reported as a rename rather than passing silently.
+            var identity = source == FindingSource.Clash
+                ? Clash.ClashFindings.Identity(json["facts"][Clash.ClashFindings.HostTest].AsString())
+                : null;
+
             // Derived again rather than restored. See the type remarks.
-            var finding = Finding.Create(source, rule!, title!, elements, discriminator);
+            var finding = Finding.Create(source, rule!, title!, elements, discriminator, identity);
 
             var written = json["id"].AsString();
 

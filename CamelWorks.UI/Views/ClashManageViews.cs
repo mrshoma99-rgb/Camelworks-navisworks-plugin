@@ -5338,8 +5338,11 @@ namespace CamelWorks.UI.Views
             {
                 if (OnFile) return null;
 
-                var read = new HashSet<string>(entries.Select(e => e.Test.Name),
-                                               StringComparer.Ordinal);
+                // Scoped by the host's id for each test, not by its name. Keyed on the name, a
+                // renamed test put its own findings outside the scope of the run that read it:
+                // they were never marked absent, so they lingered as orphans beside a fresh set
+                // that arrived as New.
+                var read = entries.Select(e => e.Test.Id).ToList();
 
                 var found = new List<Finding>();
 
@@ -5354,7 +5357,7 @@ namespace CamelWorks.UI.Views
                 var intake = register.Observe(
                     FindingSource.Clash, found, DateTime.UtcNow.Ticks,
                     origin: _session.Store.Path,
-                    scope: f => read.Contains(f.Rule));
+                    scope: ClashFindings.Scope(read));
 
                 Index(register);
 
