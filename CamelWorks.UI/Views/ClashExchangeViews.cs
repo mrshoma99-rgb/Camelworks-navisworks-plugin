@@ -199,7 +199,8 @@ namespace CamelWorks.UI.Views
                 var strip = Ui.Across(
                     Ui.Field("Profile", Saved()),
                     Ui.Field("Find", _find),
-                    Splitting());
+                    Splitting(),
+                    Ui.Field("Order", Sorting()));
 
                 var foot = new WrapPanel();
 
@@ -226,12 +227,15 @@ namespace CamelWorks.UI.Views
                 DrawTests();
                 DrawResults();
 
+                // A pane's label and its "say" share one clipped row, so the say is one short
+                // line and everything else - the filter bar, the picking bar - is in the body
+                // with the table it acts on.
                 return Bench.Split(strip,
-                                   Bench.Pane("Tests", _testsSaid, _tests, TestVerbs(), scrolls: false),
-                                   Bench.Pane("Results", _resultsSaid, _results, ResultVerbs(),
+                                   Bench.Pane("Tests", _testsSaid, _tests, null, scrolls: false),
+                                   Bench.Pane("Results", _resultsSaid, _results, null,
                                               scrolls: false),
                                    Ui.Stack(foot, _sending),
-                                   leftWidth: 420);
+                                   leftWidth: 460);
             }
 
             /// <summary>The saved profiles, as a chooser for the strip.</summary>
@@ -360,8 +364,8 @@ namespace CamelWorks.UI.Views
                 }).ToList();
 
                 var table = Ui.Table(rows,
-                    ("In", 34), ("Test", 0), ("Folder", 110), ("Results", 70),
-                    ("Last sent", 90)).Multi();
+                    ("In", 30), ("Test", 0), ("Folder", 100), ("Results", 62),
+                    ("Last sent", 76)).Multi();
 
                 Ui.SetFills(_tests, true);
 
@@ -376,31 +380,9 @@ namespace CamelWorks.UI.Views
                 var chosen = all.Count(one => Sending(one.Name));
 
                 _testsSaid.Children.Add(Ui.Small(
-                    chosen + " of " + Ui.Count(all.Count, "test") + " included, "
-                    + Ui.Count(all.Where(one => Sending(one.Name)).Sum(one => one.Count), "result")
-                    + " between them."));
-            }
-
-            /// <summary>The verbs the tests pane offers whatever is picked.</summary>
-            private UIElement TestVerbs()
-            {
-                var row = new WrapPanel();
-
-                row.Children.Add(Ui.Link("Include every test", () => Ui.Safely(() =>
-                {
-                    foreach (var one in Tests()) Send(one.Name, true);
-                    Redraw();
-                })));
-
-                row.Children.Add(new Border { Width = 10 });
-
-                row.Children.Add(Ui.Link("Exclude every test", () => Ui.Safely(() =>
-                {
-                    foreach (var one in Tests()) Send(one.Name, false);
-                    Redraw();
-                })));
-
-                return row;
+                    chosen + " of " + all.Count + " included · "
+                    + Ui.Count(all.Where(one => Sending(one.Name)).Sum(one => one.Count),
+                               "result")));
             }
 
             /// <summary>Include or exclude the tests picked in the table.</summary>
@@ -444,7 +426,7 @@ namespace CamelWorks.UI.Views
                 _results.Children.Clear();
                 _resultsSaid.Children.Clear();
 
-                _resultsSaid.Children.Add(Filters());
+                _results.Children.Add(Filters());
 
                 var scope = Scope();
 
@@ -495,30 +477,15 @@ namespace CamelWorks.UI.Views
                 var rounds = Rounds(scope);
 
                 _resultsSaid.Children.Add(Ui.Small(
-                    Ui.Count(scope.Count, "result") + " in scope of "
-                    + Ui.Count(Results().Count, "result") + " on the board"
-                    + (_dropped.Count > 0
-                        ? ", " + Ui.Count(_dropped.Count, "clash") + " left out by hand"
-                        : string.Empty)
-                    + " · " + Ui.Count(rounds.Count, "pack") + " to write."));
-            }
-
-            /// <summary>The verbs the results pane offers whatever is picked.</summary>
-            private UIElement ResultVerbs()
-            {
-                var row = new WrapPanel();
-
-                row.Children.Add(Sorting());
+                    scope.Count.ToString("N0", CultureInfo.InvariantCulture) + " of "
+                    + Ui.Count(Results().Count, "result") + " · "
+                    + Ui.Count(rounds.Count, "pack")));
 
                 if (_dropped.Count > 0)
-                {
-                    row.Children.Add(new Border { Width = 10 });
-
-                    row.Children.Add(Ui.Link("Put back " + Ui.Count(_dropped.Count, "clash"),
-                        () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); })));
-                }
-
-                return row;
+                    _results.Children.Add(Ui.Across(
+                        Ui.Small(Ui.Count(_dropped.Count, "clash") + " left out by hand."),
+                        Ui.Link("Put them back",
+                                () => Ui.Safely(() => { _dropped.Clear(); Rebuild(); }))));
             }
 
             /// <summary>
@@ -530,7 +497,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Filters()
             {
-                var bar = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+                var bar = new WrapPanel { Margin = new Thickness(0, 6, 0, 2) };
 
                 var facets = new List<ClashFacet>();
 
@@ -702,8 +669,9 @@ namespace CamelWorks.UI.Views
             private UIElement Sorting()
             {
                 var by = Ui.Link(_profile.Pick.Sort == null
-                    ? "Order in the pack…"
-                    : "Ordered by " + Titled(_profile.Pick.Sort), () => { });
+                    ? "As they came"
+                    : Titled(_profile.Pick.Sort)
+                      + (_profile.Pick.Descending ? " ↓" : " ↑"), () => { });
 
                 by.ToolTip = "The order the clashes are written in, which is not the order the "
                              + "table happens to be sorted in.";
