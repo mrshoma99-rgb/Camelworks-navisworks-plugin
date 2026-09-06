@@ -530,7 +530,7 @@ namespace CamelWorks.UI.Views
                 pad.ToolTip = "Leading zeros, so 1 reads as 01.";
 
                 row = Ui.Across(kinds, Ui.Field("Start at", start, null),
-                                Ui.Field("Step", step, null), Ui.Field("Digits", pad, null));
+                                Ui.Field("Step", step, null), Ui.Field("Least digits", pad, null));
             }
 
             row.Margin = new Thickness(0, 8, 0, 0);

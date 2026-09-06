@@ -179,7 +179,11 @@ namespace CamelWorks.Core.Clash
 
                 if (held == null)
                 {
-                    if (board.IsKeptHalf(row, column) && !board.IsSelfPair(row, column)) open = true;
+                    // A symbol on the diagonal is a test somebody asked for; an empty diagonal
+                    // cell is not a gap in the coordination.
+                    if (board.IsKeptHalf(row, column)
+                        && (!board.IsSelfPair(row, column) || board.At(row, column) != null))
+                        open = true;
                     continue;
                 }
 

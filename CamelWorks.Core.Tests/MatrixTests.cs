@@ -548,6 +548,25 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void ADisciplineAgainstItselfIsAPlannableTestOnceSomebodyWritesIt()
+        {
+            // A duct through its own hanger is a test that runs every week. Bulk gestures leave
+            // the diagonal alone, but a cell written by hand is a decision, and everything that
+            // reads the board has to follow it.
+            var board = Named("Steel", "Ducts");
+
+            Assert.Null(board.At(board.Rows[1], board.Columns[1]));
+
+            board.Set(board.Rows[1], board.Columns[1], "A");
+
+            Assert.True(board.IsSelfPair(board.Rows[1], board.Columns[1]));
+            Assert.Equal("A", board.At(board.Rows[1], board.Columns[1]));
+
+            Assert.Contains(board.Cells(),
+                            cell => board.IsSelfPair(cell.Row, cell.Column) && cell.Symbol == "A");
+        }
+
+        [Fact]
         public void OnePressFillsEveryPairNobodyHasRuledOn()
         {
             var board = Named("Steel", "Ducts", "Pipes");

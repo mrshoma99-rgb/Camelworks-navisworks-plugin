@@ -4030,12 +4030,15 @@ namespace CamelWorks.UI.Views
                     cell.BorderBrush = Painted(_style.SpineColour, "SpineBd");
                 else cell.Tint(Border.BorderBrushProperty, spine ? "SpineBd" : "Bd");
 
-                if (_board.IsSelfPair(row, column))
+                // A cell on the diagonal that carries a symbol is a test somebody asked for — a
+                // duct through its own hanger is a test that runs every week — so it counts like
+                // any other. Only an empty one is drawn as the spine.
+                if (_board.IsSelfPair(row, column) && _board.At(row, column) == null)
                 {
                     Ground(cell, spine ? _style.SpineColour : string.Empty, spine ? "Spine" : "Nav");
 
                     cell.Child = null;
-                    cell.ToolTip = at + " — a discipline against itself";
+                    cell.ToolTip = at + " — a discipline against itself, with no test on it";
                     return;
                 }
 
