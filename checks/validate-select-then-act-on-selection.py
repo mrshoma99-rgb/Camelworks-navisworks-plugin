@@ -21,9 +21,14 @@ isolate can act on that: IsolateSelection() and ZoomToSelection() take no keys a
 It was reported as Focus and Isolate being slow, on three separate screens, and each one was the
 same three lines.
 
-So: a screen that calls Model.Select(keys) may not also hand the same keys to View.ZoomTo or
-View.Isolate. A screen that never selects is left alone - there the keys are the only handle it
-has.
+So: a screen that calls Model.Select(keys) - or selects through a check's ICheckGeometry, which
+does the same thing with the producer's own handles - may not also hand the same keys to
+View.ZoomTo or View.Isolate. A screen that never selects is left alone: there the keys are the only
+handle it has.
+
+The seam is named here for the same reason it is named in validate-verbs-dont-search.py. Selecting
+through ICheckGeometry.Select is still a selection, and a screen that framed the keys again
+afterwards would resolve every one of them a second time.
 
     python3 checks/validate-select-then-act-on-selection.py
 """
@@ -35,7 +40,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
-SELECTS = re.compile(r"\.Model\.Select\s*\(")
+SELECTS = re.compile(r"\.Model\.Select\s*\(|\.Geometry[?]?\.Select\s*\("
+                     r"|SelectByLocator\s*\(")
 AGAIN = re.compile(r"\.View\.(ZoomTo|Isolate)\s*\(")
 
 # How far after a Select the second resolution still counts as the same press. Generous: the

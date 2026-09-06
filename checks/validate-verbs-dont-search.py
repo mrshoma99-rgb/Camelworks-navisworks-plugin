@@ -17,9 +17,15 @@ fixed this. A later commit rewrote the same method for an unrelated feature and 
 along with the method holding it. Nothing objected, and the freeze came back exactly as before.
 A fix that exists only as a call site lasts until the next person refactors around it.
 
-So: a file whose verbs resolve keys - Model.Select, View.Isolate, View.ZoomTo on keys - must also
-call Index somewhere. Better still is not to resolve at all, which is why a file that reaches the
-model only through the clash engine's own handles is not asked for one.
+So: a file whose verbs resolve keys - Model.Select, View.Isolate, View.ZoomTo, SelectByLocator, or
+a check's ICheckGeometry.Locate - must also call Index somewhere. Better still is not to resolve at
+all, which is why a file that reaches the model only through the clash engine's own handles is not
+asked for one.
+
+**The seam counts too.** The clash board reaches its elements through ICheckGeometry: Select hands
+back what the producer is already holding and resolves nothing, and Locate returns the keys and
+paths a caller then has to resolve. A check pass that moved those calls behind the seam without
+this line would leave the check passing by finding nothing, which is worse than failing.
 
     python3 checks/validate-verbs-dont-search.py
 """
@@ -31,8 +37,11 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 UI = ROOT / "CamelWorks.UI"
 
-# Reaching the model with keys, which is what can cost a walk.
-RESOLVES = re.compile(r"\.Model\.Select\s*\(|\.View\.Isolate\s*\(|\.View\.ZoomTo\s*\(")
+# Reaching the model with keys, which is what can cost a walk. The last two are the check seam:
+# SelectByLocator resolves whatever the locator could not answer directly, and ICheckGeometry.Locate
+# is what hands a screen the keys to resolve.
+RESOLVES = re.compile(r"\.Model\.Select\s*\(|\.View\.Isolate\s*\(|\.View\.ZoomTo\s*\("
+                      r"|SelectByLocator\s*\(|\.Geometry[?]?\.Locate\s*\(")
 
 # Paying for it where there is a progress bar and a Stop: the one shared door.
 BUILDS = re.compile(r"Ui\.Ready\s*\(")

@@ -109,8 +109,16 @@ namespace CamelWorks.Core.Checks
         /// <see cref="Unkeyed"/> rather than written into a markup of nothing.
         /// </summary>
         /// <param name="finding">The finding.</param>
-        public ClashItem? Item(Finding? finding) =>
-            finding != null && _items.TryGetValue(finding.Id, out var item) ? item : null;
+        public ClashItem? Item(Finding? finding)
+        {
+            if (finding == null) return null;
+
+            if (_items.TryGetValue(finding.Id, out var item)) return item;
+
+            return finding.TopicGuid != null && _items.TryGetValue(finding.TopicGuid, out var same)
+                ? same
+                : null;
+        }
 
         /// <summary>No measure: a file carries no tolerance to hold a distance against.</summary>
         /// <param name="finding">The finding.</param>
@@ -249,9 +257,18 @@ namespace CamelWorks.Core.Checks
                     byGuid[Handle(result)] = result.Item;
 
             foreach (var finding in _findings)
-                if (finding.Facts.TryGetValue(ClashFindings.HostId, out var id)
-                    && id != null && byGuid.TryGetValue(id, out var item))
-                    items[finding.Id] = item;
+            {
+                if (!finding.Facts.TryGetValue(ClashFindings.HostId, out var id)
+                    || id == null || !byGuid.TryGetValue(id, out var item))
+                    continue;
+
+                items[finding.Id] = item;
+
+                // Under the topic guid as well, because a caller that has folded this read onto
+                // the findings already held is holding those and not these, and the item is what
+                // says where in the model the elements are.
+                if (!string.IsNullOrEmpty(finding.TopicGuid)) items[finding.TopicGuid!] = item;
+            }
 
             foreach (var pair in items) _items[pair.Key] = pair.Value;
         }

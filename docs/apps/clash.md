@@ -143,6 +143,33 @@ the marker colour and the row's tone bar. A word is read from outside once, thro
 `FindingStatusWords.Of`. Nothing on screen changed: the status column still sorts by the word, so
 its order is alphabetical as before rather than the lattice's.
 
+**The board reads a check, not the clash engine.** The tab used to name the host's clash seam at
+every turn: forty-nine calls to `IClashSource`, a rail row built from `ClashTestInfo` and
+`ClashTestSides`, a board row built from `ClashResultInfo`, and fifty-two branches on whether the
+results came from the model or from a file. It now holds one `ICheck` — `ClashCheck` over the
+document, `FileCheck` over an opened baseline or markup — and draws whatever that returns.
+
+- A rail row is a `CheckRun`: the check words the kind, what the run is between, its threshold and
+  its trades, so the board composes none of them. The board reads the threshold's *number* from the
+  check when it tones a row and never from the words it prints.
+- A board row is a `Finding` and what the check wrote onto it. There is no separate result type.
+- **The file leg is not a branch; it is a check with capabilities missing.** A file has nothing to
+  echo a decision into, no host groups to nest in, nothing to re-run, no run of ours to rename and
+  no elements in this document to read properties off, so it answers null to five of the six.
+  Running, renaming by double-click and the property columns appear where the check offers them.
+- **An edit is not lost because there is no echo.** Every edit on the board goes through one door:
+  the register takes it first and unconditionally, the check's host echo is attempted where the
+  check offers one, and a refused echo marks the field pending and the sync offers it again. That
+  is what a published NWD has always done here; it is now what a file board does too, so a markup
+  is recorded in the project as well as written back into the file.
+- **A file board's results now reach the register.** They are matched to the document's own
+  findings on the topic guid — the one id a file and a model agree on for one clash — so a seat
+  that marked up the baseline and later opens the model finds one clash with one history, not two.
+
+Nothing on screen changed: the rail, the board, the verbs, the counts and the wording are what
+they were. Nothing in this repository can prove that, which is why the check itself is asserted in
+`Core.Tests` against a fake clash seat and the board is checked by the compiler and the validators.
+
 ## Tests — removed
 
 The tab listed the engine's tests and carried a matrix builder. The Matrix tab has been the place

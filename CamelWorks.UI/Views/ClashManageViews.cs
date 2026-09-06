@@ -60,9 +60,6 @@ namespace CamelWorks.UI.Views
         /// <summary>The check over the file being marked up, or null when none has been read.</summary>
         private static FileCheck? _fileCheck;
 
-        /// <summary>What the last read of the document produced, for the register to be scoped by.</summary>
-        private static CheckRead? _lastRead;
-
         /// <summary>
         /// The finding behind each row read from the model, keyed by test and result id.
         ///
@@ -94,7 +91,6 @@ namespace CamelWorks.UI.Views
             _byHost = null;
             _engine = null;
             _fileCheck = null;
-            _lastRead = null;
 
             _columns.Clear();
         }
@@ -266,14 +262,19 @@ namespace CamelWorks.UI.Views
                 Status = finding.Status;
                 Assigned = finding.AssignedTo ?? string.Empty;
                 Group = finding.Group ?? string.Empty;
-                Comments = ClashCheck.CommentsOn(finding);
-                LastComment = ClashCheck.LastCommentOn(finding) ?? string.Empty;
-
                 foreach (var comment in finding.Comments)
                     Trail.Add(new ClashComment(comment.Author, comment.WhenTicks, comment.Body)
                     {
                         HostId = comment.HostId,
                     });
+
+                // The count the check read where it wrote one — the host says how many remarks a
+                // result carries without handing the trail over — and the trail itself where it
+                // did not, which is a file, whose remarks arrive in full.
+                Comments = Math.Max(ClashCheck.CommentsOn(finding), Trail.Count);
+
+                LastComment = ClashCheck.LastCommentOn(finding)
+                              ?? (Trail.Count > 0 ? Trail[Trail.Count - 1].Body : string.Empty);
             }
 
             private FindingStatus _status;
@@ -5635,7 +5636,6 @@ namespace CamelWorks.UI.Views
                 if (job.IsCancelled) return;
 
                 _read = entries;
-                _lastRead = read;
 
                 foreach (var note in read.Notes) _log.Children.Add(Ui.Note(note));
 
@@ -5721,6 +5721,28 @@ namespace CamelWorks.UI.Views
                            : string.Empty);
             }
 
+            /// <summary>
+            /// Lay what is recorded back over rows a re-read has just replaced.
+            ///
+            /// A re-read after a run, a renumber or a compact does not observe into the register —
+            /// it is refreshing part of a board the register already speaks for. Without this the
+            /// fresh rows would show what the producer read and nothing of what was decided, which
+            /// on a re-run is every row back to New.
+            /// </summary>
+            /// <param name="entries">The runs whose rows were replaced.</param>
+            private void Laid(IReadOnlyList<TestEntry> entries)
+            {
+                var register = _session.Findings.Findings;
+
+                foreach (var entry in entries)
+                    foreach (var row in entry.Rows)
+                    {
+                        row.Fact = register.Find(row.Fact.Id) ?? row.Fact;
+
+                        Apply(Found(row), row);
+                    }
+            }
+
             /// <summary>Nothing carried over from a previous read.</summary>
             private static Dictionary<string, Dictionary<string, string>> Nothing =>
                 new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
@@ -5767,6 +5789,34 @@ namespace CamelWorks.UI.Views
 
                 return entries;
             }
+
+            /// <summary>Every clash finding held, by the topic guid it carries.</summary>
+            /// <param name="register">The register.</param>
+            private static Dictionary<string, Finding> Topics(FindingRegister register)
+            {
+                var byTopic = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var finding in register.From(FindingSource.Clash))
+                    if (!string.IsNullOrEmpty(finding.TopicGuid)
+                        && !byTopic.ContainsKey(finding.TopicGuid!))
+                        byTopic[finding.TopicGuid!] = finding;
+
+                return byTopic;
+            }
+
+            /// <summary>
+            /// The finding the register holds for the same clash under another id, or null.
+            ///
+            /// Matched on the topic guid, which is derived from the two elements and the cell they
+            /// meet in and is therefore the one id a file and the document agree on.
+            /// </summary>
+            /// <param name="byTopic">Every held clash finding, by topic guid.</param>
+            /// <param name="fresh">The finding a file read produced.</param>
+            private static Finding? Same(Dictionary<string, Finding> byTopic, Finding fresh) =>
+                !string.IsNullOrEmpty(fresh.TopicGuid)
+                && byTopic.TryGetValue(fresh.TopicGuid!, out var held)
+                    ? held
+                    : null;
 
             /// <summary>
             /// Record what a file's markup says, without letting it close anything.
@@ -5982,6 +6032,16 @@ namespace CamelWorks.UI.Views
                 _file = round;
 
                 Marked(taken);
+
+                // At what the register holds for each of them. A result the fold matched to a
+                // finding already held is that finding now, and a row still pointing at the copy
+                // the fold dropped would put it back the moment somebody edited the row.
+                var byTopic = Topics(_session.Findings.Findings);
+
+                foreach (var row in round.Entries.SelectMany(entry => entry.Rows))
+                    row.Fact = _session.Findings.Findings.Find(row.Fact.Id)
+                               ?? Same(byTopic, row.Fact)
+                               ?? row.Fact;
 
                 Redraw();
 
@@ -6511,7 +6571,9 @@ namespace CamelWorks.UI.Views
             /// <param name="entry">The run, or null before one is picked.</param>
             private double ToleranceMm(TestEntry? entry)
             {
-                var metres = entry == null ? null : Engine?.ThresholdMetres(entry.Run.Id);
+                var metres = entry == null
+                    ? null
+                    : (Check as ClashCheck)?.ThresholdMetres(entry.Run.Id);
 
                 return metres.HasValue && Math.Abs(metres.Value) > 0
                     ? Math.Abs(metres.Value) * 1000
@@ -9011,14 +9073,14 @@ namespace CamelWorks.UI.Views
             /// <param name="say">Where the outcome goes.</param>
             /// <param name="didFormat">What to say afterwards, with a slot for the count.</param>
             /// <param name="echo">
-            /// What to ask the check's host echo, over one run's findings at a time. Null when this
-            /// edit has no echo of its own.
+            /// What to ask the check's host echo, over one run's findings at a time. Not called at
+            /// all when the check offers no echo.
             /// </param>
             /// <param name="apply">What the row shows now.</param>
             /// <param name="record">What the finding holds now.</param>
             /// <param name="field">Which field is pending when the echo refuses.</param>
             private void Write(IReadOnlyList<object> picked, Panel say, string didFormat,
-                               Func<ICheckHostEcho, IReadOnlyList<Finding>, bool>? echo,
+                               Func<ICheckHostEcho, IReadOnlyList<Finding>, bool> echo,
                                Action<Row> apply,
                                Action<Finding, Row>? record = null, string? field = null)
             {
@@ -9048,7 +9110,7 @@ namespace CamelWorks.UI.Views
                 // over the filter state can see inside a row.
                 Moved();
 
-                var echoing = echo == null ? null : Check?.HostEcho;
+                var echoing = Check?.HostEcho;
 
                 if (echoing == null)
                 {
@@ -9080,12 +9142,20 @@ namespace CamelWorks.UI.Views
                     {
                         touched.Add(byTest.Key);
 
-                        var findings = byTest.Select(row => Found(row) ?? Raised(row))
-                                             .Where(finding => finding != null)
-                                             .Select(finding => finding!)
-                                             .ToList();
+                        // The findings first, because the echo reads its host handle off them
+                        // and the register is where the edit is kept whatever the echo answers.
+                        // A row the read had not reached — or a result the engine renumbered
+                        // under us — has none yet, and gets one here.
+                        var behind = new Dictionary<Row, Finding>();
 
-                        var took = echo!(echoing, findings);
+                        foreach (var row in byTest)
+                        {
+                            var made = Found(row) ?? Raised(row);
+
+                            if (made != null) behind[row] = made;
+                        }
+
+                        var took = echo(echoing, behind.Values.ToList());
 
                         if (!took && record == null)
                         {
@@ -9102,15 +9172,7 @@ namespace CamelWorks.UI.Views
                             // document refuses - a published NWD holds its results read-only - is
                             // only that the field says it is still waiting, so the sync knows
                             // what to offer and never writes the same comment twice.
-                            // A row with no finding yet gets one now.
-                            //
-                            // The register is written by the read, and a row the read had not
-                            // reached - or a result the engine renumbered under us - had no
-                            // finding to hold the decision. On a document that takes the write
-                            // that was invisible; on one that does not, the decision was simply
-                            // lost. It is the database that is the record, so the record is
-                            // made rather than the edit dropped.
-                            var finding = Found(row) ?? Raised(row);
+                            var finding = behind.TryGetValue(row, out var one) ? one : null;
 
                             if (finding != null && record != null)
                             {
@@ -10505,10 +10567,11 @@ namespace CamelWorks.UI.Views
                                            seen => { onProgress(seen); return keepGoing(); });
 
                     entries = Entries(read, carried);
-                    _lastRead = read;
                 });
 
                 if (entries.Count > 0) _read = entries;
+
+                Laid(entries);
 
                 Moved();
                 Redraw();
@@ -10552,6 +10615,8 @@ namespace CamelWorks.UI.Views
                         entry.Take(Restored(new Row(entry.Run.Id, entry.Run.Name, finding),
                                             carried));
                 }
+
+                Laid(board);
 
                 Moved();
                 Redraw();
