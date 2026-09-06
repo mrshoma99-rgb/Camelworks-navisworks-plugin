@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using Autodesk.Navisworks.Api;
 using CamelWorks.Core.Abstractions;
+using CamelWorks.Core.Checks;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Project;
@@ -33,11 +34,22 @@ namespace CamelWorks.UI.Views
             Clash = clash;
             ClashProblem = clashProblem;
             View = new NavViewSession(model);
+            Triangles = new NavTriangles(model);
             Viewpoints = new NavViewpointStore(model);
             Search = new NavSearch(model);
             Findings = FindingStore.Open(PhysicalFileSystem.Instance, store);
+            Checks = new CheckCatalogue();
             Baselines = SetBaselineStore.Open(PhysicalFileSystem.Instance, store);
         }
+
+        /// <summary>
+        /// Every check this session can offer.
+        ///
+        /// Empty for now: the checks themselves move onto the seam one at a time, and the tab that
+        /// draws them is not built yet. Registered here rather than when the first check arrives so
+        /// that the seam has a call site and is compiled against.
+        /// </summary>
+        public CheckCatalogue Checks { get; }
 
         /// <summary>
         /// Every finding this project holds, whatever check produced it.
@@ -115,6 +127,15 @@ namespace CamelWorks.UI.Views
 
         /// <summary>The document behind the seam.</summary>
         public NavDocument Model { get; }
+
+        /// <summary>
+        /// Triangles, for the checks that cannot be answered from a bounding box.
+        ///
+        /// Whether an element faces up, how much contiguous surface it has and where its outline
+        /// runs are all questions a box cannot answer, and the clearance check's surface detection
+        /// asks all three.
+        /// </summary>
+        public ITriangleSource Triangles { get; }
 
         /// <summary>Runs compiled set expressions and publishes native sets.</summary>
         public NavSearch Search { get; }

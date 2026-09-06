@@ -160,6 +160,13 @@ namespace CamelWorks.Studio
             // this seat holds none.
             Page("app-clash-matrix-priority", "Clash Manager · Matrix, priority", 820,
                  () => MatrixWindow.Surface(Seated(), Drawn(), MatrixWindow.Showing.Priority)),
+
+            // The clearance tab's floor side. The whole point of the page is the sentence the
+            // detected option is offered under and the list under it: detection cannot tell a floor
+            // from a desk top, and a screen that says "detected walkable surfaces" and stops there
+            // reads as though it could. Not in the render's default list; named on dispatch.
+            Page("app-clash-clearance-surfaces", "Clash Manager · Clearance, what to measure", 760,
+                 Walkable),
         };
 
         /// <summary>
@@ -587,6 +594,75 @@ namespace CamelWorks.Studio
             {
                 code, name.Replace(" ", "_").ToUpperInvariant(), "REV21", "ISSUED",
             });
+
+        /// <summary>
+        /// Clearance ▸ What to measure, with the detected surfaces listed.
+        ///
+        /// Drawn rather than shown: the tab is built from a Session, which needs a document, so
+        /// until this page existed nothing about this window had been looked at away from a
+        /// licensed seat.
+        /// </summary>
+        private static UIElement Walkable()
+        {
+            // The option's own sentence, as the tab builds it from the minimum area in force.
+            var said = "Detected walkable surfaces — every up-facing surface over 0.05 m², "
+                     + "which includes desk tops and duct tops.";
+
+            var sources = new[]
+            {
+                said,
+                "Walking surfaces (a guess)",
+                "Current selection",
+                "Everything loaded",
+                "Level 03 Floors",
+            };
+
+            var measure = Bench.Group("What to measure",
+                Ui.Field("Clear height", Ui.Text("2.100", null, 90), "the minimum, in m"),
+                Ui.Field("Measure up from", Ui.Choice(sources, said, null, 420),
+                         "the walking surface"),
+                Ui.Field("Measure up to", Ui.Choice(
+                    new[] { "Everything except the surfaces", "Current selection", "MEP" },
+                    "Everything except the surfaces", null, 210),
+                    "what might be too low over it"));
+
+            var rows = new[]
+            {
+                new TableRow(null, "Level 03", "412.0 m²", "9.600 m", string.Empty),
+                new TableRow(null, "Level 03", "88.4 m²", "9.600 m", string.Empty),
+                new TableRow(null, "Level 03", "12.6 m²", "10.050 m", string.Empty),
+                new TableRow(null, "Level 03", "1.4 m²", "9.900 m", "dropped") { Tone = Tone.Warn },
+                new TableRow(null, "Level 03", "0.9 m²", "10.700 m", "dropped") { Tone = Tone.Warn },
+                new TableRow(null, "Level 02", "398.2 m²", "6.000 m", string.Empty),
+            };
+
+            var table = Ui.Table(rows, ("Level", 0), ("Area", 90), ("Top", 90), ("In the check", 90));
+
+            var detected = Bench.Group("Detected walkable surfaces",
+                Ui.Check("Prefer elements whose category names a floor", false, null),
+                Ui.Check("Leave stairs out — detection makes one surface per tread, and the "
+                         + "flight above then reads as low headroom over the treads below it",
+                         false, null),
+                Ui.Runner("Find the surfaces", Ui.Stack(), _ => { }, primary: false),
+                Ui.Line("412 surfaces, 8,940 m², 31 elements refused", 1, true),
+                Ui.Small("31 elements would not give triangles; their bounding-box tops were used "
+                         + "instead."),
+                table,
+                Ui.Picking(table,
+                    new Ui.OnPicked("Drop these {n}", (picked, panel) => { }),
+                    new Ui.OnPicked("Put these {n} back", (picked, panel) => { })),
+                Ui.Small("406 surfaces in the check, 2 dropped"),
+                Ui.Small("Detection reads triangles: it keeps every up-facing surface over 0.05 m², "
+                         + "which is a floor, and is also a desk top, a worktop, a window sill and "
+                         + "the top of a wide duct. Read the list before running the check and drop "
+                         + "what is not a floor."),
+                Ui.Small("Both ticks are off to start with: the geometric answer is the default, "
+                         + "and a stair with a soffit too low over it is still worth reporting."));
+
+            return Deck("clash", "headroom",
+                        Bench.Surface(null, Ui.Runner("Check", Ui.Stack(), _ => { }),
+                                      Ui.Stack(measure, detected)));
+        }
 
         private static Sheet Page(string id, string title, int height, Func<UIElement> build) =>
             new Sheet { Id = id, Title = title, Height = height, Builder = _ => build(), Widths = new[] { 1180 } };

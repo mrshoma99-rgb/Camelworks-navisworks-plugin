@@ -46,6 +46,15 @@ namespace CamelWorks.UI.Views
         internal const string Loaded = "Everything loaded";
         internal const string NotTheSurfaces = "Everything except the surfaces";
 
+        /// <summary>
+        /// Surfaces found in the triangles rather than named by hand.
+        ///
+        /// The token. What the option says on screen is <see cref="DetectedSaid"/>, and the caveat
+        /// is in that sentence rather than in a tooltip: the detector can tell an up-facing surface
+        /// from a soffit and a large one from a small one, and it cannot tell a floor from a desk.
+        /// </summary>
+        internal const string Detected = "Detected walkable surfaces";
+
         /// <summary>The words the guess matches, on the element's category or type.</summary>
         internal static readonly string[] WalkingWords =
             { "floor", "slab", "stair", "landing", "ramp", "platform", "deck" };
@@ -67,6 +76,33 @@ namespace CamelWorks.UI.Views
         private static readonly List<PropColumn> _columns = new List<PropColumn>();
         private static readonly List<string> _chain = new List<string>();
 
+        // What detection was asked for, what it found, and what somebody threw out of it. Held
+        // between visits like the findings are: a federation sweep is a minute of traversal.
+        private static readonly WalkableOptions _detection = new WalkableOptions();
+        private static List<WalkablePatch>? _patches;
+        private static WalkableDiagnostics? _diagnostics;
+
+        /// <summary>
+        /// Surfaces the user dropped, by patch id.
+        ///
+        /// In memory for now. A patch id is derived from where the surface is, so it survives a
+        /// re-run of the same build; carrying the exclusions in the run's own saved settings waits
+        /// for the run record.
+        /// </summary>
+        private static readonly HashSet<string> _dropped = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// The option's whole sentence, caveat included.
+        ///
+        /// The caveat is in the option rather than in a tooltip or a note under it. An option that
+        /// says only "detected walkable surfaces" reads as though the software found the floors.
+        /// </summary>
+        /// <param name="units">The seat's units, so the area reads in them.</param>
+        /// <param name="minimumAreaSquareMetres">The smallest patch detection will report.</param>
+        internal static string DetectedSaid(Measure units, double minimumAreaSquareMetres) =>
+            Detected + " — every up-facing surface over " + units.Area(minimumAreaSquareMetres)
+            + ", which includes desk tops and duct tops.";
+
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Check(Session session) => new Screen(session).Build();
@@ -86,6 +122,10 @@ namespace CamelWorks.UI.Views
 
             _columns.Clear();
             _chain.Clear();
+
+            _patches = null;
+            _diagnostics = null;
+            _dropped.Clear();
         }
 
         /// <summary>
@@ -226,6 +266,8 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _fill = Ui.Stack();
             private readonly StackPanel _filterScope = Ui.Stack();
             private readonly StackPanel _strip = Ui.Stack();
+            private readonly StackPanel _detectLog = Ui.Stack();
+            private readonly StackPanel _detectList = Ui.Stack();
 
             private readonly TextBox _minimum;
             private readonly TextBox _filter;
@@ -388,30 +430,222 @@ namespace CamelWorks.UI.Views
             private UIElement MeasurePage()
             {
                 var sets = Sets();
+                var said = DetectedSaid(Units, _detection.MinPatchAreaSquareMetres);
 
-                var from = new List<string> { Guessed, Selected, Loaded };
+                var from = new List<string> { said, Guessed, Selected, Loaded };
                 from.AddRange(sets);
 
                 var to = new List<string> { NotTheSurfaces, Selected, Loaded };
                 to.AddRange(sets);
 
-                if (!from.Contains(_surfaces, StringComparer.OrdinalIgnoreCase)) from.Add(_surfaces);
+                var chosen = _surfaces == Detected ? said : _surfaces;
+
+                if (!from.Contains(chosen, StringComparer.OrdinalIgnoreCase)) from.Add(chosen);
                 if (!to.Contains(_targets, StringComparer.OrdinalIgnoreCase)) to.Add(_targets);
 
-                return Bench.Group("What to measure",
-                    Ui.Field("Clear height", _minimum, "the minimum, in " + Units.LengthUnit),
-                    Ui.Field("Measure up from", Ui.Choice(from, _surfaces, pick => _surfaces = pick, 210),
-                             "the walking surface"),
-                    Ui.Field("Measure up to", Ui.Choice(to, _targets, pick => _targets = pick, 210),
-                             "what might be too low over it"),
-                    Ui.Small("Both lists are this model's own search sets and selection sets. "
-                             + "\"" + Guessed + "\" is the only one that guesses: it takes anything "
-                             + "whose category or type contains " + string.Join(", ", WalkingWords)
-                             + ". Name a set instead and nothing is guessed at all."),
-                    sets.Count == 0
-                        ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
-                                  + "and it appears in both lists.")
-                        : null);
+                RedrawDetected();
+
+                return Ui.Stack(
+                    Bench.Group("What to measure",
+                        Ui.Field("Clear height", _minimum, "the minimum, in " + Units.LengthUnit),
+                        Ui.Field("Measure up from",
+                                 Ui.Choice(from, chosen, pick =>
+                                 {
+                                     _surfaces = pick == said ? Detected : pick;
+                                     RedrawDetected();
+                                 }, 420),
+                                 "the walking surface"),
+                        Ui.Field("Measure up to", Ui.Choice(to, _targets, pick => _targets = pick, 210),
+                                 "what might be too low over it"),
+                        Ui.Small("Apart from the first two, both lists are this model's own search "
+                                 + "sets and selection sets. \"" + Guessed + "\" reads names: it "
+                                 + "takes anything whose category or type contains "
+                                 + string.Join(", ", WalkingWords)
+                                 + ". Name a set instead and nothing is guessed at all."),
+                        sets.Count == 0
+                            ? Ui.Note("This document holds no saved sets yet. Build one in Set Builder "
+                                      + "and it appears in both lists.")
+                            : null),
+                    Bench.Group(Detected,
+                        Ui.Check("Prefer elements whose category names a floor",
+                                 _detection.PreferFloorCategories, on =>
+                                 {
+                                     _detection.PreferFloorCategories = on;
+                                     Stale();
+                                 }),
+                        Ui.Check("Leave stairs out — detection makes one surface per tread, and "
+                                 + "the flight above then reads as low headroom over the treads "
+                                 + "below it", _detection.ExcludeStairs, on =>
+                        {
+                            _detection.ExcludeStairs = on;
+                            Stale();
+                        }),
+                        Ui.Runner("Find the surfaces", _detectLog, primary: false, work: FindSurfaces),
+                        _detectLog,
+                        _detectList,
+                        Ui.Small("Detection reads triangles: it keeps every up-facing surface over "
+                                 + Units.Area(_detection.MinPatchAreaSquareMetres)
+                                 + ", which is a floor, and is also a desk top, a worktop, a window "
+                                 + "sill and the top of a wide duct. Read the list before running "
+                                 + "the check and drop what is not a floor."),
+                        Ui.Small("Both ticks are off to start with: the geometric answer is the "
+                                 + "default, and a stair with a soffit too low over it is still "
+                                 + "worth reporting.")));
+            }
+
+            /// <summary>What was detected no longer answers what is being asked for.</summary>
+            private void Stale()
+            {
+                _patches = null;
+                _diagnostics = null;
+
+                _detectLog.Children.Clear();
+
+                RedrawDetected();
+            }
+
+            // -------------------------------------------------------------------------------
+            // Detection
+            // -------------------------------------------------------------------------------
+
+            /// <summary>Run detection over everything loaded.</summary>
+            /// <param name="job">The job, for progress and a Stop.</param>
+            /// <param name="say">Where the counts and the caveats go, or null to keep them.</param>
+            private IReadOnlyList<WalkablePatch> Detect(Job job, Panel? say)
+            {
+                var diagnostics = new WalkableDiagnostics();
+
+                var found = WalkableSurfaces.Read(_session.Model, _session.Triangles,
+                                                  TraversalScope.WholeDocument, _session.MetresPerUnit,
+                                                  _detection, diagnostics,
+                                                  read => job.Step(read, "elements read"));
+
+                _patches = found.ToList();
+                _diagnostics = diagnostics;
+
+                if (say != null) Report(say);
+
+                return found;
+            }
+
+            /// <summary>
+            /// What detection found and what it could not do.
+            ///
+            /// Stated before the check is run, not after it. A federation that answers 412 surfaces
+            /// and 8,940 m² on two storeys of offices is one where desk tops and duct tops are in
+            /// the list, and the number is the only thing that says so.
+            /// </summary>
+            /// <param name="say">Where the lines go.</param>
+            private void Report(Panel say)
+            {
+                if (_diagnostics == null || _patches == null) return;
+
+                var area = 0.0;
+                foreach (var patch in _patches) area += patch.AreaSquareMetres;
+
+                say.Children.Add(Ui.Line(Ui.Count(_patches.Count, "surface") + ", " + Units.Area(area)
+                    + ", " + Ui.Count(_diagnostics.ElementsRefused, "element") + " refused", 1, true));
+
+                if (_diagnostics.UpAxis != 2)
+                    say.Children.Add(Ui.Problem("Most of this model's flat area faces "
+                        + (_diagnostics.UpAxis == 0 ? "X" : "Y") + ", not Z. The clear height is "
+                        + "measured up the Z axis, so what comes back will be wrong."));
+
+                foreach (var note in _diagnostics.Notes) say.Children.Add(Ui.Small(note));
+            }
+
+            /// <summary>Detect from the set-up window, and redraw the list underneath it.</summary>
+            private void FindSurfaces(Job job)
+            {
+                Detect(job, null);
+
+                RedrawDetected();
+            }
+
+            /// <summary>What detection found, less what was dropped from it.</summary>
+            private static List<WalkablePatch> Kept() =>
+                (_patches ?? new List<WalkablePatch>())
+                    .Where(patch => !_dropped.Contains(patch.Id))
+                    .ToList();
+
+            /// <summary>How many rows of the list are drawn at once.</summary>
+            private const int Shown = 500;
+
+            /// <summary>
+            /// The detected surfaces, largest first, with the ones somebody dropped marked.
+            ///
+            /// Largest first because the list is read to find what is obviously not a floor, and a
+            /// 40 m² slab and a 0.4 m² sill are told apart by their size before anything else.
+            /// </summary>
+            private void RedrawDetected()
+            {
+                _detectList.Children.Clear();
+
+                if (_patches == null)
+                {
+                    _detectList.Children.Add(Ui.Small("Nothing detected yet."));
+                    return;
+                }
+
+                Report(_detectList);
+
+                if (_patches.Count == 0)
+                {
+                    _detectList.Children.Add(Ui.Empty("No surfaces were found.",
+                        "Nothing loaded has an up-facing surface over "
+                        + Units.Area(_detection.MinPatchAreaSquareMetres)
+                        + ". If this seat will not give triangles, use a set or the guess instead."));
+                    return;
+                }
+
+                var ordered = _patches.OrderByDescending(patch => patch.AreaSquareMetres)
+                                      .Take(Shown)
+                                      .ToList();
+
+                var rows = ordered.Select(patch => new TableRow(patch,
+                    patch.Level ?? "—",
+                    Units.Area(patch.AreaSquareMetres),
+                    Units.Length(patch.TopMetres),
+                    _dropped.Contains(patch.Id) ? "dropped" : string.Empty)
+                {
+                    Tone = _dropped.Contains(patch.Id) ? Tone.Warn : Tone.Plain,
+                }).ToList();
+
+                var table = Ui.Table(rows, ("Level", 0), ("Area", 90), ("Top", 90), ("In the check", 90));
+
+                _detectList.Children.Add(table);
+
+                _detectList.Children.Add(Ui.Picking(table,
+                    new Ui.OnPicked("Drop these {n}", (picked, said) => Drop(picked, said, dropping: true)),
+                    new Ui.OnPicked("Put these {n} back", (picked, said) => Drop(picked, said, dropping: false))));
+
+                _detectList.Children.Add(Ui.Small(
+                    Ui.Count(Kept().Count, "surface") + " in the check"
+                    + (_dropped.Count == 0 ? string.Empty : ", " + _dropped.Count + " dropped")
+                    + (_patches.Count > Shown
+                        ? ". The largest " + Shown + " are listed."
+                        : string.Empty)));
+            }
+
+            /// <summary>Drop the picked surfaces from the check, or put them back.</summary>
+            /// <param name="picked">The rows picked.</param>
+            /// <param name="said">Where the bar says what it did.</param>
+            /// <param name="dropping">Whether they are dropped.</param>
+            private void Drop(IReadOnlyList<object> picked, Panel said, bool dropping)
+            {
+                var touched = 0;
+
+                foreach (var one in picked)
+                {
+                    if (!(one is WalkablePatch patch)) continue;
+
+                    if (dropping ? _dropped.Add(patch.Id) : _dropped.Remove(patch.Id)) touched++;
+                }
+
+                RedrawDetected();
+
+                said.Children.Add(Ui.Done(Ui.Count(touched, "surface")
+                    + (dropping ? " dropped from the check." : " back in the check.")));
             }
 
             private UIElement FiltersPage() => Bench.Group("Narrow the findings",
@@ -516,6 +750,14 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var detecting = _surfaces == Detected;
+
+                // Detection does its own walk, so pressing Check without opening the set-up window
+                // first still measures something rather than refusing.
+                if (detecting && _patches == null) Detect(job, _log);
+
+                var patches = detecting ? Kept() : new List<WalkablePatch>();
+
                 // Only the three whole-model answers pay for a full traversal. A named set walks
                 // its own members, which on a federation is the difference between a second and
                 // a minute.
@@ -535,10 +777,18 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
-                var surfaces = Gather(_surfaces, whole, null, job);
+                var surfaces = detecting
+                    ? patches.Select(Standing).ToList()
+                    : Gather(_surfaces, whole, null, job);
+
                 if (surfaces == null) return;
 
-                var already = new HashSet<string>(surfaces.Select(p => p.Id), StringComparer.Ordinal);
+                // What "everything except the surfaces" excludes. A detected surface is part of an
+                // element, so it is that element that comes off the other side.
+                var already = detecting
+                    ? new HashSet<string>(patches.Select(patch => patch.Source.ToString()),
+                                          StringComparer.Ordinal)
+                    : new HashSet<string>(surfaces.Select(p => p.Id), StringComparer.Ordinal);
 
                 var above = Gather(_targets, whole, already, job);
                 if (above == null) return;
@@ -548,7 +798,11 @@ namespace CamelWorks.UI.Views
                     _found = null;
                     _headline = string.Empty;
                     _log.Children.Add(Ui.Empty("No surfaces to measure from.",
-                        _surfaces == Guessed
+                        detecting
+                            ? "Detection found no up-facing surface over "
+                              + Units.Area(_detection.MinPatchAreaSquareMetres)
+                              + ", or every one it found was dropped."
+                            : _surfaces == Guessed
                             ? "Nothing loaded has a category or type that reads as a walking "
                               + "surface. Pick a search set or a selection set in \"Measure up "
                               + "from\" instead - the guess is only there for when you have none."
@@ -564,8 +818,13 @@ namespace CamelWorks.UI.Views
                 foreach (var piece in surfaces) byId[piece.Id] = piece;
                 foreach (var piece in above) byId[piece.Id] = piece;
 
-                var found = Headroom.Check(surfaces.Select(p => p.Box), above.Select(p => p.Box),
-                                           minimum);
+                // Over a detected surface the volume swept is the patch's own outline extruded,
+                // not its bounding rectangle: the rectangle over an L-shaped plate or a ring
+                // corridor covers ground that is not floor, and everything in it would be a
+                // finding.
+                var found = detecting
+                    ? Headroom.Check(patches, above.Select(p => p.Box), minimum)
+                    : Headroom.Check(surfaces.Select(p => p.Box), above.Select(p => p.Box), minimum);
 
                 var rows = new List<Row>();
 
@@ -613,6 +872,30 @@ namespace CamelWorks.UI.Views
 
             private static bool NeedsWhole(string choice) =>
                 choice == Guessed || choice == Loaded || choice == NotTheSurfaces;
+
+            /// <summary>
+            /// A detected surface as the rest of the tab sees an element.
+            ///
+            /// The box is the patch's footprint with its top at the patch's own highest point, and
+            /// the key is the element the surface came off, so focus, isolate, markers and the
+            /// findings register all still name something in the model.
+            /// </summary>
+            private Piece Standing(WalkablePatch patch)
+            {
+                var box = new HeadroomElement(patch.Id, Surface(patch))
+                {
+                    MinX = patch.Footprint.MinX, MaxX = patch.Footprint.MaxX,
+                    MinY = patch.Footprint.MinY, MaxY = patch.Footprint.MaxY,
+                    MinZ = patch.Footprint.MinZ, MaxZ = patch.TopMetres,
+                };
+
+                return new Piece(patch.Source, patch.Id, Surface(patch), patch.Level, true, box);
+            }
+
+            /// <summary>How a detected surface reads on the board.</summary>
+            private string Surface(WalkablePatch patch) =>
+                (patch.Level == null ? "Surface" : patch.Level + " surface") + " "
+                + Units.Area(patch.AreaSquareMetres);
 
             /// <summary>
             /// One side's elements.

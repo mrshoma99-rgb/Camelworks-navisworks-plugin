@@ -138,6 +138,7 @@ namespace CamelWorks.Core.Project
             Check(results, "Report", "a spreadsheet is a readable zip", Xlsx);
             Check(results, "openBIM", "a BCF file writes and reads back", Bcf);
             Check(results, "Clash", "the clash seam refuses what the host refuses", ClashSeam);
+            Check(results, "Checks", "a check read is scoped to the runs it covered", CheckSeam);
 
             if (scratch != null)
                 Check(results, "Storage", "the project file writes and reads back",
@@ -195,6 +196,45 @@ namespace CamelWorks.Core.Project
                  "", "a seat with no clash engine took a status write");
 
             return "unknown statuses and a seat with no engine are both refused";
+        }
+
+        // The check seam, through the in-memory check the contract tests run against. The two
+        // rules a consumer is most likely to get wrong: a read of some of the runs must not mark
+        // the other runs' findings absent, and a run with no journal is a first run rather than a
+        // wholesale change.
+        private static string CheckSeam()
+        {
+            var check = new Testing.FakeCheck()
+                .With("run-a")
+                .Result("Duct through beam", 0.12)
+                .With("run-b")
+                .Result("Pipe through slab", 0.05);
+
+            var register = new Findings.FindingRegister();
+            var everything = check.Read(null, null);
+
+            register.Observe(check.Key, everything.Findings, 1, null, everything.Scope);
+
+            Must(register.Count == 2, "", "a read of two runs did not hold both runs' findings");
+
+            var one = check.Read(new[] { "run-a" }, null);
+            var intake = register.Observe(check.Key, one.Findings, 2, null, one.Scope);
+
+            Must(intake.Absent == 0, "", "a read of one run marked another run's findings absent");
+            Must(intake.Reopened.Count == 0, "", "a run reported a finding reopened that was never closed");
+
+            var first = Checks.CheckDelta.Between(null, intake, register, one.Scope, check.Aliases);
+
+            Must(first.NoPreviousRun, "", "a run with no journal did not read as a first run");
+            Must(first.New.Count == 0, "", "a first run reported findings as new");
+
+            var journal = Checks.RunJournal.Of(check.Key, "run-a", 2, one.Findings);
+            var since = Checks.CheckDelta.Between(journal, intake, register, one.Scope, check.Aliases);
+
+            Must(since.New.Count == 0 && since.Gone.Count == 0,
+                 "", "an unchanged run reported a change");
+
+            return "a partial read keeps its scope and a first run says so";
         }
 
         /// <summary>One element of the clash seam's fixture.</summary>

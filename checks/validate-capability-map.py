@@ -37,7 +37,11 @@ ALLOWED = {
     "IModelSource", "IModelDocument", "IModelItem", "IModelWriteTransaction",
     "IViewSession", "IViewpointStore", "IClashSource", "IFileSystem", "IGraphHost",
     "ILayerResolver", "TraversalScopeKind", "StaleItemException", "OverrideLayer",
-    "ClashSide", "ClashSideKind",
+    "ClashSide", "ClashSideKind", "ITriangleSource",
+    # The check seam. A check talks to the board through these and the board talks to the host
+    # through them; none is a feature, and six of the seven checks answer null to most of them.
+    "ICheck", "ICheckHostEcho", "ICheckGrouping", "ICheckRunner", "ICheckNaming",
+    "ICheckGeometry", "ICheckProperties",
     # Storage plumbing. Every tool writes through it; no tool is it.
     "PhysicalFileSystem", "AtomicFile", "JournalEntry", "JournalFold", "JsonReader",
     "JsonValue", "VersionedDocument", "SectionDiff",

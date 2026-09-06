@@ -49,9 +49,9 @@ namespace CamelWorks.Core.Data
     public sealed class HeadroomSpan
     {
         internal HeadroomSpan(HeadroomElement floor, HeadroomElement obstruction, double clear,
-                              double x, double y)
+                              double x, double y, double z)
         {
-            Floor = floor; Obstruction = obstruction; Clear = clear; X = x; Y = y;
+            Floor = floor; Obstruction = obstruction; Clear = clear; X = x; Y = y; Z = z;
         }
 
         /// <summary>The walkable surface.</summary>
@@ -68,6 +68,15 @@ namespace CamelWorks.Core.Data
 
         /// <summary>Where to look, in metres.</summary>
         public double Y { get; }
+
+        /// <summary>
+        /// The surface itself at that point, in metres.
+        ///
+        /// So a result is a place rather than a pair of numbers and an implied third. The engine
+        /// this was ported from reported which band an element was in and nothing else — no depth,
+        /// no clear height, no point — which leaves a list nobody can sort or prioritise.
+        /// </summary>
+        public double Z { get; }
 
         /// <inheritdoc />
         public override string ToString() =>
@@ -142,7 +151,56 @@ namespace CamelWorks.Core.Data
         public static HeadroomResult Check(IEnumerable<HeadroomElement> floors,
                                            IEnumerable<HeadroomElement> obstructions,
                                            double minimumMetres = DefaultMinimum,
+                                           double cellMetres = DefaultCell) =>
+            Check(floors, null, obstructions, minimumMetres, cellMetres);
+
+        /// <summary>
+        /// Run the check over detected walkable surfaces.
+        ///
+        /// A patch is a shape, not a rectangle, so the volume swept above it is its own outline
+        /// extruded and not its bounding rectangle. On an L-shaped plate, a ring corridor or a
+        /// floor around a stair void the rectangle covers ground nobody stands on, and every
+        /// column, railing and riser inside it would be reported as low headroom.
+        /// </summary>
+        /// <param name="patches">The detected surfaces. Z-up: the patches carry which axis was up.</param>
+        /// <param name="obstructions">What might be above them, in metres.</param>
+        /// <param name="minimumMetres">The clear height required.</param>
+        /// <param name="cellMetres">The lookup cell size.</param>
+        public static HeadroomResult Check(IEnumerable<WalkablePatch> patches,
+                                           IEnumerable<HeadroomElement> obstructions,
+                                           double minimumMetres = DefaultMinimum,
                                            double cellMetres = DefaultCell)
+        {
+            if (patches == null) throw new ArgumentNullException(nameof(patches));
+
+            var floors = new List<HeadroomElement>();
+            var outlines = new Dictionary<string, IReadOnlyList<Tri2>>(StringComparer.Ordinal);
+
+            foreach (var patch in patches)
+            {
+                floors.Add(new HeadroomElement(patch.Id, Named(patch))
+                {
+                    MinX = patch.Footprint.MinX, MaxX = patch.Footprint.MaxX,
+                    MinY = patch.Footprint.MinY, MaxY = patch.Footprint.MaxY,
+                    MinZ = patch.Footprint.MinZ, MaxZ = patch.TopMetres,
+                });
+
+                outlines[patch.Id] = patch.Outline;
+            }
+
+            return Check(floors, outlines, obstructions, minimumMetres, cellMetres);
+        }
+
+        /// <summary>How a detected surface reads in a result.</summary>
+        private static string Named(WalkablePatch patch) =>
+            (patch.Level == null ? "Surface" : patch.Level + " surface")
+            + " " + patch.AreaSquareMetres.ToString("0.0", CultureInfo.InvariantCulture) + " m²";
+
+        private static HeadroomResult Check(IEnumerable<HeadroomElement> floors,
+                                            IReadOnlyDictionary<string, IReadOnlyList<Tri2>>? outlines,
+                                            IEnumerable<HeadroomElement> obstructions,
+                                            double minimumMetres,
+                                            double cellMetres)
         {
             if (floors == null) throw new ArgumentNullException(nameof(floors));
             if (obstructions == null) throw new ArgumentNullException(nameof(obstructions));
@@ -175,6 +233,13 @@ namespace CamelWorks.Core.Data
 
                 var seen = new HashSet<string>(StringComparer.Ordinal);
 
+                IReadOnlyList<Tri2>? outline = null;
+                outlines?.TryGetValue(floor.Id, out outline);
+
+                // The volume this surface is entitled to. An element that never reaches into it
+                // cannot lower the clear height over it, whatever its plan position.
+                var prism = new Span1(floor.MaxZ, floor.MaxZ + minimumMetres);
+
                 foreach (var candidate in Candidates(floor, grid, cellMetres))
                 {
                     if (ReferenceEquals(candidate, floor)) continue;
@@ -192,13 +257,27 @@ namespace CamelWorks.Core.Data
 
                     if (overlapX <= 0 || overlapY <= 0) continue;
 
+                    if (!prism.Overlaps(new Span1(candidate.MinZ, candidate.MaxZ))) continue;
+
+                    var lowX = Math.Max(floor.MinX, candidate.MinX);
+                    var highX = Math.Min(floor.MaxX, candidate.MaxX);
+                    var lowY = Math.Max(floor.MinY, candidate.MinY);
+                    var highY = Math.Min(floor.MaxY, candidate.MaxY);
+
+                    if (outline != null && !Covers(outline, lowX, lowY, highX, highY)) continue;
+
                     worst = candidate;
                     clear = gap;
-                    atX = (Math.Max(floor.MinX, candidate.MinX) + Math.Min(floor.MaxX, candidate.MaxX)) / 2;
-                    atY = (Math.Max(floor.MinY, candidate.MinY) + Math.Min(floor.MaxY, candidate.MaxY)) / 2;
+                    atX = (lowX + highX) / 2;
+                    atY = (lowY + highY) / 2;
+
+                    // The centre of two overlapping rectangles can be off the surface itself — the
+                    // missing corner of an L, the courtyard inside a ring. A point nobody can stand
+                    // on is a point nobody can go and look at, so it is moved onto the patch.
+                    if (outline != null) Onto(outline, lowX, lowY, highX, highY, ref atX, ref atY);
                 }
 
-                if (worst != null) spans.Add(new HeadroomSpan(floor, worst, clear, atX, atY));
+                if (worst != null) spans.Add(new HeadroomSpan(floor, worst, clear, atX, atY, floor.MaxZ));
             }
 
             spans.Sort((a, b) => a.Clear.CompareTo(b.Clear));
@@ -214,6 +293,37 @@ namespace CamelWorks.Core.Data
 
         /// <summary>The bucket for elements too large to place in cells at all.</summary>
         private const long Oversized = long.MinValue;
+
+        /// <summary>Whether any triangle of the outline reaches into a plan rectangle.</summary>
+        private static bool Covers(IReadOnlyList<Tri2> outline, double minX, double minY,
+                                   double maxX, double maxY)
+        {
+            for (var i = 0; i < outline.Count; i++)
+                if (outline[i].Overlaps(minX, minY, maxX, maxY)) return true;
+
+            return false;
+        }
+
+        /// <summary>Move a point onto the outline, if it is not already on it.</summary>
+        private static void Onto(IReadOnlyList<Tri2> outline, double minX, double minY,
+                                 double maxX, double maxY, ref double x, ref double y)
+        {
+            for (var i = 0; i < outline.Count; i++)
+                if (outline[i].Holds(x, y)) return;
+
+            // The nearest thing to the overlap that is on the surface: the middle of a patch
+            // triangle the obstruction actually passes over.
+            for (var i = 0; i < outline.Count; i++)
+            {
+                var triangle = outline[i];
+
+                if (triangle.Area <= 0 || !triangle.Overlaps(minX, minY, maxX, maxY)) continue;
+
+                x = (triangle.Ax + triangle.Bx + triangle.Cx) / 3.0;
+                y = (triangle.Ay + triangle.By + triangle.Cy) / 3.0;
+                return;
+            }
+        }
 
         private static bool Finite(HeadroomElement e) =>
             !double.IsNaN(e.MinX) && !double.IsInfinity(e.MinX)

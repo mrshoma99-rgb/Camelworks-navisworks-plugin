@@ -201,6 +201,25 @@ answer, and printed a table nobody could do anything with.
   engine found these, so there is nothing there to write into. It survives a re-run instead:
   status, assignment, comments and groups carry over onto the same surface-and-obstruction pair,
   so re-checking after a model update does not reopen everything somebody closed.
+- *Was wrong:* the floor side was still a question the model should answer. Naming a set works,
+  and it is a set somebody has to build first. **The floor side now offers detected walkable
+  surfaces**, found in the elements' triangles: every up-facing surface within 10 degrees of
+  horizontal, banded by elevation, clustered by shared vertex and larger than 0.05 m². The volume
+  swept over a surface is that surface's own outline extruded, not its bounding rectangle, so an
+  L-shaped plate does not sweep its missing corner and a ring corridor does not sweep its
+  courtyard. Every breach carries the clear height and the point it was measured at.
+- *Held honestly:* detection cannot tell a floor from a desk top. The only discriminators are
+  which way a face points and how much of it there is, so a worktop, a window sill, a plant skid
+  and the top of a wide duct all pass. So the option's own sentence says so — *Detected walkable
+  surfaces — every up-facing surface over 0.05 m², which includes desk tops and duct tops* — the
+  window states the count, the total area and how many elements refused before the check is run,
+  the surfaces are listed largest first and any of them can be dropped, and *Prefer elements whose
+  category names a floor* is a visible tick that is off by default. *Leave stairs out* is a second
+  tick, also off: detection makes one surface per tread and then reads the flight above as low
+  headroom over the treads below it.
+- *Held honestly:* a seat whose primitive reader refuses triangles falls back to element bounding
+  box tops, which is the coarser answer the check gave before, and the window says that is what
+  happened. The named-set and guess options are unchanged for those seats.
 - **Out of the tab:** the grid to a spreadsheet exactly as filtered, and every shown finding as a
   clash file — which the Manage tab's "A file" source opens, so a clearance list runs the same
   offline review round as a clash export.
