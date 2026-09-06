@@ -241,7 +241,10 @@ namespace CamelWorks.UI.Views
 
                 Redraw();
 
-                return Bench.Surface(null, foot, stage);
+                // The stage is not scrolled as a whole: each of the three columns scrolls inside
+                // itself. Scrolled, the columns were measured against an unbounded width and the
+                // last one was arranged past the right edge of the pane it is drawn in.
+                return Bench.Surface(null, foot, stage, scrollStage: false);
             }
 
             /// <summary>Redraw the columns once the typing in the find box has stopped.</summary>
