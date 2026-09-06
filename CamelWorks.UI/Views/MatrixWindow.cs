@@ -6403,16 +6403,6 @@ namespace CamelWorks.UI.Views
                 _palette.Children.Add(says);
             }
 
-            /// <summary>
-            /// One line of a key: a swatch, what it is, and what it means.
-            ///
-            /// Shaped like the palette's own keys so the panel reads as one thing, and without
-            /// their cursor or their press, because there is nothing here to arm.
-            /// </summary>
-            /// <param name="paint">The wash.</param>
-            /// <param name="mark">What is written in it.</param>
-            /// <param name="name">What it is.</param>
-            /// <param name="says">The quieter line under it.</param>
             /// <summary>A left-to-right sweep between two brushes, or a flat fill if either is not solid.</summary>
             /// <param name="from">The colour at one open clash.</param>
             /// <param name="to">The colour at the worst pair.</param>
@@ -6464,6 +6454,16 @@ namespace CamelWorks.UI.Views
                 _palette.Children.Add(says);
             }
 
+            /// <summary>
+            /// One line of a key: a swatch, what it is, and what it means.
+            ///
+            /// Shaped like the palette's own keys so the panel reads as one thing, and without
+            /// their cursor or their press, because there is nothing here to arm.
+            /// </summary>
+            /// <param name="paint">The wash.</param>
+            /// <param name="mark">What is written in it.</param>
+            /// <param name="name">What it is.</param>
+            /// <param name="says">The quieter line under it.</param>
             private void Keyed(System.Windows.Media.Brush paint, string mark, string name,
                                string says)
             {
