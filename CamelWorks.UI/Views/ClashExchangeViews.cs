@@ -89,7 +89,7 @@ namespace CamelWorks.UI.Views
             private readonly StackPanel _results = Ui.Stack();
             private readonly StackPanel _packs = Ui.Stack();
             private readonly StackPanel _sending = Ui.Stack();
-            private readonly TextBox _find = Ui.Text(string.Empty, "a test or a folder", null, 220);
+            private readonly TextBox _find = Ui.Text(string.Empty, "a test or a folder", null, 0);
             private readonly TextBox _named = Ui.Text("Everything", null, 180);
 
             private string _search = string.Empty;
@@ -189,16 +189,32 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement SendingOut()
             {
-                var columns = new Grid { Margin = new Thickness(0, 8, 0, 0) };
+                var columns = new Grid
+                {
+                    Margin = new Thickness(0, 8, 0, 0),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
 
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(270) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+                // Proportional rather than fixed. Fixed, the three came to more than a narrow pane
+                // had and the last column was drawn past its right edge.
                 columns.ColumnDefinitions.Add(new ColumnDefinition
                 {
-                    Width = new GridLength(1, GridUnitType.Star),
+                    Width = new GridLength(5, GridUnitType.Star),
                 });
+
                 columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+
+                columns.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(7, GridUnitType.Star),
+                });
+
+                columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+
+                columns.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(5, GridUnitType.Star),
+                });
 
                 var tests = Column("Tests", _tests);
                 var results = Column("Results", _results);
@@ -428,50 +444,44 @@ namespace CamelWorks.UI.Views
             // Column two: the results
             // -------------------------------------------------------------------------------
 
+            /// <summary>
+            /// The parameters a result is narrowed by, each on its own row saying where it stands.
+            ///
+            /// A row apiece rather than one "add a filter" link, because the question the column
+            /// answers is "what am I sending them" and a column that is empty until somebody adds
+            /// something answers it with nothing. The common four are always drawn - status, who
+            /// it is assigned to, the storey and the level - and every other parameter the board
+            /// carries is one press further on.
+            /// </summary>
             private void DrawResults()
             {
                 _results.Children.Clear();
 
-                _results.Children.Add(Ui.Small(
-                    "Which of the chosen tests' results go in, by any parameter a result carries."));
+                var facets = new List<ClashFacet>();
 
-                foreach (var clause in _profile.Pick.Clauses.ToList())
+                foreach (var key in new[] { "status", "assignee", "storey", "level" })
                 {
-                    var here = clause;
-                    var facet = ClashFacets.Of(here.Facet, Results(), Storeys());
+                    var found = ClashFacets.Of(key, Results(), Storeys());
 
-                    var row = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-
-                    row.ColumnDefinitions.Add(new ColumnDefinition
-                    {
-                        Width = new GridLength(1, GridUnitType.Star),
-                    });
-
-                    row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                    var said = Ui.Line(here.Describe(facet));
-
-                    said.TextWrapping = TextWrapping.Wrap;
-                    said.VerticalAlignment = VerticalAlignment.Center;
-
-                    var drop = Ui.Icon(Glyphs.Close, "Remove this filter", () => Ui.Safely(() =>
-                    {
-                        _profile.Pick.Clauses.Remove(here);
-                        Redraw();
-                    }));
-
-                    Grid.SetColumn(drop, 1);
-
-                    row.Children.Add(said);
-                    row.Children.Add(drop);
-
-                    _results.Children.Add(row);
+                    if (found != null) facets.Add(found);
                 }
 
-                if (_profile.Pick.Clauses.Count == 0)
-                    _results.Children.Add(Ui.Small("No filter. Every result of a chosen test goes."));
+                // Anything already filtered on, so a clause added from the menu has a row of its
+                // own rather than disappearing into a list further down.
+                foreach (var clause in _profile.Pick.Clauses)
+                {
+                    if (facets.Any(one => string.Equals(one.Key, clause.Facet,
+                                                        StringComparison.OrdinalIgnoreCase)))
+                        continue;
 
-                var add = Ui.Link("Add a filter", () => { });
+                    var found = ClashFacets.Of(clause.Facet, Results(), Storeys());
+
+                    if (found != null) facets.Add(found);
+                }
+
+                foreach (var facet in facets) _results.Children.Add(Parameter(facet));
+
+                var add = Ui.Link("Another parameter\u2026", () => { });
 
                 add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
                 add.Margin = new Thickness(0, 8, 0, 0);
@@ -479,10 +489,77 @@ namespace CamelWorks.UI.Views
                 _results.Children.Add(Ui.Across(add, Sorting()));
 
                 var scope = Scope();
+                var board = Results().Count;
 
                 _results.Children.Add(Ui.Small(
                     Ui.Count(scope.Count, "result") + " in scope, of "
-                    + Ui.Count(Results().Count, "result") + " on the board."));
+                    + Ui.Count(board, "result") + " on the board."));
+            }
+
+            /// <summary>One parameter row: what it is, and which of its values are let through.</summary>
+            /// <param name="facet">The parameter.</param>
+            private UIElement Parameter(ClashFacet facet)
+            {
+                var here = facet;
+
+                var clause = _profile.Pick.Clauses.FirstOrDefault(
+                    one => string.Equals(one.Facet, here.Key, StringComparison.OrdinalIgnoreCase));
+
+                var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+
+                row.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(1, GridUnitType.Star),
+                });
+
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var title = Ui.Small(here.Title);
+
+                title.VerticalAlignment = VerticalAlignment.Center;
+
+                var said = Ui.Link(clause == null ? "Any" : Values(clause), () => { });
+
+                said.Click += (s, e) => Ui.Safely(() => Choose(here));
+                said.HorizontalAlignment = HorizontalAlignment.Left;
+                said.ToolTip = clause == null
+                    ? "Every value goes. Press to choose which."
+                    : clause.Describe(here);
+
+                Grid.SetColumn(said, 1);
+
+                row.Children.Add(title);
+                row.Children.Add(said);
+
+                if (clause != null)
+                {
+                    var drop = Ui.Icon(Glyphs.Close, "Let every value through", () => Ui.Safely(() =>
+                    {
+                        _profile.Pick.Clauses.Remove(clause);
+                        Redraw();
+                    }));
+
+                    Grid.SetColumn(drop, 2);
+                    row.Children.Add(drop);
+                }
+
+                return row;
+            }
+
+            /// <summary>The values a clause names, short enough for a row.</summary>
+            /// <param name="clause">The clause.</param>
+            private static string Values(ClashClause clause)
+            {
+                if (clause.Values.Count == 0) return "a range";
+
+                var said = string.Join(", ", clause.Values.Take(3));
+
+                return clause.Values.Count > 3
+                    ? said + " and " + (clause.Values.Count - 3).ToString(CultureInfo.InvariantCulture)
+                      + " more"
+                    : said;
             }
 
             /// <summary>What the tests and the filter between them let through.</summary>
@@ -521,7 +598,9 @@ namespace CamelWorks.UI.Views
 
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                    var who = Ui.Line(round.Recipient);
+                    var who = Ui.Line(rounds.Count == 1 && _profile.SplitBy == null
+                        ? "One pack"
+                        : round.Recipient);
 
                     who.TextTrimming = TextTrimming.CharacterEllipsis;
                     who.ToolTip = round.FileStem() + ClashFile.Extension;
@@ -572,7 +651,7 @@ namespace CamelWorks.UI.Views
                 {
                     var here = facet;
 
-                    items.Add(Parts.Entry.Act(here.Title, null, () => Values(here)));
+                    items.Add(Parts.Entry.Act(here.Title, null, () => Choose(here)));
                 }
 
                 return items;
@@ -580,7 +659,7 @@ namespace CamelWorks.UI.Views
 
             /// <summary>Ask which values of one parameter go in, from the ones the board holds.</summary>
             /// <param name="facet">The parameter chosen.</param>
-            private void Values(ClashFacet facet)
+            private void Choose(ClashFacet facet)
             {
                 var held = ClashFacets.Values(facet, Results());
 
@@ -592,14 +671,19 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                var standing = _profile.Pick.Clauses.FirstOrDefault(
+                    one => string.Equals(one.Facet, facet.Key, StringComparison.OrdinalIgnoreCase));
+
                 var box = Ui.Stack();
-                var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var taken = new HashSet<string>(standing?.Values ?? Array.Empty<string>(),
+                                                StringComparer.OrdinalIgnoreCase);
 
                 foreach (var value in held.Take(60))
                 {
                     var here = value;
 
-                    box.Children.Add(Ui.Check(here, false, on =>
+                    box.Children.Add(Ui.Check(here, taken.Contains(here), on =>
                     {
                         if (on) taken.Add(here);
                         else taken.Remove(here);
@@ -611,11 +695,16 @@ namespace CamelWorks.UI.Views
 
                 Ui.Configure(facet.Title, () =>
                 {
-                    if (taken.Count == 0) return;
+                    // One clause per parameter. A second clause on the same one would have to hold
+                    // as well as the first, so choosing New and then Active would send nothing.
+                    if (standing != null) _profile.Pick.Clauses.Remove(standing);
 
-                    var clause = _profile.Pick.Add(facet.Key);
+                    if (taken.Count > 0)
+                    {
+                        var clause = _profile.Pick.Add(facet.Key);
 
-                    foreach (var one in taken) clause.Values.Add(one);
+                        foreach (var one in taken) clause.Values.Add(one);
+                    }
 
                     Redraw();
                 }, page);
