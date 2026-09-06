@@ -3,6 +3,7 @@ using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
+using CamelWorks.Core.Store;
 using CamelWorks.Core.Identity;
 using Xunit;
 
@@ -131,6 +132,79 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(FindingStatus.Approved, after.Status);
             Assert.Equal("sam", after.AssignedTo);
             Assert.Equal("312", after.Facts[ClashFindings.HostId]);
+        }
+
+        [Fact]
+        public void RenamingATestKeepsEverythingDecidedUnderIt()
+        {
+            // Renaming a clash test is a first-class feature of this product. Identity made from
+            // the name meant a rename gave every finding under it a new id and silently detached
+            // its status, its assignee, its due date and its whole comment trail.
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Clash,
+                ClashFindings.ForTest("t1", "L03 MEP vs Structure",
+                                      new[] { Result("1", 10, 20, 30) }), 100);
+
+            register.All.Single().Status = FindingStatus.Approved;
+            register.All.Single().AssignedTo = "sam";
+
+            // The same test, renamed, read again.
+            register.Observe(FindingSource.Clash,
+                ClashFindings.ForTest("t1", "L03 Mechanical vs Structure",
+                                      new[] { Result("1", 10, 20, 30, "Active") }), 200,
+                scope: ClashFindings.Scope(new[] { "t1" }));
+
+            var after = Assert.Single(register.All);
+
+            Assert.Equal(FindingStatus.Approved, after.Status);
+            Assert.Equal("sam", after.AssignedTo);
+
+            // The name is what a person reads, so it follows the rename.
+            Assert.Equal("L03 Mechanical vs Structure", after.Rule);
+        }
+
+        [Fact]
+        public void TwoTestsWithTheSameNameAreNotTheSameFinding()
+        {
+            // The other half of the same change. Two tests can carry one name - a job inherited
+            // with four "Coordination check" tests is ordinary - and keying on the name folded
+            // their results into one another.
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Clash, ClashFindings.ForTest(
+                "t1", "Coordination check", new[] { Result("1", 10, 20, 30) }), 100);
+
+            register.Observe(FindingSource.Clash, ClashFindings.ForTest(
+                "t2", "Coordination check", new[] { Result("2", 10, 20, 30) }), 100,
+                scope: ClashFindings.Scope(new[] { "t2" }));
+
+            Assert.Equal(2, register.All.Count);
+        }
+
+        [Fact]
+        public void ARegisterWrittenBeforeTheMoveComesBackOnTheNewIdentity()
+        {
+            // Read again on load rather than migrated by a pass of its own: the id is derived on
+            // every read anyway, so a file written under the old scheme comes back under the new
+            // one carrying everything it held.
+            var found = ClashFindings.ForTest("t1", "L03 MEP vs Structure",
+                                              new[] { Result("1", 10, 20, 30) }).Single();
+
+            found.Status = FindingStatus.Approved;
+
+            var json = FindingJson.Write(found);
+
+            // What the old writer put there: an id derived from the test's name.
+            json.Set("id", Finding.Create(FindingSource.Clash, "L03 MEP vs Structure",
+                                          found.Title, found.Elements, found.Discriminator).Id);
+
+            var read = FindingJson.Read(JsonReader.Parse(json.ToString()), out var renamed);
+
+            Assert.NotNull(read);
+            Assert.True(renamed);
+            Assert.Equal(found.Id, read!.Id);
+            Assert.Equal(FindingStatus.Approved, read.Status);
         }
 
         [Fact]

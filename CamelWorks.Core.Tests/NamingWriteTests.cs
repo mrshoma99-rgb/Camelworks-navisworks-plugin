@@ -55,6 +55,52 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_test_that_has_already_been_issued_is_refused_rather_than_renamed()
+        {
+            // Every pack written, every issue register row, every email and every RFI naming a
+            // test points at the name it had when it went out. Renaming it afterwards leaves all
+            // of them pointing at nothing, and nobody who wrote one finds out.
+            var book = Booked(Standard);
+
+            var tests = new List<(string, string)>
+            {
+                ("t1", "ST-01 Steel vs ME-04 Ducts"),
+                ("t2", "ST-02 Steel vs ME-05 Pipes"),
+                ("t3", "ST-03 Steel vs ME-06 Trays"),
+            };
+
+            foreach (var one in tests) book.Bind(one.Item1, 1);
+
+            var plan = NamingWrite.Plan(book, tests, "rowNumber", Series("10", 10, 2),
+                                        issued: new[] { "ST-02 Steel vs ME-05 Pipes" });
+
+            Assert.Equal(NamingRefusal.Issued, plan[1].Why);
+            Assert.Null(plan[1].Now);
+            Assert.Equal("It has already been issued under this name",
+                         NamingWrite.Said(plan[1].Why));
+
+            // The refused test keeps its place in the run, so refusing the second of three does
+            // not shift the third up into its number.
+            Assert.Equal("ST-10 Steel vs ME-04 Ducts", plan[0].Now);
+            Assert.Equal("ST-30 Steel vs ME-06 Trays", plan[2].Now);
+        }
+
+        [Fact]
+        public void Nothing_issued_means_nothing_is_refused_for_it()
+        {
+            var book = Booked(Standard);
+
+            var tests = new List<(string, string)> { ("t1", "ST-01 Steel vs ME-04 Ducts") };
+
+            book.Bind("t1", 1);
+
+            var plan = NamingWrite.Plan(book, tests, "rowNumber", Series("10", 10, 2),
+                                        issued: null);
+
+            Assert.Equal(NamingRefusal.None, Assert.Single(plan).Why);
+        }
+
+        [Fact]
         public void Everything_the_pattern_did_not_name_survives_the_write()
         {
             var book = Booked("{rowCode}-{rowNumber} · {row} | {columnCode} · {column}");

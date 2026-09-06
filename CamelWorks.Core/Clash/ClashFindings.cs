@@ -46,11 +46,19 @@ namespace CamelWorks.Core.Clash
         /// <summary>
         /// One clash result, as a finding.
         /// </summary>
-        /// <param name="testName">The test that found it — the finding's rule.</param>
+        /// <param name="testName">The test that found it — the finding's rule, as it reads.</param>
         /// <param name="result">The result, as the adapter read it.</param>
         /// <param name="cell">The cell size the keys are made with.</param>
+        /// <param name="testId">
+        /// The host's own id for the test, which is what the identity is made from.
+        ///
+        /// Renaming a clash test is a first-class feature — <see cref="ClashTestNames"/> exists
+        /// only to persist renames on seats where the host refuses the write. Identity made from
+        /// the name meant a rename detached every status, assignee, due date and comment under
+        /// that test, with no error and nothing on screen.
+        /// </param>
         public static Finding From(string testName, ClashResultInfo result,
-                                   double cell = ClashKey.DefaultCell)
+                                   double cell = ClashKey.DefaultCell, string? testId = null)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
 
@@ -64,7 +72,8 @@ namespace CamelWorks.Core.Clash
             var where = elements.Count == 2 ? CellOf(result.Key(cell)) : result.Id;
 
             var finding = Finding.Create(FindingSource.Clash, rule,
-                                         result.Name ?? "Clash", elements, where);
+                                         result.Name ?? "Clash", elements, where,
+                                         identity: Identity(testId));
 
             // The topic this exports as, derived here so a markup coming back from somebody
             // else's tool finds its way home without re-deriving the key.
@@ -116,6 +125,37 @@ namespace CamelWorks.Core.Clash
         public const string HostTest = "Host test";
 
         /// <summary>
+        /// What stands for a clash test in a finding's identity.
+        ///
+        /// The host's id where there is one. A test with no id — a hand-raised issue, a board
+        /// hydrated from the record — falls back to nothing, and <see cref="Finding.Create"/>
+        /// then hashes the rule as it always did.
+        /// </summary>
+        /// <param name="testId">The host's id for the test, or null.</param>
+        public static string? Identity(string? testId) =>
+            string.IsNullOrWhiteSpace(testId) ? null : "test:" + testId!.Trim();
+
+        /// <summary>
+        /// Whether a finding belongs to one of the tests just read, by id rather than by name.
+        ///
+        /// The scope a run is observed under. Keyed on the name, a renamed test put its old
+        /// findings outside the scope, so they were never marked absent and lingered as orphans
+        /// beside a fresh set that arrived as New.
+        /// </summary>
+        /// <param name="testIds">The host ids of the tests that were read.</param>
+        public static Func<Finding, bool> Scope(IEnumerable<string>? testIds)
+        {
+            var held = new HashSet<string>(testIds ?? Array.Empty<string>(),
+                                           StringComparer.Ordinal);
+
+            return finding =>
+                finding != null
+                && finding.Facts.TryGetValue(HostTest, out var id)
+                && id != null
+                && held.Contains(id);
+        }
+
+        /// <summary>
         /// A whole test's results, as findings.
         /// </summary>
         /// <param name="testId">The host's id for the test, kept so the projection can write back.</param>
@@ -132,7 +172,7 @@ namespace CamelWorks.Core.Clash
             {
                 if (result == null) continue;
 
-                var finding = From(testName, result, cell);
+                var finding = From(testName, result, cell, testId);
 
                 finding.Facts[HostTest] = testId;
                 found.Add(finding);

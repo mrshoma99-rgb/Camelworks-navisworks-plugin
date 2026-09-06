@@ -614,6 +614,32 @@ namespace CamelWorks.UI.Views
             /// write numbers them in the order it is given. Sorting the rail by name and then
             /// renumbering is how a coordinator gets 010, 020, 030 down an alphabetical list.
             /// </summary>
+            /// <summary>
+            /// The tests that have already gone out to somebody, by the name they went out under.
+            ///
+            /// Read from the export profiles, which stamp each test when a pack carrying it is
+            /// written. Every pack, issue register row, email and RFI naming a test points at the
+            /// name it had that day, and renaming it afterwards leaves all of them pointing at
+            /// nothing without anybody who wrote one finding out.
+            /// </summary>
+            private IReadOnlyList<string> Issued()
+            {
+                var sent = new List<string>();
+
+                var held = _session.Store.Section(ProjectStore.ProfileSection)
+                                   [ClashExchangeViews.Key];
+
+                foreach (var one in held.Items)
+                {
+                    var profile = ExportProfile.FromJson(one);
+
+                    foreach (var test in profile.Tests)
+                        if (!test.NeverExported) sent.Add(test.Name);
+                }
+
+                return sent;
+            }
+
             /// <param name="pane">Which pane to open on.</param>
             private void Naming(NamingPane pane)
             {
@@ -630,7 +656,8 @@ namespace CamelWorks.UI.Views
 
                         return RenamedTo(entry, name);
                     },
-                    pane);
+                    pane,
+                    Issued());
 
                 if (!changed) return;
 
@@ -5311,8 +5338,11 @@ namespace CamelWorks.UI.Views
             {
                 if (OnFile) return null;
 
-                var read = new HashSet<string>(entries.Select(e => e.Test.Name),
-                                               StringComparer.Ordinal);
+                // Scoped by the host's id for each test, not by its name. Keyed on the name, a
+                // renamed test put its own findings outside the scope of the run that read it:
+                // they were never marked absent, so they lingered as orphans beside a fresh set
+                // that arrived as New.
+                var read = entries.Select(e => e.Test.Id).ToList();
 
                 var found = new List<Finding>();
 
@@ -5327,7 +5357,7 @@ namespace CamelWorks.UI.Views
                 var intake = register.Observe(
                     FindingSource.Clash, found, DateTime.UtcNow.Ticks,
                     origin: _session.Store.Path,
-                    scope: f => read.Contains(f.Rule));
+                    scope: ClashFindings.Scope(read));
 
                 Index(register);
 

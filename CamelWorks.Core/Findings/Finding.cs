@@ -154,7 +154,7 @@ namespace CamelWorks.Core.Findings
         public FindingSource Source { get; }
 
         /// <summary>The rule or test that produced it, as the user named it.</summary>
-        public string Rule { get; }
+        public string Rule { get; private set; }
 
         /// <summary>
         /// One line, as the board shows it.
@@ -404,12 +404,22 @@ namespace CamelWorks.Core.Findings
         /// elements — a clash cell, a property name, a measured value bucket. Omit when the rule and
         /// elements are already unique.
         /// </param>
+        /// <param name="identity">
+        /// What stands for the rule in the identity, when the rule's own text is not stable.
+        ///
+        /// A clash test's rule is its name, because that is what a person reads on the board and
+        /// in a BCF label — and renaming a test is a first-class feature of this product. Hashing
+        /// the name meant a rename gave every finding under it a new identity, silently detaching
+        /// its status, its assignee, its due date and its whole comment trail. The host's own id
+        /// for the test goes here instead; the name stays on <see cref="Rule"/>, where it is read.
+        /// </param>
         public static Finding Create(
             FindingSource source,
             string rule,
             string title,
             IReadOnlyList<ElementKey> elements,
-            string? discriminator = null)
+            string? discriminator = null,
+            string? identity = null)
         {
             if (string.IsNullOrWhiteSpace(rule)) throw new ArgumentException("rule is required", nameof(rule));
             if (elements == null) throw new ArgumentNullException(nameof(elements));
@@ -418,7 +428,9 @@ namespace CamelWorks.Core.Findings
             // way round are reporting the same thing.
             var ordered = elements.Select(e => e.ToString()).OrderBy(s => s, StringComparer.Ordinal).ToArray();
 
-            var parts = new List<string?> { source.ToString(), rule, discriminator };
+            var named = string.IsNullOrWhiteSpace(identity) ? rule : identity!.Trim();
+
+            var parts = new List<string?> { source.ToString(), named, discriminator };
             parts.AddRange(ordered.Select(s => (string?)s));
 
             var id = Hash.Of(Hash.ComponentWidth, parts.ToArray());
@@ -505,6 +517,12 @@ namespace CamelWorks.Core.Findings
                 Status = FindingStatusLattice.Merge(Status, other.Status);
 
             if (!otherIsNewer) return;
+
+            // The rule is what a person reads — a clash test's name, and renaming one is a
+            // first-class feature. Identity no longer depends on it, so the newest read is what
+            // the board should show; keeping the first one meant a renamed test kept its old name
+            // on every screen until somebody deleted the register.
+            if (!string.IsNullOrWhiteSpace(other.Rule)) Rule = other.Rule;
 
             if (other.AssignedTo != null && !Pending.Contains(FindingField.AssignedTo))
                 AssignedTo = other.AssignedTo;
