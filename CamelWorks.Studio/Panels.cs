@@ -1504,19 +1504,25 @@ namespace CamelWorks.Studio
 
             words.Children.Add(title.Wearing("Body"));
 
+            if (made) words.Children.Add(Parts.Note("grouped by you"));
+
+            // The member count, at the right of the name's own cell, so it survives a group name
+            // too long for the column.
             var many = new TextBlock
             {
                 Text = Ui.Count(count, "clash"),                     // harness: data
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(6, 0, 0, 0),
+                Margin = new Thickness(8, 0, 0, 0),
                 TextWrapping = TextWrapping.NoWrap,
             };
 
-            words.Children.Add(many.Wearing("Hint"));
+            var named = new DockPanel { LastChildFill = true };
 
-            if (made) words.Children.Add(Parts.Note("grouped by you"));
+            DockPanel.SetDock(many, Dock.Right);
+            named.Children.Add(many.Wearing("Hint"));
+            named.Children.Add(words);
 
-            Put(grid, words, 1);
+            Put(grid, named, 1);
             Put(grid, Right(Hint("—")), 2);
             Put(grid, Right(Hint("—")), 3);
             Put(grid, Figure(worst, true), 4);

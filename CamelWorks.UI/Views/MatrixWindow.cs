@@ -6387,11 +6387,10 @@ namespace CamelWorks.UI.Views
                 Keyed(Skin.Of("OkBg"), "0", "Nothing open",
                       "tested, and everything on it is decided");
 
-                Keyed(Heat((worst + 1) / 2), "\u2026", "Some open",
-                      "the wash runs to the worst on this board");
-
-                Keyed(Heat(worst), worst.ToString(CultureInfo.InvariantCulture), "The worst pair",
-                      "which is where a meeting goes first");
+                // A ramp, not two samples off it. Two swatches labelled with the numbers they
+                // happen to sit at say what those two cells look like and nothing about the
+                // sixty between them; a scale says where it runs from and to.
+                Ramp(worst);
 
                 Keyed(System.Windows.Media.Brushes.Transparent, string.Empty, "No test covers it",
                       "a hole in the coordination, not a clean pair");
@@ -6414,6 +6413,57 @@ namespace CamelWorks.UI.Views
             /// <param name="mark">What is written in it.</param>
             /// <param name="name">What it is.</param>
             /// <param name="says">The quieter line under it.</param>
+            /// <summary>A left-to-right sweep between two brushes, or a flat fill if either is not solid.</summary>
+            /// <param name="from">The colour at one open clash.</param>
+            /// <param name="to">The colour at the worst pair.</param>
+            private static System.Windows.Media.Brush Sweep(System.Windows.Media.Brush from,
+                                                            System.Windows.Media.Brush to) =>
+                from is System.Windows.Media.SolidColorBrush least
+                && to is System.Windows.Media.SolidColorBrush most
+                    ? new System.Windows.Media.LinearGradientBrush(least.Color, most.Color, 0)
+                    : to;
+
+            /// <summary>
+            /// The heat scale, as a bar from one open clash to the worst pair on the board.
+            /// </summary>
+            /// <param name="worst">The most open clashes on any one pair.</param>
+            private void Ramp(int worst)
+            {
+                var bar = new Border
+                {
+                    Height = 12,
+                    CornerRadius = new CornerRadius(4),
+                    BorderThickness = new Thickness(1),
+                    Margin = new Thickness(5, 4, 6, 2),
+                    Background = Sweep(Heat(1), Heat(worst)),
+                };
+
+                bar.Tint(Border.BorderBrushProperty, "Bd");
+
+                var ends = new DockPanel
+                {
+                    LastChildFill = false,
+                    Margin = new Thickness(5, 0, 6, 4),
+                };
+
+                var most = Ui.Small(worst.ToString(CultureInfo.InvariantCulture) + " open");
+
+                DockPanel.SetDock(most, Dock.Right);
+                ends.Children.Add(most);
+                ends.Children.Add(Ui.Small("1 open"));
+
+                _palette.Children.Add(bar);
+                _palette.Children.Add(ends);
+
+                var says = Ui.Small("The wash runs to the worst pair on this board, which is where "
+                                    + "a meeting goes first.");
+
+                says.TextWrapping = TextWrapping.Wrap;
+                says.Margin = new Thickness(5, 0, 6, 4);
+
+                _palette.Children.Add(says);
+            }
+
             private void Keyed(System.Windows.Media.Brush paint, string mark, string name,
                                string says)
             {

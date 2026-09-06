@@ -4158,19 +4158,6 @@ namespace CamelWorks.UI.Views
 
                 words.Children.Add(name.Wearing("Body"));
 
-                // The member count, beside the name it belongs to. It had a column of its own,
-                // which meant every clash row carried an em-dash under a header called "Clashes"
-                // — a column's width spent saying nothing on nine rows in ten.
-                var many = new TextBlock
-                {
-                    Text = Ui.Count(row.Rows.Count, "clash"),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(6, 0, 0, 0),
-                    TextWrapping = TextWrapping.NoWrap,
-                };
-
-                words.Children.Add(many.Wearing("Hint"));
-
                 if (_made.Contains(row.Id)) words.Children.Add(Parts.Note("grouped by you"));
 
                 words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
@@ -4179,7 +4166,26 @@ namespace CamelWorks.UI.Views
                     Opened(row.Id);
                 });
 
-                Put(grid, words, Where(Named));
+                // The member count, at the right of the name's own cell. It had a column of its
+                // own, which meant every clash row carried an em-dash under a header called
+                // "Clashes" — a column's width spent saying nothing on nine rows in ten. Docked
+                // rather than trailing the name, so it survives a group name too long for the
+                // column.
+                var many = new TextBlock
+                {
+                    Text = Ui.Count(row.Rows.Count, "clash"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0),
+                    TextWrapping = TextWrapping.NoWrap,
+                };
+
+                var named = new DockPanel { LastChildFill = true };
+
+                DockPanel.SetDock(many, Dock.Right);
+                named.Children.Add(many.Wearing("Hint"));
+                named.Children.Add(words);
+
+                Put(grid, named, Where(Named));
 
                 // Em-dashes, not the first member's items. A group aggregates many different item
                 // pairs and has no pair of its own; borrowing one member's would be a lie the eye
