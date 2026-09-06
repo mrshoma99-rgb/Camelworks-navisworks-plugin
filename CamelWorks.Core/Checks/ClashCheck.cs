@@ -321,12 +321,17 @@ namespace CamelWorks.Core.Checks
                 if (finding.Facts.TryGetValue(ClashFindings.HostId, out var id)
                     && id != null && byId.TryGetValue(id, out var info))
                 {
-                    if (info.CommentCount > 0)
-                        finding.Facts[HostComments] =
-                            info.CommentCount.ToString(CultureInfo.InvariantCulture);
+                    var count = Math.Max(info.CommentCount, info.Comments.Count);
 
-                    if (!string.IsNullOrWhiteSpace(info.LastComment))
-                        finding.Facts[HostLastComment] = info.LastComment;
+                    if (count > 0)
+                        finding.Facts[HostComments] = count.ToString(CultureInfo.InvariantCulture);
+
+                    var last = info.LastComment
+                               ?? (info.Comments.Count > 0
+                                       ? info.Comments[info.Comments.Count - 1].Body
+                                       : null);
+
+                    if (!string.IsNullOrWhiteSpace(last)) finding.Facts[HostLastComment] = last;
                 }
             }
 

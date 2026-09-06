@@ -358,8 +358,8 @@ namespace CamelWorks.Core.Checks
         /// the echo can write. It takes the file-born finding's status, assignee, group, dates and
         /// remarks, and the file-born finding is then removed rather than left as a duplicate.
         ///
-        /// A held finding that came from the document carries the host's own result id, and is
-        /// left alone: this only ever claims findings a file raised.
+        /// A held finding the document reported is marked as being in the host and is left alone:
+        /// this only ever claims findings a file raised.
         /// </summary>
         /// <param name="register">The register.</param>
         /// <param name="found">What the host read produced.</param>
@@ -375,9 +375,11 @@ namespace CamelWorks.Core.Checks
 
             foreach (var held in register.From(FindingSource.Clash))
             {
-                // Raised by a file read and by nothing since: a finding the document reported
-                // carries the host's id for its result.
-                if (held.Facts.ContainsKey(ClashFindings.HostId)) continue;
+                // Raised by a file read and by nothing since. A finding the document reported is
+                // marked by its producer as being in the host, and this must never claim one of
+                // those: what it claims it removes, and the document's findings are what the
+                // board draws and what the echo can write.
+                if (held.HostHasIt) continue;
 
                 var topic = held.TopicGuid;
 
