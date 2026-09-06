@@ -214,11 +214,16 @@ namespace CamelWorks.UI.Views
                     }
                 }
 
+                // A finding with no point has nowhere to look. Taking the missing coordinate as
+                // nought would send back a picture of the origin, which reads as a picture of the
+                // finding and is not one; a topic with no snapshot is the honest answer.
+                if (item.X == null || item.Y == null || item.Z == null) return null;
+
                 try
                 {
                     // Four metres back is the framing Focus uses, so the picture matches what
                     // pressing Focus on the same row would show.
-                    session.View.LookAt(item.X ?? 0, item.Y ?? 0, item.Z ?? 0, 4.0);
+                    session.View.LookAt(item.X.Value, item.Y.Value, item.Z.Value, 4.0);
 
                     return session.View.Capture(width, height);
                 }

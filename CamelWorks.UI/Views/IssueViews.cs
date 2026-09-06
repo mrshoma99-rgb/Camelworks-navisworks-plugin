@@ -1356,51 +1356,59 @@ namespace CamelWorks.UI.Views
 
                 job.Say("Building topics...");
 
-                var topics = going.Select(FindingBcf.ToTopic).ToList();
-                var findings = 0;
+                var attached = new List<Finding>();
 
                 if (_withFindings)
                 {
                     var register = _session.Findings.Findings;
 
-                    var attached = going
+                    attached = going
                         .SelectMany(i => i.Findings)
                         .Distinct(StringComparer.Ordinal)
                         .Select(register.Find)
                         .Where(f => f != null)
                         .Select(f => f!)
                         .ToList();
-
-                    var byGuid = topics.ToDictionary(t => t.Guid, t => t, StringComparer.Ordinal);
-
-                    var whose = going.ToDictionary(i => FindingBcf.ToTopic(i).Guid,
-                                                   i => (IEnumerable<string>)i.Findings,
-                                                   StringComparer.Ordinal);
-
-                    topics = FindingBcf.Together(attached, topics,
-                        topic => whose.TryGetValue(topic.Guid, out var ids)
-                            ? ids
-                            : Array.Empty<string>()).ToList();
-
-                    findings = attached.Count;
-
-                    // The findings are about to travel under the topic guids stamped on them, so
-                    // the register has to remember which - otherwise a file coming back names
-                    // topics nothing here answers to and every reply lands as a new issue.
-                    if (findings > 0 && !_session.Findings.Save())
-                        _log.Children.Add(Ui.Note("The findings went out, but which topics they "
-                            + "went out as could not be kept: "
-                            + (_session.Findings.LastSaveProblem
-                               ?? "there was nowhere to write.")
-                            + " A reply may come home as new issues rather than as answers."));
                 }
 
-                BcfWriteResult written;
+                // Through the one writer, so the file carries the sidecar: the findings'
+                // identities, their points and their facts. Written with BcfWriter directly, this
+                // pack came home as a stranger - no CamelWorks detail, every topic read as
+                // somebody else's - which is the file this product sent itself.
+                var how = new FindingBcfOptions
+                {
+                    SourceFile = _session.Store.Path,
+                    ProjectName = _session.Profile.ProjectName,
+                    Author = Environment.UserName ?? "CamelWorks",
+                    WhenTicks = DateTime.UtcNow.Ticks,
+                };
+
+                if (attached.Count > 0)
+                {
+                    var ids = new ClashIdentity.Ids(null, attached, null);
+
+                    Ui.Busy(() => ids = new ClashIdentity.Ids(_session, attached, null));
+
+                    how.IfcGuidOf = ids.Of;
+                    how.LocatorOf = ids.At;
+                }
+
+                var written = FindingBcf.Write(attached, going, how);
+                var findings = written.Findings;
+
+                // The findings are about to travel under the topic guids stamped on them, so
+                // the register has to remember which - otherwise a file coming back names
+                // topics nothing here answers to and every reply lands as a new issue.
+                if (findings > 0 && !_session.Findings.Save())
+                    _log.Children.Add(Ui.Note("The findings went out, but which topics they "
+                        + "went out as could not be kept: "
+                        + (_session.Findings.LastSaveProblem
+                           ?? "there was nowhere to write.")
+                        + " A reply may come home as new issues rather than as answers."));
 
                 try
                 {
-                    using (var stream = System.IO.File.Create(dialog.FileName))
-                        written = BcfWriter.Write(stream, topics, BcfVersion.V21);
+                    System.IO.File.WriteAllBytes(dialog.FileName, written.Bytes);
                 }
                 catch (Exception e)
                 {
@@ -1409,11 +1417,11 @@ namespace CamelWorks.UI.Views
                 }
 
                 _session.Record(ActivityKind.Exchange, "wrote the issues as BCF",
-                                written.ToString() + " to " + dialog.FileName);
+                                written.Explain() + " to " + dialog.FileName);
 
-                foreach (var note in written.Notes) _log.Children.Add(Ui.Note(note));
+                foreach (var note in written.Warnings) _log.Children.Add(Ui.Note(note));
 
-                _log.Children.Add(Ui.Done(written.ToString()
+                _log.Children.Add(Ui.Done(written.Explain()
                     + (findings > 0
                         ? " " + Ui.Count(findings, "finding") + " went with them, each related to "
                           + "the issue it is about."

@@ -321,10 +321,10 @@ nothing reaches is how a redesign loses a feature quietly.
 
 ## Exchange — one file out, several files back
 
-The tab is one coordination round: on Monday a pack per trade goes out, on Thursday the packs
-come back and the answers land on the board without anybody retyping them. Both halves are on
-one tab because they are one round; they were three tabs, so setting up an issue and taking one
-back were in different places and neither said what the other had done.
+The tab is one coordination round: a pack per trade goes out, the packs come back, and the
+answers land on the board without anybody retyping them. Both halves are on one tab because they
+are one round; they were three tabs, so setting up an issue and taking one back were in different
+places and neither said what the other had done.
 
 **One writer, so exchange is offered on every check.** There were three BCF writers over one
 format — a clash writer, a finding writer and an issue writer — with two label vocabularies, two
@@ -335,15 +335,26 @@ writer, `FindingBcf`, and what goes in a pack is a finding:
 
 - **One label vocabulary.** Every label the product writes carries a declared prefix — the
   check, the rule, the folder, the group, the level, the grid, the zone, the issue number — and
-  one predicate says whether a label is ours. A prefixed label is taken off on the way back in; a
-  bare one is the reviewer's tag and is kept.
+  one predicate says whether a label is ours. Every prefix starts with the marker `CW/`, because
+  seven of the eight words are ordinary English and a reviewer typing `Level: 3` in Solibri would
+  otherwise have it read as one of ours and discarded. A marked label is taken off on the way back
+  in; anything else is the reviewer's tag and is kept. The cost is that a pack sent before the
+  marker existed comes home with its own labels read as the reviewer's tags.
 - **One sidecar, per check.** The finding's identity, its point in metres, where the writing
   document had each element, and every fact the check measured. A clearance breach travels with
   its clear height, its minimum and its shortfall, and comes home with them.
 - **One status reading.** Whatever word the sending tool used, the same answer whether the file
   is applied to a finding, merged into the findings register or read as an issue. A word outside
-  the conventional vocabulary is reported by name before anything is applied rather than mapped
-  in silence.
+  the conventional vocabulary is read for its sense, and every leg can be told not to guess. The
+  issue import names the words it met that the vocabulary does not hold, in its notes.
+- **A returned status never demotes.** A topic that set no status word says nothing about the
+  status, and a word it did set goes through the lattice, on the finding leg and the issue leg
+  alike. A month-old pack saying Open cannot put an Approved issue back to Active.
+- **One topic per finding.** A clash's topic guid is derived from the element pair and the cell,
+  not from the test, so two tests reporting one physical conflict derive one guid. The second
+  claimant is written under a guid derived from that guid and its own finding id, and keeps it
+  from then on: BCF names a topic's folder with its guid, and two topics at one guid is a file
+  the receiving tool reads half of.
 
 **Pack per trade, and what happens to a check with no trades.** Clash packs split on the two
 disciplines. Clearance has an obstruction and a surface, not two trades, and fall hazard has one
@@ -358,10 +369,20 @@ reading another check's board.
 **No viewpoint parity claim.** The clash engine can frame a result the way the native clash
 window does, using the host's own result geometry (`ResultSnapshot`). Nothing else can: every
 other check's viewpoints are rendered through the slow camera route — the finding's elements, a
-bounding box, a camera backed off it — which is slower and frames worse. The camera direction,
-the element colouring, the section box and the rendered picture are all still per pack, with
-per-check defaults: clearance goes out boxed, because a breach is a space somebody walks under
-and a camera on it otherwise shows the wall in front of it.
+bounding box, a camera backed off it — which is slower and frames worse. Pictures are off by
+default and need an open document; without one the tab says so, and the pack goes out with a
+camera and the facts the register holds. The camera direction, the element colouring, the section
+box and the rendered picture are all per pack, with per-check defaults: clearance goes out boxed,
+because a breach is a space somebody walks under and a camera on it otherwise shows the wall in
+front of it.
+
+**What the model supplies, and what a file leg cannot.** The IFC ids a receiving tool selects by
+and the route to each element are read from the open document, on every export path: the Manage
+tab's baseline, the Exchange tab's packs and the Issue register's export. A markup saved from a
+file board has no document to read either from, so it sends back the ids and routes the file it
+was reading arrived with. The model and discipline of each side are recorded onto the finding as
+facts by the seat that could resolve them, so a seat reading a pack can still split by discipline
+and tell a same-model clash from a cross-model one.
 
 **What a returned answer lands on.** A clash finding's topic guid is derived from its two
 elements and the cell they meet in, so it survives a re-run and a pack that has been through

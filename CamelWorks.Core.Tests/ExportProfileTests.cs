@@ -436,6 +436,89 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(profile.Name, round.Recipient);
         }
 
+
+        [Fact]
+        public void A_split_the_check_has_no_sides_for_falls_back_to_the_assignee()
+        {
+            // Clearance has an obstruction and a surface, not two trades, so a discipline split
+            // over it names every pack "? v ?" - one pack addressed to nobody. The assignee is the
+            // one recipient every check has, and the round says which split it used.
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var theirs = Item("b", "Hard", FindingStatus.New, 2);
+
+            mine.DisciplineA = null;
+            mine.DisciplineB = null;
+            theirs.DisciplineA = null;
+            theirs.DisciplineB = null;
+
+            mine.AssignedTo = "Mechanical";
+            theirs.AssignedTo = "Structure";
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "disciplines";
+
+            var rounds = profile.Rounds(new[] { mine, theirs });
+
+            Assert.Equal(2, rounds.Count);
+            Assert.Equal(new[] { "Mechanical", "Structure" },
+                         rounds.Select(r => r.Recipient).OrderBy(r => r, StringComparer.Ordinal));
+
+            Assert.All(rounds, round =>
+            {
+                Assert.Equal("Assigned to", round.SplitBy);
+                Assert.Equal("Disciplines", round.Asked);
+            });
+        }
+
+        [Fact]
+        public void A_split_nothing_answers_and_nobody_is_assigned_is_one_pack_that_says_so()
+        {
+            // The branch the tab draws a sentence from. SplitBy naming nothing left that sentence
+            // reading "so the split fell back to ."
+            var loose = Item("a", "Hard", FindingStatus.New, 1);
+
+            loose.DisciplineA = null;
+            loose.DisciplineB = null;
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "disciplines";
+
+            var round = Assert.Single(profile.Rounds(new[] { loose }));
+
+            Assert.Equal(profile.Name, round.Recipient);
+            Assert.Equal(ExportProfile.OnePack, round.SplitBy);
+            Assert.Equal("Disciplines", round.Asked);
+        }
+
+        [Fact]
+        public void A_split_the_check_does_have_sides_for_is_the_split_that_is_used()
+        {
+            // The fallback is not a default. A clash has two trades, so a discipline split splits
+            // by discipline and nothing is said about a fallback.
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var theirs = Item("b", "Hard", FindingStatus.New, 2);
+
+            mine.DisciplineA = "Mechanical";
+            mine.DisciplineB = "Structural";
+            theirs.DisciplineA = "Electrical";
+            theirs.DisciplineB = "Structural";
+
+            mine.AssignedTo = "Ada";
+            theirs.AssignedTo = "Ada";
+
+            var profile = Everything("Hard");
+
+            profile.SplitBy = "disciplines";
+
+            var rounds = profile.Rounds(new[] { mine, theirs });
+
+            Assert.Equal(2, rounds.Count);
+            Assert.All(rounds, round => Assert.Null(round.Asked));
+            Assert.All(rounds, round => Assert.Equal("Disciplines", round.SplitBy));
+        }
+
         [Fact]
         public void A_recipients_name_becomes_a_filename_a_file_system_will_take()
         {

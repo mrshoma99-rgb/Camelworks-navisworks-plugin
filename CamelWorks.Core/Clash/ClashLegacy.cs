@@ -48,14 +48,21 @@ namespace CamelWorks.Core.Clash
             var byHost = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
             var byTopic = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var finding in all)
+            // A topic guid is not unique across findings - two clash tests reporting one conflict
+            // derive the same one - so the first to claim it keeps it, and the findings are walked
+            // in id order so the same two answer the same way on every seat. Read left as it was,
+            // the old register's status landed on whichever of the two was indexed last.
+            var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var finding in all.OrderBy(one => one.Id, StringComparer.Ordinal))
             {
                 if (finding.Facts.TryGetValue(ClashFindings.HostTest, out var test)
                     && finding.Facts.TryGetValue(ClashFindings.HostId, out var result)
                     && test != null && result != null)
                     byHost[Where(test, result)] = finding;
 
-                if (!string.IsNullOrEmpty(finding.TopicGuid)) byTopic[finding.TopicGuid!] = finding;
+                if (!string.IsNullOrEmpty(finding.TopicGuid) && claimed.Add(finding.TopicGuid!))
+                    byTopic[finding.TopicGuid!] = finding;
             }
 
             foreach (var record in (held ?? JsonValue.Object())[HeldKey].Items)

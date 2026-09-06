@@ -40,8 +40,8 @@ namespace CamelWorks.Core.Findings
         /// <summary>
         /// Whether the group each finding is filed under travels as a label.
         ///
-        /// A reviewer who is going to work through the file wants the folders that took an
-        /// afternoon to make; a reviewer who wants it in their own tool usually wants it flat.
+        /// On for a reviewer working through the pack as it was sent, off for one importing it
+        /// into a tool that files topics its own way.
         /// </summary>
         public bool KeepGroups { get; set; } = true;
 
@@ -81,10 +81,8 @@ namespace CamelWorks.Core.Findings
         /// Navisworks in it and is tested on a machine with no graphics, so the picture is
         /// requested rather than taken here.
         ///
-        /// Worth requesting because every coordination tool shows its issue list as thumbnails. A
-        /// pack with no snapshots arrives as rows of grey boxes and a reviewer has to open each
-        /// one to find out what it is, which on four hundred findings decides whether the file is
-        /// worked through or closed.
+        /// Worth requesting: coordination tools show an issue list as thumbnails, so a pack with
+        /// no snapshots arrives as rows of grey boxes.
         ///
         /// Null is an ordinary answer: a document that cannot render off-screen, a file source
         /// with no model behind it, or a reviewer who asked for no pictures.
@@ -119,6 +117,20 @@ namespace CamelWorks.Core.Findings
         /// exactly when the federation was built from IFC.
         /// </summary>
         public Func<ElementKey, string?>? IfcGuidOf { get; set; }
+
+        /// <summary>
+        /// Facts this pack adds to a finding's own, for the sidecar and the labels.
+        ///
+        /// What a board derives per document rather than the producer writing it: the level a
+        /// height falls on, the grid it is nearest, the zone it is in, and the property columns
+        /// the profile reads off the clashing elements. The receiving seat has no document to
+        /// derive any of it from, so it travels.
+        ///
+        /// A callback rather than the caller writing the facts onto the finding, because a finding
+        /// is the register's and writing a file must not edit it. A pack fact wins over the
+        /// finding's own of the same name for this file only.
+        /// </summary>
+        public Func<Finding, IReadOnlyDictionary<string, string?>?>? FactsOf { get; set; }
 
         /// <summary>
         /// The defaults for one check, by its key.

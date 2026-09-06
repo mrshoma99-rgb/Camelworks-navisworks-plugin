@@ -239,10 +239,11 @@ namespace CamelWorks.Core.Clash
         public ExportSelection Selection { get; }
 
         /// <summary>
-        /// What the rounds were split on, as the facet titles it, or null for one pack.
+        /// What the rounds were split on, as the facet titles it, or null when nothing was asked.
         ///
-        /// Said out loud because it is not always the split that was asked for: see
-        /// <see cref="Asked"/>.
+        /// <see cref="ExportProfile.OnePack"/> when a split was asked for and nothing answered it,
+        /// which is a different thing from a profile that asked for no split. Said out loud
+        /// because it is not always the split that was asked for: see <see cref="Asked"/>.
         /// </summary>
         public string? SplitBy { get; }
 
@@ -529,8 +530,11 @@ namespace CamelWorks.Core.Clash
             {
                 var assignee = ClashFacets.Of(Assignee, chosen.Items, plan, issued);
 
+                // Nothing is assigned either, so there is one pack. SplitBy names what that one
+                // pack is split on, which is nothing, and the tab has to be able to say "nothing
+                // here carries X, so everything went in one pack" rather than trailing off.
                 if (assignee == null || !Answers(assignee, chosen.Items))
-                    return new[] { new ExportRound(Name, chosen, null, facet.Title) };
+                    return new[] { new ExportRound(Name, chosen, OnePack, facet.Title) };
 
                 asked = facet.Title;
                 facet = assignee;
@@ -626,6 +630,12 @@ namespace CamelWorks.Core.Clash
 
         /// <summary>What a round is called when the facet says nothing about who it is for.</summary>
         public const string Nobody = "Unassigned";
+
+        /// <summary>
+        /// What <see cref="ExportRound.SplitBy"/> says when the asked-for split answered nothing
+        /// and the assignee answered nothing either, so everything went in one pack.
+        /// </summary>
+        public const string OnePack = "one pack";
 
         /// <summary>The facet the split falls back to, which is the one every check has.</summary>
         private const string Assignee = "assignee";

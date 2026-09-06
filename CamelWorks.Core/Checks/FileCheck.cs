@@ -289,7 +289,12 @@ namespace CamelWorks.Core.Checks
                 if (result.Item != null)
                     byGuid[Handle(result)] = result.Item;
 
-            foreach (var finding in _findings)
+            // The topic guid each item is filed under is claimed once, and the findings are
+            // walked in id order so two findings on one guid answer the same way twice. A file
+            // another tool re-authored can carry one guid on two topics.
+            var claimed = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var finding in _findings.OrderBy(one => one.Id, StringComparer.Ordinal))
             {
                 if (!finding.Facts.TryGetValue(ClashFindings.HostId, out var id)
                     || id == null || !byGuid.TryGetValue(id, out var item))
@@ -297,13 +302,36 @@ namespace CamelWorks.Core.Checks
 
                 items[finding.Id] = item;
 
+                // The topic the file actually carried, rather than the one re-derived from the
+                // key. The two are normally equal; they differ for the second of two findings on
+                // one clash, which goes out under a topic of its own, and a markup saved here has
+                // to go home under the name it arrived with.
+                if (!string.IsNullOrEmpty(item.TopicGuid)) finding.TopicGuid = item.TopicGuid;
+
+                // What the writing seat resolved per document and this one cannot: which model
+                // and which discipline each side is. The facets and the same-model test read them.
+                Carried(finding, ClashFindings.ModelA, item.ModelA);
+                Carried(finding, ClashFindings.ModelB, item.ModelB);
+                Carried(finding, ClashFindings.DisciplineA, item.DisciplineA);
+                Carried(finding, ClashFindings.DisciplineB, item.DisciplineB);
+
                 // Under the topic guid as well, because a caller that has folded this read onto
                 // the findings already held is holding those and not these, and the item is what
                 // says where in the model the elements are.
-                if (!string.IsNullOrEmpty(finding.TopicGuid)) items[finding.TopicGuid!] = item;
+                if (!string.IsNullOrEmpty(finding.TopicGuid) && claimed.Add(finding.TopicGuid!))
+                    items[finding.TopicGuid!] = item;
             }
 
             foreach (var pair in items) _items[pair.Key] = pair.Value;
+        }
+
+        /// <summary>Write a fact the file carried, and leave what is there when it carried none.</summary>
+        /// <param name="finding">The finding raised from the file.</param>
+        /// <param name="fact">The fact's name.</param>
+        /// <param name="value">What the file said, or null.</param>
+        private static void Carried(Finding finding, string fact, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) finding.Facts[fact] = value!;
         }
 
         /// <summary>One file result, in the shape the clash producer reads.</summary>
@@ -324,8 +352,12 @@ namespace CamelWorks.Core.Checks
             {
                 Name = result.Name,
                 GroupName = result.Group,
-                NameA = result.Item?.ModelA,
-                NameB = result.Item?.ModelB,
+
+                // The participants' display names, as the producing seat wrote them. These used
+                // to read result.Item.ModelA, which is the model file the element is in and not
+                // the element: the two element-name facts came home holding model names.
+                NameA = Said(result, ClashFindings.NameA),
+                NameB = Said(result, ClashFindings.NameB),
                 CategoryA = result.Item?.CategoryA,
                 CategoryB = result.Item?.CategoryB,
                 CommentCount = result.Comments.Count,
@@ -334,6 +366,16 @@ namespace CamelWorks.Core.Checks
                 Distance = result.Item?.Distance,
             };
         }
+
+        /// <summary>One fact the file carried on a result, or null when it carried none.</summary>
+        /// <param name="result">The result the file carried.</param>
+        /// <param name="fact">The fact's name.</param>
+        private static string? Said(ClashPackResult result, string fact) =>
+            result.Item != null
+            && result.Item.Properties.TryGetValue(fact, out var value)
+            && !string.IsNullOrWhiteSpace(value)
+                ? value
+                : null;
 
         /// <summary>What stands in for a host result id: the file's own guid, or where it sits.</summary>
         /// <param name="result">The result the file carried.</param>

@@ -85,7 +85,8 @@ namespace CamelWorks.UI.Views
         /// <summary>The surface, for a desk to bench.</summary>
         /// <param name="session">The open document.</param>
         public static UIElement Surface(Session session) =>
-            Drawn(session.Store, session.Profile.ProjectName, findings: session.Findings);
+            Drawn(session.Store, session.Profile.ProjectName, findings: session.Findings,
+                  session: session);
 
         /// <summary>
         /// The same surface from the project file alone, so it can be drawn without a document.
@@ -102,10 +103,17 @@ namespace CamelWorks.UI.Views
         /// Where an applied answer is written to last. Null draws the screen without one, which is
         /// what the harness does; applying then reaches the live board and says so.
         /// </param>
+        /// <param name="session">
+        /// The open document, for the parts of a pack only a document can supply: the IFC ids a
+        /// receiving tool selects by, where each element sits, and the rendered pictures. Null
+        /// writes the pack without them and the tab says what that costs.
+        /// </param>
         public static UIElement Drawn(ProjectStore store, string? projectName = null,
                                       IReadOnlyList<ClashGroup>? board = null,
-                                      bool importing = false, FindingStore? findings = null) =>
-            new Desk(store, projectName ?? "Untitled project", board, importing, findings).View;
+                                      bool importing = false, FindingStore? findings = null,
+                                      Session? session = null) =>
+            new Desk(store, projectName ?? "Untitled project", board, importing, findings,
+                     session).View;
 
         /// <summary>The two halves of a round.</summary>
         private const string SendOut = "Export";
@@ -172,15 +180,22 @@ namespace CamelWorks.UI.Views
 
             private readonly FindingStore? _findings;
 
+            /// <summary>The open document, or null when the desk was drawn from the project file.</summary>
+            private readonly Session? _session;
+
+            /// <summary>Whether each topic carries a rendered picture. Needs a document.</summary>
+            private bool _pictures;
+
             internal Desk(ProjectStore store, string projectName,
                           IReadOnlyList<ClashGroup>? board = null, bool importing = false,
-                          FindingStore? findings = null)
+                          FindingStore? findings = null, Session? session = null)
             {
                 _store = store;
                 _projectName = projectName;
                 _board = board;
                 _importing = importing;
                 _findings = findings;
+                _session = session;
 
                 Load();
 
@@ -347,7 +362,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private UIElement Selected()
             {
-                var named = CheckKey == FindingSource.Clash ? "Clash detection" : CheckKey;
+                var named = Named(CheckKey);
 
                 var link = Ui.Quiet(named + " \u2014 change on Manage",
                                     () => Ui.Told(Shell.AppWindow.Show("clash", "manage")));
@@ -356,6 +371,28 @@ namespace CamelWorks.UI.Views
                              + "has selected, so the two cannot disagree.";
 
                 return link;
+            }
+
+            /// <summary>
+            /// What a check is called on screen.
+            ///
+            /// The tab holds a check key and not the check itself — the check over a document is
+            /// built by the Manage tab and this desk draws without one — so the key is worded here
+            /// rather than shown raw. "FallHazard" is a constant in a persisted format and not a
+            /// name anybody wrote.
+            /// </summary>
+            /// <param name="checkKey">The check's key, as <see cref="FindingSource"/> spells it.</param>
+            private static string Named(string checkKey)
+            {
+                switch (checkKey)
+                {
+                    case FindingSource.Clash: return "Clash detection";
+                    case FindingSource.Headroom: return "Clearance";
+                    case FindingSource.SetDrift: return "Set drift";
+                    case FindingSource.FallHazard: return "Fall hazard";
+                    case FindingSource.Ids: return "IDS";
+                    default: return string.IsNullOrWhiteSpace(checkKey) ? "Clash detection" : checkKey;
+                }
             }
 
             /// <summary>The saved profiles, as a chooser for the strip.</summary>
@@ -1004,7 +1041,10 @@ namespace CamelWorks.UI.Views
                 if (fell != null)
                     into.Children.Add(Ui.Note(
                         "Nothing here carries " + fell.Asked + ", which is what this profile "
-                        + "splits on, so the split fell back to " + fell.SplitBy + "."));
+                        + "splits on, so "
+                        + (fell.SplitBy == ExportProfile.OnePack
+                            ? "everything went in one pack: nothing here is assigned either."
+                            : "the split fell back to " + fell.SplitBy + ".")));
 
                 into.Children.Add(Ui.Small(Framing(going.Count)));
 
@@ -1014,31 +1054,77 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// How the viewpoints will be drawn, and what that will cost.
+            /// What each topic will carry, and what that will cost.
             ///
-            /// There is no viewpoint parity between the checks and saying so is the honest
-            /// answer. The clash engine frames a result the way the native clash window does,
-            /// using the host's own result geometry; nothing else can, so every other check's
-            /// topics are framed by backing a camera off the finding's elements — slower, and a
-            /// worse picture. Said before the press rather than discovered as a tab that appears
-            /// to hang.
+            /// Said before the press rather than discovered as a tab that appears to hang, and
+            /// said from what this desk actually has. Without an open document a pack carries its
+            /// camera and its facts and nothing else: no IFC ids to select by, no route to each
+            /// element, no pictures.
             /// </summary>
             /// <param name="results">How many results are going out.</param>
-            private static string Framing(int results)
+            private string Framing(int results)
             {
+                if (_session == null)
+                    return "No model is open, so these topics go out with a camera and the facts "
+                         + "the register holds: no IFC ids for the receiving tool to select by, "
+                         + "no route to the elements for a reviewing seat, and no pictures.";
+
+                if (!_pictures)
+                    return "Each topic carries its elements' IFC ids and a camera on the finding. "
+                         + "Pictures are off.";
+
                 if (CheckKey == FindingSource.Clash)
-                    return "Viewpoints are framed by the clash engine, the way the native clash "
-                         + "window frames a result.";
+                    return "Pictures are framed by the clash engine where the result still has "
+                         + "the host ids it was read under, the way the native clash window "
+                         + "frames it, and by a camera otherwise. Each topic carries its "
+                         + "elements' IFC ids.";
 
                 // A camera move and a capture each, which measures at about a fifth of a second
                 // on a federation of any size. Rounded up to the minute, because a number to the
                 // second reads as a promise.
                 var minutes = Math.Max(1, (int)Math.Ceiling(results * 0.2 / 60.0));
 
-                return "This check has no result geometry of its own, so each viewpoint is framed "
+                return "This check has no result geometry of its own, so each picture is framed "
                      + "by backing a camera off the finding's elements. That is slower and frames "
                      + "worse than a clash: allow about "
                      + Ui.Count(minutes, "minute") + " for the pictures.";
+            }
+
+            /// <summary>
+            /// Which host test and result a finding was read from, when it carries both.
+            ///
+            /// The clash engine can draw a result the way the native clash window does, and it
+            /// needs the host's two ids to do it. A finding read from a file or produced by any
+            /// other check carries neither, and the camera route draws that one.
+            /// </summary>
+            /// <param name="finding">The finding going out.</param>
+            private static (string Test, string Result)? Drawn(Finding finding) =>
+                finding.Facts.TryGetValue(ClashFindings.HostTest, out var test)
+                && !string.IsNullOrEmpty(test)
+                && finding.Facts.TryGetValue(ClashFindings.HostId, out var result)
+                && !string.IsNullOrEmpty(result)
+                    ? (test!, result!)
+                    : ((string Test, string Result)?)null;
+
+            /// <summary>
+            /// The findings behind the rows going out, for a read that is made once for the run.
+            /// </summary>
+            /// <param name="going">The rows going out.</param>
+            private IReadOnlyList<Finding> Findings(IReadOnlyList<ClashItem> going)
+            {
+                var register = _findings?.Findings;
+                var found = new List<Finding>();
+
+                if (register == null) return found;
+
+                foreach (var item in going)
+                {
+                    var finding = item?.FindingId == null ? null : register.Find(item.FindingId);
+
+                    if (finding != null) found.Add(finding);
+                }
+
+                return found;
             }
 
             /// <summary>The packs this profile would write, from the rows going out.</summary>
@@ -1053,15 +1139,16 @@ namespace CamelWorks.UI.Views
             /// behind each row rather than the row: a pack written from the projection carries no
             /// facts, no locations and no identity the return leg can match on.
             ///
-            /// Three things the board derives per document rather than the producer writing them —
-            /// the level a height falls on, the grid it is nearest and the zone it is in — are
-            /// written onto the finding as facts, which is the declared route by which a fact
-            /// travels as a label. The pack's folder is not: a board folder is made by the
-            /// grouping rules and is not the group the host filed the result under, so it is
-            /// handed to the writer for this pack alone.
+            /// What the board derives per document rather than the producer writing it — the level
+            /// a height falls on, the grid it is nearest, the zone it is in, and the property
+            /// columns read off the clashing elements — travels as facts of this pack. Handed to
+            /// the writer rather than written onto the finding: a finding belongs to the register,
+            /// and an export that edited it changed rows for findings it did not send. The pack's
+            /// folder goes the same way, because a board folder is made by the grouping rules and
+            /// is not the group the host filed the result under.
             /// </summary>
             /// <param name="round">The round.</param>
-            /// <param name="how">The writer's settings, which this fills the folder map into.</param>
+            /// <param name="how">The writer's settings, which this fills the folder and fact maps into.</param>
             private IReadOnlyList<Finding> Pack(ExportRound round, FindingBcfOptions how)
             {
                 var register = _findings?.Findings;
@@ -1072,6 +1159,8 @@ namespace CamelWorks.UI.Views
                         if (member?.FindingId != null) folders[member.FindingId] = group.Name;
 
                 var pack = new List<Finding>();
+                var said = new Dictionary<string, IReadOnlyDictionary<string, string?>>(
+                    StringComparer.Ordinal);
 
                 foreach (var item in round.Selection.Items)
                 {
@@ -1081,27 +1170,50 @@ namespace CamelWorks.UI.Views
 
                     if (finding == null) continue;
 
-                    Place(finding, "Level", item!.Level);
-                    Place(finding, "Grid", item.Grid);
-                    Place(finding, "Zone", item.Zone);
-
+                    said[finding.Id] = Derived(item!);
                     pack.Add(finding);
                 }
 
                 how.GroupOf = finding =>
                     folders.TryGetValue(finding.Id, out var named) ? named : null;
 
+                how.FactsOf = finding =>
+                    said.TryGetValue(finding.Id, out var facts) ? facts : null;
+
                 return pack;
             }
 
-            /// <summary>Write a place word as a fact, or take a stale one off.</summary>
-            /// <param name="finding">The finding going out.</param>
-            /// <param name="fact">Which fact.</param>
-            /// <param name="said">What the board derived, or null when it derived nothing.</param>
-            private static void Place(Finding finding, string fact, string? said)
+            /// <summary>
+            /// What the board worked out about a result and the register does not hold.
+            ///
+            /// The three place words travel as labels by the declared fact-to-label mapping; the
+            /// property columns travel in the sidecar, which is where a board reading the pack
+            /// looks for them. An empty value removes the finding's own fact for this pack, so a
+            /// board that derived no level does not send last week's.
+            /// </summary>
+            /// <param name="item">The row going out.</param>
+            private static IReadOnlyDictionary<string, string?> Derived(ClashItem item)
             {
-                if (string.IsNullOrWhiteSpace(said)) finding.Facts.Remove(fact);
-                else finding.Facts[fact] = said!;
+                var facts = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Level"] = item.Level ?? string.Empty,
+                    ["Grid"] = item.Grid ?? string.Empty,
+                    ["Zone"] = item.Zone ?? string.Empty,
+                };
+
+                foreach (var pair in item.Properties)
+                {
+                    // The board draws these two off the producer's own facts. Sending them again
+                    // under the board's column names would put the same value in the topic's
+                    // description twice.
+                    if (pair.Key == ClashItem.HostStatusProperty
+                        || pair.Key == ClashItem.HostAssigneeProperty)
+                        continue;
+
+                    if (!facts.ContainsKey(pair.Key)) facts[pair.Key] = pair.Value;
+                }
+
+                return facts;
             }
 
             /// <summary>Write the packs.</summary>
@@ -1131,6 +1243,18 @@ namespace CamelWorks.UI.Views
 
                 _sending.Children.Clear();
 
+                // The GlobalIds a receiving tool selects by and the route to each element, read
+                // once for everything going out rather than once per pack: the first read after a
+                // model change pays for the federation index, and a split by assignee writes
+                // thirty packs off the same elements.
+                var ids = new ClashIdentity.Ids(null, Findings(going), null);
+
+                if (_session != null)
+                {
+                    job.Say("Reading IFC ids for the export...");
+                    ids = new ClashIdentity.Ids(_session, Findings(going), job);
+                }
+
                 foreach (var round in rounds)
                 {
                     job.Say("Writing " + round.Recipient + "...");
@@ -1140,6 +1264,14 @@ namespace CamelWorks.UI.Views
                         : Path.Combine(folder, round.FileStem() + ClashFile.Extension);
 
                     var how = _profile.BcfOptions(_projectName, when);
+
+                    how.IfcGuidOf = ids.Of;
+                    how.LocatorOf = ids.At;
+                    how.Author = Environment.UserName ?? "CamelWorks";
+
+                    if (_pictures && _session != null)
+                        how.Snapshot = ClashIdentity.Pictures(_session, 1280, 720, Drawn, job);
+
                     var pack = Pack(round, how);
 
                     if (pack.Count == 0)
@@ -1882,6 +2014,25 @@ namespace CamelWorks.UI.Views
 
                 box.Children.Add(Ui.Check("Colour the two clashing elements", _profile.Highlight,
                                           on => _profile.Highlight = on));
+
+                var pictures = Ui.Check("Draw a picture of each finding", _pictures,
+                                        on => _pictures = on);
+
+                // Off and unavailable without a document: a picture is a render, and this desk
+                // draws from the project file alone when nothing is open.
+                if (_session == null)
+                {
+                    _pictures = false;
+                    pictures.IsEnabled = false;
+                    pictures.ToolTip = "No model is open, so there is nothing to render.";
+                }
+                else
+                {
+                    pictures.ToolTip = "Every coordination tool shows its issue list as "
+                                     + "thumbnails. They cost a render each.";
+                }
+
+                box.Children.Add(pictures);
 
                 box.Children.Add(Ui.Check("Cut a section box around the clash", _profile.Section,
                                           on => _profile.Section = on));

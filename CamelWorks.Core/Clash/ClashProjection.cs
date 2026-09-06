@@ -100,10 +100,14 @@ namespace CamelWorks.Core.Clash
                 SuppressedBy = Fact(finding, ClashFindings.SuppressedBy),
                 CategoryA = Fact(finding, ClashFindings.CategoryA),
                 CategoryB = Fact(finding, ClashFindings.CategoryB),
-                ModelA = ModelName?.Invoke(a),
-                ModelB = ModelName?.Invoke(b),
-                DisciplineA = Discipline?.Invoke(a),
-                DisciplineB = Discipline?.Invoke(b),
+
+                // The seat's own answer first, and what the last seat to hold this finding
+                // recorded second. A seat reading a pack has no federation to answer from, and
+                // the models, disciplines and same-model facets are drawn from these four.
+                ModelA = ModelName?.Invoke(a) ?? Fact(finding, ClashFindings.ModelA),
+                ModelB = ModelName?.Invoke(b) ?? Fact(finding, ClashFindings.ModelB),
+                DisciplineA = Discipline?.Invoke(a) ?? Fact(finding, ClashFindings.DisciplineA),
+                DisciplineB = Discipline?.Invoke(b) ?? Fact(finding, ClashFindings.DisciplineB),
                 Level = Level?.Invoke(z),
             };
 
@@ -117,8 +121,8 @@ namespace CamelWorks.Core.Clash
             var status = Fact(finding, ClashFindings.HostStatus);
             var assignee = Fact(finding, ClashFindings.HostAssignee);
 
-            if (status != null) item.Properties["Host/Status"] = status;
-            if (assignee != null) item.Properties["Host/AssignedTo"] = assignee;
+            if (status != null) item.Properties[ClashItem.HostStatusProperty] = status;
+            if (assignee != null) item.Properties[ClashItem.HostAssigneeProperty] = assignee;
 
             foreach (var comment in finding.Comments)
                 if (comment != null)

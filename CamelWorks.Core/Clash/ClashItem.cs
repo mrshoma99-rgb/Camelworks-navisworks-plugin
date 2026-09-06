@@ -278,6 +278,18 @@ namespace CamelWorks.Core.Clash
         public IDictionary<string, string?> Properties { get; } =
             new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// The property the board draws the status the host last reported under.
+        ///
+        /// An observation and not the result's status, which is the register's. Named here because
+        /// two producers write it - the projection off a document and the reader off a file - and
+        /// a column drawn under two spellings is a column that is empty on one leg.
+        /// </summary>
+        public const string HostStatusProperty = "Host/Status";
+
+        /// <summary>The property the board draws the assignee the host last reported under.</summary>
+        public const string HostAssigneeProperty = "Host/AssignedTo";
+
         /// <summary>True when both participants are in the same model — usually a modelling artefact.</summary>
         public bool IsSameModel =>
             ModelA != null && string.Equals(ModelA, ModelB, StringComparison.OrdinalIgnoreCase);

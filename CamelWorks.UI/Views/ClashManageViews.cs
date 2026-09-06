@@ -97,6 +97,8 @@ namespace CamelWorks.UI.Views
             _engine = null;
             _fileCheck = null;
 
+            ClashExchangeViews.CheckKey = FindingSource.Clash;
+
             _columns.Clear();
         }
 
@@ -1103,6 +1105,12 @@ namespace CamelWorks.UI.Views
             internal UIElement Build()
             {
                 Indexed();
+
+                // The Exchange tab exchanges whatever this tab has selected, and it holds that as
+                // a key rather than a check. Set on every draw, not only when Export is pressed:
+                // opening Exchange from the ribbon otherwise exported whichever check was selected
+                // the last time somebody did press it.
+                ClashExchangeViews.CheckKey = Check?.Key ?? FindingSource.Clash;
 
                 // One caption for both sources: the results are what gets read either way, and
                 // the tool registry promises this exact action.
@@ -6434,6 +6442,17 @@ namespace CamelWorks.UI.Views
 
                 foreach (var note in taken.Notes) _log.Children.Add(Ui.Note(note));
 
+                // Counted and said. A result whose topic names no element this product can key is
+                // drawn and read like any other, but a markup of it can never land back on a
+                // model, and finding that out at the save is finding it out too late.
+                if (round.Unkeyed > 0)
+                    _log.Children.Add(Ui.Note(
+                        Ui.Count(round.Unkeyed, "result") + " in that file "
+                        + (round.Unkeyed == 1 ? "names" : "name")
+                        + " no element this product can identify, so a markup of "
+                        + (round.Unkeyed == 1 ? "it" : "them")
+                        + " could not land back on a model."));
+
                 _log.Children.Add(Ui.Line(read.Explain() + " Mark it up below, then save the "
                                           + "markup.", 1, true));
             }
@@ -10300,8 +10319,18 @@ namespace CamelWorks.UI.Views
                     if (!row.A.IsEmpty && !row.B.IsEmpty)
                         drawnFrom[row.Fact.Id] = (row.TestId, row.Id);
 
+                // The folders as the board has them, which is what the rules made and not what
+                // the host filed the results under. Without this the baseline goes out grouped
+                // the way it was read.
+                var grouped = new Dictionary<string, string>(StringComparer.Ordinal);
+
+                foreach (var row in read.SelectMany(e => e.Rows))
+                    if (row.Group.Length > 0) grouped[row.Fact.Id] = row.Group;
+
                 var written = FindingBcf.Write(going, null, new FindingBcfOptions
                 {
+                    GroupOf = finding =>
+                        grouped.TryGetValue(finding.Id, out var named) ? named : null,
                     Snapshot = _pictures && !OnFile
                         ? ClashIdentity.Pictures(_session, 1280, 720,
                               finding => drawnFrom.TryGetValue(finding.Id, out var at)
@@ -10444,6 +10473,28 @@ namespace CamelWorks.UI.Views
             // The review round: save a markup, sync markups back
             // -------------------------------------------------------------------------------
 
+            /// <summary>Record what the file said about one element, the first time it says it.</summary>
+            /// <param name="ids">The GlobalIds read so far.</param>
+            /// <param name="at">The routes read so far.</param>
+            /// <param name="element">The element.</param>
+            /// <param name="ifcGuid">Its GlobalId, or null.</param>
+            /// <param name="pathId">The writing document's own handle, or null.</param>
+            /// <param name="treePath">Its path of display names, or null.</param>
+            private static void Reached(IDictionary<ElementKey, string> ids,
+                                        IDictionary<ElementKey, ElementLocator> at,
+                                        ElementKey element, string? ifcGuid, string? pathId,
+                                        string? treePath)
+            {
+                if (element.IsEmpty) return;
+
+                if (!string.IsNullOrEmpty(ifcGuid) && !ids.ContainsKey(element))
+                    ids[element] = ifcGuid!;
+
+                if ((!string.IsNullOrEmpty(pathId) || !string.IsNullOrEmpty(treePath))
+                    && !at.ContainsKey(element))
+                    at[element] = new ElementLocator(element, pathId, treePath);
+            }
+
             /// <summary>
             /// Write the file source's current state as this reviewer's markup.
             ///
@@ -10484,12 +10535,33 @@ namespace CamelWorks.UI.Views
                     return;
                 }
 
+                // The GlobalIds and the routes the file arrived with, sent back out on them. This
+                // seat has no document to read either from - that is what the file leg is - so a
+                // markup written without them is a file the next tool cannot select anything in,
+                // and the round trip loses them at the first review.
+                var ids = new Dictionary<ElementKey, string>();
+                var at = new Dictionary<ElementKey, ElementLocator>();
+
+                foreach (var row in round.Entries.SelectMany(e => e.Rows))
+                {
+                    var item = row.FileItem;
+
+                    if (item == null) continue;
+
+                    Reached(ids, at, item.Key.A, item.IfcGuidA, item.PathIdA, item.TreeA);
+                    Reached(ids, at, item.Key.B, item.IfcGuidB, item.PathIdB, item.TreeB);
+                }
+
                 var written = FindingBcf.Write(going, null, new FindingBcfOptions
                 {
                     SourceFile = round.Path,
                     ProjectName = _session.Profile.ProjectName,
                     Author = Environment.UserName ?? "reviewer",
                     WhenTicks = DateTime.UtcNow.Ticks,
+                    IfcGuidOf = key => ids.TryGetValue(key, out var guid) ? guid : null,
+                    LocatorOf = key => at.TryGetValue(key, out var where)
+                        ? where
+                        : new ElementLocator(key, null, null),
                 });
 
                 var reviewer = Safe(Environment.UserName ?? "reviewer");
@@ -10579,28 +10651,39 @@ namespace CamelWorks.UI.Views
                 // of a sync, and it was spent re-learning what was already in memory.
                 var read = 0;
 
-                foreach (var entry in board)
+                // Both indexes are keyed on the clash key or on what it derives, and neither is
+                // unique across tests: two tests reporting one physical conflict give two rows
+                // with one key and one topic guid. The first to claim it keeps it, and the rows
+                // are walked in test-and-result order so the two indexes name the same row and
+                // two seats syncing one file answer the same way. Left as it was, a returned
+                // topic landed on whichever row was indexed last.
+                var claimed = new HashSet<string>(StringComparer.Ordinal);
+
+                var rows = board.SelectMany(entry => entry.Rows.Select(row => (Entry: entry, Row: row)))
+                                .OrderBy(one => one.Entry.Run.Id, StringComparer.Ordinal)
+                                .ThenBy(one => one.Row.Id, StringComparer.Ordinal);
+
+                foreach (var pair in rows)
                 {
-                    foreach (var row in entry.Rows)
+                    if (!job.Step(++read, "results matched")) return;
+
+                    var key = pair.Row.Key();
+
+                    if (!claimed.Add(key.ToString())) continue;
+
+                    var live = new Live
                     {
-                        if (!job.Step(++read, "results matched")) return;
+                        Key = key,
+                        TestId = pair.Entry.Run.Id,
+                        ResultId = pair.Row.Id,
+                        Status = pair.Row.Status,
+                        Assigned = pair.Row.Assigned,
+                        Group = pair.Row.Group,
+                    };
 
-                        var key = row.Key();
+                    byKey[key.ToString()] = live;
 
-                        var live = new Live
-                        {
-                            Key = key,
-                            TestId = entry.Run.Id,
-                            ResultId = row.Id,
-                            Status = row.Status,
-                            Assigned = row.Assigned,
-                            Group = row.Group,
-                        };
-
-                        byKey[key.ToString()] = live;
-
-                        if (!key.IsEmpty) byTopic[ClashBcf.TopicGuidFor(key)] = live;
-                    }
+                    if (!key.IsEmpty) byTopic[ClashBcf.TopicGuidFor(key)] = live;
                 }
 
                 // Which tests the markups actually reached, so the refresh afterwards reads

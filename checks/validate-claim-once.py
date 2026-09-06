@@ -20,16 +20,24 @@ thing and is not looked at here.
 The rule: a loop over candidates that looks a held record up by a topic guid or an alias must
 hold a claimed set, and must order its candidates so the same two answer the same way twice.
 
-What the check keys on is the lookup argument, because a dictionary built under a topic guid
-inside a loop is not a match and anything looser flags every index in the product. Two limits
-follow from that, and both are the reason the two clash folds now share one Claims index
-rather than each rolling their own:
+The same rule covers the other half of the defect, which is where it is written rather than
+where it is read: an index built inside a loop as index[key] = value, keyed on a topic guid or
+an alias, silently keeps the last writer. FindingBcf.Merge built the register's answer index
+that way, so of two findings on one topic guid only one could ever be answered.
 
-  * A lookup keyed on a value that is non-unique for a reason nothing in the name says is not
-    seen at all.
+What the check keys on is the topic guid or alias in the lookup argument or in the subscript
+being assigned to. Anything looser flags every index in the product. Two limits follow, and
+both are the reason the two clash folds now share one Claims index rather than each rolling
+their own:
+
+  * A lookup or a build keyed on a value that is non-unique for a reason nothing in the name
+    says is not seen at all.
   * Whether a match is consumed - the record removed, its decisions taken onto something else
     - cannot be read off the text, so a read-only match is flagged like a consuming one. Those
-    go in checks/claim-once-allowed.txt with the reason they may be made twice.
+    go in checks/claim-once-allowed.txt with the reason they may be made twice. An entry there
+    may name which half it allows - "path::method#lookup" or "path::method#build" - and a bare
+    entry allows both. A method whose lookup is allowed does not thereby get to build an index
+    the same way.
 
     python3 checks/validate-claim-once.py
 """
@@ -52,6 +60,20 @@ ALLOWED = pathlib.Path(__file__).resolve().parent / "claim-once-allowed.txt"
 LOOKUP = re.compile(
     r"\.(?:TryGetValue|ContainsKey|Holds|Contains|Find)\(\s*[A-Za-z0-9_.!\[\]]*"
     r"(?:[Tt]opic|[Aa]lias)[A-Za-z0-9_.!\[\]]*\s*[,)]")
+
+# An index built under a topic guid or an alias inside a loop: index[thatKey] = value. Last
+# writer wins and nothing says which writer that was, which is the same defect as an
+# unclaimed lookup with the read and the write swapped.
+#
+# Two ways the key is named, because both are how it is written: the subscript says what it
+# holds (byWhat[topic.Guid]), or the index does (byTopic[guid]). Anything looser - every
+# assignment into every dictionary - flags each index in the product. A compound assignment
+# (==, +=, =>) is not a build.
+BUILD = re.compile(
+    r"\b(?:[A-Za-z_][A-Za-z0-9_]*\s*\[\s*[A-Za-z0-9_.!()\[\]]*"
+    r"(?:[Tt]opic|[Aa]lias)[A-Za-z0-9_.!()\[\]]*\s*\]"
+    r"|[A-Za-z_][A-Za-z0-9_]*(?:[Tt]opic|[Aa]lias)[A-Za-z0-9_]*"
+    r"\s*\[[^\[\]\n]*\])\s*=(?![=>])")
 
 # What claiming looks like: a set of what has been taken, or an index that hands each held
 # record out once. Removing the record from a register does not count - the index the lookup
@@ -181,17 +203,31 @@ def site_around(blank, at):
     return None
 
 
-def allowed():
-    if not ALLOWED.exists():
-        return set()
+KINDS = ("lookup", "build")
 
-    found = set()
+
+def allowed():
+    """Each allowed site, as site -> the halves it is allowed for."""
+    found = {}
+
+    if not ALLOWED.exists():
+        return found
 
     for line in ALLOWED.read_text(encoding="utf-8").splitlines():
-        line = line.split("#", 1)[0].strip()
+        line = line.strip()
 
-        if line:
-            found.add(line)
+        # A comment line, as against the "#lookup" or "#build" suffix on a site.
+        if not line or line.startswith("#"):
+            continue
+
+        site, _, kind = line.partition("#")
+        site = site.strip()
+        kind = kind.strip()
+
+        if not site:
+            continue
+
+        found.setdefault(site, set()).update([kind] if kind in KINDS else KINDS)
 
     return found
 
@@ -221,7 +257,10 @@ def main():
         for head, opens, closes in loops(blank):
             body = blank[opens:closes]
 
-            if not LOOKUP.search(body):
+            reads = LOOKUP.search(body) is not None
+            builds = BUILD.search(body) is not None
+
+            if not reads and not builds:
                 continue
 
             looked += 1
@@ -232,7 +271,17 @@ def main():
             where = named(blank, method[0]) if method else None
             site = f"{name}::{where or '?'}"
 
-            if site in skip:
+            # Allowed one half at a time: a method whose lookup may be made twice is not
+            # thereby allowed to build an index that keeps whichever was written last.
+            waived = skip.get(site, set())
+
+            if reads and "lookup" in waived:
+                reads = False
+
+            if builds and "build" in waived:
+                builds = False
+
+            if not reads and not builds:
                 continue
 
             missing = []
@@ -244,7 +293,8 @@ def main():
                 missing.append("does not order its candidates")
 
             if missing:
-                problems.append(f"{name}:{line} ({site}): this loop matches on a topic guid "
+                does = "matches on" if reads else "indexes by"
+                problems.append(f"{name}:{line} ({site}): this loop {does} a topic guid "
                                 f"or an alias and " + " and ".join(missing))
 
     if problems:
@@ -255,7 +305,8 @@ def main():
 
         print(
             "\nA topic guid is derived from the element pair and the cell, and an alias is a\n"
-            "neighbouring cell: neither is unique, so two candidates can match one held record.\n"
+            "neighbouring cell: neither is unique, so two candidates can match one held record,\n"
+            "and an index built under one keeps whichever was written last.\n"
             "Claim what is matched - a set of what has been taken - and order the candidates,\n"
             "so the same two answer the same way twice.\n"
             "FileCheck's Claims index is the pattern to copy.\n"
@@ -263,7 +314,8 @@ def main():
             "with the reason.")
         return 1
 
-    print(f"claim once: {looked} match(es) on a topic guid or an alias, each claims and orders")
+    print(f"claim once: {looked} loop(s) matching or indexing on a topic guid or an alias, "
+          "each claims and orders")
     return 0
 
 

@@ -132,6 +132,7 @@ namespace CamelWorks.Core.Tests
             Assert.Equal(finding.Discriminator, record.Discriminator);
             Assert.Equal(finding.Elements, record.Elements);
             Assert.Equal(finding.X, record.X);
+            Assert.Equal(finding.Y, record.Y);
             Assert.Equal(finding.Z, record.Z);
 
             foreach (var fact in finding.Facts)
@@ -139,6 +140,154 @@ namespace CamelWorks.Core.Tests
 
             Assert.Equal(finding.Facts[ClearanceFindings.Measured],
                          record.Facts[ClearanceFindings.Measured]);
+        }
+
+        // -----------------------------------------------------------------------------------
+        // The issue leg of the same file
+        // -----------------------------------------------------------------------------------
+
+        /// <summary>An issue already in the register, under the guid a returned topic names.</summary>
+        /// <param name="register">The register.</param>
+        /// <param name="guid">The topic's guid.</param>
+        /// <param name="status">Where the issue has got to.</param>
+        private static Issue Held(IssueRegister register, string guid, FindingStatus status)
+        {
+            var issue = new Issue(register.NextId(), "Riser boxing", Issue.ByHand)
+            {
+                BcfGuid = guid,
+                Status = status,
+            };
+
+            issue.Labels.Add("Site query");
+            register.Put(issue);
+
+            return issue;
+        }
+
+        [Fact]
+        public void ATopicWithNoStatusWordSaysNothingAboutAnIssuesStatus()
+        {
+            // A field left blank is not a decision. Assigning the read word set a Resolved issue
+            // back to New, and IssueCascade pushed that down onto every finding attached to it.
+            var returned = Reauthored(FindingBcf.Write(new[] { Breach() }).Bytes,
+                                      topic => topic.TopicStatus = string.Empty);
+
+            var register = new IssueRegister();
+            var topic = Read(returned).Topics.Single();
+
+            Held(register, topic.Guid, FindingStatus.Resolved);
+
+            FindingBcf.MergeIssues(register, new[] { topic }, "theirs.bcfzip");
+
+            Assert.Equal(FindingStatus.Resolved, register.Issues.Single().Status);
+        }
+
+        [Fact]
+        public void AStaleFileCannotReopenAnIssueApprovedSinceItLeft()
+        {
+            // The lattice, on the issue leg as well as the finding leg: one reading of one file.
+            var returned = Reauthored(FindingBcf.Write(new[] { Breach() }).Bytes,
+                                      topic => topic.TopicStatus = "Open");
+
+            var register = new IssueRegister();
+            var topic = Read(returned).Topics.Single();
+
+            Held(register, topic.Guid, FindingStatus.Approved);
+
+            FindingBcf.MergeIssues(register, new[] { topic }, "theirs.bcfzip");
+
+            Assert.Equal(FindingStatus.Approved, register.Issues.Single().Status);
+        }
+
+        [Fact]
+        public void AReviewersTagsReachAnIssueAlreadyHeldAndOursDoNot()
+        {
+            var returned = Reauthored(FindingBcf.Write(new[] { Breach() }).Bytes,
+                                      topic => topic.Labels.Add("Fire strategy"));
+
+            var register = new IssueRegister();
+            var topic = Read(returned).Topics.Single();
+
+            Held(register, topic.Guid, FindingStatus.Active);
+
+            FindingBcf.MergeIssues(register, new[] { topic }, "theirs.bcfzip");
+
+            var labels = register.Issues.Single().Labels;
+
+            Assert.Contains("Fire strategy", labels);
+            Assert.Contains("Site query", labels);
+            Assert.DoesNotContain(labels, one => FindingLabels.Ours(one));
+        }
+
+        [Fact]
+        public void AnIssueImportNamesTheStatusWordsTheVocabularyDoesNotHold()
+        {
+            // Reported by name rather than mapped in silence, which is what the tab promises.
+            var returned = Reauthored(FindingBcf.Write(new[] { Breach() }).Bytes,
+                                      topic => topic.TopicStatus = "Awaiting client");
+
+            var register = new IssueRegister();
+
+            var result = FindingBcf.MergeIssues(register, Read(returned).Topics, "theirs.bcfzip");
+
+            Assert.Contains(result.Notes, note => note.Contains("Awaiting client"));
+
+            // And a caller that must not guess is left where it was rather than moved on a word
+            // nobody agreed the meaning of.
+            var strict = new IssueRegister();
+            var topic = Read(returned).Topics.Single();
+
+            Held(strict, topic.Guid, FindingStatus.Reviewed);
+
+            FindingBcf.MergeIssues(strict, new[] { topic }, "theirs.bcfzip", guessStatus: false);
+
+            Assert.Equal(FindingStatus.Reviewed, strict.Issues.Single().Status);
+        }
+
+        [Fact]
+        public void ThePackAFindingTravelsInCanCarryFactsTheRegisterDoesNotHold()
+        {
+            // What a board derived from the open document - the level, the grid, the zone, the
+            // property columns - has to reach the receiving seat, and writing it onto the finding
+            // would edit the register as a side effect of writing a file.
+            var finding = Breach();
+
+            var written = FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                FactsOf = _ => new System.Collections.Generic.Dictionary<string, string?>
+                {
+                    ["Level"] = "L03",
+                    ["Pipes/Insulation"] = "25 mm",
+                },
+            });
+
+            var read = Read(written.Bytes);
+
+            Assert.Equal("L03", read.Record(finding.TopicGuid)!.Facts["Level"]);
+            Assert.Equal("25 mm", read.Record(finding.TopicGuid)!.Facts["Pipes/Insulation"]);
+            Assert.Contains(FindingLabels.Level + "L03", read.Topics.Single().Labels);
+
+            // And the register is where it was.
+            Assert.False(finding.Facts.ContainsKey("Level"));
+            Assert.False(finding.Facts.ContainsKey("Pipes/Insulation"));
+        }
+
+        [Fact]
+        public void ASidecarLocatesEveryElementTheViewpointNames()
+        {
+            // The viewpoint and the counts run off AllElements, so a sidecar over the narrower
+            // list sent a locator for some components and none for the rest.
+            var finding = Breach();
+
+            finding.AddLocation(new FindingLocation("Riser 2", new[] { Key('c') }));
+
+            var located = Read(FindingBcf.Write(new[] { finding }, null, new FindingBcfOptions
+            {
+                LocatorOf = element => new ElementLocator(element, "path/" + element, null),
+            }).Bytes).Record(finding.TopicGuid)!.Located;
+
+            Assert.Equal(finding.AllElements().Count, located.Count);
+            Assert.All(located, one => Assert.True(one.HasRoute));
         }
 
         // -----------------------------------------------------------------------------------

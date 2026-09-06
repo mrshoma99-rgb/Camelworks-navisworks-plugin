@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CamelWorks.Core.Abstractions;
 using CamelWorks.Core.Checks;
@@ -7,6 +8,7 @@ using CamelWorks.Core.Clash;
 using CamelWorks.Core.Findings;
 using CamelWorks.Core.Identity;
 using CamelWorks.Core.Issues;
+using CamelWorks.Core.OpenBim;
 using CamelWorks.Core.Testing;
 using Xunit;
 
@@ -1001,6 +1003,79 @@ namespace CamelWorks.Core.Tests
         /// <summary>One host result as the item a BCF is written from.</summary>
         /// <param name="result">The result.</param>
         /// <param name="testName">The test it came from.</param>
+
+        [Fact]
+        public void A_file_read_keeps_the_element_names_and_the_models_the_pack_carried()
+        {
+            // The two name facts hold the display names of the clashing elements. They were read
+            // off the item's ModelA and ModelB, which are the model files the elements are in, so
+            // a seat reading a pack held a model name in the element-name column and sent it back
+            // out that way. The model and discipline of each side have their own facts, and the
+            // receiving seat has no federation to derive them from.
+            var item = ClashFixture.Item("a", x: 1);
+            var finding = ClashFixture.Found(item);
+
+            finding.Facts[ClashFindings.NameA] = "Duct 400x250";
+            finding.Facts[ClashFindings.NameB] = "Beam UB305x165";
+            finding.Facts[ClashFindings.ModelA] = "MEP.nwc";
+            finding.Facts[ClashFindings.ModelB] = "STR.nwc";
+            finding.Facts[ClashFindings.DisciplineA] = "Mechanical";
+            finding.Facts[ClashFindings.DisciplineB] = "Structural";
+
+            var file = new FileCheck(ClashFile.Read(FindingBcf.Write(new[] { finding }).Bytes));
+            var back = Assert.Single(file.Read(null, null).Findings);
+
+            Assert.Equal("Duct 400x250", back.Facts[ClashFindings.NameA]);
+            Assert.Equal("Beam UB305x165", back.Facts[ClashFindings.NameB]);
+            Assert.Equal("MEP.nwc", back.Facts[ClashFindings.ModelA]);
+            Assert.Equal("STR.nwc", back.Facts[ClashFindings.ModelB]);
+            Assert.Equal("Mechanical", back.Facts[ClashFindings.DisciplineA]);
+            Assert.Equal("Structural", back.Facts[ClashFindings.DisciplineB]);
+        }
+
+        [Fact]
+        public void A_file_read_keeps_the_topic_each_result_arrived_under()
+        {
+            // Two tests on one conflict go out as two topics, the second under a guid of its own.
+            // Re-deriving the guid from the key on the way in would send the second one's markup
+            // home under the first one's name.
+            var mine = ClashFixture.Item("a", x: 1);
+            var theirs = ClashFixture.Item("a", x: 1, test: "Clearance");
+
+            Assert.Equal(mine.Key, theirs.Key);
+
+            var written = FindingBcf.Write(new[]
+            {
+                ClashFixture.Found(mine), ClashFixture.Found(theirs),
+            });
+
+            var file = new FileCheck(ClashFile.Read(written.Bytes));
+            var back = file.Read(null, null).Findings;
+
+            Assert.Equal(2, back.Count);
+            Assert.Equal(2, back.Select(one => one.TopicGuid)
+                              .Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        }
+
+        [Fact]
+        public void A_result_naming_no_element_is_counted_so_the_seat_can_say_so()
+        {
+            // A markup of one of these could never land back on a model, and a reader that did
+            // not count them left that to be discovered at the save.
+            var topic = new BcfTopic("11111111-1111-1111-1111-111111111111", "Somebody's own note",
+                                     DateTimeOffset.UnixEpoch, "ada");
+
+            using var theirs = new MemoryStream();
+
+            BcfWriter.Write(theirs, new[] { topic }, BcfVersion.V21);
+
+            var file = new FileCheck(ClashFile.Read(theirs.ToArray()));
+
+            file.Read(null, null);
+
+            Assert.Equal(1, file.Unkeyed);
+        }
+
         private static ClashItem Item(ClashResultInfo result, string testName) =>
             new ClashItem(result.Key(), testName)
             {

@@ -184,6 +184,18 @@ namespace CamelWorks.Core.Clash
         /// <summary>Where the assignee the host last reported is kept, as an observation.</summary>
         public const string HostAssignee = "Host assignee";
 
+        /// <summary>Where the display name of the model holding the first participant is kept.</summary>
+        public const string ModelA = "Model 1";
+
+        /// <summary>Where the display name of the model holding the second participant is kept.</summary>
+        public const string ModelB = "Model 2";
+
+        /// <summary>Where the first participant's discipline is kept.</summary>
+        public const string DisciplineA = "Discipline 1";
+
+        /// <summary>Where the second participant's discipline is kept.</summary>
+        public const string DisciplineB = "Discipline 2";
+
         /// <summary>Where the board group a result was in is kept.</summary>
         public const string BoardGroup = "Board group";
 
@@ -270,6 +282,25 @@ namespace CamelWorks.Core.Clash
             Set(finding, BoardGroup, group);
             Set(finding, BoardGroupPinned, pinned ? Yes : null);
             Set(finding, SuppressedBy, item.SuppressedBy);
+
+            // The model and discipline of each side, which the seat resolves per document and the
+            // finding has no other way to hold. Written and never removed, unlike the three above:
+            // a board built on a seat that answers neither - the file leg has no federation - must
+            // not wipe what the seat that did answer recorded. A model name is a property of the
+            // element pair and does not go stale the way a group or a suppression rule does.
+            Kept(finding, ModelA, item.ModelA);
+            Kept(finding, ModelB, item.ModelB);
+            Kept(finding, DisciplineA, item.DisciplineA);
+            Kept(finding, DisciplineB, item.DisciplineB);
+        }
+
+        /// <summary>Write a fact when there is something to say, and leave it alone otherwise.</summary>
+        /// <param name="finding">The finding.</param>
+        /// <param name="name">The fact.</param>
+        /// <param name="value">What it says, or null to leave what is there.</param>
+        private static void Kept(Finding finding, string name, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value)) finding.Facts[name] = value!;
         }
 
         /// <summary>Write a fact, or remove it when there is nothing to say.</summary>

@@ -209,23 +209,30 @@ namespace CamelWorks.Core.Clash
                     if (!string.IsNullOrWhiteSpace(fact.Value))
                         item.Properties[fact.Key] = fact.Value;
 
-                // Where the writing document had the two elements, so this one can reach them
-                // without keying the whole federation to find a hash.
-                if (record.Located.Count > 0)
-                {
-                    item.PathIdA = record.Located[0].PathId;
-                    item.TreeA = record.Located[0].TreePath;
-                }
+                // The two the board draws as columns of its own rather than as properties. The
+                // projection puts them here under these names on the document leg, so a file board
+                // and a document board draw the same two columns.
+                Column(item, ClashFindings.HostStatus, ClashItem.HostStatusProperty);
+                Column(item, ClashFindings.HostAssignee, ClashItem.HostAssigneeProperty);
 
-                if (record.Located.Count > 1)
-                {
-                    item.PathIdB = record.Located[1].PathId;
-                    item.TreeB = record.Located[1].TreePath;
-                }
+                // Where the writing document had each element, matched by key rather than by
+                // position. The sidecar lists elements in the order the producer reported the
+                // pair; the item's A and B are the clash key's, which is that pair sorted. Taking
+                // Located[0] as A put the locator on the wrong element for about half of them.
+                Locate(item, record, key.A, true);
+                Locate(item, record, key.B, false);
 
                 item.CategoryA = Fact(record, ClashFindings.CategoryA);
                 item.CategoryB = Fact(record, ClashFindings.CategoryB);
                 item.Distance = Metres(Fact(record, ClashFindings.Distance));
+
+                // The model and discipline of each side. Read from the file rather than derived,
+                // because the seat reading a pack has no federation to derive them from and the
+                // models, disciplines and same-model facets are drawn from them.
+                item.ModelA = Fact(record, ClashFindings.ModelA);
+                item.ModelB = Fact(record, ClashFindings.ModelB);
+                item.DisciplineA = Fact(record, ClashFindings.DisciplineA);
+                item.DisciplineB = Fact(record, ClashFindings.DisciplineB);
             }
 
             foreach (var comment in topic.Comments)
@@ -235,16 +242,69 @@ namespace CamelWorks.Core.Clash
 
             // The GlobalIds the file names its components by, so a file that has been through
             // another tool still goes back out able to select its elements.
-            var globalIds = topic.Viewpoints
-                                 .SelectMany(v => v.Selection)
-                                 .Where(c => c?.IfcGuid != null)
-                                 .Select(c => c.IfcGuid!)
-                                 .ToList();
+            //
+            // By the component's own element key where it carries one, because a pair where only
+            // one side has a GlobalId would otherwise put that id on A whichever side it belongs
+            // to. Position is the fallback, for a file whose components carry no key of ours.
+            var components = topic.Viewpoints.SelectMany(v => v.Selection)
+                                  .Where(c => c != null && c.IfcGuid != null)
+                                  .ToList();
 
-            if (globalIds.Count > 0) item.IfcGuidA = globalIds[0];
-            if (globalIds.Count > 1) item.IfcGuidB = globalIds[1];
+            item.IfcGuidA = GlobalId(components, key.A, 0);
+            item.IfcGuidB = GlobalId(components, key.B, 1);
 
             return item;
+        }
+
+        /// <summary>Copy a fact onto the property name the board draws it under.</summary>
+        /// <param name="item">The item.</param>
+        /// <param name="fact">What the producer called it.</param>
+        /// <param name="column">What the board calls it.</param>
+        private static void Column(ClashItem item, string fact, string column)
+        {
+            if (item.Properties.TryGetValue(fact, out var said)
+                && !string.IsNullOrWhiteSpace(said))
+                item.Properties[column] = said;
+        }
+
+        /// <summary>Where the writing document had one element of the pair.</summary>
+        /// <param name="item">The item.</param>
+        /// <param name="record">The sidecar row.</param>
+        /// <param name="element">Which element, as the clash key holds it.</param>
+        /// <param name="first">True for the key's first element, false for its second.</param>
+        private static void Locate(ClashItem item, FindingRecord record, ElementKey element,
+                                   bool first)
+        {
+            foreach (var at in record.Located)
+            {
+                if (!at.HasRoute || !at.Key.Equals(element)) continue;
+
+                if (first) { item.PathIdA = at.PathId; item.TreeA = at.TreePath; }
+                else { item.PathIdB = at.PathId; item.TreeB = at.TreePath; }
+
+                return;
+            }
+        }
+
+        /// <summary>
+        /// The GlobalId for one element of the pair: the component that names it, or the one in
+        /// that position when no component carries a key of ours.
+        /// </summary>
+        /// <param name="components">The topic's components that carry a GlobalId.</param>
+        /// <param name="element">Which element.</param>
+        /// <param name="at">Its position in the pair, for the fallback.</param>
+        private static string? GlobalId(IReadOnlyList<BcfComponent> components, ElementKey element,
+                                        int at)
+        {
+            foreach (var component in components)
+                if (ElementKey.TryParse(component.AuthoringToolId, out var named)
+                    && !named.IsEmpty && named.Equals(element))
+                    return component.IfcGuid;
+
+            var keyed = components.Any(one => ElementKey.TryParse(one.AuthoringToolId, out var some)
+                                              && !some.IsEmpty);
+
+            return keyed || at >= components.Count ? null : components[at].IfcGuid;
         }
 
         /// <summary>
@@ -413,18 +473,32 @@ namespace CamelWorks.Core.Clash
                 : (double?)null;
 
         /// <summary>
-        /// What kind of test these results came from.
+        /// What kind of test these results came from, inferred from the distances.
         ///
-        /// Inferred rather than left blank, because the receiving tool shows it and "unknown" reads
-        /// as a fault in the export. A test whose results all stand apart is a clearance test; one
-        /// whose results overlap is a hard one.
+        /// The file does not say. The pack format carries findings and their facts, not the test
+        /// settings the run was made with, so this is read off the results: a test every one of
+        /// whose results stands apart from its pair is a clearance test, and one with a result at
+        /// or inside contact is a hard one.
+        ///
+        /// Inferred rather than left blank because the board shows it in a column, and it is only
+        /// ever a reading of the results in this file. Overlap volume is not consulted: nothing
+        /// writes it on the file leg, so a clause over it would be a constant.
         /// </summary>
+        /// <param name="members">The results read for this test.</param>
         private static MatrixTest Kind(IReadOnlyList<ClashItem> members) =>
-            members.Any(one => one.Distance.HasValue && one.Distance.Value > 0)
-            && !members.Any(one => one.OverlapVolume.HasValue && one.OverlapVolume.Value > 0)
+            members.Count > 0 && members.All(one => one.Distance.HasValue && one.Distance.Value > 0)
                 ? MatrixTest.Clearance
                 : MatrixTest.Hard;
 
+        /// <summary>
+        /// What the test looks to have run at, in metres, or zero when the file says nothing.
+        ///
+        /// The smallest positive distance among the results, which is a lower bound on the
+        /// tolerance and not the tolerance: a test finds nothing between its tolerance and the
+        /// nearest breach it actually reported, and a pack filtered before it was sent narrows the
+        /// bound further. Read as "no result in this file was further apart than this".
+        /// </summary>
+        /// <param name="members">The results read for this test.</param>
         private static double Tolerance(IReadOnlyList<ClashItem> members)
         {
             var distances = members.Where(one => one.Distance.HasValue && one.Distance.Value > 0)

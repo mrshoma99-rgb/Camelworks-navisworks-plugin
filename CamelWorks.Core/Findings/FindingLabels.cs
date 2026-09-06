@@ -19,32 +19,52 @@ namespace CamelWorks.Core.Findings
     /// One vocabulary, one <see cref="Ours"/>. Every prefix is declared here, including the ones a
     /// fact travels under: a check that wants a fact on the topic's tags adds a row to
     /// <see cref="FromFacts"/> rather than a prefix of its own.
+    ///
+    /// Every prefix starts with <see cref="Marker"/>, because seven of the eight words are
+    /// ordinary English and a reviewer types them. Without the marker "Level: 3" typed in Solibri
+    /// matched a declared prefix, so the return leg dropped it as one of ours and the coordinator
+    /// who set it was told nothing.
     /// </summary>
     public static class FindingLabels
     {
+        /// <summary>
+        /// What every prefix this product writes starts with.
+        ///
+        /// BCF has one bag for tags, so the only way to tell a label this writer put on from a tag
+        /// a reviewer typed is to write ours in a form nobody types. A tag reads as
+        /// "CW/Level: L03" in the receiving tool, which is legible and unambiguous; a reviewer's
+        /// own "Level: 3" carries no marker and travels back as their tag.
+        ///
+        /// A file written before this marker existed comes home with its labels read as the
+        /// reviewer's tags. That is the cost of the change and it is bounded: the tags are
+        /// appended once and can be deleted, where the alternative is discarding what a reviewer
+        /// wrote on every future exchange.
+        /// </summary>
+        public const string Marker = "CW/";
+
         /// <summary>Which check produced the topic, so a reply can be placed.</summary>
-        public const string Check = "Check: ";
+        public const string Check = Marker + "Check: ";
 
         /// <summary>The rule or run that found it — a clash test's name, a clearance run's name.</summary>
-        public const string Rule = "Rule: ";
+        public const string Rule = Marker + "Rule: ";
 
         /// <summary>The folder the run sits in.</summary>
-        public const string Folder = "Folder: ";
+        public const string Folder = Marker + "Folder: ";
 
         /// <summary>The group the finding was filed under on the board.</summary>
-        public const string Group = "Group: ";
+        public const string Group = Marker + "Group: ";
 
         /// <summary>The level it is on.</summary>
-        public const string Level = "Level: ";
+        public const string Level = Marker + "Level: ";
 
         /// <summary>The grid reference it is nearest.</summary>
-        public const string Grid = "Grid: ";
+        public const string Grid = Marker + "Grid: ";
 
         /// <summary>The zone it is in.</summary>
-        public const string Zone = "Zone: ";
+        public const string Zone = Marker + "Zone: ";
 
         /// <summary>The register's own number for an issue, which BCF has no field for.</summary>
-        public const string Issue = "Issue: ";
+        public const string Issue = Marker + "Issue: ";
 
         /// <summary>Every prefix this product writes.</summary>
         public static IReadOnlyList<string> Prefixes { get; } = new[]
@@ -69,7 +89,13 @@ namespace CamelWorks.Core.Findings
                 ["Folder"] = Folder,
             };
 
-        /// <summary>Whether a label is one this product wrote rather than one a reviewer set.</summary>
+        /// <summary>
+        /// Whether a label is one this product wrote rather than one a reviewer set.
+        ///
+        /// A declared prefix and nothing looser. An unmarked "Level: 3" is a reviewer's tag, and
+        /// so is a marked prefix this vocabulary does not declare: a label nothing here writes is
+        /// not ours to take off.
+        /// </summary>
         /// <param name="label">The label.</param>
         public static bool Ours(string? label) =>
             label != null
@@ -77,12 +103,20 @@ namespace CamelWorks.Core.Findings
 
         /// <summary>
         /// The value of one prefixed label on a topic, or null when it carries none.
+        ///
+        /// The ordinally first value when a topic carries the same prefix twice, rather than the
+        /// first in the list. A topic's label order is whatever the sending tool wrote, and two
+        /// labels under one prefix would otherwise be answered differently by two seats reading
+        /// one file. The writer emits each prefix once, so a duplicate means a hand-edited or
+        /// re-authored file.
         /// </summary>
         /// <param name="topic">The topic.</param>
         /// <param name="prefix">One of the prefixes declared here.</param>
         public static string? Value(BcfTopic? topic, string? prefix)
         {
             if (topic == null || string.IsNullOrEmpty(prefix)) return null;
+
+            string? found = null;
 
             foreach (var label in topic.Labels)
             {
@@ -92,10 +126,12 @@ namespace CamelWorks.Core.Findings
 
                 var value = label.Substring(prefix!.Length).Trim();
 
-                if (value.Length > 0) return value;
+                if (value.Length == 0) continue;
+
+                if (found == null || string.CompareOrdinal(value, found) < 0) found = value;
             }
 
-            return null;
+            return found;
         }
 
         /// <summary>

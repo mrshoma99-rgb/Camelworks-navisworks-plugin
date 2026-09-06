@@ -126,6 +126,72 @@ namespace CamelWorks.Core.Tests
             return items;
         }
 
+
+        [Fact]
+        public void A_seat_that_cannot_resolve_a_model_reads_what_the_last_seat_recorded()
+        {
+            // A seat reading a pack has no federation, so ModelName and Discipline answer
+            // nothing. The models, modelA, modelB and disciplines facets, the same-model test and
+            // the default export split are all read off these four, and without the fall-back
+            // every row on a file board answers "? v ?".
+            var finding = Finding.Create(FindingSource.Clash, "L03 MEP v STR", "Clash",
+                                         new[] { Mep("Duct 1"), Arch("Beam 1") }, "0,0,0");
+
+            finding.X = 1;
+            finding.Y = 2;
+            finding.Z = 3;
+
+            finding.Facts[ClashFindings.ModelA] = "MEP.nwc";
+            finding.Facts[ClashFindings.ModelB] = "ARCH.nwc";
+            finding.Facts[ClashFindings.DisciplineA] = "Mechanical";
+            finding.Facts[ClashFindings.DisciplineB] = "Architecture";
+
+            var item = new ClashProjection(1.0).Item(finding)!;
+
+            Assert.Equal("MEP.nwc", item.ModelA);
+            Assert.Equal("ARCH.nwc", item.ModelB);
+            Assert.Equal("Mechanical", item.DisciplineA);
+            Assert.Equal("Architecture", item.DisciplineB);
+            Assert.NotEqual(ClashItem.UnknownPair, item.DisciplinePair);
+
+            // And the seat that can resolve them answers for itself: a fact recorded by a seat
+            // whose federation was arranged differently does not outrank the open document.
+            Assert.Equal(ModelOf(Mep("Duct 1")), Projection().Item(finding)!.ModelA);
+        }
+
+        [Fact]
+        public void The_board_records_the_model_and_discipline_of_each_side_onto_the_finding()
+        {
+            // The only route by which they reach the register, and from there a pack. Written and
+            // never removed: a board built on a seat that resolves neither must not wipe what the
+            // seat that did resolve them recorded.
+            var seat = new FakeClashSource()
+                .With("L03 MEP v STR", "Weekly", "t1")
+                .Finding(Mep("Duct 1"), Arch("Beam 1"), 1.1, 2.2, 3.3);
+
+            var read = new ClashCheck(seat).Read(null, null);
+            var register = new FindingRegister();
+
+            register.Observe(FindingSource.Clash, read.Findings, 1, scope: read.Scope);
+
+            var held = register.All.ToList();
+            var board = ClashPipeline.Run(Projection().Items(held));
+
+            ClashFindings.Recorded(board, register, held);
+
+            var finding = Assert.Single(register.All);
+
+            Assert.Equal(ModelOf(Mep("Duct 1")), finding.Facts[ClashFindings.ModelA]);
+            Assert.Equal(DisciplineOf(Arch("Beam 1")), finding.Facts[ClashFindings.DisciplineB]);
+
+            // A board from a seat that answers nothing leaves them where they are.
+            var blind = new ClashProjection(1.0);
+
+            ClashFindings.Recorded(ClashPipeline.Run(blind.Items(held)), register, held);
+
+            Assert.Equal(ModelOf(Mep("Duct 1")), finding.Facts[ClashFindings.ModelA]);
+        }
+
         [Fact]
         public void The_projection_produces_the_item_set_the_host_read_produces()
         {
