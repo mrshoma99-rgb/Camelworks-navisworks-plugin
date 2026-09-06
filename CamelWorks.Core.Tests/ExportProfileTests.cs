@@ -378,6 +378,39 @@ namespace CamelWorks.Core.Tests
         }
 
         [Fact]
+        public void A_folder_member_two_recipients_both_claim_reaches_both_packs()
+        {
+            // Two tests can report the same conflict in the same cell, and both results can be on
+            // the board and in one folder. A split that kept only the last recipient for a key
+            // dropped the other one's member out of that recipient's group.
+            var mine = Item("a", "Hard", FindingStatus.New, 1);
+            var theirs = Item("a", "Clearance", FindingStatus.New, 1);
+
+            Assert.Equal(mine.Key, theirs.Key);
+
+            mine.AssignedTo = "Mechanical";
+            theirs.AssignedTo = "Structure";
+
+            var folder = Group("Corridor C", null, mine, theirs);
+
+            var profile = Everything("Hard", "Clearance");
+
+            profile.SplitBy = "assignee";
+            profile.KeepGroups = true;
+
+            var rounds = profile.Rounds(new[] { mine, theirs }, new[] { folder });
+
+            Assert.Equal(2, rounds.Count);
+
+            foreach (var round in rounds)
+            {
+                var group = Assert.Single(round.Selection.Groups);
+
+                Assert.Equal(2, group.Items.Count);
+            }
+        }
+
+        [Fact]
         public void Clashes_nobody_was_assigned_get_their_own_pack_rather_than_none()
         {
             var loose = Item("a", "Hard", FindingStatus.New, 1);

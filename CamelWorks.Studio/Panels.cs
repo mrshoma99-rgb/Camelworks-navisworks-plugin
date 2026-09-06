@@ -837,7 +837,7 @@ namespace CamelWorks.Studio
             {
                 Padding = new Thickness(14, 10, 14, 10),
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Child = panel ? Ui.Stack(top, Narrowing()) : Ui.Stack(top),
+                Child = Ui.Stack(top),
             };
 
             head.Tint(Border.BorderBrushProperty, "Bd");
@@ -861,6 +861,24 @@ namespace CamelWorks.Studio
 
             Grid.SetRow(list, 1);
             grid.Children.Add(list);
+
+            // Over the rows, not above them. Inside the head it pushed the test list down by its
+            // own height, and the rail's column headings stopped lining up with the board's.
+            if (panel)
+            {
+                var over = Narrowing();
+
+                if (over is FrameworkElement floating)
+                {
+                    floating.Margin = new Thickness(10, 0, 10, 0);
+                    floating.VerticalAlignment = VerticalAlignment.Top;
+                    floating.HorizontalAlignment = HorizontalAlignment.Stretch;
+                }
+
+                Grid.SetRow(over, 1);
+                Panel.SetZIndex(over, 2);
+                grid.Children.Add(over);
+            }
 
             var verbs = new StackPanel { Orientation = Orientation.Horizontal };
             verbs.Children.Add(Ui.Icon(Glyphs.Play, "Run all the tests again", () => { }));
@@ -963,8 +981,16 @@ namespace CamelWorks.Studio
                 Child = body,
             };
 
-            panel.Tint(Border.BackgroundProperty, "Bg");
+            panel.Tint(Border.BackgroundProperty, "Card");
             panel.Tint(Border.BorderBrushProperty, "Bd");
+
+            panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 12,
+                ShadowDepth = 2,
+                Direction = 270,
+                Opacity = 0.18,
+            };
 
             return panel;
         }

@@ -79,6 +79,11 @@ namespace CamelWorks.Core.Identity
 
             if (sb == null) return _text = new StringBuilder(64);
 
+            // A tree path long enough to grow the builder past the cap is one key out of half a
+            // million, and holding its capacity for the life of the thread is a megabyte kept for
+            // nothing.
+            if (sb.Capacity > MostKept) return _text = new StringBuilder(64);
+
             sb.Length = 0;
 
             return sb;

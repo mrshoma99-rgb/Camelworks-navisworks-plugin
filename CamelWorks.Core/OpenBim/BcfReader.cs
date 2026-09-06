@@ -181,16 +181,15 @@ namespace CamelWorks.Core.OpenBim
         /// The archive's entries, indexed once.
         ///
         /// A .bcfv is named for its viewpoint's GUID and sits beside the markup that references it,
-        /// so the exact path answers almost every lookup. The two looser tiers are for tools that
-        /// file them elsewhere or prefix the name, and they are reached only when the exact path
-        /// misses.
+        /// so the exact path answers almost every lookup. The looser tier is for tools that file
+        /// them elsewhere or prefix the name, and it is reached only when the exact path misses.
+        /// It walks the .bcfv entries in archive order rather than an index, because the answer
+        /// has to be the one the old two-pass scan gave: an archive holding two entries that both
+        /// end with the GUID must resolve to the same one it always did.
         /// </summary>
         private sealed class Files
         {
             private readonly Dictionary<string, ZipArchiveEntry> _byPath =
-                new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
-
-            private readonly Dictionary<string, ZipArchiveEntry> _byName =
                 new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
 
             private readonly List<ZipArchiveEntry> _visualisations = new List<ZipArchiveEntry>();
@@ -206,11 +205,6 @@ namespace CamelWorks.Core.OpenBim
                         continue;
 
                     _visualisations.Add(entry);
-
-                    var cut = entry.FullName.LastIndexOf('/');
-                    var name = cut < 0 ? entry.FullName : entry.FullName.Substring(cut + 1);
-
-                    if (!_byName.ContainsKey(name)) _byName[name] = entry;
                 }
             }
 
@@ -222,10 +216,6 @@ namespace CamelWorks.Core.OpenBim
                 var wanted = guid + ".bcfv";
 
                 if (_byPath.TryGetValue(folder + wanted, out var exact)) return exact;
-
-                if (_byName.TryGetValue(wanted, out var named)
-                    && named.FullName.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
-                    return named;
 
                 foreach (var entry in _visualisations)
                     if (entry.FullName.StartsWith(folder, StringComparison.OrdinalIgnoreCase)

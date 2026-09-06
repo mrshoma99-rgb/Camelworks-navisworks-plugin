@@ -497,7 +497,10 @@ namespace CamelWorks.Core.Clash
 
             var order = new List<string>();
             var byWhom = new Dictionary<string, List<ClashItem>>(StringComparer.OrdinalIgnoreCase);
-            var whose = new Dictionary<ClashKey, string>();
+            // A list, not one recipient. Two tests can report the same conflict in the same cell,
+            // and both results can be on the board and in one folder: a key that kept only the
+            // last recipient dropped the other one's member out of that recipient's group.
+            var whose = new Dictionary<ClashKey, List<string>>();
 
             foreach (var item in chosen.Items)
             {
@@ -513,7 +516,15 @@ namespace CamelWorks.Core.Clash
                 }
 
                 held.Add(item);
-                whose[item.Key] = said;
+
+                if (!whose.TryGetValue(item.Key, out var claimants))
+                {
+                    claimants = new List<string>();
+                    whose[item.Key] = claimants;
+                }
+
+                if (!claimants.Contains(said, StringComparer.OrdinalIgnoreCase))
+                    claimants.Add(said);
             }
 
             order.Sort(StringComparer.OrdinalIgnoreCase);
@@ -529,23 +540,31 @@ namespace CamelWorks.Core.Clash
 
                 foreach (var member in group.Items)
                 {
-                    if (member == null || !whose.TryGetValue(member.Key, out var who)) continue;
+                    if (member == null || !whose.TryGetValue(member.Key, out var claimants))
+                        continue;
 
-                    if (!copies.TryGetValue(who, out var copy))
+                    foreach (var who in claimants)
                     {
-                        copy = new ClashGroup(group.Id, group.Name) { AssignedTo = group.AssignedTo };
-                        copies[who] = copy;
-
-                        if (!trimmed.TryGetValue(who, out var theirs))
+                        if (!copies.TryGetValue(who, out var copy))
                         {
-                            theirs = new List<ClashGroup>();
-                            trimmed[who] = theirs;
+                            copy = new ClashGroup(group.Id, group.Name)
+                            {
+                                AssignedTo = group.AssignedTo,
+                            };
+
+                            copies[who] = copy;
+
+                            if (!trimmed.TryGetValue(who, out var theirs))
+                            {
+                                theirs = new List<ClashGroup>();
+                                trimmed[who] = theirs;
+                            }
+
+                            theirs.Add(copy);
                         }
 
-                        theirs.Add(copy);
+                        copy.Items.Add(member);
                     }
-
-                    copy.Items.Add(member);
                 }
             }
 

@@ -2010,8 +2010,6 @@ namespace CamelWorks.Nav.Clash
         {
             _byId.Clear();
             _cachedAt = -1;
-            _tests = null;
-            _testsAt = -1;
         }
 
         /// <summary>
@@ -2052,39 +2050,21 @@ namespace CamelWorks.Nav.Clash
         }
 
         /// <summary>
-        /// The tests by id, so finding one is not a walk of the tree.
+        /// One test by its id.
         ///
-        /// Every bulk operation names its tests by id and asked for each in turn, and each ask
-        /// walked the whole test tree: renumbering four hundred tests was four hundred traversals.
-        /// Held against the document's generation, like the result cache above, and dropped by the
-        /// same <see cref="Forget"/>.
+        /// Not memoised. A table of tests would be built inside the very loops that need it —
+        /// every bulk operation calls <see cref="Writable"/> once and then mutates in a loop — and
+        /// a regroup replaces the test object, a delete removes it and a move reparents it. The
+        /// document's generation does not bump for any of those, so the table would hand out
+        /// handles to tests the document no longer has. The tree walk is the correct answer here.
         /// </summary>
-        private Dictionary<string, ClashTest>? _tests;
-
-        private int _testsAt = -1;
-
-        /// <summary>One test by its id, or null when the document no longer has it.</summary>
         /// <param name="clash">The document's clash data.</param>
         /// <param name="testId">Which test.</param>
-        private ClashTest? FindTest(DocumentClash clash, string testId)
-        {
-            if (testId == null) return null;
-
-            if (_tests == null || _testsAt != _document.Generation)
-            {
-                _tests = new Dictionary<string, ClashTest>(StringComparer.OrdinalIgnoreCase);
-                _testsAt = _document.Generation;
-
-                foreach (var found in AllTests(clash))
-                {
-                    var id = found.Test.Guid.ToString();
-
-                    if (!_tests.ContainsKey(id)) _tests[id] = found.Test;
-                }
-            }
-
-            return _tests.TryGetValue(testId, out var test) ? test : null;
-        }
+        private static ClashTest? FindTest(DocumentClash clash, string testId) =>
+            AllTests(clash)
+                .Select(t => t.Test)
+                .FirstOrDefault(t => string.Equals(t.Guid.ToString(), testId,
+                                                   StringComparison.OrdinalIgnoreCase));
 
         private static ClashTestFolder? FolderIn(GroupItem root, string name)
         {

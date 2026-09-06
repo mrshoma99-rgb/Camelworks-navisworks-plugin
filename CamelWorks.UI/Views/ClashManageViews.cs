@@ -1019,7 +1019,7 @@ namespace CamelWorks.UI.Views
                 {
                     Padding = new Thickness(14, 10, 14, 10),
                     BorderThickness = new Thickness(0, 0, 0, 1),
-                    Child = Ui.Stack(top, _railPanel),
+                    Child = top,
                 };
 
                 head.Tint(Border.BorderBrushProperty, "Bd");
@@ -1034,6 +1034,18 @@ namespace CamelWorks.UI.Views
 
                 Grid.SetRow(list, 1);
                 grid.Children.Add(list);
+
+                // The filter panel is drawn over the rows, not above them. Inside the head it
+                // pushed the test list down by its own height, so the rail's column headings and
+                // the board's stopped lining up the moment the panel was opened — two panes of one
+                // table with their heads at different heights.
+                _railPanel.Margin = new Thickness(10, 0, 10, 0);
+                _railPanel.VerticalAlignment = VerticalAlignment.Top;
+                _railPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+                Grid.SetRow(_railPanel, 1);
+                Panel.SetZIndex(_railPanel, 2);
+                grid.Children.Add(Ui.Loose(_railPanel));
 
                 Grid.SetRow(_railFoot, 2);
                 grid.Children.Add(Ui.Loose(_railFoot));
@@ -1223,6 +1235,8 @@ namespace CamelWorks.UI.Views
                         RedrawRail();
                     }));
 
+                // Card, not the pane's own ground: this is drawn over the rows, and a panel the
+                // same colour as what is behind it reads as a hole in the list.
                 var panel = new Border
                 {
                     BorderThickness = new Thickness(1),
@@ -1232,8 +1246,16 @@ namespace CamelWorks.UI.Views
                     Child = body,
                 };
 
-                panel.Tint(Border.BackgroundProperty, "Bg");
+                panel.Tint(Border.BackgroundProperty, "Card");
                 panel.Tint(Border.BorderBrushProperty, "Bd");
+
+                panel.Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    BlurRadius = 12,
+                    ShadowDepth = 2,
+                    Direction = 270,
+                    Opacity = 0.18,
+                };
 
                 return panel;
             }
@@ -3363,11 +3385,9 @@ namespace CamelWorks.UI.Views
                     if (string.Equals(name, Named, StringComparison.Ordinal))
                         Named2(Named, 2, tight ? 110 : 130);
                     else if (string.Equals(name, ItemA, StringComparison.Ordinal))
-                        Named2(ItemA, 1, tight ? 58 : 74);
+                        Named2(ItemA, 1, tight ? 74 : 90);
                     else if (string.Equals(name, ItemB, StringComparison.Ordinal))
-                        Named2(ItemB, 1, tight ? 58 : 74);
-                    else if (string.Equals(name, Clashes, StringComparison.Ordinal))
-                        columns.Add((Clashes, new GridLength(Wide(Clashes, tight ? 44 : 48)), 0));
+                        Named2(ItemB, 1, tight ? 74 : 90);
                     else if (string.Equals(name, Worst, StringComparison.Ordinal))
                         columns.Add((Worst, new GridLength(Wide(Worst, tight ? 60 : 64)), 0));
                     else if (string.Equals(name, Status, StringComparison.Ordinal))
@@ -3380,7 +3400,7 @@ namespace CamelWorks.UI.Views
                         // that grows by 95 pixels every time somebody adds a column scrolls
                         // sideways off its own row verbs on the second one. It takes a share of
                         // what there is and ellipsises, with the whole value on the tooltip.
-                        Named2(name, 1, 60);
+                        Named2(name, 1, 76);
                 }
 
                 // Four row buttons, at the tighter margin the bar below sets on them. The
@@ -3425,7 +3445,7 @@ namespace CamelWorks.UI.Views
             /// </summary>
             private List<string> Order()
             {
-                var natural = new List<string> { Named, ItemA, ItemB, Clashes, Worst };
+                var natural = new List<string> { Named, ItemA, ItemB, Worst };
 
                 natural.AddRange(_columns.Select(c => c.Title));
                 natural.Add(Status);
@@ -3542,7 +3562,6 @@ namespace CamelWorks.UI.Views
             private const string Named = "Group or result";
             private const string ItemA = "Item 1";
             private const string ItemB = "Item 2";
-            private const string Clashes = "Clashes";
             private const string Worst = "Worst";
             private const string Status = "Status";
             private const string Assigned = "Assigned";
@@ -3558,7 +3577,7 @@ namespace CamelWorks.UI.Views
                 new Dictionary<string, double>(StringComparer.Ordinal)
                 {
                     { Named, 2 }, { ItemA, 1 }, { ItemB, 1 },
-                    { Clashes, 48 }, { Worst, 64 }, { Status, 104 }, { Assigned, 104 },
+                    { Worst, 64 }, { Status, 104 }, { Assigned, 104 },
                 };
 
             /// <summary>
@@ -3626,7 +3645,6 @@ namespace CamelWorks.UI.Views
 
                     // Numbers, ordered as numbers. Sorting "-9 mm" against "-48 mm" as text puts
                     // the shallower one first, which is the wrong end of the board entirely.
-                    case Clashes: return Ordered(row.IsGroup ? row.Rows.Count : 0);
                     case Worst: return Ordered((int)(Deep(row) ?? 0));
 
                     default:
@@ -3779,7 +3797,6 @@ namespace CamelWorks.UI.Views
                 Put(grid, Head(Named, false), Where(Named));
                 Put(grid, Head(ItemA, false), Where(ItemA));
                 Put(grid, Head(ItemB, false), Where(ItemB));
-                Put(grid, Head(Clashes, true), Where(Clashes));
                 Put(grid, Head(Worst, true), Where(Worst));
 
                 foreach (var column in _columns)
@@ -4141,6 +4158,19 @@ namespace CamelWorks.UI.Views
 
                 words.Children.Add(name.Wearing("Body"));
 
+                // The member count, beside the name it belongs to. It had a column of its own,
+                // which meant every clash row carried an em-dash under a header called "Clashes"
+                // — a column's width spent saying nothing on nine rows in ten.
+                var many = new TextBlock
+                {
+                    Text = Ui.Count(row.Rows.Count, "clash"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(6, 0, 0, 0),
+                    TextWrapping = TextWrapping.NoWrap,
+                };
+
+                words.Children.Add(many.Wearing("Hint"));
+
                 if (_made.Contains(row.Id)) words.Children.Add(Parts.Note("grouped by you"));
 
                 words.MouseLeftButtonUp += (s, e) => Ui.Safely(() =>
@@ -4156,7 +4186,6 @@ namespace CamelWorks.UI.Views
                 // reads as fact.
                 Put(grid, Right(Hint("—")), Where(ItemA));
                 Put(grid, Right(Hint("—")), Where(ItemB));
-                Put(grid, Figure(Skin.Num(row.Rows.Count), false), Where(Clashes));
                 Put(grid, Figure(Deepest(row), Bad(row)), Where(Worst));
 
                 for (var i = 0; i < _columns.Count; i++)
@@ -4462,7 +4491,6 @@ namespace CamelWorks.UI.Views
 
                 // A loose clash is not a count of anything, so the column that counts is empty
                 // rather than showing one.
-                Put(grid, Right(Hint("—")), Where(Clashes));
                 Put(grid, Figure(Millimetres(result), Bad(result)), Where(Worst));
 
                 for (var i = 0; i < _columns.Count; i++)
@@ -5536,13 +5564,6 @@ namespace CamelWorks.UI.Views
             }
 
             /// <summary>
-            /// Build the way back from a row to its finding.
-            ///
-            /// Only findings this run reported: one marked absent points at a result the host no
-            /// longer has, and an index entry for it would hand a row to the wrong clash the next
-            /// time the engine reused the id.
-            /// </summary>
-            /// <summary>
             /// Add one finding to the way back from a row, without rebuilding the index.
             /// </summary>
             /// <param name="register">The register, for the first build.</param>
@@ -5558,6 +5579,14 @@ namespace CamelWorks.UI.Views
                     _byHost[Where(test, result)] = one;
             }
 
+            /// <summary>
+            /// Build the way back from a row to its finding.
+            ///
+            /// Only findings this run reported: one marked absent points at a result the host no
+            /// longer has, and an index entry for it would hand a row to the wrong clash the next
+            /// time the engine reused the id.
+            /// </summary>
+            /// <param name="register">The register.</param>
             private static void Index(FindingRegister register)
             {
                 var index = new Dictionary<string, Finding>(StringComparer.OrdinalIgnoreCase);
