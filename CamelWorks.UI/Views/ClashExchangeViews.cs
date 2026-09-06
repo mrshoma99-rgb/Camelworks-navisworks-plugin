@@ -418,9 +418,8 @@ namespace CamelWorks.UI.Views
                                               StringComparison.OrdinalIgnoreCase))))
                 {
                     Tone = Tone.Plain,
-                    Ticked = Sending(one.Name),
-                    OnTicked = on => Included(new object[] { one }, null, on),
-                }).ToList();
+                }.Ticking(Sending(one.Name), on => Included(new object[] { one }, null, on)))
+                    .ToList();
 
                 var table = Ui.Table(rows,
                     ("In", 34), ("Test", 0), ("Folder", 100), ("Results", 62),

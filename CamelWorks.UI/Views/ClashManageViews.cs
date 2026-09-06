@@ -10971,7 +10971,9 @@ namespace CamelWorks.UI.Views
 
                 var row = new DockPanel { LastChildFill = true };
 
-                var dismiss = Ui.Link("Dismiss", Clear);
+                // A button, not a text link. Dismissing a notice is an action on the notice, and
+                // a link beside a sentence reads as part of the sentence.
+                var dismiss = Ui.Quiet("Dismiss", Clear);
                 dismiss.VerticalAlignment = VerticalAlignment.Center;
                 DockPanel.SetDock(dismiss, Dock.Right);
                 row.Children.Add(dismiss);

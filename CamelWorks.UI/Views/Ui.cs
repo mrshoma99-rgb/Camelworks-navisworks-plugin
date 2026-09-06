@@ -124,13 +124,37 @@ namespace CamelWorks.UI.Views
         /// <summary>
         /// Whether this row's tick box is on, for a table with a ticked column.
         ///
-        /// Null on a table that has none, which is what tells <c>Ticking</c> to leave the column
-        /// as text.
+        /// Written by the box itself through a two-way binding, which is why the setter is what
+        /// tells the caller: a routed handler on a template factory is the other way to do this
+        /// and it makes the row presenter throw while it measures.
         /// </summary>
-        public bool? Ticked { get; set; }
+        public bool? Ticked
+        {
+            get => _ticked;
+            set
+            {
+                if (_ticked == value) return;
 
-        /// <summary>What to do when somebody ticks or unticks the row.</summary>
-        public Action<bool>? OnTicked { get; set; }
+                _ticked = value;
+                _onTicked?.Invoke(value == true);
+            }
+        }
+
+        private bool? _ticked;
+        private Action<bool>? _onTicked;
+
+        /// <summary>
+        /// Give this row a tick box, on a table whose column is drawn by <c>Ticking</c>.
+        /// </summary>
+        /// <param name="on">Where the box starts.</param>
+        /// <param name="onTicked">What to do when somebody ticks or unticks it.</param>
+        public TableRow Ticking(bool on, Action<bool> onTicked)
+        {
+            _ticked = on;
+            _onTicked = onTicked;
+
+            return this;
+        }
 
         /// <inheritdoc />
         public override string ToString() => string.Join(" | ", _cells);
@@ -3001,28 +3025,19 @@ namespace CamelWorks.UI.Views
 
             var box = new FrameworkElementFactory(typeof(CheckBox));
 
-            box.SetBinding(ToggleButton.IsCheckedProperty, new Binding("Ticked"));
+            box.SetBinding(ToggleButton.IsCheckedProperty, new Binding("Ticked")
+            {
+                Mode = BindingMode.TwoWay,
+                UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged,
+            });
+
             box.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
             box.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-
-            box.AddHandler(ToggleButton.CheckedEvent,
-                new RoutedEventHandler((s, e) => Toggled(s, true)));
-            box.AddHandler(ToggleButton.UncheckedEvent,
-                new RoutedEventHandler((s, e) => Toggled(s, false)));
 
             grid.Columns[column].CellTemplate = new DataTemplate { VisualTree = box };
 
             return table;
         }
-
-        /// <summary>Tell a row's own handler that its box changed.</summary>
-        /// <param name="sender">The box.</param>
-        /// <param name="on">Where it landed.</param>
-        private static void Toggled(object sender, bool on) => Safely(() =>
-        {
-            if (sender is FrameworkElement box && box.DataContext is TableRow row)
-                row.OnTicked?.Invoke(on);
-        });
 
         public static ListView Multi(this ListView table)
         {

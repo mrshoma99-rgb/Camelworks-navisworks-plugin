@@ -1310,13 +1310,14 @@ namespace CamelWorks.Studio
                     MinWidth = least,
                 });
 
+            // No Clashes column. It said nothing on nine rows in ten; a group's member count is
+            // beside its name, and the width goes to the two items and the property column.
             Fixed(26);
             Flexible(2, 110);
-            Flexible(1, 58);
-            Flexible(1, 58);
-            Fixed(44);
+            Flexible(1, 74);
+            Flexible(1, 74);
             Fixed(60);
-            Flexible(1, 60);    // one property column, as somebody's own column would be
+            Flexible(1, 76);    // one property column, as somebody's own column would be
             Fixed(104);
             Fixed(104);
             Fixed(120);
@@ -1462,11 +1463,10 @@ namespace CamelWorks.Studio
             Put(grid, Head("Group or result", false, false), 1);
             Put(grid, Head("Item 1", false, false), 2);
             Put(grid, Head("Item 2", false, false), 3);
-            Put(grid, Head("Clashes", true, false), 4);
-            Put(grid, Head("Worst", true, true), 5);
-            Put(grid, Head("System Name", false, false), 6);
-            Put(grid, Head("Status", false, false), 7);
-            Put(grid, Head("Assigned", false, false), 8);
+            Put(grid, Head("Worst", true, true), 4);
+            Put(grid, Head("System Name", false, false), 5);
+            Put(grid, Head("Status", false, false), 6);
+            Put(grid, Head("Assigned", false, false), 7);
 
             var band = new Border
             {
@@ -1504,19 +1504,28 @@ namespace CamelWorks.Studio
 
             words.Children.Add(title.Wearing("Body"));
 
+            var many = new TextBlock
+            {
+                Text = Ui.Count(count, "clash"),                     // harness: data
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
+                TextWrapping = TextWrapping.NoWrap,
+            };
+
+            words.Children.Add(many.Wearing("Hint"));
+
             if (made) words.Children.Add(Parts.Note("grouped by you"));
 
             Put(grid, words, 1);
             Put(grid, Right(Hint("—")), 2);
             Put(grid, Right(Hint("—")), 3);
-            Put(grid, Figure(count.ToString(CultureInfo.InvariantCulture), false), 4);
-            Put(grid, Figure(worst, true), 5);
+            Put(grid, Figure(worst, true), 4);
 
-            Put(grid, Hint("—"), 6);
-            Put(grid, Parts.InlineChip("New", new[] { "New" }, _ => { }, Tone.Bad, "Set status"), 7);
-            Put(grid, Parts.InlineChip("Structures", new[] { "Structures" }, _ => { }, Tone.Plain, "Assign"), 8);
+            Put(grid, Hint("—"), 5);
+            Put(grid, Parts.InlineChip("New", new[] { "New" }, _ => { }, Tone.Bad, "Set status"), 6);
+            Put(grid, Parts.InlineChip("Structures", new[] { "Structures" }, _ => { }, Tone.Plain, "Assign"), 7);
             var groupVerbs = Verbs();
-            Put(grid, groupVerbs, 9);
+            Put(grid, groupVerbs, 8);
             groupVerbs.Margin = new Thickness(0);
 
             var tone = new Border
@@ -1558,17 +1567,16 @@ namespace CamelWorks.Studio
             Put(grid, Item(a), 2);
             Put(grid, Item(b), 3);
 
-            Put(grid, Right(Hint("—")), 4);
             Put(grid, Figure(worst, worst.StartsWith("-4", StringComparison.Ordinal)
-                                    || worst.StartsWith("-5", StringComparison.Ordinal)), 5);
+                                    || worst.StartsWith("-5", StringComparison.Ordinal)), 4);
 
-            Put(grid, Item(system), 6);
-            Put(grid, Parts.InlineChip(status, new[] { status }, _ => { }, tone, "Set status"), 7);
-            Put(grid, Parts.InlineChip(who, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign"), 8);
+            Put(grid, Item(system), 5);
+            Put(grid, Parts.InlineChip(status, new[] { status }, _ => { }, tone, "Set status"), 6);
+            Put(grid, Parts.InlineChip(who, new[] { "Mechanical" }, _ => { }, Tone.Plain, "Assign"), 7);
 
             var verbs = Verbs();
             verbs.Visibility = picked ? Visibility.Visible : Visibility.Hidden;
-            Put(grid, verbs, 9);
+            Put(grid, verbs, 8);
             verbs.Margin = new Thickness(0);
 
             var edge = status == "New" ? Skin.Of("RedTx")
