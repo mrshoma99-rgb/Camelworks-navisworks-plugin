@@ -448,8 +448,8 @@ namespace CamelWorks.UI.Views
                     one.Level ?? string.Empty)).ToList();
 
                 var table = Ui.Table(rows,
-                    ("Clash", 0), ("Test", 150), ("Status", 90),
-                    ("Assigned to", 120), ("Level", 70)).Multi();
+                    ("Clash", 0), ("Test", 130), ("Status", 80),
+                    ("Assigned to", 100), ("Level", 56)).Multi();
 
                 Ui.SetFills(_results, true);
 
@@ -530,7 +530,7 @@ namespace CamelWorks.UI.Views
 
                 foreach (var facet in facets) bar.Children.Add(Chip(facet));
 
-                var add = Ui.Link("and…", () => { });
+                var add = Ui.Link("and one more…", () => { });
 
                 add.Click += (s, e) => Ui.Safely(() => Parts.PopMenu(add, Facets()));
                 add.Margin = new Thickness(4, 0, 0, 4);
